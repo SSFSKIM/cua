@@ -139,7 +139,7 @@ export function inventoryCheck(name, steps, expected) {
   const results = expected.map(step => ({step, found: steps.find(s => s.name === step)}));
   const missing = results.filter(r => !r.found).map(r => r.step);
   const status = rollup(results.map(r => r.found?.status ?? 'BLOCKED'));
-  const ran = results.filter(r => r.found).map(r => `${r.step}: ${r.found.status}`);
+  const ran = results.filter(r => r.found).map(r => `${r.step}: ${r.found.status}${expected.length === 1 && r.found.detail ? ` (${r.found.detail})` : ''}`);
   return {name, status, detail: [...ran, ...(missing.length ? [`not executed: ${missing.join('; ')}`] : [])].join('; ')};
 }
 

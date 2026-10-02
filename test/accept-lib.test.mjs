@@ -129,6 +129,7 @@ test('a live phase passes only when every expected step ran and passed; a step t
   assert.equal(inventoryCheck(phase.name, steps, phase.steps).status, 'PASS');
   assert.equal(inventoryCheck(phase.name, steps.filter(s => s.name !== 'real serve: close'), phase.steps).status, 'BLOCKED');
   assert.match(inventoryCheck(phase.name, steps.filter(s => s.name !== 'real serve: close'), phase.steps).detail, /not executed: real serve: close/);
+  assert.equal(inventoryCheck('one', [{name: 'cleanup', status: 'PASS', detail: 'removed'}], ['cleanup']).detail, 'cleanup: PASS (removed)', 'a single step keeps its own detail');
   const failed = steps.map(s => s.name === 'replaced value: close' ? {...s, status: 'FAIL'} : s);
   assert.equal(inventoryCheck(phase.name, failed, phase.steps).status, 'FAIL');
 });

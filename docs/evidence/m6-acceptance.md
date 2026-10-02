@@ -148,3 +148,37 @@ evidence.
 - The fixture's readback of a typed secret is target observation; confidentiality evidence is the fake-target scan.
 - TextEdit may keep its own autosave/version data for the deleted temporary document (disposable marker and value
   only).
+
+## Fix wave 1 rerun (code `9d1e51c`, clean tree)
+
+After the M6 review the runner and fixture were tightened: a suite counts only with executed coverage (nothing
+skipped, TODO, failed or cancelled), suite-backed claims carry that verdict, live scenarios contribute their complete
+verdict plus an explicit inventory of expected steps per phase (a step that never ran is BLOCKED, a missing report
+FAIL), optional UI delivery needs each of its steps to have run, per-connection approval needs both connections bound,
+asked, answered and their session files handled, and the TextEdit approval rule also requires the pinned form mode and
+an empty object schema. The fixture now checks its own window inside every typing and closing cell (and stops all input
+after any loss), counts a close only when TextEdit then reports no window, keeps its document in a `mkdtemp`
+directory, and ends every server it started in `finally`.
+
+One fresh run on a new `mktemp -d /tmp/cua-accept.XXXXXX` home (installed from the local archive, deleted afterwards):
+`node scripts/accept-native.mjs --live-keychain --live-textedit --report "$CUA_HOME/acceptance-keychain-ui.json"`,
+2 min 30 s, exit 3 (BLOCKED overall, from item 9 only).
+
+| # | Result | Notes |
+|---|---|---|
+| 1 | PASS | `npm test` 188/188 executed and passed (0 skipped, 0 TODO); `test:helper` 55 Swift + 7/7 Node-driven |
+| 2 | PASS | reinstall `changed:false`, release tree identical; download mode cited |
+| 3 | PASS | |
+| 4 | PASS | |
+| 5 | PASS | fixture verdict PASS, all 10 expected own steps ran and passed; the close was confirmed by TextEdit reporting no window; no input stopped |
+| 6 | PASS | probe verdict PASS (32/32 steps), every phase complete; UI delivery: all four steps ran and passed |
+| 7 | PASS | probe verdict PASS; per-method, ordinary/unsupported/invalid, planted-module and fail-closed phases complete |
+| 8 | PASS | lifecycle observations as before; connection A and B each bound, asked once, accepted once, session file present while open and removed after close |
+| 9 | BLOCKED | the same four gates |
+| 10 | PASS | clean clone of `9d1e51c`: 188/188, `build:helper`, 55 + 7 |
+
+Observed in this run: the native helper was again the existing one, pid 63982,
+`~/.codex/computer-use/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService`, before and after (reused; the
+earlier runs above recorded the same pid). TextEdit was already running (pid 33371, from M6's exploration) and was left
+running. No connection directory was left under `$CUA_HOME/run`, no server process remained, and the Keychain label
+list was empty afterwards.

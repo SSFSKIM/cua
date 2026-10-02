@@ -8,25 +8,61 @@ status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
 
 ## Requirements
 
-- macOS on Apple silicon and `node` 22 or newer on `PATH` (no npm dependencies).
-- The pinned runtime, installed once from a checkout: `node bin/cua.mjs install` (downloads OpenAI's pinned archive;
-  `--archive <ChatGPT zip>` uses a local copy of it), then `node bin/cua.mjs doctor` to check it.
-- The native computer-use helper needs Accessibility and Screen Recording. Where ChatGPT's Computer Use already runs,
-  its helper serves this runtime too; a first-run permission flow without ChatGPT installed is not yet verified.
+- macOS on Apple silicon (the only pinned runtime is `darwin-arm64`; other platforms get `unsupported_platform`) and
+  `node` 22 or newer on `PATH`. There are no npm dependencies.
+- The pinned runtime, installed into `CUA_HOME` (default `~/Library/Application Support/cua`) by `cua install`: it
+  downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
+  `--archive <zip>`, and refuses anything whose length, SHA-256, layout or OpenAI code signatures (team `2DC432GLL2`)
+  differ from `runtime/releases/*.json`. Vendor files are never modified or re-signed.
+- Accessibility and Screen Recording for the native computer-use helper (`Codex Computer Use.app`, started by the
+  runtime through LaunchServices). macOS asks on first use; `cua doctor` cannot see these grants and reports them as
+  `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
+  runtime too and is reused as it is, never stopped or replaced.
+- For secrets only: Swift (Xcode or its command-line tools) to build the Keychain helper with `npm run build:helper`.
+  No account is needed: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read from
+  ChatGPT.app or `~/.codex`.
+
+Not yet shown, and release gates rather than defects: a first run on a clean Mac without ChatGPT installed, the pinned
+helper's own cold start and first-run permission prompts, and stable Developer ID signing of the Keychain helper (see
+Acceptance).
 
 ## Install
+
+From a checkout (or after `npm link`, the same commands as `cua`):
+
+```sh
+npm test                                   # Node only; no Swift, runtime, GUI, network or credentials
+node bin/cua.mjs install                   # or: install --archive <ChatGPT-darwin-arm64-26.928.40906.zip>
+node bin/cua.mjs doctor                    # --json for the structured checks; exit 1 when one fails
+npm run build:helper && npm run test:helper    # only for secrets: build, then test, the Swift Keychain helper
+```
+
+`cua install` is idempotent for a verified release and never repairs one in place; `cua runtime use <release>`
+switches between verified installed releases. A release that no longer verifies is reported with its offline
+recovery: stop the servers using it, remove its directory, install again.
+
+### As a Claude Code plugin
 
 ```sh
 claude plugin marketplace add SSFSKIM/cua
 claude plugin install cua@cua
 ```
 
-(Inside a MAWS checkout, the repo root is also a local marketplace: `claude plugin marketplace add <path to MAWS>`
-then `claude plugin install cua@maws`. The plugin's source of truth is `plugins/cua` in MAWS, published to
-`github.com/SSFSKIM/cua` with `git subtree push --prefix plugins/cua`.)
+The plugin runs `node cua-shim.mjs`, which is `cua serve`. Then allow the tools in your settings so each call does not
+prompt: `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next
+section. This repository is the plugin's source of truth.
 
-Then allow the tools in your settings so each call does not prompt: `"mcp__plugin_cua_cua_repl__*"` under
-`permissions.allow`. App approvals are a separate dialog; see the next section.
+### As a plain MCP server (any host)
+
+`cua serve` speaks MCP over stdin/stdout. Register it yourself under a name you do not already use; nothing in this
+repository registers or replaces a server for you. For Claude Code, for example:
+
+```sh
+claude mcp list                                                       # check what is already registered
+claude mcp add --scope user cua -- node /absolute/path/to/cua/bin/cua.mjs serve
+```
+
+Settings (below) go in the server's environment, e.g. `claude mcp add ... -e CUA_SHIM_SECRETS=off -- ...`.
 
 ## App approvals
 
@@ -35,7 +71,8 @@ Apart from Claude Code's tool permission, OpenAI's stack asks before an app is f
 `CUA_SHIM_PERSIST`:
 
 - `session` (the default) writes `$CUA_HOME/state/codex/computer-use/sessions/<session id>.toml`; each server
-  connection has its own random session id, so every new connection asks once more per app.
+  connection has its own random session id, so every new connection asks once more per app, and the file is removed
+  when its connection closes.
 - `always` adds the app to the machine-wide list Codex Desktop's own "Always allow" uses,
   `~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json`;
   an app on that list is never asked about again from any session or host. One more accept per app, then silence.
@@ -129,29 +166,59 @@ restores the previous contents; a clipboard manager may record it). Only authori
 into yourself. Browser input (`playwright_locator_fill`, tab paste/type/set-value) has a planned mapping for the
 Chrome phase but is not implemented or available in this release.
 
-A locally built helper is ad-hoc signed, and Keychain items trust the exact helper that created them: after a rebuild,
-macOS may ask whether the new helper may use them. Signing with a stable identity avoids that (`npm run build:helper --
---sign "Apple Development: …"`); a distributable release needs Developer ID signing. `cua doctor` reports the helper's
-build and signature as `secrets.helper` and `secrets.signing`.
+The helper is used only from this checkout's build, `native/keychain/.build/release/cua-keychain`; nothing else (in
+particular not the generic `security` tool) is ever used in its place. A locally built helper is ad-hoc signed, and
+Keychain items trust the exact helper that created them: after a rebuild, macOS may ask whether the new helper may use
+them. Signing with a stable identity avoids that on one machine (`npm run build:helper -- --sign "Apple Development:
+…"`); a distributable release needs a Developer ID Application signature, which is not set up yet. `cua doctor`
+reports the helper's build and signature as `secrets.helper` and `secrets.signing`: not built, ad-hoc or Apple
+Development is `blocked`, a stale protocol or broken signature `fail`, Developer ID `pass`.
 
-## Verify
+## Verify and acceptance
 
 ```sh
 npm test                  # Node only; no Swift, runtime, GUI or network
 npm run build:helper      # the Keychain helper
 npm run test:helper       # the actual helper: in-memory storage and pseudo-terminals, no Keychain access
 node verify.mjs           # the installed runtime in $CUA_HOME, through `cua serve`
-npm run test:keychain-live   # opt-in: one disposable Keychain item with generated values, removed afterwards
-node scripts/probe-secrets.mjs   # opt-in: {{secret:…}} substitution through the runtime to a fake target, no GUI
 ```
-
-`scripts/probe-secrets.mjs` stores generated values in one disposable Keychain item (removed afterwards), sends
-references through `cua serve` and the runtime's trusted service to a fake input target, and checks that the values
-arrive there and nowhere else (MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME`).
 
 `verify.mjs` completes the MCP handshake, checks the tool surface, and runs trivial cells that bind no app (the first
 loads OpenAI's API, which contacts the native helper read-only) to check task identity and `end_task`. It reports which
 executables served and which helper answered. A non-zero exit names what failed.
+
+The acceptance runner checks the whole native + secrets slice against an explicit scratch home and writes a report
+with PASS, FAIL or BLOCKED for each acceptance item of the spec (metadata only, never a secret value):
+
+```sh
+export CUA_HOME="$(mktemp -d /tmp/cua-accept.XXXXXX)"
+node bin/cua.mjs install --archive <ChatGPT-darwin-arm64-26.928.40906.zip>
+node scripts/accept-native.mjs --report "$CUA_HOME/acceptance.json"
+node scripts/accept-native.mjs --live-keychain --report "$CUA_HOME/acceptance-keychain.json"
+node scripts/accept-native.mjs --live-textedit --report "$CUA_HOME/acceptance-live.json"
+node scripts/accept-native.mjs --live-keychain --live-textedit --report "$CUA_HOME/acceptance-keychain-ui.json"
+```
+
+Without a flag it runs the suites, install/reinstall, doctor, `verify.mjs`, the read-only lifecycle probe
+(`scripts/probe-lifecycle.mjs`), packaging checks and a clean clone of `HEAD` that runs `npm test`, `build:helper` and
+`test:helper` (deleted afterwards). The opt-in flags add live scenarios:
+
+- `--live-keychain` runs `scripts/probe-secrets.mjs`: one uniquely labelled disposable Keychain item holding generated
+  values, created and replaced through a test-only pseudo-terminal driver typing into the production `set`, read
+  through the real helper → broker → trusted service → a controlled fake input target, and deleted at the end. It
+  checks every input method, the failures, failing closed with secrets off or no broker, and that neither value
+  appears in the MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME` or the report.
+- `--live-textedit` opens a new empty temporary document under `$CUA_HOME` in TextEdit, types a marker through
+  `cua serve`, reads it back (accessibility text and a screenshot, recorded as metadata), closes only that window and
+  deletes the file. It never touches another document and never quits TextEdit. It accepts the app-approval
+  elicitation only when it is exactly the request for `com.apple.TextEdit`, for the session only, and declines
+  anything else; that answer lives in the test harness, not in `cua serve`. With both flags it also types a
+  disposable secret into that document; reading it back is observation of the target, not confidentiality evidence.
+
+A macOS permission or Keychain prompt is never answered by these scripts: the step stops and is reported BLOCKED
+with the human action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned
+helper's own cold start, first-run permission prompts, Developer ID signing across an upgrade) are always reported
+BLOCKED here. `npm run test:keychain-live` is the narrower Keychain-only roundtrip from the helper's milestone.
 
 ## Configuration (environment of the server)
 

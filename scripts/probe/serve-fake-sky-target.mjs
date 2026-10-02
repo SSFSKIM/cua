@@ -4,20 +4,24 @@
 // @oai/sky/service. The target's directory is added to the trusted code paths for this connection only. Everything
 // else (runtime, node_repl, trusted worker, nativePipe, Keychain helper broker) is the real thing.
 //
-//   node scripts/probe/serve-fake-sky-target.mjs <absolute fake target module>      (uses $CUA_HOME like the CLI)
+//   node scripts/probe/serve-fake-sky-target.mjs <absolute fake target module> [--no-helper]   (uses $CUA_HOME)
+// --no-helper serves as if the Keychain helper were not built, so the connection has no broker and secrets are
+// unavailable (the fail-closed path for an unavailable broker).
 import {dirname, isAbsolute} from 'node:path';
 import {realpathSync} from 'node:fs';
 import {serve} from '../../src/mcp/server.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
+import {locateHelper} from '../../src/secrets/helper.mjs';
 
-const target = process.argv[2];
-if (!target || !isAbsolute(target)) {
-  process.stderr.write('serve-fake-sky-target: pass the absolute path of the fake target module\n');
+const [target, flag] = process.argv.slice(2);
+if (!target || !isAbsolute(target) || (flag !== undefined && flag !== '--no-helper')) {
+  process.stderr.write('serve-fake-sky-target: pass the absolute path of the fake target module, optionally --no-helper\n');
   process.exit(2);
 }
 const real = realpathSync(target);
 const code = await serve({
   home: defaultHome(),
+  keychainHelper: flag === '--no-helper' ? {...locateHelper(), built: false} : locateHelper(),
   prepareLaunch: launch => ({
     ...launch,
     env: {

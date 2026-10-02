@@ -18,7 +18,10 @@
 //   real `cua serve` with the vendor sky service: a substituted command against a nonexistent app (a real vendor
 //     failure after substitution), an unknown label, and model cells trying to write an importable module into every
 //     trusted code root (and, for comparison, their own working and temporary directories).
-//   real `cua serve` with CUA_SHIM_SECRETS=off: a reference fails closed with secrets_disabled.
+//   fail-closed connections through the fake target: with CUA_SHIM_SECRETS=off (secrets_disabled) and with no broker
+//     (the helper treated as not built: secrets_unavailable), a reference in each of the three methods fails before
+//     anything reaches the target.
+// `node scripts/accept-native.mjs --live-keychain` runs this probe as acceptance 6's live roundtrip.
 // Every observable channel is scanned for both sentinels (raw and as base64 at every alignment): the MCP transport in
 // both directions, serve/anchor/cua-repl/node_repl/kernel/trusted-worker/broker stderr (all inherited by the served
 // process), every regular file the runtime left under $CUA_HOME/state and run (read whole; an unreadable one fails the
@@ -282,13 +285,26 @@ nodeRepl.write(JSON.stringify({ok: true, result: out}));`;
   record('real serve: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
-async function secretsOffConnection() {
-  const c = connect('secrets-off', [CLI, 'serve'], {CUA_SHIM_SECRETS: 'off'});
+// Secrets turned off, or no broker at all (the Keychain helper "not built"): an exact reference must fail closed
+// before any input. Run through the fake target, so "before any input" is observed at the target, not inferred.
+async function failClosedConnection(tag, recorder, targetModule, {args = [], env = {}, expected, reason}) {
+  const c = connect(`fail-closed ${tag}`, [FAKE_SERVE, targetModule, ...args], env);
   await c.open();
-  const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: REF}))));
-  record('secrets off: reference fails closed', !out.ok && errorCode(out) === 'secrets_disabled' ? 'PASS' : 'FAIL', `got ${out.ok ? 'success' : errorCode(out)}`);
+  for (const [method, input] of [
+    ['type_text', {app: 'probe.record', text: REF}],
+    ['paste', {app: 'probe.record', text: REF, format: 'text'}],
+    ['set_value', {app: 'probe.record', element_index: 3, value: REF}],
+  ]) {
+    const before = recorder.received.length;
+    const out = cellOutput(await c.js(rpcCell(exec(method, input))));
+    const delivered = recorder.received.length - before;
+    const ok = !out.ok && errorCode(out) === expected && (!reason || out.message.includes(`(${reason})`)) && delivered === 0;
+    record(`${tag}: ${method} reference fails closed`, ok ? 'PASS' : 'FAIL', ok
+      ? `failed with ${expected}${reason ? ` (${reason})` : ''}; the target received nothing`
+      : `got ${out.ok ? 'success' : `${errorCode(out)}: ${String(out.message ?? out.raw).replace(/^cua: /, '').slice(0, 120)}`}; target calls ${delivered}`);
+  }
   const exit = await c.close();
-  record('secrets off: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+  record(`${tag}: close`, exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
 let created = false;
@@ -315,7 +331,8 @@ try {
         record('replaced value: close', exit2?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit2?.code ?? 'timeout'}`);
         await realServeConnection(runtime);
       }
-      await secretsOffConnection();
+      await failClosedConnection('secrets off', recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
+      await failClosedConnection('broker unavailable', recorder, targetModule, {args: ['--no-helper'], expected: 'secrets_unavailable', reason: 'helper_not_built'});
     }
   }
 } catch (error) {

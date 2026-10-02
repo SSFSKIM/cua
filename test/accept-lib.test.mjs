@@ -87,8 +87,10 @@ test('the package must carry what runs, diagnoses and builds the helper', () => 
 });
 
 test('credential-looking strings are recognized, ordinary text is not', () => {
-  assert.equal(tokenLike('key = sk-proj-abcdefghijklmnopqrstuvwxyz012345'), true);
-  assert.equal(tokenLike('-----BEGIN OPENSSH PRIVATE KEY-----'), true);
-  assert.equal(tokenLike('token ghp_abcdefghijklmnopqrstuvwxyz0123456789'), true);
+  // Assembled at run time so this file does not itself hold a token-shaped string the tracked-file scan would flag.
+  const join = (...parts) => parts.join('');
+  assert.equal(tokenLike(join('key = sk', '-proj-', 'abcdefghijklmnopqrstuvwxyz012345')), true);
+  assert.equal(tokenLike(join('-----BEGIN OPENSSH ', 'PRIVATE KEY-----')), true);
+  assert.equal(tokenLike(join('token gh', 'p_', 'abcdefghijklmnopqrstuvwxyz0123456789')), true);
   assert.equal(tokenLike('capability-token-for-test; sk-short; the sky service'), false);
 });

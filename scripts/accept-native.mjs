@@ -394,7 +394,8 @@ async function item10() {
       const buildCheck = check('clean clone: npm run build:helper', build.code === 0 ? 'PASS' : 'FAIL', `exit ${build.code ?? build.error} in ${seconds(build.ms)}`);
       const helper = build.code === 0 ? await helperSuite(dir, {label: 'clean clone: '}) : check('clean clone: npm run test:helper', 'FAIL', 'not run: build:helper failed');
       checks.push(node, buildCheck, helper);
-      const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md']).trim();
+      // This runner holds the pattern itself, so it is not searched.
+      const researchRefs = sh('git', ['-C', dir, 'grep', '-l', '-e', 'codex-app-src', '--', ':!docs', ':!*.md', ':!scripts/accept-native.mjs']).trim();
       checks.push(check('clean clone needs no research trees', researchRefs ? 'FAIL' : 'PASS', researchRefs ? `code referring to research trees: ${researchRefs}` : 'no code or config outside docs refers to the local research trees'));
     }
   } finally { rmSync(clone, {recursive: true, force: true}); }

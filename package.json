@@ -9,5 +9,18 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\""
-  }
+  },
+  "bin": {
+    "cua": "bin/cua.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "runtime/releases/",
+    "cua-shim.mjs",
+    "verify.mjs",
+    "hooks/",
+    ".claude-plugin/",
+    "README.md"
+  ]
 }

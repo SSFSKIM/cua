@@ -1,0 +1,15 @@
+# Dependencies and build output
+node_modules/
+native/keychain/.build/
+
+# Vendor runtime archives and extracted runtimes never enter git; tests and probes use a scratch CUA_HOME outside
+# the repository.
+*.zip
+runtimes/
+staging/
+current.json
+
+# Local secrets and machine state
+.env
+*.log
+.DS_Store

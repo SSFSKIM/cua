@@ -2,4 +2,8 @@
 
 ## Open
 
-- **2026-10-02 — Explicit native surfaces setting in the launch contract (minor).** The standalone spec's environment enumeration does not explicitly list `CUA_REPL_ENABLED_SURFACES=computer`, although the pinned launcher requires the variable and the existing shim already supplies it. M2 should set it in the allowlisted launch environment, document it alongside the other variables, and cover it in launch tests. Native-only A+B must not silently advertise browser support. This is a nonblocking spec clarification, not a new review cycle. Source: pinned `@oai/cua-repl` `launch.js:16–29`; governing spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
+(none)
+
+## Resolved
+
+- **2026-10-02 — Explicit native surfaces setting in the launch contract (minor).** The standalone spec's environment enumeration did not explicitly list `CUA_REPL_ENABLED_SURFACES=computer`, although the pinned launcher requires the variable. Resolved in M2: `src/runtime/launch.mjs` sets it in the allowlisted launch environment, documents it in the module's environment contract alongside the other variables, and `test/runtime-launch.test.mjs` asserts it (and that no browser variable or `NODE_REPL_TRUSTED_SERVICES` default is configured for native-only launches). Source: pinned `@oai/cua-repl` `launch.js:16–29`; governing spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.

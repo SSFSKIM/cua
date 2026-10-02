@@ -139,6 +139,23 @@ test('each connection gets its own random session ID', {skip: !supported}, async
   assert.notEqual(sessions[0], sessions[1]);
 });
 
+test('a connection\'s own session approval file is removed at close; other sessions\' files are left alone', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const sessions = join(home, 'state', 'codex', 'computer-use', 'sessions');
+  mkdirSync(sessions, {recursive: true});
+  const other = join(sessions, '00000000-0000-4000-8000-000000000000.toml');
+  writeFileSync(other, '[apps]\nallowed = []\n');
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve']);
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  const js = await server.call('js', {code: 'approve'});
+  const own = join(sessions, `${JSON.parse(js.result.content[0].text).turn.session_id}.toml`);
+  assert.equal(existsSync(own), true, 'the runtime wrote the connection\'s approvals');
+  server.child.stdin.end();
+  assert.equal((await server.exit).code, 0);
+  assert.equal(existsSync(own), false);
+  assert.equal(existsSync(other), true);
+});
+
 test('the plugin entry cua-shim.mjs is the same server', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const server = launch(join(REPO, 'cua-shim.mjs'), home);

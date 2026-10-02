@@ -19,6 +19,7 @@
 import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {TaskLifecycle} from './task.mjs';
 import {spawnUpstream} from './upstream.mjs';
 import {
@@ -289,7 +290,8 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // `cua serve`: resolve the installed runtime, start this connection's secrets broker (unless secrets are off or the
 // Keychain helper is not built), launch the runtime for a fresh connection session in an owned working directory with
 // the trusted sky service (src/services/sky.mjs) registered and the broker's endpoint and token (or the reason there
-// is no broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created. Returns the
+// is no broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including
+// the session's app-approval file the runtime wrote). Returns the
 // exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
 // tests and the opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and
 // are not reachable from the CLI.
@@ -323,5 +325,8 @@ export async function serve({home, env = process.env, input = process.stdin, out
     for (const signal of SIGNALS) process.off(signal, onSignal);
     await secrets.close();
     rmSync(launch.cwd, {recursive: true, force: true});
+    // The runtime records a "session" app approval under this connection's random session ID, which no later
+    // connection can use; it goes with the connection. Other sessions' files are never touched.
+    rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
   }
 }

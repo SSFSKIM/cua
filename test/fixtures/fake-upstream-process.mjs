@@ -7,9 +7,10 @@
 //   unowned      start a grandchild in its own session (like the LaunchServices-started native helper), then echo
 //   noise        write a non-JSON line before each response
 // When CODEX_HOME is set (an actual `cua serve` launch), every received message plus the launch environment and
-// working directory are appended to $CODEX_HOME/fake-upstream.jsonl for the test to inspect.
+// working directory are appended to $CODEX_HOME/fake-upstream.jsonl for the test to inspect. A js call with code
+// "approve" writes the session approval file node_repl writes for an accepted app approval.
 import {spawn} from 'node:child_process';
-import {appendFileSync, writeFileSync, statSync} from 'node:fs';
+import {appendFileSync, mkdirSync, writeFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 
@@ -54,6 +55,12 @@ createInterface({input: process.stdin}).on('line', line => {
       const {name, arguments: args = {}, _meta} = msg.params;
       if (name === 'js' && args.code === 'exit') process.exit(3);
       if (name === 'js' && args.code === 'big') return reply(text('x'.repeat(8 << 20)));
+      if (name === 'js' && args.code === 'approve') {
+        // What node_repl does when an app approval is accepted with persist "session".
+        const sessions = join(process.env.CODEX_HOME, 'computer-use', 'sessions');
+        mkdirSync(sessions, {recursive: true});
+        writeFileSync(join(sessions, `${_meta['x-codex-turn-metadata'].session_id}.toml`), '[apps]\nallowed = ["com.example.app"]\n');
+      }
       if (name === 'js') return reply(text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}));
       if (name === 'js_reset') return reply(text('js kernel reset'));
       if (name === 'turn_ended') return reply(text('{}'));

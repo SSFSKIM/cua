@@ -100,8 +100,9 @@ async function suites(cwd, {label}) {
   const out = [];
   const node = await run('npm', ['test'], {cwd, env: suiteEnv()});
   const totals = tapTotals(node.stdout);
+  const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
   out.push(check(`${label}npm test`, node.code === 0 && totals?.fail === 0 ? 'PASS' : 'FAIL',
-    totals ? `${totals.pass}/${totals.tests} passed, ${totals.fail} failed, ${totals.skipped} skipped in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `exit ${node.code ?? node.error}; no summary`,
+    totals ? `${totals.pass}/${totals.tests} passed, ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `exit ${node.code ?? node.error}; no summary`,
     {totals}));
   return out;
 }

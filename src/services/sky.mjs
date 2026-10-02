@@ -7,7 +7,9 @@
 // nodeRepl.rpc("sky", …)) are eligible, and only when the eligible field is entirely `{{secret:<label>}}`:
 //   {type:"execute", method:"paste",     args:[{app, text, format?}]}      text    (format absent or "text")
 //   {type:"execute", method:"type_text", args:[{app, text}]}               text
-//   {type:"execute", method:"set_value", args:[{app, element_index, value}]} value
+//   {type:"execute", method:"set_value", args:[{app, element_index, value}]} value   (element_index an integer)
+// with a string method and string app/text/value: since the vendor looks methods up by coerced property key, a
+// reference in a request that only coerces to one of these (e.g. method ["paste"]) fails closed too.
 // The stored value is read from this connection's private broker (src/secrets/client.mjs, over nodeRepl.nativePipe)
 // and placed in a copy of the request handed to the vendor. Everything else is delegated untouched: other methods,
 // other fields, text that merely contains a marker, and arbitrary JavaScript, which is never scanned.
@@ -22,10 +24,12 @@ import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {BROKER_ENV, BrokerError, brokerClientFromEnv} from '../secrets/client.mjs';
 
+// Each eligible command's input: its keys and the primitive type each must have (`optional` keys may be absent).
+const isString = value => typeof value === 'string';
 const ELIGIBLE = {
-  paste: {field: 'text', required: ['app', 'text'], allowed: ['app', 'text', 'format']},
-  type_text: {field: 'text', required: ['app', 'text'], allowed: ['app', 'text']},
-  set_value: {field: 'value', required: ['app', 'element_index', 'value'], allowed: ['app', 'element_index', 'value']},
+  paste: {field: 'text', fields: {app: isString, text: isString, format: value => value === 'text'}, optional: ['format']},
+  type_text: {field: 'text', fields: {app: isString, text: isString}, optional: []},
+  set_value: {field: 'value', fields: {app: isString, element_index: Number.isInteger, value: isString}, optional: []},
 };
 const REQUEST_KEYS = ['type', 'method', 'args'];
 
@@ -61,24 +65,38 @@ export class SecretInputError extends Error {
 
 const isPlainObject = value => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
 
-// The substitution a request asks for: null to delegate it untouched, or {method, rule, input, reference}.
+// The property key the vendor service would look the method up by: it indexes its client with request.method, which
+// coerces (["paste"] reaches paste), so eligibility is judged on the same key and the pinned shape then demands a
+// plain string. Requests arrive JSON-decoded, so coercion runs no foreign code; anything uncoercible is ineligible.
+function methodKey(method) {
+  if (typeof method === 'string') return method;
+  try { return String(method); } catch { return null; }
+}
+
+// The substitution a request asks for: null to delegate it untouched, or {method, rule, input, reference, request}.
 function substitutionFor(request) {
-  if (!isPlainObject(request) || request.type !== 'execute' || !Object.hasOwn(ELIGIBLE, request.method)) return null;
-  if (!Array.isArray(request.args) || !isPlainObject(request.args[0])) return null;
-  const rule = ELIGIBLE[request.method];
+  if (!isPlainObject(request) || request.type !== 'execute') return null;
+  const method = methodKey(request.method);
+  if (method === null || !Object.hasOwn(ELIGIBLE, method)) return null;
+  if (!Array.isArray(request.args) || request.args[0] === null || typeof request.args[0] !== 'object') return null;
+  const rule = ELIGIBLE[method];
   const input = request.args[0];
   const reference = parseReference(input[rule.field]);
   if (!reference) return null;
-  return {method: request.method, rule, input, reference, request};
+  return {method, rule, input, reference, request};
 }
 
+// Exactly the pinned request: a string method, one plain-object argument, only the pinned keys, each of its pinned
+// primitive type (paste only in text format).
 function checkShape({method, rule, input, request}) {
-  const pinned = request.args.length === 1
+  const keys = Object.keys(rule.fields);
+  const pinned = typeof request.method === 'string'
+    && request.args.length === 1
+    && isPlainObject(input)
     && Object.keys(request).every(key => REQUEST_KEYS.includes(key))
-    && Object.keys(input).every(key => rule.allowed.includes(key))
-    && rule.required.every(key => Object.hasOwn(input, key))
-    && (method !== 'paste' || input.format === undefined || input.format === 'text');
-  if (!pinned) throw new SecretInputError('unsupported_secret_shape', `a {{secret:…}} reference is expanded only as the whole ${rule.field} of ${method} in its pinned shape (${rule.allowed.join(', ')}${method === 'paste' ? '; text format' : ''}); ${NOTHING_ENTERED}`);
+    && Object.keys(input).every(key => keys.includes(key))
+    && keys.every(key => Object.hasOwn(input, key) ? rule.fields[key](input[key]) : rule.optional.includes(key));
+  if (!pinned) throw new SecretInputError('unsupported_secret_shape', `a {{secret:…}} reference is expanded only as the whole ${rule.field} of ${method} in its pinned shape (${keys.join(', ')}${method === 'paste' ? '; text format' : ''}); ${NOTHING_ENTERED}`);
 }
 
 function unavailable(reason) {

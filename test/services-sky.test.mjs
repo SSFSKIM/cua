@@ -227,3 +227,39 @@ test('the vendor service loads once, and a load failure is reported without a va
   const error = await rejection(broken.handleRpc(typeText(REF('work-password'))));
   assertValueFree(error);
 });
+
+// The vendor service looks the method up by property key, which coerces (["paste"] reaches paste). A request that
+// carries a reference must therefore be pinned by primitive type, not only by key name, before any secret is read.
+const COERCED = [
+  {type: 'execute', method: ['paste'], args: [{app: 'a', text: REF('work-password'), format: 'html'}]},
+  {type: 'execute', method: ['paste'], args: [{app: 'a', text: REF('work-password'), format: 'text'}]},
+  {type: 'execute', method: ['type_text'], args: [{app: 'a', text: REF('work-password')}]},
+  {type: 'execute', method: ['set_value'], args: [{app: 'a', element_index: 4, value: REF('work-password')}]},
+  {type: 'execute', method: 'paste', args: [{app: 'a', text: REF('work-password'), format: ['text']}]},
+  {type: 'execute', method: 'type_text', args: [{app: ['a'], text: REF('work-password')}]},
+  {type: 'execute', method: 'set_value', args: [{app: 'a', element_index: '4', value: REF('work-password')}]},
+  {type: 'execute', method: 'set_value', args: [{app: 'a', element_index: [4], value: REF('work-password')}]},
+  {type: 'execute', method: 'set_value', args: [{app: 'a', element_index: 1.5, value: REF('work-password')}]},
+];
+
+test('a reference in a request whose method or fields are not the pinned primitive types fails closed before any read', async () => {
+  for (const request of COERCED) {
+    const {service, received, reads} = harness();
+    const error = await rejection(service.handleRpc(request));
+    assert.equal(error.code, 'unsupported_secret_shape', JSON.stringify(request));
+    assert.deepEqual(received, [], `delegated ${JSON.stringify(request)}`);
+    assert.deepEqual(reads, [], `read a secret for ${JSON.stringify(request)}`);
+  }
+});
+
+test('with secrets off or unavailable, a coerced-method reference still fails closed and is never delegated literally', async () => {
+  for (const secretsUnavailable of ['secrets_disabled', 'helper_not_built']) {
+    for (const request of COERCED.slice(0, 4)) {
+      const {service, received, reads} = harness({secretsUnavailable});
+      const error = await rejection(service.handleRpc(request));
+      assert.ok(['unsupported_secret_shape', 'secrets_disabled', 'secrets_unavailable'].includes(error.code), `${secretsUnavailable}: ${error.code}`);
+      assert.deepEqual(received, [], `${secretsUnavailable}: delegated ${JSON.stringify(request)}`);
+      assert.deepEqual(reads, []);
+    }
+  }
+});

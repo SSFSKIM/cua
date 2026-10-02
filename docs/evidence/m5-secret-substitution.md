@@ -13,7 +13,9 @@ The Swift helper was not changed (the M4 ad-hoc build was used as is).
   `buildLaunch` (`NODE_REPL_TRUSTED_SERVICES={"sky": <real path>}`), with secrets on or off. It delegates every request
   to the vendor `@oai/sky/service` named by `CUA_SKY_VENDOR_SERVICE`, and substitutes only in the pinned shapes
   `paste {app, text, format?="text"}`, `type_text {app, text}`, `set_value {app, element_index, value}` with one
-  argument and no other request keys. Failure codes (all before anything is delivered, except the last):
+  argument, no other request keys, a string method and each field of its pinned primitive type (strings; an integer
+  `element_index`). The vendor looks methods up by coerced property key (`["paste"]` reaches paste), so a reference
+  in a request that only coerces to an eligible method fails closed as `unsupported_secret_shape` (review fix wave 1). Failure codes (all before anything is delivered, except the last):
   `invalid_secret_label`, `unsupported_secret_shape`, `secrets_disabled`, `secrets_unavailable (<reason>)`,
   `secret_not_found`, `secret_denied`, `secret_locked`, `secret_unsupported_value`, and `secret_input_failed (<kind>)`
   when the vendor fails after substitution, where `<kind>` is a pinned `SkyComputerUseError` name, `transport`,
@@ -50,10 +52,15 @@ pinned resolve hook and exactly the launch environment, and shows that dropping 
 
 | Suite | Result | Notes |
 |---|---|---|
-| `npm test` | PASS, 168 tests | Node only; output has no warnings. New: `secrets-reference`, `services-sky`, `services-sky-trust`; nativePipe-surface client tests; launch/serve registration and trusted-path tests. |
+| `npm test` | PASS, 173 tests (after review fix wave 1) | Node only; output has no warnings. New: `secrets-reference`, `services-sky`, `services-sky-trust`, `probe-leak-scan`; nativePipe-surface client tests; launch/serve registration and trusted-path tests. |
 | `npm run build:helper`, `npm run test:helper` | not rerun | no Swift change in M5. |
 
 ## Live sentinel probe (`node scripts/probe-secrets.mjs`, opt-in): PASS, 26/26 steps
+
+Rerun after review fix wave 1 (pinned primitive types; whole-file streaming scan in `scripts/probe/leak-scan.mjs`,
+where an unreadable file fails the scan as incomplete evidence): PASS 26/26, 7 runtime files read whole, none
+unread, 6 symbolic links (`state/codex/tmp/arg0`) not followed. The table below is from the first run; the rerun
+matched it.
 
 Path: MCP client → `cua serve` → vendor cua-repl → `node_repl` → sandboxed cell `nodeRepl.rpc("sky")` → trusted
 worker → `src/services/sky.mjs` → `nodeRepl.nativePipe` → `node_repl` → production `cua-keychain broker` (real
@@ -79,7 +86,7 @@ native delivery, no Keychain prompt.
 | every connection closed | exit 0 |
 | cleanup | the scenario's item removed; listing shows no `cua-m5-*` item |
 | scanner self-check | each sentinel is found raw and as base64 at every byte offset |
-| sentinel scan | neither sentinel, raw or base64, in 15 channels: MCP transport both directions ×4 connections, served-process stderr ×4 (serve, anchor, cua-repl, `node_repl`, kernel, trusted worker and broker all inherit it), 7 files left under `$CUA_HOME/state` and `run`; the report is checked before it is written |
+| sentinel scan | neither sentinel, raw or base64, in 15 channels: MCP transport both directions ×4 connections, served-process stderr ×4 (serve, anchor, cua-repl, `node_repl`, kernel, trusted worker and broker all inherit it), 7 files left under `$CUA_HOME/state` and `run` (read whole since fix wave 1; the first run skipped files of 4 MiB or more, of which there were none); the report is checked before it is written |
 
 The live `node verify.mjs` on the same home also passed with the wrapper registered (four tools, `secrets_list` ok,
 banner `setup`/`list_apps` delegated through the wrapper to the real vendor).

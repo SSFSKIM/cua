@@ -21,12 +21,12 @@
 //   real `cua serve` with CUA_SHIM_SECRETS=off: a reference fails closed with secrets_disabled.
 // Every observable channel is scanned for both sentinels (raw and as base64 at every alignment): the MCP transport in
 // both directions, serve/anchor/cua-repl/node_repl/kernel/trusted-worker/broker stderr (all inherited by the served
-// process), the files the runtime left under $CUA_HOME/state and run, and this report. Keychain prompts never get
-// answered: a step that stalls is BLOCKED. Behavioural failures, including cleanup, are FAIL. Exit 0 PASS, 1 FAIL,
-// 3 BLOCKED. The report holds metadata only.
+// process), every regular file the runtime left under $CUA_HOME/state and run (read whole; an unreadable one fails the
+// scan as incomplete evidence), and this report. Keychain prompts never get answered: a step that stalls is BLOCKED.
+// Behavioural failures, including cleanup, are FAIL. Exit 0 PASS, 1 FAIL, 3 BLOCKED. The report holds metadata only.
 import {spawn} from 'node:child_process';
 import {randomBytes, randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {dirname, join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -38,6 +38,7 @@ import {SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {HELPER_PATH, locateHelper} from '../src/secrets/helper.mjs';
 import {runCaptured} from '../src/secrets/commands.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
+import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -55,17 +56,8 @@ const channels = [];          // {name, text}: everything observable, scanned at
 const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// Base64 fingerprints of a value at each byte alignment (node_repl relays nativePipe bytes as base64).
-function fingerprints(value) {
-  const out = [value];
-  for (let pad = 0; pad < 3; pad++) {
-    const b64 = Buffer.concat([Buffer.alloc(pad, 0x20), Buffer.from(value)]).toString('base64');
-    out.push(b64.slice(pad ? 4 : 0, -4));
-  }
-  return out;
-}
 const PRINTS = sentinels.flatMap(fingerprints);
-const leaks = text => PRINTS.filter(p => text.includes(p)).length;
+const leaks = text => textLeaks(text, PRINTS);
 
 // --- the recorder: the only place the fake target may deliver a value ---------------------------------------------
 function startRecorder(path) {
@@ -299,16 +291,6 @@ async function secretsOffConnection() {
   record('secrets off: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
-function filesUnder(dir, out = []) {
-  if (!existsSync(dir)) return out;
-  for (const entry of readdirSync(dir, {withFileTypes: true})) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) filesUnder(path, out);
-    else if (entry.isFile() && statSync(path).size < 4 << 20) out.push(path);
-  }
-  return out;
-}
-
 let created = false;
 let recorder;
 const scratch = realpathSync(mkdtempSync('/tmp/cm5-'));
@@ -335,9 +317,6 @@ try {
       }
       await secretsOffConnection();
     }
-    for (const file of [...filesUnder(join(home, 'state')), ...filesUnder(join(home, 'run'))]) {
-      channels.push({name: `file ${file.replace(home, '$CUA_HOME')}`, text: readFileSync(file).toString('latin1')});
-    }
   }
 } catch (error) {
   record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${error.message}`);
@@ -362,18 +341,23 @@ const selfCheck = [0, 1, 2, 3, 4, 5].every(offset => {
   return leaks(frame.toString('base64')) > 0 && leaks(JSON.stringify({value: sentinels[1]})) > 0;
 });
 record('scanner self-check', selfCheck ? 'PASS' : 'FAIL', 'a generated value is found raw and as base64 at every byte offset');
-const leaked = channels.filter(c => leaks(c.text)).map(c => c.name);
-const channelSummary = channels.filter(c => !c.name.startsWith('file ')).map(c => ({
+// Every regular file the runtime left under $CUA_HOME/state and run, read whole. An unreadable file is incomplete
+// evidence, so the scan cannot pass.
+const files = await scanFiles([join(home, 'state'), join(home, 'run')], PRINTS);
+const leaked = [...channels.filter(c => leaks(c.text)).map(c => c.name), ...files.leaked.map(f => `file ${f.replace(home, '$CUA_HOME')}`)];
+const unread = files.unread.map(f => f.replace(home, '$CUA_HOME'));
+const channelSummary = channels.map(c => ({
   name: c.name, bytes: Buffer.byteLength(c.text), containsReference: c.text.includes(REF),
   ...(c.name.includes('stderr') && c.text ? {excerpt: c.text.slice(0, 600)} : {}),
 }));
-record('sentinel scan', leaked.length ? 'FAIL' : 'PASS', leaked.length
+record('sentinel scan', leaked.length || unread.length ? 'FAIL' : 'PASS', leaked.length
   ? `a generated value appeared in: ${leaked.join('; ')}`
-  : `no generated value (raw or base64) in ${channels.length} channels: ${[...new Set(channels.map(c => c.name.replace(/^file .*/, 'runtime files')))].join('; ')}`);
+  : unread.length ? `incomplete evidence: could not read ${unread.join('; ')}`
+    : `no generated value (raw or base64) in ${channels.length} streams (${channels.map(c => c.name).join('; ')}) or in ${files.scanned} runtime files read whole (${files.links} symbolic links not followed)`);
 const status = steps.some(s => s.status === 'FAIL') ? 'FAIL' : steps.some(s => s.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
 const report = {
   scenario: 'live-native-secret-substitution', status, release: (() => { try { return resolveRuntime({home}).release; } catch { return null; } })(),
-  label, steps, channels: channelSummary, runtimeFilesScanned: channels.length - channelSummary.length, date: new Date().toISOString(),
+  label, steps, channels: channelSummary, runtimeFiles: {scanned: files.scanned, unread, symbolicLinks: files.links}, date: new Date().toISOString(),
 };
 const text = JSON.stringify(report, null, 2);
 if (leaks(text)) {

@@ -7,8 +7,9 @@
 //   @oai/cua-repl launch.js:11-77   CUA_REPL_ENABLED_SURFACES=browser registers {browser:"@oai/browser-desktop/service"}
 //   browser-service.mjs:67722-67742 BROWSER_USE_BACKEND_PATHS lists absolute backend sockets explicitly
 //   browser-service.mjs:9532-9551, 11059-11110  BROWSER_USE_SECURITY_MODE stays unset (default policy, no bypass);
-//                                   BROWSER_USE_DISABLE_AMBIENT_NETWORK=1 keeps telemetry/identity fetches off
-//   browser-service.mjs:17686-17735 the extension request-header policy reads caller identity, which this probe lacks
+//                                   BROWSER_USE_DISABLE_AMBIENT_NETWORK=1 suppresses telemetry and identity initialization
+//   browser-service.mjs:17686-17735 the extension request-header policy reads the identity promise, which that switch
+//                                   leaves unset (cn() stops jm); normal-network identity behaviour is NOT measured here
 import {spawn, spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {mkdirSync, realpathSync, rmSync} from 'node:fs';
@@ -280,11 +281,14 @@ function judge(runs, signatures) {
   ], ['browser-service.mjs:67942-67983', 'browser-service.mjs:66007-66033', 'browser-service.mjs:36462-36507 (origin-access elicitation)']);
 
   const identity = hdr.cells.listTabs?.result?.error ?? hdr.cells.getTab?.result?.error ?? null;
-  add('identity-policy', 'extension kind with agentRequestHeaderEnabled:false (a truthful "no header" claim) under default policy', [
+  // Every vendor run sets BROWSER_USE_DISABLE_AMBIENT_NETWORK=1, so cn() keeps jm from starting identity initialization
+  // and wv() finds no identity promise at all. This measures "identity initialization disabled", not a normal-network
+  // run whose identity fetch was attempted and failed (unmeasured).
+  add('identity-policy', 'extension kind with agentRequestHeaderEnabled:false, default security mode, identity initialization disabled by the ambient-network switch', [
     c('session requests are refused by the vendor before reaching the backend', sessionRequests(hdr).length === 0, sessionRequests(hdr).map(f => f.method)),
-    c('the refusal names the caller-identity requirement', typeof identity === 'string' && identity.includes('requires caller identity'), identity),
+    c('the refusal is wv()\'s "no identity initialized" error (not an attempted identity fetch that failed)', typeof identity === 'string' && identity === 'Browser request-header policy requires caller identity.', identity),
     c('omitting the field (plain extension run) does reach the backend', sessionRequests(ext).length > 0),
-  ], ['browser-service.mjs:68066-68092', 'browser-service.mjs:17686-17692']);
+  ], ['browser-service.mjs:68066-68092', 'browser-service.mjs:17686-17692 (wv)', 'browser-service.mjs:17727-17735 (jm skipped when cn())', 'browser-service.mjs:11331 (cn)']);
 
   add('turn-completion', 'hidden turn_ended reaches the backend as turnEnded with the task ids', [ext, cdp].map(r =>
     c(`${r.label}: turnEnded frame with session_id/turn_id`, r.turnEnded?.backendFrame?.params?.session_id === 'string' && r.turnEnded.backendFrame.params.turn_id === 'string', r.turnEnded)),

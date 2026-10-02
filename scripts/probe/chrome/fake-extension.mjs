@@ -37,6 +37,8 @@ export function createFakeExtension({send, timing = SOURCE_TIMING, firstTabId = 
   let hasEverAttached = false;
   let closed = false;
   let holdReplies = false;                // scenario switch: record commands but never answer (an unresponsive peer)
+  const holdMethods = new Set();          // scenario switch: perform these commands but withhold their replies
+  const held = [];
   let onclose = () => {};
 
   const later = (ms, fn) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
@@ -168,8 +170,11 @@ export function createFakeExtension({send, timing = SOURCE_TIMING, firstTabId = 
       } catch (error) {
         response.error = error.message;
       }
-      out(response);
+      if (holdMethods.has(message.method)) held.push(response); else out(response);
     },
+    holdRepliesFor(method) { holdMethods.add(method); },
+    releaseHeld() { holdMethods.clear(); for (const response of held.splice(0)) out(response); },
+    get heldCount() { return held.length; },
     // Browser-side events the scenarios drive. Each mirrors what Chrome or the user would cause.
     cdpEvent(source, method, params) { if (debuggerAttached.has(source.tabId)) chromeEvent('chrome.debugger.onEvent', [source, method, params]); },
     userCancel(tabId) { if (debuggerAttached.delete(tabId)) chromeEvent('chrome.debugger.onDetach', [{tabId}, 'canceled_by_user']); },

@@ -200,6 +200,66 @@ export const SCENARIOS = [
       });
     }),
 
+  scenario('turn-end-cancels-renewal', 'turnEnded before the extension\'s re-offer: the pending renewal cannot re-attach afterwards',
+    [`${BG}:119-169`, `${BS}:68041-68054`], async ({check, dir, sentinels, captures}) => {
+      await withFixture({dir, sentinels, captures}, {name: 'endrenew'}, async ({extension, adapter, client}) => {
+        const a = extension.addTab({url: 'https://a.fixture.invalid/'});
+        const b = extension.addTab({url: 'https://b.fixture.invalid/'});
+        extension.connect(a.id); extension.offer(b.id); await settle(5);
+        for (const tab of [a, b]) await client.request('attach', {...SESSION, tabId: tab.id});
+        extension.transientTargetClose(a.id); await settle(5);
+        check('target_closed on a held tab opened a renewal (precondition)', adapter.state().renewable.includes(a.id));
+        const ended = await attempt(client.request('turnEnded', {session_id: SESSION.session_id, turn_id: SESSION.turn_id}));
+        check('turnEnded is acknowledged with every held tab released', ended.ok && adapter.state().attached.length === 0 && adapter.state().renewable.length === 0, ended.message);
+        const offersBefore = adapter.events.filter(e => e.method === 'chrome.tabs.onCreated').length;
+        await settle(400);                    // the extension's re-offer arrives at 150 ms
+        check('the extension\'s re-offer still arrived (precondition)', adapter.events.filter(e => e.method === 'chrome.tabs.onCreated').length === offersBefore + 1);
+        check('no chrome.debugger.attach after the acknowledged completion', attachedCount(extension, a.id) === 1 && !extension.debuggerAttached.has(a.id) && !adapter.state().attached.includes(a.id));
+        check('no tab was closed', extension.tabs.has(a.id) && extension.tabs.has(b.id) && !extension.commands.some(c => c.method === 'chrome.tabs.remove'));
+      });
+    }),
+
+  scenario('turn-end-during-renewal-attach', 'turnEnded while the renewal\'s attach reply is held: the late attach is undone, never restored',
+    [`${BG}:199-208`, `${BS}:68154-68213`], async ({check, dir, sentinels, captures}) => {
+      const renewalInFlight = async (extension, adapter, client) => {
+        const a = extension.addTab({url: 'https://a.fixture.invalid/'});
+        const b = extension.addTab({url: 'https://b.fixture.invalid/'});
+        extension.connect(a.id); extension.offer(b.id); await settle(5);
+        for (const tab of [a, b]) await client.request('attach', {...SESSION, tabId: tab.id});
+        extension.holdRepliesFor('chrome.debugger.attach');
+        extension.transientTargetClose(a.id);
+        await settle(400);                    // re-offer at 150 ms -> adapter's renewal attach, reply withheld
+        check('the renewal attach reached the extension and its reply is withheld (precondition)', attachedCount(extension, a.id) === 2 && extension.heldCount === 1 && extension.debuggerAttached.has(a.id));
+        return a;
+      };
+      const detachedAfterLastAttach = (extension, tabId) => {
+        const last = extension.commands.findLastIndex(c => c.method === 'chrome.debugger.attach' && c.debuggee?.tabId === tabId);
+        return extension.commands.slice(last + 1).some(c => c.method === 'chrome.debugger.detach' && c.debuggee?.tabId === tabId);
+      };
+      await withFixture({dir, sentinels, captures}, {name: 'endheld'}, async ({extension, adapter, client}) => {
+        const a = await renewalInFlight(extension, adapter, client);
+        const ending = attempt(client.request('turnEnded', {session_id: SESSION.session_id, turn_id: SESSION.turn_id}));
+        await settle(50);
+        check('turnEnded is not acknowledged while the attach is in flight', adapter.state().attaching === 1);
+        extension.releaseHeld();
+        const ended = await ending;
+        await settle(5);
+        check('turnEnded is acknowledged after the late attach was undone', ended.ok, ended.message);
+        check('the late attach was followed by chrome.debugger.detach (side effect undone)', detachedAfterLastAttach(extension, a.id) && !extension.debuggerAttached.has(a.id));
+        check('the adapter holds no debugger control after completion', adapter.state().attached.length === 0);
+      });
+      await withFixture({dir, sentinels, captures}, {name: 'endstuck'}, async ({extension, adapter, client}) => {
+        const a = await renewalInFlight(extension, adapter, client);
+        const ended = await attempt(client.request('turnEnded', {session_id: SESSION.session_id, turn_id: SESSION.turn_id}));
+        check('with the reply still withheld past the bound, turnEnded reports release unconfirmed instead of success', !ended.ok && /release unconfirmed/.test(ended.message), ended.message);
+        extension.releaseHeld();
+        await settle(10);
+        check('the late success cannot restore held control and is detached', !adapter.state().attached.includes(a.id) && detachedAfterLastAttach(extension, a.id) && !extension.debuggerAttached.has(a.id));
+        const cdp = await attempt(client.request('executeCdp', {...SESSION, target: {tabId: a.id}, method: 'Page.enable', commandParams: {}}));
+        check('no CDP is routed to the tab afterwards', !cdp.ok);
+      });
+    }),
+
   scenario('popup-offers', 'popups opened by a held tab arrive as offers; popups of unheld tabs never do',
     [`${BG}:170-176`, `${BG}:119-125`], async ({check, dir, sentinels, captures}) => {
       await withFixture({dir, sentinels, captures}, {name: 'popup'}, async ({extension, adapter, client}) => {

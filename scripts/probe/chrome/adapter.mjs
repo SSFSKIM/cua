@@ -38,7 +38,7 @@ function exposedTab(tab) {
   return {id: tab.id, ...(tab.title ? {title: tab.title} : {}), ...(url ? {url} : {})};
 }
 
-export function createAdapter({kind, info = backendInfo(kind), sendToExtension, notify, renewalWindowMs = 2500}) {
+export function createAdapter({kind, info = backendInfo(kind), sendToExtension, notify, renewalWindowMs = 2500, releaseWaitMs = 1000}) {
   let nextId = 1;
   let initialized = false;
   let connected = true;
@@ -51,6 +51,11 @@ export function createAdapter({kind, info = backendInfo(kind), sendToExtension, 
   const renewable = new Map();
   const children = new Map();     // sessionId -> {tabId, targetId}
   const sessions = new Set();
+  // Task ownership epoch: turnEnded advances it. An attach started in an older epoch that succeeds late is undone (the
+  // debugger really was attached, so it is detached again), never recorded as held.
+  let epoch = 0;
+  const attaching = new Set();    // settled-promises of attaches in flight
+  const releaseFailures = [];     // undo detaches that failed, reported by the next turnEnded
   const events = [];              // metadata log of extension->adapter traffic, for the report
 
   const owned = tabId => offered.has(tabId) || created.has(tabId);
@@ -95,8 +100,21 @@ export function createAdapter({kind, info = backendInfo(kind), sendToExtension, 
     if (!renewal) return;
     // A renewed offer for a tab whose debugger dropped with target_closed while we held it. A user cancellation or a
     // released connection never reaches `renewable`, so this is never a forced re-attachment.
-    endRenewal(tab.id, renewal, attached.has(tab.id) ? Promise.resolve(true)
-      : call('chrome.debugger.attach', [{tabId: tab.id}, '1.3']).then(() => { attached.add(tab.id); return true; }, () => false));
+    endRenewal(tab.id, renewal, attached.has(tab.id) ? Promise.resolve(true) : attachDebugger(tab.id).then(() => true, () => false));
+  }
+
+  // The one path that takes debugger control. Its side effect is real even when the reply arrives after the task
+  // ended, so a stale success detaches before rejecting; a failed undo is kept for turnEnded to report.
+  function attachDebugger(tabId) {
+    const started = epoch;
+    const attempt = call('chrome.debugger.attach', [{tabId}, '1.3']).then(async () => {
+      if (started === epoch && connected) { attached.add(tabId); return; }
+      await call('chrome.debugger.detach', [{tabId}]).catch(error => { releaseFailures.push({tabId, error: error.message}); });
+      throw new BackendError(1, `Tab ${tabId}: the task ended while attaching; control was released`);
+    });
+    const tracked = attempt.catch(() => {}).finally(() => attaching.delete(tracked));
+    attaching.add(tracked);
+    return attempt;
   }
 
   function endRenewal(tabId, renewal, outcome) {
@@ -178,8 +196,7 @@ export function createAdapter({kind, info = backendInfo(kind), sendToExtension, 
         throw new BackendError(1, `Tab ${tabId} was released and not offered again`);
       requireTab(tabId);
       if (attached.has(tabId)) return {};
-      await call('chrome.debugger.attach', [{tabId}, '1.3']);
-      attached.add(tabId);
+      await attachDebugger(tabId);
       return {};
     },
     async detach({tabId}) {
@@ -200,8 +217,23 @@ export function createAdapter({kind, info = backendInfo(kind), sendToExtension, 
       return {};
     },
     async turnEnded() {
-      // Release debugger control at task end; keep every tab open (user tabs and deliverables alike).
-      for (const tabId of [...attached]) { attached.delete(tabId); await call('chrome.debugger.detach', [{tabId}]).catch(() => {}); }
+      // Release debugger control at task end; keep every tab open (user tabs and deliverables alike). Advancing the
+      // epoch first means a pending renewal can no longer re-attach and an in-flight attach undoes itself on success.
+      epoch++;
+      for (const [tabId, renewal] of renewable) endRenewal(tabId, renewal, Promise.resolve(false));
+      const failures = releaseFailures.splice(0);
+      for (const tabId of [...attached]) {
+        attached.delete(tabId);
+        await call('chrome.debugger.detach', [{tabId}]).catch(error => failures.push({tabId, error: error.message}));
+      }
+      // Acknowledge only once in-flight attaches have settled (each stale success has been detached), within a bound.
+      const inflight = [...attaching];
+      let timer;
+      const settled = await Promise.race([Promise.all(inflight).then(() => true), new Promise(r => { timer = setTimeout(() => r(false), releaseWaitMs); })]);
+      clearTimeout(timer);
+      failures.push(...releaseFailures.splice(0));
+      if (!settled || failures.length)
+        throw new BackendError(1, `turnEnded: debugger release unconfirmed (${!settled ? `${attaching.size} attach still in flight` : ''}${!settled && failures.length ? '; ' : ''}${failures.map(f => `tab ${f.tabId}: ${f.error}`).join('; ')})`);
       return {};
     },
   };
@@ -221,7 +253,7 @@ export function createAdapter({kind, info = backendInfo(kind), sendToExtension, 
   return {
     handleRequest, onExtensionMessage, onExtensionClose,
     dispose() { for (const [tabId, renewal] of renewable) endRenewal(tabId, renewal, Promise.resolve(false)); },
-    state: () => ({initialized, connected, offered: [...offered.keys()], created: [...created.keys()], attached: [...attached], renewable: [...renewable.keys()], children: [...children.keys()], sessions: sessions.size, pending: pending.size}),
+    state: () => ({epoch, attaching: attaching.size, initialized, connected, offered: [...offered.keys()], created: [...created.keys()], attached: [...attached], renewable: [...renewable.keys()], children: [...children.keys()], sessions: sessions.size, pending: pending.size}),
     events,
   };
 }

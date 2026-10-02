@@ -21,6 +21,11 @@
   timeout as an escalation budget and report unconfirmed if exit is never observed. Test-harness only; normal local
   SIGKILL makes it a narrow edge.
 
+- **2026-10-02 — M7 vendor-layer `synthetic-only` check is constant (minor, M7 review).**
+  `scripts/probe/chrome/vendor-layer.mjs` (`synthetic-only` scenario) records answered/refused CDP per run but its check
+  passes unconditionally. The restrictive fake (`NEUTRAL_CDP` in `fake-extension.mjs`) supports the conclusion today;
+  make the check assert that every answered `executeCdp` method is in `NEUTRAL_CDP` at the next pertinent probe change.
+
 ## Resolved
 
 - **2026-10-02 — Per-connection approval files accumulated (minor, M3; observed and resolved in M6).** Observed live

@@ -2,7 +2,8 @@
 
 Spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, milestone M7 (Phase C prototyping). Run on
 2026-10-02, macOS 26 arm64, host Node 22.23.2, pinned runtime `26.928.40906-darwin-arm64` (`@oai/browser-desktop`
-0.1.1), probe code at `d5fba50` on `feat/chrome-existing-profile` (the evidence commit only corrects citation comments).
+0.1.1), probe code at `d5fba50` on `feat/chrome-existing-profile`, amended by the review fix wave recorded under
+"Review fix wave" below (the results here are from the fixed code).
 
 **chromeAttached: false.** No Chrome process was opened, attached, navigated or queried. No extension, profile,
 cookie/password database, extension localStorage, account, `PLAYWRIGHT_MCP_EXTENSION_TOKEN` value or native helper
@@ -36,7 +37,7 @@ fake `BROWSER_USE_SECURITY_MODE=disabled-for-local-testing` in the ambient it fi
 
 | Layer | Scenario | Result |
 |---|---|---|
-| fixtures | framing, offer-before-initialized, reply-and-error-shapes, optional-method-errors, unknown-tab-rejection, child-session-forwarding, user-detach-no-retry, transient-target-renewal, popup-offers, disconnect, created-tab-retention, token-url-redaction, sentinel-non-disclosure | 13 PASS |
+| fixtures | framing, offer-before-initialized, reply-and-error-shapes, optional-method-errors, unknown-tab-rejection, child-session-forwarding, user-detach-no-retry, transient-target-renewal, turn-end-cancels-renewal, turn-end-during-renewal-attach, popup-offers, disconnect, created-tab-retention, token-url-redaction, sentinel-non-disclosure | 15 PASS |
 | vendor | vendor-launch, vendor-framing, getinfo-raw-vs-normalized, documented-surface, session-parameters, optional-method-fallback, attach-and-child-routes, kind-comparison, identity-policy, turn-completion, synthetic-only, sentinel-non-disclosure | 12 PASS |
 | vendor | vendor-child-session-commands | BLOCKED: the vendor stopped at the first refused page-state CDP call (`Runtime.enable`/`Runtime.evaluate`) before addressing the announced child session; child routing is proven only at the adapter (fixture layer) |
 
@@ -93,29 +94,41 @@ is never followed by a reconnect.
 
 ## Kind comparison and policy (vendor, default security mode)
 
+Every vendor run set `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`. Under that switch `cn()` is true, so `jm` never starts
+identity initialization and the identity promise `Um` stays unset (`BS:11331`, `BS:17727-17735`). The header-policy
+refusal below is therefore what happens when identity initialization is **disabled**; a normal-network run, where the
+identity fetch is started and fails (or succeeds), was not run and its outcome is unverified.
+
 | | `extension` (truthful, field omitted) | `extension` + `agentRequestHeaderEnabled:false` | `cdp` |
 |---|---|---|---|
 | Normalized info | `{id, name, type:"extension", family:"chrome"}` | same | `{id, name, type:"cdp"}` |
 | Documentation | 30 345 chars; adds `browser.nameSession`, `tab.markDeliverable`, `tab.markHandoff` and a `user` (user-tabs) object | same | 27 188 chars; none of those |
-| Existing offered tab | `getCommittedTabUrl` -> `getTabs` url; then an **origin-access elicitation** "Allow Browser use to access https://…?" (`persist`, `codex_sensitive_action`). Declined -> refused by policy; approved (probe harness, synthetic origin only) -> `attach` then CDP. | every session request refused in the vendor: `Browser request-header policy requires caller identity.`; nothing reaches the backend | `getCommittedTabUrl` -> `executeCdp Page.getFrameTree` on the **unattached** tab -> fails on an attach-gated transport (origin check not reached) |
-| `createBrowserTab` | `createTab`, `attach`, page-state CDP | refused (identity) | `createTab`, `attach`, page-state CDP |
+| Existing offered tab | `getCommittedTabUrl` -> `getTabs` url; then an **origin-access elicitation** "Allow Browser use to access https://…?" (`persist`, `codex_sensitive_action`). Declined -> refused by policy; approved (probe harness, synthetic origin only) -> `attach` then CDP. | with identity initialization disabled, every session request is refused in the vendor by `wv()`'s null-identity error `Browser request-header policy requires caller identity.`; nothing reaches the backend | `getCommittedTabUrl` -> `executeCdp Page.getFrameTree` on the **unattached** tab -> fails on an attach-gated transport (origin check not reached) |
+| `createBrowserTab` | `createTab`, `attach`, page-state CDP | refused (no identity initialized) | `createTab`, `attach`, page-state CDP |
 
 Consequences:
 
-- **`cdp` misrepresents this transport.** The `cdp` kind assumes CDP on any listed tab without `attach`
+- **`cdp` misrepresents this transport's attach semantics.** The kind recommendation rests on what the adapter
+  implements, not on which kind avoids a policy check. The `cdp` kind assumes CDP on any listed tab without `attach`
   (`BS:67956-67965`); the extension requires an explicit debugger attach per tab (user-visible infobar, a user
   cancellation channel). Making `executeCdp` silently attach would hide that consent boundary. `cdp` also lacks the
   handoff/deliverable/session-naming surface that the extension kind documents, and its full-CDP capability is gated
   to `gaas-browser-environment` (`BS:18371-18381`). `extension` is the kind that matches what the adapter implements.
-- **Header policy is an open decision, not settled by the fixture.** The vendor checks the agent request-header policy
-  only for `extension` backends that report `agentRequestHeaderEnabled`; the check needs caller identity (a ChatGPT
-  identity fetched from `chatgpt.com/backend-api/aura/identity`, `BS:17655-17670`), which a standalone install does
-  not have. Reporting the truthful `false` blocks every operation without an account; omitting the field skips the
-  check entirely. Omission asserts nothing false, but it relies on a version-specific absence and is not proof of a
-  supported account-free path. With an identity and the `codex_browser_use_agent_request_header` gate on, the vendor
-  sends `agent_request_header_enabled:true` in every session request, i.e. asks the backend to add agent request
+  The extension kind is also the only kind subject to the header policy below; that is a cost of the choice, not a
+  reason against it.
+- **Header policy is an open decision, not settled by the fixture.** Source (knowledge, not a product decision): the
+  vendor runs the agent request-header check only for `extension` backends whose `getInfo` includes
+  `agentRequestHeaderEnabled` (`BS:68066-68092`). The check calls `wv()`, which throws
+  `Browser request-header policy requires caller identity.` when no identity initialization was started, and otherwise
+  awaits the identity fetch from `chatgpt.com/backend-api/aura/identity` and reads the
+  `codex_browser_use_agent_request_header` gate (`BS:17655-17670`, `BS:17686-17692`). Measured here: with the field
+  present and initialization disabled, every session request is refused; with the field omitted the check is skipped.
+  Not measured: what a standalone install without an account gets under normal network (a started-and-failed identity
+  fetch), and what a signed-in identity gets. Omission asserts nothing false, but it relies on a version-specific
+  absence and is not evidence of a supported account-free path. Per source, with an identity and the gate on the
+  vendor sends `agent_request_header_enabled:true` in session requests, asking the backend to add agent request
   headers, and refuses a backend whose field is present but not boolean ("This browser requires agent request
-  headers…", `BS:68066-68092`). The adapter cannot add agent headers today.
+  headers…"). The adapter cannot add agent headers today.
 - **Origin approvals are real policy for user tabs** under the extension kind and must reach the user through the
   host (production `serve` forwards elicitations; it never auto-accepts). The probe accepted only the synthetic
   `work.fixture.invalid` origin, in an owned `CODEX_HOME` that was deleted.
@@ -124,27 +137,31 @@ Consequences:
   LevelDB to a temp dir to match a profile name (`BS:67352-67470`, Local State at 67451, LevelDB copy at 67374-67414). The Playwright extension offers no authenticated
   profile id anyway; the adapter must never send these fields. Profile selection stays explicit, outside this
   handshake.
-- **Network/telemetry.** `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1` (an ambient-network switch, not a security mode)
-  kept Sentry/Statsig/identity fetches off (`BS:11331`, `BS:17708-17735`, `BS:77426`); `BROWSER_USE_SECURITY_MODE`
-  stayed unset. Site-status URL checks fail open without network (`BS:37019-37036`); a production decision on
-  ambient network is still needed.
+- **Network/telemetry.** `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1` is an ambient-network switch, not a security mode;
+  `BROWSER_USE_SECURITY_MODE` stayed unset. The guards it drives, as read in source, suppress Sentry/Statsig telemetry
+  and identity initialization (`BS:11331`, `BS:17708-17735`, `BS:77426`). They do not show that site-status URL checks
+  are skipped; whether a URL check is attempted under the switch was not measured (the source shows such checks fail
+  open when their fetch errors, `BS:37019-37036`). Normal-network identity and site-status behaviour remain unverified;
+  a production decision on ambient network is still needed.
 
 ## Verdict: PROMOTE the existing-extension candidate, as an `extension`-kind backend
 
 Core routing and ownership are representable over the extension's five commands: framing and JSON-RPC conventions,
 offers before initialization, owned-only attach with no guessed ids, verbatim error strings (including the vendor's
 recovery and optional-method fallbacks), flattened child sessions in both directions, popups, user cancellation without
-re-attachment, renewal only through the extension's own re-offer, disconnect without reconnect, created-tab
+re-attachment, renewal only through the extension's own re-offer and only within the live task, disconnect without reconnect, created-tab
 ownership, and token-URL redaction. No required capability was shown incompatible. This is not working Chrome support.
 
 Decisions for the parent before production design (not executor calls):
 
-1. Agent request-header policy: omit `agentRequestHeaderEnabled` (works without an account, version-sensitive), or
-   report it and require a supported identity, honouring `agent_request_header_enabled` by actually adding the
-   headers (needs header injection through CDP `Fetch`, unimplemented) — reporting it without an identity blocks
-   standalone use.
-2. Ambient network for the browser service (`BROWSER_USE_DISABLE_AMBIENT_NETWORK`): off means no site-status checks
-   and no vendor telemetry; on means identity/Statsig/Sentry calls from the user's machine.
+1. Agent request-header policy: omit `agentRequestHeaderEnabled` (the check is then skipped in this pin; whether that
+   is an acceptable standalone path is a policy call, and it is version-sensitive), or report it and rely on a
+   supported identity, honouring `agent_request_header_enabled` by actually adding the headers (needs header injection
+   through CDP `Fetch`, unimplemented). Reporting it with identity initialization disabled was measured to refuse every
+   session request; the normal-network no-account outcome is unmeasured.
+2. Ambient network for the browser service (`BROWSER_USE_DISABLE_AMBIENT_NETWORK`): per source, setting it suppresses
+   vendor telemetry and identity initialization; unsetting it lets the vendor start identity/Statsig/Sentry calls from
+   the user's machine. Its effect on site-status URL checks was not measured.
 3. Which optional methods to implement (`nameSession`, `markTab`, `followSessionTab`, `getCommittedTabUrl`,
    `getUserTabs` over offered tabs only) versus answering `No handler`.
 4. Whether the connect page tab (the auto-connect selected tab) is exposed to the model at all, or reserved and
@@ -188,9 +205,37 @@ Chrome or macOS permission prompt stops the probe for the human.
 - The adapter enforces ownership (offered ∪ created); any debugger loss releases it; only a `target_closed` on a held
   tab followed by the extension's own re-offer within 2.5 s re-attaches (as the extension's protocol expects), and a
   client `attach` during that window waits for the renewal rather than forcing it.
-- `turnEnded` detaches and closes no tab; closing is allowed only for adapter-created tabs.
+- `turnEnded` detaches and closes no tab; closing is allowed only for adapter-created tabs. It advances a task
+  ownership epoch, ends pending renewals, and is acknowledged only after in-flight attaches settle (bounded at 1 s); an
+  attach that succeeds after the epoch moved is detached again rather than recorded as held. A detach that fails, or an
+  attach still unanswered at the bound, makes `turnEnded` an error ("debugger release unconfirmed"), never a success.
 - Vendor layer: browser surface only, vendor-default trusted service, `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`, no
   security mode, owned empty `CODEX_HOME` per run, elicitations declined except the one synthetic fixture origin in a
   dedicated run.
 - Scenario status: PASS = the expectation held or the observation was obtained; BLOCKED = the observation could not be
   reached without inventing page state; FAIL = a contract expectation broke.
+
+## Review fix wave (astra-high M7 review, two P2 findings)
+
+1. **Identity claims overreached.** All vendor runs disable identity initialization through
+   `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`, so the observed refusal is `wv()`'s null-identity error, not a measured
+   normal-network account requirement. The `identity-policy` scenario, the kind table and the decisions above now say
+   so, the generalizations "blocks every operation without an account", "works without an account" and "off means no
+   site-status checks" are withdrawn, and normal-network identity/site-status behaviour is listed as unverified. No
+   normal-network run was made.
+2. **Task-end race in the adapter.** Before the fix, a `target_closed` on a held tab left a renewal that `turnEnded`
+   did not clear, so the extension's later re-offer re-attached after the task completed, and a renewal attach still
+   in flight at `turnEnded` was recorded as held when its reply arrived. Fixed with a task epoch (see Decisions).
+   - RED (adapter at `9ea8f3a`, new scenarios): `turn-end-cancels-renewal` FAIL (re-attach after completion);
+     `turn-end-during-renewal-attach` FAIL (acknowledged while the attach was in flight, late success restored held
+     control, CDP still routed).
+   - GREEN: both PASS; the ordinary same-task renewal (`transient-target-renewal`) still PASSes. The held-reply case
+     shows the real side effect undone (a `chrome.debugger.detach` follows the late attach and the fake debugger is no
+     longer attached); with the reply held past the 1 s bound `turnEnded` reports release unconfirmed, and the late
+     success is still detached and never routed.
+
+Logged as non-blocking debt (`tech-debt-tracker.md`): the vendor layer's `synthetic-only` scenario records the refused
+CDP list but its check is constant `true`; the restrictive fake (`NEUTRAL_CDP`) supports the conclusion.
+
+Limits that remain: every vendor observation is against synthetic answers with identity initialization disabled;
+the vendor never addressed a child session (BLOCKED); all live gates listed above are untouched.

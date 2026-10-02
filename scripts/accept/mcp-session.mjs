@@ -14,6 +14,7 @@ export function openSession({args, env, onServerRequest = () => ({action: 'decli
   const exited = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal})));
   const waiters = new Map();
   let nextId = 0;
+  let terminating = null;
   const send = msg => {
     const line = JSON.stringify(msg);
     transcript.push(line);
@@ -43,14 +44,25 @@ export function openSession({args, env, onServerRequest = () => ({action: 'decli
       send({jsonrpc: '2.0', method: 'notifications/initialized'});
       return init.result;
     },
-    // end_task, EOF, then a bounded wait; SIGTERM only for a server that does not exit on its own.
+    // EOF, then SIGTERM, each with a bounded wait; idempotent, and safe whether or not the server already exited.
+    // Resolves {code, signal, forced?, stuck?}: `stuck` means it was still alive after SIGTERM's wait (then SIGKILL).
+    terminate({budgetMs = 20_000} = {}) {
+      terminating ??= (async () => {
+        if (child.stdin.writable) child.stdin.end();
+        const first = await Promise.race([exited, sleep(budgetMs * 0.75).then(() => null)]);
+        if (first) return first;
+        child.kill('SIGTERM');
+        const second = await Promise.race([exited, sleep(budgetMs * 0.25).then(() => null)]);
+        if (second) return {...second, forced: true};
+        child.kill('SIGKILL');
+        return {...await exited, forced: true, stuck: true};
+      })();
+      return terminating;
+    },
+    // end_task, then terminate.
     async close() {
-      await request('tools/call', {name: 'end_task', arguments: {}}, 15_000);
-      child.stdin.end();
-      const exit = await Promise.race([exited, sleep(20_000).then(() => null)]);
-      if (exit) return exit;
-      child.kill('SIGTERM');
-      return {...await exited, forced: true};
+      if (!terminating) await request('tools/call', {name: 'end_task', arguments: {}}, 15_000);
+      return this.terminate();
     },
   };
 }

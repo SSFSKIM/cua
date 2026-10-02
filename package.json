@@ -1,0 +1,13 @@
+{
+  "name": "cua",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone MCP server for OpenAI's computer-use runtime on macOS.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\""
+  }
+}

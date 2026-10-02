@@ -38,7 +38,8 @@ After `npm link`, the same commands are available as `cua`. No package-registry 
 - [ ] Clean-machine desktop-absence, fresh-permission onboarding, stable release-signing acceptance (requires suitable environment/user participation).
 - [x] (2026-10-02) Phases A+B completed and reviewed at `63fe70d`; their release gates remain explicit, not passed by this handoff.
 - [x] (2026-10-02) Created `feat/chrome-existing-profile` from `63fe70d`; initial read-only extension/CUA protocol research completed. No Chrome attachment or browser operation has occurred.
-- [ ] M7 — Phase C prototyping: verify extension/CUA wire contracts without touching Chrome; independently review the spike specification and record a promote/discard verdict.
+- [x] (2026-10-02) Independent `astra-high` review of the Phase C/M7 spec extension (`63fe70d..e356978`): clear, no material spec/buildability findings. This validates the spike plan, not browser compatibility.
+- [ ] M7 — Phase C prototyping: verify extension/CUA wire contracts without touching Chrome and record a promote/discard verdict; evidence review follows the probe.
 - [ ] Phase C after M7: controlled live extension compatibility probe on newly created test tabs in a selected existing profile, then production bridge, browser secret substitution and acceptance. Extend this execution section using the measured M7 contract first.
 - [ ] Phase D: MAWS-hosted in-app-browser adapter; profile import/UI stay MAWS's responsibility.
 

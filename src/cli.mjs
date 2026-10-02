@@ -8,13 +8,17 @@ import {installRuntime, useRuntime} from './runtime/install.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {CuaError} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
+import {runSecrets} from './secrets/commands.mjs';
+import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 
 const USAGE = `usage: cua <command>
   install [--archive <ChatGPT zip>] [--release <id>] [--json]   install and activate the pinned runtime
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve                                                        MCP over stdin/stdout until EOF or a signal
-  secrets <set|list|remove> ...                                Keychain secrets (not yet available)
+  secrets set <label>                                          store a secret, typed hidden at this terminal
+  secrets list [--json]                                        stored labels, never values
+  secrets remove <label> [--yes]                               delete one secret (confirmed at the terminal)
 environment: CUA_HOME (default ~/Library/Application Support/cua)`;
 
 class UsageError extends Error {}
@@ -82,11 +86,30 @@ async function serve(args) {
   return code;
 }
 
-function notYet(name) {
-  return () => { throw new CuaError('not_available', `\`cua ${name}\` is not available in this build yet`); };
+// A secret is never an argument: set takes exactly one label and the helper reads the value at the terminal. Usage
+// errors here never repeat what was passed, in case a value was typed where a label belongs.
+async function secrets(args) {
+  const [command, ...rest] = args;
+  const label = positionals => {
+    if (!isLabel(positionals[0])) throw new UsageError(LABEL_RULE);
+    return positionals[0];
+  };
+  if (command === 'set') {
+    const {positionals} = parse(rest, {}, 1);
+    return runSecrets({command, label: label(positionals)});
+  }
+  if (command === 'remove') {
+    const {values, positionals} = parse(rest, {yes: {type: 'boolean'}}, 1);
+    return runSecrets({command, label: label(positionals), yes: values.yes});
+  }
+  if (command === 'list') {
+    const {values} = parse(rest);
+    return runSecrets({command, json: values.json});
+  }
+  throw new UsageError('secrets takes set, list or remove');
 }
 
-const COMMANDS = {install, doctor, runtime, serve, secrets: notYet('secrets')};
+const COMMANDS = {install, doctor, runtime, serve, secrets};
 
 export async function main(argv) {
   const [command, ...rest] = argv;

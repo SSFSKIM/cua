@@ -23,8 +23,9 @@ export const END_TASK_TOOL = {
 
 export const SECRETS_LIST_TOOL = {
   name: 'secrets_list',
-  description: 'List the labels of secrets stored for computer-use input, never their values. Secret storage is not '
-    + 'configured in this build, so this reports it as unavailable.',
+  description: 'List the labels of the secrets the user stored for computer-use input (with `cua secrets set`), never '
+    + 'their values. Returns status "ok" with labels, or status "unavailable"/"error" with a code when secret storage '
+    + 'cannot be used on this connection.',
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list stored secret credential labels for computer-use typing'},

@@ -17,7 +17,9 @@
 //   CODEX_CLI_PATH                           relocated CodexCLI.app executable (the sandbox; no unsandboxed fallback)
 //   SKY_CUA_SERVICE_PATH                     relocated helper app, opened by the vendor through LaunchServices
 //   CUA_SKY_VENDOR_SERVICE                   vendor sky service module, for a trusted wrapper to delegate to
-//   CUA_SECRETS_BROKER_ENDPOINT, CUA_SECRETS_BROKER_TOKEN   only with a broker; trusted-worker environment only
+//   CUA_SECRETS_BROKER_ENDPOINT, CUA_SECRETS_BROKER_TOKEN   only with a broker (src/secrets/broker.mjs): its socket
+//                                            and capability token, read by src/secrets/client.mjs in the trusted
+//                                            worker; untrusted cells see only the vendor's env allowlist
 // Deliberately never set: NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS (it would let model cells reach the broker; the
 // trusted wrapper uses nodeRepl.nativePipe instead), NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the
 // vendor launcher adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH,
@@ -29,6 +31,7 @@ import {realpathSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
+import {BROKER_ENV} from '../secrets/client.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -65,8 +68,8 @@ export function buildLaunch({runtime, home, sessionId, services, broker, ambient
     CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
   });
   if (broker) {
-    env.CUA_SECRETS_BROKER_ENDPOINT = broker.endpoint;
-    env.CUA_SECRETS_BROKER_TOKEN = broker.token;
+    env[BROKER_ENV.endpoint] = broker.endpoint;
+    env[BROKER_ENV.token] = broker.token;
   }
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }

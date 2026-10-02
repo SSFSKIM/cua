@@ -5,6 +5,8 @@
 // (its banner), which reaches the native helper read-only. Then end_task, a second task, and EOF. It records which
 // executables served (none may come from an installed desktop app), which helper held the native socket, and that
 // the connection's working directory is gone afterwards. Elicitations are declined; nothing is registered anywhere.
+// secrets_list is checked for shape only (labels, or a value-free unavailable/error status): with a built Keychain
+// helper the server runs that connection's broker as its second child, which must be gone after close too.
 //
 //   node verify.mjs            exit 0 when every check passes; prints a JSON report either way
 import {spawn, spawnSync} from 'node:child_process';
@@ -16,6 +18,7 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
 import {descendants, classifyProcesses, socketHolders} from './scripts/probe/lib.mjs';
+import {HELPER_PATH} from './src/secrets/helper.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
 const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
@@ -79,7 +82,10 @@ try {
 
   const idleEnd = await call('end_task');
   check(idleEnd.structuredContent?.status === 'noop', `end_task with no task returned ${JSON.stringify(idleEnd.structuredContent)}`);
-  report.secretsList = (await call('secrets_list')).structuredContent;
+  const secrets = (await call('secrets_list')).structuredContent;
+  report.secretsList = secrets?.status === 'ok' ? {status: 'ok', labelCount: secrets.labels.length} : secrets;
+  check(secrets?.status === 'ok' ? Array.isArray(secrets.labels) && Object.keys(secrets).join() === 'status,labels'
+    : ['unavailable', 'error'].includes(secrets?.status) && typeof secrets.code === 'string', `secrets_list returned ${JSON.stringify(report.secretsList)}`);
 
   const first = await call('js', {code: 'nodeRepl.write("cua-verify")', title: 'cua verify'}, 120_000);
   const second = await call('js', {code: 'nodeRepl.write("cua-verify again")', title: 'cua verify'}, 60_000);
@@ -88,8 +94,14 @@ try {
   report.task = {first: taskId, sameTaskAcrossCalls: taskId !== null && taskOf(second) === taskId};
   check(report.task.sameTaskAcrossCalls, 'two js calls in one task carried different task IDs');
 
-  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime.
-  const tree = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), server.pid).filter(p => p.pid !== server.pid);
+  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime;
+  // beside it, the connection's secrets broker when the Keychain helper is built.
+  const helper = existsSync(HELPER_PATH) ? realpathSync(HELPER_PATH) : null;
+  const all = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), server.pid).filter(p => p.pid !== server.pid);
+  const brokers = all.filter(p => p.ppid === server.pid && helper && [HELPER_PATH, helper].includes(p.executable));
+  const tree = all.filter(p => !brokers.includes(p));
+  report.secretsBroker = brokers.map(p => ({pid: p.pid, executable: p.executable.replace(homedir(), '~')}));
+  check(secrets?.status !== 'ok' || brokers.length === 1, 'secrets_list answered but no broker helper runs under the server');
   const hostNode = realpathSync(process.execPath);
   const anchor = tree.find(p => p.ppid === server.pid);
   const runtimeTree = tree.filter(p => p !== anchor);
@@ -128,7 +140,12 @@ try {
   report.exit = exit ?? await exited;
   check(report.exit.code === 0, `cua serve exited with ${JSON.stringify(report.exit)}`);
   const leftover = (existsSync(runDir) ? readdirSync(runDir) : []).filter(name => !runBefore.includes(name));
-  check(leftover.length === 0, `connection directories left under ${runDir}: ${leftover.join(', ')}`);
+  check(leftover.length === 0, `connection directories or broker endpoints left under ${runDir}: ${leftover.join(', ')}`);
+  for (const broker of report.secretsBroker ?? []) {
+    let gone = false;
+    try { process.kill(broker.pid, 0); } catch { gone = true; }
+    check(gone, `the secrets broker (pid ${broker.pid}) outlived the connection`);
+  }
 }
 
 console.log(JSON.stringify(report, null, 1));

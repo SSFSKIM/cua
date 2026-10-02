@@ -59,7 +59,7 @@ test('hidden upstream tools cannot be called: turn_ended and js_add_node_module_
   assert.equal(h.upstream.sent.length, before);
 });
 
-test('secrets_list reports that secret storage is not configured, with no labels', async () => {
+test('secrets_list without a secrets provider reports storage as not configured, with no labels', async () => {
   const h = harness();
   await initialized(h);
   const response = await h.client.call('secrets_list').response;
@@ -67,6 +67,58 @@ test('secrets_list reports that secret storage is not configured, with no labels
   assert.deepEqual(structured(response), {status: 'unavailable', code: 'secrets_not_configured'});
   assert.equal('labels' in structured(response), false);
   assert.equal(h.upstream.calls('secrets_list').length, 0);
+});
+
+test('secrets_list returns the provider\'s labels and nothing else', async () => {
+  const h = harness({server: {secrets: {list: async () => ['b', 'a'], close: async () => ({confirmed: true, steps: ['eof']})}}});
+  await initialized(h);
+  const response = await h.client.call('secrets_list').response;
+  assert.equal(response.result.isError, false);
+  assert.deepEqual(structured(response), {status: 'ok', labels: ['a', 'b']});
+  assert.deepEqual(JSON.parse(textOf(response)), {status: 'ok', labels: ['a', 'b']});
+  assert.equal(h.upstream.calls('secrets_list').length, 0);
+});
+
+test('secrets_list reports an unavailable provider and a failed listing by code, value-free', async () => {
+  const unavailable = harness({server: {secrets: {unavailable: {code: 'helper_not_built', message: 'the Keychain helper is not built'}, close: async () => ({confirmed: true, steps: []})}}});
+  await initialized(unavailable);
+  const u = await unavailable.client.call('secrets_list').response;
+  assert.equal(u.result.isError, true);
+  assert.deepEqual(structured(u), {status: 'unavailable', code: 'helper_not_built'});
+  assert.match(textOf(u), /not built/);
+
+  const failure = Object.assign(new Error('the Keychain is locked'), {code: 'locked'});
+  const locked = harness({server: {secrets: {list: async () => { throw failure; }, close: async () => ({confirmed: true, steps: []})}}});
+  await initialized(locked);
+  const l = await locked.client.call('secrets_list').response;
+  assert.equal(l.result.isError, true);
+  assert.deepEqual(structured(l), {status: 'error', code: 'locked'});
+
+  const odd = harness({server: {secrets: {list: async () => { throw new Error('raw detail that must not surface'); }, close: async () => ({confirmed: true, steps: []})}}});
+  await initialized(odd);
+  const o = await odd.client.call('secrets_list').response;
+  assert.deepEqual(structured(o), {status: 'error', code: 'unavailable'});
+  assert.doesNotMatch(textOf(o), /raw detail/);
+});
+
+test('close tears the secrets broker down with the runtime, inside the teardown budget', async () => {
+  const closes = [];
+  const h = harness({server: {secrets: {list: async () => [], close: async options => { closes.push(options); return {confirmed: true, steps: ['eof']}; }}}});
+  await initialized(h);
+  h.client.eof();
+  const closed = await h.server.closed;
+  assert.equal(closed.code, 0);
+  assert.deepEqual(closes, [{budgetMs: 150}]);
+  assert.deepEqual(closed.secrets, {confirmed: true, steps: ['eof']});
+});
+
+test('an unconfirmed broker teardown is reported and makes the exit nonzero', async () => {
+  const h = harness({server: {secrets: {list: async () => [], close: async () => ({confirmed: false, steps: ['eof', 'SIGTERM', 'SIGKILL'], reason: 'the broker helper did not exit'})}}});
+  await initialized(h);
+  h.client.eof();
+  const closed = await h.server.closed;
+  assert.equal(closed.code, 1);
+  assert.ok(h.client.diagnostics.some(line => /secrets broker teardown unconfirmed.*did not exit/.test(line)), h.client.diagnostics.join('\n'));
 });
 
 test('client and internal requests use proxy-owned upstream IDs; responses return under the caller\'s own ID', async () => {

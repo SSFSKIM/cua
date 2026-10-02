@@ -11,6 +11,7 @@ const darwin = process.platform === 'darwin';
 const HOST = {platform: 'darwin', arch: 'arm64'};
 const check = (report, name) => report.checks.find(c => c.name === name);
 const noHelper = async () => ({socket: '/x/computeruse.sock', holders: []});
+const noSecrets = async () => ({path: '/x/cua-keychain', built: false});
 
 async function installedHome(t) {
   const s = scratch();
@@ -25,7 +26,7 @@ async function installedHome(t) {
 test('a missing runtime fails with install guidance and still reports helper and permission evidence separately', async () => {
   const s = scratch();
   try {
-    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper});
+    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets});
     assert.equal(report.ok, false);
     assert.equal(report.runtime, undefined);
     assert.equal(check(report, 'platform').status, 'pass');
@@ -52,7 +53,7 @@ test('an unsupported platform is an explicit failure and nothing else is inspect
 
 test('a healthy installed runtime names its release and passes every installed-runtime check', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
   assert.equal(report.ok, true);
   assert.equal(report.runtime.release, pin.release);
   assert.equal(report.runtime.root, join(realpathSync(home), 'runtimes', pin.release));
@@ -66,12 +67,12 @@ test('a healthy installed runtime names its release and passes every installed-r
 test('signature and layout damage in the installed tree fail the doctor with the component named', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const rejectNode = async (root, p) => p.signing.components.map(c => ({component: c, valid: c !== 'cua_node/bin/node', detail: c === 'cua_node/bin/node' ? 'invalid signature' : 'ok'}));
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: rejectNode, inspectHelper: noHelper});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: rejectNode, inspectHelper: noHelper, inspectSecrets: noSecrets});
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.signatures').status, 'fail');
   assert.match(check(report, 'runtime.signatures').detail, /cua_node\/bin\/node/);
   rmSync(join(realpathSync(home), 'runtimes', pin.release, 'CodexCLI.app/Contents/MacOS/codex'));
-  const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper});
+  const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
   assert.equal(damaged.ok, false);
   assert.equal(check(damaged, 'runtime.files').status, 'fail');
   assert.match(check(damaged, 'runtime.files').detail, /codexCli/);
@@ -80,7 +81,7 @@ test('signature and layout damage in the installed tree fail the doctor with the
 test('an incompatible running helper is a diagnosed conflict that fails the doctor', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const incompatible = async () => ({socket: '/x/computeruse.sock', holders: [{pid: 42, executable: '/Old/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService', ipc: ['CodexComputerUseIPC-4']}]});
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: incompatible});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: incompatible, inspectSecrets: noSecrets});
   assert.equal(report.ok, false);
   const helper = check(report, 'helper.live');
   assert.equal(helper.status, 'fail');
@@ -123,8 +124,27 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
   const {home, pin} = await installedHome(t);
   const {writeFileSync} = await import('node:fs');
   writeFileSync(join(realpathSync(home), 'runtimes', pin.release, pin.layout.vendorManifest), 'null');
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.vendor-manifest').status, 'fail');
   assert.match(check(report, 'runtime.vendor-manifest').detail, /not a JSON object/);
+});
+
+test('Keychain helper checks are reported beside runtime health: blocked leaves ok alone, a broken helper fails', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper};
+  const unbuilt = await inspectRuntime({...common, inspectSecrets: noSecrets});
+  assert.equal(unbuilt.ok, true);
+  assert.equal(check(unbuilt, 'secrets.helper').status, 'blocked');
+  assert.match(check(unbuilt, 'secrets.helper').detail, /npm run build:helper/);
+
+  const adhoc = await inspectRuntime({...common, inspectSecrets: async () => ({path: '/x/cua-keychain', built: true, protocols: [1], signature: {valid: true, adhoc: true}})});
+  assert.equal(adhoc.ok, true);
+  assert.equal(check(adhoc, 'secrets.helper').status, 'pass');
+  assert.equal(check(adhoc, 'secrets.signing').status, 'blocked');
+  assert.match(summarize(adhoc), /secrets\.signing/);
+
+  const stale = await inspectRuntime({...common, inspectSecrets: async () => ({path: '/x/cua-keychain', built: true, protocols: [0], signature: {valid: true, adhoc: true}})});
+  assert.equal(stale.ok, false);
+  assert.equal(check(stale, 'secrets.helper').status, 'fail');
 });

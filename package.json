@@ -8,7 +8,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.mjs\""
+    "test": "node --test \"test/**/*.test.mjs\"",
+    "build:helper": "node scripts/build-helper.mjs",
+    "test:helper": "node scripts/test-helper.mjs",
+    "test:keychain-live": "node native/keychain/live/keychain-roundtrip.mjs"
   },
   "bin": {
     "cua": "bin/cua.mjs"

@@ -4,6 +4,9 @@
 // grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively.
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
+// The Keychain helper (secrets) is inspected from its file and signature, never run: not built or without a stable
+// signing identity is `blocked` (secrets, or their stable Keychain trust, are not available yet); a helper that is
+// present but speaks another broker protocol or whose signature does not verify is `fail`.
 import {existsSync, readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -11,13 +14,14 @@ import {join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {loadPins, selectPin, locateRuntime} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
+import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
 
 export const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
 const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper}) {
+export async function inspectRuntime({home, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -61,6 +65,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   checks.push(result('helper.permissions', 'blocked',
     'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
     + `Confirm with a live probe (${LIVE_PROBE}).`));
+  checks.push(...classifyKeychainHelper(await inspectSecrets()));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};

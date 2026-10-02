@@ -75,8 +75,8 @@ The first call returns OpenAI's API document to the model, which then writes sma
 API. The server adds host notes to the server instructions covering what that document leaves out (one approval per
 app, index-first addressing, dropping an app handle after quitting it, `typeText` and emoji, and so on).
 
-The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (it reports that secret
-storage is not configured yet). Calls on one connection form a task until the model calls `end_task`, which waits for
+The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (the labels of your
+stored secrets, never values; see Secrets). Calls on one connection form a task until the model calls `end_task`, which waits for
 running JavaScript and then has the runtime complete the task. The plugin no longer installs `Stop`/`SubagentStop`
 hooks for this; if completion cannot be confirmed, the connection fails closed and stops its runtime, and native
 cleanup of what was already submitted is unconfirmed. In this pinned runtime a forwarded MCP cancellation does not stop
@@ -86,11 +86,37 @@ means control has been handed back.
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.
 
+## Secrets
+
+Credentials live in your login Keychain (service `cua.secrets`, one item per label), managed by a small Swift helper
+built from `native/keychain`:
+
+```sh
+npm run build:helper                 # needs Swift (Xcode or its command-line tools)
+node bin/cua.mjs secrets set work-password     # typed hidden, twice, at your terminal
+node bin/cua.mjs secrets list                  # labels only
+node bin/cua.mjs secrets remove work-password  # asks for confirmation; --yes skips it
+```
+
+A value is only ever typed at the terminal: `set` refuses arguments, flags, environment and piped input, and nothing
+prints or exports a value. Labels are 1-128 letters, digits, `.`, `_` or `-`, starting with a letter or digit. Each
+server connection runs its own private broker (`cua-keychain broker`) that hands values only to trusted code holding
+that connection's random token; `secrets_list` lists labels through it. Typing a stored secret by reference
+(`{{secret:<label>}}`) is not wired yet.
+
+A locally built helper is ad-hoc signed, and Keychain items trust the exact helper that created them: after a rebuild,
+macOS may ask whether the new helper may use them. Signing with a stable identity avoids that (`npm run build:helper --
+--sign "Apple Development: …"`); a distributable release needs Developer ID signing. `cua doctor` reports the helper's
+build and signature as `secrets.helper` and `secrets.signing`.
+
 ## Verify
 
 ```sh
-npm test            # Node only; no runtime, GUI or network
-node verify.mjs     # the installed runtime in $CUA_HOME, through `cua serve`
+npm test                  # Node only; no Swift, runtime, GUI or network
+npm run build:helper      # the Keychain helper
+npm run test:helper       # the actual helper: in-memory storage and pseudo-terminals, no Keychain access
+node verify.mjs           # the installed runtime in $CUA_HOME, through `cua serve`
+npm run test:keychain-live   # opt-in: one disposable Keychain item with generated values, removed afterwards
 ```
 
 `verify.mjs` completes the MCP handshake, checks the tool surface, and runs trivial cells that bind no app (the first
@@ -105,6 +131,7 @@ executables served and which helper answered. A non-zero exit names what failed.
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
+| `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled |
 
 Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
 runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session),

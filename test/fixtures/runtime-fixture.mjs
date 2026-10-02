@@ -13,10 +13,13 @@ export const REAL_PIN_FILE = join(REPO, 'runtime', 'releases', '26.928.40906-dar
 export const realPinJson = () => JSON.parse(readFileSync(REAL_PIN_FILE, 'utf8'));
 export const XATTR_NAME = 'com.example.cua-fixture';
 
-export function scratch(prefix = 'cua-test-') {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
+export function scratch(prefix = 'cua-test-', parent = tmpdir()) {
+  const dir = mkdtempSync(join(parent, prefix));
   return {dir, cleanup: () => rmSync(dir, {recursive: true, force: true})};
 }
+
+// A scratch directory short enough for unix socket paths below it (the macOS per-user temp directory is not).
+export const shortScratch = (prefix = 'cua-') => scratch(prefix, '/tmp');
 
 // Writes the fixture app tree under `root`. `vendor` overrides fields of cua_node/manifest.json (`vendorRaw` replaces
 // its text outright); `ipc` replaces the IPC version string; `omit` lists layout-relative paths (inside the extracted

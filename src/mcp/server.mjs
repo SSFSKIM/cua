@@ -9,15 +9,16 @@
 //   the client none of its own.
 // - js/js_reset go through the task state machine (task.mjs): serialized, stamped with the session ID, the task ID as
 //   turn ID and a fresh call ID. end_task and secrets_list are answered here; hidden upstream tools are refused.
+// - secrets_list asks the connection's secrets provider (its private broker, src/secrets/broker.mjs) for labels; it
+//   never sees a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - Image MIME types are corrected; accepted app approvals get `_meta.persist`.
 // On EOF or a signal the connection becomes terminal (Closing), makes a bounded best-effort completion, then tears
-// down the owned runtime within its own budget before the MCP stream closes. A failure (completion uncertainty,
-// runtime exit) does the same without the completion attempt.
+// down the owned runtime and the secrets broker, concurrently and within the teardown budget, before the MCP stream
+// closes. A failure (completion uncertainty, runtime exit) does the same without the completion attempt.
 import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
-import {dirname} from 'node:path';
 import {TaskLifecycle} from './task.mjs';
 import {spawnUpstream} from './upstream.mjs';
 import {
@@ -26,13 +27,21 @@ import {
 import {resolveRuntime} from '../runtime/manifest.mjs';
 import {buildLaunch} from '../runtime/launch.mjs';
 import {fail} from '../runtime/errors.mjs';
+import {homeLayout, realHome} from '../runtime/layout.mjs';
+import {locateHelper} from '../secrets/helper.mjs';
+import {openSecrets} from '../secrets/broker.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
 const COMPLETION_CODES = new Set(['completion_timeout', 'completion_failed']);
+const NOT_CONFIGURED = {
+  unavailable: {code: 'secrets_not_configured', message: 'secret storage is not configured for this server'},
+  close: async () => ({confirmed: true, steps: []}),
+};
+const LIST_CODES = new Set(['not_configured', 'disconnected', 'timeout', 'protocol', 'unauthorized', 'denied', 'locked', 'unavailable']);
 
 export function createServer({
-  input, output, upstream, sessionId = randomUUID(),
+  input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED,
   persist = 'session', hostNotes = DEFAULT_HOST_NOTES, model,
   completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
@@ -136,6 +145,20 @@ export function createServer({
     );
   }
 
+  async function secretsList(msg) {
+    if (secrets.unavailable) {
+      const {code, message} = secrets.unavailable;
+      return respond(msg.id, statusResult({status: 'unavailable', code}, {isError: true, message: `cua: ${message}`}));
+    }
+    try {
+      const labels = [...await secrets.list()].sort();
+      respond(msg.id, statusResult({status: 'ok', labels}));
+    } catch (error) {
+      const code = LIST_CODES.has(error?.code) ? error.code : 'unavailable';
+      respond(msg.id, statusResult({status: 'error', code}, {isError: true, message: `cua: secret labels could not be listed (${code})`}));
+    }
+  }
+
   function passThrough(msg, rewrite = result => result) {
     upstreamRequest(msg.method, msg.params, {clientKey: idKey(msg.id)}).then(reply => {
       if (reply.error) write({jsonrpc: '2.0', id: msg.id, error: reply.error});
@@ -150,7 +173,7 @@ export function createServer({
       if (name === 'end_task') return endTask(msg);
       if (!LOCAL_TOOLS.has(name)) return respondError(msg.id, -32602, `Unknown tool: ${name}`);
       if (terminal()) return respond(msg.id, rejectionResult({code: lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing', message: 'this connection accepts no more work'}));
-      return respond(msg.id, statusResult({status: 'unavailable', code: 'secrets_not_configured'}, {isError: true, message: 'cua: secret storage is not configured in this build'}));
+      return secretsList(msg);
     }
     if (terminal()) return respondError(msg.id, -32000, `cua: ${lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing'}: this connection accepts no more requests`);
     if (msg.method === 'initialize') {
@@ -230,15 +253,19 @@ export function createServer({
       const {completion} = failed ? {completion: 'failed'} : await lifecycle.close();
       lifecycle.abandon();
       tearingDown = true;
-      const teardown = await upstream.terminate({budgetMs: teardownBudgetMs});
+      const [teardown, secretsTeardown] = await Promise.all([
+        upstream.terminate({budgetMs: teardownBudgetMs}),
+        secrets.close({budgetMs: teardownBudgetMs}),
+      ]);
       abandonUpstream(lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing');
       if (!teardown.confirmed) diagnostics(`runtime teardown unconfirmed after ${teardown.steps.join(', ')}: ${teardown.reason ?? 'no reason given'}; owned processes may remain`);
       else if (teardown.steps.length > 1) diagnostics(`runtime teardown needed ${teardown.steps.slice(1).join(' then ')}; every owned process is gone`);
+      if (!secretsTeardown.confirmed) diagnostics(`secrets broker teardown unconfirmed after ${secretsTeardown.steps.join(', ')}: ${secretsTeardown.reason ?? 'no reason given'}`);
       if (completion !== 'none' && completion !== 'ended' && !failed) diagnostics(`task completion at close: ${completion}; native cleanup unconfirmed`);
       await flush();
       input.destroy?.();
-      const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && (completion === 'none' || completion === 'ended');
-      const result = {code: clean ? 0 : 1, reason, completion, teardown};
+      const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && secretsTeardown.confirmed && (completion === 'none' || completion === 'ended');
+      const result = {code: clean ? 0 : 1, reason, completion, teardown, secrets: secretsTeardown};
       resolveClosed(result);
       return result;
     })();
@@ -252,30 +279,43 @@ function settingsFrom(env) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? DEFAULT_HOST_NOTES);
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL};
+  const secrets = env.CUA_SHIM_SECRETS ?? 'on';
+  if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on'};
 }
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
-// `cua serve`: resolve the installed runtime, launch it for a fresh connection session in an owned working
-// directory, serve stdin/stdout until EOF or a signal, and remove the directory. Returns the exit code.
-export async function serve({home, env = process.env, input = process.stdin, output = process.stdout}) {
-  const settings = settingsFrom(env);
+// `cua serve`: resolve the installed runtime, start this connection's secrets broker (unless secrets are off or the
+// Keychain helper is not built), launch the runtime for a fresh connection session in an owned working directory with
+// the broker's endpoint and token in its environment, serve stdin/stdout until EOF or a signal, and remove what it
+// created. Returns the exit code. `keychainHelper` is the located helper (tests substitute a stand-in).
+export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper(),
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`)}) {
+  const {secrets: secretsEnabled, ...settings} = settingsFrom(env);
   const runtime = resolveRuntime({home});
   const sessionId = randomUUID();
-  const launch = buildLaunch({runtime, home, sessionId, ambient: env});
-  mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-  mkdirSync(dirname(launch.cwd), {recursive: true, mode: 0o700});
-  mkdirSync(launch.cwd, {mode: 0o700});
-  chmodSync(launch.cwd, 0o700);
+  mkdirSync(homeLayout(realHome(home)).run, {recursive: true, mode: 0o700});
+  const secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics});
+  let launch;
+  try {
+    launch = buildLaunch({runtime, home, sessionId, ambient: env, broker: secrets.broker});
+    mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
+    mkdirSync(launch.cwd, {mode: 0o700});
+    chmodSync(launch.cwd, 0o700);
+  } catch (error) {
+    await secrets.close();
+    throw error;
+  }
   const onSignal = () => server.close('signal');
   let server;
   try {
-    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), ...settings});
+    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, diagnostics, ...settings});
     for (const signal of SIGNALS) process.on(signal, onSignal);
     return (await server.closed).code;
   } finally {
     for (const signal of SIGNALS) process.off(signal, onSignal);
+    await secrets.close();
     rmSync(launch.cwd, {recursive: true, force: true});
   }
 }

@@ -245,3 +245,15 @@ test('unparseable client input gets a JSON-RPC parse error; upstream notificatio
   h.upstream.emit({jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data: 'hello'}});
   assert.equal((await h.client.next(m => m.method === 'notifications/message')).params.data, 'hello');
 });
+
+test('a cancel arriving in the same input chunk as its js call is still forwarded upstream', async () => {
+  const h = harness();
+  await initialized(h);
+  h.client.raw([
+    JSON.stringify({jsonrpc: '2.0', id: 'same', method: 'tools/call', params: {name: 'js', arguments: {code: 'x'}}}),
+    JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 'same'}}),
+  ].join('\n'));
+  const upJs = await h.upstream.nextCall('js');
+  const cancel = await h.upstream.next(m => m.method === 'notifications/cancelled', {label: 'forwarded cancel'});
+  assert.equal(cancel.params.requestId, upJs.id);
+});

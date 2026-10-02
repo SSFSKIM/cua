@@ -14,17 +14,35 @@ GUI action was taken, and no elicitation occurred (any would have been declined)
 
 | Check | Result |
 |---|---|
-| Handshake through `bin/cua.mjs serve` | `rmcp 1.5.0`, protocol `2025-06-18`, instructions 1371 characters (cap 2048) |
+| Handshake through `bin/cua.mjs serve` | `rmcp 1.5.0`, protocol `2025-06-18`, instructions 1559 characters (cap 2048) |
 | Model-visible tools | exactly `js`, `js_reset`, `end_task`, `secrets_list`; `turn_ended` and `js_add_node_module_dir` hidden |
 | `end_task` with no task | `{status:"noop", ended:false}` |
 | `secrets_list` | `{status:"unavailable", code:"secrets_not_configured"}`, no labels (M4 wires storage) |
 | Two js calls | same task ID; `end_task` then `{status:"ended", ended:true, taskId:<that ID>}`; a repeat is `noop`; the next js gets a new task ID |
-| Executables serving the connection | 6 processes, all under `$RUNTIME`: `cua_node/bin/node`, `cua_node/bin/node_repl`, `CodexCLI.app/Contents/MacOS/codex`; no installed-desktop path |
+| Executables serving the connection | the server's anchor (host Node), then 6 runtime processes, all under `$RUNTIME`, all in the anchor's process group; no installed-desktop path (ancestry below) |
 | Native helper holding the socket | pid 34706, `~/.codex/computer-use/Codex Computer Use.app/.../SkyComputerUseService`: the owner's existing helper (another installation), neither started nor stopped by cua. Cold start remains BLOCKED as in M1. |
 | Close | exit 0 on EOF; no connection directory left under `$CUA_HOME/run/`; no `$RUNTIME` process left |
 
 This proves relocated execution through the actual launcher with the server's own configuration, not desktop absence
 (ChatGPT stayed installed and running).
+
+Process ancestry after the M3 review fix (verify run, pids from that run; host Node is the HX7739G8FX-signed nvm Node):
+
+```
+pid    ppid   pgid   executable
+40147  40145  40143  <host node> bin/cua.mjs serve           the server
+40151  40147  40151  <host node> src/mcp/anchor.mjs          group leader; holds the group number until the last signal
+40152  40151  40151  $RUNTIME/cua_node/bin/node              vendor launcher (OpenAI 2DC432GLL2), node_repl's parent
+40161  40152  40151  $RUNTIME/cua_node/bin/node_repl
+40166  40161  40151  $RUNTIME/CodexCLI.app/Contents/MacOS/codex   sandbox (kernel)
+40167  40161  40151  $RUNTIME/CodexCLI.app/Contents/MacOS/codex   sandbox (trusted worker)
+40174  40166  40151  $RUNTIME/cua_node/bin/node
+40175  40167  40151  $RUNTIME/cua_node/bin/node
+```
+
+The OpenAI-signed vendor `node` is still node_repl's direct parent, as M1 proved; the anchor only adds a non-OpenAI
+Node above it, as the probe's host Node was in M1. The native service accepted the chain: a read-only `cua.getState()`
+through `cua serve` returned 37 apps and no errors, served by the same existing helper (pid 34706).
 
 ## `node scripts/probe-lifecycle.mjs` (native cancel/end-task behavior, acceptance 8)
 
@@ -33,7 +51,7 @@ This proves relocated execution through the actual launcher with the server's ow
 | `notifications/cancelled` 0.5 s into a cell that waits 3 s | Forwarded; node_repl kept running the cell, which finished and replied normally (`isError:false`, ~2.5 s after the cancel); the next cell saw the cell's final state. Cancellation is not honored for a running cell in this runtime, so a cancel acknowledgement would never have been evidence of quiescence. `end_task` afterwards ended normally. |
 | `end_task` 0.3 s into a 2 s cell | New work sent right after was rejected at once with `task_ending`; the running cell replied normally; `turn_ended` followed and `end_task` returned `ended` within 1 ms of the cell's reply. |
 | `end_task` while a cell waits 15 s (`timeout_ms` 30 s) | At the 5 s completion deadline `end_task` returned `isError:true` `{status:"error", ended:false, code:"completion_timeout", stage:"quiescence", nativeCleanup:"unconfirmed"}`; the running call was failed once with `connection_failed`; no `turn_ended` was sent; the server tore down and exited 1 about 2.2 s later. Stderr: `connection failed (completion_timeout, quiescence)`, then `runtime teardown needed SIGTERM; every owned process is gone`. No `$RUNTIME` process remained. |
-| Idle EOF | exit 0 about 215 ms after EOF, with EOF alone (no signal); no process remained. |
+| Idle EOF | exit 0 about 35 ms after EOF (about 215 ms before the fix wave's anchor), with EOF alone (no signal); no process remained. |
 
 Not observed (no app was bound): app approvals and their per-connection persistence; native side effects of
 `turn_ended` for the sky service (M1: sky registers no turn-ended hook, so none are expected). Terminating the runtime

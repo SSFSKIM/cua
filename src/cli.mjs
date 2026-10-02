@@ -73,10 +73,13 @@ async function runtime(args) {
   else print(`active release is now ${result.release}`);
 }
 
-// stdout carries only the MCP stream from here on; every diagnostic goes to stderr.
+// stdout carries only the MCP stream from here on; every diagnostic goes to stderr. Once the server has closed and
+// cleaned up what it owns, nothing may keep the process alive: an unreferenced timer exits if anything still does.
 async function serve(args) {
   parse(args, {}, 0);
-  return serveMcp({home: defaultHome()});
+  const code = await serveMcp({home: defaultHome()});
+  setTimeout(() => process.exit(code), 1000).unref();
+  return code;
 }
 
 function notYet(name) {

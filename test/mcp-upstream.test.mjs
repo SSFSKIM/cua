@@ -4,7 +4,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, existsSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import {spawnUpstream} from '../src/mcp/upstream.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
@@ -13,12 +14,12 @@ const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const waitFile = async file => { for (let i = 0; i < 200 && !existsSync(file); i++) await sleep(10); return Number(readFileSync(file, 'utf8')); };
 
-function start(t, mode, extraArgs = []) {
+function start(t, mode, extraArgs = [], options = {}) {
   const diagnostics = [];
   const messages = [];
   const upstream = spawnUpstream(
     {command: process.execPath, args: [FAKE, mode, ...extraArgs], env: {PATH: process.env.PATH}, cwd: process.cwd()},
-    {diagnostics: line => diagnostics.push(line), stderr: 'ignore'},
+    {diagnostics: line => diagnostics.push(line), stderr: 'ignore', ...options},
   );
   let exited;
   const exit = new Promise(resolve => { exited = resolve; });
@@ -103,5 +104,53 @@ test('a runtime that cannot start reports an exit instead of throwing', async t 
   const info = await new Promise(resolve => upstream.onExit(resolve));
   assert.equal(info.code, null);
   assert.match(info.error, /ENOENT/);
-  assert.deepEqual(await upstream.terminate({budgetMs: 200}), {confirmed: true, steps: []});
+  assert.deepEqual(await upstream.terminate({budgetMs: 500}), {confirmed: true, steps: ['eof']});
+});
+
+test('once the group\'s identity cannot be established, teardown signals nothing and reports cleanup unconfirmed', async t => {
+  // The group's number alone is not ownership: after its members are gone it can be reused by a stranger. Here the
+  // anchor that holds the number is killed from outside, so the server can no longer prove the group is its own.
+  const signals = [];
+  const {upstream, request} = start(t, 'ignore-term', [], {kill: (pid, signal) => { signals.push([pid, signal]); process.kill(pid, signal); }});
+  await request(1, 'ping');
+  const launcher = upstream.launcherPid;
+  assert.ok(alive(launcher));
+  process.kill(upstream.pid, 'SIGKILL');
+  for (let i = 0; i < 100 && alive(upstream.pid); i++) await sleep(10);
+  const teardown = await upstream.terminate({budgetMs: 600});
+  assert.equal(teardown.confirmed, false);
+  assert.match(teardown.reason, /identity/);
+  assert.deepEqual(signals.filter(([pid]) => pid < 0), [], 'no process-group signal without proven identity');
+  process.kill(launcher, 'SIGKILL');
+});
+
+test('the anchor leads the group and holds its number until the last signal', async t => {
+  const {upstream, request} = start(t, 'ignore-term');
+  await request(1, 'ping');
+  assert.notEqual(upstream.launcherPid, upstream.pid);
+  const teardown = await upstream.terminate({budgetMs: 800});
+  assert.equal(teardown.confirmed, true);
+  assert.deepEqual(teardown.steps, ['eof', 'SIGTERM', 'SIGKILL']);
+  assert.equal(alive(upstream.launcherPid), false);
+  assert.equal(alive(upstream.pid), false);
+});
+
+test('a close right after start waits for the launch, so no runtime is born after teardown', async () => {
+  const upstream = spawnUpstream({command: process.execPath, args: [FAKE, 'echo'], env: {PATH: process.env.PATH}, cwd: process.cwd()}, {stderr: 'ignore'});
+  const teardown = await upstream.terminate({budgetMs: 2000});
+  assert.equal(teardown.confirmed, true);
+  assert.ok(upstream.launcherPid, 'the launch was observed before membership was judged');
+  assert.equal(alive(upstream.launcherPid), false);
+  assert.equal(alive(upstream.pid), false);
+});
+
+test('teardown leaves no timer behind that would hold the process open', () => {
+  const script = `import {spawnUpstream} from ${JSON.stringify(pathToFileURL(join(dirname(FAKE), '..', '..', 'src', 'mcp', 'upstream.mjs')).href)};
+const u = spawnUpstream({command: process.execPath, args: [${JSON.stringify(FAKE)}, 'echo'], env: {PATH: process.env.PATH}, cwd: process.cwd()}, {stderr: 'ignore'});
+await u.terminate({budgetMs: 5000});
+const done = Date.now();
+process.on('exit', () => process.stdout.write(String(Date.now() - done)));`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 15_000});
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(Number(r.stdout) < 500, `the process lingered ${r.stdout} ms after teardown`);
 });

@@ -48,10 +48,12 @@ export function createServer({
   const queuedWork = new Map();        // client ID key -> lifecycle ticket, for withdrawing queued work
   const elicitations = new Set();      // runtime request ID keys awaiting the client's answer
 
-  // The client transport. Once it is gone, callers are still settled internally, just not answered.
+  // The client transport. Losing it closes the connection like EOF; callers are still settled internally, just not
+  // answered.
   let transportOpen = true;
-  output.on('error', () => { transportOpen = false; });
-  output.on('close', () => { transportOpen = false; });
+  const transportLost = () => { transportOpen = false; close('transport'); };
+  output.on('error', transportLost);
+  output.on('close', transportLost);
   const write = msg => {
     if (!transportOpen || output.destroyed || output.writableEnded) return;
     output.write(JSON.stringify(msg) + '\n');
@@ -206,9 +208,20 @@ export function createServer({
     abandonUpstream('connection_failed');
   });
 
-  function flush() {
-    if (!transportOpen || output.destroyed || output.writableEnded) return Promise.resolve();
-    return Promise.race([new Promise(resolve => output.write('', () => resolve())), new Promise(resolve => setTimeout(resolve, 1000).unref())]);
+  // Bounded: a host that stops reading must not hold the server open. After the budget the transport is destroyed,
+  // dropping whatever it could not take.
+  async function flush(budgetMs = 1000) {
+    if (!transportOpen || output.destroyed || output.writableEnded) return;
+    let timer;
+    const drained = await Promise.race([
+      new Promise(resolve => output.write('', () => resolve(true))),
+      new Promise(resolve => { timer = setTimeout(() => resolve(false), budgetMs); }),
+    ]);
+    clearTimeout(timer);
+    if (!drained) {
+      diagnostics('the client did not read the final replies within 1 s; closing the MCP stream without them');
+      output.destroy();
+    }
   }
 
   function close(reason = 'eof') {

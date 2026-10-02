@@ -314,3 +314,18 @@ test('when the client transport is gone, pending callers are settled internally 
   const closed = await h.server.closed;
   assert.equal(closed.code, 1);
 });
+
+test('losing the client output transport alone closes the connection like EOF', async () => {
+  const h = harness();
+  await initialized(h);
+  const {up} = await startJs(h, 'running');
+  h.output.destroy();
+  // stdin stays open; the task must not stay Active forever.
+  h.upstream.text(up, 'done');
+  const turnEnded = await h.upstream.nextCall('turn_ended');
+  h.upstream.reply(turnEnded, {content: [], isError: false});
+  const closed = await h.server.closed;
+  assert.equal(closed.reason, 'transport');
+  assert.equal(closed.completion, 'ended');
+  assert.equal(h.upstream.terminations.length, 1);
+});

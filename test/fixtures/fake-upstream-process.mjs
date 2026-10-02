@@ -52,6 +52,7 @@ createInterface({input: process.stdin}).on('line', line => {
     case 'tools/call': {
       const {name, arguments: args = {}, _meta} = msg.params;
       if (name === 'js' && args.code === 'exit') process.exit(3);
+      if (name === 'js' && args.code === 'big') return reply(text('x'.repeat(8 << 20)));
       if (name === 'js') return reply(text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}));
       if (name === 'js_reset') return reply(text('js kernel reset'));
       if (name === 'turn_ended') return reply(text('{}'));

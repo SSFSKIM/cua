@@ -17,6 +17,7 @@
     "bin/",
     "src/",
     "runtime/releases/",
+    "scripts/probe/lib.mjs",
     "cua-shim.mjs",
     "verify.mjs",
     ".claude-plugin/",

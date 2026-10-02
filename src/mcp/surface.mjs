@@ -13,8 +13,9 @@ const NO_ARGUMENTS = {type: 'object', properties: {}, additionalProperties: fals
 export const END_TASK_TOOL = {
   name: 'end_task',
   description: 'Finish the current computer-use task on this connection. Call it once the GUI work is done: it waits '
-    + 'for running JavaScript to settle, then has the runtime complete the task. Returns status "ended", or "noop" when '
-    + 'no task is open. An error means completion could not be confirmed; this connection then accepts no more work.',
+    + 'up to 5 s for running JavaScript to settle, then has the runtime complete the task. Returns status "ended", or '
+    + '"noop" when no task is open. An error means completion could not be confirmed: the runtime is stopped, native '
+    + 'cleanup is unconfirmed, and this connection accepts no more work.',
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'finish end complete the current macos gui computer-use task'},
@@ -40,6 +41,7 @@ export const DEFAULT_HOST_NOTES = `Host notes (cua serve):
 - After quitting an app, stop using its handle: getAXState() on it relaunches the app. Verify with cua.listApps({emit:false}), which can lag a moment behind cmd+q.
 - typeText goes through the keyboard layout and silently drops characters it cannot key, such as emoji; use paste for those and for multiline text.
 - Batch deterministic actions with one observation per call, and pass timeout_ms for long waits. If the REPL state is confused, call js_reset and bind the app again.
+- Cancelling a js call does not stop a running cell, and js_reset waits for it, so timeout_ms is what bounds runaway code. If the runtime has to be stopped, native cleanup is unconfirmed.
 - Do not drive the same app through osascript or other tools while a cua session is open.`;
 
 export function withHostNotes(instructions, hostNotes) {

@@ -149,10 +149,16 @@ export class TaskLifecycle {
     if (this.#inFlight || !this.#queue.length || this.#state === 'failed') return;
     const item = this.#queue.shift();
     this.#inFlight = item;
-    const callId = this.newId();
-    Promise.resolve()
-      .then(() => item.run({sessionId: this.sessionId, taskId: item.taskId, callId}))
-      .then(reply => this.#finish(item, null, reply), reason => this.#finish(item, reason));
+    // Dispatch synchronously with the in-flight transition, so the caller's upstream request (and the mapping that
+    // lets a cancellation follow it) exists before any later input is handled; nothing is ever neither withdrawable
+    // nor forwardable.
+    let reply;
+    try {
+      reply = Promise.resolve(item.run({sessionId: this.sessionId, taskId: item.taskId, callId: this.newId()}));
+    } catch (reason) {
+      reply = Promise.reject(reason);
+    }
+    reply.then(value => this.#finish(item, null, value), reason => this.#finish(item, reason));
   }
 
   #finish(item, reason, reply) {

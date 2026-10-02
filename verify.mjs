@@ -8,7 +8,7 @@
 //
 //   node verify.mjs            exit 0 when every check passes; prints a JSON report either way
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, readdirSync} from 'node:fs';
+import {existsSync, readdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -88,14 +88,22 @@ try {
   report.task = {first: taskId, sameTaskAcrossCalls: taskId !== null && taskOf(second) === taskId};
   check(report.task.sameTaskAcrossCalls, 'two js calls in one task carried different task IDs');
 
+  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime.
   const tree = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), server.pid).filter(p => p.pid !== server.pid);
-  const classification = classifyProcesses(tree, {relocatedRoot: runtime.root});
+  const hostNode = realpathSync(process.execPath);
+  const anchor = tree.find(p => p.ppid === server.pid);
+  const runtimeTree = tree.filter(p => p !== anchor);
+  const pgid = pid => Number(sh('ps', ['-o', 'pgid=', '-p', String(pid)]).trim());
+  const label = executable => executable.replace(runtime.root, '$RUNTIME').replace(hostNode, '<host node>').replace(homedir(), '~');
+  const classification = classifyProcesses(runtimeTree, {relocatedRoot: runtime.root});
   report.processes = {
-    count: tree.length,
-    executables: [...new Set(tree.map(p => p.executable.replace(runtime.root, '$RUNTIME')))],
+    ancestry: [{pid: server.pid, ppid: process.pid, pgid: pgid(server.pid), executable: '<host node> bin/cua.mjs serve'},
+      ...tree.map(p => ({pid: p.pid, ppid: p.ppid, pgid: pgid(p.pid), executable: label(p.executable)}))],
     allExecutablesRelocated: classification.allExecutablesRelocated,
     desktopRuntimePaths: classification.desktopRuntimePaths.map(p => p.executable),
   };
+  check(anchor?.executable === hostNode && runtimeTree.every(p => p.ppid !== server.pid), 'the runtime is not started under the server\'s anchor');
+  check(anchor && tree.every(p => pgid(p.pid) === anchor.pid), 'a runtime process is outside the anchor\'s process group');
   check(classification.desktopRuntimePaths.length === 0, 'an installed-desktop runtime path served this connection');
   check(classification.allExecutablesRelocated, 'not every runtime process runs from the installed release');
   report.nativeHelper = (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])

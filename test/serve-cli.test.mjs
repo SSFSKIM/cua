@@ -165,3 +165,22 @@ test('SIGTERM closes the connection and its runtime', {skip: !supported}, async 
   assert.throws(() => process.kill(start.pid, 0), {code: 'ESRCH'});
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
+
+test('close is bounded even when the host stops reading the MCP stream', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const child = spawn(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'serve'], {env: {...process.env, CUA_HOME: home}, stdio: ['pipe', 'pipe', 'ignore']});
+  child.stdout.pause(); // a host that never reads: the server's 8 MiB reply cannot drain
+  const exited = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal})));
+  for (const msg of [
+    {jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}},
+    {jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'js', arguments: {code: 'big'}}},
+  ]) child.stdin.write(JSON.stringify(msg) + '\n');
+  await new Promise(r => setTimeout(r, 1000));
+  child.stdin.end();
+  const started = Date.now();
+  const exit = await Promise.race([exited, new Promise(r => setTimeout(() => r(null), 15_000))]);
+  if (!exit) child.kill('SIGKILL');
+  assert.ok(exit, 'cua serve did not exit while its output was blocked');
+  assert.ok(Date.now() - started < 12_000);
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+});

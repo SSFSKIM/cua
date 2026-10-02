@@ -78,7 +78,10 @@ app, index-first addressing, dropping an app handle after quitting it, `typeText
 The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (it reports that secret
 storage is not configured yet). Calls on one connection form a task until the model calls `end_task`, which waits for
 running JavaScript and then has the runtime complete the task. The plugin no longer installs `Stop`/`SubagentStop`
-hooks for this; if completion cannot be confirmed, the connection fails closed and stops its runtime.
+hooks for this; if completion cannot be confirmed, the connection fails closed and stops its runtime, and native
+cleanup of what was already submitted is unconfirmed. In this pinned runtime a forwarded MCP cancellation does not stop
+a running cell and `js_reset` waits behind it, so a cell's `timeout_ms` is what bounds runaway work; cancelling never
+means control has been handed back.
 
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.

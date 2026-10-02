@@ -16,6 +16,11 @@
   little headroom. Widen them (e.g. budget × 3) or measure against the injected budget rather than absolute times.
   Evidence: `docs/evidence/m6-acceptance.md`.
 
+- **2026-10-02 — Acceptance session teardown has no final reap deadline after SIGKILL (minor, M6 review).**
+  `scripts/accept/mcp-session.mjs:57-58` awaits the child's exit after SIGKILL without a final deadline; describe the
+  timeout as an escalation budget and report unconfirmed if exit is never observed. Test-harness only; normal local
+  SIGKILL makes it a narrow edge.
+
 ## Resolved
 
 - **2026-10-02 — Per-connection approval files accumulated (minor, M3; observed and resolved in M6).** Observed live

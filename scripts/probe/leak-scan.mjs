@@ -2,7 +2,7 @@
 // in files? Files are streamed whole, whatever their size, keeping enough of each chunk's end that a fingerprint
 // straddling two chunks is still found. A file or directory that cannot be read is returned as unread: the caller
 // must treat that as incomplete evidence, never as clean.
-import {createReadStream, existsSync, readdirSync} from 'node:fs';
+import {createReadStream, readdirSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 
 // The value and its base64 forms at each byte alignment (node_repl relays nativePipe bytes as base64), trimmed of the
@@ -48,6 +48,14 @@ export async function scanFiles(roots, prints, {chunkBytes = 1 << 20} = {}) {
       }
     }
   }
-  for (const root of roots) if (existsSync(root)) await visit(root);
+  // A root that does not exist has nothing to scan; one that cannot be reached (an inaccessible ancestor, say) is
+  // unread, not absent.
+  for (const root of roots) {
+    try { statSync(root); } catch (error) {
+      if (error.code !== 'ENOENT') result.unread.push(root);
+      continue;
+    }
+    await visit(root);
+  }
   return result;
 }

@@ -183,6 +183,37 @@ test('a slow-starting anchor cannot launch the runtime after teardown accepted a
   assert.ok(runtime === null || !alive(runtime), 'the runtime outlived teardown');
 });
 
+test('group enumeration cannot establish emptiness before the anchor acknowledges stop', async t => {
+  // Controlled ordering instead of timing: the anchor's acknowledgement is held back 400 ms and logged just before it
+  // is sent, and every enumeration is logged when it starts and claims that only the anchor is left. An enumeration
+  // logged before the acknowledgement would be a judgement of emptiness while a launch could still follow.
+  const s = scratch();
+  t.after(s.cleanup);
+  const log = join(s.dir, 'order.log');
+  const holdAck = join(s.dir, 'hold-ack.cjs');
+  writeFileSync(holdAck, `const fs = require('node:fs');
+const send = process.send?.bind(process);
+if (send) process.send = (msg, ...rest) => {
+  if (!msg?.stopped) return send(msg, ...rest);
+  setTimeout(() => { fs.appendFileSync(${JSON.stringify(log)}, 'ack\\n'); send(msg, ...rest); }, 400);
+  return true;
+};
+`);
+  const claimEmpty = join(s.dir, 'claim-empty-pgrep');
+  writeFileSync(claimEmpty, `#!/bin/sh\necho pgrep >> "${log}"\necho "$2"\n`);
+  chmodSync(claimEmpty, 0o755);
+  const upstream = spawnUpstream(
+    {command: process.execPath, args: [FAKE, 'echo'], env: {PATH: process.env.PATH, NODE_OPTIONS: `--require ${holdAck}`}, cwd: process.cwd()},
+    {stderr: 'ignore', pgrep: claimEmpty},
+  );
+  for (let i = 0; i < 200 && !upstream.launcherPid; i++) await sleep(10);
+  t.after(() => reap([upstream.pid, upstream.launcherPid].filter(Boolean)));
+  await upstream.terminate({budgetMs: 2000});
+  const order = readFileSync(log, 'utf8').split('\n').filter(Boolean);
+  assert.ok(order.includes('ack'), `the anchor never acknowledged stop: ${order.join(',')}`);
+  assert.equal(order[0], 'ack', `enumerated before the stop acknowledgement: ${order.join(',')}`);
+});
+
 test('failed group signals are reported: teardown is never confirmed while the anchor or a member survives', async t => {
   const {upstream, request} = start(t, 'ignore-term', [], {kill: () => { throw Object.assign(new Error('denied'), {code: 'EPERM'}); }});
   await request(1, 'ping');

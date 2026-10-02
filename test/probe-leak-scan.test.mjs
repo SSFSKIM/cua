@@ -52,3 +52,17 @@ test('a file that cannot be read is reported as unread, never as clean', {skip: 
   assert.deepEqual(result.leaked, []);
   assert.equal(result.scanned, 0);
 });
+
+test('a root behind an inaccessible directory is unread, while a root that does not exist is simply absent', {skip: process.getuid?.() === 0}, async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const gate = join(s.dir, 'gate');
+  mkdirSync(join(gate, 'state'), {recursive: true});
+  writeFileSync(join(gate, 'state', 'leak.log'), SENTINEL);
+  chmodSync(gate, 0o000);
+  let result;
+  try { result = await scanFiles([join(gate, 'state'), join(s.dir, 'absent')], PRINTS); } finally { chmodSync(gate, 0o700); }
+  assert.deepEqual(result.unread, [join(gate, 'state')]);
+  assert.deepEqual(result.leaked, []);
+  assert.equal(result.scanned, 0);
+});

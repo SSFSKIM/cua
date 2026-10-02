@@ -3,7 +3,7 @@
 // Swift broker runs under `npm run test:helper`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync} from 'node:fs';
+import {chmodSync, existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import net from 'node:net';
 import {rmSync} from 'node:fs';
@@ -81,6 +81,22 @@ test('close is bounded against a helper that ignores EOF and SIGTERM, and remove
   assert.equal(closed.confirmed, true);
   assert.equal(alive(broker.pid), false);
   assert.equal(existsSync(f.endpoint), false);
+});
+
+test('an endpoint that cannot be removed (EACCES) makes close unconfirmed with a reason instead of rejecting', async t => {
+  const f = setup(t, 'stubborn');
+  const dir = join(f.dir, 'locked');
+  mkdirSync(dir);
+  const endpoint = join(dir, 'b.sock');
+  const broker = await startBroker({...f.helper, endpoint});
+  chmodSync(dir, 0o500);
+  let closed;
+  try { closed = await broker.close({budgetMs: 1000}); } finally { chmodSync(dir, 0o700); }
+  assert.equal(closed.confirmed, false);
+  assert.deepEqual(closed.steps, ['eof', 'SIGTERM', 'SIGKILL']);
+  assert.match(closed.reason, /could not be removed \(EACCES\)/);
+  assert.equal(alive(broker.pid), false);
+  assert.equal(existsSync(endpoint), true, 'the socket really is still there');
 });
 
 test('endpoints are per-connection sockets under run/, refused when too long for a unix socket', t => {

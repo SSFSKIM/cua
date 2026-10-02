@@ -67,7 +67,7 @@ test('installing a verified release again re-verifies it without touching its fi
 test('resolving an installed release returns relocated paths under its own tree plus the checked pin', {skip: !darwin}, async t => {
   const ctx = setup(t);
   await install(ctx);
-  const runtime = resolveRuntime({home: ctx.home, pins: [ctx.pin]});
+  const runtime = resolveRuntime({home: ctx.home, pins: [ctx.pin], host: HOST});
   const home = realpathSync(ctx.home);
   const root = join(home, 'runtimes', ctx.pin.release);
   assert.equal(runtime.release, ctx.pin.release);
@@ -85,12 +85,12 @@ test('resolving an installed release returns relocated paths under its own tree 
 test('resolution refuses a pointer to a release with no checked-in pin, or a record that disagrees with the pin', {skip: !darwin}, async t => {
   const ctx = setup(t);
   await install(ctx);
-  assert.throws(() => resolveRuntime({home: ctx.home, pins: []}), expectCode('unknown_release'));
-  assert.throws(() => resolveRuntime({home: ctx.home, pins: [ctx.pin], release: '9.9.9-darwin-arm64'}), expectCode('unknown_release'));
+  assert.throws(() => resolveRuntime({home: ctx.home, pins: [], host: HOST}), expectCode('unknown_release'));
+  assert.throws(() => resolveRuntime({home: ctx.home, pins: [ctx.pin], release: '9.9.9-darwin-arm64', host: HOST}), expectCode('unknown_release'));
   const other = parsePin({...fixturePin({sha256: 'f'.repeat(64), length: ctx.archive.length})});
-  assert.throws(() => resolveRuntime({home: ctx.home, pins: [other]}), expectCode('installed_record_invalid'));
+  assert.throws(() => resolveRuntime({home: ctx.home, pins: [other], host: HOST}), expectCode('installed_record_invalid'));
   rmSync(join(realpathSync(ctx.home), 'runtimes', ctx.pin.release, 'cua_node/bin/node_repl'));
-  assert.throws(() => resolveRuntime({home: ctx.home, pins: [ctx.pin]}), expectCode('layout_invalid'));
+  assert.throws(() => resolveRuntime({home: ctx.home, pins: [ctx.pin], host: HOST}), expectCode('layout_invalid'));
 });
 
 test('a wrong-length or wrong-hash archive is refused before extraction and activates nothing', {skip: !darwin}, async t => {
@@ -173,7 +173,7 @@ test('a failed activation of a second release leaves the first release active an
   assert.equal(pointer(first.home), '0.0.1-darwin-arm64');
   assert.equal(readFileSync(join(first.home, 'runtimes', '0.0.2-darwin-arm64'), 'utf8'), 'not ours');
   assert.deepEqual(stagingLeftovers(first.home), []);
-  assert.equal(resolveRuntime({home: first.home, pins: [first.pin, second.pin]}).release, '0.0.1-darwin-arm64');
+  assert.equal(resolveRuntime({home: first.home, pins: [first.pin, second.pin], host: HOST}).release, '0.0.1-darwin-arm64');
 });
 
 test('runtime use switches between verified installed releases and refuses anything else without moving the pointer', {skip: !darwin}, async t => {
@@ -184,15 +184,15 @@ test('runtime use switches between verified installed releases and refuses anyth
   await install(second);
   const pins = [first.pin, second.pin];
   assert.equal(pointer(first.home), '0.0.2-darwin-arm64');
-  const used = await useRuntime({home: first.home, release: '0.0.1-darwin-arm64', pins, verifySignatures: acceptSignatures});
+  const used = await useRuntime({home: first.home, release: '0.0.1-darwin-arm64', pins, verifySignatures: acceptSignatures, host: HOST});
   assert.equal(used.release, '0.0.1-darwin-arm64');
   assert.equal(pointer(first.home), '0.0.1-darwin-arm64');
-  await assert.rejects(useRuntime({home: first.home, release: '0.0.3-darwin-arm64', pins, verifySignatures: acceptSignatures}), expectCode('unknown_release'));
+  await assert.rejects(useRuntime({home: first.home, release: '0.0.3-darwin-arm64', pins, verifySignatures: acceptSignatures, host: HOST}), expectCode('unknown_release'));
   const third = parsePin(fixturePin({release: '0.0.3-darwin-arm64', sha256: 'b'.repeat(64), length: 1}));
-  await assert.rejects(useRuntime({home: first.home, release: '0.0.3-darwin-arm64', pins: [...pins, third], verifySignatures: acceptSignatures}), expectCode('release_not_installed'));
-  await assert.rejects(useRuntime({home: first.home, release: '0.0.2-darwin-arm64', pins, verifySignatures: async (root, pin) => pin.signing.components.map(c => ({component: c, valid: false, detail: 'bad'}))}), expectCode('signature_invalid'));
+  await assert.rejects(useRuntime({home: first.home, release: '0.0.3-darwin-arm64', pins: [...pins, third], verifySignatures: acceptSignatures, host: HOST}), expectCode('release_not_installed'));
+  await assert.rejects(useRuntime({home: first.home, release: '0.0.2-darwin-arm64', pins, verifySignatures: async (root, pin) => pin.signing.components.map(c => ({component: c, valid: false, detail: 'bad'})), host: HOST}), expectCode('signature_invalid'));
   rmSync(join(realpathSync(first.home), 'runtimes', '0.0.2-darwin-arm64', 'cua_node/manifest.json'));
-  await assert.rejects(useRuntime({home: first.home, release: '0.0.2-darwin-arm64', pins, verifySignatures: acceptSignatures}), expectCode('layout_invalid'));
+  await assert.rejects(useRuntime({home: first.home, release: '0.0.2-darwin-arm64', pins, verifySignatures: acceptSignatures, host: HOST}), expectCode('layout_invalid'));
   assert.equal(pointer(first.home), '0.0.1-darwin-arm64');
 });
 

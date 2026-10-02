@@ -12,7 +12,7 @@ import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {CuaError} from './errors.mjs';
-import {loadPins, selectPin, locateRuntime} from './manifest.mjs';
+import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
 
@@ -47,7 +47,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   if (runtime) {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
-    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; reinstall with \`cua install\``));
+    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);
@@ -55,7 +55,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
     const signatures = await verifySignatures(root, manifest);
     const bad = signatures.filter(s => !s.valid);
     checks.push(result('runtime.signatures', bad.length ? 'fail' : 'pass', bad.length
-      ? `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ')}`
+      ? `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ')}; ${recoveryHint(root)}`
       : `${signatures.length} components signed by team ${manifest.signing.team}`));
   }
 

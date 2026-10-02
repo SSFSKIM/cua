@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {rmSync, realpathSync} from 'node:fs';
 import {inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
-import {parsePin} from '../src/runtime/manifest.mjs';
+import {parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
 import {scratch, zipFixture, fixturePin, acceptSignatures} from './fixtures/runtime-fixture.mjs';
 
 const darwin = process.platform === 'darwin';
@@ -76,6 +76,10 @@ test('signature and layout damage in the installed tree fail the doctor with the
   assert.equal(damaged.ok, false);
   assert.equal(check(damaged, 'runtime.files').status, 'fail');
   assert.match(check(damaged, 'runtime.files').detail, /codexCli/);
+  // A damaged release is never repaired in place, so the advice is the offline recovery, not a bare reinstall.
+  const root = join(realpathSync(home), 'runtimes', pin.release);
+  assert.ok(check(damaged, 'runtime.files').detail.includes(recoveryHint(root)), check(damaged, 'runtime.files').detail);
+  assert.ok(check(report, 'runtime.signatures').detail.includes(recoveryHint(root)), check(report, 'runtime.signatures').detail);
 });
 
 test('an incompatible running helper is a diagnosed conflict that fails the doctor', {skip: !darwin}, async t => {

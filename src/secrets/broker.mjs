@@ -94,9 +94,12 @@ export async function startBroker({command, args = ['broker'], env = {}, endpoin
       lines.close();
       // A helper that was killed could not remove its own socket. (There is a window between the check and the
       // unlink; the run directory is the server's own, so nothing else is expected to replace the socket within it.)
-      if (isOwned()) rmSync(endpoint, {force: true});
+      // An unlink failure (a run directory made unwritable, say) is reported, never thrown: close always settles.
+      let unlinkError = null;
+      if (isOwned()) try { rmSync(endpoint, {force: true}); } catch (error) { unlinkError = error.code ?? 'error'; }
       const leftover = isOwned();
-      const problems = [...(gone ? [] : ['the broker helper did not exit']), ...(leftover ? [`${endpoint} remains`] : [])];
+      const problems = [...(gone ? [] : ['the broker helper did not exit']),
+        ...(leftover ? [unlinkError ? `${endpoint} could not be removed (${unlinkError})` : `${endpoint} remains`] : [])];
       return {confirmed: !problems.length, steps, ...(problems.length ? {reason: problems.join('; ')} : {})};
     })();
     return closing;

@@ -26,6 +26,12 @@
   passes unconditionally. The restrictive fake (`NEUTRAL_CDP` in `fake-extension.mjs`) supports the conclusion today;
   make the check assert that every answered `executeCdp` method is in `NEUTRAL_CDP` at the next pertinent probe change.
 
+- **2026-10-02 — M7 stale-attach diagnostic overstates release (minor, M7 fix review).**
+  `scripts/probe/chrome/adapter.mjs` (`attachDebugger`) says "control was released" after a stale attachment even if
+  its compensating detach failed. Task completion correctly reports release unconfirmed, so the ownership finding
+  is resolved. Make the individual attach error equally accurate at the next relevant prototype/production edit;
+  do not treat this text as evidence of successful release.
+
 ## Resolved
 
 - **2026-10-02 — Per-connection approval files accumulated (minor, M3; observed and resolved in M6).** Observed live

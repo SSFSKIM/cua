@@ -26,6 +26,7 @@ const TOOLS = [
   {name: 'turn_ended', description: 'Fake turn_ended.', inputSchema: {type: 'object', properties: {}}},
 ];
 
+if (process.env.FAKE_PID_FILE) writeFileSync(process.env.FAKE_PID_FILE, String(process.pid));
 const keepAlive = setInterval(() => {}, 1 << 30);
 if (mode === 'ignore-term') process.on('SIGTERM', () => {});
 if (mode === 'unowned') {

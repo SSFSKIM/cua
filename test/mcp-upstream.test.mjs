@@ -2,7 +2,7 @@
 // that never touches a process outside it (the shared native helper is started by LaunchServices, not by us).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, existsSync} from 'node:fs';
+import {readFileSync, existsSync, writeFileSync, chmodSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
@@ -153,4 +153,62 @@ process.on('exit', () => process.stdout.write(String(Date.now() - done)));`;
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 15_000});
   assert.equal(r.status, 0, r.stderr);
   assert.ok(Number(r.stdout) < 500, `the process lingered ${r.stdout} ms after teardown`);
+});
+
+const groupLeft = pgid => spawnSync('/usr/bin/pgrep', ['-g', String(pgid)], {encoding: 'utf8'}).stdout.split('\n').filter(Boolean).map(Number);
+function reap(pids) { for (const pid of pids) try { process.kill(pid, 'SIGKILL'); } catch {} }
+
+test('a slow-starting anchor cannot launch the runtime after teardown accepted an empty group', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const delay = join(s.dir, 'delay.cjs');
+  writeFileSync(delay, 'const t = Date.now(); while (Date.now() - t < 500) {}\n');
+  const slowPgrep = join(s.dir, 'slow-pgrep');
+  writeFileSync(slowPgrep, `#!/bin/sh\n[ -e "${s.dir}/pgrep-once" ] || { touch "${s.dir}/pgrep-once"; sleep 0.35; }\nexec /usr/bin/pgrep "$@"\n`);
+  chmodSync(slowPgrep, 0o755);
+  const pidFile = join(s.dir, 'runtime.pid');
+  const upstream = spawnUpstream(
+    {command: process.execPath, args: [FAKE, 'ignore-term'], env: {PATH: process.env.PATH, NODE_OPTIONS: `--require ${delay}`, FAKE_PID_FILE: pidFile}, cwd: process.cwd()},
+    {stderr: 'ignore', pgrep: slowPgrep},
+  );
+  const teardown = await upstream.terminate({budgetMs: 1000});
+  await sleep(1500); // a launch that slipped past teardown would have happened by now
+  const runtime = existsSync(pidFile) ? Number(readFileSync(pidFile, 'utf8')) : null;
+  const left = groupLeft(upstream.pid);
+  t.after(() => reap([...left, ...(runtime ? [runtime] : [])]));
+  if (teardown.confirmed) {
+    assert.deepEqual(left, [], 'confirmed teardown left group members');
+    assert.ok(runtime === null || !alive(runtime), 'confirmed teardown, then a runtime launched and stayed alive');
+  }
+  assert.ok(runtime === null || !alive(runtime), 'the runtime outlived teardown');
+});
+
+test('failed group signals are reported: teardown is never confirmed while the anchor or a member survives', async t => {
+  const {upstream, request} = start(t, 'ignore-term', [], {kill: () => { throw Object.assign(new Error('denied'), {code: 'EPERM'}); }});
+  await request(1, 'ping');
+  const pgid = upstream.pid;
+  t.after(() => reap(groupLeft(pgid)));
+  const teardown = await upstream.terminate({budgetMs: 800});
+  assert.equal(teardown.confirmed, false);
+  assert.match(teardown.reason, /EPERM/);
+  assert.ok(alive(pgid), 'the anchor is still alive, so nothing may claim the group is gone');
+});
+
+test('a stalled group enumeration is bounded, cleaned up and reported unconfirmed', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const stall = join(s.dir, 'stall-pgrep');
+  writeFileSync(stall, `#!/bin/sh\necho $$ >> "${s.dir}/stalled.pids"\nexec sleep 60\n`);
+  chmodSync(stall, 0o755);
+  const {upstream, request} = start(t, 'echo', [], {pgrep: stall});
+  await request(1, 'ping');
+  const started = Date.now();
+  const teardown = await upstream.terminate({budgetMs: 800});
+  assert.ok(Date.now() - started < 1500, `teardown took ${Date.now() - started} ms`);
+  assert.equal(teardown.confirmed, false);
+  assert.match(teardown.reason, /enumerat/);
+  await sleep(100);
+  const stalled = readFileSync(join(s.dir, 'stalled.pids'), 'utf8').split('\n').filter(Boolean).map(Number);
+  assert.ok(stalled.length > 0);
+  for (const pid of stalled) assert.equal(alive(pid), false, `enumerator ${pid} left running`);
 });

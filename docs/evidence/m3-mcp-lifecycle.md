@@ -42,7 +42,15 @@ pid    ppid   pgid   executable
 
 The OpenAI-signed vendor `node` is still node_repl's direct parent, as M1 proved; the anchor only adds a non-OpenAI
 Node above it, as the probe's host Node was in M1. The native service accepted the chain: a read-only `cua.getState()`
-through `cua serve` returned 37 apps and no errors, served by the same existing helper (pid 34706).
+through `cua serve` returned 37 apps and no errors, served by the same existing helper (pid 34706). After fix wave 2
+the ancestry has the same shape (anchor 71632 leading every runtime process), and `getState` again returned 37 apps and
+no errors.
+
+How teardown is confirmed (fix wave 2): the anchor acknowledges `stop` only after any launch has started, so group
+emptiness is judged only once no launch can follow. Group signals go out only while the anchor's exit is unobserved.
+A teardown counts as confirmed only after the anchor's exit was observed and a bounded, read-only `pgrep -g` then
+lists the group empty. Any of the following reads as unconfirmed: a failed signal, a timed-out or failed listing, a
+surviving member, or a reused number.
 
 ## `node scripts/probe-lifecycle.mjs` (native cancel/end-task behavior, acceptance 8)
 
@@ -51,7 +59,7 @@ through `cua serve` returned 37 apps and no errors, served by the same existing 
 | `notifications/cancelled` 0.5 s into a cell that waits 3 s | Forwarded; node_repl kept running the cell, which finished and replied normally (`isError:false`, ~2.5 s after the cancel); the next cell saw the cell's final state. Cancellation is not honored for a running cell in this runtime, so a cancel acknowledgement would never have been evidence of quiescence. `end_task` afterwards ended normally. |
 | `end_task` 0.3 s into a 2 s cell | New work sent right after was rejected at once with `task_ending`; the running cell replied normally; `turn_ended` followed and `end_task` returned `ended` within 1 ms of the cell's reply. |
 | `end_task` while a cell waits 15 s (`timeout_ms` 30 s) | At the 5 s completion deadline `end_task` returned `isError:true` `{status:"error", ended:false, code:"completion_timeout", stage:"quiescence", nativeCleanup:"unconfirmed"}`; the running call was failed once with `connection_failed`; no `turn_ended` was sent; the server tore down and exited 1 about 2.2 s later. Stderr: `connection failed (completion_timeout, quiescence)`, then `runtime teardown needed SIGTERM; every owned process is gone`. No `$RUNTIME` process remained. |
-| Idle EOF | exit 0 about 35 ms after EOF (about 215 ms before the fix wave's anchor), with EOF alone (no signal); no process remained. |
+| Idle EOF | exit 0 about 90 ms after EOF, with EOF alone (no signal). That time includes releasing the anchor, observing its exit and a read-only check that the group lists empty. No process remained. |
 
 Not observed (no app was bound): app approvals and their per-connection persistence; native side effects of
 `turn_ended` for the sky service (M1: sky registers no turn-ended hook, so none are expected). Terminating the runtime

@@ -232,7 +232,7 @@ export function createServer({
       tearingDown = true;
       const teardown = await upstream.terminate({budgetMs: teardownBudgetMs});
       abandonUpstream(lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing');
-      if (!teardown.confirmed) diagnostics(`runtime teardown unconfirmed after ${teardown.steps.join(', ')}; owned processes may remain`);
+      if (!teardown.confirmed) diagnostics(`runtime teardown unconfirmed after ${teardown.steps.join(', ')}: ${teardown.reason ?? 'no reason given'}; owned processes may remain`);
       else if (teardown.steps.length > 1) diagnostics(`runtime teardown needed ${teardown.steps.slice(1).join(' then ')}; every owned process is gone`);
       if (completion !== 'none' && completion !== 'ended' && !failed) diagnostics(`task completion at close: ${completion}; native cleanup unconfirmed`);
       await flush();

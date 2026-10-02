@@ -1,13 +1,17 @@
 // The owned runtime for one connection: the launch record from buildLaunch, started inside a process group that the
 // server can prove is its own, speaking newline-delimited JSON-RPC over stdin/stdout.
 //
-// Ownership is the process group, and identity is the anchor. The vendor launcher, node_repl and its sandboxed
-// kernel/worker children all stay in one group, and a kernel that ignores its own shutdown can outlive the launcher
-// there (observed after a busy cell's reset). A group's number alone proves nothing once its members are gone: it can
-// be reused. So the group is led by a small anchor process (anchor.mjs) that stays alive until the last signal; every
-// group signal is sent only while the anchor is known alive (its exit not yet reaped), and if it is not, teardown
-// signals nothing and reports cleanup unconfirmed. The native helper is started by the vendor through LaunchServices,
-// never in this group. A descendant that starts its own session escapes the group; teardown does not claim it.
+// Ownership is the process group, and identity is the anchor (anchor.mjs). The vendor launcher, node_repl and its
+// sandboxed kernel/worker children all stay in one group, and a kernel that ignores its own shutdown can outlive the
+// launcher there (observed after a busy cell's reset). A group's number alone proves nothing once its members are
+// gone: it can be reused. The anchor leads the group and stays alive until it is released or killed, so:
+// - a group signal is sent only while the anchor's exit is unobserved (its pid, and so the number, is still held);
+// - emptiness is judged only after the anchor has acknowledged `stop`, so no launch can follow the judgement;
+// - teardown is confirmed only by read-only checks after the anchor's exit was observed: the group lists empty. A
+//   failed signal, a failed or timed-out listing, a surviving member or a reused number all read as unconfirmed, and
+//   nothing is signalled after the final signal.
+// The native helper is started by the vendor through LaunchServices, never in this group. A descendant that starts
+// its own session escapes the group; teardown does not claim it.
 import {spawn, execFile} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
@@ -15,25 +19,28 @@ import {fileURLToPath} from 'node:url';
 const ANCHOR = fileURLToPath(new URL('./anchor.mjs', import.meta.url));
 const POLL_MS = 25;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-// Waits for `promise` at most `ms`, leaving no timer behind (a stray one would hold the process open after close).
-function within(promise, ms) {
+// Waits for `promise` at most `ms`; resolves `fallback` on timeout and leaves no timer behind (a stray one would hold
+// the process open after close).
+function within(promise, ms, fallback) {
   let timer;
-  return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, Math.max(0, ms)); })]).finally(() => clearTimeout(timer));
+  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(fallback), Math.max(0, ms)); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-function pidAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; }
-}
-
-// Current members of a process group, by pgrep (which never lists itself or its ancestors, and the server is not a
-// member). Null when the listing itself failed.
-function groupMembers(pgid) {
-  return new Promise(resolve => execFile('/usr/bin/pgrep', ['-g', String(pgid)], (error, stdout) => {
-    resolve(error && error.code !== 1 ? null : stdout.split('\n').filter(Boolean).map(Number));
+// The group's members, or null if the listing failed or did not finish within `ms` (its process is then killed).
+// pgrep never lists itself or its ancestors, and the server is not a member.
+function listGroup(pgrep, pgid, ms) {
+  if (ms <= 0) return Promise.resolve(null);
+  return new Promise(resolve => execFile(pgrep, ['-g', String(pgid)], {timeout: ms, killSignal: 'SIGKILL'}, (error, stdout) => {
+    if (error && !(error.code === 1 && !error.killed)) return resolve(null);
+    resolve(stdout.split('\n').filter(Boolean).map(Number));
   }));
 }
 
-export function spawnUpstream({command, args, env, cwd}, {diagnostics = () => {}, stderr = 'inherit', kill = (pid, signal) => process.kill(pid, signal)} = {}) {
+export function spawnUpstream({command, args, env, cwd}, {
+  diagnostics = () => {}, stderr = 'inherit',
+  kill = (pid, signal) => process.kill(pid, signal), pgrep = '/usr/bin/pgrep',
+} = {}) {
   let onMessage = () => {};
   let onExit = () => {};
   let exitInfo = null;
@@ -41,8 +48,7 @@ export function spawnUpstream({command, args, env, cwd}, {diagnostics = () => {}
   let terminating = null;
   let launcherPid;
   let anchorExited = false;
-  let markLaunched;
-  const launched = new Promise(resolve => { markLaunched = resolve; }); // the anchor has started the launcher, or never will
+  let stopAcknowledged = false;
 
   // The anchor leads a new process group; its pid is the group's number for as long as it lives.
   const anchor = spawn(process.execPath, [ANCHOR], {env, cwd, stdio: ['pipe', 'pipe', stderr, 'ipc'], detached: true});
@@ -70,41 +76,80 @@ export function spawnUpstream({command, args, env, cwd}, {diagnostics = () => {}
     onExit(exitInfo);
   };
   anchor.on('message', msg => {
-    if (msg?.started) { launcherPid = msg.started; markLaunched(); }
-    if (msg?.exit) { markLaunched(); reportExit(msg.exit); }
+    if (msg?.started) launcherPid = msg.started;
+    if (msg?.exit) reportExit(msg.exit);
+    if (msg?.stopped) stopAcknowledged = true;
   });
   anchor.once('exit', (code, signal) => {
     anchorExited = true;
-    markLaunched();
     if (!terminating) reportExit({code, signal, error: 'the runtime anchor exited'});
   });
   anchor.once('error', error => {
     anchorExited = true;
-    markLaunched();
     reportExit({code: null, signal: null, error: `${error.code ?? 'error'}: ${error.message}`});
   });
-  if (pgid) anchor.send({command, args, env, cwd}, error => { if (error) diagnostics(`could not hand the launch to the runtime anchor: ${error.message}`); });
+  const tell = msg => { if (anchor.connected) anchor.send(msg, error => { if (error) diagnostics(`runtime anchor did not take ${Object.keys(msg)[0]}: ${error.message}`); }); };
+  if (pgid) tell({launch: {command, args, env, cwd}});
 
-  // Members other than the anchor, or null when the group's identity can no longer be established.
-  const others = async () => {
-    if (anchorExited) return null;
-    const members = await groupMembers(pgid);
-    return members === null || anchorExited ? null : members.filter(pid => pid !== pgid);
-  };
-  const settled = async until => {
-    for (;;) {
-      const members = await others();
-      if (members === null || !members.length || Date.now() >= until) return members;
-      await sleep(POLL_MS);
+  async function teardown(budgetMs) {
+    const started = Date.now();
+    const deadline = started + budgetMs;
+    const by = fraction => started + budgetMs * fraction;
+    const steps = ['eof'];
+    const problems = [];  // each one makes the teardown unconfirmed
+    const notes = [];     // context, reported only alongside a problem
+    const result = () => ({confirmed: !problems.length, steps, ...(problems.length ? {reason: [...problems, ...notes].join('; ')} : {})});
+
+    const signalGroup = signal => {
+      if (anchorExited) { notes.push(`process-group identity lost (its anchor exited), so no ${signal} was sent`); return; }
+      steps.push(signal);
+      // Synchronous with the check above: nothing can reap the anchor in between.
+      try { kill(-pgid, signal); } catch (error) { problems.push(`${signal} to the group failed (${error.code ?? error.message})`); }
+    };
+    const release = async until => {
+      if (anchor.connected) anchor.disconnect();
+      if (!await within(anchorGone.then(() => true), until - Date.now(), false)) signalGroup('SIGKILL');
+    };
+    // True once only the anchor is left, launches being impossible; false at `until` or if identity is lost.
+    const emptied = async until => {
+      while (!anchorExited) {
+        if (stopAcknowledged) {
+          const members = await listGroup(pgrep, pgid, until - Date.now());
+          if (members && !anchorExited && members.length === 1 && members[0] === pgid) return true;
+        }
+        if (Date.now() >= until) return false;
+        await sleep(Math.min(POLL_MS, Math.max(0, until - Date.now())));
+      }
+      return false;
+    };
+    // Read-only from here: the anchor's exit must be observed, then the group must list empty.
+    const confirm = async () => {
+      if (!await within(anchorGone.then(() => true), deadline - Date.now(), false)) {
+        problems.push('the runtime anchor is still alive');
+        return result();
+      }
+      for (;;) {
+        const members = await listGroup(pgrep, pgid, deadline - Date.now());
+        if (members && !members.length) return result();
+        if (Date.now() >= deadline) {
+          problems.push(members ? `group still lists ${members.length} process(es)` : 'group enumeration failed or timed out');
+          return result();
+        }
+        await sleep(Math.min(POLL_MS, Math.max(0, deadline - Date.now())));
+      }
+    };
+
+    anchor.stdin.end();
+    tell({stop: true});
+    // Only the anchor left: release it (if it does not go, the group's final signal takes it). Otherwise escalate.
+    if (await emptied(by(0.4))) await release(by(0.7));
+    else {
+      signalGroup('SIGTERM');
+      if (await emptied(by(0.7))) await release(by(0.85));
+      else signalGroup('SIGKILL');
     }
-  };
-  // Signals the group only if the anchor's exit has not been observed: until then its pid, and so the group number,
-  // is still held (alive or an unreaped zombie), and nothing between this synchronous check and the signal reaps it.
-  const signalGroup = signal => {
-    if (anchorExited) return false;
-    try { kill(-pgid, signal); } catch {}
-    return true;
-  };
+    return confirm();
+  }
 
   return {
     pid: pgid,
@@ -118,40 +163,10 @@ export function spawnUpstream({command, args, env, cwd}, {diagnostics = () => {}
     onExit(fn) { onExit = fn; },
 
     // Bounded termination of the owned group: EOF first (the runtime's orderly shutdown), then SIGTERM, then SIGKILL,
-    // within `budgetMs`. Resolves {confirmed, steps, reason?}; confirmed means no member of the group remains.
+    // within `budgetMs`. Resolves {confirmed, steps, reason?}; confirmed means the anchor's exit was observed and no
+    // member of the group remains.
     terminate({budgetMs = 5000} = {}) {
-      terminating ??= (async () => {
-        if (!pgid) return {confirmed: true, steps: []};
-        const started = Date.now();
-        const deadline = started + budgetMs;
-        const steps = ['eof'];
-        const lost = () => ({confirmed: false, steps, reason: 'process-group identity lost (its anchor exited early); no group signal was sent'});
-        anchor.stdin.end();
-        // Membership means nothing until the launcher exists: a close right after start must not release the anchor
-        // while the launcher is still being spawned.
-        await within(launched, budgetMs * 0.4);
-        let remaining = await settled(started + budgetMs * 0.4);
-        if (remaining === null) return lost();
-        if (remaining.length) {
-          steps.push('SIGTERM');
-          if (!signalGroup('SIGTERM')) return lost();
-          remaining = await settled(started + budgetMs * 0.7);
-          if (remaining === null) return lost();
-        }
-        if (remaining.length) {
-          steps.push('SIGKILL');
-          const listed = await others();
-          if (listed === null || !signalGroup('SIGKILL')) return lost();
-          // The anchor goes with this last signal; the members listed while it still held the group must be gone.
-          while (listed.some(pidAlive) && Date.now() < deadline) await sleep(POLL_MS);
-          return {confirmed: !listed.some(pidAlive), steps};
-        }
-        // Every runtime process is gone: release the anchor.
-        if (anchor.connected) anchor.disconnect();
-        await within(anchorGone, deadline - Date.now());
-        if (!anchorExited) anchor.kill('SIGKILL');
-        return {confirmed: true, steps};
-      })();
+      terminating ??= pgid ? teardown(budgetMs) : Promise.resolve({confirmed: true, steps: []});
       return terminating;
     },
   };

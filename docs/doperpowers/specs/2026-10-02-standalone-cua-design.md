@@ -36,7 +36,11 @@ After `npm link`, the same commands are available as `cua`. No package-registry 
 - [x] (2026-10-02) M5 — Native secret substitution through trusted wrappers. Reviewed clean after one fix wave (0972ce1, a55fee9); evidence `docs/evidence/m5-secret-substitution.md`; controlled-target live sentinel probe 26/26; real vendor delivery is M6.
 - [x] (2026-10-02) M6 — Integrate packaging, run acceptance, record release gates and review. Reviewed clean after one consolidated fix wave with the whole-branch review (f993617..3ba5244, ca785ee..98e6d0d); evidence `docs/evidence/m6-acceptance.md`; final combined live run items 1-8, 10 PASS, 9 BLOCKED.
 - [ ] Clean-machine desktop-absence, fresh-permission onboarding, stable release-signing acceptance (requires suitable environment/user participation).
-- [ ] Later execution: existing-profile Chrome bridge and browser substitution; then MAWS-hosted in-app-browser adapter.
+- [x] (2026-10-02) Phases A+B completed and reviewed at `63fe70d`; their release gates remain explicit, not passed by this handoff.
+- [x] (2026-10-02) Created `feat/chrome-existing-profile` from `63fe70d`; initial read-only extension/CUA protocol research completed. No Chrome attachment or browser operation has occurred.
+- [ ] M7 — Phase C prototyping: verify extension/CUA wire contracts without touching Chrome; independently review the spike specification and record a promote/discard verdict.
+- [ ] Phase C after M7: controlled live extension compatibility probe on newly created test tabs in a selected existing profile, then production bridge, browser secret substitution and acceptance. Extend this execution section using the measured M7 contract first.
+- [ ] Phase D: MAWS-hosted in-app-browser adapter; profile import/UI stay MAWS's responsibility.
 
 ## Repository and evidence
 
@@ -137,7 +141,21 @@ Phase C must attach through an authorized extension to the selected existing Chr
 
 Preserve vendor browser-specific APIs. Backend protocol: explicit socket discovery, length-prefixed JSON-RPC; getInfo, tabs/create/attach/detach, executeCdp (Chrome DevTools Protocol commands), browser events, task completion and tab retention. Keep user tabs; exercise frames, dialogs, downloads, screenshots, autofill/user-required unlock, disconnect and takeover. Secret browser wrappers use the shared broker. Actual browser actions, authentication/network dependencies and secure-form capabilities remain to be measured; never use testing/security-bypass flags as a substitute for integration.
 
-Phase D consumes tabs owned by MAWS's future browser and presents the same backend interface. Profile import, extension compatibility and migration guarantees are MAWS's work, not prerequisites of A+B or C. No implementation milestones for C/D are dispatched by this A+B execution; extend this living spec's execution after A+B, using the approved design and empirical seam results rather than restarting product design.
+Phase D consumes tabs owned by MAWS's future browser and presents the same backend interface. Profile import, extension compatibility and migration guarantees are MAWS's work, not prerequisites of A+B or C. A+B finished at `63fe70d`; Phase C starts with M7 below. Its production execution is extended after the compatibility spike rather than assuming a private extension protocol is a ready-made supported library.
+
+#### Phase C connection boundary
+
+The current candidate is an owned adapter between the CUA backend Unix socket and the installed Playwright extension's loopback WebSocket protocol v2. The inspected extension is `mmlmfjhmonkocbjadbfplnigmagldckm` 0.4.0. This is a source-supported candidate, not a working Chrome integration. Its protocol is private/version-sensitive; do not import private Playwright relay classes or assume an unversioned third-party auto-update is compatible. A maintained public transport can replace the candidate only if it provides the same existing-profile and ownership semantics.
+
+The extension's allowed methods are `chrome.debugger.attach`, `chrome.debugger.detach`, `chrome.debugger.sendCommand`, `chrome.tabs.create` and `chrome.tabs.remove`. It offers a tab with `chrome.tabs.onCreated` before `extension.initialized`; it does not provide arbitrary tab enumeration or a trustworthy profile identifier in this handshake. Only explicit offers and tabs the adapter creates become controllable. Never guess an integer tab ID, attach to unoffered tabs, or close user-owned tabs. An extension disconnect releases control; it must not be interpreted as permission to reconnect or re-claim user-released tabs. Explicit renewed offers after a transient target change are different from forced reattachment after a user cancellation.
+
+The candidate CUA protocol carries `session_id`, `turn_id` and `session_context` on session requests; `executeCdp` targets a numeric `tabId` and at most one of `sessionId`/`targetId`. Child debugger sessions must retain their identity in commands and `onCDPEvent`/`onCDPDetach` notifications. Exact schemas and framing are outputs of M7, not facts established by compatible-looking method names. Optional-method fallback errors must match the pinned vendor's protocol rather than wrapping every failure generically.
+
+Two source reports disagree on preferred CUA backend kind (`extension` versus `cdp`) and on connection bootstrap. M7 measures the advertised API and policy consequences of each truthful fixture; production kind is selected for the capabilities actually implemented, not to avoid identity/header policy. Do not set security bypass modes or assert unsupported agent-header behavior. Absence of a capability field is not proof of an account-free operational path. Retain upstream policy and document required supported authentication where it applies.
+
+The existing `PLAYWRIGHT_MCP_EXTENSION_TOKEN`, when used in a later live attach, is consumed as configured without displaying, regenerating, copying into fixtures or probing it across profiles. A token-bearing connection URL is sensitive and must never appear in logs/reports. A manual extension chooser is a possible explicitly selected connection mode, not grounds to discard the user's configured token. No profile secrets, cookie database, password database or extension localStorage are read to discover tokens. Profile identity/selection and any live connection effects are made explicit before attachment.
+
+The loopback relay must verify the requested host and the extension origin, use a one-shot unpredictable endpoint capability and reject second clients. Whether the actual extension supplies an Origin header is a live gate; a failed check must not become a wildcard fallback. Only own servers/sockets are started in M7. The exact reusable-WebSocket library choice belongs to the promoted implementation after the wire shape is known; do not implement an entire WebSocket stack as a side project.
 
 ## Acceptance
 
@@ -208,6 +226,33 @@ Complete README/install/plugin configuration, explicit helper build/signing requ
 
 After the milestone/frontier reviews and full branch review, update Outcomes & Retrospective and leave the branch ready for inspection. Parent session decides public push/PR/integration. No MAWS changes and no change to the owner's installed MCP registration.
 
+### M7 — Prototyping: source-grounded browser contract, no Chrome attachment
+
+Work on `feat/chrome-existing-profile`, from reviewed native baseline `63fe70d`. This is a bounded knowledge milestone, not production browser support. Question: can our adapter supply the CUA browser backend contract over the existing Playwright extension protocol without importing Playwright's private library or changing the user's profile? Resolve the exact request/event/handshake shapes and expose any capability/policy mismatch before a live attachment.
+
+Add `scripts/probe-chrome-contract.mjs` and focused helpers under `scripts/probe/chrome/`; record sanitized findings in `docs/evidence/m7-chrome-contract.md`. No CLI/production launch behavior changes, no Chrome flags/settings/extensions changes, and no new user-facing browser feature yet. The existing native tests remain unchanged in meaning. Use a fake extension peer and fixture backend, not the installed extension, for this milestone. Do not read real tokens or browser profile data. A locked dependency used solely for the prototype must be explicit and excluded from product claims; prefer the existing Node tooling unless real WebSocket framing is needed for the question.
+
+Run two layers separately: (a) deterministic wire fixtures whose shapes are cited to source, including offer-before-initialized, reply/error handling, child-session forwarding, unknown-tab rejection, user detach without automatic retry, popup offers and disconnect; (b) an opt-in relocated-vendor probe against the fixture backend over an explicit owned socket, with browser-only surfaces and no account credentials or browser process. Compare `extension` and `cdp` fixture metadata/docs/API exposure under ordinary policy; report what each makes available and any operation blocked by required identity. Do not claim a fixture bypasses a real authentication requirement. The native production launcher remains native-only; the script assembles its own verified probe launch record rather than adding public arbitrary environment overrides.
+
+The vendor probe first selects only the fixture browser and reads its documented surface. Any additional synthetic request is recorded as a synthetic response, never a real browser action. Capture exact backend request/notification framing, `getInfo` shape at the wire boundary versus higher-level normalized schema, tab IDs, attachTarget/child-session mapping, optional-method error fallback, task completion and retention commands. Empty `getTabs` and metadata success cannot establish input/screenshot compatibility. Fail/refuse unsupported fixture operations rather than inventing successful page state. Seed only generated fake path/token markers in the fake peer, and scan diagnostics for accidental disclosure.
+
+Concrete commands, from the CUA checkout:
+
+```sh
+node scripts/probe-chrome-contract.mjs --fixtures --report /tmp/cua-chrome-contract-fixtures.json
+# Optional real vendor runtime, still NO browser process or profile connection:
+export CUA_HOME="$(mktemp -d /tmp/cua-chrome-contract.XXXXXX)"
+node bin/cua.mjs install --archive /Users/new/codex-app-src/_dist/ChatGPT-darwin-arm64-26.928.40906.zip
+node scripts/probe-chrome-contract.mjs --vendor --report /tmp/cua-chrome-contract-vendor.json
+npm test
+```
+
+Both reports carry PASS/FAIL/BLOCKED per scenario and an explicit `chromeAttached:false` fact. The fixture layer requires no vendor install, GUI, account or real profile; the vendor layer requires the pinned verified runtime and may report unavailable prerequisites. Reports/logs contain no personal tab titles/URLs, profile account details, real tokens or source dumps. Clean up owned fixture endpoints/processes; never stop a browser or shared native helper.
+
+Deliverable: a checked wire-contract table with source/version citations, a precise promote/discard verdict, and the minimal next live probe's operations and expected user-visible effects. Promote the existing-extension candidate if core routing/ownership can be represented and any remaining uncertainties are specific real-browser checks (input, screenshot, nested frame, dialog, download capability, disconnect/user takeover). Do not call it working Chrome support yet. Discard it only for demonstrated incompatibility with a required capability; then return the exact conflict so the already-approved minimal own-extension alternative can be specified. No broad redesign or managed-profile substitute.
+
+After M7, extend the same Plan of Work for production bridge/browser wrapper/acceptance using the measured interface names and supported capabilities. A subsequent live probe must name the selected existing profile, use only newly created owned local test pages, preserve existing tabs/settings and the configured token, and stop for any genuine user permission. M7 does not authorize running that probe or guessing a profile. Its milestone review is an independent `astra-high` assessment of the evidence and scope, not a production-coverage claim. Any reusable probe logic promoted into production later receives tests then.
+
 ## Concrete Steps
 
 Working directory for all package commands: `/Users/new/Developer/GitHub/cua` (or a fresh clone of this branch). The executor maintains these commands as interfaces settle, without silently changing the promised behavior.
@@ -269,6 +314,8 @@ Expected observations: install names the verified pinned release; doctor gives s
 - Observation (2026-10-02, M6): TextEdit's autocorrect, capitalisation and smart dashes rewrite typed text (including earlier text), so a secret typed into an ordinary text view can be altered; the README says so and the fixture uses single upper-case tokens. The vendor asks for the TextEdit app approval once per new connection; each connection's `sessions/<id>.toml` exists while open (now removed at close). The existing helper served again (a new pid under `~/.codex/computer-use`, still not ours). A failed assertion in an in-process `serve` test could hang `npm test` (fixed); some M3/M4 timing tests fail only under heavy concurrent load (tracked). The two stale `run/<uuid>` directories in the M2 scratch home were 0755 from M3's raw experiments, not a server leak. Evidence: `docs/evidence/m6-acceptance.md`.
 
 ## Decision Log
+
+- Decision (Phase C entry): preserve the reviewed native baseline at `63fe70d` and start `feat/chrome-existing-profile` with M7, a no-Chrome contract spike. Read-only research found an existing-profile extension protocol but not a supported public relay library; contradictory backend-kind/bootstrap recommendations are measured, not adopted as facts. Retain configured token handling and normal vendor policy; do not select a backend kind merely to skip authentication. After source-grounded fixtures and vendor metadata results, extend execution for the controlled live probe and production bridge. One independent `astra-high` spec/buildability review covers this single spike before dispatch; its evidence review follows implementation. No new full-product approval is required because existing-profile Chrome was already approved. Date/Author: 2026-10-02, design session.
 
 - Decision: one independent technical spec review and a separate execution/buildability review before handing the multi-milestone plan to its executor; milestone dependency-frontier reviews during execution; whole-branch correctness/security review at `doperpowers:reviewer-high` through `doperpowers:review-code` before completion. Rationale: process lifecycle, signed-runtime installation and credentials warrant independent verification, while one bounded review/fix cycle per frontier avoids indefinite polishing. Date/Author: 2026-10-02, design session.
 - Revision: at the user's request, both initial technical spec and execution/buildability reviews were dispatched as `astra-high` rather than `doperpowers:adversarial-reviewer`; both reports are received and their substantive findings are resolved by the verified corrections below. The planned whole-branch `doperpowers:reviewer-high` rung is unchanged. Date/Author: 2026-10-02, review fix wave.

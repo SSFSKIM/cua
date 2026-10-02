@@ -30,7 +30,7 @@ After `npm link`, the same commands are available as `cua`. No package-registry 
 - [x] (2026-10-02) Independent technical spec and execution/buildability review reports received; both were dispatched as `astra-high` at the user's request.
 - [x] (2026-10-02) Parent verified all three review corrections against lifecycle, interfaces, milestones and acceptance commands; `git diff --check` passes. No material finding remains. Execution/acceptance are not yet completed; the minor surfaces-setting documentation note is tracked in `tech-debt-tracker.md` for M2.
 - [x] (2026-10-02) M1 — Record relocation and trusted-wrapper feasibility. Reviewed clean (364a8b6); evidence `docs/evidence/m1-runtime-portability.md`; cold start/fresh TCC/desktop absence BLOCKED on this host.
-- [ ] M2 — Install and diagnose the pinned standalone runtime.
+- [x] (2026-10-02) M2 — Install and diagnose the pinned standalone runtime. Reviewed clean after one fix wave (01eaae8, bc315bc); evidence `docs/evidence/m2-installer.md`.
 - [ ] M3 — Serve MCP with coherent connection/task lifecycle.
 - [ ] M4 — Secure-prompt Keychain helper and private broker.
 - [ ] M5 — Native secret substitution through trusted wrappers.

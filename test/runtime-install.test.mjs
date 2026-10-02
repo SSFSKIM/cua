@@ -121,6 +121,7 @@ test('an archive built for another platform, missing a component file, or speaki
   const cases = [
     ['wrong platform', {vendor: {target: 'darwin-x64', arch: 'x64'}}, 'vendor_manifest_mismatch'],
     ['other runtime version', {vendor: {runtime_archive_version: '0.0.26/x'}}, 'vendor_manifest_mismatch'],
+    ['vendor manifest is JSON null', {vendorRaw: 'null'}, 'vendor_manifest_mismatch'],
     ['missing node_repl', {omit: ['cua_node/bin/node_repl']}, 'layout_invalid'],
     ['other ipc', {ipc: 'CodexComputerUseIPC-4'}, 'ipc_mismatch'],
   ];
@@ -166,9 +167,9 @@ test('a failed activation of a second release leaves the first release active an
   await assert.rejects(install(second, {verifySignatures: async (root, pin) => pin.signing.components.map(c => ({component: c, valid: false, detail: 'bad'}))}), expectCode('signature_invalid'));
   assert.equal(pointer(first.home), '0.0.1-darwin-arm64');
   assert.equal(existsSync(join(first.home, 'runtimes', '0.0.2-darwin-arm64')), false);
-  // Failure at the activation rename itself: something unowned occupies the release path.
+  // Something unowned occupies the release path.
   writeFileSync(join(first.home, 'runtimes', '0.0.2-darwin-arm64'), 'not ours');
-  await assert.rejects(install(second), expectCode('activation_failed'));
+  await assert.rejects(install(second), expectCode('target_occupied'));
   assert.equal(pointer(first.home), '0.0.1-darwin-arm64');
   assert.equal(readFileSync(join(first.home, 'runtimes', '0.0.2-darwin-arm64'), 'utf8'), 'not ours');
   assert.deepEqual(stagingLeftovers(first.home), []);
@@ -195,16 +196,66 @@ test('runtime use switches between verified installed releases and refuses anyth
   assert.equal(pointer(first.home), '0.0.1-darwin-arm64');
 });
 
-test('install replaces an installed release that no longer verifies, and only then', {skip: !darwin}, async t => {
-  const ctx = setup(t);
-  await install(ctx);
-  const root = join(realpathSync(ctx.home), 'runtimes', ctx.pin.release);
-  writeFileSync(join(root, 'cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js'), 'tampered');
-  const repaired = await install(ctx);
-  assert.equal(repaired.changed, true);
-  assert.match(readFileSync(join(root, 'cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js'), 'utf8'), /CodexComputerUseIPC-5/);
-  assert.equal(pointer(ctx.home), ctx.pin.release);
-  assert.deepEqual(stagingLeftovers(ctx.home), []);
+test('install never repairs a damaged installed release in place: it stays byte-for-byte and recovery is offline', {skip: !darwin}, async t => {
+  const first = setup(t, {release: '0.0.1-darwin-arm64'});
+  await install(first);
+  const second = setup(t, {release: '0.0.2-darwin-arm64'});
+  second.home = first.home;
+  await install(second);
+  const root = join(realpathSync(first.home), 'runtimes', '0.0.1-darwin-arm64');
+  const client = join(root, 'cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js');
+  writeFileSync(client, 'tampered');
+  const before = statSync(root).ino;
+  let fetched = false;
+  await assert.rejects(install(first, {archivePath: undefined, fetch: async () => { fetched = true; }}), err => {
+    assert.equal(err.code, 'installed_release_invalid');
+    assert.match(err.hint, /stop any `cua serve`/);
+    assert.ok(err.hint.includes(root), err.hint);
+    return true;
+  });
+  assert.equal(fetched, false);
+  assert.equal(readFileSync(client, 'utf8'), 'tampered');
+  assert.equal(statSync(root).ino, before);
+  assert.equal(pointer(first.home), '0.0.2-darwin-arm64');
+  assert.deepEqual(stagingLeftovers(first.home), []);
+});
+
+test('an occupied release path that is not positively a cua release is refused and left exactly as it was', {skip: !darwin}, async t => {
+  const {symlinkSync} = await import('node:fs');
+  const occupants = {
+    'regular file': target => writeFileSync(target, 'not ours'),
+    'empty directory': target => mkdirSync(target),
+    'symlink to a directory': (target, dir) => { mkdirSync(join(dir, 'elsewhere')); writeFileSync(join(dir, 'elsewhere', 'keep'), 'x'); symlinkSync(join(dir, 'elsewhere'), target); },
+    'directory with an invalid install.json': target => { mkdirSync(target); writeFileSync(join(target, 'install.json'), '{}'); writeFileSync(join(target, 'keep'), 'x'); },
+    'directory with an empty install.json': target => { mkdirSync(target); writeFileSync(join(target, 'install.json'), ''); },
+  };
+  for (const [name, occupy] of Object.entries(occupants)) {
+    const ctx = setup(t);
+    const runtimes = join(ctx.home, 'runtimes');
+    mkdirSync(runtimes, {recursive: true});
+    const target = join(runtimes, ctx.pin.release);
+    occupy(target, ctx.dir);
+    const snapshot = () => spawnSync('/bin/ls', ['-laR', target], {encoding: 'utf8'}).stdout + lstatSync(target).ino;
+    const before = snapshot();
+    await assert.rejects(install(ctx), expectCode('target_occupied'), name);
+    assert.equal(snapshot(), before, name);
+    assert.equal(pointer(ctx.home), null, name);
+    assert.deepEqual(stagingLeftovers(ctx.home), [], name);
+  }
+});
+
+test('resolution and runtime use refuse a release pinned for another host before anything can launch or activate it', {skip: !darwin}, async t => {
+  const first = setup(t, {release: '0.0.1-darwin-arm64'});
+  await install(first);
+  const second = setup(t, {release: '0.0.2-darwin-arm64'});
+  second.home = first.home;
+  await install(second);
+  const pins = [first.pin, second.pin];
+  const x64 = {platform: 'darwin', arch: 'x64'};
+  assert.throws(() => resolveRuntime({home: first.home, pins, host: x64}), expectCode('unsupported_platform'));
+  await assert.rejects(useRuntime({home: first.home, release: '0.0.1-darwin-arm64', pins, verifySignatures: acceptSignatures, host: x64}), expectCode('unsupported_platform'));
+  assert.equal(pointer(first.home), '0.0.2-darwin-arm64');
+  assert.equal(resolveRuntime({home: first.home, pins, host: HOST}).release, '0.0.2-darwin-arm64');
 });
 
 test('download mode fetches the pinned URL, verifies it like a local archive, and reports HTTP or size failures', {skip: !darwin}, async t => {

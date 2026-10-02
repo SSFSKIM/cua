@@ -18,9 +18,10 @@ export function scratch(prefix = 'cua-test-') {
   return {dir, cleanup: () => rmSync(dir, {recursive: true, force: true})};
 }
 
-// Writes the fixture app tree under `root`. `vendor` overrides fields of cua_node/manifest.json; `ipc` replaces the
-// IPC version string; `omit` lists layout-relative paths (inside the extracted components) to leave out.
-export function writeFixtureApp(root, {vendor = {}, ipc = 'CodexComputerUseIPC-5', omit = []} = {}) {
+// Writes the fixture app tree under `root`. `vendor` overrides fields of cua_node/manifest.json (`vendorRaw` replaces
+// its text outright); `ipc` replaces the IPC version string; `omit` lists layout-relative paths (inside the extracted
+// components) to leave out.
+export function writeFixtureApp(root, {vendor = {}, vendorRaw, ipc = 'CodexComputerUseIPC-5', omit = []} = {}) {
   const res = join(root, 'ChatGPT.app/Contents/Resources');
   const files = {
     'ChatGPT.app/Contents/MacOS/ChatGPT': '#!/bin/sh\necho desktop app, never installed\n',
@@ -32,7 +33,7 @@ export function writeFixtureApp(root, {vendor = {}, ipc = 'CodexComputerUseIPC-5
     'cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js': `this.apiVersion="${ipc}";\n`,
     'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService': `helper ${ipc}\n`,
     'cua_node/lib/node_modules/corepack/dist/corepack.js': '// corepack\n',
-    'cua_node/manifest.json': JSON.stringify({
+    'cua_node/manifest.json': vendorRaw ?? JSON.stringify({
       platform: 'darwin', arch: 'arm64', target: 'darwin-arm64',
       node_version: '24.21.0-cua.1', runtime_archive_version: '0.0.27/20260927214556-b77d38801cca',
       ...vendor,

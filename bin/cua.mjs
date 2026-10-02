@@ -6,12 +6,12 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from '../src/runtime/manifest.mjs';
 import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
-import {inspectRuntime} from '../src/runtime/doctor.mjs';
+import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 
 const USAGE = `usage: cua <command>
   install [--archive <ChatGPT zip>] [--release <id>] [--json]   install and activate the pinned runtime
-  doctor [--json]                                              passive health report; exit 1 when unhealthy
+  doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve                                                        MCP over stdin/stdout (not yet available)
   secrets <set|list|remove> ...                                Keychain secrets (not yet available)
@@ -60,7 +60,7 @@ async function doctor(args) {
   else {
     print(`cua doctor (CUA_HOME=${home})`);
     for (const c of report.checks) print(`${c.status.toUpperCase().padEnd(8)} ${c.name.padEnd(24)} ${c.detail}`);
-    print(report.ok ? 'healthy' : 'unhealthy: see FAIL lines');
+    print(summarize(report));
   }
   return report.ok ? 0 : 1;
 }

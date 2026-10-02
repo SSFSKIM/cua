@@ -16,6 +16,7 @@ export function checkVendorManifest(root, pin) {
   const file = join(root, pin.layout.vendorManifest);
   let vendor;
   try { vendor = JSON.parse(readFileSync(file, 'utf8')); } catch (error) { return {ok: false, detail: `cannot read ${pin.layout.vendorManifest}: ${error.message}`}; }
+  if (vendor === null || typeof vendor !== 'object' || Array.isArray(vendor)) return {ok: false, detail: `${pin.layout.vendorManifest} is not a JSON object`};
   const expected = {
     platform: pin.platform, arch: pin.arch, target: `${pin.platform}-${pin.arch}`,
     node_version: pin.runtime.node, runtime_archive_version: pin.runtime.version,

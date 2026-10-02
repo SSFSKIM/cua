@@ -1,8 +1,9 @@
 // Passive diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
 // observe from outside: it never opens an app, starts or signals the helper, connects to its socket or requests a
-// grant. Live behavior is the job of explicit probe scripts. `ok` is false when any check fails; `blocked` marks
-// evidence that is unavailable passively and does not by itself make the result fail.
+// grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively.
+// `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
+// acceptance gate were proven, and it must never be reported as release acceptance.
 import {existsSync, readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -32,7 +33,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
 
   let runtime;
   try {
-    runtime = locateRuntime({home, pins});
+    runtime = locateRuntime({home, pins, host});
     checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -64,6 +65,15 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
   return report;
+}
+
+// One-line human verdict that never overstates `ok`: blocked checks leave live capability unverified.
+export function summarize(report) {
+  if (!report.ok) return 'unhealthy: see FAIL lines';
+  const blocked = report.checks.filter(c => c.status === 'blocked').map(c => c.name);
+  return blocked.length
+    ? `passive runtime checks pass; live capability remains unverified (blocked: ${blocked.join(', ')})`
+    : 'passive runtime checks pass';
 }
 
 export function classifyHelper({socket, holders}, {expectedIpc, runtimeRoot}) {

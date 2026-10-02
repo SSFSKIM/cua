@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {rmSync, realpathSync} from 'node:fs';
-import {inspectRuntime, classifyHelper} from '../src/runtime/doctor.mjs';
+import {inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {parsePin} from '../src/runtime/manifest.mjs';
 import {scratch, zipFixture, fixturePin, acceptSignatures} from './fixtures/runtime-fixture.mjs';
@@ -107,4 +107,24 @@ test('helper classification: compatible, incompatible, unknown and absent are di
 
 test('the doctor refuses a live mode: live probes are separate explicit scripts', async () => {
   await assert.rejects(inspectRuntime({home: '/nonexistent', live: true}), /probe/);
+});
+
+test('the human verdict names runtime health only and says live capability is unverified while checks are blocked', () => {
+  const report = rows => ({ok: !rows.some(([, status]) => status === 'fail'), checks: rows.map(([name, status]) => ({name, status, detail: ''}))});
+  assert.equal(summarize(report([['runtime.files', 'pass']])), 'passive runtime checks pass');
+  const blocked = summarize(report([['runtime.files', 'pass'], ['helper.live', 'blocked'], ['helper.permissions', 'blocked']]));
+  assert.match(blocked, /^passive runtime checks pass; live capability remains unverified/);
+  assert.match(blocked, /helper\.live, helper\.permissions/);
+  assert.doesNotMatch(blocked, /healthy|accept/i);
+  assert.equal(summarize(report([['runtime.files', 'fail'], ['helper.live', 'blocked']])), 'unhealthy: see FAIL lines');
+});
+
+test('a vendor manifest that is JSON null is a failed check, not an exception', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const {writeFileSync} = await import('node:fs');
+  writeFileSync(join(realpathSync(home), 'runtimes', pin.release, pin.layout.vendorManifest), 'null');
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper});
+  assert.equal(report.ok, false);
+  assert.equal(check(report, 'runtime.vendor-manifest').status, 'fail');
+  assert.match(check(report, 'runtime.vendor-manifest').detail, /not a JSON object/);
 });

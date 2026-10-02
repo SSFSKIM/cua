@@ -3,7 +3,7 @@
 // A pin (runtime/releases/<release>.json) is the only source of what may be downloaded, extracted, trusted and
 // launched. Parsing is strict: an unknown or malformed field is an error, never ignored, because every field affects
 // execution. `resolveRuntime` turns the active (or a named) installed release into absolute relocated paths.
-import {readFileSync, readdirSync, existsSync} from 'node:fs';
+import {readFileSync, readdirSync, lstatSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
@@ -14,6 +14,21 @@ export const RELEASES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 
 export const RECORD_FILE = 'install.json';
 export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyServiceApp', 'skyVendorService', 'vendorManifest', 'ipcClient'];
 const INSTALL_HINT = 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)';
+const hostTarget = () => ({platform: process.platform, arch: process.arch});
+
+// A damaged installed release is never repaired in place (a running connection may still execute from it), so its
+// recovery is offline and explicit.
+export const recoveryHint = root => `stop any \`cua serve\` using it, remove ${root}, then ${INSTALL_HINT}`;
+
+// Release trees are real directories; a symlink at a release path is never followed as an installed release.
+export function isRealDirectory(path) {
+  try { return lstatSync(path).isDirectory(); } catch { return false; }
+}
+
+export function assertHostSupports(pin, host = hostTarget()) {
+  if (pin.platform !== host.platform || pin.arch !== host.arch)
+    fail('unsupported_platform', `release ${pin.release} is for ${pin.platform}-${pin.arch}; this host is ${host.platform}-${host.arch}`);
+}
 
 const invalid = (where, why) => fail('invalid_pin', `release pin ${where}: ${why}`);
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -102,7 +117,7 @@ const newer = (a, b) => { const x = versionParts(a), y = versionParts(b); for (l
 
 // The pin to install by default on this host: the newest checked-in pin for its target. Other targets get an
 // explicit error rather than a guessed download.
-export function selectPin(pins, host = {platform: process.platform, arch: process.arch}) {
+export function selectPin(pins, host = hostTarget()) {
   const target = `${host.platform}-${host.arch}`;
   const matching = pins.filter(p => p.platform === host.platform && p.arch === host.arch);
   if (!matching.length) {
@@ -131,27 +146,29 @@ export function readInstalledRecord(root, pin) {
   try { record = JSON.parse(readFileSync(file, 'utf8')); } catch { record = null; }
   const valid = isObject(record) && record.schema === 1 && record.release === pin.release && isObject(record.archive)
     && record.archive.sha256 === pin.archive.sha256 && record.archive.length === pin.archive.length;
-  if (!valid) fail('installed_record_invalid', `${file} does not record a verified install of ${pin.release} from its pinned archive`, {hint: INSTALL_HINT});
+  if (!valid) fail('installed_record_invalid', `${file} does not record a verified install of ${pin.release} from its pinned archive`, {hint: recoveryHint(root)});
   return record;
 }
 
 // The installed release a home points at (or the named one), with its pin and install record, without checking its
-// files; doctor reports file damage as its own check.
-export function locateRuntime({home, release, pins = loadPins()}) {
+// files; doctor reports file damage as its own check. A release pinned for another platform is refused here, before
+// anything can launch it.
+export function locateRuntime({home, release, pins = loadPins(), host = hostTarget()}) {
   const real = realHome(home);
   const selected = release ?? readPointer(real);
   if (!selected) fail('runtime_not_installed', `no runtime is installed in ${real}`, {hint: INSTALL_HINT});
   const pin = findPin(pins, selected);
+  assertHostSupports(pin, host);
   const root = join(homeLayout(real).runtimes, pin.release);
-  if (!existsSync(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: INSTALL_HINT});
+  if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: INSTALL_HINT});
   return runtimeFor({home: real, pin, record: readInstalledRecord(root, pin)});
 }
 
 // The active (or named) installed release as absolute relocated paths. Checks structure only (pin, record, files);
 // vendor signatures are verified at install, by `runtime use` and by doctor, not on every launch.
-export function resolveRuntime({home, release, pins = loadPins()}) {
-  const runtime = locateRuntime({home, release, pins});
+export function resolveRuntime({home, release, pins = loadPins(), host = hostTarget()}) {
+  const runtime = locateRuntime({home, release, pins, host});
   const layout = checkLayout(runtime.root, runtime.manifest);
-  if (!layout.ok) fail('layout_invalid', `installed release ${runtime.release} is missing ${layout.missing.join(', ')}`, {hint: `reinstall: ${INSTALL_HINT}`});
+  if (!layout.ok) fail('layout_invalid', `installed release ${runtime.release} is missing ${layout.missing.join(', ')}`, {hint: recoveryHint(runtime.root)});
   return runtime;
 }

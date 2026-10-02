@@ -4,13 +4,18 @@
 // anything reads it as a zip, extract it in a staging directory owned by this operation, keep only the pinned
 // components, verify the tree (layout, vendor manifest, IPC version, vendor code signatures), record it, move it into
 // runtimes/<release> with one rename and only then rewrite the pointer. Any failure before the pointer write leaves
-// the previous pointer and every existing release untouched, and the staging directory is always removed. Vendor
+// the previous pointer and every existing release untouched, and the staging directory is always removed.
+//
+// An existing release tree is never repaired, replaced or deleted: a running connection may still execute from it.
+// A verified release makes install a no-op; a damaged one is an error with offline recovery guidance; a target path
+// that is not positively a release this tool installed (a file, symlink, empty directory, or a directory without a
+// valid install record) is refused and left exactly as it is. Vendor
 // bytes are never modified: extraction uses `ditto`, which keeps modes, symlinks, extended attributes and quarantine,
 // and components move by rename on the same volume.
 //
 // The signature checker and fetch are injectable for tests through this module API only; the CLI always uses the
 // production codesign check and the global fetch.
-import {mkdirSync, mkdtempSync, rmSync, statSync, lstatSync, renameSync, writeFileSync, existsSync, createReadStream, createWriteStream} from 'node:fs';
+import {mkdirSync, mkdtempSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, createReadStream, createWriteStream} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {pipeline} from 'node:stream/promises';
@@ -18,10 +23,9 @@ import {Readable} from 'node:stream';
 import {join} from 'node:path';
 import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
-import {RECORD_FILE, findPin, loadPins, readInstalledRecord} from './manifest.mjs';
+import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 
-const hostTarget = () => ({platform: process.platform, arch: process.arch});
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
@@ -30,23 +34,27 @@ function run(command, args) {
   });
 }
 
-export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host = hostTarget(), onProgress}) {
-  if (manifest.platform !== host.platform || manifest.arch !== host.arch)
-    fail('unsupported_platform', `release ${manifest.release} is for ${manifest.platform}-${manifest.arch}; this host is ${host.platform}-${host.arch}`);
+export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress}) {
+  assertHostSupports(manifest, host);
   const real = realHome(home, {create: true});
   const layout = homeLayout(real);
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);
 
-  // Idempotent path: a release this tool installed that still verifies is kept byte-for-byte and (re)activated. One
-  // that no longer verifies is replaced below by a fresh verified copy.
-  const ours = isOwnedRelease(target);
-  const record = ours ? await verifiedRecord(target, manifest, verifySignatures) : null;
-  if (record) {
+  // Idempotent path: a release this tool installed that still verifies is kept byte-for-byte and (re)activated.
+  const existing = existingRelease(target, manifest);
+  if (existing) {
+    try {
+      await verifyRuntimeTree(target, manifest, {verifySignatures});
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      fail('installed_release_invalid', `installed release ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: recoveryHint(target), cause: error});
+    }
     activate(real, manifest.release);
-    return {release: manifest.release, root: target, record, changed: false};
+    return {release: manifest.release, root: target, record: existing, changed: false};
   }
+  assertTargetFree(target);
 
   const stage = mkdtempSync(join(layout.staging, `${manifest.release}-`));
   try {
@@ -79,7 +87,7 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
     const fresh = {schema: 1, release: manifest.release, archive: {sha256: manifest.archive.sha256, length: manifest.archive.length}, source, installedAt: new Date().toISOString()};
     writeFileSync(join(tree, RECORD_FILE), JSON.stringify(fresh, null, 2) + '\n', {mode: 0o644});
 
-    moveIntoPlace(tree, target, {replacing: ours, aside: join(stage, 'previous')});
+    moveIntoPlace(tree, target);
     activate(real, manifest.release);
     return {release: manifest.release, root: target, record: fresh, changed: true};
   } finally {
@@ -88,30 +96,32 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
 }
 
 // Select an installed release: it must have a checked-in pin, an install record matching that pin, and still verify.
-export async function useRuntime({home, release, pins = loadPins(), verifySignatures = verifyCodeSignatures}) {
+export async function useRuntime({home, release, pins = loadPins(), verifySignatures = verifyCodeSignatures, host}) {
   const pin = findPin(pins, release);
+  assertHostSupports(pin, host);
   const real = realHome(home);
   const root = join(homeLayout(real).runtimes, pin.release);
-  if (!existsSync(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: 'run `cua install` for it first'});
+  if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: 'run `cua install` for it first'});
   readInstalledRecord(root, pin);
   await verifyRuntimeTree(root, pin, {verifySignatures});
   activate(real, pin.release);
   return {release: pin.release, root};
 }
 
-function isOwnedRelease(target) {
-  try { return lstatSync(target).isDirectory() && existsSync(join(target, RECORD_FILE)); } catch { return false; }
+// The install record of a release tree this tool installed, or null when nothing is at the target. Ownership needs
+// a real directory (not a symlink) holding a record valid for this pin; anything else present is not ours.
+function existingRelease(target, manifest) {
+  if (!isRealDirectory(target)) return null;
+  try { return readInstalledRecord(target, manifest); } catch (error) { if (error instanceof CuaError) return null; throw error; }
 }
 
-async function verifiedRecord(root, manifest, verifySignatures) {
-  try {
-    const record = readInstalledRecord(root, manifest);
-    await verifyRuntimeTree(root, manifest, {verifySignatures});
-    return record;
-  } catch (error) {
-    if (error instanceof CuaError) return null;
-    throw error;
-  }
+function occupied(target) {
+  return fail('target_occupied', `${target} exists and is not a release installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
+}
+
+function assertTargetFree(target) {
+  try { lstatSync(target); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  occupied(target);
 }
 
 // Rewrites the pointer only when it does not already name the release, so a repeated install changes nothing.
@@ -126,15 +136,21 @@ function activate(home, release) {
   }
 }
 
-// One rename makes the verified tree visible. Replacing an owned release moves the old tree aside first and puts it
-// back if the second rename fails; anything at the target that this tool did not install is left alone.
-function moveIntoPlace(tree, target, {replacing, aside}) {
-  if (replacing) renameSync(target, aside);
+// The target is claimed with an exclusive mkdir, so nothing that appeared there since the earlier check can be
+// overwritten (a plain rename would silently replace an empty directory). The rename then replaces only our own
+// empty claim. On failure the claim is removed only if it is still empty.
+function moveIntoPlace(tree, target) {
+  try {
+    mkdirSync(target);
+  } catch (error) {
+    if (error.code === 'EEXIST') occupied(target);
+    throw error;
+  }
   try {
     renameSync(tree, target);
   } catch (error) {
-    if (replacing) renameSync(aside, target);
-    fail('activation_failed', `could not place the verified release at ${target}: ${error.code ?? error.message}`, {hint: 'move aside whatever occupies that path, then run install again', cause: error});
+    try { rmdirSync(target); } catch {}
+    fail('activation_failed', `could not place the verified release at ${target}: ${error.code ?? error.message}`, {cause: error});
   }
 }
 

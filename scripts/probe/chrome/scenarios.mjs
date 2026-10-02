@@ -58,7 +58,7 @@ export const SCENARIOS = [
     }),
 
   scenario('offer-before-initialized', 'the selected tab is offered before extension.initialized; requests wait for it',
-    [`${BG}:56-72`, `${BG}:361-375`, `${BS}:68055-68110`], async ({check, dir, sentinels, captures}) => {
+    [`${BG}:56-72`, `${BG}:361-375`, `${BS}:68061-68110`], async ({check, dir, sentinels, captures}) => {
       await withFixture({dir, sentinels, captures}, {name: 'offer'}, async ({extension, adapter, client, connectTab}) => {
         const early = await attempt(client.request('getTabs', SESSION));
         check('session request before the connection exists is refused', !early.ok && early.message === 'extension has not initialized');
@@ -94,7 +94,7 @@ export const SCENARIOS = [
     }),
 
   scenario('optional-method-errors', 'unimplemented optional methods return the exact vendor fallback strings',
-    [`${BS}:67820-67870`, `${BS}:67943-67955`, `${BS}:10452-10460`], async ({check, dir, sentinels, captures}) => {
+    [`${BS}:67810-67890`, `${BS}:67942-67955`, `${BS}:10452-10460`], async ({check, dir, sentinels, captures}) => {
       await withFixture({dir, sentinels, captures}, {name: 'optional'}, async ({extension, client, connectTab}) => {
         extension.connect(connectTab.id); await settle(5);
         for (const method of ['executeCdpWithCachedExpression', 'getCommittedTabUrl']) {
@@ -249,7 +249,7 @@ export const SCENARIOS = [
     }),
 
   scenario('created-tab-retention', 'createTab owns a new background tab; user tabs are never closed; turnEnded detaches but keeps tabs',
-    [`${BG}:20-26`, `${BS}:67999-68008`, `${BS}:68037-68050`], async ({check, dir, sentinels, captures}) => {
+    [`${BG}:20-26`, `${BS}:67999-68008`, `${BS}:68041-68054`], async ({check, dir, sentinels, captures}) => {
       await withFixture({dir, sentinels, captures}, {name: 'created'}, async ({extension, adapter, client, connectTab}) => {
         extension.connect(connectTab.id); await settle(5);
         const tab = await client.request('createTab', SESSION);

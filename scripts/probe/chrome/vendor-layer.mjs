@@ -203,7 +203,7 @@ export async function runVendorLayer({home, sentinels}) {
     async cleanup() { for (const root of scanRoots) rmSync(root, {recursive: true, force: true}); }};
 }
 
-// turnEnded is a plain request carrying {session_id, turn_id} (browser-service.mjs:68037-68050); getInfo carries none.
+// turnEnded is a plain request carrying {session_id, turn_id} (browser-service.mjs:68041-68054); getInfo carries none.
 const sessionRequests = run => run.frames.filter(f => f.direction === 'client->backend' && f.method && !['getInfo', 'turnEnded'].includes(f.method));
 
 function judge(runs, signatures) {
@@ -230,7 +230,7 @@ function judge(runs, signatures) {
   add('getinfo-raw-vs-normalized', 'raw getInfo at the wire versus the normalized BrowserInfo the model sees', all.map(r => {
     const listed = r.cells.listBrowsers?.result?.browsers?.[0];
     return c(`${r.label}: normalized entry has a vendor-assigned id, keeps type/name and drops raw capabilities`, listed && typeof listed.id === 'string' && listed.type === r.rawInfo.type && !('capabilities' in listed), {raw: Object.keys(r.rawInfo).sort(), normalized: listed ?? r.cells.listBrowsers});
-  }), ['browser-service.mjs:31953-31976 (zod dy/rs: agent-command results)', 'browser-service.mjs:66005-66033 (A_/po normalization)', 'browser-service.mjs:67599-67613 (discovery: no schema parse)']);
+  }), ['browser-service.mjs:31960-31976 (zod dy/rs: agent-command results)', 'browser-service.mjs:66007-66033 (A_/po normalization)', 'browser-service.mjs:67599-67613 (discovery: no schema parse)']);
 
   add('documented-surface', 'browser documentation and API members per truthful kind', all.map(r => {
     const g = r.cells.getBrowser?.result;
@@ -240,7 +240,7 @@ function judge(runs, signatures) {
   add('session-parameters', 'every session request carries session_id, turn_id and session_context', [ext, cdp].map(r => {
     const reqs = sessionRequests(r);
     return c(`${r.label}: ${reqs.length} session requests all carry the triple`, reqs.length > 0 && reqs.every(f => f.params?.session_id === 'string' && f.params?.turn_id === 'string' && typeof f.params?.session_context === 'string'), [...new Set(reqs.map(f => `${f.method}:${f.params?.session_context}`))]);
-  }), ['browser-service.mjs:68055-68110']);
+  }), ['browser-service.mjs:68061-68110']);
 
   const approved = runs['extension-origin-approved'];
   const requests = run => run.frames.filter(f => f.direction === 'client->backend' && f.method);
@@ -253,7 +253,7 @@ function judge(runs, signatures) {
     c('cdp: getCommittedTabUrl falls back to executeCdp Page.getFrameTree', nextAfter(cdp, 'getCommittedTabUrl')?.method === 'executeCdp' && nextAfter(cdp, 'getCommittedTabUrl')?.params?.method === 'Page.getFrameTree'),
     c('executeCdpWithCachedExpression falls back to plain executeCdp of the same CDP method', cached?.method === 'executeCdp' && cached.params?.method === 'Runtime.evaluate', cached && {method: cached.method, cdp: cached.params?.method}),
     c('extension: getUserTabs falls back without failing listTabs', optional.some(o => o.label === 'extension' && o.message.endsWith('getUserTabs')) && Array.isArray(ext.cells.listTabs?.result?.tabs)),
-  ], ['browser-service.mjs:67822-67870', 'browser-service.mjs:67943-67980', 'browser-service.mjs:68316-68328']);
+  ], ['browser-service.mjs:67810-67890', 'browser-service.mjs:67942-67983', 'browser-service.mjs:68316-68328']);
 
   add('attach-and-child-routes', 'tab attach, flattened auto-attach and the child-session announcement as the vendor drives them', [approved, cdp].flatMap(r => {
     const reqs = requests(r);
@@ -277,18 +277,18 @@ function judge(runs, signatures) {
     c('extension: with that synthetic origin approved, the vendor attaches the offered tab', approved.elicitations.some(e => e.answered === 'accept') && requests(approved).some(f => f.method === 'attach' && f.params?.tabId === 1002)),
     c('cdp: binding an existing tab issues CDP before any attach and fails there on an attach-gated transport (origin check not reached)', cdp.elicitations.length === 0 && /Debugger is not attached/.test(cdp.cells.getTab?.result?.error ?? '') && !requests(cdp).slice(0, requests(cdp).findIndex(f => f.method === 'createTab')).some(f => f.method === 'attach')),
     c('both kinds: createBrowserTab = createTab, attach, then page-state CDP (refused here)', [ext, cdp].every(r => requests(r).some(f => f.method === 'createTab') && /fixture refuses CDP/.test(r.cells.createBrowserTab?.result?.error ?? ''))),
-  ], ['browser-service.mjs:67943-67980', 'browser-service.mjs:66005-66033', 'browser-service.mjs:36462-36507 (origin-access elicitation)']);
+  ], ['browser-service.mjs:67942-67983', 'browser-service.mjs:66007-66033', 'browser-service.mjs:36462-36507 (origin-access elicitation)']);
 
   const identity = hdr.cells.listTabs?.result?.error ?? hdr.cells.getTab?.result?.error ?? null;
   add('identity-policy', 'extension kind with agentRequestHeaderEnabled:false (a truthful "no header" claim) under default policy', [
     c('session requests are refused by the vendor before reaching the backend', sessionRequests(hdr).length === 0, sessionRequests(hdr).map(f => f.method)),
     c('the refusal names the caller-identity requirement', typeof identity === 'string' && identity.includes('requires caller identity'), identity),
     c('omitting the field (plain extension run) does reach the backend', sessionRequests(ext).length > 0),
-  ], ['browser-service.mjs:68062-68092', 'browser-service.mjs:17686-17692']);
+  ], ['browser-service.mjs:68066-68092', 'browser-service.mjs:17686-17692']);
 
   add('turn-completion', 'hidden turn_ended reaches the backend as turnEnded with the task ids', [ext, cdp].map(r =>
     c(`${r.label}: turnEnded frame with session_id/turn_id`, r.turnEnded?.backendFrame?.params?.session_id === 'string' && r.turnEnded.backendFrame.params.turn_id === 'string', r.turnEnded)),
-  ['browser-service.mjs:68037-68050', 'browser-service.mjs:68169-68213']);
+  ['browser-service.mjs:68041-68054', 'browser-service.mjs:68154-68213']);
 
   add('synthetic-only', 'only neutral CDP was answered; everything else was refused, no page state invented', all.map(r => {
     const answered = r.frames.filter(f => f.direction === 'backend->client' && f.result !== undefined).length;

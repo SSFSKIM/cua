@@ -6,9 +6,9 @@
 // Vendor-side citations (@oai/browser-desktop 0.1.1, ChatGPT 26.928.40906, scripts/browser-service.mjs):
 //   10352-10485  JSON-RPC peer: an error reply rejects with the bare string error.message; an unknown method is
 //                answered {code:-1, message:"No handler registered for method: <m>"}; a handler throw is code 1
-//   67822-67870  optional executeCdpWithCachedExpression: falls back only on that exact string
-//   67943-67955  optional getCommittedTabUrl: falls back only on that exact string (extension -> getTabs().url)
-//   68055-68110  every request except getInfo/getUserTabs... carries session_id, turn_id, session_context
+//   67810-67890  optional executeCdpWithCachedExpression: falls back only on that exact string
+//   67942-67955  optional getCommittedTabUrl: falls back only on that exact string (extension -> getTabs().url)
+//   68061-68110  every session request (all but turnEnded/ping) carries session_id, turn_id, session_context
 //   47189-47215  onCDPDetach params carry tabId; onCDPEvent params are {source:{tabId,sessionId?}, method, params}
 //   47585-47595  "Debugger unattached" / "...Debugger is not attached..." from executeCdp triggers one re-attach
 //   48392-48410  a target names at most one of sessionId/targetId
@@ -22,7 +22,7 @@ export class BackendError extends Error {
 
 // Truthful raw getInfo for each candidate kind. No metadata.extensionInstanceId/extensionId: the extension offers no
 // authenticated profile id, and the vendor would otherwise read Chrome's Local State and copy the extension's
-// LevelDB settings to resolve one (browser-service.mjs:67350-67440). No agentRequestHeaderEnabled unless a scenario
+// LevelDB settings to resolve one (browser-service.mjs:67352-67470). No agentRequestHeaderEnabled unless a scenario
 // states it, and never true: the adapter cannot add agent request headers.
 export function backendInfo(kind, {agentRequestHeaderEnabled} = {}) {
   const base = {type: kind, name: 'Chrome (M7 fixture)', capabilities: {browser: [], tab: []}};

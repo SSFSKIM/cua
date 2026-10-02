@@ -223,6 +223,7 @@ test('serve starts the connection\'s broker before the runtime, hands only the r
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
   const diagnostics = [];
   const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'on'}, input, output, keychainHelper, diagnostics: line => diagnostics.push(line)});
+  t.after(async () => { input.end(); await served; });  // a failed assertion must not leave the server (and the suite) running
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   await reply(1);
@@ -256,6 +257,7 @@ test('serve without a built helper still serves, and secrets_list says how to bu
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
   const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'on'}, input, output, keychainHelper: {built: false, path: '/nowhere/cua-keychain'}, diagnostics: () => {}});
+  t.after(async () => { input.end(); await served; });
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
   for (let i = 0; i < 400 && frames.length < 2; i++) await new Promise(r => setTimeout(r, 25));

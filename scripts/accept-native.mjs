@@ -67,15 +67,16 @@ const check = (name, status, detail, extra = {}) => ({name, status, detail, ...e
 const sanitize = text => String(text).split(home).join('$CUA_HOME').split(REPO).join('<repo>').split(homedir()).join('~');
 const sh = (command, args, opts = {}) => { try { return execFileSync(command, args, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts}); } catch (error) { return error.stdout ?? ''; } };
 
-// A child with captured output and a hard time limit (only that child is ever signalled).
+// A child with captured output and a hard time limit. It leads its own process group, so a timeout stops it and what
+// it started in that group (npm's test runner, say) and nothing else.
 function run(command, args, {cwd = REPO, env = process.env, timeoutMs = 600_000, stdin = 'ignore'} = {}) {
   return new Promise(resolve => {
     const started = Date.now();
-    const child = spawn(command, args, {cwd, env, stdio: [stdin, 'pipe', 'pipe']});
+    const child = spawn(command, args, {cwd, env, stdio: [stdin, 'pipe', 'pipe'], detached: true});
     let stdout = '', stderr = '';
     child.stdout.on('data', d => { stdout += d; });
     child.stderr.on('data', d => { stderr += d; });
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    const timer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, timeoutMs);
     child.on('error', error => { clearTimeout(timer); resolve({code: null, error: error.code ?? error.message, stdout, stderr, ms: Date.now() - started}); });
     child.on('exit', (code, signal) => { clearTimeout(timer); resolve({code, signal, timedOut: signal === 'SIGKILL', stdout, stderr, ms: Date.now() - started}); });
   });
@@ -85,6 +86,7 @@ const suiteEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k
 const cuaEnv = extra => ({...process.env, CUA_HOME: home, ...extra});
 const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
 const seconds = ms => `${(ms / 1000).toFixed(1)} s`;
+const ended = r => r.timedOut ? `timed out after ${seconds(r.ms)}` : `exit ${r.code ?? r.error ?? r.signal}`;
 const noisy = text => /\b(ExperimentalWarning|DeprecationWarning|Warning:)/.test(text);
 
 function addItem(id, title, checks, evidence) {
@@ -98,11 +100,11 @@ function addItem(id, title, checks, evidence) {
 // --- 1. suites -------------------------------------------------------------------------------------------------
 async function suites(cwd, {label}) {
   const out = [];
-  const node = await run('npm', ['test'], {cwd, env: suiteEnv()});
+  const node = await run('npm', ['test'], {cwd, env: suiteEnv(), timeoutMs: 300_000});
   const totals = tapTotals(node.stdout);
   const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
   out.push(check(`${label}npm test`, node.code === 0 && totals?.fail === 0 ? 'PASS' : 'FAIL',
-    totals ? `${totals.pass}/${totals.tests} passed, ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `exit ${node.code ?? node.error}; no summary`,
+    totals ? `${totals.pass}/${totals.tests} passed, ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; no summary${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
     {totals}));
   return out;
 }
@@ -113,7 +115,7 @@ async function helperSuite(cwd, {label}) {
   const node = tapTotals(r.stdout);
   const ok = r.code === 0 && swift?.[2] === 'passed' && Number(swift[1]) > 0 && node?.fail === 0 && node.tests > 0;
   return check(`${label}npm run test:helper`, ok ? 'PASS' : 'FAIL',
-    `exit ${r.code ?? r.error} in ${seconds(r.ms)}; Swift ${swift ? `${swift[1]} tests ${swift[2]}` : 'summary not found'}; Node-driven executable tests ${node ? `${node.pass}/${node.tests}` : 'summary not found'}`,
+    `${ended(r)} in ${seconds(r.ms)}; Swift ${swift ? `${swift[1]} tests ${swift[2]}` : 'summary not found'}; Node-driven executable tests ${node ? `${node.pass}/${node.tests}` : 'summary not found'}`,
     {swiftTests: swift ? Number(swift[1]) : null, nodeTests: node?.tests ?? null});
 }
 

@@ -37,8 +37,11 @@ import {locateHelper} from '../src/secrets/helper.mjs';
 import {isLabel} from '../src/secrets/label.mjs';
 import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
-import {diffSnapshots, forbiddenPaths, missingFromPackage, rollup, snapshotTree, tapTotals, tokenLike} from './accept/lib.mjs';
-import {runTextEdit} from './accept/textedit.mjs';
+import {
+  approvalObservation, diffSnapshots, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, rollup, scenarioVerdict,
+  snapshotTree, suiteVerdict, tapTotals, tokenLike,
+} from './accept/lib.mjs';
+import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 
 const {values: options} = parseArgs({options: {
   report: {type: 'string'}, 'live-keychain': {type: 'boolean'}, 'live-textedit': {type: 'boolean'}, archive: {type: 'string'},
@@ -103,8 +106,9 @@ async function suites(cwd, {label}) {
   const node = await run('npm', ['test'], {cwd, env: suiteEnv(), timeoutMs: 300_000});
   const totals = tapTotals(node.stdout);
   const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
-  out.push(check(`${label}npm test`, node.code === 0 && totals?.fail === 0 ? 'PASS' : 'FAIL',
-    totals ? `${totals.pass}/${totals.tests} passed, ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; no summary${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
+  const verdict = suiteVerdict({code: node.code, totals});
+  out.push(check(`${label}npm test`, verdict.status,
+    totals ? `${verdict.reason}; ${totals.fail} failed${failed.length ? ` (${failed.join('; ')})` : ''}, ${totals.skipped} skipped, ${totals.todo} TODO in ${seconds(node.ms)}${noisy(node.stdout + node.stderr) ? '; output has warnings' : ''}` : `${ended(node)}; no summary${failed.length ? ` (failed before that: ${failed.join('; ')})` : ''}`,
     {totals}));
   return out;
 }
@@ -113,9 +117,11 @@ async function helperSuite(cwd, {label}) {
   // swift-testing's summary ("Test run with N tests in M suites passed|failed ..."); XCTest's own line reports 0.
   const swift = (r.stdout + r.stderr).match(/Test run with (\d+) tests? in \d+ suites? (passed|failed)/);
   const node = tapTotals(r.stdout);
-  const ok = r.code === 0 && swift?.[2] === 'passed' && Number(swift[1]) > 0 && node?.fail === 0 && node.tests > 0;
-  return check(`${label}npm run test:helper`, ok ? 'PASS' : 'FAIL',
-    `${ended(r)} in ${seconds(r.ms)}; Swift ${swift ? `${swift[1]} tests ${swift[2]}` : 'summary not found'}; Node-driven executable tests ${node ? `${node.pass}/${node.tests}` : 'summary not found'}`,
+  const nodeVerdict = suiteVerdict({code: r.code, totals: node});
+  const swiftSkipped = /^\S*\s*Test .* skipped/m.test(r.stdout + r.stderr);
+  const swiftStatus = r.code !== 0 || !swift || swift[2] !== 'passed' ? 'FAIL' : Number(swift[1]) === 0 || swiftSkipped ? 'BLOCKED' : 'PASS';
+  return check(`${label}npm run test:helper`, rollup([swiftStatus, nodeVerdict.status]),
+    `${ended(r)} in ${seconds(r.ms)}; Swift ${swift ? `${swift[1]} tests ${swift[2]}${swiftSkipped ? ', some skipped' : ''}` : 'summary not found'}; Node-driven executable tests: ${nodeVerdict.reason}`,
     {swiftTests: swift ? Number(swift[1]) : null, nodeTests: node?.tests ?? null});
 }
 
@@ -123,11 +129,11 @@ const state = {};
 
 async function item1() {
   const checks = await suites(REPO, {label: ''});
-  state.npmTestPassed = checks[0].status === 'PASS';
+  state.npmTest = checks[0].status;
   const helper = locateHelper();
   if (!helper.built) checks.push(check('npm run test:helper', 'BLOCKED', 'the Keychain helper is not built in this checkout: run npm run build:helper first (the clean clone in item 10 builds it from scratch)'));
   else checks.push(await helperSuite(REPO, {label: ''}));
-  state.helperSuitePassed = checks.at(-1).status === 'PASS';
+  state.helperSuite = checks.at(-1).status;
   checks.push(check('npm run build:helper (this checkout)', helper.built ? 'PASS' : 'BLOCKED', helper.built
     ? 'the production helper is built here and was exercised by test:helper; item 10 rebuilds it in a clean clone'
     : 'not built; run npm run build:helper'));
@@ -135,8 +141,12 @@ async function item1() {
 }
 
 // --- 2. install ----------------------------------------------------------------------------------------------------
-const fromSuite = (name, files) => check(name, state.npmTestPassed ? 'PASS' : 'FAIL',
-  state.npmTestPassed ? `covered by npm test (${files.join(', ')}), which passed in item 1` : `npm test did not pass (item 1); see ${files.join(', ')}`);
+// A claim backed by a suite carries that suite's own verdict from item 1: it passes only if the suite executed every
+// test and all passed.
+const fromSuite = (name, files) => check(name, state.npmTest ?? 'FAIL',
+  state.npmTest === 'PASS' ? `covered by npm test (${files.join(', ')}), which executed and passed every test in item 1` : `npm test was ${state.npmTest ?? 'not run'} in item 1; see ${files.join(', ')}`);
+const fromHelperSuite = (name, detail) => check(name, state.helperSuite ?? 'FAIL',
+  state.helperSuite === 'PASS' ? `npm run test:helper (item 1): ${detail}` : `npm run test:helper was ${state.helperSuite ?? 'not run'} in item 1`);
 
 async function item2() {
   const checks = [];
@@ -226,7 +236,7 @@ async function liveKeychain() {
   const r = await run(process.execPath, [join(REPO, 'scripts', 'probe-secrets.mjs'), '--report', reportFile], {env: cuaEnv(), timeoutMs: 900_000});
   const probe = existsSync(reportFile) ? parseJson(readFileSync(reportFile, 'utf8')) : null;
   rmSync(reportFile, {force: true});
-  if (!probe) return {status: 'FAIL', steps: [{name: 'probe', status: 'FAIL', detail: `scripts/probe-secrets.mjs wrote no report (exit ${r.code}): ${sanitize(r.stderr.trim().split('\n').at(-1) ?? '')}`}]};
+  if (!probe) return {missing: `scripts/probe-secrets.mjs wrote no report (${ended(r)}): ${sanitize(r.stderr.trim().split('\n').at(-1) ?? '')}`, steps: []};
   return probe;
 }
 
@@ -236,18 +246,23 @@ async function liveTextEdit() {
 }
 
 const NOT_REQUESTED = flag => check(`opt-in ${flag}`, 'BLOCKED', `not run: pass ${flag} to run it (never counted as a pass when skipped)`);
-const stepsMatching = (probe, test) => probe.steps.filter(s => test(s.name));
-function phase(probe, name, test) {
-  const steps = stepsMatching(probe, test);
-  return check(name, rollup(steps.map(s => s.status)), steps.length ? steps.map(s => `${s.name}: ${s.status}`).join('; ') : 'no matching probe step ran');
+const PROBE_STEPS = PROBE_SECRETS_PHASES.flatMap(p => p.steps);
+// The live probe's checks: its own complete verdict (a missing report is FAIL), then each expected phase.
+function probeChecks(probe, phases) {
+  const verdict = probe.missing ? check('live: scripts/probe-secrets.mjs verdict', 'FAIL', probe.missing) : scenarioVerdict('live: scripts/probe-secrets.mjs verdict', probe, PROBE_STEPS);
+  return [verdict, ...phases.map(p => inventoryCheck(p.name, probe.steps, p.steps))];
 }
 
 async function item5(textedit) {
   if (!textedit) return addItem(5, 'Live native fixture: its own disposable TextEdit document', [NOT_REQUESTED('--live-textedit')]);
-  const own = textedit.steps.filter(s => !s.name.startsWith('secret:'));
   const o = textedit.observations;
-  addItem(5, 'Live native fixture: its own disposable TextEdit document', own.map(s => check(s.name, s.status, s.detail)), {
-    nativeHelper: o.nativeHelper, textEdit: o.textEdit, screenshot: o.screenshot, elicitations: o.elicitations,
+  const checks = [
+    // Its own steps only (anything else it recorded, an unexpected error say, included); the secret steps are item 6's.
+    (own => scenarioVerdict('live TextEdit fixture verdict (own document)', {status: rollup(own.map(x => x.status)), steps: own}, OWN_STEPS))(textedit.steps.filter(x => !SECRET_STEPS.includes(x.name))),
+    ...OWN_STEPS.map(step => inventoryCheck(step, textedit.steps, [step])),
+  ];
+  addItem(5, 'Live native fixture: its own disposable TextEdit document', checks, {
+    nativeHelper: o.nativeHelper, textEdit: o.textEdit, screenshot: o.screenshot, elicitations: o.elicitations, connections: o.connections, guiInputStopped: o.guiInputStopped,
     note: 'cold start of the pinned helper is not shown here: see item 9',
   });
 }
@@ -267,25 +282,15 @@ async function item6(keychain, textedit) {
   const mcp = state.verify?.secretsList;
   checks.push(check('MCP secrets_list returns labels only', mcp?.status === 'ok' && Number.isInteger(mcp.labelCount) ? 'PASS' : mcp ? 'BLOCKED' : 'FAIL',
     mcp ? `verify.mjs: ${JSON.stringify(mcp)}` : 'verify.mjs produced no secrets_list result'));
-  checks.push(check('hidden input and terminal restoration on the actual helper', state.helperSuitePassed ? 'PASS' : 'FAIL',
-    state.helperSuitePassed ? 'npm run test:helper (item 1): no-TTY refusal, hidden input on real ptys, restoration on success/cancel/error/signals' : 'test:helper did not pass (item 1)'));
+  checks.push(fromHelperSuite('hidden input and terminal restoration on the actual helper', 'no-TTY refusal, hidden input on real ptys, restoration on success/cancel/error/signals'));
   if (!keychain) checks.push(NOT_REQUESTED('--live-keychain'));
-  else {
-    const methods = /^first value: (paste|type_text|set_value) substitution$/;
-    checks.push(phase(keychain, 'live: create (generated sentinel, test-owned pty fixture)', n => n === 'create'));
-    checks.push(phase(keychain, 'live: first substitution through helper → broker → trusted wrapper → controlled target', n => methods.test(n)));
-    checks.push(phase(keychain, 'live: replace with a second generated sentinel', n => n === 'replace'));
-    checks.push(phase(keychain, 'live: second substitution', n => n === 'replaced value: type_text substitution'));
-    checks.push(phase(keychain, 'live: failure output stays value-free (induced and real vendor failures)', n => /induced substituted-command failure|real vendor: failure after substitution|cell timeout during a substituted call/.test(n)));
-    checks.push(phase(keychain, 'live: fail closed before any input (secrets off, broker unavailable)', n => /^(secrets off|broker unavailable): /.test(n)));
-    checks.push(phase(keychain, 'live: no value in any observed channel or report', n => n === 'sentinel scan' || n === 'scanner self-check'));
-    checks.push(phase(keychain, 'live: finally cleanup of only the scenario-owned item', n => n === 'cleanup'));
-  }
+  else checks.push(...probeChecks(keychain, PROBE_SECRETS_PHASES.filter(p => !/ordinary input|plant code/.test(p.name))));
   if (textedit?.scenario === 'live-textedit-with-secret') {
-    for (const s of textedit.steps.filter(s => s.name.startsWith('secret:'))) checks.push(check(`UI delivery (optional, combined): ${s.name.slice(8)}`, s.status, s.detail));
+    // The optional UI delivery counts only if it actually happened: each of its steps must have run and passed.
+    for (const step of SECRET_STEPS) checks.push(inventoryCheck(`UI delivery (optional, combined): ${step.slice('secret: '.length)}`, textedit.steps, [step]));
   }
   addItem(6, 'Secrets: TTY-only hidden set, label-only listing, live Keychain roundtrip', checks,
-    keychain ? {liveKeychain: {status: keychain.status, label: keychain.label, steps: keychain.steps, runtimeFiles: keychain.runtimeFiles,
+    keychain && !keychain.missing ? {liveKeychain: {status: keychain.status, label: keychain.label, steps: keychain.steps, runtimeFiles: keychain.runtimeFiles,
       channels: keychain.channels?.map(c => ({name: c.name, bytes: c.bytes, containsReference: c.containsReference}))}} : undefined);
 }
 
@@ -293,9 +298,9 @@ async function item7(keychain) {
   const checks = [
     fromSuite('exact reference expansion per method, ordinary input, invalid/missing/denied rejection before dispatch, value-free errors, unsupported shapes', ['test/services-sky.test.mjs', 'test/secrets-reference.test.mjs', 'test/services-sky-trust.test.mjs']),
     fromSuite('broker client: unauthenticated or wrong-token requests get nothing; close releases owned resources', ['test/secrets-client.test.mjs', 'test/secrets-broker.test.mjs']),
-    check('the actual Swift broker refuses forged, malformed and oversized requests', state.helperSuitePassed ? 'PASS' : 'FAIL', 'npm run test:helper (item 1): BrokerTests and native/keychain/test/broker-interop.test.mjs'),
+    fromHelperSuite('the actual Swift broker refuses forged, malformed and oversized requests', 'BrokerTests and native/keychain/test/broker-interop.test.mjs'),
   ];
-  if (keychain) checks.push(phase(keychain, 'live: every method, ordinary input, unsupported method, unknown/invalid label, unsupported shape', n => /^first value: /.test(n) && !/close|cell timeout|induced/.test(n)));
+  if (keychain) checks.push(...probeChecks(keychain, PROBE_SECRETS_PHASES.filter(p => /first substitution|ordinary input|plant code|fail closed/.test(p.name))));
   addItem(7, 'Native input substitution: methods, rejection before dispatch, broker authentication', checks);
 }
 
@@ -318,11 +323,9 @@ async function item8(textedit) {
   }
   if (!textedit) checks.push(check('per-connection app approvals observed', 'BLOCKED', 'observed only by the live TextEdit fixture: pass --live-textedit'));
   else {
-    const conns = textedit.observations.connections;
+    const observed = approvalObservation(textedit.observations.connections);
     const files = textedit.observations.sessionFiles;
-    checks.push(check('per-connection app approvals observed', conns.length === 2 ? 'PASS' : 'BLOCKED',
-      conns.length === 2 ? `${conns.map(c => `${c.name}: asked ${c.approvalRequests} time(s), session approval file ${c.sessionFileWhileOpen ? 'written' : 'not written'} while open, ${c.sessionFileAfterClose ? 'still present' : 'removed'} after close`).join('; ')}; session files under $CUA_HOME/state/codex/computer-use/sessions: ${files.before} before, ${files.after} after`
-        : 'the fixture did not bind TextEdit on two connections'));
+    checks.push(check('per-connection app approvals observed', observed.status, `${observed.detail}; session files under $CUA_HOME/state/codex/computer-use/sessions: ${files.before} before, ${files.after} after`));
   }
   addItem(8, 'Task lifecycle: IDs, end_task outcomes, fail-closed completion; native cancel/approval behaviour observed', checks, state.lifecycle);
 }

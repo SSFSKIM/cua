@@ -25,7 +25,9 @@ export const SECRETS_LIST_TOOL = {
   name: 'secrets_list',
   description: 'List the labels of the secrets the user stored for computer-use input (with `cua secrets set`), never '
     + 'their values. Returns status "ok" with labels, or status "unavailable"/"error" with a code when secret storage '
-    + 'cannot be used on this connection.',
+    + 'cannot be used on this connection. To enter a secret the user has authorized, pass exactly "{{secret:<label>}}" '
+    + 'as the whole text of typeText or paste, or the whole value of setValue: the stored value is substituted outside '
+    + 'your code and never returned. Anywhere else the marker is not expanded.',
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list stored secret credential labels for computer-use typing'},

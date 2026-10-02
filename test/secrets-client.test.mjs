@@ -6,6 +6,7 @@ import net from 'node:net';
 import {join} from 'node:path';
 import {brokerClient, brokerClientFromEnv, BrokerError, BROKER_ENV} from '../src/secrets/client.mjs';
 import {scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
+import {nativePipeConnect} from './fixtures/native-pipe.mjs';
 
 const TOKEN = 't'.repeat(43);
 const SENTINEL = 'sentinel-value-7f3a';
@@ -180,4 +181,26 @@ test('a reply that is not valid UTF-8, or carries bytes past its frame, is a pro
     assert.equal(error.code, 'protocol');
     assert.doesNotMatch(error.message, new RegExp(SENTINEL));
   }
+});
+
+// The pinned trusted worker's nativePipe stream has only data/close/error events (others throw) and no destroy.
+test('read and list work over the pinned nativePipe stream surface and close it with end()', async t => {
+  const broker = await scriptedBroker(t, request => request.op === 'list' ? {ok: true, labels: ['a']} : {ok: true, value: SENTINEL});
+  const client = brokerClient({endpoint: broker.endpoint, token: TOKEN, connect: nativePipeConnect});
+  assert.equal(await client.read('k'), SENTINEL);
+  assert.deepEqual(await client.list(), ['a']);
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(await broker.connections(), 0, 'the client ended each connection');
+});
+
+test('over the nativePipe stream surface, a hang-up, silence or missing endpoint still settles value-free', async t => {
+  const gone = await scriptedBroker(t, () => null);
+  assert.equal((await code(brokerClient({endpoint: gone.endpoint, token: TOKEN, connect: nativePipeConnect}).read('k'))).code, 'disconnected');
+  const silent = await scriptedBroker(t, () => 'hang');
+  assert.equal((await code(brokerClient({endpoint: silent.endpoint, token: TOKEN, connect: nativePipeConnect, timeoutMs: 200}).read('k'))).code, 'timeout');
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(await silent.connections(), 0);
+  const s = scratch();
+  t.after(s.cleanup);
+  assert.equal((await code(brokerClient({endpoint: join(s.dir, 'none.sock'), token: TOKEN, connect: nativePipeConnect}).read('k'))).code, 'disconnected');
 });

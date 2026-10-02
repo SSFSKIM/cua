@@ -101,8 +101,33 @@ node bin/cua.mjs secrets remove work-password  # asks for confirmation; --yes sk
 A value is only ever typed at the terminal: `set` refuses arguments, flags, environment and piped input, and nothing
 prints or exports a value. Labels are 1-128 letters, digits, `.`, `_` or `-`, starting with a letter or digit. Each
 server connection runs its own private broker (`cua-keychain broker`) that hands values only to trusted code holding
-that connection's random token; `secrets_list` lists labels through it. Typing a stored secret by reference
-(`{{secret:<label>}}`) is not wired yet.
+that connection's random token; `secrets_list` lists labels through it.
+
+To have the agent enter a stored secret, authorize it to use the label; it then passes the exact reference
+`{{secret:<label>}}` as an input argument:
+
+| `cua` API call | runtime command | expanded field |
+|---|---|---|
+| `app.paste(text)` (text format) | `paste` | the whole `text` |
+| `app.typeText(text)` | `type_text` | the whole `text` |
+| `app.setValue(index, value)` | `set_value` | the whole `value` |
+
+The substitution happens inside the runtime's trusted service process (`src/services/sky.mjs`), after the agent's
+code and the MCP call have passed: the value comes from the connection's broker and goes only to the native input
+command, never into the agent's code, the tool result or an error. Only an argument that is entirely one reference
+expands; text that merely contains `{{secret:…}}`, any other method or field, and JavaScript strings in general are
+left alone. A reference fails before anything is entered, with a value-free error code, when its label is invalid or
+unknown, the Keychain is locked or denies access, secrets are off (`CUA_SHIM_SECRETS=off`: `secrets_disabled`) or
+unavailable (helper not built, broker gone: `secrets_unavailable`), or the command is not in its pinned shape
+(`unsupported_secret_shape`). If the native command fails after substitution, the error is a fixed diagnostic
+(`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is
+withheld because it can contain the value, and the input may have been partly entered.
+
+This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
+app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it
+restores the previous contents; a clipboard manager may record it). Only authorize secrets for apps you would type them
+into yourself. Browser input (`playwright_locator_fill`, tab paste/type/set-value) has a planned mapping for the
+Chrome phase but is not implemented or available in this release.
 
 A locally built helper is ad-hoc signed, and Keychain items trust the exact helper that created them: after a rebuild,
 macOS may ask whether the new helper may use them. Signing with a stable identity avoids that (`npm run build:helper --
@@ -117,7 +142,12 @@ npm run build:helper      # the Keychain helper
 npm run test:helper       # the actual helper: in-memory storage and pseudo-terminals, no Keychain access
 node verify.mjs           # the installed runtime in $CUA_HOME, through `cua serve`
 npm run test:keychain-live   # opt-in: one disposable Keychain item with generated values, removed afterwards
+node scripts/probe-secrets.mjs   # opt-in: {{secret:…}} substitution through the runtime to a fake target, no GUI
 ```
+
+`scripts/probe-secrets.mjs` stores generated values in one disposable Keychain item (removed afterwards), sends
+references through `cua serve` and the runtime's trusted service to a fake input target, and checks that the values
+arrive there and nowhere else (MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME`).
 
 `verify.mjs` completes the MCP handshake, checks the tool surface, and runs trivial cells that bind no app (the first
 loads OpenAI's API, which contacts the native helper read-only) to check task identity and `end_task`. It reports which
@@ -131,7 +161,7 @@ executables served and which helper answered. A non-zero exit names what failed.
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
-| `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled |
+| `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
 
 Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
 runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session),

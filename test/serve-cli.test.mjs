@@ -12,6 +12,7 @@ import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {serve} from '../src/mcp/server.mjs';
+import {SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
 const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
@@ -106,9 +107,11 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(start.env.CUA_REPL_ENABLED_SURFACES, 'computer');
   assert.equal(start.env.AMBIENT_SECRET, undefined);
   assert.equal(start.env.CUA_SHIM_CODEX_HOME, undefined);
-  assert.equal(start.env.NODE_REPL_TRUSTED_SERVICES, undefined);
+  assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE}, 'the trusted sky wrapper is registered, never an ambient override');
+  assert.deepEqual(start.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').slice(1), [dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS]);
   assert.equal(start.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin');
-  assert.equal(Object.keys(start.env).some(key => key.startsWith('CUA_SECRETS_')), false, 'no broker when secrets are off');
+  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE'], 'no broker when secrets are off');
+  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, 'secrets_disabled');
   const turnEnded = records(home).find(r => r.received?.params?.name === 'turn_ended').received;
   assert.equal(turnEnded.params.arguments.session_id, echoed.turn.session_id);
   assert.equal(turnEnded.params.arguments.turn_id, echoed.turn.turn_id);
@@ -215,6 +218,8 @@ test('serve starts the connection\'s broker before the runtime, hands only the r
   const [{start}] = records(home);
   assert.equal(start.env.CUA_SECRETS_BROKER_ENDPOINT, config.socket);
   assert.equal(start.env.CUA_SECRETS_BROKER_TOKEN, config.token);
+  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, undefined);
+  assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
   assert.equal(config.socket, join(home, 'run', `${start.cwd.split('/').pop()}.sock`));
   assert.equal(start.argv.includes(config.token), false);
   assert.equal(existsSync(config.socket), true);
@@ -241,7 +246,9 @@ test('serve without a built helper still serves, and secrets_list says how to bu
   assert.deepEqual(list.result.structuredContent, {status: 'unavailable', code: 'helper_not_built'});
   assert.match(list.result.content[0].text, /npm run build:helper/);
   const [{start}] = records(home);
-  assert.equal(Object.keys(start.env).some(key => key.startsWith('CUA_SECRETS_')), false);
+  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE']);
+  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, 'helper_not_built', 'a secret reference fails with this reason');
+  assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
   input.end();
   assert.equal(await served, 0);
 });

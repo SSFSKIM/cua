@@ -14,7 +14,9 @@
 // error. The stream is closed as soon as the frame is complete, so nothing after it is ever read.
 import {isLabel} from './label.mjs';
 
-export const BROKER_ENV = {endpoint: 'CUA_SECRETS_BROKER_ENDPOINT', token: 'CUA_SECRETS_BROKER_TOKEN'};
+// Launch variables for the trusted worker: the broker's endpoint and token, or (without a broker) the reason secrets
+// are unavailable on the connection, so a {{secret:…}} reference can fail with it.
+export const BROKER_ENV = {endpoint: 'CUA_SECRETS_BROKER_ENDPOINT', token: 'CUA_SECRETS_BROKER_TOKEN', unavailable: 'CUA_SECRETS_UNAVAILABLE'};
 export const BROKER_PROTOCOL = 1;
 export const MAX_REQUEST_BYTES = 1024;
 export const MAX_RESPONSE_BYTES = 262_144;
@@ -48,7 +50,8 @@ export class BrokerError extends Error {
 }
 
 // node_repl's trusted-worker transport. Looked up per request; never replaced by node:net, which the sandbox denies
-// and which would mean the endpoint had been opened to the sandbox.
+// and which would mean the endpoint had been opened to the sandbox. Its streams are frozen objects with write, on,
+// off and end only; node_repl relays the bytes outside the sandbox.
 async function nativePipe(path) {
   const create = globalThis.nodeRepl?.nativePipe?.createConnection;
   if (typeof create !== 'function') throw new BrokerError('disconnected');
@@ -109,9 +112,10 @@ export function brokerClient({endpoint, token, connect = nativePipe, timeoutMs =
         try {
           stream = await connect(endpoint);
           if (settled) return closeStream(stream);
+          // The pinned nativePipe stream emits only data, error and close (any other event name throws) and has no
+          // destroy; a node:net socket emits close after end, so close alone covers a hang-up on both.
           stream.on('data', onData);
           stream.on('error', lost);
-          stream.on('end', lost);
           stream.on('close', lost);
           stream.write(frame(Buffer.from(JSON.stringify({v: BROKER_PROTOCOL, token, ...request}), 'utf8')));
         } catch {

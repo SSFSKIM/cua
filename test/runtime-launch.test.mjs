@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {buildLaunch} from '../src/runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
@@ -48,7 +48,7 @@ test('the launch environment is an allowlist: OS basics plus relocated settings,
     CUA_REPL_ENABLED_SURFACES: 'computer',
     NODE_REPL_NODE_PATH: p.node,
     NODE_REPL_NODE_MODULE_DIRS: p.moduleDir,
-    NODE_REPL_TRUSTED_CODE_PATHS: [join(home, 'state', 'codex'), p.moduleDir].join(':'),
+    NODE_REPL_TRUSTED_CODE_PATHS: p.moduleDir,
     NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: p.codexCli,
@@ -65,7 +65,7 @@ test('native-only launches never enable or configure the browser surface', t => 
   assert.equal(env.NODE_REPL_TRUSTED_SERVICES, undefined, 'unset lets the vendor launcher pick only @oai/sky/service for the computer surface');
 });
 
-test('a trusted sky wrapper is registered by real path and its directory is trusted alongside the vendor modules', t => {
+test('a trusted sky wrapper is registered by real path; its directory and the owned modules it imports are trusted alongside the vendor modules', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
   const wrapper = join(home, 'wrapper-src', 'services', 'sky.mjs');
   mkdirSync(dirname(wrapper), {recursive: true});
@@ -74,7 +74,7 @@ test('a trusted sky wrapper is registered by real path and its directory is trus
   symlinkSync(join(home, 'wrapper-src'), join(dir, 'linked'));
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: join(dir, 'linked', 'services', 'sky.mjs')}});
   assert.deepEqual(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES), {sky: wrapper});
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [join(home, 'state', 'codex'), runtime.paths.moduleDir, dirname(wrapper)]);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(wrapper), ...SERVICE_SUPPORT_DIRS]);
   assert.equal(env.CUA_SKY_VENDOR_SERVICE, runtime.paths.skyVendorService);
 });
 
@@ -110,4 +110,27 @@ test('the launch resolves the home to its real path so trusted paths match what 
   const {env, cwd} = buildLaunch({runtime, home: join(dir, 'home-link'), sessionId: SESSION, ambient: AMBIENT});
   assert.equal(env.CODEX_HOME, join(home, 'state', 'codex'));
   assert.equal(cwd, join(home, 'run', SESSION));
+});
+
+test('trusted code is only the vendor modules and owned source, never a directory the runtime or model code writes', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}});
+  const repo = realpathSync(new URL('..', import.meta.url).pathname);
+  const trusted = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':');
+  assert.deepEqual(trusted, [runtime.paths.moduleDir, join(repo, 'src', 'services'), join(repo, 'src', 'secrets')]);
+  for (const root of trusted) {
+    assert.ok(!(root + '/').startsWith(join(home, 'state') + '/') && !(root + '/').startsWith(join(home, 'run') + '/'), `${root} is runtime-writable state`);
+  }
+  assert.equal(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES).sky, join(repo, 'src', 'services', 'sky.mjs'));
+});
+
+test('without a broker the launch tells the trusted worker why, so a secret reference fails with that reason', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsUnavailable: 'secrets_disabled'});
+  assert.equal(env.CUA_SECRETS_UNAVAILABLE, 'secrets_disabled');
+  assert.equal(env.CUA_SECRETS_BROKER_ENDPOINT, undefined);
+  const broker = {endpoint: join(home, 'run', 'b.sock'), token: 'capability-token-for-test'};
+  const withBroker = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, broker, secretsUnavailable: 'secrets_disabled'}).env;
+  assert.equal(withBroker.CUA_SECRETS_UNAVAILABLE, undefined, 'a running broker wins');
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsUnavailable: 'Bad Reason!'}), err => err.code === 'invalid_secrets_reason');
 });

@@ -25,7 +25,7 @@ import {
   DEFAULT_HOST_NOTES, LOCAL_TOOLS, WORK_TOOLS, correctImages, modelTools, persistAccepted, statusResult, withHostNotes,
 } from './surface.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch} from '../runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE} from '../runtime/launch.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {locateHelper} from '../secrets/helper.mjs';
@@ -288,10 +288,13 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 // `cua serve`: resolve the installed runtime, start this connection's secrets broker (unless secrets are off or the
 // Keychain helper is not built), launch the runtime for a fresh connection session in an owned working directory with
-// the broker's endpoint and token in its environment, serve stdin/stdout until EOF or a signal, and remove what it
-// created. Returns the exit code. `keychainHelper` is the located helper (tests substitute a stand-in).
+// the trusted sky service (src/services/sky.mjs) registered and the broker's endpoint and token (or the reason there
+// is no broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created. Returns the
+// exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
+// tests and the opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and
+// are not reachable from the CLI.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper(),
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`)}) {
+  prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`)}) {
   const {secrets: secretsEnabled, ...settings} = settingsFrom(env);
   const runtime = resolveRuntime({home});
   const sessionId = randomUUID();
@@ -299,7 +302,10 @@ export async function serve({home, env = process.env, input = process.stdin, out
   const secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics});
   let launch;
   try {
-    launch = buildLaunch({runtime, home, sessionId, ambient: env, broker: secrets.broker});
+    launch = prepareLaunch(buildLaunch({
+      runtime, home, sessionId, ambient: env, services: {sky: SKY_SERVICE},
+      broker: secrets.broker, secretsUnavailable: secrets.unavailable?.code,
+    }));
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);

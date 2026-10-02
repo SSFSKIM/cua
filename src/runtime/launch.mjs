@@ -10,9 +10,12 @@
 //   CUA_REPL_NODE_REPL_PATH                  relocated node_repl (required by the vendor launcher)
 //   CUA_REPL_ENABLED_SURFACES=computer       required by the vendor launcher; native-only, never "browser" here
 //   NODE_REPL_NODE_PATH, NODE_REPL_NODE_MODULE_DIRS    relocated vendor node and its module tree
-//   NODE_REPL_TRUSTED_CODE_PATHS             CODEX_HOME, the vendor module tree, and each registered service's directory
-//   NODE_REPL_TRUSTED_SERVICES               only when services are registered; unset lets the vendor launcher use
-//                                            its own @oai/sky/service for the computer surface
+//   NODE_REPL_TRUSTED_CODE_PATHS             the vendor module tree and, with services registered, each service's
+//                                            directory and the owned modules services import (src/secrets). Never
+//                                            CODEX_HOME or run/: the runtime writes there, and the trusted worker
+//                                            imports anything under a trusted path
+//   NODE_REPL_TRUSTED_SERVICES               only when services are registered (`cua serve` registers SKY_SERVICE);
+//                                            unset lets the vendor launcher use its own @oai/sky/service
 //   NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000, NODE_REPL_DISABLE_ANALYTICS=1
 //   CODEX_CLI_PATH                           relocated CodexCLI.app executable (the sandbox; no unsandboxed fallback)
 //   SKY_CUA_SERVICE_PATH                     relocated helper app, opened by the vendor through LaunchServices
@@ -20,6 +23,8 @@
 //   CUA_SECRETS_BROKER_ENDPOINT, CUA_SECRETS_BROKER_TOKEN   only with a broker (src/secrets/broker.mjs): its socket
 //                                            and capability token, read by src/secrets/client.mjs in the trusted
 //                                            worker; untrusted cells see only the vendor's env allowlist
+//   CUA_SECRETS_UNAVAILABLE                  only without a broker: why (e.g. secrets_disabled), so the trusted sky
+//                                            service fails a {{secret:…}} reference with that reason
 // Deliberately never set: NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS (it would let model cells reach the broker; the
 // trusted wrapper uses nodeRepl.nativePipe instead), NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the
 // vendor launcher adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH,
@@ -29,6 +34,7 @@
 // the repository. The caller creates it (mode 0700) before spawning and removes it when the connection ends.
 import {realpathSync, statSync} from 'node:fs';
 import {dirname, isAbsolute, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROKER_ENV} from '../secrets/client.mjs';
@@ -37,15 +43,23 @@ const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL'
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 const KNOWN_SERVICES = ['sky'];
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
+const REASON = /^[a-z][a-z_]{0,63}$/;
+const ownedPath = relative => realpathSync(fileURLToPath(new URL(relative, import.meta.url)));
 
-export function buildLaunch({runtime, home, sessionId, services, broker, ambient = process.env}) {
+// The production trusted sky service, and the owned directories whose modules registered services import (the
+// trusted worker refuses any import whose real path lies outside NODE_REPL_TRUSTED_CODE_PATHS).
+export const SKY_SERVICE = ownedPath('../services/sky.mjs');
+export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
+
+export function buildLaunch({runtime, home, sessionId, services, broker, secretsUnavailable, ambient = process.env}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
+  if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
-  const trustedCodePaths = [owned.codexHome, p.moduleDir];
+  const trustedCodePaths = [p.moduleDir];
   Object.assign(env, {
     PATH: FIXED_PATH,
     CODEX_HOME: owned.codexHome,
@@ -57,7 +71,7 @@ export function buildLaunch({runtime, home, sessionId, services, broker, ambient
   if (services && Object.keys(services).length) {
     const registered = trustedServices(services);
     env.NODE_REPL_TRUSTED_SERVICES = JSON.stringify(registered);
-    for (const module of Object.values(registered)) if (!trustedCodePaths.includes(dirname(module))) trustedCodePaths.push(dirname(module));
+    for (const dir of [...Object.values(registered).map(module => dirname(module)), ...SERVICE_SUPPORT_DIRS]) if (!trustedCodePaths.includes(dir)) trustedCodePaths.push(dir);
   }
   Object.assign(env, {
     NODE_REPL_TRUSTED_CODE_PATHS: trustedCodePaths.join(':'),
@@ -70,6 +84,8 @@ export function buildLaunch({runtime, home, sessionId, services, broker, ambient
   if (broker) {
     env[BROKER_ENV.endpoint] = broker.endpoint;
     env[BROKER_ENV.token] = broker.token;
+  } else if (secretsUnavailable) {
+    env[BROKER_ENV.unavailable] = secretsUnavailable;
   }
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }

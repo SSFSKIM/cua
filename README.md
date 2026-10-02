@@ -162,8 +162,10 @@ withheld because it can contain the value, and the input may have been partly en
 
 This is input substitution, not a vault around the value: once entered, a secret can be seen in screenshots, the
 app's accessibility text or the app itself, and `paste` uses the system clipboard as the runtime always does (it
-restores the previous contents; a clipboard manager may record it). Only authorize secrets for apps you would type them
-into yourself. Browser input (`playwright_locator_fill`, tab paste/type/set-value) has a planned mapping for the
+restores the previous contents; a clipboard manager may record it). `typeText` enters the value as keystrokes, so an
+ordinary text view's own substitutions (autocorrect, automatic capitalization, smart dashes) can change it, and even
+text typed before it, as they would for a person typing; password fields do not do this. Only authorize secrets for
+apps you would type them into yourself. Browser input (`playwright_locator_fill`, tab paste/type/set-value) has a planned mapping for the
 Chrome phase but is not implemented or available in this release.
 
 The helper is used only from this checkout's build, `native/keychain/.build/release/cua-keychain`; nothing else (in

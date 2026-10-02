@@ -59,9 +59,13 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
   const observations = {elicitations: [], connections: []};
-  const marker = `cua-accept-marker-${randomBytes(6).toString('hex')}`;
+  // Like the value below, one unbroken upper-case token: TextEdit's autocorrect otherwise offers to capitalize a
+  // lower-case first word and applies it when typing continues, rewriting text that was already observed.
+  const marker = `CUAMARKER${randomBytes(6).toString('hex').toUpperCase()}`;
   const label = `cua-accept-ui-${randomUUID()}`;
-  const value = secret ? `cua-accept-ui-${randomBytes(18).toString('base64url')}` : null;
+  // One unbroken upper-case token (no separators, no words): the target's own text substitutions (autocorrect at a word
+  // boundary, smart dashes for "--", capitalization) act on typed text in an ordinary text view.
+  const value = secret ? `CUAUI${randomBytes(16).toString('hex').toUpperCase()}` : null;
   if (value) forbid(value);
   const prints = value ? fingerprints(value) : [];
   const docDir = join(home, 'accept-textedit');
@@ -169,18 +173,27 @@ ${out(`{window: __window, valueIsMarker: __value === ${JSON.stringify(marker)}, 
           ? `failed: ${String(delivered.error).replace(value, '<value>')}` : leakedBefore ? 'the value appeared in the MCP transport or stderr before any readback' : 'typeText({{secret:<label>}}) returned; nothing so far carried the value (MCP transport, server/runtime stderr)');
         // Intentional plaintext readback from the target: this is target observation, not confidentiality evidence.
         const readback = cellJson(await b.js(`${OBSERVE}\n${out('{window: __window, value: __value}')}`, stepMs));
-        const exact = readback.window === docName && readback.value === marker + value;
+        const got = typeof readback.value === 'string' ? readback.value : '';
+        const exact = readback.window === docName && got === marker + value;
         record('secret: target observation (plaintext readback, not confidentiality evidence)', exact ? 'PASS' : 'FAIL',
-          exact ? 'the document reads back the marker followed by exactly the stored value' : `the document reads back ${readback.isError ? `an error (${readback.error})` : 'something else'}`);
+          exact ? 'the document reads back the marker followed by exactly the stored value'
+            : readback.isError ? `the readback failed (${readback.error})`
+              : `the document reads back something else (window is the fixture's: ${readback.window === docName}; starts with the marker: ${got.startsWith(marker)}; ${got.length} characters, expected ${marker.length + value.length}; contains the value: ${got.includes(value)})`);
       }
+      // Right after the window closes TextEdit can briefly report no front window at all (and, with no document left,
+      // may then show its Open panel), so the observation is retried until it names a window or says there is none.
       const closed = cellJson(await b.js(`await app.pressKey("super+w");
 let __after = null, __error = null;
-try { __after = (await app.getAXState({emit: false})).match(/^Window: "([^"]*)"/m)?.[1] ?? null; } catch (error) { __error = String(error?.message ?? error); }
-${out('{frontAfter: __after, noWindows: /noWindowsAvailable/.test(__error ?? "")}')}`, stepMs));
+for (let attempt = 0; attempt < 6 && __after === null && __error === null; attempt++) {
+  if (attempt) await new Promise(resolve => setTimeout(resolve, 500));
+  try { __after = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null; } catch (error) { __error = String(error?.message ?? error); }
+}
+${out('{frontAfter: __after, noWindows: /noWindowsAvailable/.test(__error ?? ""), error: __error && !/noWindowsAvailable/.test(__error) ? __error.slice(0, 160) : undefined}')}`, stepMs));
       docOpen = !(closed.noWindows || (typeof closed.frontAfter === 'string' && closed.frontAfter !== docName));
       record('connection B: close only the fixture document', docOpen ? 'FAIL' : 'PASS', docOpen
-        ? `the document still looks open (${closed.error ?? closed.frontAfter}); close it by hand without saving elsewhere`
-        : closed.noWindows ? 'super+w closed it; TextEdit has no windows left' : 'super+w closed it; another TextEdit window is now in front and was not touched');
+        ? `the document still looks open (${closed.error ?? (closed.frontAfter === docName ? 'its window is still in front' : 'no window could be observed')}); close it by hand without saving elsewhere`
+        : closed.noWindows ? 'super+w closed it; TextEdit has no windows left'
+          : 'super+w closed it; another TextEdit window (possibly TextEdit\'s own Open panel, shown when no document is left) is now in front and was not touched');
     }
     const exitB = await b.close();
     record('connection B: close', exitB.code === 0 ? 'PASS' : 'FAIL', `exit ${exitB.code ?? exitB.signal}`);
@@ -221,7 +234,7 @@ ${out('{frontAfter: __after, noWindows: /noWindowsAvailable/.test(__error ?? "")
     observations.textEdit.quitByFixture = false;
     const after = sessionFiles(home);
     observations.sessionFiles = {before: sessionsBefore.length, after: after.length, addedByThisRun: after.filter(f => !sessionsBefore.includes(f)).length};
-    observations.marker = 'a benign generated marker (cua-accept-marker-<hex>)';
+    observations.marker = 'a benign generated marker (CUAMARKER<hex>)';
     if (secret) observations.secretLabel = label;
     const status = steps.some(s => s.status === 'FAIL') ? 'FAIL' : steps.some(s => s.status === 'BLOCKED') || !steps.length ? 'BLOCKED' : 'PASS';
     return {scenario: secret ? 'live-textedit-with-secret' : 'live-textedit', status, steps, observations};

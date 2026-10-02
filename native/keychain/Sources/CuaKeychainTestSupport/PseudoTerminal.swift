@@ -59,12 +59,28 @@ final class OutputCollector: @unchecked Sendable {
   }
 }
 
-private func writeAllBytes(_ fd: Int32, _ bytes: [UInt8]) {
+/// Writes to a pty master, giving up after `timeout` if the terminal stops taking input (a reader that went away must
+/// not hang the test).
+private func writeAllBytes(_ fd: Int32, _ bytes: [UInt8], timeout: Double = 3) {
+  let flags = fcntl(fd, F_GETFL)
+  _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+  defer { _ = fcntl(fd, F_SETFL, flags) }
+  let deadline = Date().addingTimeInterval(timeout)
   var offset = 0
-  while offset < bytes.count {
+  while offset < bytes.count && Date() < deadline {
     let n = bytes[offset...].withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
-    if n > 0 { offset += n } else if n < 0 && errno == EINTR { continue } else { return }
+    if n > 0 { offset += n; continue }
+    if n < 0 && errno != EAGAIN && errno != EINTR { return }
+    var p = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+    _ = poll(&p, 1, 20)
   }
+}
+
+/// Bytes queued for reading on a terminal descriptor that nobody has read yet.
+public func pendingInput(_ fd: Int32) -> Int32 {
+  var count: Int32 = 0
+  _ = ioctl(fd, 0x4004_667f /* FIONREAD: _IOR('f', 127, int) */, &count)
+  return count
 }
 
 /// Default terminal modes of a fresh pty, used as the explicit starting modes of every spawned pty.
@@ -98,6 +114,8 @@ public final class PseudoTerminalPair: @unchecked Sendable {
 
   public func modes() -> TerminalModes { var t = termios(); tcgetattr(slave, &t); return TerminalModes(t) }
   public func drainOutput() -> String { collector.text() }
+  /// Input typed but not read by anyone (it would reach whatever reads the terminal next).
+  public var unreadInput: Int32 { pendingInput(slave) }
 
   /// Runs `body` (which reads from `slave`) on another thread, typing each answer once a new prompt — output ending
   /// in ": " or "] " — has appeared since the previous answer. Returns the body's result, or a timeout error.

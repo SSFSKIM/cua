@@ -6,7 +6,10 @@
 //     argv or a file) and otherwise handed only to the launch environment of the trusted worker;
 //   - the helper's stdout is a private pipe carrying one ready line, never the MCP stream; its stdin staying open is
 //     its lease, so it also stops if the server dies;
-//   - close is bounded: EOF, then SIGTERM, then SIGKILL, and a socket left behind by a killed helper is removed.
+//   - close is bounded: EOF, then SIGTERM, then SIGKILL, and a socket left behind by a killed helper is removed. Only
+//     the socket this broker created is ever removed: its identity (device and inode) is recorded once the helper
+//     reports ready and checked again before unlinking. A broker that never became ready removes nothing, and a path
+//     that now holds anything else (an earlier socket, a replacement) is left alone; a path is not ownership.
 // Secrets being unavailable (disabled, helper not built, broker failed to start) never fails the connection; native
 // control works without them and secrets_list reports why.
 import {spawn} from 'node:child_process';
@@ -60,6 +63,14 @@ export async function startBroker({command, args = ['broker'], env = {}, endpoin
     lines.once('close', () => resolve(null));
   });
 
+  let owned = null;  // {dev, ino} of the socket the helper created, once it is ready
+  const isOwned = () => {
+    if (!owned) return false;
+    try {
+      const now = lstatSync(endpoint);
+      return now.isSocket() && now.dev === owned.dev && now.ino === owned.ino;
+    } catch { return false; }
+  };
   let closing = null;
   let spawnFailed = false;
   child.once('error', () => { spawnFailed = true; });
@@ -81,10 +92,10 @@ export async function startBroker({command, args = ['broker'], env = {}, endpoin
         gone = await sleepUntil(exited, started + budgetMs - Date.now());
       }
       lines.close();
-      // A helper that was killed could not remove its socket.
-      try { if (lstatSync(endpoint).isSocket()) rmSync(endpoint, {force: true}); } catch {}
-      let leftover = false;
-      try { lstatSync(endpoint); leftover = true; } catch {}
+      // A helper that was killed could not remove its own socket. (There is a window between the check and the
+      // unlink; the run directory is the server's own, so nothing else is expected to replace the socket within it.)
+      if (isOwned()) rmSync(endpoint, {force: true});
+      const leftover = isOwned();
       const problems = [...(gone ? [] : ['the broker helper did not exit']), ...(leftover ? [`${endpoint} remains`] : [])];
       return {confirmed: !problems.length, steps, ...(problems.length ? {reason: problems.join('; ')} : {})};
     })();
@@ -104,6 +115,10 @@ export async function startBroker({command, args = ['broker'], env = {}, endpoin
     fail('broker_failed', `the Keychain helper could not start its broker (${typeof ready?.error === 'string' ? ready.error : 'no reason given'})`);
   }
 
+  try {
+    const created = lstatSync(endpoint);
+    if (created.isSocket()) owned = {dev: created.dev, ino: created.ino};
+  } catch {}
   const client = brokerClient({endpoint, token, connect: path => net.createConnection(path)});
   return {endpoint, token, pid: child.pid, exited, list: () => client.list(), close};
 }

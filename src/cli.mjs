@@ -87,26 +87,39 @@ async function serve(args) {
 }
 
 // A secret is never an argument: set takes exactly one label and the helper reads the value at the terminal. Usage
-// errors here never repeat what was passed, in case a value was typed where a label belongs.
+// errors here are fixed messages that never repeat what was passed (an option name or a stray word may be a value
+// typed in the wrong place), so the parser's own messages are not shown.
+const SECRETS_USAGE = {
+  set: 'secrets set takes exactly one label; the secret is typed at the terminal, never passed as an argument',
+  remove: 'secrets remove takes exactly one label and optionally --yes',
+  list: 'secrets list takes only --json',
+};
+
 async function secrets(args) {
   const [command, ...rest] = args;
+  if (!Object.hasOwn(SECRETS_USAGE, command)) throw new UsageError('secrets takes set, list or remove');
+  const fixed = (options, positionals) => {
+    try { return parse(rest, options, positionals); } catch (error) {
+      if (error instanceof UsageError) throw new UsageError(SECRETS_USAGE[command]);
+      throw error;
+    }
+  };
   const label = positionals => {
     if (!isLabel(positionals[0])) throw new UsageError(LABEL_RULE);
     return positionals[0];
   };
   if (command === 'set') {
-    const {positionals} = parse(rest, {}, 1);
+    const {values, positionals} = fixed({}, 1);
+    if (values.json) throw new UsageError(SECRETS_USAGE.set);
     return runSecrets({command, label: label(positionals)});
   }
   if (command === 'remove') {
-    const {values, positionals} = parse(rest, {yes: {type: 'boolean'}}, 1);
+    const {values, positionals} = fixed({yes: {type: 'boolean'}}, 1);
+    if (values.json) throw new UsageError(SECRETS_USAGE.remove);
     return runSecrets({command, label: label(positionals), yes: values.yes});
   }
-  if (command === 'list') {
-    const {values} = parse(rest);
-    return runSecrets({command, json: values.json});
-  }
-  throw new UsageError('secrets takes set, list or remove');
+  const {values} = fixed({}, 0);
+  return runSecrets({command, json: values.json});
 }
 
 const COMMANDS = {install, doctor, runtime, serve, secrets};

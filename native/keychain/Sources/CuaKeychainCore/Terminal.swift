@@ -6,7 +6,12 @@
 // empty line cancels, escape sequences (arrow keys) are ignored. Typeahead from before the prompt is discarded. The
 // previous modes are restored on every exit path: return, error, and the signals that would otherwise leave the
 // user's terminal without echo (SIGTERM, SIGHUP, SIGINT, SIGQUIT), whose handlers restore and then re-raise.
+// Restoring always discards input nobody has read (TCSAFLUSH): whatever was typed or pasted in hidden mode must not
+// reach the next reader of the terminal, or be echoed by it. When reading stops early (an overlong paste, a cancel),
+// the rest of that input is first read and discarded until the terminal has been quiet briefly, so bytes still on
+// their way are not echoed once echo is back on.
 import Darwin
+import Dispatch
 
 public enum TerminalError: Error, Equatable, Sendable {
   case notATerminal, cancelled, closed, tooLong, empty, invalidEncoding, mismatch
@@ -85,6 +90,7 @@ public final class Terminal {
     do {
       try readLineHidden(into: &line, maxBytes: maxBytes)
     } catch {
+      discardArrivingInput()
       write("\n")
       throw error
     }
@@ -116,6 +122,21 @@ public final class Terminal {
       if n == 0 { throw TerminalError.closed }
       if errno == EINTR { continue }
       throw errno == EIO ? TerminalError.closed : TerminalError.io(errno)
+    }
+  }
+
+  /// Reads and drops input until none has arrived for `quietMs`, for at most `capMs`.
+  private func discardArrivingInput(quietMs: Int32 = 150, capMs: Double = 2000) {
+    let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(capMs * 1_000_000)
+    var sink = [UInt8](repeating: 0, count: 1024)
+    defer { for i in sink.indices { sink[i] = 0 } }
+    while DispatchTime.now().uptimeNanoseconds < deadline {
+      var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+      let ready = poll(&p, 1, quietMs)
+      if ready < 0 && errno == EINTR { continue }
+      guard ready > 0, p.revents & Int16(POLLIN) != 0 else { return }
+      let n = Darwin.read(fd, &sink, sink.count)
+      if n <= 0 && errno != EINTR { return }
     }
   }
 
@@ -194,7 +215,7 @@ private let restoredSignals: [Int32] = [SIGTERM, SIGHUP, SIGINT, SIGQUIT]
 private let restoreHandler: @convention(c) (Int32) -> Void = { signal in
   if restoreArmed != 0 {
     var modes = restoreModes
-    _ = tcsetattr(restoreFd, TCSANOW, &modes)
+    _ = tcsetattr(restoreFd, TCSAFLUSH, &modes)
   }
   var action = sigaction()
   action.__sigaction_u.__sa_handler = SIG_DFL
@@ -233,7 +254,7 @@ private final class ModeRestorer {
   func restore() {
     guard !done else { return }
     done = true
-    _ = tcsetattr(fd, TCSANOW, &saved)
+    _ = tcsetattr(fd, TCSAFLUSH, &saved)
     restoreArmed = 0
     for (signal, old) in previous {
       var old = old

@@ -8,8 +8,10 @@
 //   {"v":1,"token":…,"op":"read","label":…} -> {"ok":true,"value":…}
 //   {"v":1,"token":…,"op":"list"}           -> {"ok":true,"labels":[…]}
 //   failure                                  -> {"ok":false,"error":<code>}
-// Errors are BrokerError with a stable `code` and a fixed message. No error ever carries reply bytes, so a value
-// cannot leak through a failure path; labels are not secret and may appear.
+// Errors are BrokerError with a stable `code` and a fixed message. No error ever carries reply bytes or transport
+// diagnostics, so a value cannot leak through a failure path; labels are not secret and may appear. A reply must be
+// exactly one frame of valid UTF-8: bytes past the frame in what has been received, or invalid UTF-8, are a protocol
+// error. The stream is closed as soon as the frame is complete, so nothing after it is ever read.
 import {isLabel} from './label.mjs';
 
 export const BROKER_ENV = {endpoint: 'CUA_SECRETS_BROKER_ENDPOINT', token: 'CUA_SECRETS_BROKER_TOKEN'};
@@ -53,6 +55,9 @@ async function nativePipe(path) {
   return create(path);
 }
 
+const utf8 = new TextDecoder('utf-8', {fatal: true});
+const closeStream = stream => { try { stream?.destroy ? stream.destroy() : stream?.end?.(); } catch {} };
+
 const frame = body => {
   const header = Buffer.alloc(4);
   header.writeUInt32BE(body.length);
@@ -73,7 +78,7 @@ export function brokerClient({endpoint, token, connect = nativePipe, timeoutMs =
         clearTimeout(timer);
         for (const chunk of chunks) chunk.fill(0);
         chunks = [];
-        try { stream?.destroy ? stream.destroy() : stream?.end?.(); } catch {}
+        closeStream(stream);
         if (error) reject(error); else resolve(reply);
       };
       const timer = setTimeout(() => finish(new BrokerError('timeout')), timeoutMs);
@@ -90,22 +95,29 @@ export function brokerClient({endpoint, token, connect = nativePipe, timeoutMs =
           if (expected === 0 || expected > MAX_RESPONSE_BYTES) return finish(new BrokerError('protocol'));
         }
         if (expected === null || received < 4 + expected) return;
+        if (received > 4 + expected) return finish(new BrokerError('protocol'));
         const all = Buffer.concat(chunks);
         chunks.forEach(c => c.fill(0));
         chunks = [all];
         let reply;
-        try { reply = JSON.parse(all.subarray(4, 4 + expected).toString('utf8')); } catch { return finish(new BrokerError('protocol')); }
+        try { reply = JSON.parse(utf8.decode(all.subarray(4))); } catch { return finish(new BrokerError('protocol')); }
         finish(null, reply);
       };
       const lost = () => finish(new BrokerError('disconnected'));
+      // Any failure to connect, attach or write settles the call once as `disconnected`, whatever the transport threw.
       (async () => {
-        try { stream = await connect(endpoint); } catch { return finish(new BrokerError('disconnected')); }
-        if (settled) { try { stream?.destroy ? stream.destroy() : stream?.end?.(); } catch {} return; }
-        stream.on('data', onData);
-        stream.on('error', lost);
-        stream.on('end', lost);
-        stream.on('close', lost);
-        stream.write(frame(Buffer.from(JSON.stringify({v: BROKER_PROTOCOL, token, ...request}), 'utf8')));
+        try {
+          stream = await connect(endpoint);
+          if (settled) return closeStream(stream);
+          stream.on('data', onData);
+          stream.on('error', lost);
+          stream.on('end', lost);
+          stream.on('close', lost);
+          stream.write(frame(Buffer.from(JSON.stringify({v: BROKER_PROTOCOL, token, ...request}), 'utf8')));
+        } catch {
+          if (settled) closeStream(stream);
+          else finish(new BrokerError('disconnected'));
+        }
       })();
     });
   }

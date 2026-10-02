@@ -16,6 +16,8 @@ test('anything but a single valid label is refused as usage, never echoing what 
       [], ['get', 'k'], ['export'], ['show', 'k'], ['read', 'k'],
       ['set'], ['set', 'k', 'hunter2-argv'], ['set', '--value', 'hunter2-flag'], ['set', 'k', '--value=hunter2-eq'],
       ['set', 'bad hunter2 label'], ['set', '-hunter2'], ['remove'], ['remove', 'a', 'b'], ['remove', 'k', '--force'], ['list', 'extra'],
+      ['set', 'k', '--hunter2-secret'], ['set', '--hunter2'], ['set', '-xhunter2', 'k'], ['set', 'k', '--hunter2', 'v'],
+      ['remove', 'k', '--hunter2-flag'], ['remove', '--yes=hunter2', 'k'], ['list', '--hunter2'], ['list', '--json=hunter2'],
     ];
     for (const args of cases) {
       const r = spawnSync(process.execPath, [CLI, 'secrets', ...args], {env: {...process.env, CUA_HOME: s.dir}, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe']});

@@ -5,6 +5,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync} from 'node:fs';
 import {join} from 'node:path';
+import net from 'node:net';
+import {rmSync} from 'node:fs';
 import {startBroker, endpointFor, openSecrets} from '../src/secrets/broker.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -128,4 +130,41 @@ test('a helper path that cannot be executed fails fast as broker_failed', async 
   const error = await startBroker({command: join(f.dir, 'no-such-helper'), endpoint: f.endpoint}).then(() => null, e => e);
   assert.equal(error?.code, 'broker_failed');
   assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+});
+
+// An independent listener at `path`, standing in for a socket cua does not own.
+async function foreignListener(t, path) {
+  const server = net.createServer(socket => socket.end());
+  await new Promise(resolve => server.listen(path, resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  return server;
+}
+const connects = path => new Promise(resolve => {
+  const socket = net.createConnection(path);
+  socket.once('connect', () => { socket.destroy(); resolve(true); });
+  socket.once('error', () => resolve(false));
+});
+
+test('a broker that never became ready leaves an existing endpoint alone', async t => {
+  for (const command of ['refuse', 'missing']) {
+    const f = setup(t, 'refuse');
+    await foreignListener(t, f.endpoint);
+    const helper = command === 'missing' ? {...f.helper, command: join(f.dir, 'no-such-helper')} : f.helper;
+    const error = await startBroker({...helper, endpoint: f.endpoint}).then(() => null, e => e);
+    assert.equal(error?.code, 'broker_failed', command);
+    assert.equal(existsSync(f.endpoint), true, command);
+    assert.equal(await connects(f.endpoint), true, command);
+  }
+});
+
+test('close removes only the socket the broker created, never one that replaced it', async t => {
+  const f = setup(t, 'stubborn');
+  const broker = await startBroker({...f.helper, endpoint: f.endpoint});
+  rmSync(f.endpoint);
+  await foreignListener(t, f.endpoint);
+  const closed = await broker.close({budgetMs: 1000});
+  assert.equal(closed.confirmed, true);
+  assert.equal(alive(broker.pid), false);
+  assert.equal(existsSync(f.endpoint), true);
+  assert.equal(await connects(f.endpoint), true);
 });

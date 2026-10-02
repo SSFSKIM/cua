@@ -53,6 +53,18 @@ enum Built {
     #expect(!screen.contains("typed-zz"))
   }
 
+  @Test func productionOverflowingPasteIsRefusedWithoutEchoingTheRest() throws {
+    let p = try PseudoTerminalProcess.spawn(Built.production, ["set", "cua-test-label"])
+    let before = p.initialModes
+    try p.expect("(input hidden)", timeout: 10)
+    p.type(String(repeating: "Q", count: 4500) + "\r")
+    #expect(p.wait(timeout: 10) == .exited(1))
+    #expect(p.modes() == before)
+    usleep(300_000)
+    #expect(p.output.contains("[too_long]"))
+    #expect(!p.output.contains("QQQQ"))
+  }
+
   @Test func productionMismatchStoresNothingAndRestoresTheTerminal() throws {
     let p = try PseudoTerminalProcess.spawn(Built.production, ["set", "cua-test-label"])
     let before = p.initialModes

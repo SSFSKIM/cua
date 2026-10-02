@@ -74,4 +74,25 @@ import CuaKeychainTestSupport
     defer { close(fds[0]); close(fds[1]) }
     #expect(throws: TerminalError.notATerminal) { try Terminal(fd: fds[0]).readHidden(prompt: "Secret: ") }
   }
+
+  @Test func anOverflowingPasteLeavesNothingQueuedOrEchoed() throws {
+    let pty = try PseudoTerminalPair()
+    let before = pty.modes()
+    let paste = String(repeating: "Q", count: 4500) + "\r"
+    let result = pty.run({ try Terminal(fd: pty.slave).readHidden(prompt: "Secret: ") }, typing: [paste])
+    #expect(throws: TerminalError.tooLong) { try result.get() }
+    #expect(pty.modes() == before)
+    usleep(300_000)
+    #expect(pty.unreadInput == 0)
+    #expect(!pty.drainOutput().contains("QQQQ"))
+  }
+
+  @Test func inputAfterACancelIsDiscarded() throws {
+    let pty = try PseudoTerminalPair()
+    let result = pty.run({ try Terminal(fd: pty.slave).readHidden(prompt: "Secret: ") }, typing: ["abc\u{3}rest-zz\r"])
+    #expect(throws: TerminalError.cancelled) { try result.get() }
+    usleep(300_000)
+    #expect(pty.unreadInput == 0)
+    #expect(!pty.drainOutput().contains("rest-zz"))
+  }
 }

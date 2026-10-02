@@ -146,3 +146,38 @@ test('without a connect function the client uses nodeRepl.nativePipe and never f
   assert.equal(await client.read('k'), SENTINEL);
   assert.deepEqual(used, [broker.endpoint]);
 });
+
+test('a transport whose setup or write throws settles once as disconnected, closes the stream and leaks nothing', async () => {
+  const shapes = {
+    'write throws': () => ({on() {}, write() { throw new Error(`write ${SENTINEL}`); }}),
+    'on throws': () => ({on() { throw new Error(`on ${SENTINEL}`); }, write() {}}),
+    'no stream': () => null,
+  };
+  for (const [name, make] of Object.entries(shapes)) {
+    let destroyed = 0;
+    const client = brokerClient({endpoint: '/x.sock', token: TOKEN, timeoutMs: 2000, connect: async () => {
+      const stream = make();
+      if (stream) stream.destroy = () => { destroyed++; };
+      return stream;
+    }});
+    const started = Date.now();
+    const error = await code(client.read('k'));
+    assert.equal(error.code, 'disconnected', name);
+    assert.ok(Date.now() - started < 1000, `${name} waited for the timeout`);
+    assert.doesNotMatch(error.message + String(error.stack), new RegExp(SENTINEL), name);
+    if (name !== 'no stream') assert.equal(destroyed, 1, name);
+  }
+});
+
+test('a reply that is not valid UTF-8, or carries bytes past its frame, is a protocol error', async t => {
+  const invalid = Buffer.concat([Buffer.from('{"ok":true,"value":"a'), Buffer.from([0xff, 0xfe]), Buffer.from('"}')]);
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(invalid.length);
+  const surplus = Buffer.concat([frame({ok: true, value: SENTINEL}), Buffer.from('extra')]);
+  for (const reply of [Buffer.concat([header, invalid]), surplus]) {
+    const broker = await scriptedBroker(t, () => reply);
+    const error = await code(brokerClient({endpoint: broker.endpoint, token: TOKEN, connect: viaNet}).read('k'));
+    assert.equal(error.code, 'protocol');
+    assert.doesNotMatch(error.message, new RegExp(SENTINEL));
+  }
+});

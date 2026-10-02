@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "cua",
-      "description": "Native macOS computer use for Claude Code through OpenAI's Codex computer-use stack (requires ChatGPT.app with Computer Use enabled)",
+      "description": "Native macOS computer use for Claude Code through OpenAI's computer-use runtime (requires the pinned runtime installed with `cua install`)",
       "version": "0.1.0",
       "source": "./",
       "author": {

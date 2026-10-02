@@ -2,7 +2,16 @@
 
 ## Open
 
-(none)
+- **2026-10-02 — Stale node_repl active-exec records after a forced teardown (minor, M3).** When the server has to
+  signal the runtime while a cell runs (the uncertain-completion path), node_repl leaves
+  `$CUA_HOME/state/codex/node_repl/active_execs/<exec>.json` behind. No reader was found in node_repl; the files are
+  small and private to CUA_HOME. Revisit if a vendor component turns out to act on them (they name pids). Evidence:
+  `docs/evidence/m3-mcp-lifecycle.md`.
+- **2026-10-02 — Per-connection approval files may accumulate (minor, M3, unobserved).** Each connection has a random
+  session id, and `CUA_SHIM_PERSIST=session` makes node_repl write
+  `$CUA_HOME/state/codex/computer-use/sessions/<session id>.toml` per approved connection; nothing removes them. Not
+  observed yet (no app was bound in M3 runs); confirm in M6's TextEdit fixture and decide whether close should remove
+  the connection's own file.
 
 ## Resolved
 

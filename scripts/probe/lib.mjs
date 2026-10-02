@@ -66,7 +66,7 @@ const DESKTOP_RUNTIME = /\/ChatGPT\.app\/Contents\/|\/\.codex\/computer-use\//;
 export function classifyProcesses(tree, {relocatedRoot}) {
   return {
     desktopRuntimePaths: tree.filter(p => DESKTOP_RUNTIME.test(p.executable)),
-    allExecutablesRelocated: tree.every(p => p.executable.startsWith(relocatedRoot + '/')),
+    allExecutablesRelocated: tree.length > 0 && tree.every(p => p.executable.startsWith(relocatedRoot + '/')),
   };
 }
 

@@ -19,7 +19,6 @@
     "runtime/releases/",
     "cua-shim.mjs",
     "verify.mjs",
-    "hooks/",
     ".claude-plugin/",
     "README.md"
   ]

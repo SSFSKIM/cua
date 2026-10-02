@@ -1,17 +1,18 @@
 # cua — native macOS computer use for Claude Code
 
 Lets Claude Code read and operate macOS apps (accessibility tree, screenshots, clicks, typing, menus) by hosting
-OpenAI's Codex computer-use stack, which ships inside ChatGPT.app. `cua-shim.mjs` is a stdio MCP proxy: Claude Code
-talks to it, and it launches ChatGPT.app's own `cua_repl` server exactly as Codex does. Nothing in ChatGPT.app or
-`~/.codex` is modified. The study behind it is in `research/codex-computer-use/`.
+OpenAI's Codex computer-use stack. `cua serve` (the plugin runs it through `cua-shim.mjs`) is a stdio MCP server: it
+launches a pinned copy of OpenAI's `cua_repl` runtime that `cua install` verified and placed under `CUA_HOME`, not the
+copy inside an installed ChatGPT.app, and nothing in ChatGPT.app or `~/.codex` is read or modified. The design and its
+status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
 
 ## Requirements
 
-- macOS, ChatGPT.app 26.917 or newer, with Computer Use enabled once in its settings (that installs
-  `~/.codex/computer-use/Codex Computer Use.app` and grants it Accessibility and Screen Recording).
-- ChatGPT running, so its computer-use service is up. If it is not, the first call starts the service through
-  LaunchServices and takes a few seconds longer.
-- `node` on `PATH` (any recent version; the shim itself has no dependencies).
+- macOS on Apple silicon and `node` 22 or newer on `PATH` (no npm dependencies).
+- The pinned runtime, installed once from a checkout: `node bin/cua.mjs install` (downloads OpenAI's pinned archive;
+  `--archive <ChatGPT zip>` uses a local copy of it), then `node bin/cua.mjs doctor` to check it.
+- The native computer-use helper needs Accessibility and Screen Recording. Where ChatGPT's Computer Use already runs,
+  its helper serves this runtime too; a first-run permission flow without ChatGPT installed is not yet verified.
 
 ## Install
 
@@ -33,8 +34,8 @@ Apart from Claude Code's tool permission, OpenAI's stack asks before an app is f
 "X"?`, as an MCP elicitation that Claude Code shows as a dialog. Where an accepted answer is remembered depends on
 `CUA_SHIM_PERSIST`:
 
-- `session` (the default) writes `$CUA_SHIM_CODEX_HOME/computer-use/sessions/<session id>.toml`, so every new Claude
-  Code session asks once more per app.
+- `session` (the default) writes `$CUA_HOME/state/codex/computer-use/sessions/<session id>.toml`; each server
+  connection has its own random session id, so every new connection asks once more per app.
 - `always` adds the app to the machine-wide list Codex Desktop's own "Always allow" uses,
   `~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json`;
   an app on that list is never asked about again from any session or host. One more accept per app, then silence.
@@ -71,33 +72,41 @@ app's whole front window (see Use).
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns OpenAI's API document to the model, which then writes small JavaScript cells against the `cua`
-API. The shim adds host notes to the server instructions covering what that document leaves out (one approval per
+API. The server adds host notes to the server instructions covering what that document leaves out (one approval per
 app, index-first addressing, dropping an app handle after quitting it, `typeText` and emoji, and so on).
+
+The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (it reports that secret
+storage is not configured yet). Calls on one connection form a task until the model calls `end_task`, which waits for
+running JavaScript and then has the runtime complete the task. The plugin no longer installs `Stop`/`SubagentStop`
+hooks for this; if completion cannot be confirmed, the connection fails closed and stops its runtime.
 
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.
 
-## Verify after a ChatGPT.app update
+## Verify
 
 ```sh
-node plugins/cua/verify.mjs
+npm test            # Node only; no runtime, GUI or network
+node verify.mjs     # the installed runtime in $CUA_HOME, through `cua serve`
 ```
 
-It spawns the shim, completes the MCP handshake and lists the tools without touching any app. A non-zero exit names
-what changed. The end-to-end checks live in `spikes/computer-use-probe/` (`w3-shim-unit.mjs` drives a throwaway
-TextEdit document).
+`verify.mjs` completes the MCP handshake, checks the tool surface, and runs trivial cells that bind no app (the first
+loads OpenAI's API, which contacts the native helper read-only) to check task identity and `end_task`. It reports which
+executables served and which helper answered. A non-zero exit names what failed.
 
 ## Configuration (environment of the server)
 
 | variable | default | meaning |
 |---|---|---|
-| `CUA_SHIM_CODEX_HOME` | `${CLAUDE_PLUGIN_DATA}/codex-home` | where session approvals and config are stored |
-| `CUA_SHIM_SESSION_ID` | Claude Code's session id | key for "allow this session" approvals |
+| `CUA_HOME` | `~/Library/Application Support/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`) |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
-| `CUA_SHIM_SURFACES` | `computer` | `browser,computer` adds OpenAI's browser API, but under this shim it lists no browsers: it needs a Codex login in `CODEX_HOME`, and the in-app browser (`iab`) only serves ChatGPT's own Codex threads |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
-| `CUA_SHIM_LOG` | unset | JSONL journal of every frame, for debugging |
-| `CUA_SHIM_PLUGIN_MCP` | newest under `~/.codex/plugins/cache/openai-bundled/unified-computer-use/` | OpenAI's launch recipe to copy |
+| `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
+
+Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
+runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session),
+`CUA_SHIM_SURFACES` (native computer use only) and `CUA_SHIM_LOG` (it recorded whole transcripts). Apart from basic OS
+variables (`HOME`, `USER`, `TMPDIR`, locale), nothing else in the server's environment reaches the runtime.
 
 ## For MAWS
 

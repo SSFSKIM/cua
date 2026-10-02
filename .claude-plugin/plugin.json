@@ -1,6 +1,6 @@
 {
   "name": "cua",
-  "description": "Native macOS computer use for Claude Code through OpenAI's Codex computer-use stack: a stdio MCP shim that hosts ChatGPT.app's cua_repl server. Requires ChatGPT.app with Computer Use enabled.",
+  "description": "Native macOS computer use for Claude Code through OpenAI's computer-use runtime: a stdio MCP server running the pinned runtime that `cua install` places under CUA_HOME, not the copy inside an installed ChatGPT.app. Requires macOS arm64 and that install.",
   "version": "0.1.0",
   "author": {
     "name": "SSFSKIM"
@@ -10,10 +10,7 @@
       "command": "node",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/cua-shim.mjs"
-      ],
-      "env": {
-        "CUA_SHIM_CODEX_HOME": "${CLAUDE_PLUGIN_DATA}/codex-home"
-      }
+      ]
     }
   }
 }

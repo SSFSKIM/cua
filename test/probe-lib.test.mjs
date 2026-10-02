@@ -75,6 +75,8 @@ test('process classification flags any installed-desktop runtime path in the own
   const flagged = classifyProcesses(descendants(dirty, 1000), {relocatedRoot: paths.root});
   assert.deepEqual(flagged.desktopRuntimePaths.map(p => p.pid), [1004]);
   assert.equal(flagged.allExecutablesRelocated, false);
+  // No observed process is no evidence of relocation.
+  assert.equal(classifyProcesses([], {relocatedRoot: paths.root}).allExecutablesRelocated, false);
 });
 
 test('socket holders are read from lsof field output', () => {

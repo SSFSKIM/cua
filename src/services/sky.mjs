@@ -22,7 +22,11 @@
 // error it raises carries a cause, a vendor payload or anything derived from the value. Labels are not secret.
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
-import {BROKER_ENV, BrokerError, brokerClientFromEnv} from '../secrets/client.mjs';
+import {
+  SecretInputError, NOTHING_ENTERED, propertyKey, matchesShape, invalidLabel, unavailable, readFailure, inputFailed, secretsFromEnv,
+} from './secret-input.mjs';
+
+export {SecretInputError};
 
 // Each eligible command's input: its keys and the primitive type each must have (`optional` keys may be absent).
 const isString = value => typeof value === 'string';
@@ -43,40 +47,11 @@ const VENDOR_ERROR_NAMES = new Set([
   'couldNotGetBootstrapPort', 'screenLocked', 'jsonRPCError',
 ]);
 
-// Broker client codes -> what the caller is told. Codes absent here (transport and protocol failures) mean secrets
-// are unavailable on this connection.
-const BROKER_OUTCOMES = {
-  not_found: 'secret_not_found',
-  denied: 'secret_denied',
-  locked: 'secret_locked',
-  unsupported_value: 'secret_unsupported_value',
-  invalid_label: 'invalid_secret_label',
-};
-const LAUNCH_CODE = /^[a-z][a-z_]{0,63}$/;
-const NOTHING_ENTERED = 'nothing was entered';
-
-export class SecretInputError extends Error {
-  constructor(code, sentence) {
-    super(`cua: ${sentence} [${code}]`);
-    this.name = 'SecretInputError';
-    this.code = code;
-  }
-}
-
-const isPlainObject = value => value !== null && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype;
-
-// The property key the vendor service would look the method up by: it indexes its client with request.method, which
-// coerces (["paste"] reaches paste), so eligibility is judged on the same key and the pinned shape then demands a
-// plain string. Requests arrive JSON-decoded, so coercion runs no foreign code; anything uncoercible is ineligible.
-function methodKey(method) {
-  if (typeof method === 'string') return method;
-  try { return String(method); } catch { return null; }
-}
-
 // The substitution a request asks for: null to delegate it untouched, or {method, rule, input, reference, request}.
+// The vendor indexes its client with request.method, so eligibility uses the coerced key (see propertyKey).
 function substitutionFor(request) {
-  if (!isPlainObject(request) || request.type !== 'execute') return null;
-  const method = methodKey(request.method);
+  if (request === null || typeof request !== 'object' || Array.isArray(request) || request.type !== 'execute') return null;
+  const method = propertyKey(request.method);
   if (method === null || !Object.hasOwn(ELIGIBLE, method)) return null;
   if (!Array.isArray(request.args) || request.args[0] === null || typeof request.args[0] !== 'object') return null;
   const rule = ELIGIBLE[method];
@@ -92,31 +67,10 @@ function checkShape({method, rule, input, request}) {
   const keys = Object.keys(rule.fields);
   const pinned = typeof request.method === 'string'
     && request.args.length === 1
-    && isPlainObject(input)
     && Object.keys(request).every(key => REQUEST_KEYS.includes(key))
-    && Object.keys(input).every(key => keys.includes(key))
-    && keys.every(key => Object.hasOwn(input, key) ? rule.fields[key](input[key]) : rule.optional.includes(key));
+    && matchesShape(input, rule.fields, rule.optional);
   if (!pinned) throw new SecretInputError('unsupported_secret_shape', `a {{secret:…}} reference is expanded only as the whole ${rule.field} of ${method} in its pinned shape (${keys.join(', ')}${method === 'paste' ? '; text format' : ''}); ${NOTHING_ENTERED}`);
 }
-
-function unavailable(reason) {
-  if (reason === 'secrets_disabled') return new SecretInputError('secrets_disabled', `secrets are turned off for this server (CUA_SHIM_SECRETS=off); ${NOTHING_ENTERED}`);
-  return new SecretInputError('secrets_unavailable', `secrets are unavailable on this connection (${reason}); ${NOTHING_ENTERED}`);
-}
-
-function readFailure(error, label) {
-  const code = error instanceof BrokerError ? error.code : 'error';
-  switch (BROKER_OUTCOMES[code]) {
-    case 'secret_not_found': return new SecretInputError('secret_not_found', `no secret named "${label}" (secrets_list shows the stored labels); ${NOTHING_ENTERED}`);
-    case 'secret_denied': return new SecretInputError('secret_denied', `Keychain access to secret "${label}" was denied; ${NOTHING_ENTERED}`);
-    case 'secret_locked': return new SecretInputError('secret_locked', `the Keychain is locked, so secret "${label}" could not be read; ${NOTHING_ENTERED}`);
-    case 'secret_unsupported_value': return new SecretInputError('secret_unsupported_value', `secret "${label}" is not valid UTF-8 text; ${NOTHING_ENTERED}`);
-    case 'invalid_secret_label': return invalidLabel();
-    default: return unavailable(code);
-  }
-}
-
-const invalidLabel = () => new SecretInputError('invalid_secret_label', `a {{secret:…}} reference must name a label of 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit; ${NOTHING_ENTERED}`);
 
 // A fixed classification of a vendor failure, never its text.
 function vendorFailureKind(error) {
@@ -150,7 +104,7 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     try {
       return await service.handleRpc({type: 'execute', method, args: [{...input, [rule.field]: value}]});
     } catch (error) {
-      throw new SecretInputError('secret_input_failed', `${method} with secret "${reference.label}" failed (${vendorFailureKind(error)}) after the secret was read; it may have been partly entered. The runtime's error is withheld because it can contain the secret`);
+      throw inputFailed(method, reference.label, vendorFailureKind(error));
     }
   }
   return {handleRpc};
@@ -159,16 +113,12 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
 // The service as the trusted worker runs it, configured by the launch environment.
 export function skyServiceFromEnv(env = process.env) {
   const vendorPath = env.CUA_SKY_VENDOR_SERVICE;
-  const reason = env[BROKER_ENV.unavailable];
-  const secrets = brokerClientFromEnv({env});
-  const configured = env[BROKER_ENV.endpoint] && env[BROKER_ENV.token];
   return createSkyService({
     loadVendor: async () => {
       if (!vendorPath) throw new Error('cua: the vendor sky service is not configured for this runtime [sky_not_configured]');
       return import(pathToFileURL(vendorPath).href);
     },
-    secrets,
-    secretsUnavailable: configured ? null : (LAUNCH_CODE.test(reason ?? '') ? reason : 'secrets_not_configured'),
+    ...secretsFromEnv(env),
   });
 }
 

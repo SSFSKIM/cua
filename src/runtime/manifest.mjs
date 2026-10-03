@@ -12,7 +12,7 @@ import {checkLayout} from './checks.mjs';
 
 export const RELEASES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'releases');
 export const RECORD_FILE = 'install.json';
-export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyServiceApp', 'skyVendorService', 'vendorManifest', 'ipcClient'];
+export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
 const INSTALL_HINT = 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)';
 const hostTarget = () => ({platform: process.platform, arch: process.arch});
 

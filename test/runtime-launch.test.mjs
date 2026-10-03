@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {buildLaunch, SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
@@ -133,4 +133,48 @@ test('without a broker the launch tells the trusted worker why, so a secret refe
   const withBroker = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, broker, secretsUnavailable: 'secrets_disabled'}).env;
   assert.equal(withBroker.CUA_SECRETS_UNAVAILABLE, undefined, 'a running broker wins');
   assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsUnavailable: 'Bad Reason!'}), err => err.code === 'invalid_secrets_reason');
+});
+
+// ---- surfaces (M11) -------------------------------------------------------------------------------------------
+
+test('the browser surface registers the trusted browser wrapper and configures the vendor browser service', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['computer', 'browser'], services: {sky: SKY_SERVICE, browser: BROWSER_SERVICE}});
+  assert.equal(env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
+  assert.deepEqual(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE, browser: BROWSER_SERVICE});
+  assert.equal(env.CUA_BROWSER_VENDOR_SERVICE, runtime.paths.browserVendorService);
+  assert.equal(env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome');
+  assert.equal(env.CUA_SKY_VENDOR_SERVICE, runtime.paths.skyVendorService);
+  // The vendor discovers its hosts itself; no explicit backend list, no network or security override.
+  for (const key of ['BROWSER_USE_BACKEND_PATHS', 'BROWSER_USE_DISABLE_AMBIENT_NETWORK', 'BROWSER_USE_SECURITY_MODE', 'BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID'])
+    assert.equal(env[key], undefined, key);
+  assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'CUA_BROWSER_VENDOR_SERVICE']);
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS]);
+});
+
+test('a browser-only launch has no computer-use service or native helper configuration', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
+  assert.equal(env.CUA_REPL_ENABLED_SURFACES, 'browser');
+  assert.deepEqual(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES), {browser: BROWSER_SERVICE});
+  assert.equal(env.SKY_CUA_SERVICE_PATH, undefined);
+  assert.equal(env.CUA_SKY_VENDOR_SERVICE, undefined);
+  assert.equal(env.CODEX_CLI_PATH, runtime.paths.codexCli, 'the runtime sandbox is kept whatever the surface');
+});
+
+test('surfaces are canonical: computer by default, order-independent, and only the two vendor surfaces', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  assert.equal(buildLaunch({runtime, home, sessionId: SESSION}).env.CUA_REPL_ENABLED_SURFACES, 'computer');
+  const reversed = buildLaunch({runtime, home, sessionId: SESSION, surfaces: ['browser', 'computer'], services: {sky: SKY_SERVICE, browser: BROWSER_SERVICE}});
+  assert.equal(reversed.env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
+  for (const bad of [[], ['iab'], ['computer', 'computer'], 'computer', [' browser']])
+    assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, surfaces: bad}), err => err.code === 'invalid_surfaces', JSON.stringify(bad));
+});
+
+test('registered services must match the enabled surfaces exactly, so no surface silently runs without its wrapper', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const expect = err => err.code === 'invalid_service';
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, surfaces: ['computer', 'browser'], services: {sky: SKY_SERVICE}}), expect);
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, surfaces: ['browser'], services: {sky: SKY_SERVICE, browser: BROWSER_SERVICE}}), expect);
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, services: {browser: BROWSER_SERVICE}}), expect);
 });

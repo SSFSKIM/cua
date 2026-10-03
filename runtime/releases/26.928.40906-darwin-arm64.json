@@ -26,6 +26,7 @@
     "codexCli": "CodexCLI.app/Contents/MacOS/codex",
     "skyServiceApp": "cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
     "skyVendorService": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
+    "browserVendorService": "cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
     "vendorManifest": "cua_node/manifest.json",
     "ipcClient": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js"
   },

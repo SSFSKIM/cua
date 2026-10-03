@@ -8,18 +8,29 @@
 //   PATH                                     fixed system path
 //   CODEX_HOME                               <home>/state/codex: runtime config and per-user approvals
 //   CUA_REPL_NODE_REPL_PATH                  relocated node_repl (required by the vendor launcher)
-//   CUA_REPL_ENABLED_SURFACES=computer       required by the vendor launcher; native-only, never "browser" here
+//   CUA_REPL_ENABLED_SURFACES                required by the vendor launcher: `computer` (the default), `browser` or
+//                                            `computer,browser`, from the caller's `surfaces`
 //   NODE_REPL_NODE_PATH, NODE_REPL_NODE_MODULE_DIRS    relocated vendor node and its module tree
 //   NODE_REPL_TRUSTED_CODE_PATHS             the vendor module tree and, with services registered, each service's
 //                                            directory and the owned modules services import (src/secrets). Never
 //                                            CODEX_HOME or run/: the runtime writes there, and the trusted worker
 //                                            imports anything under a trusted path
-//   NODE_REPL_TRUSTED_SERVICES               only when services are registered (`cua serve` registers SKY_SERVICE);
-//                                            unset lets the vendor launcher use its own @oai/sky/service
+//   NODE_REPL_TRUSTED_SERVICES               only when services are registered (`cua serve` registers SKY_SERVICE for
+//                                            the computer surface and BROWSER_SERVICE for the browser surface, and the
+//                                            registered services must be exactly those of the enabled surfaces); unset
+//                                            lets the vendor launcher use its own services
 //   NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000, NODE_REPL_DISABLE_ANALYTICS=1
 //   CODEX_CLI_PATH                           relocated CodexCLI.app executable (the sandbox; no unsandboxed fallback)
-//   SKY_CUA_SERVICE_PATH                     relocated helper app, opened by the vendor through LaunchServices
-//   CUA_SKY_VENDOR_SERVICE                   vendor sky service module, for a trusted wrapper to delegate to
+//   SKY_CUA_SERVICE_PATH                     computer surface: relocated helper app, opened by the vendor through
+//                                            LaunchServices
+//   CUA_SKY_VENDOR_SERVICE                   computer surface: vendor sky service module, for the trusted wrapper
+//   CUA_BROWSER_VENDOR_SERVICE               browser surface: vendor @oai/browser-desktop service module, for the
+//                                            trusted browser wrapper (src/services/browser.mjs) to delegate to
+//   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the vendor service considers Chrome backends only. Its
+//                                            backend sockets are left to the vendor's own discovery (no
+//                                            BROWSER_USE_BACKEND_PATHS), and its network and security behaviour is
+//                                            the vendor default (no BROWSER_USE_DISABLE_AMBIENT_NETWORK or
+//                                            BROWSER_USE_SECURITY_MODE)
 //   CUA_SECRETS_BROKER_ENDPOINT, CUA_SECRETS_BROKER_TOKEN   only with a broker (src/secrets/broker.mjs): its socket
 //                                            and capability token, read by src/secrets/client.mjs in the trusted
 //                                            worker; untrusted cells see only the vendor's env allowlist
@@ -41,7 +52,9 @@ import {BROKER_ENV} from '../secrets/client.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-const KNOWN_SERVICES = ['sky'];
+// Each surface the vendor launcher knows, in its canonical order, and the trusted service that serves it.
+const SURFACE_SERVICES = {computer: 'sky', browser: 'browser'};
+const SURFACES = Object.keys(SURFACE_SERVICES);
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
 const REASON = /^[a-z][a-z_]{0,63}$/;
 const ownedPath = relative => realpathSync(fileURLToPath(new URL(relative, import.meta.url)));
@@ -49,10 +62,12 @@ const ownedPath = relative => realpathSync(fileURLToPath(new URL(relative, impor
 // The production trusted sky service, and the owned directories whose modules registered services import (the
 // trusted worker refuses any import whose real path lies outside NODE_REPL_TRUSTED_CODE_PATHS).
 export const SKY_SERVICE = ownedPath('../services/sky.mjs');
+export const BROWSER_SERVICE = ownedPath('../services/browser.mjs');
 export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 
-export function buildLaunch({runtime, home, sessionId, services, broker, secretsUnavailable, ambient = process.env}) {
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, broker, secretsUnavailable, ambient = process.env}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
+  const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
@@ -64,12 +79,12 @@ export function buildLaunch({runtime, home, sessionId, services, broker, secrets
     PATH: FIXED_PATH,
     CODEX_HOME: owned.codexHome,
     CUA_REPL_NODE_REPL_PATH: p.nodeRepl,
-    CUA_REPL_ENABLED_SURFACES: 'computer',
+    CUA_REPL_ENABLED_SURFACES: enabled.join(','),
     NODE_REPL_NODE_PATH: p.node,
     NODE_REPL_NODE_MODULE_DIRS: p.moduleDir,
   });
   if (services && Object.keys(services).length) {
-    const registered = trustedServices(services);
+    const registered = trustedServices(services, enabled);
     env.NODE_REPL_TRUSTED_SERVICES = JSON.stringify(registered);
     for (const dir of [...Object.values(registered).map(module => dirname(module)), ...SERVICE_SUPPORT_DIRS]) if (!trustedCodePaths.includes(dir)) trustedCodePaths.push(dir);
   }
@@ -78,9 +93,9 @@ export function buildLaunch({runtime, home, sessionId, services, broker, secrets
     NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: p.codexCli,
-    SKY_CUA_SERVICE_PATH: p.skyServiceApp,
-    CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
   });
+  if (enabled.includes('computer')) Object.assign(env, {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
+  if (enabled.includes('browser')) Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
   if (broker) {
     env[BROKER_ENV.endpoint] = broker.endpoint;
     env[BROKER_ENV.token] = broker.token;
@@ -90,12 +105,24 @@ export function buildLaunch({runtime, home, sessionId, services, broker, secrets
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }
 
+// The enabled surfaces in the vendor launcher's terms: a non-empty set of known surface names, in canonical order.
+function canonicalSurfaces(surfaces) {
+  const valid = Array.isArray(surfaces) && surfaces.length > 0 && surfaces.every(s => SURFACES.includes(s)) && new Set(surfaces).size === surfaces.length;
+  if (!valid) fail('invalid_surfaces', `surfaces must be a non-empty set of ${SURFACES.join(', ')}`);
+  return SURFACES.filter(s => surfaces.includes(s));
+}
+
 // Service modules are registered by real path: the trusted worker only imports modules whose real path lies under
-// NODE_REPL_TRUSTED_CODE_PATHS, so a symlinked checkout (npm link) must not leak its link path in here.
-function trustedServices(services) {
+// NODE_REPL_TRUSTED_CODE_PATHS, so a symlinked checkout (npm link) must not leak its link path in here. The registered
+// services are exactly the enabled surfaces' services: with NODE_REPL_TRUSTED_SERVICES set the vendor launcher
+// registers nothing of its own, so a missing one would leave its surface without a service.
+function trustedServices(services, surfaces) {
+  const expected = surfaces.map(s => SURFACE_SERVICES[s]);
+  const names = Object.keys(services);
+  if (names.length !== expected.length || !expected.every(name => names.includes(name)))
+    fail('invalid_service', `the surfaces ${surfaces.join(', ')} take exactly the trusted service(s) ${expected.join(', ')}; got ${names.join(', ') || 'none'}`);
   const out = {};
   for (const [name, module] of Object.entries(services)) {
-    if (!KNOWN_SERVICES.includes(name)) fail('invalid_service', `unknown trusted service "${name}"; this delivery registers only ${KNOWN_SERVICES.join(', ')}`);
     if (typeof module !== 'string' || !isAbsolute(module)) fail('invalid_service', `trusted service ${name} must be an absolute module path`);
     let real;
     try { real = realpathSync(module); } catch { fail('invalid_service', `trusted service ${name} module ${module} does not exist`); }

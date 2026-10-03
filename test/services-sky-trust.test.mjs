@@ -1,4 +1,4 @@
-// The production sky service must load inside node_repl's trusted worker, which refuses to import any file whose
+// The production sky and browser services must load inside node_repl's trusted worker, which refuses to import any file whose
 // real path lies outside NODE_REPL_TRUSTED_CODE_PATHS. This runs the service in a child Node with a copy of that
 // resolve hook (pinned node_repl 26.928.40906, trusted-worker.js) and exactly the environment buildLaunch produces,
 // so a new import outside the trusted directories fails here rather than only in a live runtime.
@@ -8,7 +8,7 @@ import {execFile} from 'node:child_process';
 import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {registerHooks} from 'node:module';
-import {buildLaunch, SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
@@ -36,17 +36,21 @@ registerHooks({resolve(specifier, context, nextResolve) {
   return resolved;
 }});
 const out = [];
+const [name, setup, reference] = JSON.parse(process.env.TRUST_TEST_REQUESTS);
 try {
-  const service = await import(pathToFileURL(JSON.parse(process.env.NODE_REPL_TRUSTED_SERVICES).sky).href);
-  out.push(await service.handleRpc({type: 'setup'}));
-  try { await service.handleRpc({type: 'execute', method: 'type_text', args: [{app: 'a', text: '{{secret:work-password}}'}]}); }
+  const service = await import(pathToFileURL(JSON.parse(process.env.NODE_REPL_TRUSTED_SERVICES)[name]).href);
+  out.push(await service.handleRpc(setup));
+  try { await service.handleRpc(reference); }
   catch (error) { out.push({error: error.message}); }
 } catch (error) { out.push({loadError: error.message}); }
 process.stdout.write(JSON.stringify(out));
 `;
 
-function runWorker(env) {
-  return new Promise((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', WORKER], {env, encoding: 'utf8'}, (error, stdout, stderr) => {
+const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{app: 'a', text: '{{secret:work-password}}'}]}];
+const BROWSER_REQUESTS = ['browser', {method: 'setup', params: {}}, {method: 'executeWithRecovery', params: {type: 'playwright_locator_fill', browser_id: '1', tab_id: '2', selector: 's', value: '{{secret:work-password}}', replace: true}}];
+
+function runWorker(env, requests = SKY_REQUESTS) {
+  return new Promise((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', WORKER], {env: {...env, TRUST_TEST_REQUESTS: JSON.stringify(requests)}, encoding: 'utf8'}, (error, stdout, stderr) => {
     if (error) return reject(new Error(`${error.message}\n${stderr}`));
     resolve(JSON.parse(stdout));
   }));
@@ -59,6 +63,8 @@ function launchWithFakeVendor(t, options = {}) {
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
   mkdirSync(dirname(runtime.paths.skyVendorService), {recursive: true});
   writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type}; }\n');
+  mkdirSync(dirname(runtime.paths.browserVendorService), {recursive: true});
+  writeFileSync(runtime.paths.browserVendorService, 'export async function handleRpc(request) { return {vendor: request.method}; }\n');
   return buildLaunch({runtime, home, sessionId: SESSION, ambient: {}, services: {sky: SKY_SERVICE}, ...options});
 }
 
@@ -73,5 +79,15 @@ test('the hook copy is effective: without the owned secrets modules trusted, the
   const {env} = launchWithFakeVendor(t);
   const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => !SERVICE_SUPPORT_DIRS.includes(dir)).join(':');
   const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed});
+  assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
+});
+
+test('the production browser service and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
+  const [setup, reference] = await runWorker(env, BROWSER_REQUESTS);
+  assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the vendor module named by CUA_BROWSER_VENDOR_SERVICE');
+  assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
+  const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => !SERVICE_SUPPORT_DIRS.includes(dir)).join(':');
+  const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed}, BROWSER_REQUESTS);
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
 });

@@ -33,6 +33,7 @@ export function writeFixtureApp(root, {vendor = {}, vendorRaw, ipc = 'CodexCompu
     'cua_node/bin/node_repl': '#!/bin/sh\necho fixture node_repl\n',
     'cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs': 'export {};\n',
     'cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js': 'export async function handleRpc() {}\n',
+    'cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs': 'export async function handleRpc() {}\n',
     'cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js': `this.apiVersion="${ipc}";\n`,
     'cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService': `helper ${ipc}\n`,
     'cua_node/lib/node_modules/corepack/dist/corepack.js': '// corepack\n',

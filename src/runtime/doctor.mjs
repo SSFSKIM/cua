@@ -10,6 +10,9 @@
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
 // a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
 // capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`.
+// The Chrome checks (src/profiles/checks.mjs) are capability evidence the same way: each registered profile's
+// extension, the com.openai.codexextension native-messaging registration and which host it names, and the running
+// OpenAI hosts, read from files and the process table only.
 import {existsSync, readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -19,13 +22,15 @@ import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
 import {loginStatus, LOGIN_STATES} from './login.mjs';
+import {chromeFacts} from '../profiles/chrome.mjs';
+import {chromeChecks, processTable} from '../profiles/checks.mjs';
 
 export const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
 const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin}) {
+export async function inspectRuntime({home, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -73,6 +78,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
     + `Confirm with a live probe (${LIVE_PROBE}).`));
   checks.push(...classifyKeychainHelper(await inspectSecrets()));
   checks.push(await codexLoginCheck({home, runtime: runtimeUsable ? runtime : null, inspectLogin}));
+  checks.push(...await inspectChrome({home}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
@@ -80,6 +86,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
+const defaultInspectChrome = async ({home}) => chromeChecks({home, chrome: chromeFacts(), psText: processTable()});
 
 async function codexLoginCheck({home, runtime, inspectLogin}) {
   if (!runtime) return result('codex.login', 'blocked', 'needs a usable installed runtime to ask; run cua install, then run cua login');

@@ -8,7 +8,10 @@
 //   reply can never answer a caller. Requests the runtime sends the client keep the runtime's IDs; the server sends
 //   the client none of its own.
 // - js/js_reset go through the task state machine (task.mjs): serialized, stamped with the session ID, the task ID as
-//   turn ID and a fresh call ID. end_task and secrets_list are answered here; hidden upstream tools are refused.
+//   turn ID and a fresh call ID. end_task, secrets_list and (with the browser surface) profiles_list are answered here;
+//   hidden upstream tools are refused.
+// - profiles_list reads the registered Chrome profiles (src/profiles) when asked: key, readiness, the instance id of a
+//   ready profile, the reason of one that is not; never a Chrome directory.
 // - secrets_list asks the connection's secrets provider (its private broker, src/secrets/broker.mjs) for labels; it
 //   never sees a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
@@ -23,14 +26,16 @@ import {join} from 'node:path';
 import {TaskLifecycle} from './task.mjs';
 import {spawnUpstream} from './upstream.mjs';
 import {
-  DEFAULT_HOST_NOTES, LOCAL_TOOLS, WORK_TOOLS, correctImages, modelTools, persistAccepted, statusResult, withHostNotes,
+  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, statusResult, withHostNotes,
 } from './surface.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, SKY_SERVICE} from '../runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {locateHelper} from '../secrets/helper.mjs';
 import {openSecrets} from '../secrets/broker.mjs';
+import {chromeFacts} from '../profiles/chrome.mjs';
+import {profileStatuses} from '../profiles/registry.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
@@ -40,10 +45,12 @@ const NOT_CONFIGURED = {
   close: async () => ({confirmed: true, steps: []}),
 };
 const LIST_CODES = new Set(['not_configured', 'disconnected', 'timeout', 'protocol', 'unauthorized', 'denied', 'locked', 'unavailable']);
+const SURFACES = ['computer', 'browser'];
+const NO_PROFILES = {list: () => []};
 
 export function createServer({
-  input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED,
-  persist = 'session', hostNotes = DEFAULT_HOST_NOTES, model,
+  input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
+  persist = 'session', hostNotes = hostNotesFor(surfaces), model,
   completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
 }) {
@@ -160,6 +167,15 @@ export function createServer({
     }
   }
 
+  function profilesList(msg) {
+    try {
+      respond(msg.id, statusResult({status: 'ok', profiles: profiles.list().map(profileView)}));
+    } catch (error) {
+      const code = error?.code === 'profiles_invalid' ? 'profiles_invalid' : 'unavailable';
+      respond(msg.id, statusResult({status: 'error', code}, {isError: true, message: `cua: the registered profiles could not be read (${code}); run cua profiles list for details`}));
+    }
+  }
+
   function passThrough(msg, rewrite = result => result) {
     upstreamRequest(msg.method, msg.params, {clientKey: idKey(msg.id)}).then(reply => {
       if (reply.error) write({jsonrpc: '2.0', id: msg.id, error: reply.error});
@@ -172,16 +188,17 @@ export function createServer({
       const name = msg.params?.name;
       if (WORK_TOOLS.has(name)) return runWork(msg);
       if (name === 'end_task') return endTask(msg);
-      if (!LOCAL_TOOLS.has(name)) return respondError(msg.id, -32602, `Unknown tool: ${name}`);
+      const browserOnly = name === 'profiles_list' && !surfaces.includes('browser');
+      if (!LOCAL_TOOLS.has(name) || browserOnly) return respondError(msg.id, -32602, `Unknown tool: ${name}`);
       if (terminal()) return respond(msg.id, rejectionResult({code: lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing', message: 'this connection accepts no more work'}));
-      return secretsList(msg);
+      return name === 'profiles_list' ? profilesList(msg) : secretsList(msg);
     }
     if (terminal()) return respondError(msg.id, -32000, `cua: ${lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing'}: this connection accepts no more requests`);
     if (msg.method === 'initialize') {
       clientModel ??= typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined;
       return passThrough(msg, result => ({...result, instructions: withHostNotes(result?.instructions, hostNotes)}));
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools)}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces})}));
     return passThrough(msg);
   }
 
@@ -276,28 +293,41 @@ export function createServer({
   return {sessionId, closed, close, get state() { return lifecycle.state; }};
 }
 
-function settingsFrom(env) {
+// CUA_SHIM_SURFACES: computer (the default), browser, or both (comma-separated, any order).
+function surfacesFrom(value = 'computer') {
+  const named = value.split(',').map(s => s.trim());
+  if (!named.length || !named.every(s => SURFACES.includes(s)) || new Set(named).size !== named.length)
+    fail('invalid_setting', 'CUA_SHIM_SURFACES must be computer, browser or computer,browser');
+  return SURFACES.filter(s => named.includes(s));
+}
+
+export function settingsFrom(env) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
-  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? DEFAULT_HOST_NOTES);
+  const surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
+  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on'};
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces};
 }
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 // `cua serve`: resolve the installed runtime, start this connection's secrets broker (unless secrets are off or the
 // Keychain helper is not built), launch the runtime for a fresh connection session in an owned working directory with
-// the trusted sky service (src/services/sky.mjs) registered and the broker's endpoint and token (or the reason there
-// is no broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including
-// the session's app-approval file the runtime wrote). Returns the
+// the enabled surfaces (CUA_SHIM_SURFACES) and their trusted services registered (src/services/sky.mjs for computer
+// use, src/services/browser.mjs for the browser) and the broker's endpoint and token (or the reason there is no
+// broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including the
+// session's app-approval file the runtime wrote). With the browser surface, profiles_list reads $CUA_HOME's profile
+// registry. Returns the
 // exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
 // tests and the opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and
 // are not reachable from the CLI.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper(),
   prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`)}) {
   const {secrets: secretsEnabled, ...settings} = settingsFrom(env);
+  const services = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
+  const chrome = chromeFacts();
   const runtime = resolveRuntime({home});
   const sessionId = randomUUID();
   mkdirSync(homeLayout(realHome(home)).run, {recursive: true, mode: 0o700});
@@ -305,7 +335,8 @@ export async function serve({home, env = process.env, input = process.stdin, out
   let launch;
   try {
     launch = prepareLaunch(buildLaunch({
-      runtime, home, sessionId, ambient: env, services: {sky: SKY_SERVICE},
+      runtime, home, sessionId, ambient: env, surfaces: settings.surfaces,
+      services: Object.assign({}, ...settings.surfaces.map(s => services[s])),
       broker: secrets.broker, secretsUnavailable: secrets.unavailable?.code,
     }));
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
@@ -318,7 +349,8 @@ export async function serve({home, env = process.env, input = process.stdin, out
   const onSignal = () => server.close('signal');
   let server;
   try {
-    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, diagnostics, ...settings});
+    const profiles = {list: () => profileStatuses({home, chrome})};
+    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics, ...settings});
     for (const signal of SIGNALS) process.on(signal, onSignal);
     return (await server.closed).code;
   } finally {

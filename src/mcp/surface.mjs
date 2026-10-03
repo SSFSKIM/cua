@@ -1,5 +1,6 @@
-// What the model sees of the server: the four-tool surface, server instructions with host notes, and the result
-// rewrites the proxy applies (image MIME correction). Pure functions; the server applies them to relayed messages.
+// What the model sees of the server: the four-tool surface (five with the browser surface, which adds profiles_list),
+// server instructions with host notes for the enabled surfaces, and the result rewrites the proxy applies (image MIME
+// correction). Pure functions; the server applies them to relayed messages.
 
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
 // js_add_node_module_dir (it would widen what model code can import) stay private.
@@ -7,6 +8,11 @@ const PASSED_THROUGH = new Map([
   ['js', 'control macos apps through their gui (computer use): click, type, read the screen, screenshot'],
   ['js_reset', 'reset the computer-use session for macos gui control'],
 ]);
+// Search hints when the browser surface is on (alone, or with computer use).
+const BROWSER_HINTS = {
+  browser: {js: 'operate the user\'s chrome browser profiles: open tabs, read pages, fill forms, screenshot', js_reset: 'reset the browser-use session'},
+  both: {js: 'control macos apps and the user\'s chrome browser profiles: click, type, fill forms, read, screenshot', js_reset: 'reset the computer-use and browser-use session'},
+};
 
 const NO_ARGUMENTS = {type: 'object', properties: {}, additionalProperties: false};
 
@@ -33,7 +39,23 @@ export const SECRETS_LIST_TOOL = {
   _meta: {'anthropic/searchHint': 'list stored secret credential labels for computer-use typing'},
 };
 
-export const LOCAL_TOOLS = new Set([END_TASK_TOOL.name, SECRETS_LIST_TOOL.name]);
+// With the browser surface, secret references also work as the whole value of a Chrome tab's locator.fill.
+const SECRETS_LIST_BROWSER_TOOL = {
+  ...SECRETS_LIST_TOOL,
+  description: SECRETS_LIST_TOOL.description.replace('or the whole value of setValue:', 'or the whole value of setValue or of a Chrome tab\'s locator.fill:'),
+};
+
+export const PROFILES_LIST_TOOL = {
+  name: 'profiles_list',
+  description: 'List the Chrome profiles the user registered for browser use, by key, with whether each is ready and, '
+    + 'when ready, its extensionInstanceId. Select the profile the user means with '
+    + 'cua.getBrowser({extensionInstanceId}); a profile that is not ready says why, and no other profile stands in for it.',
+  inputSchema: NO_ARGUMENTS,
+  annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
+  _meta: {'anthropic/searchHint': 'list registered chrome browser profiles for browser use'},
+};
+
+export const LOCAL_TOOLS = new Set([END_TASK_TOOL.name, SECRETS_LIST_TOOL.name, PROFILES_LIST_TOOL.name]);
 export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
 
 export const DEFAULT_HOST_NOTES = `Host notes (cua serve):
@@ -47,15 +69,42 @@ export const DEFAULT_HOST_NOTES = `Host notes (cua serve):
 - Cancelling a js call does not stop a running cell, and js_reset waits for it, so timeout_ms is what bounds runaway code. If the runtime has to be stopped, native cleanup is unconfirmed.
 - Do not drive the same app through osascript or other tools while a cua session is open.`;
 
+// Browser-surface notes: the three Chrome rules (pick a registered profile by instance id, DOM-only input through
+// Playwright locators, a long createBrowserTab limit and a possible leftover tab after its timeout).
+const BROWSER_NOTES = [
+  '- Chrome: call profiles_list, then select the profile the user means with cua.getBrowser({extensionInstanceId}). Never choose between profiles yourself.',
+  '- Chrome tabs are DOM-only: fill and click with tab.playwright locators; native typeText/click throw there.',
+  '- createBrowserTab can take over 30 s: give that js call timeout_ms of at least 60000. If it times out, a tab may still have opened: tell the user, do not retry blindly.',
+];
+// The surface-independent native notes a browser-only connection keeps.
+const BROWSER_ONLY_HEAD = '- Use this to operate the user\'s existing Chrome profiles when no API or skill covers the task. The first js call returns the API document; read it before writing more code.';
+const GENERAL = line => /^- (js and js_reset calls|Cancelling a js call)/.test(line);
+
+export function hostNotesFor(surfaces) {
+  if (!surfaces.includes('browser')) return DEFAULT_HOST_NOTES;
+  if (surfaces.includes('computer')) return [DEFAULT_HOST_NOTES, ...BROWSER_NOTES].join('\n');
+  const [title, ...lines] = DEFAULT_HOST_NOTES.split('\n');
+  return [title, BROWSER_ONLY_HEAD, ...lines.filter(GENERAL), ...BROWSER_NOTES].join('\n');
+}
+
+// A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
+// Chrome directory.
+export const profileView = ({key, ready, reason, extensionInstanceId}) => ({key, ready, ...(extensionInstanceId && ready ? {extensionInstanceId} : {}), ...(reason ? {reason} : {})});
+
 export function withHostNotes(instructions, hostNotes) {
   return [instructions, hostNotes].filter(Boolean).join('\n\n');
 }
 
-export function modelTools(upstreamTools) {
+const hintFor = (name, surfaces) => !surfaces.includes('browser') ? PASSED_THROUGH.get(name)
+  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name];
+
+export function modelTools(upstreamTools, {surfaces = ['computer']} = {}) {
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
-    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': PASSED_THROUGH.get(tool.name)}}));
-  return [...passed, END_TASK_TOOL, SECRETS_LIST_TOOL];
+    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces)}}));
+  return surfaces.includes('browser')
+    ? [...passed, END_TASK_TOOL, SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
+    : [...passed, END_TASK_TOOL, SECRETS_LIST_TOOL];
 }
 
 // node_repl labels JPEG screenshots image/png; the bytes say what they are.

@@ -12,7 +12,7 @@ import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {serve} from '../src/mcp/server.mjs';
-import {SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
 const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
@@ -40,9 +40,9 @@ function fakeInstalledHome(t, {short = false} = {}) {
   return home;
 }
 
-function launch(entry, home, args = []) {
+function launch(entry, home, args = [], extraEnv = {}) {
   const child = spawn(process.execPath, [entry, ...args], {
-    env: {...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', AMBIENT_SECRET: 'must-not-reach-runtime', NODE_REPL_TRUSTED_SERVICES: '{"sky":"/evil.mjs"}', CUA_SHIM_CODEX_HOME: '/tmp/legacy'},
+    env: {...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', AMBIENT_SECRET: 'must-not-reach-runtime', NODE_REPL_TRUSTED_SERVICES: '{"sky":"/evil.mjs"}', CUA_SHIM_CODEX_HOME: '/tmp/legacy', ...extraEnv},
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stderr = '';
@@ -123,6 +123,43 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(code, 0, stderr);
   assert.equal(existsSync(sessionDir), false);
   assert.deepEqual(readdirSync(join(home, 'run')), []);
+});
+
+test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures the vendor browser service and answers profiles_list from the registry', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const chromeDir = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default');
+  mkdirSync(chromeDir, {recursive: true});
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'computer,browser', HOME: userHome, BROWSER_USE_BACKEND_PATHS: '/tmp/evil.sock'});
+  const init = await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  assert.match(init.result.instructions, /cua\.getBrowser\(\{extensionInstanceId\}\)/);
+  const list = await server.request('tools/list');
+  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list']);
+  const profiles = await server.call('profiles_list');
+  assert.deepEqual(profiles.result.structuredContent, {status: 'ok', profiles: [
+    {key: 'personal', ready: false, reason: 'extension_not_installed'},
+    {key: 'school', ready: false, reason: 'profile_directory_missing'},
+  ]});
+  await server.call('js', {code: 'hello'});
+  const [{start}] = records(home);
+  assert.equal(start.env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
+  assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE, browser: BROWSER_SERVICE});
+  assert.match(start.env.CUA_BROWSER_VENDOR_SERVICE, /@oai\/browser-desktop\/scripts\/browser-service\.mjs$/);
+  assert.equal(start.env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome');
+  assert.equal(start.env.BROWSER_USE_BACKEND_PATHS, undefined, 'an ambient backend list never reaches the runtime');
+  server.child.stdin.end();
+  assert.equal((await server.exit).code, 0);
+});
+
+test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'iab'});
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 1);
+  assert.match(stderr, /CUA_SHIM_SURFACES must be computer, browser or computer,browser \[invalid_setting\]/);
+  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false);
 });
 
 test('each connection gets its own random session ID', {skip: !supported}, async t => {

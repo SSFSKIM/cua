@@ -8,7 +8,7 @@
 import {randomUUID} from 'node:crypto';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
-import {fail} from '../runtime/errors.mjs';
+import {CuaError, fail} from '../runtime/errors.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
@@ -84,8 +84,18 @@ export async function listBackendsWith(upstream, {limits = LIMITS} = {}) {
   }
   pending.clear();
   const teardown = await upstream.terminate({budgetMs: limit.teardownMs});
+  if (!teardown?.confirmed) throw teardownUnconfirmed(teardown, failure);
   if (failure) throw failure;
   return {backends, elicitationsDeclined, teardown};
+}
+
+// The owned runtime could not be shown gone: that outranks the listing's own result (a bind must not be recorded on
+// top of it), and a listing failure is kept in the same diagnostic.
+export function teardownUnconfirmed(teardown, failure) {
+  const listing = failure ? `; the listing itself also failed (${failure.code ?? 'error'}: ${failure.message})` : '';
+  const error = new CuaError('runtime_teardown_unconfirmed', `the runtime launched to list the Chrome backends could not be confirmed stopped after ${(teardown?.steps ?? []).join(', ') || 'teardown'} (${teardown?.reason ?? 'no reason given'}); owned processes may remain${listing}`, {hint: 'nothing was bound; check for leftover cua runtime processes before retrying'});
+  error.teardown = teardown;
+  return error;
 }
 
 // One bounded launch of the installed runtime in this home, as `cua serve` would make it with the browser surface

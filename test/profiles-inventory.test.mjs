@@ -85,3 +85,20 @@ test('the listing cell reduces the vendor inventory to extension backends, insta
     {instanceId: 'inst-c', profileName: null, tabCount: null},
   ]});
 });
+
+test('an unconfirmed runtime teardown fails the listing, classified, and keeps a listing failure\'s diagnostic too', async () => {
+  const unconfirmed = {confirmed: false, steps: ['eof', 'sigterm', 'sigkill'], reason: 'a group member survived'};
+  const upstream = fakeUpstream();
+  upstream.terminateImpl = async () => unconfirmed;
+  const listing = listBackendsWith(upstream);
+  await answerHandshake(upstream);
+  replyCell(upstream, await upstream.nextCall('js'), {backends: [{instanceId: 'a', profileName: 'P', tabCount: 1}]});
+  await assert.rejects(listing, error => error.code === 'runtime_teardown_unconfirmed' && /a group member survived/.test(error.message) && error.teardown === unconfirmed);
+
+  const both = fakeUpstream();
+  both.terminateImpl = async () => unconfirmed;
+  const failing = listBackendsWith(both);
+  await answerHandshake(both);
+  replyCell(both, await both.nextCall('js'), {error: 'list_failed'});
+  await assert.rejects(failing, error => error.code === 'runtime_teardown_unconfirmed' && /a group member survived/.test(error.message) && /listing_failed/.test(error.message));
+});

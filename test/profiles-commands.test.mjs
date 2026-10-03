@@ -93,6 +93,8 @@ test('an unreadable Local State leaves the automatic branch undetermined but sti
   assert.deepEqual({ok: auto.ok, reason: auto.reason}, {ok: false, reason: 'no_display_name'});
   const pick = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-a', listBackends: listing([{instanceId: 'inst-a'}])});
   assert.equal(pick.ok, true);
+  const labelled = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-b', listBackends: listing([{instanceId: 'inst-b', profileName: 'Someone'}])});
+  assert.deepEqual({ok: labelled.ok, id: labelled.extensionInstanceId}, {ok: true, id: 'inst-b'}, 'a label cannot conflict with an unknown name');
 });
 
 // ---- the CLI routes ----------------------------------------------------------------------------------------------
@@ -122,4 +124,13 @@ test('cua profiles usage errors exit 2', t => {
   const env = setup(t);
   for (const args of [['profiles'], ['profiles', 'add', 'x'], ['profiles', 'add', '--chrome-profile', 'Default'], ['profiles', 'bind'], ['profiles', 'list', 'extra'], ['profiles', 'nope']])
     assert.equal(cua(args, env).status, 2, args.join(' '));
+});
+
+test('a bind whose runtime teardown was unconfirmed stores nothing and reports the cleanup failure', async t => {
+  const {home, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const unconfirmed = async () => ({backends: [{instanceId: 'inst-a', profileName: 'Personal'}], elicitationsDeclined: 0, teardown: {confirmed: false, steps: ['eof', 'sigterm'], reason: 'listing timed out'}});
+  await assert.rejects(bindCommand({home, key: 'personal', chrome, listBackends: unconfirmed}), e => e.code === 'runtime_teardown_unconfirmed' && /listing timed out/.test(e.message));
+  await assert.rejects(bindCommand({home, key: 'personal', chrome, explicitId: 'inst-a', listBackends: unconfirmed}), e => e.code === 'runtime_teardown_unconfirmed');
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined);
 });

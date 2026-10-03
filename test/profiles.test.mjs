@@ -180,3 +180,10 @@ test('an explicit pick is accepted only for a live backend, and never against th
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends, explicitId: 'zzz'}), {outcome: 'refused', reason: 'not_live'});
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends, explicitId: 'b'}), {outcome: 'refused', reason: 'labelled_other_profile'});
 });
+
+test('without a known display name for the profile, a labelled live backend can still be picked explicitly', () => {
+  const backends = [{instanceId: 'a', profileName: 'Personal'}, {instanceId: 'b', profileName: 'Work'}];
+  for (const displayNames of [new Map(), new Map([['Profile 8', 'Work']])])
+    assert.deepEqual(decideBinding({directory: 'Default', displayNames, backends, explicitId: 'b'}), {outcome: 'bound', how: 'explicit', instanceId: 'b'});
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: new Map(), backends, explicitId: 'zzz'}), {outcome: 'refused', reason: 'not_live'});
+});

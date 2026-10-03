@@ -9,13 +9,15 @@
 // chosen.
 //
 // Explicit: an instance id the user picked (interactively, or relayed with --extension-instance-id) is accepted only
-// when that backend is live now, and refused when the runtime itself labels it as another profile.
+// when that backend is live now, and refused when the runtime itself labels it as another profile. A label can only
+// conflict with a known name: when the registered profile's own display name is unknown (Local State unreadable or
+// silent about it), the user's live choice stands.
 export function decideBinding({directory, displayNames, backends, explicitId}) {
   const name = displayNames.get(directory);
   if (explicitId !== undefined) {
     const picked = backends.find(b => b.instanceId === explicitId);
     if (!picked) return {outcome: 'refused', reason: 'not_live'};
-    if (typeof picked.profileName === 'string' && picked.profileName !== name) return {outcome: 'refused', reason: 'labelled_other_profile'};
+    if (name !== undefined && typeof picked.profileName === 'string' && picked.profileName !== name) return {outcome: 'refused', reason: 'labelled_other_profile'};
     return {outcome: 'bound', how: 'explicit', instanceId: explicitId};
   }
   const undetermined = reason => ({outcome: 'undetermined', reason});

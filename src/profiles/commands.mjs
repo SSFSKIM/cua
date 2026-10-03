@@ -5,6 +5,7 @@
 import {fail} from '../runtime/errors.mjs';
 import {readRegistry, bindProfile, REASONS} from './registry.mjs';
 import {decideBinding, REFUSED} from './bind.mjs';
+import {teardownUnconfirmed} from './inventory.mjs';
 
 function labelOf(backend, name) {
   if (typeof backend.profileName !== 'string') return 'unlabelled';
@@ -21,7 +22,10 @@ export async function bindCommand({home, key, chrome, listBackends, explicitId, 
   if (!chrome.profileDirectoryExists(directory)) fail('profile_not_ready', `profile "${key}": ${REASONS.profile_directory_missing}`);
   if (!chrome.extensionInstalled(directory)) fail('profile_not_ready', `profile "${key}": ${REASONS.extension_not_installed}`);
 
-  const {backends, elicitationsDeclined} = await listBackends();
+  const {backends, elicitationsDeclined, teardown} = await listBackends();
+  // A listing whose runtime was not shown stopped binds nothing (the real listing already throws this; a listing
+  // that reports it instead is held to the same rule).
+  if (teardown && !teardown.confirmed) throw teardownUnconfirmed(teardown);
   let displayNames;
   try { displayNames = chrome.displayNames(); } catch { displayNames = new Map(); }
   const name = displayNames.get(directory);

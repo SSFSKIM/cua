@@ -148,7 +148,7 @@ function take(path, expected, io) {
   try { io.renameSync(path, aside); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
   const same = withTaken(aside, path, io, () => io.readFileSync(aside).equals(expected));
   if (same) return aside;
-  putBack(aside, path, io);
+  rollback(aside, path, io, 'it changed after cua read it');
   return null;
 }
 
@@ -158,15 +158,20 @@ function putBack(aside, path, io) {
   rmSync(aside, {force: true});
 }
 
+// putBack whose failure is never silent: the taken bytes stay in `aside`, named with the exact command to restore them.
+function rollback(aside, path, io, why, cause) {
+  try { putBack(aside, path, io); } catch (error) {
+    fail('manifest_rollback_failed', `${path}: ${why}, and putting the manifest that was there back failed (${error.code ?? error.message}); its bytes are kept in ${aside}`,
+      {hint: `restore it yourself: mv "${aside}" "${path}"`, cause: cause ?? error});
+  }
+}
+
 function withTaken(aside, path, io, work) {
   try {
     return work();
   } catch (error) {
     const cause = error.code ?? error.message;
-    try { putBack(aside, path, io); } catch (rollback) {
-      fail('manifest_rollback_failed', `${path}: ${cause}, and putting the manifest that was there back failed (${rollback.code ?? rollback.message}); its bytes are kept in ${aside}`,
-        {hint: `restore it yourself: mv "${aside}" "${path}"`, cause: error});
-    }
+    rollback(aside, path, io, cause, error);
     if (error instanceof CuaError) throw error;
     fail('manifest_write_failed', `the change to ${path} failed (${cause}); the manifest that was there is back in place`, {cause: error});
   }

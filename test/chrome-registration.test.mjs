@@ -427,3 +427,38 @@ test('unregister puts cua\'s manifest back when the restore cannot be published,
   assert.equal(both.browsers[0].restoration, 'blocked');
   assert.ok(both.browsers[0].userAction.includes(`mv "${asidePath}" "${m.manifests.chrome}"`), both.browsers[0].userAction);
 });
+
+test('a manifest that changed before the take is put back, and a failed put-back names the aside file', async t => {
+  for (const command of ['register', 'unregister']) {
+    const m = machine(t);
+    const desktop = desktopBytes(m.userHome);
+    writeFileSync(m.manifests.chrome, ourManifest(command === 'register' ? olderHost(m) : m.component.host));
+    // Turn the slot foreign just before the take, and fail the link that would put it back.
+    const options = {onStep: hook('chrome', 'take', () => writeFileSync(m.manifests.chrome, desktop)), io: failingIo({manifestPath: m.manifests.chrome, rollback: true})};
+    let error, result;
+    if (command === 'register') await register(m, options).catch(e => { error = e; });
+    else result = unregisterHost({home: m.home, userHome: m.userHome, ...options});
+    const [aside] = hidden(m.manifests.chrome);
+    assert.ok(aside?.endsWith('.taken'), `${command}: ${hidden(m.manifests.chrome)}`);
+    const asidePath = join(dirname(m.manifests.chrome), aside);
+    assert.equal(readFileSync(asidePath, 'utf8'), desktop, command);
+    const restore = `mv "${asidePath}" "${m.manifests.chrome}"`;
+    if (command === 'register') {
+      assert.equal(error?.code, 'manifest_rollback_failed');
+      assert.match(error.message, /changed after cua read it/);
+      assert.ok(error.message.includes(asidePath), error.message);
+      assert.equal(error.hint, `restore it yourself: ${restore}`);
+    } else {
+      const chrome = result.browsers[0];
+      assert.equal(chrome.restoration, 'blocked');
+      assert.ok(chrome.userAction.includes(restore), chrome.userAction);
+    }
+  }
+  // Without the injected failure the mismatched manifest goes straight back.
+  const ok = machine(t);
+  const desktop = desktopBytes(ok.userHome);
+  writeFileSync(ok.manifests.chrome, ourManifest(olderHost(ok)));
+  await assert.rejects(register(ok, {onStep: hook('chrome', 'take', () => writeFileSync(ok.manifests.chrome, desktop))}), expectCode('registration_in_use'));
+  assert.equal(readFileSync(ok.manifests.chrome, 'utf8'), desktop);
+  assert.deepEqual(hidden(ok.manifests.chrome), []);
+});

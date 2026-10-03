@@ -5,12 +5,15 @@
 // holds one manifest per name, so cua's host and the desktop app's cannot both be registered in one browser. The rule:
 //   - register writes the manifest only where none exists, or where the existing one already names cua's host in this
 //     home (the pinned host location of a release directory; rewritten if it names another release). Any other existing manifest (the desktop's, another host's, or
-//     one that cannot be read) makes register refuse as a whole, before anything is written, naming its class.
+//     one that cannot be read) makes register refuse as a whole, before anything is written, naming its class. One
+//     that appears mid-run, or any other failure there, makes register undo what it already wrote in this run
+//     (undoRun), or report exactly what it could not undo.
 //   - register --replace backs each such manifest up byte-for-byte under <home>/chrome/manifest-backup/<browser>.json
 //     and records it before overwriting; the caller announces the consequences first (REPLACE_CONSEQUENCES).
 //   - unregister removes only manifests that name cua's host in this home. Where cua replaced one, it restores the
-//     backup and verifies the restored bytes; when there is no backup, it does not match, there is no record of what
-//     was replaced, or the restore does not verify, restoration is BLOCKED with the exact user action.
+//     backup and verifies the restored bytes. A backup is restored only when the record holds its hash; when there is
+//     no backup, no record, or no matching hash, or the restore does not verify, restoration is BLOCKED with the exact
+//     user action and an unverified backup is kept, never installed.
 // The manifest is the vendor installManifest.mjs format byte-for-byte except `path`. Browsers are the five the vendor
 // targets on macOS whose user-data directory exists; their NativeMessagingHosts directory is created when missing.
 // The slots are shared with the desktop app, which re-syncs its manifest: cua takes exactly the file it read before
@@ -211,56 +214,97 @@ export async function registerHost({home, runtime, replace = false, userHome = h
   const announce = () => { if (!announced) { announced = true; onReplace?.(REPLACE_CONSEQUENCES); } };
   const record = readRecord(cuaHome);
   const browsers = [];
-  for (const s of planned) {
-    const row = {browser: s.browser, manifestPath: s.manifestPath};
-    const step = name => onStep?.(name, row);
-    const backup = backupFile(cuaHome, s.browser);
-    let done = null;
-    for (let attempt = 0; attempt < ATTEMPTS && !done; attempt++) {
-      // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
-      const slot = readSlot(s.manifestPath, context);
-      if (slot.state === 'absent') {
-        record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
-        writeRecord(cuaHome, record);
-        step('publish');
-        let placed = false;
-        try { placed = publish(s.manifestPath, desired, io); } catch (error) {
-          delete record.browsers[s.browser];
-          writeRecord(cuaHome, record);
-          fail('manifest_write_failed', `could not write ${s.manifestPath} (${error.code ?? error.message}); nothing was placed there`, {cause: error});
-        }
-        if (placed) done = {...row, action: 'placed'};
-        else { delete record.browsers[s.browser]; writeRecord(cuaHome, record); }
-      } else if (slot.state === 'ours') {
-        if (slot.bytes.equals(desired)) { done = {...row, action: 'unchanged'}; break; }
-        step('take');
-        const aside = take(s.manifestPath, slot.bytes, io);
-        if (!aside) continue;
-        const placed = withTaken(aside, s.manifestPath, io, () => { step('publish'); return publish(s.manifestPath, desired, io); });
-        // Published, or a newer manifest took the slot meanwhile and stands: either way the old one is not needed.
-        rmSync(aside, {force: true});
-        if (placed) done = {...row, action: 'updated'};
-      } else {
-        if (!replace) fail('registration_in_use', refusal([{...s, slot}], native.name), {hint: `it appeared while cua was registering; ${replaceHint}`});
-        announce();
-        step('take');
-        const aside = take(s.manifestPath, slot.bytes, io);
-        if (!aside) continue;
-        const placed = withTaken(aside, s.manifestPath, io, () => {
-          writeAtomic(backup, slot.bytes, {mode: 0o600, dirMode: 0o700});
-          if (!readFileSync(backup).equals(slot.bytes)) fail('backup_failed', `the backup ${backup} does not match ${s.manifestPath}; nothing was replaced in ${s.browser}`);
-          record.browsers[s.browser] = {manifest: s.manifestPath, replaced: true, backupSha256: sha256(slot.bytes)};
+  const applied = [];
+  try {
+    for (const s of planned) {
+      const row = {browser: s.browser, manifestPath: s.manifestPath};
+      const step = name => onStep?.(name, row);
+      const backup = backupFile(cuaHome, s.browser);
+      let done = null;
+      for (let attempt = 0; attempt < ATTEMPTS && !done; attempt++) {
+        // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
+        const slot = readSlot(s.manifestPath, context);
+        if (slot.state === 'absent') {
+          record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
           writeRecord(cuaHome, record);
           step('publish');
-          return publish(s.manifestPath, desired, io);
-        });
-        rmSync(aside, {force: true});
-        if (placed) done = {...row, action: 'replaced', backup};
+          let placed = false;
+          try { placed = publish(s.manifestPath, desired, io); } catch (error) {
+            delete record.browsers[s.browser];
+            writeRecord(cuaHome, record);
+            fail('manifest_write_failed', `could not write ${s.manifestPath} (${error.code ?? error.message}); nothing was placed there`, {cause: error});
+          }
+          if (placed) done = {...row, action: 'placed'};
+          else { delete record.browsers[s.browser]; writeRecord(cuaHome, record); }
+        } else if (slot.state === 'ours') {
+          if (slot.bytes.equals(desired)) { done = {...row, action: 'unchanged'}; break; }
+          step('take');
+          const aside = take(s.manifestPath, slot.bytes, io);
+          if (!aside) continue;
+          const placed = withTaken(aside, s.manifestPath, io, () => { step('publish'); return publish(s.manifestPath, desired, io); });
+          // Published, or a newer manifest took the slot meanwhile and stands: either way the old one is not needed.
+          rmSync(aside, {force: true});
+          if (placed) done = {...row, action: 'updated'};
+        } else {
+          if (!replace) fail('registration_in_use', refusal([{...s, slot}], native.name), {hint: `it appeared while cua was registering; ${replaceHint}`});
+          announce();
+          step('take');
+          const aside = take(s.manifestPath, slot.bytes, io);
+          if (!aside) continue;
+          const placed = withTaken(aside, s.manifestPath, io, () => {
+            writeAtomic(backup, slot.bytes, {mode: 0o600, dirMode: 0o700});
+            if (!readFileSync(backup).equals(slot.bytes)) fail('backup_failed', `the backup ${backup} does not match ${s.manifestPath}; nothing was replaced in ${s.browser}`);
+            record.browsers[s.browser] = {manifest: s.manifestPath, replaced: true, backupSha256: sha256(slot.bytes)};
+            writeRecord(cuaHome, record);
+            step('publish');
+            return publish(s.manifestPath, desired, io);
+          });
+          rmSync(aside, {force: true});
+          if (placed) done = {...row, action: 'replaced', backup};
+        }
+        if (done && done.action !== 'unchanged') applied.push({...row, action: done.action, prior: done.action === 'placed' ? null : slot.bytes});
       }
+      browsers.push(done ?? contended(s.manifestPath));
     }
-    browsers.push(done ?? contended(s.manifestPath));
+  } catch (error) {
+    throw undoRun(error, applied, {cuaHome, record, desired, io, onStep});
   }
   return {host: paths.host, browsers};
+}
+
+// A failure (a refusal included) after earlier browsers were written in this run undoes those writes, newest first,
+// with the same discipline: take exactly cua's manifest (a concurrent writer's file is left standing), put back the
+// bytes that were there (the previous cua manifest, or the replaced foreign one, without clobbering), and forget the
+// record entry and backup this run made. Returns the error to throw: the original when everything was undone (with a
+// note when it was not a refusal), else `registration_partial` naming what stayed and how to remove it.
+function undoRun(error, applied, {cuaHome, record, desired, io, onStep}) {
+  if (!applied.length) return error;
+  const left = [];
+  for (const change of [...applied].reverse()) {
+    try {
+      onStep?.('undo', {browser: change.browser, manifestPath: change.manifestPath});
+      const aside = take(change.manifestPath, desired, io);
+      if (aside) {
+        if (change.prior) withTaken(aside, change.manifestPath, io, () => publish(change.manifestPath, change.prior, io));
+        rmSync(aside, {force: true});
+      }
+      if (change.action !== 'updated') delete record.browsers[change.browser];
+      if (change.action === 'replaced') rmSync(backupFile(cuaHome, change.browser), {force: true});
+    } catch (undoError) {
+      left.push({...change, why: undoError.message, hint: undoError.hint});
+    }
+  }
+  try { writeRecord(cuaHome, record); } catch (recordError) { left.push({browser: 'record', manifestPath: recordFile(cuaHome), why: recordError.message}); }
+  if (!left.length) {
+    if (error.code === 'registration_in_use') return error;
+    error.message += `; cua undid what it had registered earlier in this run (${applied.map(c => c.browser).join(', ')})`;
+    return error;
+  }
+  const base = error.message.replace(/ Nothing was changed\.$/, '');
+  const undone = applied.filter(c => !left.some(l => l.browser === c.browser)).map(c => c.browser);
+  return new CuaError('registration_partial',
+    `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}, but could not undo ${left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ')}`,
+    {hint: [...left.filter(l => l.hint).map(l => l.hint), 'then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced)'].join('; '), cause: error});
 }
 
 const restoreYourself = (name, manifestPath) => `restore ${name}'s previous registration yourself: if it was the ChatGPT desktop app's, quit and reopen ChatGPT so it writes ${manifestPath} again, then run \`cua doctor\` and check that chrome.host.registered names the desktop host`;
@@ -302,7 +346,9 @@ function unregisterSlot(s, row, {context, record, cuaHome, forget, io, step}) {
     const entry = record.browsers[s.browser];
     let saved = null;
     if (entry?.replaced !== false) { try { saved = readFileSync(backup); } catch {} }
-    const usable = saved && (!entry || sha256(saved) === entry.backupSha256);
+    // A backup is restored only on the record's word: a replacement entry whose hash matches it. Without one (record
+    // missing, unreadable, or silent about this browser) the backup's provenance is unknown and it is never installed.
+    const usable = saved && entry?.replaced === true && typeof entry.backupSha256 === 'string' && sha256(saved) === entry.backupSha256;
     step('take');
     const aside = take(s.manifestPath, slot.bytes, io);
     if (!aside) continue;
@@ -315,9 +361,11 @@ function unregisterSlot(s, row, {context, record, cuaHome, forget, io, step}) {
       rmSync(aside, {force: true});
       forget(s.browser);
       const blocked = (reason, userAction) => ({...row, action: 'removed', restoration: 'blocked', reason, userAction});
-      if (!entry) return blocked('cua has no record of what this registration replaced and no backup exists', restoreYourself(s.name, s.manifestPath));
+      const inspect = `inspect ${backup}; if it is the previous manifest, copy it to ${s.manifestPath}, otherwise ${restoreYourself(s.name, s.manifestPath)}`;
+      if (!entry && !saved) return blocked('cua has no record of what this registration replaced and no backup exists', restoreYourself(s.name, s.manifestPath));
+      if (!entry) return blocked(`cua has no record of what this registration replaced, so the backup ${backup} is unverified; it was kept, not restored`, inspect);
       if (!saved) return blocked(`the backup ${backup} is missing`, restoreYourself(s.name, s.manifestPath));
-      return blocked(`the backup ${backup} does not match what cua backed up; it was kept`, `inspect ${backup}; if it is the previous manifest, copy it to ${s.manifestPath}, otherwise ${restoreYourself(s.name, s.manifestPath)}`);
+      return blocked(`the backup ${backup} does not match what cua recorded backing up; it was kept, not restored`, inspect);
     }
     const placed = withTaken(aside, s.manifestPath, io, () => { step('publish'); return publish(s.manifestPath, saved, io); });
     rmSync(aside, {force: true});

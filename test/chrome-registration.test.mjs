@@ -462,3 +462,85 @@ test('a manifest that changed before the take is put back, and a failed put-back
   assert.equal(readFileSync(ok.manifests.chrome, 'utf8'), desktop);
   assert.deepEqual(hidden(ok.manifests.chrome), []);
 });
+
+// Final-review fixes: a backup is restored only with its recorded hash; a mid-run refusal undoes this run's writes.
+test('a backup without a matching recorded hash is never restored: our manifest is removed, the backup kept, BLOCKED', async t => {
+  for (const variant of ['no record', 'record without a hash']) {
+    const m = machine(t);
+    writeFileSync(m.manifests.chrome, ourManifest(m.component.host));
+    const stale = ourManifest('/Applications/Other.app/Contents/MacOS/other-host');
+    mkdirSync(m.backups, {recursive: true});
+    writeFileSync(join(m.backups, 'chrome.json'), stale);
+    if (variant === 'record without a hash') {
+      mkdirSync(join(m.runtime.home, 'chrome'), {recursive: true});
+      writeFileSync(join(m.runtime.home, 'chrome', 'registration.json'), JSON.stringify({schema: 1, browsers: {chrome: {manifest: m.manifests.chrome, replaced: true}}}));
+    }
+    const result = unregister(m);
+    const chrome = result.browsers[0];
+    assert.deepEqual([chrome.action, chrome.restoration], ['removed', 'blocked'], variant);
+    assert.match(chrome.reason, /unverified|no record|does not match/, variant);
+    assert.ok(chrome.userAction.includes(join(m.backups, 'chrome.json')) && chrome.userAction.includes(m.manifests.chrome), chrome.userAction);
+    assert.equal(existsSync(m.manifests.chrome), false, `${variant}: the stale backup is not installed`);
+    assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), stale, `${variant}: the backup is kept`);
+    assert.equal(result.blocked, true);
+  }
+});
+
+const lateBrave = (m, desktop) => async (root, pin) => { mkdirSync(dirname(m.manifests.brave), {recursive: true}); writeFileSync(m.manifests.brave, desktop); return acceptSignatures(root, pin); };
+
+test('a refusal found after earlier browsers were registered undoes them, so "Nothing was changed" is true', async t => {
+  const m = machine(t);
+  const desktop = desktopBytes(m.userHome);
+  await assert.rejects(register(m, {verifySignatures: lateBrave(m, desktop)}), err => {
+    assert.equal(err.code, 'registration_in_use');
+    assert.match(err.message, /Nothing was changed/);
+    return true;
+  });
+  assert.equal(existsSync(m.manifests.chrome), false);
+  assert.equal(readFileSync(m.manifests.brave, 'utf8'), desktop);
+  assert.deepEqual(record(m).browsers, {});
+  assert.deepEqual(hidden(m.manifests.chrome), []);
+
+});
+
+test('an apply-time failure undoes the run\'s update and replacement, restoring the bytes that were there', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  const priorBrave = ourManifest(olderHost(m));
+  mkdirSync(dirname(m.manifests.brave), {recursive: true});
+  writeFileSync(m.manifests.brave, priorBrave);
+  // Vivaldi comes last; its publish fails, after Chrome was replaced and Brave updated.
+  mkdirSync(join(m.support, 'Vivaldi'), {recursive: true});
+  const vivaldi = join(m.support, 'Vivaldi', 'NativeMessagingHosts', 'com.openai.codexextension.json');
+  await assert.rejects(register(m, {replace: true, onReplace: () => {}, io: failingIo({manifestPath: vivaldi, publish: true})}), err => {
+    assert.equal(err.code, 'manifest_write_failed');
+    assert.match(err.message, /undid/);
+    return true;
+  });
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original);
+  assert.equal(readFileSync(m.manifests.brave, 'utf8'), priorBrave);
+  assert.equal(existsSync(vivaldi), false);
+  assert.equal(existsSync(join(m.backups, 'chrome.json')), false);
+  assert.deepEqual(record(m).browsers, {});
+});
+
+test('undoing preserves a concurrent writer\'s file, and an undo that cannot complete reports the partial state', async t => {
+  const m = machine(t);
+  const desktop = desktopBytes(m.userHome);
+  await assert.rejects(register(m, {verifySignatures: lateBrave(m, desktop), onStep: hook('chrome', 'undo', () => writeFileSync(m.manifests.chrome, desktop))}), expectCode('registration_in_use'));
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), desktop, 'the writer\'s file stands');
+  assert.deepEqual(hidden(m.manifests.chrome), []);
+
+  const p = machine(t);
+  const failRename = {linkSync, writeFileSync, readFileSync, renameSync: (from, to) => { if (from === p.manifests.chrome) throw eio(); return renameSync(from, to); }};
+  let error;
+  await register(p, {verifySignatures: lateBrave(p, desktop), io: failRename}).catch(e => { error = e; });
+  assert.equal(error?.code, 'registration_partial');
+  assert.doesNotMatch(error.message, /Nothing was changed/);
+  assert.match(error.message, /chrome/);
+  assert.match(error.hint, /cua chrome unregister/);
+  assert.equal(readFileSync(p.manifests.chrome, 'utf8'), ourManifest(p.component.host));
+  assert.deepEqual(record(p).browsers.chrome, {manifest: p.manifests.chrome, replaced: false});
+  // The recovery the error names works.
+  const after = unregister(p);
+  assert.deepEqual([after.browsers[0].action, after.browsers[0].restoration], ['removed', 'not_needed']);
+});

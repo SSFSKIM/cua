@@ -37,7 +37,7 @@ export {cellOutcome} from './classify.mjs';
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const MAX_SOCKETS = 4;
 const CELLS_ALLOWED = ['listBrowsers', 'listTabs'];
-const TAB_OPERATIONS = ['createBrowserTab', 'gotoOwnedPage', 'typeText', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'];
+const TAB_OPERATIONS = ['createBrowserTab', 'gotoOwnedPage', 'fillInput', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'];
 
 export function liveEnv({ambient, paths, codexHome, sockets}) {
   if (ambient.HOME && realish(codexHome) === realish(join(ambient.HOME, '.codex'))) throw new Error('CODEX_HOME must be an owned scratch directory, never the user Codex home');

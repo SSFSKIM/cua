@@ -38,12 +38,15 @@ const approved = new Set();
 let extrasSent = false;
 let created = 0;
 
+// Tabs the original extension creates are DOM-only for input (live M10 run 2): no `ax`, getAXState is a Playwright
+// style aria snapshot without element indices, and the native input wrappers refuse before input.
 function render(tab) {
-  if (!tab.page) return `Tab: New Tab\nURL: chrome://newtab/\n[1] text "New Tab"`;
+  if (!tab.page) return `- document "New Tab"`;
   const p = tab.page;
-  return [`Tab: ${p.title}`, `URL: ${tab.url}`, `[1] heading "${p.title}"`, `[2] text "${p.marker}"`,
-    `[3] textbox "${p.inputLabel}" value="${p.value}"`, `[4] button "${p.buttonLabel}"`, `[5] status "${p.out}"`].join('\n');
+  return [`- document "${p.title}"`, `  - heading "${p.title}" [level=1]`, `  - paragraph: ${p.marker}`,
+    `  - textbox "${p.inputLabel}" [active]${p.value ? `: ${p.value}` : ''}`, `  - button "${p.buttonLabel}"`, `  - status: ${p.out}`].join('\n');
 }
+const DOM_ONLY = 'This tab does not support accessibility input. Use its Playwright API.';
 
 function makeTab(browser, record) {
   return {
@@ -65,13 +68,26 @@ function makeTab(browser, record) {
       record.page = {title: record.title, marker: pick(/id="marker">([^<]*)</), inputLabel: pick(/aria-label="([^"]*)"/), buttonLabel: pick(/<button[^>]*>([^<]*)<\/button>/), value: '', out: 'waiting'};
     },
     async getAXState() { return render(record); },
-    async typeText(index, text) {
-      if (!record.page || (index !== 3 && index !== null)) throw new Error(`no editable element at ${index}`);
-      record.page.value += text;
-    },
-    async click(index) {
-      if (!record.page || index !== 4) throw new Error(`no clickable element at ${index}`);
-      record.page.out = doneText(record.page.value);
+    async typeText() { throw new Error(DOM_ONLY); },
+    async click() { throw new Error(DOM_ONLY); },
+    playwright: {
+      getByLabel(label, {exact} = {}) {
+        const matches = record.page && exact && label === record.page.inputLabel ? 1 : 0;
+        return {
+          count: async () => matches,
+          async fill(value) { if (matches !== 1) throw new Error(`no element for label`); record.page.value = value; },
+        };
+      },
+      getByRole(role, {exact, name} = {}) {
+        const matches = record.page && exact && role === 'button' && name === record.page.buttonLabel ? 1 : 0;
+        return {
+          count: async () => matches,
+          async click() { if (matches !== 1) throw new Error('no element for role'); record.page.out = doneText(record.page.value); },
+        };
+      },
+      locator(selector) {
+        return {textContent: async () => (record.page && selector === '#out' ? record.page.out : null)};
+      },
     },
     async getScreenshot() { return new Uint8Array(PNG); },
     async close() {

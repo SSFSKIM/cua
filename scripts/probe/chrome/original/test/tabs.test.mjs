@@ -58,18 +58,18 @@ const happy = () => ({
   tabs: {
     target: {index: 0, reason: 'only browser'}, created: true, create: {class: 'ok'},
     goto: {class: 'ok', markerFound: true, inputIndex: 3, buttonIndex: 4},
-    type: {class: 'ok'}, click: {class: 'ok', domChanged: true},
+    fill: {class: 'ok'}, click: {class: 'ok', domChanged: true, statusText: true},
     screenshot: {class: 'ok', images: 1, bytes: 120, sizeMatches: true, sha256: 'a'.repeat(64)},
     close: {class: 'ok'}, confirm: {class: 'ok', stillListed: false},
   },
   elicitations: [{kind: 'origin-access', ownOrigin: true, answered: 'accept (session)'}, {kind: 'history', ownOrigin: false, answered: 'decline'}],
-  cellsSent: ['listBrowsers', 'listTabs', 'createBrowserTab', 'gotoOwnedPage', 'typeText', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'],
+  cellsSent: ['listBrowsers', 'listTabs', 'createBrowserTab', 'gotoOwnedPage', 'fillInput', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'],
 });
 const statusOf = (scenarios, id) => scenarios.find(s => s.id === id)?.status;
 
 test('judgeTabs: the full owned-page round trip passes', () => {
   const s = judgeTabs(happy());
-  for (const id of ['list-tabs-reach', 'target-browser', 'create-tab', 'owned-page', 'type-input', 'click-dom-change', 'screenshot', 'close-created-tab', 'elicitations-own-origin-only', 'user-tabs-untouched'])
+  for (const id of ['list-tabs-reach', 'target-browser', 'create-tab', 'owned-page', 'fill-input', 'click-dom-change', 'screenshot', 'close-created-tab', 'elicitations-own-origin-only', 'user-tabs-untouched'])
     assert.equal(statusOf(s, id), 'PASS', id);
 });
 
@@ -83,11 +83,17 @@ test('judgeTabs: a leftover fails the close scenario and carries the note; a mis
 
   const m = happy();
   m.tabs.goto = {class: 'ok', markerFound: false};
-  delete m.tabs.type; delete m.tabs.click; delete m.tabs.screenshot;
+  delete m.tabs.fill; delete m.tabs.click; delete m.tabs.screenshot;
   const t = judgeTabs(m);
   assert.equal(statusOf(t, 'owned-page'), 'FAIL');
-  for (const id of ['type-input', 'click-dom-change', 'screenshot']) assert.equal(statusOf(t, id), 'BLOCKED', id);
+  for (const id of ['fill-input', 'click-dom-change', 'screenshot']) assert.equal(statusOf(t, id), 'BLOCKED', id);
   assert.equal(statusOf(t, 'close-created-tab'), 'PASS');
+});
+
+test('judgeTabs: the click verdict needs both the AX change and the page status text', () => {
+  const o = happy();
+  o.tabs.click.statusText = false;
+  assert.equal(statusOf(judgeTabs(o), 'click-dom-change'), 'FAIL');
 });
 
 test('judgeTabs: an unstructured request naming the probe origin is BLOCKED; anything accepted beyond the own origin FAILS', () => {
@@ -110,5 +116,5 @@ test('judgeTabs: no target means nothing was created and every tab step is BLOCK
   o.tabs = {target: {index: null, reason: 'ambiguous'}, created: false};
   const s = judgeTabs(o);
   assert.equal(statusOf(s, 'target-browser'), 'BLOCKED');
-  for (const id of ['create-tab', 'owned-page', 'type-input', 'click-dom-change', 'screenshot', 'close-created-tab']) assert.equal(statusOf(s, id), 'BLOCKED', id);
+  for (const id of ['create-tab', 'owned-page', 'fill-input', 'click-dom-change', 'screenshot', 'close-created-tab']) assert.equal(statusOf(s, id), 'BLOCKED', id);
 });

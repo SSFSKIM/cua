@@ -1,6 +1,7 @@
 // M10 --with-tabs: the owned-page round trip on one existing Chrome backend, its leftover accounting and its verdict.
 //
-// Sequence: (compare profiles) -> createBrowserTab -> goto the probe page + AX read -> typeText -> click + AX verify
+// Sequence: (compare profiles) -> createBrowserTab -> goto the probe page + AX read -> locator fill -> locator click +
+// AX and status-text verify
 // -> one screenshot -> close the created tab -> listTabs to confirm it is gone. Input and screenshot run only after
 // the page's document marker was seen in the created tab. Close is attempted whenever a tab was created; if close
 // fails, nothing further is sent to the browser (no confirmation listTabs, no retry, no reconnect) and the possible
@@ -14,10 +15,10 @@ import {mkdtempSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {cellOutcome} from './classify.mjs';
-import {COMPARE_PROFILES, createTab, gotoOwnedPage, typeIntoInput, clickAndVerify, screenshot, CLOSE_CREATED_TAB, CONFIRM_CLOSED} from './cells.mjs';
+import {COMPARE_PROFILES, createTab, gotoOwnedPage, fillInput, clickAndVerify, screenshot, CLOSE_CREATED_TAB, CONFIRM_CLOSED} from './cells.mjs';
 import {PAGE_TITLE, INPUT_LABEL, BUTTON_LABEL, doneText} from './test-page.mjs';
 
-export const TAB_CELLS = ['listBrowsers', 'listTabs', 'compareProfiles', 'createBrowserTab', 'gotoOwnedPage', 'typeText', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'];
+export const TAB_CELLS = ['listBrowsers', 'listTabs', 'compareProfiles', 'createBrowserTab', 'gotoOwnedPage', 'fillInput', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'];
 const GOTO_CELL = {cellMs: 45_000, callMs: 75_000};
 
 export function chooseTarget({browsers, listTabs, browserIndex, sameProfile}) {
@@ -86,13 +87,16 @@ export async function runTabSequence({runCell, page, browserCount, listTabs, bro
   const g = go.result ?? {};
   t.goto = {...cellOutcome(go), markerFound: g.markerFound === true, originShown: g.originShown === true,
     inputIndex: Number.isInteger(g.inputIndex) ? g.inputIndex : null, buttonIndex: Number.isInteger(g.buttonIndex) ? g.buttonIndex : null,
+    axInput: g.axInput === true, playwrightLocators: g.playwrightLocators === true,
     ...(g.lineShapes ? {lineShapes: g.lineShapes} : {})};
 
   if (t.goto.markerFound) {
-    const type = await runCell('typeText', typeIntoInput(page));
-    t.type = {...cellOutcome(type), usedIndex: type.result?.usedIndex === true};
-    const click = await runCell('clickAndVerify', clickAndVerify(page, doneText(page.typedMarker)));
-    t.click = {...cellOutcome(click), domChanged: click.result?.domChanged === true};
+    const labels = {input: INPUT_LABEL, button: BUTTON_LABEL};
+    const fill = await runCell('fillInput', fillInput(page, labels));
+    t.fill = {...cellOutcome(fill), calls: ['playwright.getByLabel(label, {exact: true})', 'locator.fill(marker, {timeoutMs})']};
+    const click = await runCell('clickAndVerify', clickAndVerify(page, labels, doneText(page.typedMarker)));
+    t.click = {...cellOutcome(click), domChanged: click.result?.domChanged === true, statusText: click.result?.statusText === true,
+      calls: ['playwright.getByRole("button", {exact: true, name})', 'locator.click({})', 'getAXState', 'playwright.locator("#out").textContent()']};
     const shot = keepScreenshot(await runCell('getScreenshot', screenshot(page)), screenshotDir);
     t.screenshot = shot.screenshot;
     screenshotFile = shot.screenshotFile;
@@ -121,8 +125,8 @@ export function judgeTabs(o) {
   add('create-tab', 'createBrowserTab on the chosen backend returns a tab handle', status(t.created && t.create?.class === 'ok', !targeted), t.create);
   add('owned-page', 'goto the probe page; the AX read of the created tab shows its document marker', status(t.goto?.class === 'ok' && t.goto.markerFound, !t.created), t.goto);
   const verified = t.goto?.markerFound === true;
-  add('type-input', 'typeText of a generated benign marker into the page input', status(t.type?.class === 'ok', !verified), t.type);
-  add('click-dom-change', 'click the page button; the AX read shows the page-only DOM change with the typed marker', status(t.click?.class === 'ok' && t.click.domChanged, !verified), t.click);
+  add('fill-input', 'Playwright locator fill of a generated benign marker into the page input', status(t.fill?.class === 'ok', !verified), t.fill);
+  add('click-dom-change', 'Playwright locator click of the page button; the AX read and the page status text show the page-only DOM change with the marker', status(t.click?.class === 'ok' && t.click.domChanged && t.click.statusText, !verified), t.click);
   const s = t.screenshot;
   add('screenshot', 'one screenshot of the created tab, kept outside git (size and SHA-256 only)', status(s?.class === 'ok' && s.images === 1 && s.bytes > 0 && s.sizeMatches && /^[0-9a-f]{64}$/.test(s.sha256 ?? ''), !verified), s);
   const leftover = t.leftover ?? leftoverOf(t);

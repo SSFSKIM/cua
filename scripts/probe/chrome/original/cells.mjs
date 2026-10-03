@@ -89,6 +89,8 @@ await m.tab.goto(${js(page.url)});
 const ax = await m.tab.getAXState({emit: false, disableDiffing: true});
 m.verified = ax.includes(${js(page.documentMarker)});
 __out.markerFound = m.verified;
+__out.axInput = m.tab.ax !== undefined;
+__out.playwrightLocators = typeof m.tab.playwright?.getByLabel === "function" && typeof m.tab.playwright?.getByRole === "function";
 __out.originShown = ax.includes(${js(page.origin)});
 m.inputIndex = findIndex(ax, ${js(labels.input)});
 m.buttonIndex = findIndex(ax, ${js(labels.button)});
@@ -96,17 +98,22 @@ __out.inputIndex = m.inputIndex;
 __out.buttonIndex = m.buttonIndex;
 __out.lineShapes = {input: lineShape(ax, ${js(labels.input)}), button: lineShape(ax, ${js(labels.button)})};`);
 
-// With no index found, typeText(null) types into the focused element (the input has autofocus); recorded.
-export const typeIntoInput = page => cellCode(`${owned(page)}
-await m.tab.typeText(m.inputIndex ?? null, ${js(page.typedMarker)});
-__out.typed = true;
-__out.usedIndex = m.inputIndex != null;`);
+// Input through the vendor's documented Playwright locators (BS:833-1225): tabs the original extension creates have
+// no `tab.ax`, so the native typeText/click wrappers refuse before input (bind_tab.js) and getAXState is a DOM
+// snapshot without element indices. Each locator must resolve to exactly one element of the probe page.
+export const fillInput = (page, labels) => cellCode(`${owned(page)}
+const field = m.tab.playwright.getByLabel(${js(labels.input)}, {exact: true});
+if (typeof field.count === "function" && (await field.count()) !== 1) throw new Error("probe: the input label does not resolve to exactly one element");
+await field.fill(${js(page.typedMarker)}, {timeoutMs: 10000});
+__out.filled = true;`);
 
-export const clickAndVerify = (page, expected) => cellCode(`${owned(page)}
-if (m.buttonIndex == null) throw new Error("probe: no element index for the probe button");
-await m.tab.click(m.buttonIndex);
+export const clickAndVerify = (page, labels, expected) => cellCode(`${owned(page)}
+const button = m.tab.playwright.getByRole("button", {exact: true, name: ${js(labels.button)}});
+if (typeof button.count === "function" && (await button.count()) !== 1) throw new Error("probe: the button does not resolve to exactly one element");
+await button.click({});
 const after = await m.tab.getAXState({emit: false, disableDiffing: true});
-__out.domChanged = after.includes(${js(expected)});`);
+__out.domChanged = after.includes(${js(expected)});
+__out.statusText = (await m.tab.playwright.locator("#out").textContent({timeoutMs: 5000})) === ${js(expected)};`);
 
 export const screenshot = page => cellCode(`${owned(page)}
 const shot = await m.tab.getScreenshot({emit: false});

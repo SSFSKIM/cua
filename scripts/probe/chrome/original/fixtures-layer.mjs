@@ -18,7 +18,7 @@ import {originAccessRequest, downloadRequest, rawCdpRequest, historyRequest, ALL
 
 const FAKE = fileURLToPath(new URL('./fake-runtime.mjs', import.meta.url));
 const PNG_SHA256 = createHash('sha256').update(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64')).digest('hex');
-const ALL_TAB_SCENARIOS = ['list-tabs-reach', 'target-browser', 'create-tab', 'owned-page', 'type-input', 'click-dom-change', 'screenshot', 'close-created-tab', 'elicitations-own-origin-only', 'user-tabs-untouched'];
+const ALL_TAB_SCENARIOS = ['list-tabs-reach', 'target-browser', 'create-tab', 'owned-page', 'fill-input', 'click-dom-change', 'screenshot', 'close-created-tab', 'elicitations-own-origin-only', 'user-tabs-untouched'];
 
 // Generated sentinels standing for user data the probe must never report.
 function sentinels() {
@@ -130,7 +130,7 @@ const CASES = [
     check: r => [
       ...(answerOf(r, 'own-origin')?.action === 'decline' ? [] : ['unstructured own-origin request was not declined']),
       ...(statusOf(r, 'elicitations-own-origin-only') === 'BLOCKED' ? [] : [`elicitation verdict ${statusOf(r, 'elicitations-own-origin-only')}`]),
-      ...(statusOf(r, 'owned-page') === 'FAIL' && statusOf(r, 'type-input') === 'BLOCKED' ? [] : ['input was not withheld']),
+      ...(statusOf(r, 'owned-page') === 'FAIL' && statusOf(r, 'fill-input') === 'BLOCKED' ? [] : ['input was not withheld']),
       ...(statusOf(r, 'close-created-tab') === 'PASS' ? [] : ['the created tab was not closed']),
     ]},
   {id: 'fixture-leftover-close-fails', title: 'close() fails: the possible leftover is reported for the user and nothing further is sent (no confirmation listTabs, no retry)',

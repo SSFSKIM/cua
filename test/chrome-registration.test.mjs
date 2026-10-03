@@ -2,7 +2,7 @@
 // browser's NativeMessagingHosts directory: every test passes its own scratch `userHome`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, chmodSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, chmodSync, linkSync, renameSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {join, dirname} from 'node:path';
 import {registerHost, unregisterHost, BROWSERS, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
@@ -344,4 +344,86 @@ test('a restore that does not read back as the backup is BLOCKED and keeps the b
   assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original);
   assert.equal(record(m).browsers.chrome.replaced, true);
   assert.equal(result.browsers.find(b => b.browser === 'brave').restoration, 'not_needed');
+});
+
+// Re-review fix: a taken manifest always goes back when what follows the take fails, and a failed rollback is never silent.
+const eio = () => Object.assign(new Error('EIO: injected'), {code: 'EIO'});
+// node:fs with linkSync failing for links into `manifestPath`: from a temp file (the publish) and/or from a taken
+// file (the rollback); and readFileSync failing for taken files.
+function failingIo({manifestPath, publish = false, rollback = false, readTaken = false}) {
+  return {
+    linkSync: (from, to) => {
+      if (to === manifestPath && ((publish && from.endsWith('.tmp')) || (rollback && from.endsWith('.taken')))) throw eio();
+      return linkSync(from, to);
+    },
+    renameSync, writeFileSync,
+    readFileSync: (path, ...rest) => { if (readTaken && String(path).endsWith('.taken')) throw eio(); return readFileSync(path, ...rest); },
+  };
+}
+const hidden = path => readdirSync(dirname(path)).filter(name => name.startsWith('.'));
+const olderHost = m => join(m.runtime.home, 'runtimes', '0.0.1-darwin-arm64', 'chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome');
+
+test('a failed publish after taking the manifest puts it back, for an update and for a replacement', async t => {
+  const u = machine(t);
+  const older = ourManifest(olderHost(u));
+  writeFileSync(u.manifests.chrome, older);
+  await assert.rejects(register(u, {io: failingIo({manifestPath: u.manifests.chrome, publish: true})}), err => {
+    assert.equal(err.code, 'manifest_write_failed');
+    assert.match(err.message, /EIO/);
+    assert.match(err.message, /back in place/);
+    return true;
+  });
+  assert.equal(readFileSync(u.manifests.chrome, 'utf8'), older);
+  assert.deepEqual(hidden(u.manifests.chrome), []);
+
+  const r = machine(t, {chromeManifest: DESKTOP});
+  await assert.rejects(register(r, {replace: true, onReplace: () => {}, io: failingIo({manifestPath: r.manifests.chrome, publish: true})}), expectCode('manifest_write_failed'));
+  assert.equal(readFileSync(r.manifests.chrome, 'utf8'), r.original);
+  assert.deepEqual(hidden(r.manifests.chrome), []);
+});
+
+test('a failed rollback keeps the taken bytes and names their path with the exact restore command', async t => {
+  for (const kind of ['update', 'replacement']) {
+    const m = machine(t, kind === 'replacement' ? {chromeManifest: DESKTOP} : {});
+    const before = kind === 'update' ? ourManifest(olderHost(m)) : m.original;
+    if (kind === 'update') writeFileSync(m.manifests.chrome, before);
+    let error;
+    await register(m, {replace: true, onReplace: () => {}, io: failingIo({manifestPath: m.manifests.chrome, publish: true, rollback: true})}).catch(e => { error = e; });
+    assert.equal(error?.code, 'manifest_rollback_failed', kind);
+    const [aside] = hidden(m.manifests.chrome);
+    assert.ok(aside?.endsWith('.taken'), `${kind}: ${hidden(m.manifests.chrome)}`);
+    const asidePath = join(dirname(m.manifests.chrome), aside);
+    assert.equal(readFileSync(asidePath, 'utf8'), before, kind);
+    assert.ok(error.message.includes(asidePath), error.message);
+    assert.equal(error.hint, `restore it yourself: mv "${asidePath}" "${m.manifests.chrome}"`);
+    assert.equal(existsSync(m.manifests.chrome), false, kind);
+  }
+});
+
+test('a failure while checking a taken manifest puts it back', async t => {
+  const m = machine(t);
+  const older = ourManifest(olderHost(m));
+  writeFileSync(m.manifests.chrome, older);
+  await assert.rejects(register(m, {io: failingIo({manifestPath: m.manifests.chrome, readTaken: true})}), expectCode('manifest_write_failed'));
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), older);
+  assert.deepEqual(hidden(m.manifests.chrome), []);
+});
+
+test('unregister puts cua\'s manifest back when the restore cannot be published, and names the aside file if that fails too', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  await register(m, {replace: true, onReplace: () => {}});
+  const ours = readFileSync(m.manifests.chrome, 'utf8');
+  const result = unregisterHost({home: m.home, userHome: m.userHome, io: failingIo({manifestPath: m.manifests.chrome, publish: true})});
+  const chrome = result.browsers[0];
+  assert.deepEqual([chrome.action, chrome.restoration], ['not_removed', 'blocked']);
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), ours);
+  assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original);
+  assert.deepEqual(hidden(m.manifests.chrome), []);
+
+  const both = unregisterHost({home: m.home, userHome: m.userHome, io: failingIo({manifestPath: m.manifests.chrome, publish: true, rollback: true})});
+  const [aside] = hidden(m.manifests.chrome);
+  const asidePath = join(dirname(m.manifests.chrome), aside);
+  assert.equal(readFileSync(asidePath, 'utf8'), ours);
+  assert.equal(both.browsers[0].restoration, 'blocked');
+  assert.ok(both.browsers[0].userAction.includes(`mv "${asidePath}" "${m.manifests.chrome}"`), both.browsers[0].userAction);
 });

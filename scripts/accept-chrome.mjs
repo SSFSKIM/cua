@@ -25,9 +25,8 @@
 // ways, serve and runtime stderr, the screenshot bytes, every regular file under $CUA_HOME/state and run (read whole;
 // the server's Codex credential file is excluded by name and never opened), and the report. Exit 0 PASS, 1 FAIL,
 // 3 BLOCKED. The report holds metadata only; the screenshot path is printed, not reported.
-import {createHash, randomBytes, randomUUID} from 'node:crypto';
-import {mkdtempSync, writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {randomBytes, randomUUID} from 'node:crypto';
+import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -42,11 +41,9 @@ import {processTable} from '../src/profiles/checks.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {openSession} from './accept/mcp-session.mjs';
-import {decideElicitation, answerFor, inventoryEntry} from './probe/chrome/original/elicitation.mjs';
-import {cellOutcome, reportLeaks} from './probe/chrome/original/classify.mjs';
-import {RESULT_MARKER} from './probe/chrome/original/cells.mjs';
-import {startAcceptancePage, expectedDigest, PAGE_TITLE} from './accept/chrome-page.mjs';
-import * as cells from './accept/chrome-cells.mjs';
+import {reportLeaks} from './probe/chrome/original/classify.mjs';
+import {startAcceptancePage} from './accept/chrome-page.mjs';
+import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, runAgentScript} from './accept/chrome-run.mjs';
 
 const {values: options} = parseArgs({options: {live: {type: 'boolean'}, profile: {type: 'string'}, report: {type: 'string'}}, strict: true});
 if (!options.live || !options.profile || !options.report) {
@@ -58,10 +55,6 @@ const REPO = fileURLToPath(new URL('..', import.meta.url));
 const CLI = join(REPO, 'bin', 'cua.mjs');
 const SEED_MS = 15_000;
 const PROMPT_ACTION = 'a Keychain prompt may be waiting: dismiss it (do not allow) and re-run when a human can answer it';
-const LIMITS = {
-  select: {cellMs: 30_000, callMs: 60_000}, create: {cellMs: 60_000, callMs: 90_000}, goto: {cellMs: 45_000, callMs: 75_000},
-  default: {cellMs: 30_000, callMs: 60_000},
-};
 
 const home = realHome(defaultHome());
 const label = `cua-m11-accept-${randomUUID()}`;
@@ -87,89 +80,13 @@ function preconditions() {
   return {runtime, profile, missing};
 }
 
-// ---- the fixed agent script --------------------------------------------------------------------------------------
-async function agentScript(session, page, instanceId, shots) {
-  const results = {};
-  const declinedSoFar = () => facts.elicitations.filter(e => !e.answered.startsWith('accept')).length;
-  const run = async (name, code, limits = LIMITS.default) => {
-    facts.cellsSent.push(name);
-    const started = Date.now();
-    const reply = await session.request('tools/call', {name: 'js', arguments: {code, title: `cua accept ${name}`, timeout_ms: limits.cellMs}}, limits.callMs);
-    const content = reply.result?.content ?? [];
-    const text = content.filter(c => c.type === 'text').map(c => c.text).join('\n');
-    const found = text.match(new RegExp(`${RESULT_MARKER} (\\{.*\\})`));
-    const cell = reply.timedOut ? {probeError: `${name} timed out after ${limits.callMs} ms`, images: []}
-      : {isError: reply.result?.isError === true, result: found ? JSON.parse(found[1]) : null, images: content.filter(c => c.type === 'image'), ...(found ? {} : {unmarked: text.slice(0, 600)})};
-    results[name] = {...cellOutcome(cell), durationMs: Date.now() - started, result: cell.result ?? null, images: cell.images};
-    return results[name];
-  };
-
-  const select = await run('selectBrowser', cells.selectBrowser(instanceId), LIMITS.select);
-  if (!record('select-profile-backend', select.result?.selected === true ? 'PASS' : 'FAIL', {class: select.class, ...(select.text ? {text: select.text} : {})})) return results;
-
-  const create = await run('createBrowserTab', cells.CREATE_TAB, LIMITS.create);
-  facts.tabOperations++;
-  results.created = create.result?.created === true;
-  record('create-tab', results.created ? 'PASS' : 'FAIL', {class: create.class, durationMs: create.durationMs, limitMs: LIMITS.create.cellMs, ...(create.text ? {text: create.text} : {})});
-  if (!results.created) { results.createFailed = true; return results; }
-
-  const go = await run('gotoOwnedPage', cells.gotoPage(page), LIMITS.goto);
-  facts.tabOperations++;
-  const verified = go.result?.markerFound === true;
-  record('owned-page', verified ? 'PASS' : 'FAIL', {class: go.class, markerFound: verified, ...(go.text ? {text: go.text} : {})});
-  if (verified && !declinedSoFar()) {
-    const fill = await run('fillSecretReference', cells.fillReference(page, reference));
-    facts.tabOperations++;
-    record('fill-secret-reference', fill.result?.filled === true ? 'PASS' : 'FAIL', {class: fill.class, ...(fill.text ? {text: fill.text} : {})});
-    const digest = await run('computeDigest', cells.computeDigest(page));
-    facts.tabOperations++;
-    const matches = typeof digest.result?.digest === 'string' && digest.result.digest === expectedDigest(sentinel);
-    record('page-digest-matches-sentinel', matches ? 'PASS' : 'FAIL', {class: digest.class, digestShown: typeof digest.result?.digest === 'string', digestMatches: matches, ...(digest.text ? {text: digest.text} : {})});
-    const induced = await run('inducedFailure', cells.inducedFailure(page, reference));
-    facts.tabOperations++;
-    const r = induced.result ?? {};
-    record('induced-failure-value-free', r.code === 'secret_input_failed' && typeof r.classification === 'string' && !r.unexpectedSuccess ? 'PASS' : 'FAIL',
-      {class: induced.class, code: r.code ?? null, classification: r.classification ?? null, ...(r.unexpectedSuccess ? {unexpectedSuccess: true} : {})});
-    const shot = await run('getScreenshot', cells.screenshot(page));
-    facts.tabOperations++;
-    if (shot.images.length === 1) {
-      const bytes = Buffer.from(shot.images[0].data, 'base64');
-      shots.bytes = bytes;
-      const dir = mkdtempSync(join(tmpdir(), 'cua-m11-shot-'));
-      shots.file = join(dir, `owned-tab.${bytes[0] === 0xff ? 'jpeg' : 'png'}`);
-      writeFileSync(shots.file, bytes, {mode: 0o600});
-      shots.meta = {bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), sizeMatches: bytes.length === shot.result?.bytes};
-    }
-    record('screenshot', shots.meta?.sizeMatches ? 'PASS' : 'FAIL', {class: shot.class, ...(shots.meta ?? {images: shot.images.length})});
-  } else {
-    record('fill-secret-reference', 'BLOCKED', verified ? 'an elicitation was declined; no input was sent' : 'the owned page was not verified; no input was sent');
-  }
-
-  const close = await run('closeCreatedTab', cells.CLOSE_TAB);
-  facts.tabOperations++;
-  results.closed = close.result?.closed === true;
-  if (results.closed) {
-    const confirm = await run('confirmClosed', cells.CONFIRM_CLOSED);
-    results.confirmed = confirm.class === 'ok' && confirm.result?.stillListed === false;
-    results.stillListed = confirm.result?.stillListed === true;
-  }
-  return results;
-}
-
-function leftover(results) {
-  if (!results.created) return results.createFailed ? {status: 'unknown', note: `createBrowserTab failed without returning a tab; if a new tab appeared in Chrome, close it by hand. The runner did not reconnect or retry.`} : {status: 'none'};
-  if (!results.closed) return {status: 'possibly-open', note: `close() of the runner's own tab ("${PAGE_TITLE}" on 127.0.0.1) failed; close it by hand. The runner did not reconnect or retry.`};
-  if (results.stillListed) return {status: 'open', note: `The runner's own tab ("${PAGE_TITLE}" on 127.0.0.1) is still listed after close(); close it by hand.`};
-  if (!results.confirmed) return {status: 'unconfirmed', note: `The runner's own tab was closed but its absence could not be confirmed; if it is still open, close it by hand.`};
-  return {status: 'none'};
-}
-
 // ---- run -----------------------------------------------------------------------------------------------------------
 const channels = [];
 const shots = {};
+const latch = createStopLatch();
+const tab = newTabRecord();
 let seeded = false;
 let page;
-let left = {status: 'none'};
 try {
   const {runtime, profile, missing} = preconditions();
   if (missing.length) {
@@ -190,11 +107,7 @@ try {
         page = await startAcceptancePage();
         const session = openSession({
           args: [CLI, 'serve'], env: {...process.env, CUA_HOME: home, CUA_SHIM_SURFACES: 'browser'}, clientName: 'cua-accept-chrome',
-          onServerRequest: msg => {
-            const decision = decideElicitation(msg, {origin: page.origin});
-            facts.elicitations.push(inventoryEntry(msg, decision));
-            return answerFor(decision);
-          },
+          onServerRequest: elicitationPolicy({origin: page.origin, latch, inventory: facts.elicitations}),
         });
         try {
           const init = await session.initialize();
@@ -205,9 +118,11 @@ try {
           const entry = profiles?.profiles?.find(p => p.key === options.profile);
           const sameId = entry?.ready === true && entry.extensionInstanceId === profile.extensionInstanceId;
           if (record('profiles-list', sameId ? 'PASS' : 'FAIL', {status: profiles?.status, keys: profiles?.profiles?.map(p => p.key), readyWithStoredId: sameId})) {
-            const results = await agentScript(session, page, entry.extensionInstanceId, shots);
-            left = leftover(results);
-            if (results.created) record('close-created-tab', left.status === 'none' ? 'PASS' : 'FAIL', {leftover: left.status});
+            try {
+              await runAgentScript({session, page, instanceId: entry.extensionInstanceId, reference, sentinel, latch, tab, record, facts, shots});
+            } finally {
+              if (tab.createAttempted) record('close-created-tab', leftoverOf(tab).status === 'none' ? 'PASS' : 'FAIL', {leftover: leftoverOf(tab).status, closeAttempted: tab.closeAttempted});
+            }
           }
           const ended = (await session.call('end_task', {}, 15_000)).result?.structuredContent;
           record('end-task', ended?.status === 'ended' || ended?.status === 'noop' ? 'PASS' : 'FAIL', {status: ended?.status ?? null});
@@ -253,6 +168,9 @@ if (seeded) {
       runtimeFiles: {scanned: files.scanned, excludedByPolicy: files.excluded.map(f => f.replace(home, '$CUA_HOME')), symbolicLinks: files.links}});
 }
 
+// Read from the tab record, whatever path the run took: only a confirmed close is no leftover.
+const left = leftoverOf(tab);
+if (latch.stopped) facts.stoppedBy = latch.reason;
 const status = steps.some(s => s.status === 'FAIL') ? 'FAIL' : steps.some(s => s.status === 'BLOCKED') ? 'BLOCKED' : 'PASS';
 const report = {scenario: 'C2-live-browser-secret-round-trip', status, at: new Date().toISOString(), label, ...facts, leftover: left.status, steps};
 const text = JSON.stringify(report, null, 1);

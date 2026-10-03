@@ -20,6 +20,8 @@ import {PAGE_TITLE, INPUT_LABEL, BUTTON_LABEL, doneText} from './test-page.mjs';
 
 export const TAB_CELLS = ['listBrowsers', 'listTabs', 'compareProfiles', 'createBrowserTab', 'gotoOwnedPage', 'fillInput', 'clickAndVerify', 'getScreenshot', 'closeCreatedTab', 'confirmClosed'];
 const GOTO_CELL = {cellMs: 45_000, callMs: 75_000};
+// createBrowserTab once took longer than the default 30 s cell limit live (M10 run 3) and still left a tab behind.
+const CREATE_CELL = {cellMs: 60_000, callMs: 90_000};
 
 export function chooseTarget({browsers, listTabs, browserIndex, sameProfile}) {
   const reachable = i => listTabs[i]?.class === 'ok';
@@ -78,8 +80,9 @@ export async function runTabSequence({runCell, page, browserCount, listTabs, bro
   t.target = chooseTarget({browsers: browserCount, listTabs, browserIndex, sameProfile});
   if (t.target.index === null) { t.leftover = leftoverOf(t); return {tabs: t}; }
 
-  const create = await runCell('createBrowserTab', createTab(t.target.index));
-  t.create = {...cellOutcome(create), ...(create.result?.methods ? {methods: create.result.methods} : {})};
+  const started = Date.now();
+  const create = await runCell('createBrowserTab', createTab(t.target.index), CREATE_CELL);
+  t.create = {...cellOutcome(create), durationMs: Date.now() - started, limitMs: CREATE_CELL.cellMs, ...(create.result?.methods ? {methods: create.result.methods} : {})};
   if (create.result?.created !== true) { t.createError = t.create.class; t.leftover = leftoverOf(t); return {tabs: t}; }
   t.created = true;
 

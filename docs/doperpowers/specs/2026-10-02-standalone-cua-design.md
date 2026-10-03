@@ -46,8 +46,10 @@ After `npm link`, the same commands are available as `cua`. No package-registry 
 - [x] (2026-10-03) Original OpenAI Chrome route metadata probe: relocated pinned node_repl successfully sent only getInfo to two existing signed OpenAI Chrome hosts; no browser service/profile-enrichment code, tab operation, credential access, app termination or registry change. Evidence: `docs/evidence/original-chrome-host-reuse.md`.
 - [x] (2026-10-03) User chose to proceed with the original OpenAI Chrome route. Paused Playwright prototype committed on `wip/m8-playwright-transport` (`b77c6eb`); `feat/chrome-existing-profile` is clean.
 - [x] (2026-10-03) M9 — Original backend through the real browser service (`53c0a8e`; spec reviewed clear by `astra-high` before acceptance). Live: both existing hosts listed as `extension`/`chrome`; `listTabs` refused before reaching any host with class identity-or-auth (`Codex auth token is unavailable`) under the empty owned CODEX_HOME; 0 tab operations, 0 elicitations, teardown confirmed. Static (disassembly-tagged): the host reads `extension-host-config.json` and `chrome-native-hosts-v2.json` in one config loader reached only from app-server management; the seven registry error codes gate app-server spawning, not socket creation; `presence`'s effect on entry selection is unknown. Verdict: PROMOTE. Evidence: `docs/evidence/m9-original-chrome.md`.
-- [ ] Product decision (user): which Codex login the standalone server's CODEX_HOME uses — its own `codex login`, or the desktop/CLI login already in `~/.codex`. Identity initialization also starts `codex app-server`, which ran `git` against remote endpoints and wrote state into the owned home; a standalone product inherits that whenever identity runs.
-- [ ] After the login decision: independent registration/startup of the original host (writes a native-messaging manifest and `extension-host-config.json` for a host we place; must coexist with, not overwrite, the desktop's registration), desktop-absence evidence, then actual browser operations and secret substitution through the browser wrapper.
+- [x] (2026-10-03) User asked whether the original route works without `codex login`: answered no on the legitimate path (the host declares agent-header support, so the service requires an identity; disabling network does not help; stripping the declaration or test security modes are out). Login-free browser control exists only through the parked Playwright route. User chose: original route + one-time login in the server's own `CODEX_HOME`.
+- [ ] M10 Part A — `cua login`, doctor `codex.login`, first real install into the default `CUA_HOME`, `--with-tabs` probe with fixtures.
+- [ ] M10 Part B — user runs `cua login` once; then the owned-page round trip through the original hosts (listTabs, createBrowserTab, navigate to the probe's page, AX, input, click, screenshot, close).
+- [ ] After M10: production bridge (browser surface in `serve`, browser secret wrapper, profile registry) and the independent native-host registration/startup gate with desktop-absence evidence.
 - [ ] Phase C after M8: production Chrome bridge, browser secret substitution and acceptance using measured transport behavior. Browser service account/network policy remains distinct from this direct-extension transport probe.
 - [ ] Phase D: MAWS-hosted in-app-browser adapter; profile import/UI stay MAWS's responsibility.
 
@@ -329,6 +331,34 @@ npm test
 ```
 
 Reports are metadata-only (no socket paths beyond their count, no tab data, no auth material), carry PASS/FAIL/BLOCKED per scenario, and state `desktopRunning` and `tabOperations: 0`. One independent `astra-high` review runs on this entry while the probe executes; findings are absorbed before the evidence is accepted.
+
+### M10 — The standalone server's own Codex login, and the first real browser operations on the original route
+
+User decision (2026-10-03): the standalone server uses its **own** Codex login, performed once by the user in the server's owned `CODEX_HOME`; the desktop's `~/.codex` is never pointed at or copied. The Playwright route stays parked as the login-free alternative.
+
+Part A (executor, no human step):
+
+- `cua login` (`src/cli.mjs` + `src/runtime/login.mjs`): resolves the active runtime and runs the relocated bundled CLI (`<runtime>/CodexCLI.app/Contents/MacOS/codex login`, verified 0.159.2 here) with `CODEX_HOME=<home>/state/codex`, interactive, stdio inherited, TTY required; `cua login --status` runs `codex login status` and maps its exit code. `--device-auth` is passed through when given. The wrapper never reads, prints or stores `auth.json`; it does not expose `--with-api-key`/`--with-access-token`. A missing runtime is the existing actionable install error.
+- `cua doctor` gains `codex.login`: `pass` when `codex login status` exits 0, `blocked` otherwise, with the hint `run cua login`; the check never opens auth files. Doctor's `ok` semantics are unchanged (login is capability evidence, not runtime health).
+- First real install on this machine: `node bin/cua.mjs install --archive /Users/new/codex-app-src/_dist/ChatGPT-darwin-arm64-26.928.40906.zip` into the **default** `CUA_HOME` (`~/Library/Application Support/cua`), so the login is not thrown away with a scratch home. Record the doctor output (metadata only).
+- Extend `scripts/probe-chrome-original.mjs` with `--with-tabs`, used only after login: after `listBrowsers`, `listTabs` for each backend; then `createBrowserTab(<browser>)`, `goto` the probe's own loopback test page (served by the probe, no external resources, a unique document marker, one text input, one button that changes only its own DOM), `getAXState`, `typeText` of a generated benign marker into the input, `click` the button, verify the DOM change through `getAXState`, one `getScreenshot` written outside git, then `close()` of the created tab. The elicitation handler accepts **only** a form-mode origin-access request whose message names the probe's own loopback origin, session-scoped in the owned `CODEX_HOME`; every other elicitation (user-tab origins, downloads, history) is declined and recorded by kind. User tabs are never bound, read or closed. The report records whether `listTabs` showed user tabs (count only), the elicitation inventory, each operation's outcome class, screenshot size/hash, and that the created tab was closed. If the created tab cannot be closed while authorized, report the leftover for the user; never reconnect to clean up. Fixtures (fake backend) cover the handler's accept/decline matrix and the report's sanitization before any live run.
+
+Part B (human, then executor): the user runs `node bin/cua.mjs login` (or `cua login` after `npm link`) once; it opens the browser sign-in flow. Then the executor runs `CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs --report /tmp/cua-chrome-original-tabs.json`, once, and records the evidence in `docs/evidence/m10-original-chrome-tabs.md`. Expected: `listTabs` now reaches the hosts; the owned page round trip passes; the identity path starts `codex app-server` in the owned home (record what it writes, metadata only).
+
+Promote when the owned-page round trip (navigate, AX read, input, click-verified DOM change, screenshot, close) passes on the original route with the user's login, and the elicitation inventory shows nothing accepted beyond the probe's own origin. Then the production bridge milestone is written: register the browser surface in `cua serve` behind a `--surfaces` setting, the trusted browser wrapper for secret substitution (M5's pattern, `playwright_locator_fill` / `tab_ax_action`), profile registry, and the independent native-host registration/startup gate. Not in M10: any registry/manifest write, host launch, desktop-absence claim, or secret substitution in the browser.
+
+```sh
+# Part A
+npm test
+node bin/cua.mjs install --archive /Users/new/codex-app-src/_dist/ChatGPT-darwin-arm64-26.928.40906.zip
+node bin/cua.mjs doctor --json              # codex.login: blocked (run cua login)
+node scripts/probe-chrome-original.mjs --fixtures --report /tmp/cua-chrome-original-fixtures.json
+# Part B (human)
+node bin/cua.mjs login                      # browser sign-in, once
+node bin/cua.mjs login --status
+# Part B (executor)
+CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs --report /tmp/cua-chrome-original-tabs.json
+```
 
 ## Concrete Steps
 

@@ -66,3 +66,19 @@ test('a root behind an inaccessible directory is unread, while a root that does 
   assert.deepEqual(result.leaked, []);
   assert.equal(result.scanned, 0);
 });
+
+test('an excluded path is never opened and is reported as excluded, not as scanned or clean', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  mkdirSync(join(s.dir, 'codex'));
+  writeFileSync(join(s.dir, 'codex', 'auth.json'), `{"x":"${SENTINEL}"}`);
+  writeFileSync(join(s.dir, 'codex', 'other.json'), 'clean');
+  const opened = [];
+  const result = await scanFiles([s.dir], PRINTS, {exclude: path => { opened.push(path); return path.endsWith('/codex/auth.json'); }});
+  assert.deepEqual(result.leaked, []);
+  assert.equal(result.scanned, 1);
+  assert.deepEqual(result.excluded, [join(s.dir, 'codex', 'auth.json')]);
+  const plain = await scanFiles([s.dir], PRINTS);
+  assert.deepEqual(plain.excluded, []);
+  assert.equal(plain.leaked.length, 1, 'without the exclusion the same file is scanned');
+});

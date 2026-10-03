@@ -232,15 +232,16 @@ BLOCKED here. `npm run test:keychain-live` is the narrower Keychain-only roundtr
 | variable | default | meaning |
 |---|---|---|
 | `CUA_HOME` | `~/Library/Application Support/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`) |
+| `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through the original OpenAI extension and host, with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
 
 Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
-runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session),
-`CUA_SHIM_SURFACES` (native computer use only) and `CUA_SHIM_LOG` (it recorded whole transcripts). Apart from basic OS
-variables (`HOME`, `USER`, `TMPDIR`, locale), nothing else in the server's environment reaches the runtime.
+runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session) and
+`CUA_SHIM_LOG` (it recorded whole transcripts). Apart from basic OS variables (`HOME`, `USER`, `TMPDIR`, locale),
+nothing else in the server's environment reaches the runtime.
 
 ## For MAWS
 

@@ -30,9 +30,11 @@ async function fileLeaks(path, prints, chunkBytes) {
   return false;
 }
 
-// Every regular file under `roots` (symbolic links are not followed). Returns {scanned, leaked, unread, links}.
-export async function scanFiles(roots, prints, {chunkBytes = 1 << 20} = {}) {
-  const result = {scanned: 0, leaked: [], unread: [], links: 0};
+// Every regular file under `roots` (symbolic links are not followed), except files `exclude(path)` names, which are
+// never opened and are listed as excluded (a policy decision the caller reports, e.g. a credential file the run must
+// not read). Returns {scanned, leaked, unread, excluded, links}.
+export async function scanFiles(roots, prints, {chunkBytes = 1 << 20, exclude = () => false} = {}) {
+  const result = {scanned: 0, leaked: [], unread: [], excluded: [], links: 0};
   async function visit(dir) {
     let entries;
     try { entries = readdirSync(dir, {withFileTypes: true}); } catch { result.unread.push(dir); return; }
@@ -40,6 +42,7 @@ export async function scanFiles(roots, prints, {chunkBytes = 1 << 20} = {}) {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) await visit(path);
       else if (entry.isSymbolicLink()) result.links++;
+      else if (entry.isFile() && exclude(path)) result.excluded.push(path);
       else if (entry.isFile()) {
         try {
           if (await fileLeaks(path, prints, chunkBytes)) result.leaked.push(path);

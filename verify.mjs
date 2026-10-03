@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 // Checks the standalone server end to end through the actual launcher: `cua serve` on the installed runtime in
-// $CUA_HOME (default ~/Library/Application Support/cua). It runs the MCP handshake, checks the four-tool surface and
-// instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
+// $CUA_HOME (default ~/Library/Application Support/cua). It runs the MCP handshake, checks the tool surface (four
+// tools; five with the browser surface of CUA_SHIM_SURFACES, which adds profiles_list and documents the browser API
+// in the js description, while the default documents none) and instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
 // (its banner), which reaches the native helper read-only. Then end_task, a second task, and EOF. It records which
 // executables served (none may come from an installed desktop app), which helper held the native socket, and that
 // the connection's working directory is gone afterwards. Elicitations are declined; nothing is registered anywhere.
 // secrets_list is checked for shape only (labels, or a value-free unavailable/error status): with a built Keychain
 // helper the server runs that connection's broker as its second child, which must be gone after close too.
 //
-//   node verify.mjs            exit 0 when every check passes; prints a JSON report either way
+// profiles_list (browser surface) is checked for shape only and never opens a tab.
+//
+//   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
+//   CUA_SHIM_SURFACES=computer,browser node verify.mjs   the same with the browser surface
 import {spawn, spawnSync} from 'node:child_process';
 import {existsSync, readdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -19,13 +23,16 @@ import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
 import {descendants, classifyProcesses, socketHolders} from './scripts/probe/lib.mjs';
 import {HELPER_PATH} from './src/secrets/helper.mjs';
+import {settingsFrom} from './src/mcp/server.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
 const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
-const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list'];
 const home = defaultHome();
 const problems = [];
-const report = {home, problems};
+const {surfaces} = settingsFrom(process.env);
+const browser = surfaces.includes('browser');
+const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ? ['profiles_list'] : [])];
+const report = {home, surfaces, problems};
 const check = (ok, problem) => { if (!ok) problems.push(problem); return ok; };
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8'}).stdout ?? '';
 
@@ -79,6 +86,15 @@ try {
   check(JSON.stringify(report.tools) === JSON.stringify(MODEL_TOOLS), `tools are ${report.tools.join(', ')}, expected ${MODEL_TOOLS.join(', ')}`);
   check(tools.every(t => t._meta?.['anthropic/searchHint']), 'a tool lacks anthropic/searchHint');
   check(!tools.some(t => t._meta?.['anthropic/alwaysLoad']), 'a tool carries anthropic/alwaysLoad; the tools are meant to defer');
+  const jsDescription = tools.find(t => t.name === 'js')?.description ?? '';
+  report.browserApiDocumented = /createBrowserTab/.test(jsDescription);
+  check(report.browserApiDocumented === browser, browser ? 'the js description does not document the browser API' : 'the js description documents the browser API without the browser surface');
+  if (browser) {
+    const profiles = (await call('profiles_list')).structuredContent;
+    report.profilesList = profiles?.status === 'ok' ? {status: 'ok', keys: profiles.profiles.map(p => p.key), ready: profiles.profiles.filter(p => p.ready).map(p => p.key)} : profiles;
+    check(profiles?.status === 'ok' && Array.isArray(profiles.profiles) && profiles.profiles.every(p => typeof p.key === 'string' && typeof p.ready === 'boolean' && !('chromeProfileDirectory' in p)),
+      `profiles_list returned ${JSON.stringify(report.profilesList)}`);
+  }
 
   const idleEnd = await call('end_task');
   check(idleEnd.structuredContent?.status === 'noop', `end_task with no task returned ${JSON.stringify(idleEnd.structuredContent)}`);

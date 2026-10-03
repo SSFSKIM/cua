@@ -156,3 +156,46 @@ own login. Input and click failed because the probe used the native-input wrappe
 unsupported on these tabs; the route itself did not refuse anything. Next: switch the probe's input and click to the
 documented Playwright locator API (fill the input, click the button, verify through `getAXState`) and run once more.
 That locator path is also the `playwright_locator_fill` shape the browser secret wrapper already targets.
+
+## Part B, run 3 (2026-10-03, `--browser-index 1`, Playwright locators)
+
+Probe change before the run (`39c8fc7`): input and click now use the vendor's documented Playwright locators for
+DOM-only tabs (BS:833-1225; the cua binding `oai_js_cua/src/tinysky_alt/bind_tab.js` leaves these tabs without `tab.ax`,
+so native typeText/click refuse before input and getAXState falls back to `tab.playwright.domSnapshot()`):
+
+- fill: `tab.playwright.getByLabel("Probe input", {exact: true})`, required to match exactly 1 element (`count()`),
+  then `.fill(marker, {timeoutMs: 10000})`;
+- click: `tab.playwright.getByRole("button", {exact: true, name: "Mark probe page"})`, exactly 1 element, `.click({})`;
+- verify: `getAXState` contains `done: <marker>`, and `tab.playwright.locator("#out").textContent()` equals it.
+
+By source, these map to the browser service commands `playwright_locator_fill` (BS:49707) and
+`playwright_locator_click` (BS:43822), the shapes the browser secret wrapper will target. The probe cannot observe
+the service's backend wire, so these names are source evidence, not observed. Fixtures 11/11, helper tests 42/42 and
+`npm test` 200/200 passed with the change.
+
+One run:
+
+```sh
+CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs --browser-index 1 --report /tmp/cua-chrome-original-tabs.json
+```
+
+Result 8 PASS / 1 FAIL / 5 BLOCKED, `tabOperations: 1`.
+
+| Step | Outcome |
+|---|---|
+| prerequisites, launch, listBrowsers, listTabs | PASS; backend 0 lists 0 tabs, backend 1 lists 37 (counts only) |
+| target-browser | PASS, index 1 |
+| createBrowserTab | **FAIL, class `transport`**: "js execution timed out; kernel reset, rerun your request" (the 30 s cell timeout) |
+| goto, fill, click, screenshot, close | BLOCKED: no tab handle, so nothing was attempted |
+| elicitations | 0 (none asked, none accepted) |
+| user tabs | untouched: cells `listBrowsers, listTabs x2, createBrowserTab` |
+| teardown | confirmed (EOF), 0 owned leftovers, hosts still running; runtime stderr 953 bytes (removed with the scratch, unread) |
+
+- **Leftover: unknown.** createBrowserTab returned no tab id, so the probe did not guess, close, retry or reconnect.
+  If a new tab appeared in the Default profile window, the user closes it by hand.
+- Test page: 0 requests. Owned `state/codex` gained `cache` (names only).
+- The same call on the same backend succeeded in run 2 within the timeout, so this is a timing or extension-state
+  outcome, not a refusal. It stays unexplained without another observation.
+
+**Verdict: not promoted, not discarded.** The locator round trip has not run live yet; run 3 ended before a tab
+handle existed.

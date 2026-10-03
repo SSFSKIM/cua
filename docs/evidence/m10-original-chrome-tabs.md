@@ -199,3 +199,46 @@ Result 8 PASS / 1 FAIL / 5 BLOCKED, `tabOperations: 1`.
 
 **Verdict: not promoted, not discarded.** The locator round trip has not run live yet; run 3 ended before a tab
 handle existed.
+
+**Run 3 leftover, resolved by the user:** the user checked the Default profile window and closed one leftover tab by
+hand. So the timed-out createBrowserTab had in fact created a tab that the probe, without a tab id, correctly did not
+touch.
+
+## Part B, run 4 (2026-10-03, `--browser-index 1`, Playwright locators, createBrowserTab limit 60 s)
+
+Change before the run (`02f2311`): the createBrowserTab cell limit is 60 s (other cells unchanged), and its wall-clock
+duration is recorded. One run:
+
+```sh
+CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs --browser-index 1 --report /tmp/cua-chrome-original-tabs.json
+```
+
+**Result 14 PASS / 0 FAIL / 0 BLOCKED**, `tabOperations: 7`, no leftover.
+
+| Step | Outcome |
+|---|---|
+| prerequisites, launch, listBrowsers | PASS (login `logged-in`; 2 `extension`/`chrome` backends) |
+| listTabs | ok on both: backend 0 lists 0 tabs, backend 1 lists 38 (counts only) |
+| target-browser | PASS, index 1 |
+| createBrowserTab | ok in **622 ms** (limit 60 s) |
+| goto + AX read | ok; document marker found; `axInput: false`, Playwright locators present (DOM-only tab, recorded once); page served 1 request |
+| fill | ok: `playwright.getByLabel("Probe input", {exact: true})` (1 match) `.fill(marker, {timeoutMs: 10000})` |
+| click + verify | ok: `playwright.getByRole("button", {exact: true, name})` (1 match) `.click({})`; `getAXState` shows `done: <marker>` and `playwright.locator("#out").textContent()` equals it |
+| getScreenshot | ok: 1 image, **JPEG, 18185 bytes, SHA-256 `e641c147a31ae0cca7f4075bb343b4d91c42e9cce578075f91b5170f061466df`**, size matches; kept outside git. It shows only the probe page with the marker in the input and status `done: <marker>` |
+| close + confirm | ok; the created tab is gone from listTabs (38 before and after); **leftover `none`** |
+| elicitations | 1: `origin-access` for the probe's exact origin, form mode, **accepted with `persist:"session"`**; 0 declined |
+| user tabs | untouched: cells `listBrowsers, listTabs x2, createBrowserTab, gotoOwnedPage, fillInput, clickAndVerify, getScreenshot, closeCreatedTab, confirmClosed` |
+| teardown | confirmed (EOF), 0 owned leftovers, hosts still running, runtime stderr 0 bytes |
+
+Owned `state/codex`: no new entry names in this run. AX format as in run 2: `- textbox "<label>" [active]`,
+`- button "<label>"`, no element indices. The locator calls map by source to `playwright_locator_fill` /
+`playwright_locator_click` (not observable on the wire from the probe).
+
+**Run 3 versus run 4:** createBrowserTab took over 30 s in run 3 (and still created a tab) and 622 ms here. One slow
+outlier is not explained. A production bridge needs a createBrowserTab limit well above 30 s, and must report a
+possible leftover after a timeout, as the probe did.
+
+**Verdict against M10's criteria: PROMOTE.** The owned-page round trip (navigate, AX read, input, click-verified DOM
+change, screenshot, close) passes on the original route with the server's own login. The elicitation inventory shows
+nothing accepted beyond the probe's own origin (session scope). Input on these tabs goes through the Playwright locator
+API, the shape the browser secret wrapper targets (`playwright_locator_fill`).

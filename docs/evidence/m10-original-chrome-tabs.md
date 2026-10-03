@@ -76,3 +76,41 @@ CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-origi
 Two backends are listed today. If they show different tabs (two profiles), the run stops at `target-browser`
 BLOCKED before creating anything, and the per-browser user-tab counts in the report are the only way to tell the
 profiles apart; rerun with `--browser-index N` for the intended profile.
+
+## Part B, run 1 (2026-10-03, executor, after the user's `cua login`)
+
+The user ran `cua login` at a terminal; the coordinator verified `cua login --status` exit 0 and doctor
+`codex.login: pass` (no auth material read). One run:
+
+```sh
+CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs --report /tmp/cua-chrome-original-tabs.json
+```
+
+Result 7 PASS / 0 FAIL / 7 BLOCKED, `tabOperations: 0`. **It stopped at `target-browser`, as designed:** the two
+backends are distinct profiles, so no tab was created and nothing was navigated, typed, clicked, screenshotted or closed.
+
+| Step | Outcome |
+|---|---|
+| live-prerequisites | PASS: login `logged-in` (codex login status), 2 hosts / 2 sockets, all signatures valid |
+| live-launch, list-browsers | PASS: 2 backends, both `extension`/`chrome`, `extensionInstanceId` present, `profileName` absent |
+| list-tabs-reach | **PASS: with the login, listTabs reaches both hosts** (M9 was refused `identity-or-auth`). Backend 0 lists **0** tabs, backend 1 lists **35** (counts only) |
+| compareProfiles | ok, `sameProfile: false` (the two tab-id sets differ) |
+| target-browser | BLOCKED: "2 browsers that may be different profiles; rerun with --browser-index N" |
+| create-tab ... close-created-tab | BLOCKED (nothing attempted); leftover `none` |
+| elicitations-own-origin-only | PASS: 0 elicitations (none asked, none accepted) |
+| user-tabs-untouched | PASS: cells `listBrowsers, listTabs, listTabs, compareProfiles` |
+| owned-teardown | PASS: confirmed (EOF), 0 owned leftovers, hosts still running |
+
+- Test page: 0 requests (never navigated to). Runtime stderr: 0 bytes. Owned group ran `codex`, `node`, `node_repl`;
+  4 remote TCP endpoints, all port 443 (the identity path).
+- Owned `state/codex`, names only. Before: `auth.json`, `log`, `tmp`. After: those plus `goals_1.sqlite`,
+  `installation_id`, `logs_2.sqlite`, `memories_1.sqlite`, `models_cache.json`, `node_repl`, `queue_1.sqlite`,
+  `skills`, `state_5.sqlite` (each sqlite with `-shm`/`-wal`): what `codex app-server` and node_repl wrote. `auth.json`
+  was seen by name in the listing only, never opened.
+
+**Next:** the user picks the profile. Backend 0 shows no tabs (a profile with no open window, or a host without a
+window); backend 1 shows 35 tabs. If the selected `Default` profile is the one with the user's open tabs, rerun once
+with `--browser-index 1`; the probe then creates one tab there, uses only its own loopback page, and closes it.
+
+**Verdict against M10's criteria: not yet promotable, not discarded.** The login made the original route's session
+requests work (listTabs reaches both hosts with no policy refusal), but the owned-page round trip has not run.

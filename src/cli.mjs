@@ -244,7 +244,7 @@ async function profiles(args) {
 // host's manifest is present unless --replace, which backs it up first; unregister removes only cua's manifests and
 // restores what cua replaced. Exit 1 on a refusal or when a restoration is BLOCKED.
 const CHROME_USAGE = {register: 'chrome register takes only --replace and --json', unregister: 'chrome unregister takes only --json'};
-const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours'};
+const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours', not_removed: 'kept'};
 
 async function chrome(args) {
   const [command, ...rest] = args;

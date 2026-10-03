@@ -2,12 +2,12 @@
 // browser's NativeMessagingHosts directory: every test passes its own scratch `userHome`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, chmodSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {join} from 'node:path';
-import {registerHost, unregisterHost, BROWSERS} from '../src/chrome/registration.mjs';
-import {resolveRuntime} from '../src/runtime/manifest.mjs';
-import {scratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures} from './fixtures/runtime-fixture.mjs';
+import {join, dirname} from 'node:path';
+import {registerHost, unregisterHost, BROWSERS, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
+import {resolveRuntime, parsePin} from '../src/runtime/manifest.mjs';
+import {scratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures, realPinJson} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const MANIFEST = 'com.openai.codexextension.json';
@@ -227,4 +227,121 @@ test('register refuses before writing when the host signature fails, the compone
   });
   assert.equal(existsSync(noComponent.manifests.chrome), false);
   assert.deepEqual(readdirSync(join(noComponent.support, 'Google', 'Chrome', 'NativeMessagingHosts')), []);
+});
+
+// Review fixes (M12 frontier review): concurrent writers, late announcement, exact ownership, restoration I/O failure.
+const hook = (browser, step, act) => (name, row) => { if (row.browser === browser && name === step) act(row); };
+
+test('a manifest another program writes into an empty slot between cua\'s read and its write is never clobbered', async t => {
+  const m = machine(t);
+  const desktop = desktopBytes(m.userHome);
+  await assert.rejects(register(m, {onStep: hook('chrome', 'publish', () => writeFileSync(m.manifests.chrome, desktop))}), expectCode('registration_in_use'));
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), desktop);
+  assert.equal(record(m).browsers.chrome, undefined);
+  assert.equal(existsSync(m.backups), false);
+  // With --replace the newcomer takes the announced, backed-up path instead.
+  const r = machine(t);
+  const announced = [];
+  let fired = false;
+  const result = await register(r, {replace: true, onReplace: () => announced.push(readFileSync(r.manifests.chrome, 'utf8')),
+    onStep: hook('chrome', 'publish', () => { if (!fired) { fired = true; writeFileSync(r.manifests.chrome, desktop); } })});
+  assert.deepEqual(announced, [desktop]);
+  assert.equal(result.browsers[0].action, 'replaced');
+  assert.equal(readFileSync(join(r.backups, 'chrome.json'), 'utf8'), desktop);
+  assert.equal(readFileSync(r.manifests.chrome, 'utf8'), ourManifest(r.component.host));
+});
+
+test('our manifest that turns foreign before cua takes or republishes it is neither overwritten nor removed', async t => {
+  const older = m => join(m.runtime.home, 'runtimes', '0.0.1-darwin-arm64', 'chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome');
+  for (const step of ['take', 'publish']) {
+    const m = machine(t);
+    const desktop = desktopBytes(m.userHome);
+    writeFileSync(m.manifests.chrome, ourManifest(older(m)));
+    await assert.rejects(register(m, {onStep: hook('chrome', step, () => writeFileSync(m.manifests.chrome, desktop))}), expectCode('registration_in_use'), step);
+    assert.equal(readFileSync(m.manifests.chrome, 'utf8'), desktop, step);
+  }
+  const u = machine(t);
+  const desktop = desktopBytes(u.userHome);
+  writeFileSync(u.manifests.chrome, ourManifest(u.component.host));
+  const result = unregisterHost({home: u.home, userHome: u.userHome, onStep: hook('chrome', 'take', () => writeFileSync(u.manifests.chrome, desktop))});
+  assert.deepEqual([result.browsers[0].action, result.browsers[0].pathClass], ['not_ours', 'desktop']);
+  assert.equal(readFileSync(u.manifests.chrome, 'utf8'), desktop);
+});
+
+test('a foreign manifest that appears during the signature check is announced before it is replaced', async t => {
+  const m = machine(t);
+  const desktop = desktopBytes(m.userHome);
+  const announced = [];
+  const result = await register(m, {replace: true,
+    verifySignatures: async (root, pin) => { mkdirSync(dirname(m.manifests.brave), {recursive: true}); writeFileSync(m.manifests.brave, desktop); return acceptSignatures(root, pin); },
+    onReplace: lines => announced.push({lines, brave: readFileSync(m.manifests.brave, 'utf8')})});
+  assert.equal(announced.length, 1);
+  assert.equal(announced[0].lines.length, 2);
+  assert.equal(announced[0].brave, desktop, 'announced while the foreign manifest is still in place');
+  assert.deepEqual(result.browsers.map(b => [b.browser, b.action]), [['chrome', 'placed'], ['brave', 'replaced']]);
+  assert.equal(readFileSync(join(m.backups, 'brave.json'), 'utf8'), desktop);
+  // Without --replace the late arrival is refused and left in place.
+  const n = machine(t);
+  await assert.rejects(register(n, {verifySignatures: async (root, pin) => { mkdirSync(dirname(n.manifests.brave), {recursive: true}); writeFileSync(n.manifests.brave, desktop); return acceptSignatures(root, pin); }}), expectCode('registration_in_use'));
+  assert.equal(readFileSync(n.manifests.brave, 'utf8'), desktop);
+});
+
+test('only the pinned Chrome host location of a release counts as cua\'s; other executables and escaping paths do not', async t => {
+  const m = machine(t);
+  const runtimes = join(m.runtime.home, 'runtimes');
+  const suffixes = hostSuffixes([parsePin(realPinJson())]);
+  const own = p => isOwnHostPath(p, {home: m.runtime.home, suffixes});
+  assert.equal(own(m.component.host), true);
+  assert.equal(own(join(runtimes, '0.0.1-darwin-arm64/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome')), true);
+  for (const path of [
+    join(runtimes, m.runtime.release, 'cua_node/bin/node'),
+    join(runtimes, m.runtime.release, 'chrome-plugin/scripts/browser-service.mjs'),
+    `${runtimes}/${m.runtime.release}/chrome-plugin/../chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome`,
+    `${runtimes}//${m.runtime.release}/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome`,
+    join(runtimes, 'evil/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome'),
+    join(runtimes, 'chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome'),
+    'runtimes/x/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome',
+  ]) assert.equal(own(path), false, path);
+  // A manifest naming the runtime's node is not cua's: register refuses it and unregister leaves it.
+  const node = ourManifest(join(runtimes, m.runtime.release, 'cua_node/bin/node'));
+  writeFileSync(m.manifests.chrome, node);
+  await assert.rejects(register(m), expectCode('registration_in_use'));
+  assert.equal(unregister(m).browsers[0].action, 'not_ours');
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), node);
+});
+
+test('a restore that cannot write is BLOCKED for that browser with the manual recovery, and every browser is processed', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  await register(m, {replace: true, onReplace: () => {}});
+  const dir = dirname(m.manifests.chrome);
+  chmodSync(dir, 0o555);
+  let result;
+  try { result = unregister(m); } finally { chmodSync(dir, 0o755); }
+  assert.equal(result.blocked, true);
+  const [chrome, brave] = result.browsers.filter(b => b.action !== 'absent');
+  assert.equal(chrome.browser, 'chrome');
+  assert.equal(chrome.action, 'not_removed');
+  assert.equal(chrome.restoration, 'blocked');
+  assert.match(chrome.reason, /EACCES/);
+  const backup = join(m.backups, 'chrome.json');
+  assert.ok(chrome.userAction.includes(backup) && chrome.userAction.includes(m.manifests.chrome), chrome.userAction);
+  assert.equal(readFileSync(backup, 'utf8'), m.original, 'backup kept');
+  assert.equal(record(m).browsers.chrome.replaced, true, 'record kept');
+  assert.deepEqual([brave.browser, brave.action, brave.restoration], ['brave', 'removed', 'not_needed']);
+  // Once the cause is fixed, unregister completes the restore.
+  const again = unregister(m);
+  assert.equal(again.blocked, false);
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original);
+});
+
+test('a restore that does not read back as the backup is BLOCKED and keeps the backup and its record', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  await register(m, {replace: true, onReplace: () => {}});
+  const result = unregisterHost({home: m.home, userHome: m.userHome, onStep: hook('chrome', 'restored', () => writeFileSync(m.manifests.chrome, 'changed under us'))});
+  const chrome = result.browsers[0];
+  assert.deepEqual([chrome.action, chrome.restoration], ['restored', 'blocked']);
+  assert.match(chrome.reason, /does not read back/);
+  assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original);
+  assert.equal(record(m).browsers.chrome.replaced, true);
+  assert.equal(result.browsers.find(b => b.browser === 'brave').restoration, 'not_needed');
 });

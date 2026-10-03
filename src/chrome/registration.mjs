@@ -3,26 +3,30 @@
 //
 // The OpenAI extension connects to exactly one native-messaging name (com.openai.codexextension), and a browser
 // holds one manifest per name, so cua's host and the desktop app's cannot both be registered in one browser. The rule:
-//   - register writes the manifest only where none exists, or where the existing one already names a cua host in this
-//     home (rewritten if it names another release). Any other existing manifest (the desktop's, another host's, or
+//   - register writes the manifest only where none exists, or where the existing one already names cua's host in this
+//     home (the pinned host location of a release directory; rewritten if it names another release). Any other existing manifest (the desktop's, another host's, or
 //     one that cannot be read) makes register refuse as a whole, before anything is written, naming its class.
 //   - register --replace backs each such manifest up byte-for-byte under <home>/chrome/manifest-backup/<browser>.json
 //     and records it before overwriting; the caller announces the consequences first (REPLACE_CONSEQUENCES).
-//   - unregister removes only manifests that name a cua host in this home. Where cua replaced one, it restores the
+//   - unregister removes only manifests that name cua's host in this home. Where cua replaced one, it restores the
 //     backup and verifies the restored bytes; when there is no backup, it does not match, there is no record of what
 //     was replaced, or the restore does not verify, restoration is BLOCKED with the exact user action.
 // The manifest is the vendor installManifest.mjs format byte-for-byte except `path`. Browsers are the five the vendor
 // targets on macOS whose user-data directory exists; their NativeMessagingHosts directory is created when missing.
+// The slots are shared with the desktop app, which re-syncs its manifest: cua takes exactly the file it read before
+// replacing or removing it and publishes without clobbering (see `publish`/`take`), so a concurrent write is detected
+// and never destroyed.
 // No chrome-native-hosts-v2.json entry is written: the browser-use socket does not need one (only the desktop's
 // side-panel app-server does, which is not cua's feature). Nothing here launches or signals a host or a browser.
-import {mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync} from 'node:fs';
+import {linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createHash, randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
-import {basename, dirname, join} from 'node:path';
+import {basename, dirname, isAbsolute, join, normalize} from 'node:path';
 import {fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {verifyCodeSignatures} from '../runtime/checks.mjs';
 import {locateChromeComponent, verifyChromeComponent} from '../runtime/chrome-component.mjs';
+import {loadPins} from '../runtime/manifest.mjs';
 import {hostPathClass} from '../profiles/chrome.mjs';
 
 // macOS user-data directories, relative to the user's home (the vendor's chromium-family manifest directories).
@@ -57,9 +61,24 @@ function slots({userHome, nativeHost, onlyPresent}) {
   });
 }
 
-// What a browser's manifest slot holds: nothing, a manifest naming a cua host in this home, or anything else (with
+// The exact host locations that are cua's: <home>/runtimes/<release>/<chromePlugin.dir>/<layout.host> for a valid
+// release directory name and any checked-in pin's plugin layout. Anything else in the home (another executable under
+// runtimes/, a path with `..` or doubled separators) is not cua's host.
+const RELEASE_DIR = /^\d+(\.\d+)+-[a-z0-9]+-[a-z0-9]+$/;
+export const hostSuffixes = pins => new Set(pins.map(pin => `${pin.chromePlugin.dir}/${pin.chromePlugin.layout.host}`));
+
+export function isOwnHostPath(hostPath, {home, suffixes}) {
+  if (typeof hostPath !== 'string' || !isAbsolute(hostPath) || normalize(hostPath) !== hostPath) return false;
+  const prefix = join(home, 'runtimes') + '/';
+  if (!hostPath.startsWith(prefix)) return false;
+  const rest = hostPath.slice(prefix.length);
+  const slash = rest.indexOf('/');
+  return slash > 0 && RELEASE_DIR.test(rest.slice(0, slash)) && suffixes.has(rest.slice(slash + 1));
+}
+
+// What a browser's manifest slot holds: nothing, a manifest naming cua's host in this home, or anything else (with
 // the class of the host it names, or `unreadable`).
-function readSlot(path, {home, userHome}) {
+function readSlot(path, {home, userHome, suffixes}) {
   let bytes;
   try { bytes = readFileSync(path); } catch (error) {
     if (error.code === 'ENOENT') return {state: 'absent'};
@@ -68,7 +87,7 @@ function readSlot(path, {home, userHome}) {
   let manifest;
   try { manifest = JSON.parse(bytes.toString('utf8')); } catch { manifest = null; }
   const hostPath = typeof manifest?.path === 'string' ? manifest.path : null;
-  if (hostPath?.startsWith(join(home, 'runtimes') + '/')) return {state: 'ours', bytes, hostPath};
+  if (isOwnHostPath(hostPath, {home, suffixes})) return {state: 'ours', bytes, hostPath};
   return {state: 'foreign', bytes, pathClass: hostPath ? hostPathClass(hostPath, {cuaHome: home, userHome}) : 'unreadable'};
 }
 
@@ -81,10 +100,12 @@ function readRecord(home) {
 
 const writeRecord = (home, record) => writeAtomic(recordFile(home), JSON.stringify(record, null, 2) + '\n', {mode: 0o600, dirMode: 0o700});
 
-// Write-then-rename in the destination directory: readers see the old file or the new one, never a partial file.
+const sibling = (path, kind) => join(dirname(path), `.${basename(path)}.${randomUUID()}.${kind}`);
+
+// Write-then-rename for cua's own files: readers see the old file or the new one, never a partial file.
 function writeAtomic(path, bytes, {mode, dirMode}) {
   mkdirSync(dirname(path), {recursive: true, ...(dirMode ? {mode: dirMode} : {})});
-  const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+  const temp = sibling(path, 'tmp');
   try {
     writeFileSync(temp, bytes, {mode, flag: 'wx'});
     renameSync(temp, path);
@@ -92,6 +113,42 @@ function writeAtomic(path, bytes, {mode, dirMode}) {
     rmSync(temp, {force: true});
     throw error;
   }
+}
+
+// A browser's manifest slot is shared with other writers (the desktop app re-syncs its manifest), so cua never
+// overwrites or deletes it blindly:
+//   publish  puts bytes into an empty slot with link(2), which fails with EEXIST instead of clobbering whatever
+//            appeared there; returns false on that collision.
+//   take     moves the file in the slot aside with one rename, so cua holds exactly the file it will replace or
+//            remove, and checks it is the one just read; otherwise it puts it back (without clobbering) and returns
+//            null, and the caller reads the slot again.
+function publish(path, bytes, {mode = 0o644} = {}) {
+  mkdirSync(dirname(path), {recursive: true});
+  const temp = sibling(path, 'tmp');
+  writeFileSync(temp, bytes, {mode, flag: 'wx'});
+  try {
+    linkSync(temp, path);
+    return true;
+  } catch (error) {
+    if (error.code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    rmSync(temp, {force: true});
+  }
+}
+
+function take(path, expected) {
+  const aside = sibling(path, 'taken');
+  try { renameSync(path, aside); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  if (readFileSync(aside).equals(expected)) return aside;
+  putBack(aside, path);
+  return null;
+}
+
+// Returns a taken file to its slot unless something newer is there already, which then stands.
+function putBack(aside, path) {
+  try { linkSync(aside, path); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+  rmSync(aside, {force: true});
 }
 
 function refusal(foreign, nativeHost) {
@@ -102,90 +159,150 @@ function refusal(foreign, nativeHost) {
   return `${nativeHost} is already registered for another host in ${where}: ${why}. Nothing was changed.`;
 }
 
-// Registers the active release's Chrome host. `onReplace(consequences)` is called once, before anything is
-// overwritten, when --replace is about to replace at least one manifest cua did not write.
-export async function registerHost({home, runtime, replace = false, userHome = homedir(), verifySignatures = verifyCodeSignatures, onReplace}) {
+const ATTEMPTS = 3;
+const contended = path => fail('registration_contended', `${path} kept changing while cua was writing it; nothing more was changed there`, {hint: 'quit the application that keeps rewriting it, then run the command again'});
+
+// Registers the active release's Chrome host. `onReplace(consequences)` is called once, immediately before the first
+// manifest cua did not write is actually replaced (including one that appeared after the plan); the consequences are
+// therefore always announced before anything foreign is overwritten. `onStep(step, {browser, manifestPath})` is a
+// test seam (module API only) called right before each publish or take.
+export async function registerHost({home, runtime, replace = false, userHome = homedir(), verifySignatures = verifyCodeSignatures, onReplace, onStep, pins = loadPins()}) {
   const cuaHome = realHome(home);
   const paths = locateChromeComponent(runtime);
   const native = runtime.manifest.chromePlugin.nativeHost;
   const desired = Buffer.from(manifestText(native, paths.host));
-  const context = {home: cuaHome, userHome};
+  const context = {home: cuaHome, userHome, suffixes: hostSuffixes([...pins, runtime.manifest])};
   const planned = slots({userHome, nativeHost: native.name, onlyPresent: true}).map(s => ({...s, slot: readSlot(s.manifestPath, context)}));
   if (!planned.length)
     fail('no_supported_browser', `no Chrome, Edge, Brave, Opera or Vivaldi user-data directory under ${join(userHome, 'Library', 'Application Support')}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
   const foreign = planned.filter(s => s.slot.state === 'foreign');
-  if (foreign.length && !replace)
-    fail('registration_in_use', refusal(foreign, native.name), {hint: `\`cua chrome register --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister\` restores it`});
+  const replaceHint = `\`cua chrome register --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister\` restores it`;
+  if (foreign.length && !replace) fail('registration_in_use', refusal(foreign, native.name), {hint: replaceHint});
   // The host must be cua's verified host before any browser is pointed at it.
   await verifyChromeComponent(paths.root, runtime.manifest, {verifySignatures});
-  if (foreign.length) onReplace?.(REPLACE_CONSEQUENCES);
 
+  let announced = false;
+  const announce = () => { if (!announced) { announced = true; onReplace?.(REPLACE_CONSEQUENCES); } };
   const record = readRecord(cuaHome);
   const browsers = [];
   for (const s of planned) {
-    // Read again right before writing, so nothing that appeared since the plan is overwritten without a backup.
-    const slot = readSlot(s.manifestPath, context);
     const row = {browser: s.browser, manifestPath: s.manifestPath};
+    const step = name => onStep?.(name, row);
     const backup = backupFile(cuaHome, s.browser);
-    if (slot.state === 'foreign') {
-      if (!replace) fail('registration_in_use', refusal([{...s, slot}], native.name), {hint: 'something registered itself while cua was registering; rerun `cua chrome register`'});
-      writeAtomic(backup, slot.bytes, {mode: 0o600, dirMode: 0o700});
-      if (!readFileSync(backup).equals(slot.bytes)) fail('backup_failed', `the backup ${backup} does not match ${s.manifestPath}; nothing was replaced in ${s.browser}`);
-      record.browsers[s.browser] = {manifest: s.manifestPath, replaced: true, backupSha256: sha256(slot.bytes)};
-      writeRecord(cuaHome, record);
-      writeAtomic(s.manifestPath, desired, {mode: 0o644});
-      browsers.push({...row, action: 'replaced', backup});
-    } else if (slot.state === 'ours') {
-      if (slot.bytes.equals(desired)) { browsers.push({...row, action: 'unchanged'}); continue; }
-      writeAtomic(s.manifestPath, desired, {mode: 0o644});
-      browsers.push({...row, action: 'updated'});
-    } else {
-      record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
-      writeRecord(cuaHome, record);
-      writeAtomic(s.manifestPath, desired, {mode: 0o644});
-      browsers.push({...row, action: 'placed'});
+    let done = null;
+    for (let attempt = 0; attempt < ATTEMPTS && !done; attempt++) {
+      // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
+      const slot = readSlot(s.manifestPath, context);
+      if (slot.state === 'absent') {
+        record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
+        writeRecord(cuaHome, record);
+        step('publish');
+        if (publish(s.manifestPath, desired)) done = {...row, action: 'placed'};
+        else { delete record.browsers[s.browser]; writeRecord(cuaHome, record); }
+      } else if (slot.state === 'ours') {
+        if (slot.bytes.equals(desired)) { done = {...row, action: 'unchanged'}; break; }
+        step('take');
+        const aside = take(s.manifestPath, slot.bytes);
+        if (!aside) continue;
+        step('publish');
+        const placed = publish(s.manifestPath, desired);
+        rmSync(aside, {force: true});
+        if (placed) done = {...row, action: 'updated'};
+      } else {
+        if (!replace) fail('registration_in_use', refusal([{...s, slot}], native.name), {hint: `it appeared while cua was registering; ${replaceHint}`});
+        announce();
+        step('take');
+        const aside = take(s.manifestPath, slot.bytes);
+        if (!aside) continue;
+        try {
+          writeAtomic(backup, slot.bytes, {mode: 0o600, dirMode: 0o700});
+          if (!readFileSync(backup).equals(slot.bytes)) fail('backup_failed', `the backup ${backup} does not match ${s.manifestPath}; nothing was replaced in ${s.browser}`);
+          record.browsers[s.browser] = {manifest: s.manifestPath, replaced: true, backupSha256: sha256(slot.bytes)};
+          writeRecord(cuaHome, record);
+        } catch (error) {
+          putBack(aside, s.manifestPath);
+          throw error;
+        }
+        step('publish');
+        const placed = publish(s.manifestPath, desired);
+        rmSync(aside, {force: true});
+        if (placed) done = {...row, action: 'replaced', backup};
+      }
     }
+    browsers.push(done ?? contended(s.manifestPath));
   }
   return {host: paths.host, browsers};
 }
 
 const restoreYourself = (name, manifestPath) => `restore ${name}'s previous registration yourself: if it was the ChatGPT desktop app's, quit and reopen ChatGPT so it writes ${manifestPath} again, then run \`cua doctor\` and check that chrome.host.registered names the desktop host`;
 
-// Removes cua's manifests from every browser and restores what cua replaced. Never touches a manifest it did not write.
-export function unregisterHost({home, userHome = homedir(), nativeHost = 'com.openai.codexextension'}) {
+// Removes cua's manifests from every browser and restores what cua replaced. Never touches a manifest it did not write:
+// each removal takes exactly the file it read (see `take`), and a restore publishes without clobbering. Every browser
+// is processed; an I/O failure in one is that browser's BLOCKED result (backup and record kept), never a stop.
+export function unregisterHost({home, userHome = homedir(), nativeHost = 'com.openai.codexextension', pins = loadPins(), onStep}) {
   const cuaHome = realHome(home);
-  const context = {home: cuaHome, userHome};
+  const context = {home: cuaHome, userHome, suffixes: hostSuffixes(pins)};
   const record = readRecord(cuaHome);
   let recordChanged = false;
+  const forget = browser => { if (record.browsers[browser]) { delete record.browsers[browser]; recordChanged = true; } };
   const browsers = slots({userHome, nativeHost, onlyPresent: false}).map(s => {
-    const slot = readSlot(s.manifestPath, context);
     const row = {browser: s.browser, manifestPath: s.manifestPath};
+    try {
+      return unregisterSlot(s, row, {context, record, cuaHome, forget, step: name => onStep?.(name, row)});
+    } catch (error) {
+      const backup = backupFile(cuaHome, s.browser);
+      const stillOurs = (() => { try { return readSlot(s.manifestPath, context).state === 'ours'; } catch { return false; } })();
+      return {...row, action: stillOurs ? 'not_removed' : 'removed', restoration: 'blocked',
+        reason: `${error.code ?? error.message} while unregistering ${s.manifestPath}; ${stillOurs ? 'cua\'s registration is still in place' : 'cua\'s registration is no longer there'}, and the backup and its record were kept`,
+        userAction: record.browsers[s.browser]?.replaced
+          ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
+          : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`};
+    }
+  });
+  if (recordChanged) writeRecord(cuaHome, record);
+  return {browsers, blocked: browsers.some(b => b.restoration === 'blocked')};
+}
+
+function unregisterSlot(s, row, {context, record, cuaHome, forget, step}) {
+  const backup = backupFile(cuaHome, s.browser);
+  for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
+    const slot = readSlot(s.manifestPath, context);
     if (slot.state === 'absent') return {...row, action: 'absent'};
     if (slot.state === 'foreign') return {...row, action: 'not_ours', pathClass: slot.pathClass};
     const entry = record.browsers[s.browser];
-    const backup = backupFile(cuaHome, s.browser);
-    if (entry) { delete record.browsers[s.browser]; recordChanged = true; }
+    let saved = null;
+    if (entry?.replaced !== false) { try { saved = readFileSync(backup); } catch {} }
+    const usable = saved && (!entry || sha256(saved) === entry.backupSha256);
+    step('take');
+    const aside = take(s.manifestPath, slot.bytes);
+    if (!aside) continue;
     if (entry?.replaced === false) {
-      unlinkSync(s.manifestPath);
+      rmSync(aside, {force: true});
+      forget(s.browser);
       return {...row, action: 'removed', restoration: 'not_needed'};
     }
-    let saved = null;
-    try { saved = readFileSync(backup); } catch {}
-    const blocked = (reason, userAction) => ({...row, action: 'removed', restoration: 'blocked', reason, userAction});
-    if (!saved || (entry && sha256(saved) !== entry.backupSha256)) {
-      unlinkSync(s.manifestPath);
+    if (!usable) {
+      rmSync(aside, {force: true});
+      forget(s.browser);
+      const blocked = (reason, userAction) => ({...row, action: 'removed', restoration: 'blocked', reason, userAction});
       if (!entry) return blocked('cua has no record of what this registration replaced and no backup exists', restoreYourself(s.name, s.manifestPath));
       if (!saved) return blocked(`the backup ${backup} is missing`, restoreYourself(s.name, s.manifestPath));
       return blocked(`the backup ${backup} does not match what cua backed up; it was kept`, `inspect ${backup}; if it is the previous manifest, copy it to ${s.manifestPath}, otherwise ${restoreYourself(s.name, s.manifestPath)}`);
     }
-    writeAtomic(s.manifestPath, saved, {mode: 0o644});
+    step('publish');
+    let placed;
+    try { placed = publish(s.manifestPath, saved); } catch (error) { putBack(aside, s.manifestPath); throw error; }
+    rmSync(aside, {force: true});
+    if (!placed)
+      return {...row, action: 'removed', restoration: 'blocked', reason: `another program wrote ${s.manifestPath} while cua was restoring it; that manifest was left as it is and the backup ${backup} was kept`, userAction: `check which host ${s.manifestPath} names (\`cua doctor\`, chrome.host.registered); if it is not the one you want, copy ${backup} to ${s.manifestPath}`};
+    step('restored');
     let restored = null;
     try { restored = readFileSync(s.manifestPath); } catch {}
     if (!restored?.equals(saved))
-      return {...row, action: 'restored', restoration: 'blocked', reason: `${s.manifestPath} does not read back as the backup`, userAction: `copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``};
+      return {...row, action: 'restored', restoration: 'blocked', reason: `${s.manifestPath} does not read back as the backup; the backup and its record were kept`, userAction: `copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``};
     rmSync(backup, {force: true});
+    forget(s.browser);
     return {...row, action: 'restored', restoration: 'restored', backup};
-  });
-  if (recordChanged) writeRecord(cuaHome, record);
-  return {browsers, blocked: browsers.some(b => b.restoration === 'blocked')};
+  }
+  return contended(s.manifestPath);
 }

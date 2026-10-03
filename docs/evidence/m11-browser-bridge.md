@@ -4,7 +4,9 @@ Spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, milestone M1
 `feat/chrome-existing-profile`, from `b8b7f1a`. macOS 26 arm64, host Node 22, pinned runtime
 `26.928.40906-darwin-arm64`, vendor `@oai/browser-desktop` 0.1.1. Live work in the default `CUA_HOME`.
 
-Status: code and automated suites complete; live runs that need the user's Chrome are **pending** (see "Live, part 2").
+Status: code and automated suites complete (review fix wave `7ce9643`, `bceb499`: `npm test` 268/268). Live part 2: the
+`computer,browser` verify passed; `profiles bind personal` stopped **undetermined** with a single unlabelled backend
+(not bound, by rule); the C2 run is pending the user's pick.
 
 ## What was built
 
@@ -81,7 +83,46 @@ keys personal/school/work, none ready; task ids stable, `end_task` ended, a seco
 relocated (anchor -> vendor node -> node_repl -> codex x3 -> node x2); no native helper involved; serve exit 0; run
 directory removed.
 
-## Live, part 2 (pending: needs the user's Chrome open)
+## Live, part 2 (2026-10-03, the user's regular Chrome open on the Default profile)
 
-`profiles bind personal`, `CUA_SHIM_SURFACES=computer,browser node verify.mjs` and
-`accept-chrome.mjs --live --profile personal` need live OpenAI hosts, which Chrome starts for the extension.
+Environment: checkout at `171bf56` (M12 landed: Chrome host component placed in the release, `cua chrome`, doctor
+`chrome.host.config`). One `ChatGPT for Chrome` host was running, a child of the user's regular Chrome (the desktop's
+plugin-cache host binary; the registration still names the desktop's host). The ChatGPT desktop app was closed and no
+native computer-use helper was running (no process; the IPC directory held only `computeruse.sock.lock`).
+
+### `CUA_SHIM_SURFACES=computer,browser node verify.mjs` (06:50:06Z, once)
+
+Exit 0, `problems: []`. Tools `js, js_reset, end_task, secrets_list, profiles_list`; browser API documented in the js
+description; instructions 1990 characters (cap 2048); `profiles_list` keys personal/school/work, none ready;
+`secrets_list` ok (0 labels); task ids stable across calls, `end_task` ended, repeat `noop`, the next task differed;
+broker started and gone after close; every process relocated (anchor -> vendor node -> node_repl -> codex x3 -> node
+x2), no desktop runtime path; serve exit 0; stderr empty.
+
+**Acceptance-9 cold-start gate: not exercised by this run.** `nativeHelper: []`: nothing held the native socket
+during the run, and after it no `Codex Computer Use` / `SkyComputerUseService` process existed and the IPC directory
+still held only the lock file. So the vendor did **not** launch our release's pinned `Codex Computer Use.app`; no
+macOS prompt appeared (none was shown to the user; the TCC log showed nothing for Computer Use in that window); no
+helper was stopped (none was running). IPC version not observable without a helper (the pin expects
+`CodexComputerUseIPC-5`). Discovery: verify's trivial cells (`nodeRepl.write`) load the API banner without contacting
+the native helper; the helper is opened only by a native call (e.g. `cua.getState()`, as `scripts/probe-runtime.mjs`
+sends). Earlier runs listed a helper because the desktop's was already running, not because verify reached it. A
+cold-start observation therefore needs one explicit native read (`scripts/probe-runtime.mjs`), not verify. Note kept
+for that run: a cold-started cua helper holds the per-user socket until its clients go away, so the desktop may see a
+brief conflict when it reopens.
+
+### `cua profiles bind personal` (06:50:41Z, once, automatic)
+
+```sh
+env -u CUA_HOME node bin/cua.mjs profiles bind personal --json   # exit 1
+```
+
+`outcome: undetermined`, `reason: unlabelled`: exactly **one** live extension backend, **unlabelled** (no
+`profileName` from the vendor's enrichment), listing **42** tabs; 0 elicitations; the listing runtime was torn down
+(confirmed; `run/` empty afterwards, no owned process left). **Nothing was bound**: a singleton backend is never bound
+automatically, and the relayed user pick applies only to the two-backend split seen in M10 (one with many tabs, one
+with 0), which this listing is not. `personal` stays `not_bound`. Stopped for the user's pick (instance id with its tab
+count reported to the parent session, not recorded here).
+
+### C2 live round trip
+
+Not run: it needs `personal` bound.

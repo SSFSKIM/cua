@@ -267,44 +267,76 @@ export async function registerHost({home, runtime, replace = false, userHome = h
       browsers.push(done ?? contended(s.manifestPath));
     }
   } catch (error) {
-    throw undoRun(error, applied, {cuaHome, record, desired, io, onStep});
+    throw undoRun(error, applied, {cuaHome, record, desired, io, onStep, context});
   }
   return {host: paths.host, browsers};
 }
 
 // A failure (a refusal included) after earlier browsers were written in this run undoes those writes, newest first,
-// with the same discipline: take exactly cua's manifest (a concurrent writer's file is left standing), put back the
-// bytes that were there (the previous cua manifest, or the replaced foreign one, without clobbering), and forget the
-// record entry and backup this run made. Returns the error to throw: the original when everything was undone (with a
-// note when it was not a refusal), else `registration_partial` naming what stayed and how to remove it.
-function undoRun(error, applied, {cuaHome, record, desired, io, onStep}) {
+// with the same discipline: take exactly cua's manifest (a concurrent writer's file is left standing) and put back the
+// bytes that were there (the previous cua manifest, or the replaced foreign one) without clobbering. The record entry
+// and backup this run made are discarded only when the earlier manifest is confirmed back, or when another program's
+// manifest now stands there so no cua registration needs them. When the slot ends up holding some other cua manifest
+// (or restoring lost a race to one), the restoration is unconfirmed: recovery data is kept and the result is
+// `registration_partial` naming the path. Returns the error to throw.
+function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}) {
   if (!applied.length) return error;
-  const left = [];
+  const outcomes = [];
   for (const change of [...applied].reverse()) {
+    let outcome;
     try {
-      onStep?.('undo', {browser: change.browser, manifestPath: change.manifestPath});
-      const aside = take(change.manifestPath, desired, io);
-      if (aside) {
-        if (change.prior) withTaken(aside, change.manifestPath, io, () => publish(change.manifestPath, change.prior, io));
-        rmSync(aside, {force: true});
-      }
+      outcome = undoChange(change, {desired, io, context, step: name => onStep?.(name, {browser: change.browser, manifestPath: change.manifestPath})});
+    } catch (undoError) {
+      outcome = {state: 'unconfirmed', why: undoError.message, hint: undoError.hint};
+    }
+    if (outcome.state !== 'unconfirmed') {
       if (change.action !== 'updated') delete record.browsers[change.browser];
       if (change.action === 'replaced') rmSync(backupFile(cuaHome, change.browser), {force: true});
-    } catch (undoError) {
-      left.push({...change, why: undoError.message, hint: undoError.hint});
     }
+    outcomes.push({...change, ...outcome});
   }
-  try { writeRecord(cuaHome, record); } catch (recordError) { left.push({browser: 'record', manifestPath: recordFile(cuaHome), why: recordError.message}); }
+  try { writeRecord(cuaHome, record); } catch (recordError) { outcomes.push({browser: 'record', manifestPath: recordFile(cuaHome), state: 'unconfirmed', why: recordError.message}); }
+  const left = outcomes.filter(o => o.state === 'unconfirmed');
+  const superseded = outcomes.filter(o => o.state === 'superseded').map(o => o.browser);
+  const note = superseded.length ? `; in ${superseded.join(', ')} another program's manifest now stands, so nothing of cua's remains there` : '';
   if (!left.length) {
+    // Nothing of cua's from this run remains, so a refusal's "Nothing was changed." stands as written.
     if (error.code === 'registration_in_use') return error;
-    error.message += `; cua undid what it had registered earlier in this run (${applied.map(c => c.browser).join(', ')})`;
+    error.message += `; cua undid what it had registered earlier in this run (${applied.map(c => c.browser).join(', ')})${note}`;
     return error;
   }
   const base = error.message.replace(/ Nothing was changed\.$/, '');
-  const undone = applied.filter(c => !left.some(l => l.browser === c.browser)).map(c => c.browser);
+  const undone = outcomes.filter(o => o.state !== 'unconfirmed' && o.browser !== 'record').map(o => o.browser);
   return new CuaError('registration_partial',
-    `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}, but could not undo ${left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ')}`,
-    {hint: [...left.filter(l => l.hint).map(l => l.hint), 'then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced)'].join('; '), cause: error});
+    `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not undo ${left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ')}`,
+    {hint: [...left.filter(l => l.hint).map(l => l.hint), 'then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)'].join('; '), cause: error});
+}
+
+// One change's undo: `restored` (cua's write is gone and the earlier bytes, if any, are back), `superseded` (another
+// program's manifest stands in the slot), or `unconfirmed` with why.
+function undoChange(change, {desired, io, context, step}) {
+  const {manifestPath: path, prior} = change;
+  const restore = () => {
+    step('undo-publish');
+    return publish(path, prior, io);
+  };
+  // What a slot that cua could not (or no longer could) restore now holds.
+  const settle = () => {
+    const now = readSlot(path, context);
+    if (now.state === 'foreign') return {state: 'superseded'};
+    if (now.state === 'absent') {
+      if (!prior || restore()) return {state: 'restored'};
+      return readSlot(path, context).state === 'foreign' ? {state: 'superseded'} : {state: 'unconfirmed', why: 'another cua manifest took the slot while cua was restoring it; restoration of the earlier manifest is unconfirmed and its recovery data was kept'};
+    }
+    return {state: 'unconfirmed', why: 'the slot now holds a cua manifest other than this run\'s; restoration of the earlier manifest is unconfirmed and its recovery data was kept'};
+  };
+  step('undo');
+  const aside = take(path, desired, io);
+  if (!aside) return settle();
+  if (!prior) { rmSync(aside, {force: true}); return {state: 'restored'}; }
+  const placed = withTaken(aside, path, io, restore);
+  rmSync(aside, {force: true});
+  return placed ? {state: 'restored'} : settle();
 }
 
 const restoreYourself = (name, manifestPath) => `restore ${name}'s previous registration yourself: if it was the ChatGPT desktop app's, quit and reopen ChatGPT so it writes ${manifestPath} again, then run \`cua doctor\` and check that chrome.host.registered names the desktop host`;

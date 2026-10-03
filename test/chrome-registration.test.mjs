@@ -544,3 +544,44 @@ test('undoing preserves a concurrent writer\'s file, and an undo that cannot com
   const after = unregister(p);
   assert.deepEqual([after.browsers[0].action, after.browsers[0].restoration], ['removed', 'not_needed']);
 });
+
+// Re-review of the undo path: recovery data is discarded only once the earlier manifest is confirmed back, or no cua
+// registration remains that needs it.
+test('an undo that finds another cua-owned manifest in the slot keeps the backup and record and reports the partial state', async t => {
+  for (const step of ['undo', 'undo-publish']) {
+    const m = machine(t, {chromeManifest: DESKTOP});
+    mkdirSync(join(m.support, 'Vivaldi'), {recursive: true});
+    const vivaldi = join(m.support, 'Vivaldi', 'NativeMessagingHosts', 'com.openai.codexextension.json');
+    const otherCua = ourManifest(olderHost(m));
+    let error;
+    await register(m, {replace: true, onReplace: () => {}, io: failingIo({manifestPath: vivaldi, publish: true}),
+      onStep: hook('chrome', step, () => writeFileSync(m.manifests.chrome, otherCua))}).catch(e => { error = e; });
+    assert.equal(error?.code, 'registration_partial', step);
+    assert.ok(error.message.includes(m.manifests.chrome), error.message);
+    assert.match(error.message, /unconfirmed/);
+    assert.equal(readFileSync(m.manifests.chrome, 'utf8'), otherCua, `${step}: the concurrent writer's manifest stands`);
+    assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original, `${step}: backup kept`);
+    assert.deepEqual(record(m).browsers.chrome, {manifest: m.manifests.chrome, replaced: true, backupSha256: sha(m.original)}, step);
+    // The kept recovery data lets unregister finish the job.
+    const after = unregister(m);
+    assert.deepEqual([after.browsers[0].action, after.browsers[0].restoration], ['restored', 'restored'], step);
+    assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original, step);
+  }
+});
+
+test('an undo that finds a foreign manifest in the slot leaves it standing; no cua registration remains to need the backup', async t => {
+  for (const step of ['undo', 'undo-publish']) {
+    const m = machine(t, {chromeManifest: DESKTOP});
+    mkdirSync(join(m.support, 'Vivaldi'), {recursive: true});
+    const vivaldi = join(m.support, 'Vivaldi', 'NativeMessagingHosts', 'com.openai.codexextension.json');
+    const other = ourManifest('/Applications/Other.app/Contents/MacOS/other-host');
+    let error;
+    await register(m, {replace: true, onReplace: () => {}, io: failingIo({manifestPath: vivaldi, publish: true}),
+      onStep: hook('chrome', step, () => writeFileSync(m.manifests.chrome, other))}).catch(e => { error = e; });
+    assert.equal(error?.code, 'manifest_write_failed', step);
+    assert.match(error.message, /another program's manifest now stands/, step);
+    assert.equal(readFileSync(m.manifests.chrome, 'utf8'), other, step);
+    assert.equal(record(m).browsers.chrome, undefined, step);
+    assert.deepEqual(hidden(m.manifests.chrome), [], step);
+  }
+});

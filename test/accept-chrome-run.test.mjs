@@ -110,3 +110,22 @@ test('when closure cannot be established the leftover is reported, never "none"'
   assert.equal(leftoverOf(c.tab).status, 'unknown');
   assert.equal(createLost.sent.includes('closeCreatedTab'), false, 'no tab id, so nothing is guessed or closed');
 });
+
+test('a failed digest or induced-failure step stops every later browser operation; only the cleanup is sent', async () => {
+  const cases = {
+    'digest mismatch': [{computeDigest: () => marker({digest: '0'.repeat(16)})}, 'computeDigest', ['inducedFailure', 'getScreenshot']],
+    'digest timeout': [{computeDigest: () => ({timedOut: true})}, 'computeDigest', ['inducedFailure', 'getScreenshot']],
+    'induced failure not value-free': [{inducedFailure: () => marker({unexpectedSuccess: true})}, 'inducedFailure', ['getScreenshot']],
+  };
+  for (const [name, [answers, failed, notSent]] of Object.entries(cases)) {
+    const session = fakeSession({answers});
+    const h = harness(session);
+    await h.run();
+    const upTo = ['selectBrowser', 'createBrowserTab', 'gotoOwnedPage', 'fillSecretReference', 'computeDigest', 'inducedFailure'];
+    assert.deepEqual(session.sent, [...upTo.slice(0, upTo.indexOf(failed) + 1), 'closeCreatedTab', 'confirmClosed'], name);
+    const stop = h.steps.find(s => s.name === 'input-stopped');
+    assert.equal(stop?.status, 'BLOCKED', name);
+    assert.deepEqual(stop.detail.notSent, notSent, name);
+    assert.deepEqual(leftoverOf(h.tab), {status: 'none'}, name);
+  }
+});

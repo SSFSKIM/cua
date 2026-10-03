@@ -89,13 +89,13 @@ export async function runAgentScript({session, page, instanceId, reference, sent
     tab.created = create.result?.created === true;
     if (!record('create-tab', tab.created ? 'PASS' : 'FAIL', {class: create.class, durationMs: create.durationMs, limitMs: limits.create.cellMs, ...withText(create)})) return;
 
-    // Every browser operation after this point first checks the latch; a stop leaves only the cleanup below.
+    // Every browser operation after this point first checks the latch; a stop leaves only the cleanup below. Each step
+    // returns whether it succeeded (its record's PASS), so any failure stops the later steps the same way.
     const steps = [
       ['gotoOwnedPage', async () => {
         const go = await run('gotoOwnedPage', cells.gotoPage(page), limits.goto);
         const verified = go.result?.markerFound === true;
-        record('owned-page', verified ? 'PASS' : 'FAIL', {class: go.class, markerFound: verified, ...withText(go)});
-        return verified;
+        return record('owned-page', verified ? 'PASS' : 'FAIL', {class: go.class, markerFound: verified, ...withText(go)});
       }],
       ['fillSecretReference', async () => {
         const fill = await run('fillSecretReference', cells.fillReference(page, reference));
@@ -104,15 +104,13 @@ export async function runAgentScript({session, page, instanceId, reference, sent
       ['computeDigest', async () => {
         const digest = await run('computeDigest', cells.computeDigest(page));
         const matches = typeof digest.result?.digest === 'string' && digest.result.digest === expectedDigest(sentinel);
-        record('page-digest-matches-sentinel', matches ? 'PASS' : 'FAIL', {class: digest.class, digestShown: typeof digest.result?.digest === 'string', digestMatches: matches, ...withText(digest)});
-        return true;
+        return record('page-digest-matches-sentinel', matches ? 'PASS' : 'FAIL', {class: digest.class, digestShown: typeof digest.result?.digest === 'string', digestMatches: matches, ...withText(digest)});
       }],
       ['inducedFailure', async () => {
         const induced = await run('inducedFailure', cells.inducedFailure(page, reference));
         const r = induced.result ?? {};
-        record('induced-failure-value-free', r.code === 'secret_input_failed' && typeof r.classification === 'string' && !r.unexpectedSuccess ? 'PASS' : 'FAIL',
+        return record('induced-failure-value-free', r.code === 'secret_input_failed' && typeof r.classification === 'string' && !r.unexpectedSuccess ? 'PASS' : 'FAIL',
           {class: induced.class, code: r.code ?? null, classification: r.classification ?? null, ...(r.unexpectedSuccess ? {unexpectedSuccess: true} : {})});
-        return true;
       }],
       ['getScreenshot', async () => {
         const shot = await run('getScreenshot', cells.screenshot(page));
@@ -121,8 +119,7 @@ export async function runAgentScript({session, page, instanceId, reference, sent
           shots.meta = {bytes: shots.bytes.length, sha256: createHash('sha256').update(shots.bytes).digest('hex'), sizeMatches: shots.bytes.length === shot.result?.bytes};
           shots.file = saveScreenshot(shots.bytes);
         }
-        record('screenshot', shots.meta?.sizeMatches ? 'PASS' : 'FAIL', {class: shot.class, ...(shots.meta ?? {images: shot.images.length})});
-        return true;
+        return record('screenshot', shots.meta?.sizeMatches ? 'PASS' : 'FAIL', {class: shot.class, ...(shots.meta ?? {images: shot.images.length})});
       }],
     ];
     for (let i = 0; i < steps.length; i++) {

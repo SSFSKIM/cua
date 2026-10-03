@@ -126,3 +126,53 @@ count reported to the parent session, not recorded here).
 ### C2 live round trip
 
 Not run: it needs `personal` bound.
+
+## Live, part 3 (2026-10-03, checkout `8d16f77`)
+
+### Cold start of the pinned native helper (acceptance-9 gate observation), once
+
+```sh
+CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-runtime.mjs --variants none --out /tmp/cua-m11-coldstart
+```
+
+`--variants none` sends exactly one read-only `cua.getState()` (no sandbox socket allowance variant, no TextEdit,
+no app approval). Before the run: no `SkyComputerUseService` / `Codex Computer Use` process, the IPC directory held
+only `computeruse.sock.lock`, the desktop app was closed. Result (23:20:07Z-23:20:19Z, exit 0):
+
+- **The vendor launched our release's pinned helper**: `helperServed` pid 53082, executable
+  `$CUA_HOME/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService`.
+  It was not in the runtime's owned process tree (anchor-less M1 probe: vendor node -> node_repl -> codex sandbox x2 ->
+  kernel/trusted worker), consistent with the vendor's LaunchServices open. Its parent pid was not captured: the probe
+  snapshots holders by pid/executable only, and the helper had exited by the time it was looked up afterwards (the
+  socket was gone too: it held the socket only while its client existed). The unified log showed nothing for it.
+- `cua.getState()` answered `ok`: 37 apps, 0 browsers, no inventory errors; delegated `setup`, `execute:list_apps`;
+  `turn_ended` acknowledged; 0 elicitations; all owned executables relocated; no leftover after exit; stderr empty.
+- IPC version: the pinned helper binary carries `CodexComputerUseIPC-5` (the pin's expected version, also what the
+  vendor client speaks); the handshake succeeded.
+- No helper was stopped: none was running before; the cold-started one exited on its own.
+- macOS prompts: none reached the run (no elicitation; `list_apps` succeeded). Whether the system showed any dialog is
+  the user's observation (they watched and answer prompts themselves); nothing was clicked by the executor.
+- Note: a cold-started cua helper holds the per-user socket until its clients go away; the user was told the desktop
+  may see a brief conflict when it reopens. Here it was gone within the run.
+
+What this proves: the relocated release's own helper cold-starts and serves a read-only native request on this host
+while the desktop is closed. It does not prove desktop absence (the desktop app stays installed, and the helper shares
+its bundle id and CDHash with the desktop's installed copy, so TCC grants made for that identity apply) or fresh-TCC
+onboarding.
+
+### `cua profiles bind personal --extension-instance-id 77fc…aef4` (23:20:59Z): refused before any launch
+
+The user's pick, relayed by the parent session on 2026-10-03 (the single live backend, 42 tabs, identified by the user
+as their Default profile). Exit 1, `profile_not_ready`: "the OpenAI extension is not installed in this Chrome
+profile". Nothing was launched or bound.
+
+File presence (no extension storage read): `Default/Extensions/hehggadaopoacecdllhhajmbjkdcmajg/` and
+`Default/Local Extension Settings/hehggadaopoacecdllhhajmbjkdcmajg/` no longer exist (Default's `Extensions` directory
+was last modified 2026-10-03 16:17 local; on 2026-10-02 both existed, version `1.26.901.11451_0`, and `profiles add`
+and doctor saw them). The extension is now present in `Profile 1` (`1.2.27259.19709_0`) and `Profile 11`
+(`1.26.901.11451_0`), neither registered. So the live backend may not be the Default profile; binding `personal`
+(Default) to it was not attempted. Doctor's `chrome.extension.personal` would now be `blocked` as well.
+
+### C2 live round trip
+
+Not run: `personal` is not bound.

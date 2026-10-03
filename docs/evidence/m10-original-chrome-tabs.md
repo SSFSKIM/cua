@@ -114,3 +114,45 @@ with `--browser-index 1`; the probe then creates one tab there, uses only its ow
 
 **Verdict against M10's criteria: not yet promotable, not discarded.** The login made the original route's session
 requests work (listTabs reaches both hosts with no policy refusal), but the owned-page round trip has not run.
+
+## Part B, run 2 (2026-10-03, `--browser-index 1`, the user's Default profile)
+
+The user identified backend 1 (the window with the open tabs) as the Default profile. One run:
+
+```sh
+CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs --browser-index 1 --report /tmp/cua-chrome-original-tabs.json
+```
+
+Result 12 PASS / 2 FAIL / 0 BLOCKED, `tabOperations: 7`, no leftover.
+
+| Step | Outcome |
+|---|---|
+| prerequisites, launch, listBrowsers | PASS (login `logged-in`; 2 `extension`/`chrome` backends) |
+| listTabs | ok on both: backend 0 lists 0 tabs, backend 1 lists 36 (counts only; the user had one more tab open than in run 1) |
+| target-browser | PASS, index 1 (explicit `--browser-index`) |
+| createBrowserTab | ok; handle exposes `goto`, `close`, `getAXState`, `typeText`, `click`, `getScreenshot` |
+| goto + AX read | ok, document marker found in the created tab's AX text; the page server served exactly 1 request |
+| typeText | **FAIL, class `other`**: "This tab does not support accessibility input. Use its Playwright API." (refused before input) |
+| click + AX verify | **FAIL**: no element index, so no click was sent; DOM change not observed |
+| getScreenshot | ok: 1 image, **JPEG, 15253 bytes, SHA-256 `d4bb823b8718d26dfb7950cca856f7d730cc201e0b532c45745f846a6b69aeb8`**, size matches the in-cell byte count; kept outside git. It shows only the probe page (input focused and empty, status "waiting") |
+| close + confirm | ok; the created tab is gone from listTabs (36 before and after); leftover `none` |
+| elicitations | 1 total: `origin-access` for the probe's exact origin, form mode, **accepted with `persist:"session"`**; 0 declined |
+| user tabs | untouched: cells `listBrowsers, listTabs x2, createBrowserTab, gotoOwnedPage, typeText, clickAndVerify, getScreenshot, closeCreatedTab, confirmClosed` |
+| teardown | confirmed (EOF), 0 owned leftovers, hosts still running; runtime stderr 0 bytes; 5 remote endpoints, all port 443 |
+
+**AX text format observed** (line shapes of the probe's own controls, label and digits replaced):
+`- textbox "<label>" [active]` and `- button "<label>"`. This is a Playwright-style aria snapshot with **no numeric
+element indices**, and the page's origin string does not appear in it. That matches the pinned vendor documentation for
+DOM-only tabs: `getAXState()` is a DOM snapshot without indices, and native input wrappers "throw before input. Use the
+documented Playwright locators to click controls and fill fields" (`@oai/cua/docs/tinysky-alt-core-cua-repl.md`).
+On this route, a tab created through the original extension is such a DOM-only tab for input purposes.
+
+Owned `state/codex`: run 2 added `browser` and `plugins` to the entries recorded after run 1 (names only; `auth.json`
+was only seen in the listing).
+
+**Verdict against M10's criteria: not promoted yet, not discarded.** Navigation, AX read, screenshot, close of the
+created tab, session-scoped own-origin approval and user-tab isolation all work on the original route with the server's
+own login. Input and click failed because the probe used the native-input wrappers, which the vendor documents as
+unsupported on these tabs; the route itself did not refuse anything. Next: switch the probe's input and click to the
+documented Playwright locator API (fill the input, click the button, verify through `getAXState`) and run once more.
+That locator path is also the `playwright_locator_fill` shape the browser secret wrapper already targets.

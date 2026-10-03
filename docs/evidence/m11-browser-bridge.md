@@ -176,3 +176,55 @@ and doctor saw them). The extension is now present in `Profile 1` (`1.2.27259.19
 ### C2 live round trip
 
 Not run: `personal` is not bound.
+
+## Live, part 4 (2026-10-03, checkout `f0a7925`)
+
+Environment: two `ChatGPT for Chrome` hosts under the user's Chrome (pids 79991 and 85652); the OpenAI extension
+reinstalled in `Default` by the user (1.26.901.11451_0).
+
+### `cua profiles bind personal --extension-instance-id 8342…31be` (23:57:31Z): bound, the user's pick
+
+The **user's explicit pick**, relayed by the parent session on 2026-10-03, after the automatic attempt (23:32Z) had
+returned `undetermined: unlabelled` for two unlabelled backends (44 and 0 tabs). It is not an automatic choice. Exit 0,
+`how: explicit`, `extensionInstanceId` `8342c6b8-76ba-49ce-8f7e-daa9c62931be`. At bind time the live listing was
+`8342…31be` with 46 tabs and `41f3…4954` with 0 tabs, both unlabelled; 0 elicitations; teardown confirmed. The
+host-to-backend mapping is not established by evidence (the listing carries no socket or pid); host 85652 started in
+the same second Default's extension directory was created.
+
+### C2 live round trip (23:57:40Z-23:57:45Z, once): FAIL, failing closed at the fill
+
+```sh
+node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accept-chrome.json   # exit 1
+```
+
+| Step | Verdict | Detail |
+|---|---|---|
+| preconditions | PASS | release pinned, profile ready, 2 live hosts, login `logged-in` |
+| seed-disposable-secret | PASS | generated sentinel stored under a disposable label through the pty fixture |
+| browser-surface | PASS | five tools, browser API documented, the Chrome host notes present |
+| profiles-list | PASS | `personal` ready with the stored instance id |
+| select-profile-backend | PASS | `cua.getBrowser({extensionInstanceId})` |
+| create-tab | PASS | 2629 ms (limit 60 s) |
+| owned-page | PASS | document marker read through a locator; the page served exactly 1 request |
+| fill-secret-reference | **FAIL** | the trusted wrapper refused the fill: `unsupported_secret_shape`, "nothing was entered" |
+| input-stopped | BLOCKED | digest, induced failure and screenshot not sent (the fill did not succeed) |
+| close-created-tab | PASS | closed and confirmed gone; **leftover `none`** |
+| end-task | PASS | `ended` |
+| serve-exit | PASS | exit 0 |
+| cleanup-disposable-secret | PASS | the run-owned Keychain item was removed |
+| elicitations-own-origin-only | PASS | 1 request: `origin-access` for the page's exact origin, form mode, accepted with `persist:"session"`; 0 declined |
+| sentinel-scan | PASS | no sentinel (raw or base64 at any alignment) in the MCP transport (155606 bytes, reference present), serve/runtime stderr (0 bytes), or 1865 runtime files under `$CUA_HOME/state` and `run` (9 symlinks not followed; `state/codex/auth.json` excluded by policy, never opened). No screenshot was taken (0 bytes scanned, no hash) |
+
+Cells sent: `selectBrowser, createBrowserTab, gotoOwnedPage, fillSecretReference, closeCreatedTab, confirmClosed`
+(4 tab operations). No user tab was bound, read, screenshotted or closed.
+
+**Root cause (source):** the vendor client's transport adds a field to every command it sends:
+`FunctionAgentTransport.send` in `browser-client.mjs` (around line 10428) sends `{...command.toJSON(),
+client_timeout_ms}`, where `client_timeout_ms` is the locator's `timeoutMs` when it is positive (here 10000) and
+undefined otherwise. The pinned shape (`browser_id, tab_id, selector, value, replace, timeout_ms`) did not list it, so
+the wrapper failed closed exactly as designed: before reading the secret, nothing entered, a value-free error. The
+static shape study looked at the command payload schemas, not at the transport envelope.
+
+**Fix:** `1f0cae6` accepts `client_timeout_ms` as an optional positive integer in both pinned shapes; any other value
+still fails closed before a read. New test included; `npm test` 341/341. **C2 has not been re-run** with the fix:
+that needs the parent's go for one more live run.

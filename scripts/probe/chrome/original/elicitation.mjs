@@ -8,8 +8,16 @@
 // _meta.connector_id "browser-use", codex_approval_kind "mcp_tool_call", tool_name "access_browser_origin";
 // _meta.origin and _meta.tool_params (exactly {origin}) both equal the probe origin as a whole string; no all-sites
 // scope; `persist`, if present, only offers "session"/"always" (the reply always chooses "session").
-// A request whose structure does not name an origin but whose message mentions the probe origin is flagged
-// `unstructuredOwnOrigin`: declined, and the run's elicitation verdict is BLOCKED rather than widened to text matching.
+// Requests that may have been the vendor asking for the probe page in a shape the probe refuses make the run's
+// elicitation verdict BLOCKED (declined, never widened): `unstructuredOwnOrigin`, an unknown shape whose message
+// mentions the probe origin (the message only classifies, it never accepts), and `refusedOwnOrigin`, an origin-access
+// request whose structured fields name the probe origin but fail the rule (two origins, all-sites grant, URL mode,
+// input-asking form, unknown persistence offer). Lookalike hosts, other ports and user-tab origins are not the probe
+// page: plain declines, recorded by kind.
+//
+// `persist` in a request is the vendor offering persistence options to a UI (it sends "always" whenever persistent
+// approval is allowed, the default: BS:62136, 62877), not a grant; the probe's reply alone chooses, and is always
+// "session". A request for a grant wider than one origin (the all-sites scope key) is declined.
 import {sanitizeVendorText} from './classify.mjs';
 import {ALL_SITES_SCOPE_KEY} from './vendor-shapes.mjs';
 
@@ -42,7 +50,8 @@ export function decideElicitation(msg, {origin}) {
   const mode = typeof params.mode === 'string' ? params.mode : null;
   const ownOrigin = typeof origin === 'string' && meta.origin === origin;
   const unstructuredOwnOrigin = kind === 'unknown' && typeof origin === 'string' && typeof params.message === 'string' && params.message.includes(origin);
-  const decline = reason => ({accept: false, kind, mode, ownOrigin, unstructuredOwnOrigin, reason});
+  const namesOwnOrigin = typeof origin === 'string' && (ownOrigin || JSON.stringify(meta.tool_params ?? null).includes(JSON.stringify(origin)));
+  const decline = reason => ({accept: false, kind, mode, ownOrigin, unstructuredOwnOrigin, ...(kind === 'origin-access' && namesOwnOrigin ? {refusedOwnOrigin: true} : {}), reason});
   if (typeof origin !== 'string') return decline('no probe origin');
   if (kind !== 'origin-access') return decline(`kind ${kind}`);
   if (mode !== 'form' || 'url' in params) return decline('not a form-mode request');
@@ -70,6 +79,7 @@ export function inventoryEntry(msg, decision) {
     method: typeof msg?.method === 'string' ? msg.method.slice(0, 40) : null,
     kind: decision.kind, mode: decision.mode, ownOrigin: decision.ownOrigin,
     ...(decision.unstructuredOwnOrigin ? {unstructuredOwnOrigin: true} : {}),
+    ...(decision.refusedOwnOrigin ? {refusedOwnOrigin: true} : {}),
     answered: decision.accept ? 'accept (session)' : (decision.kind === 'other-request' ? 'error' : 'decline'),
     reason: decision.reason,
     text: sanitizeVendorText(message ?? '', 120),

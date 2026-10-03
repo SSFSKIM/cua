@@ -34,24 +34,30 @@ function sentinels() {
 
 const userTabs = (s, ids) => ids.map(id => ({id: String(id), providerTabId: String(id), title: `${s.title} ${id}`, url: `${s.url}&tab=${id}`}));
 
-// The decline matrix sent during listTabs: every one must be declined on the wire.
-function declineMatrix(origin, s) {
+// Decline matrices sent during listTabs: every request must be declined on the wire. Foreign requests (not the probe
+// page) leave the elicitation verdict PASS; refused shapes naming the probe origin make it BLOCKED.
+function foreignMatrix(origin, s) {
   const port = Number(new URL(origin).port);
   return [
     ['user-tab-origin', originAccessRequest(new URL(s.url).origin)],
     ['lookalike-host', originAccessRequest(`http://127.0.0.1.${s.host}:${port}`)],
     ['localhost-alias', originAccessRequest(`http://localhost:${port}`)],
     ['different-port', originAccessRequest(`http://127.0.0.1:${port === 65535 ? port - 1 : port + 1}`)],
-    ['two-origins', originAccessRequest(origin, {meta: {tool_params: {origin, origins: [origin, new URL(s.url).origin]}}})],
-    ['persistent-all-sites-grant', originAccessRequest(origin, {meta: {[ALL_SITES_SCOPE_KEY]: 'all-sites'}})],
     ['unknown-shape', {mode: 'form', requestedSchema: {type: 'object', properties: {}}, message: `Something about ${s.url}`, _meta: {tool_name: 'mystery'}}],
-    ['url-mode', originAccessRequest(origin, {params: {mode: 'url', url: s.url}})],
-    ['asks-for-input', originAccessRequest(origin, {params: {requestedSchema: {type: 'object', properties: {secret: {type: 'string'}}}}})],
     ['raw-cdp-own-origin', rawCdpRequest(origin)],
     ['download-own-origin', downloadRequest(origin)],
     ['history', historyRequest()],
   ].map(([label, params]) => ({label, params}));
 }
+function ownOriginVariants(origin, s) {
+  return [
+    ['two-origins', originAccessRequest(origin, {meta: {tool_params: {origin, origins: [origin, new URL(s.url).origin]}}})],
+    ['persistent-all-sites-grant', originAccessRequest(origin, {meta: {[ALL_SITES_SCOPE_KEY]: 'all-sites'}})],
+    ['url-mode', originAccessRequest(origin, {params: {mode: 'url', url: s.url}})],
+    ['asks-for-input', originAccessRequest(origin, {params: {requestedSchema: {type: 'object', properties: {secret: {type: 'string'}}}}})],
+  ].map(([label, params]) => ({label, params}));
+}
+const labels = matrix => matrix('http://127.0.0.1:1', sentinels()).map(e => e.label);
 
 async function runCase({name, browsers, browserIndex, scenario = {}, extras = () => []}) {
   const s = sentinels();
@@ -104,13 +110,20 @@ const CASES = [
       ...(r.o.listTabs?.[0]?.tabCount === 3 ? [] : ['user tab count not reduced to 3']),
       ...(r.o.tabs?.leftover?.status === LEFTOVER.none ? [] : ['a leftover was reported']),
     ]},
-  {id: 'fixture-decline-matrix', title: 'declined on the wire: user-tab origin, lookalike host, localhost alias, different port, two origins, persistent all-sites grant, unknown shape, URL mode, input-asking form, raw CDP, download, history; the own origin still accepted',
-    run: {browsers: s => [{id: '1', tabs: userTabs(s, [101])}], extras: declineMatrix},
+  {id: 'fixture-decline-foreign', title: 'declined on the wire, verdict still PASS: user-tab origin, lookalike host, localhost alias, different port, unknown shape, raw CDP, download, history; the own origin accepted for the session',
+    run: {browsers: s => [{id: '1', tabs: userTabs(s, [101])}], extras: foreignMatrix},
     check: r => [
-      ...declineMatrix('http://127.0.0.1:1', sentinels()).map(e => e.label).filter(label => answerOf(r, label)?.action !== 'decline').map(label => `${label} was not declined`),
+      ...labels(foreignMatrix).filter(label => answerOf(r, label)?.action !== 'decline').map(label => `${label} was not declined`),
       ...(isSessionAccept(answerOf(r, 'own-origin')) ? [] : ['own-origin not accepted for the session']),
       ...(statusOf(r, 'elicitations-own-origin-only') === 'PASS' ? [] : [`elicitation verdict ${statusOf(r, 'elicitations-own-origin-only')}`]),
-      ...(r.o.elicitations?.length === 13 ? [] : [`inventory has ${r.o.elicitations?.length} entries, expected 13`]),
+      ...(r.o.elicitations?.length === labels(foreignMatrix).length + 1 ? [] : [`inventory has ${r.o.elicitations?.length} entries`]),
+    ]},
+  {id: 'fixture-decline-own-origin-variants', title: 'refused shapes naming the probe origin are declined on the wire and make the verdict BLOCKED: two origins, persistent all-sites grant, URL mode, input-asking form',
+    run: {browsers: s => [{id: '1', tabs: userTabs(s, [101])}], extras: ownOriginVariants},
+    check: r => [
+      ...labels(ownOriginVariants).filter(label => answerOf(r, label)?.action !== 'decline').map(label => `${label} was not declined`),
+      ...(isSessionAccept(answerOf(r, 'own-origin')) ? [] : ['the exact own-origin request was not accepted for the session']),
+      ...(statusOf(r, 'elicitations-own-origin-only') === 'BLOCKED' ? [] : [`elicitation verdict ${statusOf(r, 'elicitations-own-origin-only')}`]),
     ]},
   {id: 'fixture-unstructured-own-origin', title: 'an access request naming the probe origin only in its message is declined and the elicitation verdict is BLOCKED (no text matching); the created tab is still closed',
     run: {browsers: s => [{id: '1', tabs: userTabs(s, [101])}], scenario: {originRequest: 'unstructured'}},

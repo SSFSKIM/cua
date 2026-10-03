@@ -71,6 +71,11 @@ test('kinds are recorded from structure, and an unstructured request naming the 
   assert.equal(unknown.kind, 'unknown');
   assert.equal(unknown.unstructuredOwnOrigin, true);
   assert.equal(decide(DECLINED['a lookalike host']).unstructuredOwnOrigin, false);
+  // Refused shapes that name the probe origin block the verdict; foreign origins do not.
+  for (const name of ['two origins in tool_params', 'meta origin disagreeing with tool_params', 'an origins array', 'a persistent all-sites grant', 'an unknown persist value', 'url mode', 'a schema asking for input'])
+    assert.equal(decide(DECLINED[name]).refusedOwnOrigin, true, name);
+  for (const name of ['a user tab origin', 'a lookalike host', 'a different port', 'localhost instead of 127.0.0.1', 'raw CDP on the probe origin', 'a download from the probe origin'])
+    assert.equal(decide(DECLINED[name]).refusedOwnOrigin, undefined, name);
   assert.equal(decideElicitation({jsonrpc: '2.0', id: 1, method: 'roots/list'}, {origin: ORIGIN}).kind, 'other-request');
 });
 

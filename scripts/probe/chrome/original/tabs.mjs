@@ -132,10 +132,13 @@ export function judgeTabs(o) {
   const accepted = els.filter(e => e.answered.startsWith('accept'));
   const strayAccept = accepted.some(e => !(e.kind === 'origin-access' && e.ownOrigin === true));
   const unstructured = els.some(e => e.unstructuredOwnOrigin);
+  const refusedOwn = els.some(e => e.refusedOwnOrigin);
   const declinedByKind = {};
   for (const e of els) if (!e.answered.startsWith('accept')) declinedByKind[e.kind] = (declinedByKind[e.kind] ?? 0) + 1;
   add('elicitations-own-origin-only', 'nothing accepted beyond the probe origin\'s structured origin-access request (session scope); everything else declined by kind',
-    strayAccept ? 'FAIL' : unstructured ? 'BLOCKED' : 'PASS', {count: els.length, accepted: accepted.length, declinedByKind, ...(unstructured ? {why: 'a request naming the probe origin did not expose it structurally; declined, not widened to text matching'} : {})});
+    strayAccept ? 'FAIL' : unstructured || refusedOwn ? 'BLOCKED' : 'PASS', {count: els.length, accepted: accepted.length, declinedByKind,
+      ...(unstructured ? {unstructured: 'a request naming the probe origin did not expose it structurally; declined, not widened to text matching'} : {}),
+      ...(refusedOwn ? {refusedOwnOrigin: 'an origin-access request naming the probe origin had a refused shape (two origins, wider grant, URL mode, input form or unknown persistence); declined'} : {})});
   add('user-tabs-untouched', 'only the planned cells ran: no user tab was bound, read, screenshotted or closed (listTabs reduced to counts)', status((o.cellsSent ?? []).every(c => TAB_CELLS.includes(c))), {cellsSent: o.cellsSent});
   return scenarios;
 }

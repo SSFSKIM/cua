@@ -94,6 +94,9 @@ test('judgeTabs: an unstructured request naming the probe origin is BLOCKED; any
   const u = happy();
   u.elicitations.push({kind: 'unknown', ownOrigin: false, unstructuredOwnOrigin: true, answered: 'decline'});
   assert.equal(statusOf(judgeTabs(u), 'elicitations-own-origin-only'), 'BLOCKED');
+  const r = happy();
+  r.elicitations.push({kind: 'origin-access', ownOrigin: true, refusedOwnOrigin: true, answered: 'decline'});
+  assert.equal(statusOf(judgeTabs(r), 'elicitations-own-origin-only'), 'BLOCKED');
   const a = happy();
   a.elicitations.push({kind: 'origin-access', ownOrigin: false, answered: 'accept (session)'});
   assert.equal(statusOf(judgeTabs(a), 'elicitations-own-origin-only'), 'FAIL');

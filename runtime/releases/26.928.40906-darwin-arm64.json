@@ -38,5 +38,26 @@
       "CodexCLI.app",
       "cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app"
     ]
+  },
+  "chromePlugin": {
+    "from": "ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/chrome",
+    "dir": "chrome-plugin",
+    "layout": {
+      "host": "extension-host/macos/arm64/ChatGPT for Chrome",
+      "browserClient": "scripts/browser-client.mjs",
+      "browserService": "scripts/browser-service.mjs",
+      "installManifest": "scripts/installManifest.mjs"
+    },
+    "signing": [
+      "extension-host/macos/arm64/ChatGPT for Chrome"
+    ],
+    "nativeHost": {
+      "name": "com.openai.codexextension",
+      "description": "ChatGPT browser native messaging host",
+      "extensionIds": [
+        "hehggadaopoacecdllhhajmbjkdcmajg",
+        "odlomjlbamekndcpllcnffbgeohgkmjh"
+      ]
+    }
   }
 }

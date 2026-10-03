@@ -10,7 +10,10 @@
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
 // a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
 // capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`.
-// The Chrome checks (src/profiles/checks.mjs) are capability evidence the same way: each registered profile's
+// `chrome.host.config` (chrome-component.mjs) is installed-runtime health: the Chrome host component cua placed in the
+// active release, its signature and the configuration the host reads. Not placed yet is `blocked` (install adds it);
+// anything wrong with what cua placed is `fail`.
+// The Chrome checks (src/profiles/checks.mjs) are capability evidence the same way as codex.login: each registered profile's
 // extension, the com.openai.codexextension native-messaging registration and which host it names, and the running
 // OpenAI hosts, read from files and the process table only.
 import {existsSync, readFileSync} from 'node:fs';
@@ -24,6 +27,7 @@ import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.m
 import {loginStatus, LOGIN_STATES} from './login.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
+import {inspectChromeHostConfig} from './chrome-component.mjs';
 
 export const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
 const LIVE_PROBE = 'scripts/probe-runtime.mjs';
@@ -68,6 +72,9 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
     checks.push(result('runtime.signatures', bad.length ? 'fail' : 'pass', bad.length
       ? `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ')}; ${recoveryHint(root)}`
       : `${signatures.length} components signed by team ${manifest.signing.team}`));
+    checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
+  } else {
+    checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
   }
 
   const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;

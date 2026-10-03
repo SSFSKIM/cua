@@ -13,6 +13,8 @@ import {checkLayout} from './checks.mjs';
 export const RELEASES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'runtime', 'releases');
 export const RECORD_FILE = 'install.json';
 export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyServiceApp', 'skyVendorService', 'browserVendorService', 'vendorManifest', 'ipcClient'];
+// The Chrome plugin is an additive component of a release (its own directory and record, src/runtime/chrome-component.mjs).
+export const CHROME_LAYOUT_KEYS = ['host', 'browserClient', 'browserService', 'installManifest'];
 const INSTALL_HINT = 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)';
 const hostTarget = () => ({platform: process.platform, arch: process.arch});
 
@@ -59,7 +61,7 @@ function underComponent(value, components, where) {
 
 export function parsePin(json, {file} = {}) {
   const where = file ?? 'pin';
-  exactKeys(json, ['schema', 'release', 'appVersion', 'platform', 'arch', 'archive', 'components', 'runtime', 'layout', 'signing'], where);
+  exactKeys(json, ['schema', 'release', 'appVersion', 'platform', 'arch', 'archive', 'components', 'runtime', 'layout', 'signing', 'chromePlugin'], where);
   if (json.schema !== 1) invalid(where, `unsupported schema ${JSON.stringify(json.schema)}`);
   const appVersion = text(json.appVersion, `${where}.appVersion`, /^\d+(\.\d+)+$/);
   const platform = text(json.platform, `${where}.platform`, /^[a-z0-9]+$/);
@@ -98,7 +100,33 @@ export function parsePin(json, {file} = {}) {
     components: json.signing.components.map((c, i) => underComponent(c, components, `${where}.signing.components[${i}]`)),
   };
 
-  return {schema: 1, release, appVersion, platform, arch, archive: {url: url.href, length: json.archive.length, sha256}, components, runtime, layout, signing};
+  const chromePlugin = parseChromePlugin(json.chromePlugin, components, `${where}.chromePlugin`);
+
+  return {schema: 1, release, appVersion, platform, arch, archive: {url: url.href, length: json.archive.length, sha256}, components, runtime, layout, signing, chromePlugin};
+}
+
+// Where the archive's Chrome plugin comes from, the directory it lands in beside the base components, the paths the
+// host configuration names, what is signature-checked, and the native-messaging registration the vendor's own
+// installManifest.mjs writes for this host (name, description, extension ids).
+function parseChromePlugin(value, components, where) {
+  exactKeys(value, ['from', 'dir', 'layout', 'signing', 'nativeHost'], where);
+  const from = relativePath(value.from, `${where}.from`);
+  const dir = text(value.dir, `${where}.dir`, /^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+  if (Object.hasOwn(components, dir) || dir === RECORD_FILE) invalid(`${where}.dir`, `${JSON.stringify(dir)} collides with the base release`);
+  exactKeys(value.layout, CHROME_LAYOUT_KEYS, `${where}.layout`);
+  const layout = Object.fromEntries(CHROME_LAYOUT_KEYS.map(key => [key, relativePath(value.layout[key], `${where}.layout.${key}`)]));
+  if (!Array.isArray(value.signing) || !value.signing.includes(layout.host)) invalid(`${where}.signing`, 'must list the host');
+  const signing = value.signing.map((c, i) => relativePath(c, `${where}.signing[${i}]`));
+  exactKeys(value.nativeHost, ['name', 'description', 'extensionIds'], `${where}.nativeHost`);
+  const {extensionIds} = value.nativeHost;
+  if (!Array.isArray(extensionIds) || !extensionIds.length) invalid(`${where}.nativeHost.extensionIds`, 'must be a non-empty list');
+  const nativeHost = {
+    // Chrome's native-messaging host name rule.
+    name: text(value.nativeHost.name, `${where}.nativeHost.name`, /^[a-z0-9_]+(\.[a-z0-9_]+)*$/),
+    description: text(value.nativeHost.description, `${where}.nativeHost.description`),
+    extensionIds: extensionIds.map((id, i) => text(id, `${where}.nativeHost.extensionIds[${i}]`, /^[a-p]{32}$/)),
+  };
+  return {from, dir, layout, signing, nativeHost};
 }
 
 export function loadPins(dir = RELEASES_DIR) {

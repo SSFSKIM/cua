@@ -72,6 +72,8 @@ test('doctor reports the Chrome checks beside runtime health and they never chan
   const report = await inspectRuntime({home: s.dir, host: {platform: 'darwin', arch: 'arm64'},
     inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({path: '/x', built: false}),
     inspectChrome: async ({home}) => { assert.equal(home, s.dir); return injected; }});
-  assert.deepEqual(report.checks.filter(c => c.name.startsWith('chrome.')), injected);
-  for (const c of report.checks.filter(c => c.name.startsWith('chrome.'))) assert.notEqual(c.status, 'fail');
+  // chrome.host.config is installed-runtime health (the host component cua placed), not one of these capability checks.
+  const capability = report.checks.filter(c => c.name.startsWith('chrome.') && c.name !== 'chrome.host.config');
+  assert.deepEqual(capability, injected);
+  for (const c of capability) assert.notEqual(c.status, 'fail');
 });

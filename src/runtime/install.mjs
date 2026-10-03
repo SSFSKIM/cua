@@ -13,6 +13,11 @@
 // bytes are never modified: extraction uses `ditto`, which keeps modes, symlinks, extended attributes and quarantine,
 // and components move by rename on the same volume.
 //
+// The archive's Chrome plugin is a separately recorded component inside the release tree (chrome-component.mjs). A fresh
+// install places it in the staged tree before the one activation rename. An installed release that lacks it gains it
+// on the next install, staged and verified on its own and moved in with one rename, so no existing file changes; this
+// needs the archive again (or a download). A release whose component is already placed and verifies is a no-op.
+//
 // The signature checker and fetch are injectable for tests through this module API only; the CLI always uses the
 // production codesign check and the global fetch.
 import {mkdirSync, mkdtempSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, createReadStream, createWriteStream} from 'node:fs';
@@ -23,8 +28,9 @@ import {Readable} from 'node:stream';
 import {join} from 'node:path';
 import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
-import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, RECORD_FILE} from './manifest.mjs';
+import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, runtimeFor, RECORD_FILE} from './manifest.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
+import {componentState, componentRecoveryHint, stageChromeComponent, verifyChromeComponent} from './chrome-component.mjs';
 
 
 function run(command, args) {
@@ -41,8 +47,10 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);
+  const acquisition = {manifest, archivePath, fetch, onProgress, staging: layout.staging};
 
-  // Idempotent path: a release this tool installed that still verifies is kept byte-for-byte and (re)activated.
+  // Idempotent path: a release this tool installed that still verifies is kept byte-for-byte and (re)activated, after
+  // gaining the Chrome plugin component if it lacks it.
   const existing = existingRelease(target, manifest);
   if (existing) {
     try {
@@ -51,12 +59,64 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
       if (!(error instanceof CuaError)) throw error;
       fail('installed_release_invalid', `installed release ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: recoveryHint(target), cause: error});
     }
+    const chromeHost = await ensureChromeComponent({real, target, record: existing, acquisition, verifySignatures});
     activate(real, manifest.release);
-    return {release: manifest.release, root: target, record: existing, changed: false};
+    return {release: manifest.release, root: target, record: existing, changed: chromeHost.changed, releaseChanged: false, chromeHost};
   }
   assertTargetFree(target);
 
-  const stage = mkdtempSync(join(layout.staging, `${manifest.release}-`));
+  return withStage(acquisition, async (stage, {extracted, source}) => {
+    const tree = join(stage, 'release');
+    mkdirSync(tree, {mode: 0o755});
+    for (const [name, from] of Object.entries(manifest.components)) {
+      const component = join(extracted, from);
+      let stat;
+      try { stat = lstatSync(component); } catch { stat = null; }
+      if (!stat?.isDirectory()) fail('layout_invalid', `archive for ${manifest.release} has no component directory ${from}`);
+      renameSync(component, join(tree, name));
+    }
+    await verifyRuntimeTree(tree, manifest, {verifySignatures});
+    await stageChromeComponent({extracted, into: tree, runtime: runtimeFor({home: real, pin: manifest, record: null}), source, verifySignatures});
+    rmSync(extracted, {recursive: true, force: true});
+    const fresh = {schema: 1, release: manifest.release, archive: {sha256: manifest.archive.sha256, length: manifest.archive.length}, source, installedAt: new Date().toISOString()};
+    writeFileSync(join(tree, RECORD_FILE), JSON.stringify(fresh, null, 2) + '\n', {mode: 0o644});
+
+    ensureCodexHome(real);
+    moveIntoPlace(tree, target);
+    activate(real, manifest.release);
+    return {release: manifest.release, root: target, record: fresh, changed: true, releaseChanged: true, chromeHost: {root: join(target, manifest.chromePlugin.dir), changed: true}};
+  });
+}
+
+// The Chrome plugin component of an installed, verified release: kept when it is placed and verifies, refused when its
+// path holds something else or it no longer verifies (never repaired in place), otherwise staged from the archive on
+// its own and moved in with one rename.
+async function ensureChromeComponent({real, target, record, acquisition, verifySignatures}) {
+  const {manifest} = acquisition;
+  const root = join(target, manifest.chromePlugin.dir);
+  const {state} = componentState(root, manifest);
+  if (state === 'occupied') occupied(root);
+  if (state === 'placed') {
+    try {
+      await verifyChromeComponent(root, manifest, {verifySignatures});
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      fail('chrome_component_invalid', `the Chrome host component of ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: componentRecoveryHint(root), cause: error});
+    }
+    return {root, changed: false};
+  }
+  return withStage(acquisition, async (stage, {extracted, source}) => {
+    const placed = await stageChromeComponent({extracted, into: stage, runtime: runtimeFor({home: real, pin: manifest, record}), source, verifySignatures});
+    ensureCodexHome(real);
+    moveIntoPlace(placed, root);
+    return {root, changed: true};
+  });
+}
+
+// Acquires and verifies the pinned archive in a staging directory owned by this operation, extracts it there, runs
+// `use` with the extracted tree, and always removes the staging directory.
+async function withStage({manifest, archivePath, fetch, onProgress, staging}, use) {
+  const stage = mkdtempSync(join(staging, `${manifest.release}-`));
   try {
     const archive = join(stage, 'archive.zip');
     const source = archivePath ? 'archive' : 'download';
@@ -71,28 +131,15 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
       fail('extract_failed', `could not extract ${manifest.release}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
     }
     rmSync(archive, {force: true});
-
-    const tree = join(stage, 'release');
-    mkdirSync(tree, {mode: 0o755});
-    for (const [name, from] of Object.entries(manifest.components)) {
-      const component = join(extracted, from);
-      let stat;
-      try { stat = lstatSync(component); } catch { stat = null; }
-      if (!stat?.isDirectory()) fail('layout_invalid', `archive for ${manifest.release} has no component directory ${from}`);
-      renameSync(component, join(tree, name));
-    }
-    rmSync(extracted, {recursive: true, force: true});
-
-    await verifyRuntimeTree(tree, manifest, {verifySignatures});
-    const fresh = {schema: 1, release: manifest.release, archive: {sha256: manifest.archive.sha256, length: manifest.archive.length}, source, installedAt: new Date().toISOString()};
-    writeFileSync(join(tree, RECORD_FILE), JSON.stringify(fresh, null, 2) + '\n', {mode: 0o644});
-
-    moveIntoPlace(tree, target);
-    activate(real, manifest.release);
-    return {release: manifest.release, root: target, record: fresh, changed: true};
+    return await use(stage, {extracted, source});
   } finally {
     rmSync(stage, {recursive: true, force: true});
   }
+}
+
+// The host configuration names <home>/state/codex as CODEX_HOME; it exists (private) once the host is placed.
+function ensureCodexHome(home) {
+  mkdirSync(homeLayout(home).codexHome, {recursive: true, mode: 0o700});
 }
 
 // Select an installed release: it must have a checked-in pin, an install record matching that pin, and still verify.
@@ -116,7 +163,7 @@ function existingRelease(target, manifest) {
 }
 
 function occupied(target) {
-  return fail('target_occupied', `${target} exists and is not a release installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
+  return fail('target_occupied', `${target} exists and was not installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
 }
 
 function assertTargetFree(target) {

@@ -1,7 +1,7 @@
 // Harmless stand-ins for the pinned ChatGPT archive: the same directory shape and vendor metadata as the real
 // release, a few bytes per file, zipped with the same `ditto` the installer extracts with. Fixture pins reuse the
 // checked-in pin's layout with the fixture's own release id, length and hash, so the layout data is exercised too.
-import {mkdirSync, writeFileSync, symlinkSync, readFileSync, mkdtempSync, rmSync, chmodSync} from 'node:fs';
+import {mkdirSync, writeFileSync, symlinkSync, readFileSync, mkdtempSync, rmSync, chmodSync, realpathSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
@@ -23,7 +23,7 @@ export const shortScratch = (prefix = 'cua-') => scratch(prefix, '/tmp');
 
 // Writes the fixture app tree under `root`. `vendor` overrides fields of cua_node/manifest.json (`vendorRaw` replaces
 // its text outright); `ipc` replaces the IPC version string; `omit` lists layout-relative paths (inside the extracted
-// components) to leave out.
+// components; `chrome/...` inside the Chrome plugin) to leave out.
 export function writeFixtureApp(root, {vendor = {}, vendorRaw, ipc = 'CodexComputerUseIPC-5', omit = []} = {}) {
   const res = join(root, 'ChatGPT.app/Contents/Resources');
   const files = {
@@ -43,11 +43,18 @@ export function writeFixtureApp(root, {vendor = {}, vendorRaw, ipc = 'CodexCompu
       ...vendor,
     }),
     'CodexCLI.app/Contents/MacOS/codex': '#!/bin/sh\necho fixture codex\n',
+    // The Chrome plugin (pin chromePlugin), placed as its own component; its host is never run by tests.
+    'chrome/extension-host/macos/arm64/ChatGPT for Chrome': '#!/bin/sh\necho fixture host, never run\n',
+    'chrome/scripts/browser-client.mjs': 'export {};\n',
+    'chrome/scripts/browser-service.mjs': 'export {};\n',
+    'chrome/scripts/installManifest.mjs': 'export async function install() {}\n',
+    'chrome/node_modules/classic-level.mjs': 'export {};\n',
   };
   for (const [rel, body] of Object.entries(files)) {
     if (omit.includes(rel)) continue;
     const path = rel.startsWith('ChatGPT.app/') ? join(root, rel)
-      : rel.startsWith('CodexCLI.app/') ? join(res, 'codex-cli', rel) : join(res, rel);
+      : rel.startsWith('CodexCLI.app/') ? join(res, 'codex-cli', rel)
+        : rel.startsWith('chrome/') ? join(res, 'plugins/openai-bundled/plugins', rel) : join(res, rel);
     mkdirSync(dirname(path), {recursive: true});
     writeFileSync(path, body);
     if (body.startsWith('#!')) chmodSync(path, 0o755);
@@ -120,4 +127,34 @@ echo "${FAKE_CODEX_SENTINEL}" >&2
 ${sleep ? `sleep ${sleep}` : ''}
 exit ${exit}
 `;
+}
+
+// The Chrome plugin component of a forged active runtime (forgeActiveRuntime), with its record and the host
+// configuration install would write; `config` replaces fields of that configuration. Nothing here is vendor code.
+export function forgeChromeComponent(home, {config = {}} = {}) {
+  const pin = realPinJson();
+  const real = realpathSync(home);
+  const releaseRoot = join(real, 'runtimes', pin.release);
+  const root = join(releaseRoot, pin.chromePlugin.dir);
+  for (const rel of Object.values(pin.chromePlugin.layout)) {
+    mkdirSync(dirname(join(root, rel)), {recursive: true});
+    writeFileSync(join(root, rel), rel.endsWith('ChatGPT for Chrome') ? '#!/bin/sh\necho fixture host, never run\n' : 'export {};\n');
+  }
+  const host = join(root, pin.chromePlugin.layout.host);
+  chmodSync(host, 0o755);
+  mkdirSync(join(real, 'state', 'codex'), {recursive: true, mode: 0o700});
+  const hostConfig = {
+    schemaVersion: 1, channel: 'prod',
+    browserClientPath: join(root, pin.chromePlugin.layout.browserClient),
+    browserServicePath: join(root, pin.chromePlugin.layout.browserService),
+    codexCliPath: join(releaseRoot, pin.layout.codexCli),
+    nodePath: join(releaseRoot, pin.layout.node),
+    nodeReplPath: join(releaseRoot, pin.layout.nodeRepl),
+    codexHome: join(real, 'state', 'codex'),
+    proxyHost: '127.0.0.1', proxyPort: 0,
+    ...config,
+  };
+  writeFileSync(join(dirname(host), 'extension-host-config.json'), JSON.stringify(hostConfig, null, 2) + '\n');
+  writeFileSync(join(root, 'component.json'), JSON.stringify({schema: 1, component: pin.chromePlugin.dir, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
+  return {root, host, config: hostConfig};
 }

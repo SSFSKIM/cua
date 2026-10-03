@@ -17,9 +17,10 @@ import {addProfile, removeProfile, profileStatuses, REASONS} from './profiles/re
 import {bindCommand} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {UNDETERMINED} from './profiles/bind.mjs';
+import {registerHost, unregisterHost} from './chrome/registration.mjs';
 
 const USAGE = `usage: cua <command>
-  install [--archive <ChatGPT zip>] [--release <id>] [--json]   install and activate the pinned runtime
+  install [--archive <ChatGPT zip>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve                                                        MCP over stdin/stdout until EOF or a signal
@@ -32,6 +33,8 @@ const USAGE = `usage: cua <command>
   profiles list [--json]                                       registered profiles and whether each is ready
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
   profiles bind <key> [--extension-instance-id <id>] [--json]  bind a key to its live OpenAI extension backend
+  chrome register [--replace] [--json]                         register cua's Chrome host with the browsers
+  chrome unregister [--json]                                   remove cua's registration, restoring what it replaced
 environment: CUA_HOME (default ~/Library/Application Support/cua)`;
 
 class UsageError extends Error {}
@@ -65,8 +68,10 @@ async function install(args) {
   const manifest = values.release ? findPin(pins, values.release) : selectPin(pins);
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
   const result = await installRuntime({home: defaultHome(), manifest, archivePath: values.archive, onProgress: values.json ? undefined : progressReporter()});
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source});
-  else print(result.changed ? `installed and activated ${result.release} at ${result.root}` : `${result.release} is already installed and verified; active at ${result.root}`);
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, chromeHost: result.chromeHost});
+  else if (!result.chromeHost.changed) print(`${result.release} is already installed and verified, with its Chrome host; active at ${result.root}`);
+  else if (result.releaseChanged) print(`installed and activated ${result.release} at ${result.root}, with its Chrome host at ${result.chromeHost.root}`);
+  else print(`added the Chrome host to the installed release ${result.release} at ${result.chromeHost.root}; nothing that was installed changed`);
 }
 
 async function doctor(args) {
@@ -235,7 +240,49 @@ async function profiles(args) {
   return 1;
 }
 
-const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles};
+// The OpenAI extension's native-messaging registration (src/chrome/registration.mjs). register refuses while another
+// host's manifest is present unless --replace, which backs it up first; unregister removes only cua's manifests and
+// restores what cua replaced. Exit 1 on a refusal or when a restoration is BLOCKED.
+const CHROME_USAGE = {register: 'chrome register takes only --replace and --json', unregister: 'chrome unregister takes only --json'};
+const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours'};
+
+async function chrome(args) {
+  const [command, ...rest] = args;
+  if (!Object.hasOwn(CHROME_USAGE, command)) throw new UsageError('chrome takes register or unregister');
+  let values;
+  try { ({values} = parse(rest, command === 'register' ? {replace: {type: 'boolean'}} : {}, 0)); } catch (error) {
+    if (error instanceof UsageError) throw new UsageError(CHROME_USAGE[command]);
+    throw error;
+  }
+  const home = defaultHome();
+  if (command === 'register') {
+    const runtime = resolveRuntime({home});
+    let consequences;
+    const result = await registerHost({home, runtime, replace: values.replace, onReplace: lines => {
+      consequences = lines;
+      process.stderr.write(`replacing a registration cua did not write (backed up first). Consequences:\n${lines.map((l, i) => `  ${i + 1}. ${l}`).join('\n')}\n`);
+    }});
+    if (values.json) return done({ok: true, host: result.host, browsers: result.browsers, ...(consequences ? {consequences} : {})});
+    print(`registered cua's Chrome host ${result.host}:`);
+    for (const b of result.browsers) print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}${b.backup ? ` (previous manifest backed up to ${b.backup})` : ''}`);
+    print('the browser launches the host on the extension\'s next connection; running hosts are not stopped');
+    return 0;
+  }
+  const result = unregisterHost({home});
+  if (values.json) { print({ok: true, ...result}); return result.blocked ? 1 : 0; }
+  const shown = result.browsers.filter(b => b.action !== 'absent');
+  if (!shown.some(b => b.action === 'removed' || b.action === 'restored')) print('nothing to unregister: no com.openai.codexextension manifest names cua\'s host');
+  for (const b of shown) {
+    const what = b.action === 'not_ours' ? `names a ${b.pathClass} host; left unchanged`
+      : b.restoration === 'restored' ? 'restored the backed-up manifest, verified byte-for-byte'
+        : b.restoration === 'not_needed' ? 'nothing to restore (cua placed it in an empty slot)'
+          : `restoration BLOCKED: ${b.reason}. To fix: ${b.userAction}`;
+    print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}: ${what}`);
+  }
+  return result.blocked ? 1 : 0;
+}
+
+const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome};
 
 export async function main(argv) {
   const [command, ...rest] = argv;

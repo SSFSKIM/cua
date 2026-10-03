@@ -84,3 +84,39 @@ export function fixturePin({release = '0.0.1-darwin-arm64', appVersion = release
 // The production signature check would reject unsigned fixture files; tests that are about other mechanics inject
 // this accepting double, and one test proves the production checker does reject the fixture.
 export const acceptSignatures = async (root, pin) => pin.signing.components.map(component => ({component, valid: true, detail: 'fixture'}));
+
+// A home whose active release is the checked-in pin, laid out with placeholder files (no vendor code), so the CLI's
+// real pin resolution finds it. Signatures are never checked on this path (resolveRuntime checks structure only).
+// `files` maps layout keys to file contents; executables start with "#!".
+export function forgeActiveRuntime(home, files = {}) {
+  const pin = realPinJson();
+  const root = join(home, 'runtimes', pin.release);
+  const dirs = new Set(['moduleDir', 'skyServiceApp']);
+  for (const [key, rel] of Object.entries(pin.layout)) {
+    const path = join(root, rel);
+    if (dirs.has(key)) { mkdirSync(path, {recursive: true}); continue; }
+    mkdirSync(dirname(path), {recursive: true});
+    const body = files[key] ?? '';
+    writeFileSync(path, body);
+    if (body.startsWith('#!')) chmodSync(path, 0o755);
+  }
+  writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
+  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: pin.release}));
+  return {root, codexCli: join(root, pin.layout.codexCli)};
+}
+
+// A stand-in for the bundled `codex` CLI: a shell script (the login environment's PATH is fixed, so no `env node`)
+// that appends its argv and environment to $CODEX_HOME/fake-codex.log, prints a sentinel that must never reach cua's
+// output, and exits with `exit` (after `sleep` seconds). It never touches the network or any auth file.
+export const FAKE_CODEX_SENTINEL = 'fake-codex-account-sentinel@example.invalid';
+export function fakeCodexScript({exit = 0, sleep = 0} = {}) {
+  return `#!/bin/sh
+if [ -n "$CODEX_HOME" ] && [ -d "$CODEX_HOME" ]; then
+  { printf 'argv:'; for a in "$@"; do printf ' %s' "$a"; done; printf '\\n'; env | sed 's/^/env:/'; } >> "$CODEX_HOME/fake-codex.log"
+fi
+echo "Logged in as ${FAKE_CODEX_SENTINEL}"
+echo "${FAKE_CODEX_SENTINEL}" >&2
+${sleep ? `sleep ${sleep}` : ''}
+exit ${exit}
+`;
+}

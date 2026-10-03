@@ -6,6 +6,8 @@ import {defaultHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
+import {resolveRuntime} from './runtime/manifest.mjs';
+import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
 import {CuaError} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
 import {runSecrets} from './secrets/commands.mjs';
@@ -16,6 +18,8 @@ const USAGE = `usage: cua <command>
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve                                                        MCP over stdin/stdout until EOF or a signal
+  login [--device-auth]                                        sign the server in to Codex, at this terminal
+  login --status                                               whether the server has a Codex login (never shows it)
   secrets set <label>                                          store a secret, typed hidden at this terminal
   secrets list [--json]                                        stored labels, never values
   secrets remove <label> [--yes]                               delete one secret (confirmed at the terminal)
@@ -122,7 +126,34 @@ async function secrets(args) {
   return runSecrets({command, json: values.json});
 }
 
-const COMMANDS = {install, doctor, runtime, serve, secrets};
+// The server's own Codex login, kept in CUA_HOME's CODEX_HOME (src/runtime/login.mjs). No key or token is ever an
+// argument, so everything but the two flags is refused with a fixed message that never repeats what was passed.
+const LOGIN_USAGE = 'login takes only --device-auth or --status';
+const LOGIN_MESSAGES = {
+  [LOGIN_STATES.loggedIn]: 'the cua server has a Codex login in its own CODEX_HOME',
+  [LOGIN_STATES.notLoggedIn]: 'the cua server has no Codex login in its own CODEX_HOME; run `cua login`',
+};
+
+async function login(args) {
+  let values;
+  try {
+    ({values} = parseArgs({args, options: {'device-auth': {type: 'boolean'}, status: {type: 'boolean'}}, allowPositionals: false, strict: true}));
+  } catch { throw new UsageError(LOGIN_USAGE); }
+  if (values.status && values['device-auth']) throw new UsageError(LOGIN_USAGE);
+  const home = defaultHome();
+  const runtime = resolveRuntime({home});
+  if (values.status) {
+    const result = await loginStatus({home, runtime});
+    print(LOGIN_MESSAGES[result.state] ?? `could not determine the cua server's Codex login: ${result.reason}`);
+    return result.state === LOGIN_STATES.loggedIn ? 0 : 1;
+  }
+  process.stderr.write('signing the cua server in to Codex; its login is kept in CUA_HOME, separate from any desktop Codex login\n');
+  const code = await runLogin({home, runtime, deviceAuth: values['device-auth']});
+  if (code !== 0) process.stderr.write(`cua: codex login exited ${code}\n`);
+  return code === 0 ? 0 : 1;
+}
+
+const COMMANDS = {install, doctor, runtime, serve, secrets, login};
 
 export async function main(argv) {
   const [command, ...rest] = argv;

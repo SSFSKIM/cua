@@ -7,6 +7,9 @@
 // The Keychain helper (secrets) is inspected from its file and signature, never run: not built or without a stable
 // signing identity is `blocked` (secrets, or their stable Keychain trust, are not available yet); a helper that is
 // present but speaks another broker protocol or whose signature does not verify is `fail`.
+// `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
+// a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
+// capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`.
 import {existsSync, readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -15,13 +18,14 @@ import {CuaError} from './errors.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
+import {loginStatus, LOGIN_STATES} from './login.mjs';
 
 export const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
 const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper}) {
+export async function inspectRuntime({home, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -36,6 +40,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   }
 
   let runtime;
+  let runtimeUsable = false;
   try {
     runtime = locateRuntime({home, pins, host});
     checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
@@ -47,6 +52,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   if (runtime) {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
+    runtimeUsable = layout.ok;
     checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
@@ -66,10 +72,25 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
     'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
     + `Confirm with a live probe (${LIVE_PROBE}).`));
   checks.push(...classifyKeychainHelper(await inspectSecrets()));
+  checks.push(await codexLoginCheck({home, runtime: runtimeUsable ? runtime : null, inspectLogin}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
   return report;
+}
+
+const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
+
+async function codexLoginCheck({home, runtime, inspectLogin}) {
+  if (!runtime) return result('codex.login', 'blocked', 'needs a usable installed runtime to ask; run cua install, then run cua login');
+  let status;
+  try { status = await inspectLogin({home, runtime}); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    return result('codex.login', 'blocked', `${error.message}; run cua login once CUA_HOME is fixed`);
+  }
+  return status.state === LOGIN_STATES.loggedIn
+    ? result('codex.login', 'pass', 'the server has a Codex login in its own CODEX_HOME (needed by the browser route)')
+    : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the browser route needs one: run cua login`);
 }
 
 // One-line human verdict that never overstates `ok`: blocked checks leave live capability unverified.

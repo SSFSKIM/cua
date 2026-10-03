@@ -152,3 +152,50 @@ test('Keychain helper checks are reported beside runtime health: blocked leaves 
   assert.equal(stale.ok, false);
   assert.equal(check(stale, 'secrets.helper').status, 'fail');
 });
+
+test('codex.login is capability evidence: pass when logged in, blocked with "run cua login" otherwise, ok unchanged', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const seen = [];
+  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets};
+  const as = state => async args => { seen.push(args); return {state, ...(state === 'logged-in' ? {} : {reason: 'codex login status reports no login'})}; };
+  const loggedIn = await inspectRuntime({...common, inspectLogin: as('logged-in')});
+  assert.equal(check(loggedIn, 'codex.login').status, 'pass');
+  assert.equal(loggedIn.ok, true);
+  assert.equal(seen[0].runtime.release, pin.release, 'the check asks the active runtime');
+  for (const state of ['not-logged-in', 'unknown']) {
+    const report = await inspectRuntime({...common, inspectLogin: as(state)});
+    const login = check(report, 'codex.login');
+    assert.equal(login.status, 'blocked', state);
+    assert.match(login.detail, /run cua login/);
+    assert.equal(report.ok, true, 'a missing login never fails runtime health');
+  }
+});
+
+test('codex.login without a usable runtime is blocked and asks nothing', async () => {
+  const s = scratch();
+  try {
+    let asked = false;
+    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectLogin: async () => { asked = true; }});
+    assert.equal(asked, false);
+    assert.equal(check(report, 'codex.login').status, 'blocked');
+    assert.match(check(report, 'codex.login').detail, /cua install/);
+  } finally { s.cleanup(); }
+});
+
+test('the default codex.login check runs codex login status with the owned CODEX_HOME and never shows its output', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const {writeFileSync: write, mkdirSync: mkdir, readFileSync: read, chmodSync: chmod} = await import('node:fs');
+  const {fakeCodexScript, FAKE_CODEX_SENTINEL} = await import('./fixtures/runtime-fixture.mjs');
+  const real = realpathSync(home);
+  const cli = join(real, 'runtimes', pin.release, pin.layout.codexCli);
+  write(cli, fakeCodexScript({exit: 1}));
+  chmod(cli, 0o755);
+  const codexHome = join(real, 'state', 'codex');
+  mkdir(codexHome, {recursive: true});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  assert.equal(check(report, 'codex.login').status, 'blocked');
+  assert.doesNotMatch(JSON.stringify(report), new RegExp(FAKE_CODEX_SENTINEL));
+  const log = read(join(codexHome, 'fake-codex.log'), 'utf8');
+  assert.match(log, /^argv: login status$/m);
+  assert.ok(log.includes(`env:CODEX_HOME=${codexHome}\n`));
+});

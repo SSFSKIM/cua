@@ -32,6 +32,11 @@
   is resolved. Make the individual attach error equally accurate at the next relevant prototype/production edit;
   do not treat this text as evidence of successful release.
 
+- **2026-10-03 — Two copies of the helper-suite verdict and the step runner in the acceptance runners (minor, M13).**
+  `scripts/accept/chrome-all-lib.mjs` (`helperSuiteVerdict`) and `scripts/accept/chrome-all.mjs` (`run`) repeat the
+  logic of `scripts/accept-native.mjs` (`helperSuite`, `run`) rather than sharing it, to leave the M6 runner untouched
+  during M13. Move both into `scripts/accept/lib.mjs` and have both runners import them at the next edit of either.
+
 ## Resolved
 
 - **2026-10-03 — The bind listing called a backend "other-profile" when the comparison was unknown (minor, M11

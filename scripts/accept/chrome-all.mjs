@@ -99,7 +99,7 @@ export async function runAll(argv) {
     items.push(item);
     process.stderr.write(`accept-chrome --all: ${id} ${item.status}\n`);
   };
-  const cua = (args, cuaHome = home, extra = {}) => run(process.execPath, [CLI, ...args], {env: cleanEnv({CUA_HOME: cuaHome, ...extra}), timeoutMs: 180_000});
+  const cua = (args, cuaHome = home) => run(process.execPath, [CLI, ...args], {env: cleanEnv({CUA_HOME: cuaHome}), timeoutMs: 180_000});
   const chrome = chromeFacts();
   const started = new Date();
 

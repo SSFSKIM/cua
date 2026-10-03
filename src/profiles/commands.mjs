@@ -1,7 +1,8 @@
 // `cua profiles bind`: find the live extension backend of a registered Chrome profile and record its instance id.
 // The live listing (inventory.mjs) and the interactive picker are injected so the decision path is testable; the CLI
 // wires the real ones. Display names never leave this module: the listing it returns names each backend's label only
-// as this-profile / other-profile / unlabelled, with its tab count.
+// as this-profile / other-profile / unlabelled, or comparison-unknown when the registered profile's own display name is
+// unknown (Local State unreadable or silent about it), with its tab count.
 import {fail} from '../runtime/errors.mjs';
 import {readRegistry, bindProfile, REASONS} from './registry.mjs';
 import {decideBinding, REFUSED} from './bind.mjs';
@@ -9,7 +10,8 @@ import {teardownUnconfirmed} from './inventory.mjs';
 
 function labelOf(backend, name) {
   if (typeof backend.profileName !== 'string') return 'unlabelled';
-  return name !== undefined && backend.profileName === name ? 'this-profile' : 'other-profile';
+  if (name === undefined) return 'comparison-unknown';
+  return backend.profileName === name ? 'this-profile' : 'other-profile';
 }
 
 // -> {ok:true, key, extensionInstanceId, how, backends, elicitationsDeclined}

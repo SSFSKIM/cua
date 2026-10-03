@@ -97,6 +97,15 @@ test('an unreadable Local State leaves the automatic branch undetermined but sti
   assert.deepEqual({ok: labelled.ok, id: labelled.extensionInstanceId}, {ok: true, id: 'inst-b'}, 'a label cannot conflict with an unknown name');
 });
 
+test('without the profile\'s own display name, a labelled backend is listed as not comparable, never as another profile', async t => {
+  const {home, userData, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  writeFileSync(join(userData, 'Local State'), 'garbage');
+  const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal', tabCount: 4}, {instanceId: 'inst-b', tabCount: 0}])});
+  assert.deepEqual(result.backends, [{instanceId: 'inst-a', tabCount: 4, label: 'comparison-unknown'}, {instanceId: 'inst-b', tabCount: 0, label: 'unlabelled'}]);
+  assert.ok(!JSON.stringify(result).includes('Personal'), 'display names never leave the bind');
+});
+
 // ---- the CLI routes ----------------------------------------------------------------------------------------------
 
 const CLI = join(REPO, 'bin', 'cua.mjs');

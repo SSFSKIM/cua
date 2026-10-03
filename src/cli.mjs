@@ -176,7 +176,8 @@ const PROFILES_USAGE = {
   bind: 'profiles bind takes a key and optionally --extension-instance-id <id>',
 };
 const done = value => { print(value); return 0; };
-const LABELS = {'this-profile': 'labelled as this profile', 'other-profile': 'labelled as another profile', unlabelled: 'unlabelled'};
+const LABELS = {'this-profile': 'labelled as this profile', 'other-profile': 'labelled as another profile', unlabelled: 'unlabelled',
+  'comparison-unknown': 'labelled, but this profile\'s own name is unknown, so whether it is this profile cannot be told'};
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${LABELS[b.label]}`;
 
 async function pickBackend(list, reason) {

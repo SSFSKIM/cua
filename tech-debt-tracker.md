@@ -34,6 +34,14 @@
 
 ## Resolved
 
+- **2026-10-03 — The bind listing called a backend "other-profile" when the comparison was unknown (minor, M11
+  review; resolved in M13).** `src/profiles/commands.mjs` labelled every labelled backend that did not match as
+  `other-profile`, including when the registered profile's own display name was unknown (Local State unreadable or
+  silent about the directory), so nothing was actually compared. Resolved: such a backend is listed as
+  `comparison-unknown` (the CLI says the label exists but cannot be compared with this profile); the bind decision
+  itself was already right (an explicit pick stands against an unknown name). `test/profiles-commands.test.mjs`
+  covers it beside the unreadable-Local-State test.
+
 - **2026-10-02 — Per-connection approval files accumulated (minor, M3; observed and resolved in M6).** Observed live
   with the M6 TextEdit fixture: every connection has its own random session id, the vendor asks for app approval again
   on each new connection, and an accepted `session` approval makes node_repl write

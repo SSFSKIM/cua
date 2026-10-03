@@ -278,7 +278,8 @@ export async function registerHost({home, runtime, replace = false, userHome = h
 // and backup this run made are discarded only when the earlier manifest is confirmed back, or when another program's
 // manifest now stands there so no cua registration needs them. When the slot ends up holding some other cua manifest
 // (or restoring lost a race to one), the restoration is unconfirmed: recovery data is kept and the result is
-// `registration_partial` naming the path. Returns the error to throw.
+// `registration_partial` naming the path. A recovery-data cleanup failure after a settled undo is reported the same way
+// (state `cleanup`, with the leftover backup) and does not stop the remaining undos. Returns the error to throw.
 function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}) {
   if (!applied.length) return error;
   const outcomes = [];
@@ -290,13 +291,20 @@ function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}
       outcome = {state: 'unconfirmed', why: undoError.message, hint: undoError.hint};
     }
     if (outcome.state !== 'unconfirmed') {
-      if (change.action !== 'updated') delete record.browsers[change.browser];
-      if (change.action === 'replaced') rmSync(backupFile(cuaHome, change.browser), {force: true});
+      // Recovery data goes only after the undo is settled; a cleanup failure keeps the record entry, is reported with
+      // the leftover backup, and never stops the remaining undos.
+      const backup = backupFile(cuaHome, change.browser);
+      try {
+        if (change.action === 'replaced') rmSync(backup, {force: true});
+        if (change.action !== 'updated') delete record.browsers[change.browser];
+      } catch (cleanupError) {
+        outcome = {state: 'cleanup', why: `undone, but its backup ${backup} could not be removed (${cleanupError.code ?? cleanupError.message})`, hint: `remove it yourself: rm "${backup}"`};
+      }
     }
     outcomes.push({...change, ...outcome});
   }
   try { writeRecord(cuaHome, record); } catch (recordError) { outcomes.push({browser: 'record', manifestPath: recordFile(cuaHome), state: 'unconfirmed', why: recordError.message}); }
-  const left = outcomes.filter(o => o.state === 'unconfirmed');
+  const left = outcomes.filter(o => o.state === 'unconfirmed' || o.state === 'cleanup');
   const superseded = outcomes.filter(o => o.state === 'superseded').map(o => o.browser);
   const note = superseded.length ? `; in ${superseded.join(', ')} another program's manifest now stands, so nothing of cua's remains there` : '';
   if (!left.length) {
@@ -306,9 +314,10 @@ function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}
     return error;
   }
   const base = error.message.replace(/ Nothing was changed\.$/, '');
-  const undone = outcomes.filter(o => o.state !== 'unconfirmed' && o.browser !== 'record').map(o => o.browser);
+  const undone = outcomes.filter(o => (o.state === 'restored' || o.state === 'superseded' || o.state === 'cleanup') && o.browser !== 'record').map(o => o.browser);
+  const unfinished = left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ');
   return new CuaError('registration_partial',
-    `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not undo ${left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ')}`,
+    `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not finish ${unfinished}`,
     {hint: [...left.filter(l => l.hint).map(l => l.hint), 'then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)'].join('; '), cause: error});
 }
 

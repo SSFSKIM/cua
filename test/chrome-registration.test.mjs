@@ -585,3 +585,29 @@ test('an undo that finds a foreign manifest in the slot leaves it standing; no c
     assert.deepEqual(hidden(m.manifests.chrome), [], step);
   }
 });
+
+test('a backup that cannot be removed after a confirmed undo does not stop the other undos, and is reported', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  const braveDesktop = desktopBytes(m.userHome);
+  mkdirSync(dirname(m.manifests.brave), {recursive: true});
+  writeFileSync(m.manifests.brave, braveDesktop);
+  mkdirSync(join(m.support, 'Vivaldi'), {recursive: true});
+  const vivaldi = join(m.support, 'Vivaldi', 'NativeMessagingHosts', 'com.openai.codexextension.json');
+  let error;
+  try {
+    // The backup directory turns unwritable as the undo starts (Brave first, newest first).
+    await register(m, {replace: true, onReplace: () => {}, io: failingIo({manifestPath: vivaldi, publish: true}),
+      onStep: (name, row) => { if (name === 'undo' && row.browser === 'brave') chmodSync(m.backups, 0o555); }}).catch(e => { error = e; });
+  } finally { chmodSync(m.backups, 0o700); }
+  assert.equal(error?.code, 'registration_partial');
+  assert.equal(readFileSync(m.manifests.brave, 'utf8'), braveDesktop, 'brave undone');
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original, 'chrome undone after brave\'s cleanup failed');
+  for (const browser of ['chrome', 'brave']) {
+    const backup = join(m.backups, `${browser}.json`);
+    assert.ok(error.message.includes(backup), error.message);
+    assert.ok(error.hint.includes(`rm "${backup}"`), error.hint);
+    assert.equal(record(m).browsers[browser].replaced, true, `${browser}: record entry kept with its leftover backup`);
+  }
+  assert.match(error.message, /EACCES/);
+  assert.equal(existsSync(vivaldi), false);
+});

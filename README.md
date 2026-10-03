@@ -3,8 +3,10 @@
 Lets Claude Code read and operate macOS apps (accessibility tree, screenshots, clicks, typing, menus) by hosting
 OpenAI's Codex computer-use stack. `cua serve` (the plugin runs it through `cua-shim.mjs`) is a stdio MCP server: it
 launches a pinned copy of OpenAI's `cua_repl` runtime that `cua install` verified and placed under `CUA_HOME`, not the
-copy inside an installed ChatGPT.app, and nothing in ChatGPT.app or `~/.codex` is read or modified. The design and its
-status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
+copy inside an installed ChatGPT.app, and nothing in ChatGPT.app or `~/.codex` is read or modified. With the browser
+surface turned on it also drives your existing Chrome profiles, signed-in sessions included, through OpenAI's own
+Chrome extension and native host (see Chrome). The design and its status are in
+`docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
 
 ## Requirements
 
@@ -19,8 +21,11 @@ status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
   `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
   runtime too and is reused as it is, never stopped or replaced.
 - For secrets only: Swift (Xcode or its command-line tools) to build the Keychain helper with `npm run build:helper`.
-  No account is needed: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read from
-  ChatGPT.app or `~/.codex`.
+  Native control needs no account: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read
+  from ChatGPT.app or `~/.codex`.
+- For Chrome only: Google Chrome with OpenAI's Chrome extension (`hehggadaopoacecdllhhajmbjkdcmajg`) installed and
+  enabled in each profile you want to use, and a Codex login of the server's own (`cua login`, once). cua never installs
+  the extension or signs anything in for you.
 
 Not yet shown, and release gates rather than defects: a first run on a clean Mac without ChatGPT installed, the pinned
 helper's own cold start and first-run permission prompts, and stable Developer ID signing of the Keychain helper (see
@@ -41,10 +46,9 @@ npm run build:helper && npm run test:helper    # only for secrets: build, then t
 switches between verified installed releases. A release that no longer verifies is reported with its offline
 recovery: stop the servers using it, remove its directory, install again.
 
-The Chrome route (in development, not yet served by `cua serve`) needs a Codex login of the server's own:
-`cua login` (at a terminal; `--device-auth` for the device-code flow) signs in with the bundled Codex CLI and keeps
-the login in `$CUA_HOME/state/codex`, never in or from your desktop `~/.codex`. `cua login --status` and the doctor's
-`codex.login` check report only whether it exists; neither reads or prints it. Native control does not need it.
+`cua install` also places the pinned archive's Chrome plugin (OpenAI's signed native host and its scripts) in the
+release, with the host's configuration beside it; it is used only if you register it (see Chrome). An installed
+release without it gains it on the next `cua install`, and nothing already installed changes.
 
 ### As a Claude Code plugin
 
@@ -153,8 +157,11 @@ To have the agent enter a stored secret, authorize it to use the label; it then 
 | `app.paste(text)` (text format) | `paste` | the whole `text` |
 | `app.typeText(text)` | `type_text` | the whole `text` |
 | `app.setValue(index, value)` | `set_value` | the whole `value` |
+| Chrome tab `tab.playwright.<locator>.fill(value)` | `playwright_locator_fill` | the whole `value` |
+| Chrome tab accessibility paste/type/set-value action | `tab_ax_action` | the whole `text` (paste, type_text) or `value` (set_value) |
 
-The substitution happens inside the runtime's trusted service process (`src/services/sky.mjs`), after the agent's
+The substitution happens inside the runtime's trusted service process (`src/services/sky.mjs`, and
+`src/services/browser.mjs` for Chrome), after the agent's
 code and the MCP call have passed: the value comes from the connection's broker and goes only to the native input
 command, never into the agent's code, the tool result or an error. Only an argument that is entirely one reference
 expands; text that merely contains `{{secret:…}}`, any other method or field, and JavaScript strings in general are
@@ -170,8 +177,10 @@ app's accessibility text or the app itself, and `paste` uses the system clipboar
 restores the previous contents; a clipboard manager may record it). `typeText` enters the value as keystrokes, so an
 ordinary text view's own substitutions (autocorrect, automatic capitalization, smart dashes) can change it, and even
 text typed before it, as they would for a person typing; password fields do not do this. Only authorize secrets for
-apps you would type them into yourself. Browser input (`playwright_locator_fill`, tab paste/type/set-value) has a planned mapping for the
-Chrome phase but is not implemented or available in this release.
+apps you would type them into yourself. In Chrome the same rules apply to the two browser rows above, only on
+OpenAI's pinned browser service version (`unsupported_browser_runtime` otherwise); script evaluation, CDP commands and
+every other browser command are never scanned. A failed `locator.fill` makes the vendor's client read back
+diagnostics of the matched elements (tag, role, type, label, text; not the input's value).
 
 The helper is used only from this checkout's build, `native/keychain/.build/release/cua-keychain`; nothing else (in
 particular not the generic `security` tool) is ever used in its place. A locally built helper is ad-hoc signed, and
@@ -181,6 +190,133 @@ them. Signing with a stable identity avoids that on one machine (`npm run build:
 reports the helper's build and signature as `secrets.helper` and `secrets.signing`: not built, ad-hoc or Apple
 Development is `blocked`, a stale protocol or broken signature `fail`, Developer ID `pass`.
 
+## Chrome (browser surface)
+
+With `CUA_SHIM_SURFACES=computer,browser` (or `browser` alone) in the server's environment, `cua serve` also hosts
+OpenAI's browser service. It reaches your running Chrome through OpenAI's Chrome extension and its native host, so the
+agent works in your real profiles: their cookies, signed-in sessions, settings and password manager stay where they
+are, and nothing is copied or migrated. The default (`computer`) is unchanged: no browser API, no browser environment.
+
+With the browser surface the model gets a fifth tool, `profiles_list`, OpenAI's browser API in the `js` description,
+and three host notes: pick a registered profile, use Playwright locators for input, give tab creation a long limit.
+
+### The server's Codex login
+
+OpenAI's browser service only serves an identified session, so the server needs a Codex login of its own, made once at
+a terminal:
+
+```sh
+node bin/cua.mjs login                 # opens the browser sign-in; --device-auth for the device-code flow
+node bin/cua.mjs login --status        # whether the server has a login (never shows it)
+```
+
+It runs the bundled Codex CLI with `CODEX_HOME=$CUA_HOME/state/codex`, so the login lives there, never in or from your
+desktop `~/.codex`. cua never reads, prints or copies the login file; `cua login --status` and the doctor's
+`codex.login` check report only whether it exists. Native control does not need it.
+
+### Profiles
+
+Register each Chrome profile you want the agent to use under a key of your choice. A key names an existing profile
+directory (`chrome://version` shows it as the last part of "Profile Path"); registering creates nothing in Chrome and
+`remove` deletes only cua's entry, never profile data.
+
+```sh
+node bin/cua.mjs profiles add personal --chrome-profile Default
+node bin/cua.mjs profiles add work --chrome-profile "Profile 8"
+node bin/cua.mjs profiles bind personal          # needs Chrome open on that profile with the extension enabled
+node bin/cua.mjs profiles list                   # --json for the structured list
+node bin/cua.mjs profiles remove work
+```
+
+The registry is `$CUA_HOME/profiles.json`. A profile is ready when its directory exists, the extension is installed
+there (file presence only) and it is bound; otherwise `list` says why: `profile_directory_missing`,
+`extension_not_installed` (install it in that profile yourself) or `not_bound`.
+
+`bind` records which live extension instance is this profile, because the browser service selects a browser by that
+id (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
+extension backends with their tab counts. It binds automatically only when OpenAI's browser service labels exactly one
+live backend with the profile's display name and no other profile has that name. In practice that label is usually
+absent (the vendor's lookup fails silently; it reads Chrome's `Local State` and copies the extension's settings store
+to a temporary directory to do so), so expect to pick: at a terminal `bind` shows the backends and asks which one is
+this profile; elsewhere it prints the listing and exits 1, and you pick with
+`cua profiles bind <key> --extension-instance-id <id>`. A pick is accepted only for a backend that is live now, and
+refused when the runtime labels that backend as another profile. A single live backend is never bound without the
+label; cua never chooses between profiles for you, and neither does the agent (its host notes say so).
+
+### Using it
+
+The agent calls `profiles_list` (keys, readiness, and the instance id of each ready profile), selects the profile you
+mean with `cua.getBrowser({extensionInstanceId})`, and opens its own tab with `cua.createBrowserTab(...)`. Three rules,
+also in the host notes:
+
+- Tabs the extension creates are DOM-only: fill and click with `tab.playwright` locators (for example
+  `tab.playwright.getByLabel("Email").fill(...)`, `tab.playwright.getByRole("button", {name: "Sign in"}).click()`).
+  Native `typeText`/`click` throw there.
+- `createBrowserTab` can take more than 30 s: give that `js` call `timeout_ms` of at least 60000.
+- A timed-out `createBrowserTab` can still have opened a tab. The agent should tell you rather than retry blindly;
+  close a leftover tab yourself.
+
+OpenAI's service asks you for access to each new website origin, as a dialog (an MCP elicitation), like an app
+approval. `end_task` completes the task as for native work; what the service then does with the tabs it opened is its
+own behaviour (by its source, it detaches from them) and has not been verified separately.
+
+### What the browser service does on the network and on disk
+
+This is OpenAI's own browser service, run as Codex runs it, and it behaves as it does there: with the browser surface
+it makes its identity and telemetry calls to OpenAI's endpoints, and identity initialization starts `codex app-server`
+inside the server's own `CODEX_HOME` (`$CUA_HOME/state/codex`), which writes its sqlite, skills and cache state there
+and contacts port-443 endpoints. cua does not switch any of this off (no ambient-network or security override) and
+claims no control over it. The browser surface is opt-in for that reason.
+
+### The native host: placement and registration
+
+The extension connects to one native-messaging name, `com.openai.codexextension`. Each browser holds one manifest for
+that name, naming one host executable. Where the ChatGPT desktop app is installed, its manifest is already there, and
+`cua serve` works with the desktop's host as it is: you need not register anything.
+
+To have Chrome launch cua's own placed host instead (for a machine without the desktop app, or to test it):
+
+```sh
+node bin/cua.mjs chrome register             # writes cua's manifest where none exists
+node bin/cua.mjs chrome register --replace   # replaces another host's manifest, after backing it up
+node bin/cua.mjs chrome unregister           # removes cua's manifests and restores what they replaced
+```
+
+- Coexistence rule: `register` writes only into empty slots or over a manifest that already names cua's host in this
+  `CUA_HOME`. If any browser holds a manifest cua did not write (the desktop's, another host's, or an unreadable one),
+  it refuses as a whole, names each browser with the class of host found there, and writes nothing anywhere. For the
+  desktop's it says the desktop's registration is in use and already works with `cua serve`.
+- `--replace` first copies each existing manifest byte-for-byte to `$CUA_HOME/chrome/manifest-backup/<browser>.json`
+  and records it, prints two consequences before the first replacement, then writes cua's. The consequences: while
+  cua's host is registered, the desktop's Codex side panel and app-server features in Chrome stop working (no desktop
+  registry entry names cua's host, and that registry gates the app-server; cua writes none); and the desktop app writes
+  its own manifest back when it next runs, which silently undoes cua's registration.
+- `unregister` removes only manifests that name cua's host. Where cua replaced one, it restores the backup and verifies
+  the restored bytes. With no backup, a backup that does not match, or a restore that does not verify, it reports
+  restoration BLOCKED (exit 1) with the exact command or step to fix it, and keeps the backup.
+- Writes never clobber a manifest another program writes at the same moment; a contended slot is reported, not
+  overwritten.
+- Browsers covered: Chrome, Edge, Brave, Opera and Vivaldi whose user-data directory exists. Chromium and Chrome for
+  Testing are left alone.
+- Chrome starts the host on the extension's next connection (disable and re-enable the extension, or reopen its side
+  panel). cua never launches, stops or signals a host or a browser.
+
+`cua doctor` reports the Chrome side passively, beside runtime health: `chrome.extension.<key>` (extension present per
+registered profile), `chrome.host.registered` (whether the manifest exists and whose host it names: `desktop`, `cua`
+or `other`), `chrome.hosts.live` (hosts running under Chrome), `chrome.host.config` (the placed host and its
+configuration) and `codex.login`.
+
+### Limitations
+
+- Desktop absence is not shown. Every live run so far had the ChatGPT desktop app installed, and the extension was
+  served by the desktop's registered host; cua's own host serving the extension needs `chrome register --replace` with
+  you present, and a machine without the desktop app is a separate release gate.
+- Only tabs the agent creates have been exercised. Operations on your existing tabs, downloads, file choosers,
+  dialogs, frames, saved-password autofill and Chrome tab-group side effects are untested.
+- The vendor's profile label is usually absent, so `bind` needs your explicit pick (above).
+- A profile without the extension stays not ready; cua never installs it.
+- The Playwright-extension route explored earlier is parked, not shipped.
+
 ## Verify and acceptance
 
 ```sh
@@ -188,11 +324,14 @@ npm test                  # Node only; no Swift, runtime, GUI or network
 npm run build:helper      # the Keychain helper
 npm run test:helper       # the actual helper: in-memory storage and pseudo-terminals, no Keychain access
 node verify.mjs           # the installed runtime in $CUA_HOME, through `cua serve`
+CUA_SHIM_SURFACES=computer,browser node verify.mjs   # the same with the browser surface (five tools)
 ```
 
-`verify.mjs` completes the MCP handshake, checks the tool surface, and runs trivial cells that bind no app (the first
-loads OpenAI's API, which contacts the native helper read-only) to check task identity and `end_task`. It reports which
-executables served and which helper answered. A non-zero exit names what failed.
+`verify.mjs` completes the MCP handshake, checks the tool surface for the configured surfaces, and runs trivial cells
+that bind no app (the first loads OpenAI's API document) to check task identity and `end_task`. It reports which
+executables served and which helper held the native socket; its cells do not open the native helper themselves (a
+native call such as `cua.getState()` does), and with the browser surface it reads `profiles_list` but opens no tab. A
+non-zero exit names what failed.
 
 The acceptance runner checks the whole native + secrets slice against an explicit scratch home and writes a report
 with PASS, FAIL or BLOCKED for each acceptance item of the spec (metadata only, never a secret value):
@@ -226,6 +365,31 @@ A macOS permission or Keychain prompt is never answered by these scripts: the st
 with the human action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned
 helper's own cold start, first-run permission prompts, Developer ID signing across an upgrade) are always reported
 BLOCKED here. `npm run test:keychain-live` is the narrower Keychain-only roundtrip from the helper's milestone.
+
+The Chrome acceptance (spec C1-C7) has its own runner, against `$CUA_HOME` (by default your real home: it needs the
+server's login and your registered profiles):
+
+```sh
+node scripts/accept-chrome.mjs --all --report /tmp/cua-accept-chrome-all.json
+node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accept-chrome.json
+node scripts/accept-chrome.mjs --all --c2-report /tmp/cua-accept-chrome.json --report /tmp/cua-accept-chrome-all.json
+```
+
+`--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface,
+the profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for
+`profiles_list` and the host notes, `cua doctor`, a no-op `cua install`, `cua chrome register` without `--replace`
+(which must refuse) and `cua chrome unregister` (which must change nothing; both are skipped while cua's own host is
+registered), and a clean clone running the suites and `npm pack --dry-run`. The live parts enter only as reports:
+`--c2-report` takes a `--live` run's report, and `--c6-report` the record of the `--replace` gate run with you (its
+shape and steps are in `scripts/accept/chrome-all-lib.mjs` and `docs/evidence/m12-host-placement.md`). Without them
+those parts are BLOCKED with the exact steps, never passed.
+
+`--live` is the browser secret round trip: through `cua serve` it selects the registered profile by its instance id,
+creates one tab, opens the runner's own loopback page, fills its password field with `{{secret:<label>}}` for a
+disposable generated Keychain item (removed at the end), and compares the page's own digest of what it received with
+the generated value's. It accepts only the access request for that page's exact origin, for the session; it closes the
+tab it created and reports any it could not close, and it scans the MCP traffic, stderr, the screenshot and
+`$CUA_HOME/state` for the value.
 
 ## Configuration (environment of the server)
 

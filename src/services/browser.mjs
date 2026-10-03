@@ -14,7 +14,9 @@
 //   {type:"tab_ax_action", browser_id, tab_id, action:{kind:"type_text", element_index, text}}      action.text
 //   {type:"tab_ax_action", browser_id, tab_id, action:{kind:"set_value", element_index, value}}     action.value
 // with string ids/selector/text, a boolean replace, a positive integer timeout_ms, element_index a non-negative
-// integer (or null for paste/type_text), and paste only in text format. Everything else is delegated untouched:
+// integer (or null for paste/type_text), and paste only in text format. Every command may also carry
+// client_timeout_ms (a positive integer, or absent/undefined): the vendor client's transport adds it to each command
+// it sends (FunctionAgentTransport.send in browser-client.mjs). Everything else is delegated untouched:
 // other commands and fields, values that merely contain a marker, and playwright_evaluate/CDP/script strings, which
 // are never scanned. The stored value is read from this connection's private broker and placed in a copy of the
 // request handed to the vendor.
@@ -40,17 +42,18 @@ const VENDOR_PACKAGE = '@oai/browser-desktop';
 const isString = value => typeof value === 'string';
 const isIndex = value => Number.isInteger(value) && value >= 0;
 const isNullableIndex = value => value === null || isIndex(value);
+const isPositiveInt = value => Number.isInteger(value) && value > 0;
 const SERVICE_METHODS = ['execute', 'executeWithRecovery'];
 const REQUEST_KEYS = ['method', 'params'];
 
 const FILL = {
   fields: {
     type: isString, browser_id: isString, tab_id: isString, selector: isString, value: isString,
-    replace: value => typeof value === 'boolean', timeout_ms: value => Number.isInteger(value) && value > 0,
+    replace: value => typeof value === 'boolean', timeout_ms: isPositiveInt, client_timeout_ms: isPositiveInt,
   },
-  optional: ['timeout_ms'],
+  optional: ['timeout_ms', 'client_timeout_ms'],
 };
-const AX_COMMAND = {fields: {type: isString, browser_id: isString, tab_id: isString, action: isPlainObject}};
+const AX_COMMAND = {fields: {type: isString, browser_id: isString, tab_id: isString, action: isPlainObject, client_timeout_ms: isPositiveInt}, optional: ['client_timeout_ms']};
 const AX_ACTIONS = {
   paste: {field: 'text', fields: {kind: isString, element_index: isNullableIndex, text: isString, format: value => value === 'text'}, optional: ['format']},
   type_text: {field: 'text', fields: {kind: isString, element_index: isNullableIndex, text: isString}},
@@ -99,7 +102,7 @@ function checkShape(plan) {
   const outer = typeof request.method === 'string' && Object.keys(request).every(key => REQUEST_KEYS.includes(key));
   const pinned = plan.what === 'fill'
     ? outer && matchesShape(request.params, FILL.fields, FILL.optional)
-    : outer && matchesShape(request.params, AX_COMMAND.fields) && matchesShape(request.params.action, plan.rule.fields, plan.rule.optional);
+    : outer && matchesShape(request.params, AX_COMMAND.fields, AX_COMMAND.optional) && matchesShape(request.params.action, plan.rule.fields, plan.rule.optional);
   if (pinned) return;
   const where = plan.what === 'fill'
     ? 'the whole value of a Playwright locator fill (browser_id, tab_id, selector, value, replace, timeout_ms)'

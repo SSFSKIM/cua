@@ -244,3 +244,22 @@ test('the vendor service loads once, and a load failure on a substituted call is
   const broken = createBrowserService({loadVendor: async () => { throw new Error('cannot import'); }, vendorVersion: async () => PINNED_VENDOR_VERSION, secrets: {read: async () => VALUES['work-password']}});
   assertValueFree(await rejection(broken.handleRpc(fill(REF('work-password')))));
 });
+
+// The vendor client's transport (FunctionAgentTransport.send in browser-client.mjs) adds client_timeout_ms to every
+// command: the locator's timeoutMs when positive, else undefined. Observed live in M11's C2 run as a refused fill.
+test('the transport field client_timeout_ms the vendor client adds to every command is part of the pinned shapes', async () => {
+  const {service, received} = harness();
+  await service.handleRpc(fill(REF('work-password'), {client_timeout_ms: 10000}));
+  assert.equal(received.at(-1).params.value, VALUES['work-password']);
+  assert.equal(received.at(-1).params.client_timeout_ms, 10000);
+  await service.handleRpc(fill(REF('work-password'), {client_timeout_ms: undefined}));
+  assert.equal(received.at(-1).params.value, VALUES['work-password']);
+  await service.handleRpc({method: 'executeWithRecovery', params: {...axType(REF('other.label')).params, client_timeout_ms: 5000}});
+  assert.equal(received.at(-1).params.action.text, VALUES['other.label']);
+  for (const bad of [0, -1, 1.5, '10000', null]) {
+    const h = harness();
+    const error = await rejection(h.service.handleRpc(fill(REF('work-password'), {client_timeout_ms: bad})));
+    assert.equal(error.code, 'unsupported_secret_shape', String(bad));
+    assert.deepEqual(h.reads, []);
+  }
+});

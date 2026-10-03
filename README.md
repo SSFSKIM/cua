@@ -41,6 +41,11 @@ npm run build:helper && npm run test:helper    # only for secrets: build, then t
 switches between verified installed releases. A release that no longer verifies is reported with its offline
 recovery: stop the servers using it, remove its directory, install again.
 
+The Chrome route (in development, not yet served by `cua serve`) needs a Codex login of the server's own:
+`cua login` (at a terminal; `--device-auth` for the device-code flow) signs in with the bundled Codex CLI and keeps
+the login in `$CUA_HOME/state/codex`, never in or from your desktop `~/.codex`. `cua login --status` and the doctor's
+`codex.login` check report only whether it exists; neither reads or prints it. Native control does not need it.
+
 ### As a Claude Code plugin
 
 ```sh

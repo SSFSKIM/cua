@@ -75,3 +75,19 @@ test('judgeLive: unconfirmed teardown or a stopped host fails teardown', () => {
   o.teardown = {confirmed: true, leftovers: 0, hostsStillRunning: false};
   assert.equal(status(judgeLive(o), 'owned-teardown'), 'FAIL');
 });
+
+test('judgeLive with tabs: no login blocks everything before launch; with a login the tab verdicts replace the M9 read-only ones', () => {
+  const o = {...base(), withTabs: true};
+  o.prerequisites = {...o.prerequisites, login: 'not-logged-in'};
+  const blocked = judgeLive(o);
+  assert.equal(status(blocked, 'live-prerequisites'), 'BLOCKED');
+  assert.equal(status(blocked, 'owned-page-round-trip'), 'BLOCKED');
+  o.prerequisites.login = 'logged-in';
+  o.listTabs = [{class: 'ok', tabCount: 3}, {class: 'ok', tabCount: 3}];
+  o.tabs = {target: {index: null, reason: 'x'}, created: false};
+  const s = judgeLive(o);
+  assert.equal(status(s, 'live-prerequisites'), 'PASS');
+  assert.equal(s.find(x => x.id === 'read-only-cells'), undefined);
+  assert.equal(status(s, 'target-browser'), 'BLOCKED');
+  assert.equal(status(s, 'owned-teardown'), 'PASS');
+});

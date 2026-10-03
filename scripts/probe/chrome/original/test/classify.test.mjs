@@ -31,3 +31,14 @@ test('classifyError recognises policy and transport classes', () => {
 test('sanitizeVendorText removes bare host names but keeps config file names', () => {
   assert.equal(sanitizeVendorText('Allow Browser use to access mail.example.co.uk? See config.toml and auth.json'), 'Allow Browser use to access <host>? See config.toml and auth.json');
 });
+
+test('reportLeaks finds forbidden values, URLs, absolute paths and token-like runs, and passes clean metadata', async () => {
+  const {reportLeaks} = await import('../classify.mjs');
+  assert.deepEqual(reportLeaks(JSON.stringify({sha256: 'a'.repeat(64), text: '<url> refused', count: 3, probe: 'scripts/probe-chrome-original.mjs'}), []), []);
+  assert.ok(reportLeaks('{"x":"see http://127.0.0.1:5555/"}', []).some(f => /URL/.test(f)));
+  assert.ok(reportLeaks('{"x":"/Users/someone/Library/x"}', []).some(f => /path/.test(f)));
+  assert.ok(reportLeaks('{"x":"/tmp/codex-browser-use/a.sock"}', []).some(f => /path/.test(f)));
+  assert.ok(reportLeaks('{"x":"tok sk0123456789abcdefghijklmnopqrstuvwxyzABCD"}', []).some(f => /token/.test(f)));
+  assert.ok(reportLeaks('{"x":"SECRET-TITLE"}', ['SECRET-TITLE']).some(f => /forbidden/.test(f)));
+  assert.equal(reportLeaks('{"x":"SECRET"}', ['SECRET'])[0].includes('SECRET'), false, 'findings never repeat the value');
+});

@@ -82,3 +82,29 @@ The `ps` line identifies which host served.
 PASS needs all of the following: the backend listed through `cua serve` comes from a host process whose path is
 cua's, the round trip passes, and `unregister` reports `restored` for every browser. Otherwise C6's live part stays
 BLOCKED or FAIL with the observed step.
+
+## The `--replace` live gate, run with the user's GO (2026-10-03)
+
+The parent session relayed the user's GO for the gate. The steps below follow the list above. Nothing was killed or relaunched, and nothing touched `chrome-native-hosts-v2.json`.
+
+### Before step 1
+
+- All 8 desktop manifests: sha256 `58b892526102a537b43ee632a60f03aa47e1f456b5223f8c564a50a8eb5704b6` (386 bytes), mtime 1786643409. Inodes: Chrome 4527928, Chromium 4527932, ChromeForTesting 4527930, Chrome for Testing 4527934, Edge 4527936, Brave 4527931, Opera 4527937, Vivaldi 4527933. These are the same values as the M12 baseline above.
+- Running hosts: two, both `~/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/macos/arm64/ChatGPT for Chrome`, with parent pid 69284 (Google Chrome), pids 79991 (started 16:23:52) and 85652 (16:24:39).
+- Doctor: `chrome.host.config`, `chrome.host.registered` (desktop), `chrome.hosts.live` and `codex.login` all pass.
+
+### Step 1: `chrome register --replace`: PASS (exit 0)
+
+- Both consequences were printed to stderr before anything was written: the side-panel/app-server loss (no v2 entry names cua's host), and the desktop re-sync with `unregister` as the way back.
+- All five browsers were `replaced`: chrome, edge, brave, opera, vivaldi.
+- `~/Library/Application Support/cua/chrome/manifest-backup/{chrome,edge,brave,opera,vivaldi}.json` (0600, directory 0700) each have sha256 `58b89252…04b6`, byte-identical to the desktop manifest.
+- `registration.json` (0600) holds `replaced: true` with `backupSha256 58b89252…04b6` for each of the five.
+- The five manifests now have sha256 `86c8cf8f9dc27b6c…` and name `~/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome`. Each has a new inode (atomic publish) and mtime 1791072070.
+- The Chromium and both Chrome for Testing manifests are unchanged (same hash, mtime and inode). They are not in cua's browser set.
+- No hidden temp or `.taken` files are left in the NativeMessagingHosts directories.
+
+### Step 2: `doctor --json`: PASS (exit 0, `ok:true`)
+
+- `chrome.host.registered: pass`, now naming cua's host (class `cua`).
+- `chrome.host.config: pass`, `codex.login: pass`, `chrome.extension.personal: pass`.
+- `chrome.hosts.live: 2`. Those are still the two desktop hosts (pids 79991 and 85652, unchanged): the browser starts cua's host only on the extension's next connection.

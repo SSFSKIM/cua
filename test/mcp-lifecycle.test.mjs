@@ -329,3 +329,14 @@ test('losing the client output transport alone closes the connection like EOF', 
   assert.equal(closed.completion, 'ended');
   assert.equal(h.upstream.terminations.length, 1);
 });
+
+test('an error on the client input stream closes the connection like EOF and tears down its runtime', async () => {
+  const h = harness();
+  await initialized(h);
+  assert.doesNotThrow(() => h.input.emit('error', Object.assign(new Error('read EIO'), {code: 'EIO'})));
+  assert.equal(h.server.state, 'closing');
+  const closed = await h.server.closed;
+  assert.equal(closed.reason, 'eof');
+  assert.equal(closed.code, 0);
+  assert.equal(h.upstream.terminations.length, 1);
+});

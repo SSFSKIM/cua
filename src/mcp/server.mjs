@@ -222,6 +222,9 @@ export function createServer({
     upstream.send(msg);
   }
 
+  // readline re-emits an input error on its interface, where an unhandled one would throw out of the stream before
+  // the input's own listener runs; both lead to the same close.
+  const inputFailed = () => close('eof');
   createInterface({input}).on('line', line => {
     if (!line.trim()) return;
     let msg;
@@ -230,9 +233,9 @@ export function createServer({
     if (msg.method !== undefined && msg.id !== undefined) onRequest(msg);
     else if (msg.method !== undefined) onNotification(msg);
     else if (msg.id !== undefined) onClientResponse(msg);
-  });
+  }).on('error', inputFailed);
   input.on('end', () => close('eof'));
-  input.on('error', () => close('eof'));
+  input.on('error', inputFailed);
 
   upstream.onMessage(msg => {
     if (msg.method !== undefined) {

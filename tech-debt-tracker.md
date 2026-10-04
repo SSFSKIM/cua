@@ -37,6 +37,16 @@
   logic of `scripts/accept-native.mjs` (`helperSuite`, `run`) rather than sharing it, to leave the M6 runner untouched
   during M13. Move both into `scripts/accept/lib.mjs` and have both runners import them at the next edit of either.
 
+- **2026-10-04 — `accept-chrome --all` cannot bind a supplied live report to a commit (minor, M13).** The `--live`
+  report records its time but no commit or runtime-tree identity, and the `--c6-report` is assembled by hand, so
+  `--all` records each supplied file's length and sha256 and trusts its contents. Have `--live` record `git rev-parse
+  HEAD` and the release, and have `--all` report (or refuse) a report from another commit.
+
+- **2026-10-04 — `verify.mjs`'s leftover check sees other connections in the same home (minor, M13).** It compares
+  `$CUA_HOME/run/` before and after its own connection, so a concurrent `cua serve` in that home (another client, or a
+  live acceptance run) appears as a leftover and fails verify, and with it `accept-chrome --all` C1. Compare against
+  the connection's own session id instead.
+
 ## Resolved
 
 - **2026-10-03 — The bind listing called a backend "other-profile" when the comparison was unknown (minor, M11

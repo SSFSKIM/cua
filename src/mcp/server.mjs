@@ -18,8 +18,9 @@
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - Image MIME types are corrected; accepted app approvals get `_meta.persist`.
 // On EOF or a signal the connection becomes terminal (Closing), makes a bounded best-effort completion, then tears
-// down the owned runtime and the secrets broker, concurrently and within the teardown budget, before the MCP stream
-// closes. A failure (completion uncertainty, runtime exit) does the same without the completion attempt.
+// down the owned runtime and the secrets broker, concurrently and within the teardown budget, and writes any local
+// reply still being computed (a profiles_list listing) before the MCP stream's final bounded flush. A failure
+// (completion uncertainty, runtime exit) does the same without the completion attempt.
 import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
@@ -67,6 +68,7 @@ export function createServer({
   const upstreamIdOf = new Map();      // client ID key -> upstream ID, for cancellation
   const queuedWork = new Map();        // client ID key -> lifecycle ticket, for withdrawing queued work
   const elicitations = new Set();      // runtime request ID keys awaiting the client's answer
+  const localReplies = new Set();      // local tool replies still being computed (profiles_list may take a launch)
 
   // The client transport. Losing it closes the connection like EOF; callers are still settled internally, just not
   // answered.
@@ -198,7 +200,9 @@ export function createServer({
       const browserOnly = name === 'profiles_list' && !surfaces.includes('browser');
       if (!LOCAL_TOOLS.has(name) || browserOnly) return respondError(msg.id, -32602, `Unknown tool: ${name}`);
       if (terminal()) return respond(msg.id, rejectionResult({code: lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing', message: 'this connection accepts no more work'}));
-      return name === 'profiles_list' ? profilesList(msg) : secretsList(msg);
+      const reply = name === 'profiles_list' ? profilesList(msg) : secretsList(msg);
+      localReplies.add(reply);
+      return reply.finally(() => localReplies.delete(reply));
     }
     if (terminal()) return respondError(msg.id, -32000, `cua: ${lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing'}: this connection accepts no more requests`);
     if (msg.method === 'initialize') {
@@ -290,6 +294,10 @@ export function createServer({
       else if (teardown.steps.length > 1) diagnostics(`runtime teardown needed ${teardown.steps.slice(1).join(' then ')}; every owned process is gone`);
       if (!secretsTeardown.confirmed) diagnostics(`secrets broker teardown unconfirmed after ${secretsTeardown.steps.join(', ')}: ${secretsTeardown.reason ?? 'no reason given'}`);
       if (completion !== 'none' && completion !== 'ended' && !failed) diagnostics(`task completion at close: ${completion}; native cleanup unconfirmed`);
+      // A local reply still being computed is written before the final flush, so the flush's bound covers it too; after
+      // it, nothing would drop it from a stream the client stopped reading. A readiness listing is bounded and always
+      // tears its own runtime down.
+      await Promise.allSettled([...localReplies]);
       await flush();
       input.destroy?.();
       const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && secretsTeardown.confirmed && (completion === 'none' || completion === 'ended');
@@ -330,10 +338,11 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including the
 // session's app-approval file the runtime wrote). With the browser surface, profiles_list reads $CUA_HOME's profile
 // registry and, when a profile is bound, checks it against the live backends with one bounded listing launch
-// (inventory.mjs, no tab counts); serve waits for such a listing before returning, keeping its signal handlers, and
-// exits 1 when a listing's runtime could not be confirmed stopped. Returns the exit code. `keychainHelper` is the
-// located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the opt-in live probes
-// (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not reachable from the CLI.
+// (inventory.mjs, no tab counts); the connection's close waits for such a listing (so serve keeps its signal handlers
+// meanwhile), and serve exits 1 when a listing's runtime could not be confirmed stopped. Returns the exit code.
+// `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the
+// opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not
+// reachable from the CLI.
 // `chrome` (the Chrome facts) and `listBackends` (the readiness listing) exist for tests only.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper({home}),
   prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome = chromeFacts(),
@@ -360,28 +369,20 @@ export async function serve({home, env = process.env, input = process.stdin, out
     throw error;
   }
   const onSignal = () => server.close('signal');
-  const listings = new Set();
   let listingLeftover = false;
   let server;
   let code;
   try {
     const profiles = {list: async () => {
-      const pending = profileReadiness({home, chrome, listBackends});
-      listings.add(pending);
-      try {
-        const {profiles: list, listingError} = await pending;
-        if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
-        if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
-        return list;
-      } finally { listings.delete(pending); }
+      const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
+      if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
+      if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
+      return list;
     }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics, ...settings});
     for (const signal of SIGNALS) process.on(signal, onSignal);
     code = (await server.closed).code;
   } finally {
-    // A readiness listing still running owns a runtime of its own; it is bounded and always tears it down, and a
-    // signal meanwhile must not cut that short.
-    await Promise.allSettled([...listings]);
     for (const signal of SIGNALS) process.off(signal, onSignal);
     await secrets.close();
     rmSync(launch.cwd, {recursive: true, force: true});

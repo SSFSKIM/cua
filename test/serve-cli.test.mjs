@@ -10,6 +10,7 @@ import {pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
+import {once} from 'node:events';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
@@ -380,18 +381,20 @@ test('serve without a built helper still serves, and secrets_list says how to bu
 });
 
 // In process: a fake installed home with a bound personal profile whose Default extension manifest exists (a scratch
-// Chrome user-data directory), served with the browser surface and an injected readiness listing.
-function boundBrowserServe(t, listBackends) {
+// Chrome user-data directory), served with the browser surface and an injected readiness listing. The input never
+// destroys itself, so its 'close' marks the server's own close, right after its final flush. `highWaterMark` sizes the
+// MCP stream's buffers: at 1, once the client pauses `lines`, every later write stays pending, as on a full pipe.
+function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
   const home = fakeInstalledHome(t, {short: true});
   const userData = join(home, 'user', 'Library', 'Application Support', 'Google', 'Chrome');
   const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
-  const input = new PassThrough();
-  const output = new PassThrough();
+  const input = new PassThrough({autoDestroy: false});
+  const output = new PassThrough(highWaterMark === undefined ? {} : {highWaterMark});
   const frames = [];
-  createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+  const lines = createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
   const diagnostics = [];
   const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'browser'}, input, output,
     chrome: chromeFacts({userData}), listBackends, diagnostics: line => diagnostics.push(line)});
@@ -399,7 +402,7 @@ function boundBrowserServe(t, listBackends) {
   const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
   send({id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}});
-  return {input, send, reply, served, diagnostics};
+  return {input, output, lines, send, reply, served, diagnostics};
 }
 
 test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported}, async t => {
@@ -432,6 +435,29 @@ test('serve waits for a readiness listing still running at close, keeping its si
   assert.equal(settled, false, 'serve does not return while the listing runs');
   assert.ok(process.listeners('SIGTERM').includes(own[0]), 'serve\'s SIGTERM handler is still installed while it waits');
   release();
+  assert.deepEqual((await reply(2)).result.structuredContent, {status: 'ok', profiles: [{key: 'personal', ready: true, extensionInstanceId: 'inst-a'}]}, 'a reading client still gets the reply');
   assert.equal(await served, 0);
   assert.ok(!process.listeners('SIGTERM').includes(own[0]), 'the handler goes once the listing settled');
+});
+
+test('a readiness listing that settles during close is answered before the final bounded flush, which drops the reply with the stream when the client stopped reading', {skip: !supported}, async t => {
+  let started;
+  const begun = new Promise(resolve => { started = resolve; });
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const {input, output, lines, send, reply, served, diagnostics} = boundBrowserServe(t, async () => { started(); await held; return {backends: [{instanceId: 'inst-a'}], teardown: {confirmed: true, steps: ['eof']}}; }, {highWaterMark: 1});
+  await reply(1);
+  lines.pause(); // the client stops reading
+  send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
+  await begun;
+  input.end();
+  // The listing settles once the server has finished closing, or after 1 s while the server waits for it. A reply
+  // written after the final flush would stay pending on the unread stream with nothing left to drop it.
+  await Promise.race([once(input, 'close'), new Promise(r => setTimeout(r, 1000))]);
+  const releasedAt = Date.now();
+  release();
+  assert.equal(await served, 0);
+  assert.ok(Date.now() - releasedAt < 3000, 'serve returns within the 1 s flush bound once the listing settled');
+  assert.ok(output.destroyed, 'the unread reply went with the stream at the flush bound instead of staying pending');
+  assert.ok(diagnostics.some(l => /did not read the final replies within 1 s/.test(l)), diagnostics.join('\n'));
 });

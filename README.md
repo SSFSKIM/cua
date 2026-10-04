@@ -247,7 +247,9 @@ there (file presence only) and it is bound; otherwise `list` says why: `profile_
 
 `bind` records which live extension instance is this profile, because the browser service selects a browser by that
 id (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
-extension backends with their tab counts. It binds automatically only when OpenAI's browser service labels exactly one
+extension backends with their tab counts. Only Google Chrome's backends are candidates: another browser's (Edge with
+the OpenAI extension, say, or a backend that reports no browser family) is never offered or bound, and the listing
+says only how many it left out. It binds automatically only when OpenAI's browser service labels exactly one
 live backend with the profile's display name and no other profile has that name. In practice that label is usually
 absent (the vendor's lookup fails silently; it reads Chrome's `Local State` and copies the extension's settings store
 to a temporary directory to do so), so expect to pick: at a terminal `bind` shows the backends and asks which one is

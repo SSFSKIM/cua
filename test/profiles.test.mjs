@@ -155,14 +155,16 @@ test('live hosts are the OpenAI host processes whose parent is the user\'s Chrom
 // ---- the bind rule -------------------------------------------------------------------------------------------
 
 const NAMES = new Map([['Default', 'Personal'], ['Profile 8', 'Work'], ['Profile 6', 'School']]);
+// Live Google Chrome extension backends (the only bind candidates).
+const chrome = (...backends) => backends.map(b => ({family: 'chrome', ...b}));
 
 test('automatic bind: a unique display name and exactly one live backend carrying it', () => {
-  const backends = [{instanceId: 'a', profileName: 'Personal'}, {instanceId: 'b', profileName: 'Work'}];
+  const backends = chrome({instanceId: 'a', profileName: 'Personal'}, {instanceId: 'b', profileName: 'Work'});
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends}), {outcome: 'bound', how: 'automatic', instanceId: 'a'});
 });
 
 test('automatic bind is undetermined, never a guess, when labels are missing, ambiguous or absent', () => {
-  const undetermined = (backends, names = NAMES, directory = 'Default') => decideBinding({directory, displayNames: names, backends});
+  const undetermined = (backends, names = NAMES, directory = 'Default') => decideBinding({directory, displayNames: names, backends: chrome(...backends)});
   assert.deepEqual(undetermined([]), {outcome: 'undetermined', reason: 'no_live_backends'});
   assert.deepEqual(undetermined([{instanceId: 'a'}]), {outcome: 'undetermined', reason: 'unlabelled'}, 'a singleton unlabelled backend is never bound');
   assert.deepEqual(undetermined([{instanceId: 'a'}, {instanceId: 'b'}]), {outcome: 'undetermined', reason: 'unlabelled'});
@@ -174,7 +176,7 @@ test('automatic bind is undetermined, never a guess, when labels are missing, am
 });
 
 test('an explicit pick is accepted only for a live backend, and never against the runtime\'s own label', () => {
-  const backends = [{instanceId: 'a'}, {instanceId: 'b', profileName: 'Work'}, {instanceId: 'c', profileName: 'Personal'}];
+  const backends = chrome({instanceId: 'a'}, {instanceId: 'b', profileName: 'Work'}, {instanceId: 'c', profileName: 'Personal'});
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends, explicitId: 'c'}), {outcome: 'bound', how: 'explicit', instanceId: 'c'});
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: backends.slice(0, 2), explicitId: 'a'}), {outcome: 'bound', how: 'explicit', instanceId: 'a'});
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends, explicitId: 'zzz'}), {outcome: 'refused', reason: 'not_live'});
@@ -182,8 +184,23 @@ test('an explicit pick is accepted only for a live backend, and never against th
 });
 
 test('without a known display name for the profile, a labelled live backend can still be picked explicitly', () => {
-  const backends = [{instanceId: 'a', profileName: 'Personal'}, {instanceId: 'b', profileName: 'Work'}];
+  const backends = chrome({instanceId: 'a', profileName: 'Personal'}, {instanceId: 'b', profileName: 'Work'});
   for (const displayNames of [new Map(), new Map([['Profile 8', 'Work']])])
     assert.deepEqual(decideBinding({directory: 'Default', displayNames, backends, explicitId: 'b'}), {outcome: 'bound', how: 'explicit', instanceId: 'b'});
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: new Map(), backends, explicitId: 'zzz'}), {outcome: 'refused', reason: 'not_live'});
+});
+
+// Review fix: an Edge backend labelled "Personal" (from Edge's own profiles) was bound to Chrome's uniquely named
+// "Personal" profile. Only Google Chrome's backends are candidates; a backend without a family is not Chrome's.
+test('only Google Chrome backends are bind candidates: another browser\'s or a family-less backend is never bound', () => {
+  const edge = {instanceId: 'e', family: 'edge', profileName: 'Personal'};
+  const unknown = {instanceId: 'u', profileName: 'Personal'};
+  for (const backends of [[edge], [unknown], [edge, unknown]])
+    assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends}), {outcome: 'undetermined', reason: 'no_live_backends'}, JSON.stringify(backends));
+  const mixed = [edge, ...chrome({instanceId: 'c'})];
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: mixed}), {outcome: 'undetermined', reason: 'unlabelled'}, 'the matching Edge label does not count');
+  const both = [edge, ...chrome({instanceId: 'c', profileName: 'Personal'})];
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: both}), {outcome: 'bound', how: 'automatic', instanceId: 'c'}, 'not several_matching_backends: Edge is no candidate');
+  for (const explicitId of ['e', 'u'])
+    assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: [edge, unknown, ...chrome({instanceId: 'c'})], explicitId}), {outcome: 'refused', reason: 'not_live'}, explicitId);
 });

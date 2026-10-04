@@ -179,9 +179,10 @@ const done = value => { print(value); return 0; };
 const LABELS = {'this-profile': 'labelled as this profile', 'other-profile': 'labelled as another profile', unlabelled: 'unlabelled',
   'comparison-unknown': 'labelled, but this profile\'s own name is unknown, so whether it is this profile cannot be told'};
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${LABELS[b.label]}`;
+const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
 
-async function pickBackend(list, reason) {
-  process.stderr.write(`which live backend is this profile could not be determined: ${UNDETERMINED[reason]}\n${list.map(describeBackend).join('\n')}\n`);
+async function pickBackend(list, reason, nonChromeExcluded) {
+  process.stderr.write(`which live backend is this profile could not be determined: ${UNDETERMINED[reason]}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
   const {createInterface} = await import('node:readline/promises');
   const rl = createInterface({input: process.stdin, output: process.stderr});
   try {
@@ -236,7 +237,7 @@ async function profiles(args) {
     print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (${result.how === 'automatic' ? 'the runtime labelled exactly one live backend with this profile\'s unique name' : 'your explicit pick'})`);
     return 0;
   }
-  print(`${result.key} was not bound: ${UNDETERMINED[result.reason]}`);
+  print(`${result.key} was not bound: ${UNDETERMINED[result.reason]}${describeExcluded(result.nonChromeExcluded)}`);
   if (result.backends.length) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}\nrerun with the instance of this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
   return 1;
 }

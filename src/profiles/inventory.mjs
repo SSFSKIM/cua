@@ -1,10 +1,13 @@
 // The live extension backends, as the vendor browser service sees them, for `cua profiles bind`: one bounded,
 // serve-less launch of the installed runtime with the browser surface only (the same launch `cua serve` makes, with
-// secrets off), one MCP handshake and one read-only cell — cua.listBrowsers, then cua.listTabs per extension backend
+// secrets off), one MCP handshake and one read-only cell — cua.listBrowsers, then cua.listTabs per Chrome backend
 // for a tab count — then teardown through the owned anchor. Every elicitation is declined. The cell reduces the
-// inventory inside the REPL: only each extension backend's instance id, the vendor's profile label and a tab count
-// leave it; tab titles and URLs never do. The label is the Chrome profile display name the vendor's own enrichment
-// attached (browser-service.mjs `aL`); callers use it for the bind rule and never print or store it.
+// inventory inside the REPL: only each extension backend's browser family and, for Google Chrome's (family "chrome"),
+// its instance id, the vendor's profile label and a tab count leave it; tab titles and URLs never do. Another
+// browser's extension backend (Edge, say; the vendor's chrome backend setting selects by type, not family) leaves only
+// its family and is never asked for tabs, and a backend that reports no family is not Chrome's. The label is the
+// profile display name the vendor's own enrichment attached (browser-service.mjs `aL`, read from that browser's own
+// Local State); callers use it for the bind rule and never print or store it.
 import {randomUUID} from 'node:crypto';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
@@ -23,7 +26,8 @@ try {
   __out.backends = [];
   for (const b of list) {
     if (b?.type !== "extension") continue;
-    const entry = {instanceId: typeof b.metadata?.extensionInstanceId === "string" ? b.metadata.extensionInstanceId : null, profileName: typeof b.profileName === "string" && b.profileName ? b.profileName : null, tabCount: null};
+    if (b.family !== "chrome") { __out.backends.push({family: typeof b.family === "string" ? (/^[a-z]{1,20}$/.test(b.family) ? b.family : "other") : null}); continue; }
+    const entry = {instanceId: typeof b.metadata?.extensionInstanceId === "string" ? b.metadata.extensionInstanceId : null, family: "chrome", profileName: typeof b.profileName === "string" && b.profileName ? b.profileName : null, tabCount: null};
     try { const tabs = await cua.listTabs({browser: b.id, emit: false}); entry.tabCount = Array.isArray(tabs) ? tabs.length : null; } catch {}
     __out.backends.push(entry);
   }
@@ -45,9 +49,11 @@ function parseBackends(result) {
   let payload;
   try { payload = JSON.parse(line.slice(MARKER.length + 1)); } catch { listingFailed('unreadable listing'); }
   if (payload?.error || !Array.isArray(payload?.backends)) listingFailed('the vendor listing failed');
+  // A non-Chrome backend keeps only its family, whatever else the payload carries.
   return payload.backends.map(b => {
-    if (typeof b?.instanceId !== 'string' || !INSTANCE_ID.test(b.instanceId)) listingFailed('a backend without a usable extension instance id');
-    return {instanceId: b.instanceId, ...(typeof b.profileName === 'string' ? {profileName: b.profileName} : {}), ...(Number.isInteger(b.tabCount) ? {tabCount: b.tabCount} : {})};
+    if (b?.family !== 'chrome') return typeof b?.family === 'string' ? {family: b.family} : {};
+    if (typeof b.instanceId !== 'string' || !INSTANCE_ID.test(b.instanceId)) listingFailed('a Chrome backend without a usable extension instance id');
+    return {instanceId: b.instanceId, family: 'chrome', ...(typeof b.profileName === 'string' ? {profileName: b.profileName} : {}), ...(Number.isInteger(b.tabCount) ? {tabCount: b.tabCount} : {})};
   });
 }
 

@@ -31,7 +31,8 @@ function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Pro
   return {home, userHome, userData, chrome: chromeFacts({userData})};
 }
 
-const listing = backends => async () => ({backends, elicitationsDeclined: 0, teardown: {confirmed: true, steps: ['eof']}});
+// The live listing; a backend without its own `family` key is a Google Chrome one.
+const listing = backends => async () => ({backends: backends.map(b => 'family' in b ? b : {family: 'chrome', ...b}), elicitationsDeclined: 0, teardown: {confirmed: true, steps: ['eof']}});
 
 test('bind stores the automatically labelled backend and says how it was chosen', async t => {
   const {home, chrome} = setup(t);
@@ -104,6 +105,28 @@ test('without the profile\'s own display name, a labelled backend is listed as n
   const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal', tabCount: 4}, {instanceId: 'inst-b', tabCount: 0}])});
   assert.deepEqual(result.backends, [{instanceId: 'inst-a', tabCount: 4, label: 'comparison-unknown'}, {instanceId: 'inst-b', tabCount: 0, label: 'unlabelled'}]);
   assert.ok(!JSON.stringify(result).includes('Personal'), 'display names never leave the bind');
+});
+
+// Review fix: the reviewer's reproduction, an Edge backend labelled "Personal" auto-bound to Chrome's "Personal".
+test('bind never binds another browser\'s backend and reports such backends only as an excluded count', async t => {
+  const {home, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const edge = {instanceId: 'inst-edge', family: 'edge', profileName: 'Personal', tabCount: 5};
+  const noFamily = {instanceId: 'inst-none', family: undefined, profileName: 'Personal', tabCount: 1};
+  const alone = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge])});
+  assert.deepEqual(alone, {ok: false, outcome: 'undetermined', reason: 'no_live_backends', key: 'personal', backends: [], elicitationsDeclined: 0, nonChromeExcluded: 1});
+  const offered = [];
+  const mixed = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge, noFamily, {instanceId: 'inst-c', tabCount: 2}]),
+    pick: async (list, reason, excluded) => { offered.push({list, reason, excluded}); return null; }});
+  assert.deepEqual(offered, [{list: [{instanceId: 'inst-c', tabCount: 2, label: 'unlabelled'}], reason: 'unlabelled', excluded: 2}]);
+  assert.deepEqual({ok: mixed.ok, reason: mixed.reason, excluded: mixed.nonChromeExcluded}, {ok: false, reason: 'unlabelled', excluded: 2});
+  for (const result of [alone, mixed]) assert.ok(!/inst-edge|inst-none/.test(JSON.stringify(result)), 'a non-Chrome backend is a count, never listed');
+  for (const explicitId of ['inst-edge', 'inst-none'])
+    await assert.rejects(bindCommand({home, key: 'personal', chrome, explicitId, listBackends: listing([edge, noFamily])}), e => e.code === 'bind_refused' && /Google Chrome/.test(e.message), explicitId);
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined);
+  // With Chrome's own backend labelled too, that one is bound, and the result still counts the excluded one.
+  const bound = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge, {instanceId: 'inst-c', profileName: 'Personal', tabCount: 2}])});
+  assert.deepEqual({ok: bound.ok, how: bound.how, id: bound.extensionInstanceId, excluded: bound.nonChromeExcluded}, {ok: true, how: 'automatic', id: 'inst-c', excluded: 1});
 });
 
 // ---- the CLI routes ----------------------------------------------------------------------------------------------

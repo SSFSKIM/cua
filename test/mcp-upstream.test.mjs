@@ -10,6 +10,7 @@ import {spawnUpstream} from '../src/mcp/upstream.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const FAKE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-upstream-process.mjs');
+const UPSTREAM_URL = JSON.stringify(pathToFileURL(join(dirname(FAKE), '..', '..', 'src', 'mcp', 'upstream.mjs')).href);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const waitFile = async file => { for (let i = 0; i < 200 && !existsSync(file); i++) await sleep(10); return Number(readFileSync(file, 'utf8')); };
@@ -99,7 +100,7 @@ test('an unexpected runtime exit is reported once, and sending afterwards is har
   assert.equal((await upstream.terminate({budgetMs: 500})).confirmed, true);
 });
 
-test('a runtime that cannot start reports an exit instead of throwing', async t => {
+test('a runtime that cannot start reports an exit instead of throwing', async () => {
   const upstream = spawnUpstream({command: '/nonexistent/cua-node', args: [], env: {}, cwd: process.cwd()}, {diagnostics: () => {}});
   const info = await new Promise(resolve => upstream.onExit(resolve));
   assert.equal(info.code, null);
@@ -145,7 +146,7 @@ test('a close right after start waits for the launch, so no runtime is born afte
 });
 
 test('teardown leaves no timer behind that would hold the process open', () => {
-  const script = `import {spawnUpstream} from ${JSON.stringify(pathToFileURL(join(dirname(FAKE), '..', '..', 'src', 'mcp', 'upstream.mjs')).href)};
+  const script = `import {spawnUpstream} from ${UPSTREAM_URL};
 const u = spawnUpstream({command: process.execPath, args: [${JSON.stringify(FAKE)}, 'echo'], env: {PATH: process.env.PATH}, cwd: process.cwd()}, {stderr: 'ignore'});
 await u.terminate({budgetMs: 5000});
 const done = Date.now();
@@ -157,6 +158,42 @@ process.on('exit', () => process.stdout.write(String(Date.now() - done)));`;
 
 const groupLeft = pgid => spawnSync('/usr/bin/pgrep', ['-g', String(pgid)], {encoding: 'utf8'}).stdout.split('\n').filter(Boolean).map(Number);
 function reap(pids) { for (const pid of pids) try { process.kill(pid, 'SIGKILL'); } catch {} }
+
+// An unconfirmed teardown is still the end: the bounded result must also bound the process. Here a runtime that
+// ignores EOF and SIGTERM survives teardown, holding the MCP stream it inherited, in two ways: its anchor was killed
+// from outside (identity lost, nothing signalled), or every group signal failed (the anchor lives on, its IPC channel
+// still open).
+for (const [label, options, killAnchor] of [
+  ['its anchor was killed from outside', '{}', true],
+  ['the group signals failed and the anchor survives', `{kill: () => { throw Object.assign(new Error('denied'), {code: 'EPERM'}); }}`, false],
+]) test(`a runtime surviving teardown (${label}) cannot keep the process alive past the bounded result`, t => {
+  const s = scratch();
+  const pidFile = join(s.dir, 'runtime.pid');
+  const anchorFile = join(s.dir, 'anchor.pid');
+  t.after(() => {
+    reap([pidFile, anchorFile].filter(existsSync).map(file => Number(readFileSync(file, 'utf8'))));
+    s.cleanup();
+  });
+  const script = `import {writeFileSync} from 'node:fs';
+import {spawnUpstream} from ${UPSTREAM_URL};
+const u = spawnUpstream({command: process.execPath, args: [${JSON.stringify(FAKE)}, 'ignore-term'], env: {PATH: process.env.PATH, FAKE_PID_FILE: ${JSON.stringify(pidFile)}}, cwd: process.cwd()}, {stderr: 'ignore', ...${options}});
+writeFileSync(${JSON.stringify(anchorFile)}, String(u.pid));
+await new Promise(resolve => { u.onMessage(resolve); u.send({jsonrpc: '2.0', id: 1, method: 'ping'}); });
+if (${killAnchor}) {
+  process.kill(u.pid, 'SIGKILL');
+  for (;;) { try { process.kill(u.pid, 0); } catch { break; } await new Promise(r => setTimeout(r, 10)); }
+}
+const teardown = await u.terminate({budgetMs: 100});
+const done = Date.now();
+process.on('exit', () => process.stdout.write(JSON.stringify({confirmed: teardown.confirmed, lingered: Date.now() - done})));`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', timeout: 5000});
+  assert.equal(r.signal, null, 'still alive at the 5 s limit: the surviving runtime held the process open after teardown');
+  assert.equal(r.status, 0, r.stderr);
+  const {confirmed, lingered} = JSON.parse(r.stdout);
+  assert.equal(confirmed, false, 'a survivor never reads as confirmed');
+  assert.ok(lingered < 500, `the process lingered ${lingered} ms after teardown`);
+  assert.ok(alive(Number(readFileSync(pidFile, 'utf8'))), 'the fixture runtime really did survive');
+});
 
 test('a slow-starting anchor cannot launch the runtime after teardown accepted an empty group', async t => {
   const s = scratch();

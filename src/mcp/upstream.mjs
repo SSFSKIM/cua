@@ -151,6 +151,15 @@ export function spawnUpstream({command, args, env, cwd}, {
     return confirm();
   }
 
+  // Teardown has ended, confirmed or not, and nothing of the runtime may hold this process open after it: a survivor
+  // still holding the MCP stream gets a closed pipe, and a surviving anchor is released as this process's exit would
+  // release it. Nothing is signalled here.
+  const dispose = () => {
+    for (const stream of [anchor.stdin, anchor.stdout, anchor.stderr]) stream?.destroy();
+    if (anchor.connected) anchor.disconnect();
+    anchor.unref();
+  };
+
   return {
     pid: pgid,
     get launcherPid() { return launcherPid; },
@@ -164,9 +173,9 @@ export function spawnUpstream({command, args, env, cwd}, {
 
     // Bounded termination of the owned group: EOF first (the runtime's orderly shutdown), then SIGTERM, then SIGKILL,
     // within `budgetMs`. Resolves {confirmed, steps, reason?}; confirmed means the anchor's exit was observed and no
-    // member of the group remains.
+    // member of the group remains. Once it resolves, no handle to the runtime keeps this process alive.
     terminate({budgetMs = 5000} = {}) {
-      terminating ??= pgid ? teardown(budgetMs) : Promise.resolve({confirmed: true, steps: []});
+      terminating ??= (pgid ? teardown(budgetMs) : Promise.resolve({confirmed: true, steps: []})).finally(dispose);
       return terminating;
     },
   };

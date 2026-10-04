@@ -1,0 +1,63 @@
+{
+  "schema": 1,
+  "release": "26.928.40906-darwin-arm64",
+  "appVersion": "26.928.40906",
+  "platform": "darwin",
+  "arch": "arm64",
+  "archive": {
+    "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.928.40906.zip",
+    "length": 687457051,
+    "sha256": "93bf16b32c80c567e46141f87317ab48489f5b9b6454060ba694f1eed5fbf857"
+  },
+  "components": {
+    "cua_node": "ChatGPT.app/Contents/Resources/cua_node",
+    "CodexCLI.app": "ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app"
+  },
+  "runtime": {
+    "version": "0.0.27/20260927214556-b77d38801cca",
+    "node": "24.21.0-cua.1",
+    "ipc": "CodexComputerUseIPC-5"
+  },
+  "layout": {
+    "node": "cua_node/bin/node",
+    "nodeRepl": "cua_node/bin/node_repl",
+    "moduleDir": "cua_node/lib/node_modules",
+    "cuaRepl": "cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
+    "codexCli": "CodexCLI.app/Contents/MacOS/codex",
+    "skyServiceApp": "cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
+    "skyVendorService": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
+    "browserVendorService": "cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
+    "vendorManifest": "cua_node/manifest.json",
+    "ipcClient": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/targets/mac/client.js"
+  },
+  "signing": {
+    "team": "2DC432GLL2",
+    "components": [
+      "cua_node/bin/node",
+      "cua_node/bin/node_repl",
+      "CodexCLI.app",
+      "cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app"
+    ]
+  },
+  "chromePlugin": {
+    "from": "ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/chrome",
+    "dir": "chrome-plugin",
+    "layout": {
+      "host": "extension-host/macos/arm64/ChatGPT for Chrome",
+      "browserClient": "scripts/browser-client.mjs",
+      "browserService": "scripts/browser-service.mjs",
+      "installManifest": "scripts/installManifest.mjs"
+    },
+    "signing": [
+      "extension-host/macos/arm64/ChatGPT for Chrome"
+    ],
+    "nativeHost": {
+      "name": "com.openai.codexextension",
+      "description": "ChatGPT browser native messaging host",
+      "extensionIds": [
+        "hehggadaopoacecdllhhajmbjkdcmajg",
+        "odlomjlbamekndcpllcnffbgeohgkmjh"
+      ]
+    }
+  }
+}

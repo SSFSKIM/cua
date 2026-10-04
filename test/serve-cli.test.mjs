@@ -202,6 +202,38 @@ test('profiles_list and cua profiles list check a bound profile against the live
   assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
 });
 
+// `cua` with its listing launches' teardown reported unconfirmed (test/fixtures/unconfirmed-teardown-hooks.mjs).
+const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent(`import {register} from 'node:module'; register(${JSON.stringify(pathToFileURL(join(REPO, 'test', 'fixtures', 'unconfirmed-teardown-hooks.mjs')).href)});`)}`;
+
+test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  const bound = {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'};
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: bound}}));
+  mkdirSync(join(home, 'state', 'codex'), {recursive: true});
+  writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [{instanceId: 'inst-a', family: 'chrome', profileName: null, tabCount: null}]}));
+  const cua = (args, node = []) => spawnSync(process.execPath, [...node, join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  const unlistable = {key: 'personal', ...bound, ready: false, reason: 'backends_unlistable'};
+
+  const json = cua(['--json'], [UNCONFIRMED_TEARDOWN]);
+  assert.equal(json.status, 1, json.stderr);
+  assert.deepEqual(JSON.parse(json.stdout), {ok: false, profiles: [unlistable], listingError: 'runtime_teardown_unconfirmed'});
+  const human = cua([], [UNCONFIRMED_TEARDOWN]);
+  assert.equal(human.status, 1, human.stderr);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend could be listed/m);
+  assert.match(human.stderr, /could not be listed \(runtime_teardown_unconfirmed: .*owned processes may remain/);
+
+  writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: []}));
+  const empty = cua(['--json']);
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.deepEqual(JSON.parse(empty.stdout), {ok: true, profiles: [unlistable]});
+  assert.equal(cua([]).status, 0);
+  assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
+});
+
 test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'iab'});

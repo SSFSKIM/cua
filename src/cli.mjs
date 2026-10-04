@@ -169,7 +169,8 @@ async function login(args) {
 
 // Chrome profile registrations (src/profiles). Registering and removing only touch $CUA_HOME/profiles.json; bind runs
 // one bounded, browser-only launch of the runtime to list the live extension backends, and list runs one (without tab
-// counts) when some profile is bound, to check that its bound instance is live.
+// counts) when some profile is bound, to check that its bound instance is live. Either fails (exit 1) when that
+// launch's runtime could not be confirmed stopped; list still shows the profiles.
 const PROFILES_USAGE = {
   add: 'profiles add takes a key and --chrome-profile <directory>',
   list: 'profiles list takes only --json',
@@ -221,11 +222,12 @@ async function profiles(args) {
       if (!values.json) process.stderr.write('checking the live Chrome extension backends through the runtime (one bounded launch)...\n');
       return listLiveBackends({home, runtime: resolveRuntime({home}), tabCounts: false});
     }});
-    if (values.json) return done({ok: true, profiles: list, ...(listingError ? {listingError: listingError.code} : {})});
+    const leftover = listingError?.code === 'runtime_teardown_unconfirmed';
+    if (values.json) { print({ok: !leftover, profiles: list, ...(listingError ? {listingError: listingError.code} : {})}); return leftover ? 1 : 0; }
     if (listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${listingError.code}: ${listingError.message})\n`);
     if (!list.length) return done('no Chrome profiles are registered (cua profiles add <key> --chrome-profile <directory>)');
     for (const p of list) print(`${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`);
-    return 0;
+    return leftover ? 1 : 0;
   }
   if (command === 'remove') {
     const {values, positionals} = parsed({}, 1);

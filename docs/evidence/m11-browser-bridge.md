@@ -228,3 +228,42 @@ static shape study looked at the command payload schemas, not at the transport e
 **Fix:** `1f0cae6` accepts `client_timeout_ms` as an optional positive integer in both pinned shapes; any other value
 still fails closed before a read. New test included; `npm test` 341/341. **C2 has not been re-run** with the fix:
 that needs the parent's go for one more live run.
+
+### C2 live round trip, rerun after the fix (23:59:44Z-23:59:57Z, once): **PASS 17/17**
+
+The first run (above) failed closed at the fill. This second run is the one rerun after fix `1f0cae6`, made on the
+parent's go (pre-authorized for one rerun after a fix). Checkout `c2c2bfc`.
+
+```sh
+node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accept-chrome.json   # exit 0
+```
+
+| Step | Verdict | Detail |
+|---|---|---|
+| preconditions | PASS | release pinned, profile ready, 2 live hosts, login `logged-in` |
+| seed-disposable-secret | PASS | generated sentinel under a disposable label (pty fixture) |
+| browser-surface | PASS | five tools, browser API documented, Chrome host notes |
+| profiles-list | PASS | `personal` ready with the stored instance id |
+| select-profile-backend | PASS | `cua.getBrowser({extensionInstanceId})` |
+| create-tab | PASS | 2872 ms (limit 60 s) |
+| owned-page | PASS | marker read through a locator; the page served exactly 1 request |
+| fill-secret-reference | PASS | `locator.fill("{{secret:<label>}}")` substituted in the trusted worker |
+| page-digest-matches-sentinel | PASS | the page's `done: <16 hex>` equals the first 16 hex digits of SHA-256 of the generated sentinel |
+| induced-failure-value-free | PASS | a substituted fill on a nonexistent element failed with `[secret_input_failed]`, classification `failed` |
+| screenshot | PASS | JPEG, **16886 bytes, SHA-256 `544db26f8daaba2ea0a188431174b1cda50fe0e93395a932468f2e70b9a6189b`**, size matches; kept outside git. It shows only the acceptance page: the masked password field, the button, and `done: <digest>` |
+| close-created-tab | PASS | closed and confirmed gone; **leftover `none`** |
+| end-task | PASS | `ended` |
+| serve-exit | PASS | exit 0 |
+| cleanup-disposable-secret | PASS | the run-owned Keychain item was removed |
+| elicitations-own-origin-only | PASS | 1 request: `origin-access` for the page's exact origin, form mode, accepted with `persist:"session"`; 0 declined |
+| sentinel-scan | PASS | no sentinel (raw or base64 at any alignment) in the MCP transport (308410 bytes, reference present), serve/runtime stderr (0 bytes), the screenshot bytes (16886), or 1866 runtime files under `$CUA_HOME/state` and `run` (9 symlinks not followed; `state/codex/auth.json` excluded by policy, never opened) |
+
+Cells sent: `selectBrowser, createBrowserTab, gotoOwnedPage, fillSecretReference, computeDigest, inducedFailure,
+getScreenshot, closeCreatedTab, confirmClosed` (7 tab operations, all on the run's own tab). No user tab was bound,
+read, screenshotted or closed.
+
+**C2 verdict: PASS.** Through `cua serve` over MCP, a fixed agent script selected the `personal` backend by its stored
+instance id, filled a password field with a Keychain-backed `{{secret:…}}`, and the page proved by digest that it
+received exactly the generated sentinel. No observed channel carried the value. A post-substitution vendor failure
+surfaced only as the fixed classification. The vendor's turn completion (`end_task`) succeeded with the browser
+service's hooks in place.

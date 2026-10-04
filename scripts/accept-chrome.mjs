@@ -123,10 +123,11 @@ try {
           const {result: list} = await session.request('tools/list', {});
           const tools = (list?.tools ?? []).map(t => t.name);
           record('browser-surface', tools.includes('profiles_list') && /createBrowserTab/.test(list.tools.find(t => t.name === 'js')?.description ?? '') && /extensionInstanceId/.test(init.instructions ?? '') ? 'PASS' : 'FAIL', {tools});
-          const profiles = (await session.call('profiles_list')).result?.structuredContent;
+          const profiles = (await session.call('profiles_list', {}, 150_000)).result?.structuredContent;
           const entry = profiles?.profiles?.find(p => p.key === options.profile);
           const sameId = entry?.ready === true && entry.extensionInstanceId === profile.extensionInstanceId;
-          if (record('profiles-list', sameId ? 'PASS' : 'FAIL', {status: profiles?.status, keys: profiles?.profiles?.map(p => p.key), readyWithStoredId: sameId})) {
+          if (record('profiles-list', sameId ? 'PASS' : 'FAIL', {status: profiles?.status, keys: profiles?.profiles?.map(p => p.key), readyWithStoredId: sameId,
+            ...(entry?.reason ? {reason: entry.reason} : {}), ...(entry?.reason === 'binding_stale' ? {action: `rebind: node bin/cua.mjs profiles bind ${options.profile}`} : {})})) {
             try {
               await runAgentScript({session, page, instanceId: entry.extensionInstanceId, reference, sentinel, latch, tab, record, facts, shots});
             } finally {

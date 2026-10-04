@@ -1,6 +1,7 @@
-// `cua profiles bind` as a whole, with an injected backend listing and picker, and the CLI routes for
-// add/list/remove/bind against a scratch CUA_HOME and a scratch Chrome user-data directory (HOME points there).
-// No runtime is launched: the live listing is profiles-inventory.test.mjs's, the real run is evidence.
+// `cua profiles bind` and readiness with the live check as a whole, with an injected backend listing and picker, and
+// the CLI routes for add/list/remove/bind against a scratch CUA_HOME and a scratch Chrome user-data directory (HOME
+// points there). No runtime is launched: the live listing is profiles-inventory.test.mjs's (and serve-cli.test.mjs's
+// through a fake runtime), the real run is evidence.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
@@ -8,8 +9,8 @@ import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
-import {addProfile, readRegistry, removeProfile} from '../src/profiles/registry.mjs';
-import {bindCommand} from '../src/profiles/commands.mjs';
+import {addProfile, bindProfile, readRegistry, removeProfile} from '../src/profiles/registry.mjs';
+import {bindCommand, profileReadiness} from '../src/profiles/commands.mjs';
 
 function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}, 'Profile 6': {name: 'School'}}) {
   const s = scratch();
@@ -152,6 +153,74 @@ test('a registration that changes during discovery is not bound with the instanc
   assert.equal(readRegistry(home).profiles.other, undefined);
 });
 
+// ---- readiness with the live check ---------------------------------------------------------------------------------
+
+const failing = error => async () => { throw error; };
+
+test('readiness: a bound profile is ready only while its instance is live; a new id is binding_stale, no listing is backends_unlistable', async t => {
+  const {home, chrome} = setup(t, {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}});
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome});
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a', now: new Date('2026-10-03T00:00:00Z')});
+  const personal = async listBackends => (await profileReadiness({home, chrome, listBackends})).profiles.find(p => p.key === 'personal');
+  const bound = {key: 'personal', chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'};
+
+  // live
+  assert.deepEqual(await personal(listing([{instanceId: 'other'}, {instanceId: 'inst-a'}])), {...bound, ready: true});
+  // stale: backends are live, the bound one is not (a toggle or reinstall minted a new id), even a lone new one
+  assert.deepEqual(await personal(listing([{instanceId: 'inst-new'}])), {...bound, ready: false, reason: 'binding_stale'});
+  // only Google Chrome's backends are evidence: the bound id on another browser's or a family-less backend is not live,
+  // and with no Chrome backend listed at all whether the binding is current cannot be told
+  const edge = {instanceId: 'inst-a', family: 'edge'};
+  const noFamily = {instanceId: 'inst-a', family: undefined};
+  assert.deepEqual(await personal(listing([edge, noFamily, {instanceId: 'other'}])), {...bound, ready: false, reason: 'binding_stale'});
+  assert.deepEqual(await personal(listing([edge, noFamily])), {...bound, ready: false, reason: 'backends_unlistable'});
+  // unlistable: nothing live, or the listing itself failed; never stale, never ready
+  assert.deepEqual(await personal(listing([])), {...bound, ready: false, reason: 'backends_unlistable'});
+  const failed = await profileReadiness({home, chrome, listBackends: failing(Object.assign(new Error('the runtime did not answer initialize in time'), {code: 'runtime_unresponsive'}))});
+  assert.deepEqual(failed.profiles.find(p => p.key === 'personal'), {...bound, ready: false, reason: 'backends_unlistable'});
+  assert.deepEqual(failed.listingError, {code: 'runtime_unresponsive', message: 'the runtime did not answer initialize in time'});
+  const unconfirmed = await profileReadiness({home, chrome, listBackends: async () => ({backends: [{instanceId: 'inst-a'}], teardown: {confirmed: false, steps: ['eof'], reason: 'a member survived'}})});
+  assert.equal(unconfirmed.profiles.find(p => p.key === 'personal').reason, 'backends_unlistable', 'a listing whose runtime was not shown stopped proves nothing');
+  assert.equal(unconfirmed.listingError.code, 'runtime_teardown_unconfirmed');
+  // a profile that is not ready for a file reason keeps that reason whatever is live
+  for (const list of [[{instanceId: 'inst-a'}], []]) assert.equal((await profileReadiness({home, chrome, listBackends: listing(list)})).profiles.find(p => p.key === 'work').reason, 'extension_not_installed');
+});
+
+test('readiness lists nothing when no profile is bound and otherwise ready', async t => {
+  const {home, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome});
+  bindProfile({home, key: 'work', extensionInstanceId: 'inst-w'});
+  const result = await profileReadiness({home, chrome, listBackends: async () => assert.fail('nothing may be launched')});
+  assert.deepEqual(result.profiles.map(p => [p.key, p.ready, p.reason]), [['personal', false, 'not_bound'], ['work', false, 'extension_not_installed']]);
+  assert.equal(result.listingError, undefined);
+});
+
+test('bind over a stale binding marks it and still needs the user\'s pick, even for a lone new unlabelled backend', async t => {
+  const {home, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-old'});
+  const lone = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-new', tabCount: 21}])});
+  assert.deepEqual(lone, {ok: false, outcome: 'undetermined', reason: 'unlabelled', key: 'personal', elicitationsDeclined: 0, staleBinding: 'inst-old',
+    backends: [{instanceId: 'inst-new', tabCount: 21, label: 'unlabelled'}]});
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-old', 'nothing is rebound for the user');
+
+  const offered = [];
+  const cancelled = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-new', tabCount: 21}]), pick: async (list, reason, excluded, context) => { offered.push({list, reason, excluded, context}); return null; }});
+  assert.equal(cancelled.ok, false);
+  assert.deepEqual(offered, [{list: [{instanceId: 'inst-new', tabCount: 21, label: 'unlabelled'}], reason: 'unlabelled', excluded: 0, context: {staleBinding: 'inst-old'}}]);
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-old');
+
+  const picked = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-new', listBackends: listing([{instanceId: 'inst-new', tabCount: 21}])});
+  assert.deepEqual({ok: picked.ok, id: picked.extensionInstanceId, how: picked.how, staleBinding: picked.staleBinding}, {ok: true, id: 'inst-new', how: 'explicit', staleBinding: 'inst-old'});
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-new');
+
+  // With no backend live (or only another browser's), or with the bound one live, nothing is called stale.
+  for (const backends of [[], [{instanceId: 'inst-x', family: 'edge'}], [{instanceId: 'inst-new'}, {instanceId: 'inst-b'}]])
+    assert.equal((await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends)})).staleBinding, undefined);
+});
+
 // ---- the CLI routes ----------------------------------------------------------------------------------------------
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
@@ -173,6 +242,22 @@ test('cua profiles add/list/remove against the user\'s Chrome directory, with re
   assert.match(missing.stderr, /chrome_profile_not_found/);
   assert.equal(cua(['profiles', 'remove', 'work'], env).status, 0);
   assert.deepEqual(JSON.parse(cua(['profiles', 'list', '--json'], env).stdout).profiles.map(p => p.key), ['personal']);
+});
+
+test('cua profiles list reports a bound profile it cannot check as backends_unlistable, naming why the listing failed', t => {
+  const env = setup(t);
+  assert.equal(cua(['profiles', 'add', 'personal', '--chrome-profile', 'Default'], env).status, 0);
+  bindProfile({home: env.home, key: 'personal', extensionInstanceId: 'inst-a'});
+  // No runtime is installed in this home, so the live backends cannot be listed.
+  const json = cua(['profiles', 'list', '--json'], env);
+  assert.equal(json.status, 0, json.stderr);
+  const listed = JSON.parse(json.stdout);
+  assert.deepEqual(listed.profiles.map(p => [p.key, p.ready, p.reason, p.extensionInstanceId]), [['personal', false, 'backends_unlistable', 'inst-a']]);
+  assert.equal(listed.listingError, 'runtime_not_installed');
+  const human = cua(['profiles', 'list'], env);
+  assert.equal(human.status, 0, human.stderr);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend could be listed .*whether its binding is current cannot be told$/m);
+  assert.match(human.stderr, /could not be listed \(runtime_not_installed: /);
 });
 
 test('cua profiles usage errors exit 2', t => {

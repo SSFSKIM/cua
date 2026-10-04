@@ -242,8 +242,12 @@ node bin/cua.mjs profiles remove work
 ```
 
 The registry is `$CUA_HOME/profiles.json`. A profile is ready when its directory exists, the extension is installed
-there (file presence only) and it is bound; otherwise `list` says why: `profile_directory_missing`,
-`extension_not_installed` (install it in that profile yourself) or `not_bound`.
+there (file presence only), it is bound, and its bound extension instance is live now; otherwise `list` says why:
+`profile_directory_missing`, `extension_not_installed` (install it in that profile yourself), `not_bound`,
+`binding_stale` (the bound instance is gone while other backends are live: bind again, below) or `backends_unlistable`
+(no backend could be listed at all, usually because Chrome is closed, so whether the binding is current cannot be
+told). The live part is checked on every request: when some profile is bound, `list` and the agent's `profiles_list`
+each make the same bounded launch as `bind` (below), without tab counts.
 
 `bind` records which live extension instance is this profile, because the browser service selects a browser by that
 id (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
@@ -261,14 +265,15 @@ label; cua never chooses between profiles for you, and neither does the agent (i
 A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
 `chrome://extensions`, or reinstalling it, gives it a new instance id: the stored binding then points at an instance
 that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chrome instance is unavailable.", and
-`profiles_list` still shows the old id as ready (readiness is not a live check). Run `cua profiles bind <key>` again
-after any such toggle or reinstall.
+`list` and `profiles_list` report the profile `binding_stale` (the agent is told to ask you to rebind). Run
+`cua profiles bind <key>` again: it names the stale id beside the live backends, and the pick stays yours, even when
+exactly one new unlabelled backend appeared.
 
 ### Using it
 
 The agent calls `profiles_list` (keys, readiness, and the instance id of each ready profile), selects the profile you
-mean with `cua.getBrowser({extensionInstanceId})`, and opens its own tab with `cua.createBrowserTab(...)`. Three rules,
-also in the host notes:
+mean with `cua.getBrowser({extensionInstanceId})` (calling `profiles_list` again if that fails), and opens its own tab
+with `cua.createBrowserTab(...)`. Three rules, also in the host notes:
 
 - Tabs the extension creates are DOM-only: fill and click with `tab.playwright` locators (for example
   `tab.playwright.getByLabel("Email").fill(...)`, `tab.playwright.getByRole("button", {name: "Sign in"}).click()`).

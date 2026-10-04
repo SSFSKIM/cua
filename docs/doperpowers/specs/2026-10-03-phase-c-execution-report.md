@@ -91,7 +91,7 @@ All are folded into the spec's Decision Log and Surprises (2026-10-03/04 entries
 ## Residue (candidates for tickets)
 
 1. **Clean-machine release gate:** desktop-absent install/serve, fresh-TCC onboarding, and the original host serving with no desktop present. The cold start and the cua-host round trip ran with the desktop installed.
-2. **Stale-binding readiness:** `profiles_list`/`profiles list` report a binding ready after an extension toggle or reinstall minted a new id. Readiness should check that the bound id is live, or bind should offer a guided rebind.
+2. **Stale-binding readiness:** resolved on `fix/stale-binding-readiness` (`941b42a`): readiness checks the bound id against the live backends (`binding_stale`, `backends_unlistable`), and `bind` marks a stale id while the pick stays the user's (spec Decision Log, 2026-10-04).
 3. **Vendor profile enrichment never labels backends here** (static: `classic-level` is present). Diagnose live why `profileName` stays absent; until then every bind needs the user's pick.
 4. **User-tab operations, downloads, dialogs, frames and Chrome tab-group side effects** are untested on the original route.
 5. **The Playwright route's parking status** (`wip/m8-playwright-transport`): keep, retire or document as the login-free alternative.

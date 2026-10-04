@@ -90,7 +90,8 @@ try {
   report.browserApiDocumented = /createBrowserTab/.test(jsDescription);
   check(report.browserApiDocumented === browser, browser ? 'the js description does not document the browser API' : 'the js description documents the browser API without the browser surface');
   if (browser) {
-    const profiles = (await call('profiles_list')).structuredContent;
+    // A bound profile's readiness takes one bounded listing launch of its own.
+    const profiles = (await call('profiles_list', {}, 150_000)).structuredContent;
     report.profilesList = profiles?.status === 'ok' ? {status: 'ok', keys: profiles.profiles.map(p => p.key), ready: profiles.profiles.filter(p => p.ready).map(p => p.key)} : profiles;
     check(profiles?.status === 'ok' && Array.isArray(profiles.profiles) && profiles.profiles.every(p => typeof p.key === 'string' && typeof p.ready === 'boolean' && !('chromeProfileDirectory' in p)),
       `profiles_list returned ${JSON.stringify(report.profilesList)}`);

@@ -6,7 +6,8 @@
 // by `cua profiles bind` (bind.mjs); the vendor API selects a browser by it (cua.getBrowser({extensionInstanceId})).
 // Registering or removing a key never creates, changes or deletes anything in Chrome. Readiness is computed when asked
 // (the user may install the extension later): a profile is ready when its directory exists, the extension is
-// installed there and it is bound.
+// installed there, it is bound, and (where the live backends were listed, withLiveness) its bound instance is live: an
+// extension disable/enable or reinstall mints a new instance id, so a binding can go stale.
 // Parsing is strict: a damaged or unknown file is refused with a fix, never silently rewritten.
 import {mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -104,8 +105,8 @@ export function bindProfile({home, key, extensionInstanceId, expected, now = new
   return registry.profiles[key];
 }
 
-// Every registered profile with its readiness, sorted by key. `reason` names why a profile is not ready:
-// profile_directory_missing, extension_not_installed or not_bound.
+// Every registered profile with its readiness from files alone, sorted by key. `reason` names why a profile is not
+// ready: profile_directory_missing, extension_not_installed or not_bound (withLiveness adds the live check).
 export function profileStatuses({home, chrome}) {
   const {profiles} = readRegistry(home);
   return Object.keys(profiles).sort().map(key => {
@@ -118,8 +119,24 @@ export function profileStatuses({home, chrome}) {
   });
 }
 
+// A bound, otherwise ready profile against the live Google Chrome backends' instance ids at this request (another
+// browser's backends are no evidence): ready only when its id is among them; binding_stale when other backends are live
+// but not its id; backends_unlistable when no backend was listed at all (Chrome closed, no host, or the listing failed),
+// since then whether the binding is current cannot be told. `liveIds` is empty for a failed listing.
+export function withLiveness(statuses, liveIds) {
+  return statuses.map(p => {
+    if (!p.ready) return p;
+    const reason = !liveIds.length ? 'backends_unlistable' : !liveIds.includes(p.extensionInstanceId) ? 'binding_stale' : null;
+    return reason ? {...p, ready: false, reason} : p;
+  });
+}
+
 export const REASONS = {
   profile_directory_missing: 'the Chrome profile directory no longer exists',
   extension_not_installed: 'the OpenAI extension is not installed in this Chrome profile (install it there yourself; cua never does)',
   not_bound: 'not bound to an extension instance yet: run cua profiles bind',
+  binding_stale: 'its bound extension instance is not among the live backends (an extension disable/enable or reinstall mints a new id): bind it again with cua profiles bind <key>',
+  backends_unlistable: 'no live OpenAI extension backend could be listed (is Chrome open with the extension enabled?), so whether its binding is current cannot be told',
 };
+
+export const reasonText = ({key, reason}) => REASONS[reason].replaceAll('<key>', key);

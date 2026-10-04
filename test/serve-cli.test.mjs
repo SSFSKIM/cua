@@ -3,16 +3,19 @@
 // resolver and launcher: allowlisted environment, owned per-connection working directory, and cleanup at close.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
-import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync, chmodSync} from 'node:fs';
+import {spawn, spawnSync} from 'node:child_process';
+import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync, chmodSync, rmSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
+import {once} from 'node:events';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
 const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
@@ -150,6 +153,85 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   assert.equal(start.env.BROWSER_USE_BACKEND_PATHS, undefined, 'an ambient backend list never reaches the runtime');
   server.child.stdin.end();
   assert.equal((await server.exit).code, 0);
+});
+
+test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  const backendsFile = join(home, 'state', 'codex', 'fake-backends.json');
+  mkdirSync(dirname(backendsFile), {recursive: true});
+  const listingOf = (...ids) => JSON.stringify({backends: ids.map(instanceId => ({instanceId, family: 'chrome', profileName: null, tabCount: null}))});
+
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'browser', HOME: userHome});
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  const seen = {};
+  for (const [state, listing] of [['live', listingOf('other', 'inst-a')], ['stale', listingOf('inst-new')], ['none live', listingOf()], ['listing failed', null]]) {
+    if (listing === null) rmSync(backendsFile); else writeFileSync(backendsFile, listing);
+    const reply = await server.call('profiles_list');
+    seen[state] = reply.result.structuredContent.profiles[0];
+    if (state === 'stale') assert.match(reply.result.content[0].text, /cua profiles bind personal/);
+  }
+  assert.deepEqual(seen, {
+    live: {key: 'personal', ready: true, extensionInstanceId: 'inst-a'},
+    stale: {key: 'personal', ready: false, reason: 'binding_stale'},
+    'none live': {key: 'personal', ready: false, reason: 'backends_unlistable'},
+    'listing failed': {key: 'personal', ready: false, reason: 'backends_unlistable'},
+  });
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 0, stderr);
+  assert.match(stderr, /profiles_list: the live Chrome extension backends could not be listed \(listing_failed\)/);
+  const cells = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params.arguments);
+  assert.equal(cells.length, 4, 'one listing cell per request, nothing on the serving runtime');
+  assert.ok(cells.every(c => c.code === LIVENESS_CELL), 'each listing is the tab-free cell');
+  const starts = records(home).filter(r => r.start).map(r => r.start.env);
+  assert.equal(starts.length, 5, 'the serving runtime and one bounded launch per profiles_list');
+  assert.ok(starts.slice(1).every(env => env.CUA_REPL_ENABLED_SURFACES === 'browser'));
+  assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
+
+  writeFileSync(backendsFile, listingOf('inst-new'));
+  const list = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, /^personal\s+not ready\s+Default\s+its bound extension instance is not among the live backends \(an extension disable\/enable or reinstall mints a new id\): bind it again with cua profiles bind personal$/m);
+  writeFileSync(backendsFile, listingOf('inst-a'));
+  const json = JSON.parse(spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', '--json'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000}).stdout);
+  assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
+});
+
+// `cua` with its listing launches' teardown reported unconfirmed (test/fixtures/unconfirmed-teardown-hooks.mjs).
+const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent(`import {register} from 'node:module'; register(${JSON.stringify(pathToFileURL(join(REPO, 'test', 'fixtures', 'unconfirmed-teardown-hooks.mjs')).href)});`)}`;
+
+test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  const bound = {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'};
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: bound}}));
+  mkdirSync(join(home, 'state', 'codex'), {recursive: true});
+  writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [{instanceId: 'inst-a', family: 'chrome', profileName: null, tabCount: null}]}));
+  const cua = (args, node = []) => spawnSync(process.execPath, [...node, join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  const unlistable = {key: 'personal', ...bound, ready: false, reason: 'backends_unlistable'};
+
+  const json = cua(['--json'], [UNCONFIRMED_TEARDOWN]);
+  assert.equal(json.status, 1, json.stderr);
+  assert.deepEqual(JSON.parse(json.stdout), {ok: false, profiles: [unlistable], listingError: 'runtime_teardown_unconfirmed'});
+  const human = cua([], [UNCONFIRMED_TEARDOWN]);
+  assert.equal(human.status, 1, human.stderr);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend could be listed/m);
+  assert.match(human.stderr, /could not be listed \(runtime_teardown_unconfirmed: .*owned processes may remain/);
+
+  writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: []}));
+  const empty = cua(['--json']);
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.deepEqual(JSON.parse(empty.stdout), {ok: true, profiles: [unlistable]});
+  assert.equal(cua([]).status, 0);
+  assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
 });
 
 test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched', {skip: !supported}, async t => {
@@ -328,4 +410,86 @@ test('serve without a built helper still serves, and secrets_list says how to bu
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
   input.end();
   assert.equal(await served, 0);
+});
+
+// In process: a fake installed home with a bound personal profile whose Default extension manifest exists (a scratch
+// Chrome user-data directory), served with the browser surface and an injected readiness listing. The input never
+// destroys itself, so its 'close' marks the server's own close, right after its final flush. `highWaterMark` sizes the
+// MCP stream's buffers: at 1, once the client pauses `lines`, every later write stays pending, as on a full pipe.
+function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
+  const home = fakeInstalledHome(t, {short: true});
+  const userData = join(home, 'user', 'Library', 'Application Support', 'Google', 'Chrome');
+  const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  const input = new PassThrough({autoDestroy: false});
+  const output = new PassThrough(highWaterMark === undefined ? {} : {highWaterMark});
+  const frames = [];
+  const lines = createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+  const diagnostics = [];
+  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'browser'}, input, output,
+    chrome: chromeFacts({userData}), listBackends, diagnostics: line => diagnostics.push(line)});
+  t.after(async () => { input.end(); await served; });
+  const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
+  const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
+  send({id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}});
+  return {input, output, lines, send, reply, served, diagnostics};
+}
+
+test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported}, async t => {
+  const unconfirmed = async () => ({backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: false, steps: ['eof', 'sigterm', 'sigkill'], reason: 'a group member survived'}});
+  const {input, send, reply, served, diagnostics} = boundBrowserServe(t, unconfirmed);
+  await reply(1);
+  send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
+  assert.deepEqual((await reply(2)).result.structuredContent, {status: 'ok', profiles: [{key: 'personal', ready: false, reason: 'backends_unlistable'}]});
+  input.end();
+  assert.equal(await served, 1);
+  assert.ok(diagnostics.some(l => /readiness listing's runtime could not be confirmed stopped; owned processes may remain/.test(l)), diagnostics.join('\n'));
+});
+
+test('serve waits for a readiness listing still running at close, keeping its signal handlers until it settles', {skip: !supported}, async t => {
+  let started;
+  const begun = new Promise(resolve => { started = resolve; });
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const baseline = new Set(process.listeners('SIGTERM'));
+  const {input, send, reply, served} = boundBrowserServe(t, async () => { started(); await held; return {backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: true, steps: ['eof']}}; });
+  await reply(1);
+  const own = process.listeners('SIGTERM').filter(h => !baseline.has(h));
+  assert.equal(own.length, 1, 'serve installed its SIGTERM handler');
+  send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
+  await begun;
+  input.end();
+  let settled = false;
+  served.then(() => { settled = true; });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(settled, false, 'serve does not return while the listing runs');
+  assert.ok(process.listeners('SIGTERM').includes(own[0]), 'serve\'s SIGTERM handler is still installed while it waits');
+  release();
+  assert.deepEqual((await reply(2)).result.structuredContent, {status: 'ok', profiles: [{key: 'personal', ready: true, extensionInstanceId: 'inst-a'}]}, 'a reading client still gets the reply');
+  assert.equal(await served, 0);
+  assert.ok(!process.listeners('SIGTERM').includes(own[0]), 'the handler goes once the listing settled');
+});
+
+test('a readiness listing that settles during close is answered before the final bounded flush, which drops the reply with the stream when the client stopped reading', {skip: !supported}, async t => {
+  let started;
+  const begun = new Promise(resolve => { started = resolve; });
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const {input, output, lines, send, reply, served, diagnostics} = boundBrowserServe(t, async () => { started(); await held; return {backends: [{instanceId: 'inst-a'}], teardown: {confirmed: true, steps: ['eof']}}; }, {highWaterMark: 1});
+  await reply(1);
+  lines.pause(); // the client stops reading
+  send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
+  await begun;
+  input.end();
+  // The listing settles once the server has finished closing, or after 1 s while the server waits for it. A reply
+  // written after the final flush would stay pending on the unread stream with nothing left to drop it.
+  await Promise.race([once(input, 'close'), new Promise(r => setTimeout(r, 1000))]);
+  const releasedAt = Date.now();
+  release();
+  assert.equal(await served, 0);
+  assert.ok(Date.now() - releasedAt < 3000, 'serve returns within the 1 s flush bound once the listing settled');
+  assert.ok(output.destroyed, 'the unread reply went with the stream at the flush bound instead of staying pending');
+  assert.ok(diagnostics.some(l => /did not read the final replies within 1 s/.test(l)), diagnostics.join('\n'));
 });

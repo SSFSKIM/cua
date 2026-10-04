@@ -48,6 +48,28 @@ test('with the browser surface, profiles_list is the fifth tool and returns keys
   assert.equal(h.upstream.calls('profiles_list').length, 0, 'answered by the server');
 });
 
+test('profiles_list hides a stale or unverifiable binding\'s instance id and says what the user has to do', async () => {
+  const bound = {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-old', boundAt: '2026-10-03T00:00:00.000Z'};
+  const h = harness({server: {surfaces: ['browser'], profiles: {list: async () => [
+    {key: 'personal', ...bound, ready: false, reason: 'binding_stale'},
+    {key: 'school', ...bound, chromeProfileDirectory: 'Profile 6', extensionInstanceId: 'inst-s', ready: false, reason: 'backends_unlistable'},
+    {key: 'work', chromeProfileDirectory: 'Profile 8', ready: true, extensionInstanceId: 'inst-w'},
+  ]}}});
+  await initialized(h);
+  const response = await h.client.call('profiles_list').response;
+  assert.equal(response.result.isError, false);
+  assert.deepEqual(structured(response), {status: 'ok', profiles: [
+    {key: 'personal', ready: false, reason: 'binding_stale'},
+    {key: 'school', ready: false, reason: 'backends_unlistable'},
+    {key: 'work', ready: true, extensionInstanceId: 'inst-w'},
+  ]});
+  const text = response.result.content[0].text;
+  assert.match(text, /personal is not ready \(binding_stale\): .*disable\/enable or reinstall mints a new id.*cua profiles bind personal\./);
+  assert.match(text, /school is not ready \(backends_unlistable\): .*is Chrome open/);
+  assert.match(text, /do not bind or pick a profile for them/);
+  assert.ok(!/inst-old|inst-s\b|Default|Profile/.test(text), 'neither the stale id nor a directory reaches the model');
+});
+
 test('a registry that cannot be read is a value-free error, not an empty list', async () => {
   const h = harness({server: {surfaces: ['browser'], profiles: {list: () => { throw Object.assign(new Error('/Users/x/profiles.json is bad'), {code: 'profiles_invalid'}); }}}});
   await initialized(h);
@@ -60,7 +82,7 @@ test('the browser host notes carry the three Chrome rules and keep the instructi
   for (const surfaces of [['browser'], ['computer', 'browser']]) {
     const notes = hostNotesFor(surfaces);
     assert.match(notes, /profiles_list/, surfaces.join());
-    assert.match(notes, /cua\.getBrowser\(\{extensionInstanceId\}\)/);
+    assert.match(notes, /cua\.getBrowser\(\{extensionInstanceId\}\); if that fails, call profiles_list again/);
     assert.match(notes, /tab\.playwright/);
     assert.match(notes, /timeout_ms of at least 60000/);
     assert.match(notes, /tab may still have opened/);

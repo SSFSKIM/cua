@@ -5,7 +5,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fakeUpstream} from './fixtures/mcp-harness.mjs';
-import {listBackendsWith, LIST_CELL, MARKER} from '../src/profiles/inventory.mjs';
+import {listBackendsWith, LIST_CELL, LIVENESS_CELL, MARKER} from '../src/profiles/inventory.mjs';
 
 const replyCell = (upstream, request, payload) => upstream.text(request, `docs...\n${MARKER} ${JSON.stringify(payload)}`);
 
@@ -124,6 +124,27 @@ test('a parsed listing keeps the family, and a non-Chrome backend keeps nothing 
     {family: 'edge'},
   ]});
   assert.deepEqual((await listing).backends, [{instanceId: 'a', family: 'chrome', profileName: 'P', tabCount: 1}, {family: 'edge'}, {}, {family: 'edge'}]);
+});
+
+test('a readiness listing (no tab counts) sends a cell that never asks for tabs, and reduces the same way', async () => {
+  const upstream = fakeUpstream();
+  const listing = listBackendsWith(upstream, {tabCounts: false});
+  await answerHandshake(upstream);
+  const call = await upstream.nextCall('js');
+  assert.equal(call.params.arguments.code, LIVENESS_CELL);
+  replyCell(upstream, call, {backends: [{instanceId: 'a', family: 'chrome', profileName: null, tabCount: null}]});
+  assert.deepEqual((await listing).backends, [{instanceId: 'a', family: 'chrome'}]);
+  assert.equal(upstream.terminations.length, 1);
+
+  const writes = [];
+  let tabReads = 0;
+  const cua = {
+    listBrowsers: async () => [{id: '1', type: 'extension', family: 'chrome', profileName: 'Personal', metadata: {extensionInstanceId: 'inst-a'}}, {id: '9', type: 'iab'}],
+    listTabs: async () => { tabReads++; return []; },
+  };
+  await new Function('cua', 'nodeRepl', `return (async () => { ${LIVENESS_CELL} })();`)(cua, {write: text => writes.push(text)});
+  assert.deepEqual(JSON.parse(writes[0].slice(MARKER.length + 1)), {backends: [{instanceId: 'inst-a', family: 'chrome', profileName: 'Personal', tabCount: null}]});
+  assert.equal(tabReads, 0, 'a readiness listing never reads tabs');
 });
 
 test('an unconfirmed runtime teardown fails the listing, classified, and keeps a listing failure\'s diagnostic too', async () => {

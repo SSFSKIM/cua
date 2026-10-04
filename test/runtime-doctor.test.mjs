@@ -199,3 +199,31 @@ test('the default codex.login check runs codex login status with the owned CODEX
   assert.match(log, /^argv: login status$/m);
   assert.ok(log.includes(`env:CODEX_HOME=${codexHome}\n`));
 });
+
+test('codex.login never executes a release binary the same run found untrusted: blocked naming runtime.signatures', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const {writeFileSync: write, mkdirSync: mkdir, existsSync: exists, chmodSync: chmod} = await import('node:fs');
+  const {fakeCodexScript} = await import('./fixtures/runtime-fixture.mjs');
+  const real = realpathSync(home);
+  const cli = join(real, 'runtimes', pin.release, pin.layout.codexCli);
+  write(cli, fakeCodexScript({exit: 0}));
+  chmod(cli, 0o755);
+  const codexHome = join(real, 'state', 'codex');
+  mkdir(codexHome, {recursive: true});
+  const marker = join(codexHome, 'fake-codex.log');
+  const rejectCli = async (root, p) => p.signing.components.map(c => ({component: c, valid: !c.startsWith('CodexCLI.app'), detail: 'invalid signature'}));
+  const unchecked = async () => [];
+  for (const [name, verifySignatures] of [['codex CLI rejected', rejectCli], ['no component checked', unchecked]]) {
+    // The production login probe: had it run, the fake CLI would have written its marker and reported a login.
+    const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+    assert.equal(check(report, 'runtime.signatures').status, 'fail', name);
+    const login = check(report, 'codex.login');
+    assert.equal(login.status, 'blocked', name);
+    assert.match(login.detail, /runtime\.signatures failed/, name);
+    assert.equal(exists(marker), false, `${name}: the rejected CLI was executed`);
+  }
+  // With the signatures valid, the same CLI is asked.
+  const trusted = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  assert.equal(check(trusted, 'codex.login').status, 'pass');
+  assert.equal(exists(marker), true);
+});

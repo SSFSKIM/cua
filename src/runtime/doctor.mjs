@@ -9,7 +9,9 @@
 // present but speaks another broker protocol or whose signature does not verify is `fail`.
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
 // a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
-// capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`.
+// capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
+// executes a release binary, so it runs only when this same run found the release's files present and its vendor
+// signatures valid (`runtime.signatures` pass); otherwise it is `blocked` naming the failed check.
 // `chrome.host.config` (chrome-component.mjs) is installed-runtime health: the Chrome host component cua placed in the
 // active release, its signature and the configuration the host reads. Not placed yet is `blocked` (install adds it);
 // anything wrong with what cua placed is `fail`.
@@ -49,7 +51,8 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   }
 
   let runtime;
-  let runtimeUsable = false;
+  // Why no release binary may be executed in this run, until the files and signatures checks pass.
+  let untrusted = 'needs a usable installed runtime to ask; run cua install, then run cua login';
   try {
     runtime = locateRuntime({home, pins, host});
     checks.push(result('runtime.installed', 'pass', `active release ${runtime.release} at ${runtime.root}`));
@@ -61,7 +64,6 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   if (runtime) {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
-    runtimeUsable = layout.ok;
     checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
@@ -69,9 +71,12 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
     checks.push(result('runtime.ipc', ipc.ok ? 'pass' : 'fail', ipc.detail));
     const signatures = await verifySignatures(root, manifest);
     const bad = signatures.filter(s => !s.valid);
-    checks.push(result('runtime.signatures', bad.length ? 'fail' : 'pass', bad.length
-      ? `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ')}; ${recoveryHint(root)}`
-      : `${signatures.length} components signed by team ${manifest.signing.team}`));
+    const signed = !bad.length && signatures.length === manifest.signing.components.length;
+    checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
+      ? `${signatures.length} components signed by team ${manifest.signing.team}`
+      : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
+    if (layout.ok && signed) untrusted = null;
+    else if (layout.ok) untrusted = 'not asked: runtime.signatures failed in this run, and doctor never executes a release binary it found untrusted; fix the release first (see runtime.signatures), then run cua login';
     checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
   } else {
     checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
@@ -84,7 +89,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
     'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
     + `Confirm with a live probe (${LIVE_PROBE}).`));
   checks.push(...classifyKeychainHelper(await inspectSecrets()));
-  checks.push(await codexLoginCheck({home, runtime: runtimeUsable ? runtime : null, inspectLogin}));
+  checks.push(await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
@@ -95,8 +100,8 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
 const defaultInspectChrome = async ({home}) => chromeChecks({home, chrome: chromeFacts(), psText: processTable()});
 
-async function codexLoginCheck({home, runtime, inspectLogin}) {
-  if (!runtime) return result('codex.login', 'blocked', 'needs a usable installed runtime to ask; run cua install, then run cua login');
+async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
+  if (!runtime) return result('codex.login', 'blocked', untrusted);
   let status;
   try { status = await inspectLogin({home, runtime}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;

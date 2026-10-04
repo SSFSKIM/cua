@@ -213,7 +213,9 @@ node bin/cua.mjs login --status        # whether the server has a login (never s
 
 It runs the bundled Codex CLI with `CODEX_HOME=$CUA_HOME/state/codex`, so the login lives there, never in or from your
 desktop `~/.codex`. cua never reads, prints or copies the login file; `cua login --status` and the doctor's
-`codex.login` check report only whether it exists. Native control does not need it.
+`codex.login` check report only whether it exists. Native control does not need it. The doctor asks the CLI only when
+the same run found the release's vendor signatures valid; otherwise `codex.login` is `blocked` naming
+`runtime.signatures`, and nothing from the release is executed.
 
 ### Profiles
 

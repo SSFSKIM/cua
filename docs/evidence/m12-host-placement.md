@@ -108,3 +108,43 @@ The parent session relayed the user's GO for the gate. The steps below follow th
 - `chrome.host.registered: pass`, now naming cua's host (class `cua`).
 - `chrome.host.config: pass`, `codex.login: pass`, `chrome.extension.personal: pass`.
 - `chrome.hosts.live: 2`. Those are still the two desktop hosts (pids 79991 and 85652, unchanged): the browser starts cua's host only on the extension's next connection.
+
+### Step 3 (the user)
+
+The user switched the ChatGPT extension off and back on at chrome://extensions in the Default profile and changed nothing else (relayed by the parent session).
+
+### Step 4: a host from cua's tree serves the extension: PASS
+
+- A new host is running: `~/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome`, pid 79354, parent 69284 (Google Chrome), started 17:03:13. Chrome launched it from cua's manifest on the extension's reconnection. Its socket is `/tmp/codex-browser-use/af823d87-….sock`.
+- Desktop host 85652, which served Default before, is gone; it exited when the extension was switched off and was never signalled by cua. Desktop host 79991 (another profile's, started 16:23:52) keeps running.
+
+### Step 5: owned-page round trip: BLOCKED at backend selection
+
+- Command: `node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-m12-replace-roundtrip.json`, exit 1.
+- `select-profile-backend` FAIL: "The Chrome instance is unavailable." The `personal` binding (`8342c6b8…31be`) is no longer live, because switching the extension off and on minted a new extension instance id.
+- No tab was created (no tab operations) and there were no elicitations. Sentinel scan PASS, disposable secret cleaned up, `end_task` and `serve` exited cleanly.
+- `personal` was **not** rebound.
+- Read-only live listing afterwards (one bounded launch, `listBrowsers` and tab counts, teardown confirmed, 0 elicitations):
+  - `41f3ec26-8d63-49d3-9aac-3dd1ee094954`, 0 tabs, unlabelled. It was present before the toggle; its host is the still-running desktop host 79991.
+  - `94c9fc71-4bfb-4a14-9d99-2caf6eebbabd`, 21 tabs, unlabelled. It is new.
+- That `94c9…` is served by cua's host 79354 is inferred from the timing and the host replacement, not proven by a socket-level mapping. The listing carries no pid or socket.
+- To finish C6's live round trip, the user must first rebind `personal` by explicit pick (`cua profiles bind personal --extension-instance-id <id>`), and then the gate (register `--replace`, reconnect, round trip, unregister) must run again with the extension left on.
+
+### Step 6: `chrome unregister`: PASS (exit 0, `blocked: false`)
+
+- chrome, edge, brave, opera and vivaldi are all `restored`/`restored`.
+- Every one of the 8 manifests now has sha256 `58b892526102a537b43ee632a60f03aa47e1f456b5223f8c564a50a8eb5704b6`, equal to the pre-step-1 hash, and `cmp` shows each identical to the reference copy saved before step 1.
+- The five restored manifests have new inodes (atomic publish: Chrome 113647528, Edge 113647531, Brave 113647534, Opera 113647537, Vivaldi 113647540) and mtime 1791072772. The three untouched ones (Chromium, both Chrome for Testing) keep their original inode and mtime.
+- `manifest-backup/` is empty (each verified restore consumed its backup), `registration.json` is `{schema: 1, browsers: {}}`, and no hidden files are left.
+
+### Step 7: `doctor --json`: PASS (exit 0, `ok:true`)
+
+- `chrome.host.registered: pass (desktop)`, naming `~/.codex/plugins/cache/openai-bundled/chrome/latest/…/ChatGPT for Chrome`.
+- `chrome.host.config` and `codex.login` pass.
+- `chrome.hosts.live: 2`. cua's host 79354 keeps running until Chrome lets it go, since nothing is killed, and the desktop host 79991 is still running. The extension's next connection will launch the desktop host again.
+
+### C6 verdict for the gate
+
+- PASS: placement, the backup and replace, a host from cua's tree launched by Chrome, and a byte-for-byte restore.
+- BLOCKED: the owned-page round trip through that host, because the binding went stale when the extension was toggled.
+- `/tmp/cua-c6-replace.json` (shape `{scenario: "C6-replace-live-gate", servingHost, roundTrip, unregister}`) carries `servingHost.pathClass: "cua"` with `backendMappingProven: false` and the note above, the round-trip report (`status: FAIL` at selection) and the unregister output.

@@ -11,6 +11,7 @@
 import {mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {isDeepStrictEqual} from 'node:util';
 import {fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 
@@ -85,9 +86,16 @@ export function removeProfile({home, key}) {
   writeRegistry(home, registry);
 }
 
-export function bindProfile({home, key, extensionInstanceId, now = new Date()}) {
+// `expected` is the entry as it stood when the instance id was looked for (bind's discovery takes seconds): the id is
+// recorded only if the entry is still exactly that, so an id found for one Chrome profile directory is never stored
+// under a key that was removed, re-added for another directory, or bound by another command meanwhile.
+export function bindProfile({home, key, extensionInstanceId, expected, now = new Date()}) {
   if (typeof extensionInstanceId !== 'string' || !INSTANCE_ID.test(extensionInstanceId)) fail('invalid_instance_id', 'an extension instance id is 1-128 letters, digits or . _ : -');
   const registry = readRegistry(home);
+  if (expected !== undefined && !isDeepStrictEqual(registry.profiles[key], expected)) {
+    if (!Object.hasOwn(registry.profiles, key)) fail('profile_changed', `profile "${key}" was removed while its live backends were being listed; nothing was bound`, {hint: 'cua profiles list shows the registered keys'});
+    fail('profile_changed', `profile "${key}" changed while its live backends were being listed (removed and added again, or bound by another command); the instance found for Chrome profile ${JSON.stringify(expected.chromeProfileDirectory)} was not recorded`, {hint: `run cua profiles bind ${key} again`});
+  }
   const entry = entryOf(registry, key);
   const holder = Object.entries(registry.profiles).find(([other, e]) => other !== key && e.extensionInstanceId === extensionInstanceId)?.[0];
   if (holder) fail('instance_already_bound', `that extension instance is already bound to profile "${holder}"`, {hint: 'each Chrome profile has its own extension instance; check which profile you meant'});

@@ -17,7 +17,8 @@ function labelOf(backend, name) {
 
 // -> {ok:true, key, extensionInstanceId, how, backends, elicitationsDeclined, nonChromeExcluded?}
 //  | {ok:false, outcome:'undetermined', reason, key, backends, elicitationsDeclined, nonChromeExcluded?}
-// Throws classified errors for an unknown key, a profile that cannot be ready, and a refused explicit pick.
+// Throws classified errors for an unknown key, a profile that cannot be ready, a refused explicit pick, and a
+// registration that changed while the backends were listed (`profile_changed`; nothing is bound, run bind again).
 export async function bindCommand({home, key, chrome, listBackends, explicitId, pick}) {
   const entry = readRegistry(home).profiles[key];
   if (!entry) fail('unknown_profile', `no registered profile "${key}"`, {hint: 'cua profiles list shows the registered keys'});
@@ -39,7 +40,8 @@ export async function bindCommand({home, key, chrome, listBackends, explicitId, 
 
   const bind = decision => {
     if (decision.outcome === 'refused') fail('bind_refused', `profile "${key}" was not bound: ${REFUSED[decision.reason]}`, {hint: 'cua profiles bind without --extension-instance-id lists the live backends'});
-    const stored = bindProfile({home, key, extensionInstanceId: decision.instanceId});
+    // Recorded only if the registration is still the one discovery started from (compare-and-set).
+    const stored = bindProfile({home, key, extensionInstanceId: decision.instanceId, expected: entry});
     return {ok: true, ...base, key, extensionInstanceId: stored.extensionInstanceId, how: decision.how};
   };
 

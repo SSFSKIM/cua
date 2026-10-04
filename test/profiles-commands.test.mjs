@@ -8,7 +8,7 @@ import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
-import {addProfile, readRegistry} from '../src/profiles/registry.mjs';
+import {addProfile, readRegistry, removeProfile} from '../src/profiles/registry.mjs';
 import {bindCommand} from '../src/profiles/commands.mjs';
 
 function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}, 'Profile 6': {name: 'School'}}) {
@@ -127,6 +127,29 @@ test('bind never binds another browser\'s backend and reports such backends only
   // With Chrome's own backend labelled too, that one is bound, and the result still counts the excluded one.
   const bound = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge, {instanceId: 'inst-c', profileName: 'Personal', tabCount: 2}])});
   assert.deepEqual({ok: bound.ok, how: bound.how, id: bound.extensionInstanceId, excluded: bound.nonChromeExcluded}, {ok: true, how: 'automatic', id: 'inst-c', excluded: 1});
+});
+
+// Review fix: the reviewer's reproduction, the key removed and re-added for Profile 8 while discovery for Default ran.
+test('a registration that changes during discovery is not bound with the instance found for the old one', async t => {
+  const {home, userData, chrome} = setup(t);
+  const v = join(userData, 'Profile 8', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(v, {recursive: true});
+  writeFileSync(join(v, 'manifest.json'), '{}');
+  const duringDiscovery = (change, backends) => async () => { change(); return listing(backends)(); };
+  const reAdd = () => { removeProfile({home, key: 'personal'}); addProfile({home, key: 'personal', directory: 'Profile 8', chrome}); };
+  for (const [how, extra] of [['automatic', {}], ['explicit', {explicitId: 'inst-a'}], ['picked', {pick: async () => 'inst-a'}]]) {
+    if (readRegistry(home).profiles.personal) removeProfile({home, key: 'personal'});
+    addProfile({home, key: 'personal', directory: 'Default', chrome});
+    const backends = how === 'automatic' ? [{instanceId: 'inst-a', profileName: 'Personal'}] : [{instanceId: 'inst-a'}, {instanceId: 'inst-b'}];
+    await assert.rejects(bindCommand({home, key: 'personal', chrome, listBackends: duringDiscovery(reAdd, backends), ...extra}),
+      e => e.code === 'profile_changed' && /bind personal again/.test(e.hint), how);
+    assert.deepEqual(readRegistry(home).profiles.personal, {chromeProfileDirectory: 'Profile 8'}, `${how}: nothing recorded under the re-added key`);
+  }
+  // Removed for good during discovery: refused as removed, and nothing re-created.
+  addProfile({home, key: 'other', directory: 'Default', chrome});
+  await assert.rejects(bindCommand({home, key: 'other', chrome, listBackends: duringDiscovery(() => removeProfile({home, key: 'other'}), [{instanceId: 'inst-a', profileName: 'Personal'}])}),
+    e => e.code === 'profile_changed' && /was removed/.test(e.message));
+  assert.equal(readRegistry(home).profiles.other, undefined);
 });
 
 // ---- the CLI routes ----------------------------------------------------------------------------------------------

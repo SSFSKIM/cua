@@ -99,6 +99,29 @@ test('bind refuses an unknown key and an instance id already bound to another ke
   bindProfile({home, key: 'personal', extensionInstanceId: 'inst-1'});
 });
 
+// Review fix: bind's discovery takes seconds; the id it found must not land on a registration that changed meanwhile.
+test('bind records the instance id only while the registration is the one discovery started from', t => {
+  const {home, chrome} = fakeChrome(t, THREE);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const started = readRegistry(home).profiles.personal;
+  removeProfile({home, key: 'personal'});
+  addProfile({home, key: 'personal', directory: 'Profile 8', chrome});
+  assert.throws(() => bindProfile({home, key: 'personal', extensionInstanceId: 'inst-default', expected: started}),
+    error => error.code === 'profile_changed' && /changed while/.test(error.message) && /bind personal again/.test(error.hint));
+  assert.deepEqual(readRegistry(home).profiles.personal, {chromeProfileDirectory: 'Profile 8'}, 'nothing was recorded');
+  removeProfile({home, key: 'personal'});
+  assert.throws(() => bindProfile({home, key: 'personal', extensionInstanceId: 'inst-default', expected: started}), error => error.code === 'profile_changed' && /was removed/.test(error.message));
+  // Bound by another command meanwhile: refused too, the other binding stands.
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const unbound = readRegistry(home).profiles.personal;
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-other'});
+  assert.throws(() => bindProfile({home, key: 'personal', extensionInstanceId: 'inst-mine', expected: unbound}), error => error.code === 'profile_changed');
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-other');
+  // Unchanged (a rebind of a bound profile included): recorded.
+  const bound = readRegistry(home).profiles.personal;
+  assert.equal(bindProfile({home, key: 'personal', extensionInstanceId: 'inst-new', expected: bound}).extensionInstanceId, 'inst-new');
+});
+
 test('a damaged or foreign registry file is refused with a fix, never silently replaced', t => {
   const {home, chrome} = fakeChrome(t, THREE);
   mkdirSync(home, {recursive: true});

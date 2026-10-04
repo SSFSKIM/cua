@@ -243,6 +243,12 @@ this profile; elsewhere it prints the listing and exits 1, and you pick with
 refused when the runtime labels that backend as another profile. A single live backend is never bound without the
 label; cua never chooses between profiles for you, and neither does the agent (its host notes say so).
 
+A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
+`chrome://extensions`, or reinstalling it, gives it a new instance id: the stored binding then points at an instance
+that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chrome instance is unavailable.", and
+`profiles_list` still shows the old id as ready (readiness is not a live check). Run `cua profiles bind <key>` again
+after any such toggle or reinstall.
+
 ### Using it
 
 The agent calls `profiles_list` (keys, readiness, and the instance id of each ready profile), selects the profile you
@@ -285,21 +291,31 @@ node bin/cua.mjs chrome unregister           # removes cua's manifests and resto
 - Coexistence rule: `register` writes only into empty slots or over a manifest that already names cua's host in this
   `CUA_HOME`. If any browser holds a manifest cua did not write (the desktop's, another host's, or an unreadable one),
   it refuses as a whole, names each browser with the class of host found there, and writes nothing anywhere. For the
-  desktop's it says the desktop's registration is in use and already works with `cua serve`.
+  desktop's it says the desktop's registration is in use and already works with `cua serve`. If such a manifest
+  appears, or anything else fails, partway through a run, `register` undoes what it already wrote in that run (putting
+  back the bytes that were there, newest first) so that "Nothing was changed." stays true; if it cannot finish that
+  undo (another program wrote the slot meanwhile, say), it fails with `registration_partial`, names each unfinished
+  path, keeps the backup and record, and tells you to run `cua chrome unregister`.
 - `--replace` first copies each existing manifest byte-for-byte to `$CUA_HOME/chrome/manifest-backup/<browser>.json`
   and records it, prints two consequences before the first replacement, then writes cua's. The consequences: while
   cua's host is registered, the desktop's Codex side panel and app-server features in Chrome stop working (no desktop
   registry entry names cua's host, and that registry gates the app-server; cua writes none); and the desktop app writes
   its own manifest back when it next runs, which silently undoes cua's registration.
-- `unregister` removes only manifests that name cua's host. Where cua replaced one, it restores the backup and verifies
-  the restored bytes. With no backup, a backup that does not match, or a restore that does not verify, it reports
-  restoration BLOCKED (exit 1) with the exact command or step to fix it, and keeps the backup.
-- Writes never clobber a manifest another program writes at the same moment; a contended slot is reported, not
-  overwritten.
+- `unregister` removes only manifests that name cua's host. Where cua replaced one, it restores the backup only when
+  cua's record holds that backup's SHA-256 and the backup matches it, then verifies the restored bytes. With no backup,
+  no record (or no hash for that browser), a backup that does not match, or a restore that does not read back
+  identically, it removes cua's manifest, keeps the backup without installing it, and reports restoration BLOCKED
+  (exit 1) with the exact command or step to fix it.
+- Writes never clobber a manifest another program writes at the same moment: cua takes aside exactly the file it read,
+  compares it, and publishes only into an empty slot, putting the original back on any mismatch or failure. A slot that
+  stays contended after three attempts is reported (`registration_contended`), not overwritten.
 - Browsers covered: Chrome, Edge, Brave, Opera and Vivaldi whose user-data directory exists. Chromium and Chrome for
   Testing are left alone.
-- Chrome starts the host on the extension's next connection (disable and re-enable the extension, or reopen its side
-  panel). cua never launches, stops or signals a host or a browser.
+- Chrome starts the host on the extension's next connection; switching the extension off and on at
+  `chrome://extensions` forces one (then rebind your profiles, above). A host Chrome already started keeps running and
+  serving: after `register` the old host serves until the extension reconnects, and after `unregister` cua's host
+  likewise keeps serving until the next reconnection launches the desktop's again. cua never launches, stops or
+  signals a host or a browser.
 
 `cua doctor` reports the Chrome side passively, beside runtime health: `chrome.extension.<key>` (extension present per
 registered profile), `chrome.host.registered` (whether the manifest exists and whose host it names: `desktop`, `cua`

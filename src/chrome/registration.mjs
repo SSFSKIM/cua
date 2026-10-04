@@ -18,10 +18,11 @@
 // targets on macOS whose user-data directory exists; their NativeMessagingHosts directory is created when missing.
 // The slots are shared with the desktop app, which re-syncs its manifest: cua takes exactly the file it read before
 // replacing or removing it and publishes without clobbering (see `publish`/`take`), so a concurrent write is detected
-// and never destroyed.
+// and never destroyed. Two cua commands sharing a CUA_HOME never interleave: register and unregister each hold the
+// home's registration lock for their whole run (see `acquireLock`).
 // No chrome-native-hosts-v2.json entry is written: the browser-use socket does not need one (only the desktop's
 // side-panel app-server does, which is not cua's feature). Nothing here launches or signals a host or a browser.
-import {linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {linkSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createHash, randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
 import {basename, dirname, isAbsolute, join, normalize} from 'node:path';
@@ -51,6 +52,7 @@ const isDirectory = path => { try { return statSync(path).isDirectory(); } catch
 const chromeDir = home => join(home, 'chrome');
 const recordFile = home => join(chromeDir(home), 'registration.json');
 const backupFile = (home, browser) => join(chromeDir(home), 'manifest-backup', `${browser}.json`);
+const lockFile = home => join(chromeDir(home), 'registration.lock');
 
 export function manifestText({name, description, extensionIds}, hostPath) {
   const manifest = {allowed_origins: [...new Set(extensionIds.map(id => `chrome-extension://${id}/`))], description, name, path: hostPath, type: 'stdio'};
@@ -131,11 +133,11 @@ function writeAtomic(path, bytes, {mode, dirMode}) {
 // `io` carries the filesystem calls on this path so tests can inject failures; production always uses node:fs.
 const FS = {linkSync, renameSync, readFileSync, writeFileSync};
 
-function publish(path, bytes, io) {
+function publish(path, bytes, io, mode = 0o644) {
   mkdirSync(dirname(path), {recursive: true});
   const temp = sibling(path, 'tmp');
   try {
-    io.writeFileSync(temp, bytes, {mode: 0o644, flag: 'wx'});
+    io.writeFileSync(temp, bytes, {mode, flag: 'wx'});
     io.linkSync(temp, path);
     return true;
   } catch (error) {
@@ -180,6 +182,82 @@ function withTaken(aside, path, io, work) {
   }
 }
 
+// register and unregister in one CUA_HOME run one at a time, across processes: each holds <home>/chrome/registration.lock
+// for its whole run (plan, every manifest write, the record and backups, any undo), so no second command can act on
+// a slot the first has taken aside, or rewrite the recovery record under it. The lock is published like a manifest
+// (link(2): never half-written, never clobbered) and names its holder's pid. A lock whose pid no longer runs is stale
+// and is broken; one held by a running process, or one that names no pid, is waited for (`waitMs`), then the command
+// refuses with registration_contended before changing anything. A directory created only for the lock goes with it,
+// so a command that changed nothing leaves nothing behind.
+export const LOCK_TIMING = {waitMs: 5000, pollMs: 50};
+const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const running = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+const holderOf = bytes => {
+  let pid;
+  try { ({pid} = JSON.parse(bytes.toString('utf8'))); } catch {}
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+};
+
+function acquireLock(cuaHome, {waitMs, pollMs} = LOCK_TIMING) {
+  const dir = chromeDir(cuaHome);
+  const path = lockFile(cuaHome);
+  const bytes = Buffer.from(`${JSON.stringify({pid: process.pid, token: randomUUID()})}\n`);
+  const deadline = Date.now() + waitMs;
+  let created;
+  for (;;) {
+    let held;
+    try {
+      created ??= mkdirSync(dir, {recursive: true, mode: 0o700});
+      if (publish(path, bytes, FS, 0o600)) return {path, bytes, dir, created};
+      held = readFileSync(path);
+    } catch (error) {
+      // The directory or the lock went away between the steps (its holder released it): look again.
+      if (error.code === 'ENOENT' && Date.now() < deadline) continue;
+      fail('registration_lock_failed', `could not take the registration lock ${path} (${error.code ?? error.message}); nothing was changed`, {cause: error});
+    }
+    const pid = holderOf(held);
+    if (pid !== null && !running(pid)) { breakStaleLock(path, held); continue; }
+    if (Date.now() >= deadline) {
+      fail('registration_contended', pid === null
+        ? `the registration lock ${path} is held but names no process; nothing was changed`
+        : `another cua command (process ${pid}) is registering or unregistering cua's Chrome host in ${cuaHome}; nothing was changed`,
+      {hint: pid === null
+        ? `if no \`cua chrome register\` or \`unregister\` is running, remove the lock yourself (rm "${path}") and run the command again`
+        : `run the command again once it has finished; if process ${pid} is not a cua command, remove the stale lock yourself (rm "${path}")`});
+    }
+    sleep(pollMs);
+  }
+}
+
+// Moves a stale lock aside and deletes it only if it is still exactly the one read; a lock some live process took
+// meanwhile goes back (an even newer one, if any, stands).
+function breakStaleLock(path, stale) {
+  const aside = sibling(path, 'stale');
+  try { renameSync(path, aside); } catch (error) {
+    if (error.code === 'ENOENT') return;
+    fail('registration_lock_failed', `could not remove the stale registration lock ${path} (${error.code ?? error.message}); nothing was changed`, {hint: `remove it yourself (rm "${path}") and run the command again`, cause: error});
+  }
+  let same = false;
+  try { same = readFileSync(aside).equals(stale); } catch {}
+  if (!same) {
+    try { linkSync(aside, path); } catch (error) {
+      if (error.code !== 'EEXIST') fail('registration_lock_failed', `could not put a live registration lock back at ${path} (${error.code ?? error.message}); it is kept in ${aside}`, {hint: `mv "${aside}" "${path}"`, cause: error});
+    }
+  }
+  rmSync(aside, {force: true});
+}
+
+// Removes only this run's own lock; a lock that stays behind (removal failed) names a pid that will be gone, so the
+// next command breaks it.
+function releaseLock({path, bytes, dir, created}) {
+  try { if (readFileSync(path).equals(bytes)) rmSync(path, {force: true}); } catch {}
+  if (!created) return;
+  for (let d = dir; ; d = dirname(d)) {
+    try { rmdirSync(d); } catch { return; }
+    if (d === created) return;
+  }
+}
+
 function refusal(foreign, nativeHost) {
   const where = foreign.map(s => `${s.browser} (${s.slot.pathClass})`).join(', ');
   const why = foreign.every(s => s.slot.pathClass === 'desktop')
@@ -194,9 +272,18 @@ const contended = path => fail('registration_contended', `${path} kept changing 
 // Registers the active release's Chrome host. `onReplace(consequences)` is called once, immediately before the first
 // manifest cua did not write is actually replaced (including one that appeared after the plan); the consequences are
 // therefore always announced before anything foreign is overwritten. `onStep(step, {browser, manifestPath})` (called
-// right before each publish or take) and `io` (see FS) are test seams, module API only.
-export async function registerHost({home, runtime, replace = false, userHome = homedir(), verifySignatures = verifyCodeSignatures, onReplace, onStep, pins = loadPins(), io = FS}) {
+// right before each publish or take), `io` (see FS) and `lockTiming` (see LOCK_TIMING) are test seams, module API only.
+export async function registerHost({home, runtime, replace = false, userHome = homedir(), verifySignatures = verifyCodeSignatures, onReplace, onStep, pins = loadPins(), io = FS, lockTiming = LOCK_TIMING}) {
   const cuaHome = realHome(home);
+  const lock = acquireLock(cuaHome, lockTiming);
+  try {
+    return await registerLocked({cuaHome, runtime, replace, userHome, verifySignatures, onReplace, onStep, pins, io});
+  } finally {
+    releaseLock(lock);
+  }
+}
+
+async function registerLocked({cuaHome, runtime, replace, userHome, verifySignatures, onReplace, onStep, pins, io}) {
   const paths = locateChromeComponent(runtime);
   const native = runtime.manifest.chromePlugin.nativeHost;
   const desired = Buffer.from(manifestText(native, paths.host));
@@ -353,8 +440,17 @@ const restoreYourself = (name, manifestPath) => `restore ${name}'s previous regi
 // Removes cua's manifests from every browser and restores what cua replaced. Never touches a manifest it did not write:
 // each removal takes exactly the file it read (see `take`), and a restore publishes without clobbering. Every browser
 // is processed; an I/O failure in one is that browser's BLOCKED result (backup and record kept), never a stop.
-export function unregisterHost({home, userHome = homedir(), nativeHost = 'com.openai.codexextension', pins = loadPins(), onStep, io = FS}) {
+export function unregisterHost({home, userHome = homedir(), nativeHost = 'com.openai.codexextension', pins = loadPins(), onStep, io = FS, lockTiming = LOCK_TIMING}) {
   const cuaHome = realHome(home);
+  const lock = acquireLock(cuaHome, lockTiming);
+  try {
+    return unregisterLocked({cuaHome, userHome, nativeHost, pins, onStep, io});
+  } finally {
+    releaseLock(lock);
+  }
+}
+
+function unregisterLocked({cuaHome, userHome, nativeHost, pins, onStep, io}) {
   const context = {home: cuaHome, userHome, suffixes: hostSuffixes(pins)};
   const record = readRecord(cuaHome);
   let recordChanged = false;

@@ -4,10 +4,12 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, chmodSync, linkSync, renameSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
 import {join, dirname} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {registerHost, unregisterHost, BROWSERS, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
 import {resolveRuntime, parsePin} from '../src/runtime/manifest.mjs';
-import {scratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures, realPinJson} from './fixtures/runtime-fixture.mjs';
+import {REPO, scratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures, realPinJson} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const MANIFEST = 'com.openai.codexextension.json';
@@ -631,4 +633,91 @@ test('a backup that cannot be removed after a confirmed undo does not stop the o
   }
   assert.match(error.message, /EACCES/);
   assert.equal(existsSync(vivaldi), false);
+});
+
+// Review fix: two cua processes sharing a home interleaved. The second saw the slot the first had emptied by taking the
+// desktop's manifest aside, replaced its recovery entry with replaced:false and published; a later unregister then
+// removed the registration instead of restoring the original. register and unregister now hold the home's lock.
+const lockPath = m => join(m.runtime.home, 'chrome', 'registration.lock');
+const FAST = {waitMs: 150, pollMs: 10};
+const moduleUrl = rel => JSON.stringify(pathToFileURL(join(REPO, rel)).href);
+
+// Runs register or unregister in a separate real process on the same homes, returning its outcome.
+function otherProcess(m, command) {
+  const script = `
+    import {registerHost, unregisterHost} from ${moduleUrl('src/chrome/registration.mjs')};
+    import {resolveRuntime} from ${moduleUrl('src/runtime/manifest.mjs')};
+    import {acceptSignatures} from ${moduleUrl('test/fixtures/runtime-fixture.mjs')};
+    const {CUA_TEST_HOME: home, CUA_TEST_USER_HOME: userHome, CUA_TEST_COMMAND: command} = process.env;
+    const lockTiming = {waitMs: 200, pollMs: 10};
+    try {
+      const result = command === 'register'
+        ? await registerHost({home, runtime: resolveRuntime({home}), userHome, verifySignatures: acceptSignatures, lockTiming})
+        : unregisterHost({home, userHome, lockTiming});
+      console.log(JSON.stringify({ok: true, result}));
+    } catch (error) { console.log(JSON.stringify({ok: false, code: error.code, message: error.message})); }`;
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], {env: {...process.env, CUA_TEST_HOME: m.home, CUA_TEST_USER_HOME: m.userHome, CUA_TEST_COMMAND: command}, encoding: 'utf8', timeout: 30_000});
+  assert.equal(run.status, 0, run.stderr);
+  return JSON.parse(run.stdout.trim().split('\n').at(-1));
+}
+
+test('a second cua process cannot act while the first is mid-replacement, so the original manifest is still restored', async t => {
+  for (const command of ['register', 'unregister']) {
+    const m = machine(t, {chromeManifest: DESKTOP});
+    let other;
+    // The first run pauses with the desktop's manifest taken aside, backed up and recorded, right before publishing.
+    const result = await register(m, {replace: true, onReplace: () => {}, onStep: hook('chrome', 'publish', () => {
+      assert.equal(existsSync(m.manifests.chrome), false, 'the slot is empty at this moment');
+      other = otherProcess(m, command);
+    })});
+    assert.deepEqual({ok: other.ok, code: other.code}, {ok: false, code: 'registration_contended'}, command);
+    assert.match(other.message, new RegExp(`process ${process.pid}`), command);
+    assert.deepEqual(result.browsers.map(b => [b.browser, b.action]), [['chrome', 'replaced'], ['brave', 'placed']], command);
+    assert.deepEqual(record(m).browsers.chrome, {manifest: m.manifests.chrome, replaced: true, backupSha256: sha(m.original)}, command);
+    const after = unregister(m);
+    assert.deepEqual([after.browsers[0].action, after.browsers[0].restoration], ['restored', 'restored'], command);
+    assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original, command);
+  }
+});
+
+test('register and unregister wait for a running holder of the home\'s lock, then refuse registration_contended and change nothing', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  mkdirSync(join(m.runtime.home, 'chrome'));
+  const held = `${JSON.stringify({pid: process.pid, token: 'another run'})}\n`;
+  writeFileSync(lockPath(m), held);
+  const started = Date.now();
+  await assert.rejects(register(m, {replace: true, onReplace: () => assert.fail('nothing may be announced'), lockTiming: FAST}), err => {
+    assert.equal(err.code, 'registration_contended');
+    assert.match(err.message, new RegExp(`process ${process.pid}.*nothing was changed`));
+    assert.ok(err.hint.includes(lockPath(m)), err.hint);
+    return true;
+  });
+  assert.ok(Date.now() - started >= FAST.waitMs, 'it waited for the holder first');
+  assert.throws(() => unregisterHost({home: m.home, userHome: m.userHome, lockTiming: FAST}), expectCode('registration_contended'));
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original);
+  assert.equal(existsSync(m.manifests.brave), false);
+  assert.deepEqual(readdirSync(join(m.runtime.home, 'chrome')), ['registration.lock'], 'no record, no backup');
+  assert.equal(readFileSync(lockPath(m), 'utf8'), held, 'a live holder\'s lock is never removed');
+  // A lock that names no process cannot be judged stale, so it is never broken either.
+  writeFileSync(lockPath(m), '');
+  await assert.rejects(register(m, {lockTiming: FAST}), err => err.code === 'registration_contended' && /names no process/.test(err.message) && err.hint.includes(`rm "${lockPath(m)}"`));
+  assert.equal(readFileSync(lockPath(m), 'utf8'), '');
+  rmSync(lockPath(m));
+  const done = await register(m, {replace: true, onReplace: () => {}, lockTiming: FAST});
+  assert.deepEqual(done.browsers.map(b => b.action), ['replaced', 'placed']);
+});
+
+test('a lock left by a process that no longer runs is broken, and no run leaves its lock behind', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  const dead = spawnSync(process.execPath, ['-e', '']).pid;
+  const stale = `${JSON.stringify({pid: dead, token: 'crashed run'})}\n`;
+  mkdirSync(join(m.runtime.home, 'chrome'));
+  writeFileSync(lockPath(m), stale);
+  const result = await register(m, {replace: true, onReplace: () => {}, lockTiming: FAST});
+  assert.deepEqual(result.browsers.map(b => b.action), ['replaced', 'placed']);
+  assert.deepEqual(readdirSync(join(m.runtime.home, 'chrome')).sort(), ['manifest-backup', 'registration.json']);
+  writeFileSync(lockPath(m), stale);
+  assert.equal(unregisterHost({home: m.home, userHome: m.userHome, lockTiming: FAST}).blocked, false);
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original);
+  assert.deepEqual(readdirSync(join(m.runtime.home, 'chrome')).sort(), ['manifest-backup', 'registration.json']);
 });

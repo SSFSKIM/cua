@@ -324,6 +324,9 @@ node bin/cua.mjs chrome unregister           # removes cua's manifests and resto
 - Writes never clobber a manifest another program writes at the same moment: cua takes aside exactly the file it read,
   compares it, and publishes only into an empty slot, putting the original back on any mismatch or failure. A slot that
   stays contended after three attempts is reported (`registration_contended`), not overwritten.
+- Two cua commands sharing a `CUA_HOME` never interleave: `register` and `unregister` hold
+  `$CUA_HOME/chrome/registration.lock` for their whole run. A second one waits up to 5 s, then refuses with
+  `registration_contended` before changing anything; a lock left by a process that no longer runs is cleared.
 - Browsers covered: Chrome, Edge, Brave, Opera and Vivaldi whose user-data directory exists. Chromium and Chrome for
   Testing are left alone.
 - Chrome starts the host on the extension's next connection; switching the extension off and on at

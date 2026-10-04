@@ -43,8 +43,9 @@ npm run build:helper && npm run test:helper    # only for secrets: build, then t
 ```
 
 `cua install` is idempotent for a verified release and never repairs one in place; `cua runtime use <release>`
-switches between verified installed releases. A release that no longer verifies is reported with its offline
-recovery: stop the servers using it, remove its directory, install again.
+switches between verified installed releases, including the release's Chrome host and its configuration where one is
+placed. A release that no longer verifies is reported with its offline recovery: stop the servers using it, remove its
+directory, install again.
 
 `cua install` also places the pinned archive's Chrome plugin (OpenAI's signed native host and its scripts) in the
 release, with the host's configuration beside it; it is used only if you register it (see Chrome). An installed

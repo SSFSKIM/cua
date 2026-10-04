@@ -149,14 +149,20 @@ function ensureCodexHome(home) {
 }
 
 // Select an installed release: it must have a checked-in pin, an install record matching that pin, and still verify.
+// Its Chrome plugin component is held to install's rules: a placed one must verify whole, a path holding something
+// else is refused, and a release installed before the component existed (nothing there) stays selectable.
 export async function useRuntime({home, release, pins = loadPins(), verifySignatures = verifyCodeSignatures, host}) {
   const pin = findPin(pins, release);
   assertHostSupports(pin, host);
   const real = realHome(home);
   const root = join(homeLayout(real).runtimes, pin.release);
   if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: 'run `cua install` for it first'});
-  readInstalledRecord(root, pin);
+  const record = readInstalledRecord(root, pin);
   await verifyRuntimeTree(root, pin, {verifySignatures});
+  const component = join(root, pin.chromePlugin.dir);
+  const {state} = componentState(component, pin);
+  if (state === 'occupied') occupied(component);
+  if (state === 'placed') await assertPlacedComponent(runtimeFor({home: real, pin, record}), verifySignatures);
   activate(real, pin.release);
   return {release: pin.release, root};
 }

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, writeFileSync, existsSync, readdirSync, statSync, lstatSync, rmSync, mkdirSync, realpathSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {join, relative} from 'node:path';
-import {installRuntime} from '../src/runtime/install.mjs';
+import {installRuntime, useRuntime} from '../src/runtime/install.mjs';
 import {parsePin, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {chromeComponentPaths, hostConfigFor, HOST_CONFIG_FILE} from '../src/runtime/chrome-component.mjs';
 import {scratch, zipFixture, fixturePin, acceptSignatures, realPinJson} from './fixtures/runtime-fixture.mjs';
@@ -242,4 +242,51 @@ test('a placed component whose host configuration is missing or wrong is refused
     });
     assert.deepEqual(snapshot(root), before, `${name}: never repaired in place`);
   }
+});
+
+// Two installed releases in one home, the second active, for `runtime use` back to the first.
+async function twoReleases(t) {
+  const first = setup(t, {pin: {release: '0.0.1-darwin-arm64'}});
+  await install(first);
+  const second = setup(t, {pin: {release: '0.0.2-darwin-arm64'}});
+  second.home = first.home;
+  await install(second);
+  const root = join(realpathSync(first.home), 'runtimes', first.pin.release);
+  const use = (extra = {}) => useRuntime({home: first.home, release: first.pin.release, pins: [first.pin, second.pin], verifySignatures: acceptSignatures, host: HOST, ...extra});
+  return {home: first.home, root, component: join(root, 'chrome-plugin'), use, active: second.pin.release};
+}
+
+test('runtime use refuses a release whose placed component no longer verifies, with install\'s classification, and keeps the pointer', {skip: !darwin}, async t => {
+  const damage = {
+    'host deleted': [m => rmSync(join(m.component, 'extension-host/macos/arm64/ChatGPT for Chrome')), 'layout_invalid'],
+    'configuration deleted': [m => rmSync(join(m.component, 'extension-host/macos/arm64', HOST_CONFIG_FILE)), 'host_config_invalid'],
+    'host signature rejected': [() => {}, 'signature_invalid', {verifySignatures: async (root, pin) => pin.signing.components.map(c => ({component: c, valid: !c.includes('ChatGPT for Chrome'), detail: 'bad'}))}],
+  };
+  for (const [name, [apply, cause, extra]] of Object.entries(damage)) {
+    const m = await twoReleases(t);
+    apply(m);
+    await assert.rejects(m.use(extra), err => {
+      assert.equal(err.code, 'chrome_component_invalid', `${name}: ${err.code} ${err.message}`);
+      assert.equal(err.cause?.code, cause, name);
+      assert.ok(err.hint.includes(m.component), err.hint);
+      return true;
+    });
+    assert.equal(pointer(m.home), m.active, name);
+  }
+});
+
+test('runtime use still selects a release installed before the component existed, and refuses a component path that is not ours', {skip: !darwin}, async t => {
+  const legacy = await twoReleases(t);
+  rmSync(legacy.component, {recursive: true, force: true});
+  const used = await legacy.use();
+  assert.equal(used.release, '0.0.1-darwin-arm64');
+  assert.equal(pointer(legacy.home), '0.0.1-darwin-arm64');
+
+  const other = await twoReleases(t);
+  rmSync(other.component, {recursive: true, force: true});
+  mkdirSync(other.component);
+  writeFileSync(join(other.component, 'keep'), 'not ours');
+  await assert.rejects(other.use(), expectCode('target_occupied'));
+  assert.equal(readFileSync(join(other.component, 'keep'), 'utf8'), 'not ours');
+  assert.equal(pointer(other.home), other.active);
 });

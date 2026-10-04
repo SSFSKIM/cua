@@ -9,12 +9,12 @@ import {mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, realpathSy
 import {join} from 'node:path';
 import {startBroker} from '../../../src/secrets/broker.mjs';
 import {brokerClient} from '../../../src/secrets/client.mjs';
-import {HELPER_PATH} from '../../../src/secrets/helper.mjs';
+import {BUILD_OUTPUT} from '../../../src/secrets/helper.mjs';
 import {TESTHOST, setThroughTerminal} from '../fixtures/seed.mjs';
 
 const BIN = process.env.CUA_KEYCHAIN_BIN_DIR;
 const testhost = BIN ? join(BIN, 'cua-keychain-testhost') : TESTHOST;
-const production = BIN ? join(BIN, 'cua-keychain') : HELPER_PATH;
+const production = BIN ? join(BIN, 'cua-keychain') : BUILD_OUTPUT;
 const viaNet = path => net.createConnection(path);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 

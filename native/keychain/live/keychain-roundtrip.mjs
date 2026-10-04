@@ -21,7 +21,7 @@ import {mkdtempSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import net from 'node:net';
 import {parseArgs} from 'node:util';
-import {HELPER_PATH, locateHelper, inspectKeychainHelper} from '../../../src/secrets/helper.mjs';
+import {locateHelper, inspectKeychainHelper} from '../../../src/secrets/helper.mjs';
 import {startBroker} from '../../../src/secrets/broker.mjs';
 import {brokerClient} from '../../../src/secrets/client.mjs';
 import {runCaptured} from '../../../src/secrets/commands.mjs';
@@ -29,6 +29,8 @@ import {PTY_DRIVER, setThroughTerminal} from '../fixtures/seed.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
 const STEP_MS = 15_000;
+// The helper cua runs for this CUA_HOME (installed copy first, then the checkout build).
+const HELPER = locateHelper().path;
 const PROMPT_ACTION = 'a Keychain prompt may be waiting: dismiss it (do not allow) and re-run at a time a human can answer Keychain prompts, or sign the helper with a stable identity (npm run build:helper -- --sign <identity>)';
 
 const label = `cua-live-${randomUUID()}`;
@@ -42,7 +44,7 @@ const within = (promise, ms) => {
 const viaNet = path => net.createConnection(path);
 
 async function seed(name, value) {
-  const r = await setThroughTerminal({helper: HELPER_PATH, label, value, timeoutMs: STEP_MS});
+  const r = await setThroughTerminal({helper: HELPER, label, value, timeoutMs: STEP_MS});
   if (r.echoed) return record(name, 'FAIL', 'the value appeared in terminal output');
   if (!r.terminalRestored) return record(name, 'FAIL', 'the terminal modes were not restored');
   if (r.timedOut) return record(name, 'BLOCKED', `set did not finish within ${STEP_MS} ms (step ${r.failedStep ?? 'exit'}); ${PROMPT_ACTION}`);
@@ -63,7 +65,7 @@ async function read(name, client, expected) {
 }
 
 async function listed() {
-  const r = await runCaptured(HELPER_PATH, ['list']);
+  const r = await runCaptured(HELPER, ['list']);
   if (r.code !== 0) return {error: r.stderr.trim().split('\n').pop()};
   try { return {labels: JSON.parse(r.stdout).labels}; } catch { return {error: 'unreadable list output'}; }
 }
@@ -75,14 +77,14 @@ try {
   if (!locateHelper().built || !locateHelper({path: PTY_DRIVER}).built) {
     record('preconditions', 'BLOCKED', 'build the helper (npm run build:helper) and the test products (npm run test:helper) first');
   } else {
-    const info = await inspectKeychainHelper();
+    const info = await inspectKeychainHelper({path: HELPER});
     record('preconditions', 'PASS', `helper ${info.signature?.adhoc ? 'ad-hoc signed' : `signed by ${info.signature?.authority ?? 'unknown'}`}; label ${label}`);
     created = true;  // from here on, cleanup must run even if creation is only partially confirmed
     if (await seed('create', sentinels[0])) {
       const list = await within(listed(), STEP_MS);
       const shown = list.labels?.includes(label);
       record('list', shown ? 'PASS' : list.timedOutAfterMs ? 'BLOCKED' : 'FAIL', shown ? 'the label is listed' : list.timedOutAfterMs ? PROMPT_ACTION : `label missing (${list.error ?? 'not in the list'})`);
-      broker = await startBroker({command: HELPER_PATH, endpoint: join(scratch, 'b.sock')});
+      broker = await startBroker({command: HELPER, endpoint: join(scratch, 'b.sock')});
       const client = brokerClient({endpoint: broker.endpoint, token: broker.token, connect: viaNet, timeoutMs: STEP_MS});
       if (await read('read 1', client, sentinels[0]) && await seed('replace', sentinels[1])) await read('read 2', client, sentinels[1]);
       const forged = await brokerClient({endpoint: broker.endpoint, token: 'f'.repeat(43), connect: viaNet}).read(label).then(() => 'value', error => error.code);
@@ -97,7 +99,7 @@ try {
     record('broker close', closed.confirmed ? 'PASS' : 'FAIL', closed.confirmed ? `stopped after ${closed.steps.join(', ')}; endpoint removed` : closed.reason);
   }
   if (created) {
-    const removed = await within(runCaptured(HELPER_PATH, ['remove', label, '--yes']), STEP_MS);
+    const removed = await within(runCaptured(HELPER, ['remove', label, '--yes']), STEP_MS);
     const after = await within(listed(), STEP_MS);
     const gone = Array.isArray(after.labels) && !after.labels.includes(label);
     const notFound = /\[not_found\]/.test(removed.stderr ?? '');

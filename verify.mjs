@@ -22,7 +22,7 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
 import {descendants, classifyProcesses, socketHolders} from './scripts/probe/lib.mjs';
-import {HELPER_PATH} from './src/secrets/helper.mjs';
+import {locateHelper} from './src/secrets/helper.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
@@ -112,9 +112,10 @@ try {
 
   // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime;
   // beside it, the connection's secrets broker when the Keychain helper is built.
-  const helper = existsSync(HELPER_PATH) ? realpathSync(HELPER_PATH) : null;
+  const helperPath = locateHelper({home}).path;
+  const helper = existsSync(helperPath) ? realpathSync(helperPath) : null;
   const all = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), server.pid).filter(p => p.pid !== server.pid);
-  const brokers = all.filter(p => p.ppid === server.pid && helper && [HELPER_PATH, helper].includes(p.executable));
+  const brokers = all.filter(p => p.ppid === server.pid && helper && [helperPath, helper].includes(p.executable));
   const tree = all.filter(p => !brokers.includes(p));
   report.secretsBroker = brokers.map(p => ({pid: p.pid, executable: p.executable.replace(homedir(), '~')}));
   check(secrets?.status !== 'ok' || brokers.length === 1, 'secrets_list answered but no broker helper runs under the server');

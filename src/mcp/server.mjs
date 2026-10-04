@@ -326,7 +326,7 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
 // tests and the opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and
 // are not reachable from the CLI.
-export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper(),
+export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper({home}),
   prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`)}) {
   const {secrets: secretsEnabled, ...settings} = settingsFrom(env);
   const services = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};

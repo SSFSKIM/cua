@@ -5,9 +5,9 @@
 // the Node-driven tests of the built executables. Nothing here reads or writes the Keychain or needs a prompt.
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
-import {PACKAGE_DIR, locateHelper} from '../src/secrets/helper.mjs';
+import {PACKAGE_DIR, BUILD_OUTPUT, locateHelper} from '../src/secrets/helper.mjs';
 
-if (!locateHelper().built) {
+if (!locateHelper({path: BUILD_OUTPUT}).built) {
   console.error('test:helper: run `npm run build:helper` first; these tests exercise the built production helper');
   process.exit(1);
 }

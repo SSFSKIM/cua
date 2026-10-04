@@ -3,6 +3,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {mkdirSync, writeFileSync, chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {runSecrets} from '../src/secrets/commands.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
@@ -80,4 +81,17 @@ test('without a built helper every route fails with build guidance and nothing r
     await assert.rejects(runSecrets(request, d.deps), error => error.code === 'helper_not_built' && /npm run build:helper/.test(error.hint));
     assert.deepEqual(d.calls, []);
   }
+});
+
+test('the CLI runs the helper installed in $CUA_HOME/bin, so a copy of cua without its own build finds it', () => {
+  const s = scratch();
+  try {
+    mkdirSync(join(s.dir, 'bin'));
+    const helper = join(s.dir, 'bin', 'cua-keychain');
+    writeFileSync(helper, '#!/bin/sh\n[ "$1" = list ] && echo \'{"labels":["from-cua-home"]}\'\n');
+    chmodSync(helper, 0o755);
+    const r = spawnSync(process.execPath, [CLI, 'secrets', 'list', '--json'], {env: {...process.env, CUA_HOME: s.dir}, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe']});
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout), {ok: true, labels: ['from-cua-home']});
+  } finally { s.cleanup(); }
 });

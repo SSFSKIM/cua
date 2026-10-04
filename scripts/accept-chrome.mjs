@@ -33,7 +33,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome, realHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {loginStatus, LOGIN_STATES} from '../src/runtime/login.mjs';
-import {HELPER_PATH, locateHelper} from '../src/secrets/helper.mjs';
+import {locateHelper} from '../src/secrets/helper.mjs';
 import {runCaptured} from '../src/secrets/commands.mjs';
 import {chromeFacts, countLiveHosts} from '../src/profiles/chrome.mjs';
 import {profileStatuses} from '../src/profiles/registry.mjs';
@@ -64,6 +64,8 @@ const SEED_MS = 15_000;
 const PROMPT_ACTION = 'a Keychain prompt may be waiting: dismiss it (do not allow) and re-run when a human can answer it';
 
 const home = realHome(defaultHome());
+// The helper the server under this home runs, so the seeded item and the broker share one code identity.
+const HELPER = locateHelper({home}).path;
 const label = `cua-m11-accept-${randomUUID()}`;
 const sentinel = `cua-m11-sentinel-${randomBytes(18).toString('base64url')}`;
 const reference = `{{secret:${label}}}`;
@@ -77,7 +79,7 @@ function preconditions() {
   const missing = [];
   let runtime;
   try { runtime = resolveRuntime({home}); facts.release = runtime.release; } catch (error) { missing.push(`runtime: ${error.code}`); }
-  if (!locateHelper().built || !locateHelper({path: PTY_DRIVER}).built) missing.push('Keychain helper or pty driver not built (npm run build:helper, npm run test:helper)');
+  if (!locateHelper({home}).built || !locateHelper({path: PTY_DRIVER}).built) missing.push('Keychain helper or pty driver not built (npm run build:helper, npm run test:helper)');
   let profile;
   try { profile = profileStatuses({home, chrome: chromeFacts()}).find(p => p.key === options.profile); } catch (error) { missing.push(`profiles: ${error.code}`); }
   if (!profile) missing.push(`profile "${options.profile}" is not registered`);
@@ -104,7 +106,7 @@ try {
     if (login.state !== LOGIN_STATES.loggedIn) record('preconditions', 'BLOCKED', `the server has no Codex login (${login.state}); run cua login`);
     else {
       record('preconditions', 'PASS', {release: runtime.release, profileReady: true, liveHosts: facts.liveHosts, login: login.state});
-      const seed = await setThroughTerminal({helper: HELPER_PATH, label, value: sentinel, timeoutMs: SEED_MS});
+      const seed = await setThroughTerminal({helper: HELPER, label, value: sentinel, timeoutMs: SEED_MS});
       seeded = true;
       if (seed.echoed) record('seed-disposable-secret', 'FAIL', 'the value appeared in terminal output');
       else if (seed.timedOut) record('seed-disposable-secret', 'BLOCKED', `set did not finish within ${SEED_MS} ms; ${PROMPT_ACTION}`);
@@ -147,8 +149,8 @@ try {
 } finally {
   if (page) { facts.testPage = page.requests(); await page.close(); }
   if (seeded) {
-    const removed = await runCaptured(HELPER_PATH, ['remove', label, '--yes']);
-    const after = await runCaptured(HELPER_PATH, ['list']);
+    const removed = await runCaptured(HELPER, ['remove', label, '--yes']);
+    const after = await runCaptured(HELPER, ['list']);
     let gone = false;
     try { gone = !JSON.parse(after.stdout).labels.includes(label); } catch {}
     record('cleanup-disposable-secret', gone && (removed.code === 0 || /\[not_found\]/.test(removed.stderr ?? '')) ? 'PASS' : 'FAIL',

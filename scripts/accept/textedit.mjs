@@ -25,7 +25,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {NATIVE_SOCKET} from '../../src/runtime/doctor.mjs';
-import {HELPER_PATH, locateHelper} from '../../src/secrets/helper.mjs';
+import {locateHelper} from '../../src/secrets/helper.mjs';
 import {runCaptured} from '../../src/secrets/commands.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../../native/keychain/fixtures/seed.mjs';
 import {socketHolders} from '../probe/lib.mjs';
@@ -85,6 +85,8 @@ ${action}
 }`;
 
 export async function runTextEdit({home, secret = false, forbid = () => {}, stepMs = 60_000}) {
+  // The helper the server under this home runs, so the seeded item and the broker share one code identity.
+  const helper = locateHelper({home});
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
   const observations = {elicitations: [], connections: []};
@@ -166,13 +168,13 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   async function main() {
     const runtime = resolveRuntime({home});
     if (process.platform !== 'darwin' || !existsSync(TEXTEDIT_APP)) return record(STEP.preconditions, 'BLOCKED', `needs macOS with ${TEXTEDIT_APP}`);
-    if (secret && (!locateHelper().built || !locateHelper({path: PTY_DRIVER}).built))
+    if (secret && (!helper.built || !locateHelper({path: PTY_DRIVER}).built))
       return record(STEP.preconditions, 'BLOCKED', 'build the helper (npm run build:helper) and its test products (npm run test:helper) first');
     record(STEP.preconditions, 'PASS', `runtime ${runtime.release}; TextEdit ${textEditBefore.length ? 'already running (left as it is)' : 'not running'}`);
 
     if (secret) {
       itemCreated = true;  // cleanup runs even if creation is only partly confirmed
-      const seeded = await setThroughTerminal({helper: HELPER_PATH, label, value, timeoutMs: 15_000});
+      const seeded = await setThroughTerminal({helper: helper.path, label, value, timeoutMs: 15_000});
       if (seeded.echoed) record(STEP.secretCreate, 'FAIL', 'the value appeared in terminal output');
       else if (seeded.timedOut) record(STEP.secretCreate, 'BLOCKED', `set did not finish within 15 s; ${PROMPT_ACTION}`);
       else if (seeded.exit !== 0 || !seeded.terminalRestored) record(STEP.secretCreate, 'FAIL', `set exited ${seeded.exit ?? seeded.signal}`);
@@ -267,8 +269,8 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
       record(STEP.removeDoc, existsSync(docDir) ? 'FAIL' : 'PASS', docOpen ? 'the file and its directory are gone, but its window may still be open in TextEdit' : 'the temporary file and the directory created for it are gone');
     }
     if (itemCreated) {
-      const removed = await runCaptured(HELPER_PATH, ['remove', label, '--yes']);
-      const after = await runCaptured(HELPER_PATH, ['list']);
+      const removed = await runCaptured(helper.path, ['remove', label, '--yes']);
+      const after = await runCaptured(helper.path, ['list']);
       let gone = false;
       try { gone = !JSON.parse(after.stdout).labels.includes(label); } catch {}
       record(STEP.secretCleanup, gone && (removed.code === 0 || /\[not_found\]/.test(removed.stderr)) ? 'PASS' : 'FAIL',

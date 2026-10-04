@@ -20,7 +20,8 @@ Chrome extension and native host (see Chrome). The design and its status are in
   runtime through LaunchServices). macOS asks on first use; `cua doctor` cannot see these grants and reports them as
   `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
   runtime too and is reused as it is, never stopped or replaced.
-- For secrets only: Swift (Xcode or its command-line tools) to build the Keychain helper with `npm run build:helper`.
+- For secrets only: Swift (Xcode or its command-line tools) to build the Keychain helper with `npm run build:helper`
+  from a checkout; the build installs it into `CUA_HOME`, where the plugin finds it too.
   Native control needs no account: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read
   from ChatGPT.app or `~/.codex`.
 - For Chrome only: Google Chrome with OpenAI's Chrome extension (`hehggadaopoacecdllhhajmbjkdcmajg`) installed and
@@ -39,7 +40,8 @@ From a checkout (or after `npm link`, the same commands as `cua`):
 npm test                                   # Node only; no Swift, runtime, GUI, network or credentials
 node bin/cua.mjs install                   # or: install --archive <ChatGPT-darwin-arm64-26.928.40906.zip>
 node bin/cua.mjs doctor                    # --json for the structured checks; exit 1 when one fails
-npm run build:helper && npm run test:helper    # only for secrets: build, then test, the Swift Keychain helper
+npm run build:helper && npm run test:helper    # only for secrets: build the Swift Keychain helper (installed as
+                                               # $CUA_HOME/bin/cua-keychain), then test it
 ```
 
 `cua install` is idempotent for a verified release and never repairs one in place; `cua runtime use <release>`
@@ -61,6 +63,12 @@ claude plugin install cua@cua
 The plugin runs `node cua-shim.mjs`, which is `cua serve`. Then allow the tools in your settings so each call does not
 prompt: `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next
 section. This repository is the plugin's source of truth.
+
+The plugin's copy of cua has no Keychain helper build of its own, so for secrets build it once from a checkout with
+`npm run build:helper` (Swift needed). The build installs the helper as `$CUA_HOME/bin/cua-keychain`, and every copy
+of cua using that `CUA_HOME` (the plugin's included) runs it from there. Use the same `CUA_HOME` for the build as the
+plugin's server (both default to `~/Library/Application Support/cua`), and run the build again after the helper's
+sources change. `cua doctor`'s `secrets.helper` row names the helper it found and where.
 
 ### As a plain MCP server (any host)
 
@@ -183,13 +191,15 @@ OpenAI's pinned browser service version (`unsupported_browser_runtime` otherwise
 every other browser command are never scanned. A failed `locator.fill` makes the vendor's client read back
 diagnostics of the matched elements (tag, role, type, label, text; not the input's value).
 
-The helper is used only from this checkout's build, `native/keychain/.build/release/cua-keychain`; nothing else (in
-particular not the generic `security` tool) is ever used in its place. A locally built helper is ad-hoc signed, and
-Keychain items trust the exact helper that created them: after a rebuild, macOS may ask whether the new helper may use
-them. Signing with a stable identity avoids that on one machine (`npm run build:helper -- --sign "Apple Development:
-…"`); a distributable release needs a Developer ID Application signature, which is not set up yet. `cua doctor`
-reports the helper's build and signature as `secrets.helper` and `secrets.signing`: not built, ad-hoc or Apple
-Development is `blocked`, a stale protocol or broken signature `fail`, Developer ID `pass`.
+cua runs the helper installed at `$CUA_HOME/bin/cua-keychain` when there is one, else this checkout's build output,
+`native/keychain/.build/release/cua-keychain`; `npm run build:helper` writes both, the installed one being a copy of the
+build with the same signature. Nothing else (in particular not the generic `security` tool) is ever used in its place.
+A locally built helper is ad-hoc signed, and Keychain items trust the exact helper that created them: after a rebuild,
+macOS may ask whether the new helper may use them. Signing with a stable identity avoids that on one machine (`npm run
+build:helper -- --sign "Apple Development: …"`); a distributable release needs a Developer ID Application signature,
+which is not set up yet. `cua doctor` reports the helper's build and signature as `secrets.helper` (which also names
+where it found the helper) and `secrets.signing`: not built, ad-hoc or Apple Development is `blocked`, a stale protocol
+or broken signature `fail`, Developer ID `pass`.
 
 ## Chrome (browser surface)
 

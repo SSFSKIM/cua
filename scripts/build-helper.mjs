@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// `npm run build:helper`: builds the production Keychain helper (native/keychain, product `cua-keychain`, release)
-// where cua looks for it, then reports what `cua doctor` will say about it. The linker signs it ad hoc; that is a
-// development signature (see src/secrets/helper.mjs for what it means for Keychain access).
+// `npm run build:helper`: builds the production Keychain helper (native/keychain, product `cua-keychain`, release),
+// installs the built binary as $CUA_HOME/bin/cua-keychain (default CUA_HOME ~/Library/Application Support/cua), where
+// every copy of cua using that home finds it first (the Claude Code plugin's copy has no build of its own), then
+// reports what `cua doctor` will say about it. The linker signs it ad hoc; that is a development signature (see
+// src/secrets/helper.mjs for what it means for Keychain access). The installed copy carries the same signature.
 //
 //   --sign <identity>   re-sign the built helper with a code-signing identity from your keychain (for example an
 //                       "Apple Development: ..." identity) so Keychain trust survives rebuilds on this machine.
@@ -10,7 +12,8 @@
 // Only macOS with Swift tooling (Xcode or its command-line tools) can build the helper.
 import {spawnSync} from 'node:child_process';
 import {parseArgs} from 'node:util';
-import {PACKAGE_DIR, HELPER_PATH, inspectKeychainHelper, classifyKeychainHelper} from '../src/secrets/helper.mjs';
+import {defaultHome} from '../src/runtime/layout.mjs';
+import {PACKAGE_DIR, BUILD_OUTPUT, installHelper, inspectKeychainHelper, classifyKeychainHelper} from '../src/secrets/helper.mjs';
 
 const {values} = parseArgs({options: {sign: {type: 'string'}}, strict: true});
 if (process.platform !== 'darwin') {
@@ -26,7 +29,7 @@ if (build.error || build.status !== 0) {
 
 let signing = 0;
 if (values.sign) {
-  const sign = spawnSync('/usr/bin/codesign', ['--force', '--sign', values.sign, '--identifier', 'cua-keychain', HELPER_PATH], {encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL'});
+  const sign = spawnSync('/usr/bin/codesign', ['--force', '--sign', values.sign, '--identifier', 'cua-keychain', BUILD_OUTPUT], {encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL'});
   if (sign.error?.code === 'ETIMEDOUT' || sign.signal) {
     console.error('build:helper: signing BLOCKED: codesign did not finish within 60 s (it may be waiting for permission to use the identity\'s key); the helper keeps its ad-hoc signature');
     signing = 1;
@@ -35,7 +38,16 @@ if (values.sign) {
     signing = 1;
   }
 }
+console.log(`built ${BUILD_OUTPUT}`);
 
-console.log(`built ${HELPER_PATH}`);
-for (const check of classifyKeychainHelper(await inspectKeychainHelper())) console.log(`${check.status.toUpperCase().padEnd(8)} ${check.name.padEnd(16)} ${check.detail}`);
+const home = defaultHome();
+let installed;
+try {
+  installed = installHelper({home, from: BUILD_OUTPUT});
+} catch (error) {
+  console.error(`build:helper: could not install the helper into ${home}/bin (${error.code ?? error.message}); this checkout's build still works, other copies of cua will not find it`);
+  process.exit(1);
+}
+console.log(`installed ${installed}`);
+for (const check of classifyKeychainHelper(await inspectKeychainHelper({home}))) console.log(`${check.status.toUpperCase().padEnd(8)} ${check.name.padEnd(16)} ${check.detail}`);
 process.exit(signing);

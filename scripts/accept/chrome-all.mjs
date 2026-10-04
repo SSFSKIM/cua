@@ -333,8 +333,9 @@ export async function runAll(argv) {
         const test = await run('npm', ['test'], {cwd: dir, env: cleanEnv(), timeoutMs: 300_000});
         const verdict = suiteVerdict({code: test.code, totals: tapTotals(test.stdout)});
         checks.push(check('clean clone: npm test', verdict.status, `${verdict.reason} in ${seconds(test.ms)}`));
-        const build = await run('npm', ['run', 'build:helper'], {cwd: dir, env: cleanEnv(), timeoutMs: 900_000});
-        checks.push(check('clean clone: npm run build:helper', build.code === 0 ? 'PASS' : 'FAIL', `${ended(build)} in ${seconds(build.ms)} (built inside the clone; this checkout's helper is untouched)`));
+        // build:helper installs what it built into $CUA_HOME/bin: here a home inside the clone directory, never the user's.
+        const build = await run('npm', ['run', 'build:helper'], {cwd: dir, env: cleanEnv({CUA_HOME: join(parent, 'home')}), timeoutMs: 900_000});
+        checks.push(check('clean clone: npm run build:helper', build.code === 0 ? 'PASS' : 'FAIL', `${ended(build)} in ${seconds(build.ms)} (built inside the clone and installed into a home there; this checkout's helper and the installed one are untouched)`));
         if (build.code === 0) {
           const helper = await run('npm', ['run', 'test:helper'], {cwd: dir, env: cleanEnv(), timeoutMs: 900_000});
           const h = helperSuiteVerdict({code: helper.code, text: helper.stdout + helper.stderr});

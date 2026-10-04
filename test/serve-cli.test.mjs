@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync} from 'node:fs';
+import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync, chmodSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline';
@@ -285,6 +285,27 @@ test('serve starts the connection\'s broker before the runtime, hands only the r
   assert.equal(await served, 0, diagnostics.join('\n'));
   assert.equal(existsSync(config.socket), false);
   assert.deepEqual(readdirSync(join(home, 'run')), []);
+});
+
+test('serve runs the Keychain helper installed in $CUA_HOME/bin when none is passed, as a copy of cua without a build does', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t, {short: true});
+  mkdirSync(join(home, 'bin'));
+  const installed = join(home, 'bin', 'cua-keychain');
+  const fake = join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs');
+  writeFileSync(installed, `#!/bin/sh\nFAKE_HELPER_SECRETS='{"from-cua-home":"x"}' exec ${JSON.stringify(process.execPath)} ${JSON.stringify(fake)} "$@"\n`);
+  chmodSync(installed, 0o755);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const frames = [];
+  createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: () => {}});
+  t.after(async () => { input.end(); await served; });
+  input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
+  input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
+  for (let i = 0; i < 400 && !frames.some(f => f.id === 2); i++) await new Promise(r => setTimeout(r, 25));
+  assert.deepEqual(frames.find(f => f.id === 2).result.structuredContent, {status: 'ok', labels: ['from-cua-home']});
+  input.end();
+  assert.equal(await served, 0);
 });
 
 test('serve without a built helper still serves, and secrets_list says how to build it', {skip: !supported}, async t => {

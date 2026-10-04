@@ -4,9 +4,10 @@
 // grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively.
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
-// The Keychain helper (secrets) is inspected from its file and signature, never run: not built or without a stable
-// signing identity is `blocked` (secrets, or their stable Keychain trust, are not available yet); a helper that is
-// present but speaks another broker protocol or whose signature does not verify is `fail`.
+// The Keychain helper (secrets) cua would run for this home ($CUA_HOME/bin/cua-keychain, else the checkout's build
+// output; secrets.helper names which) is inspected from its file and signature, never run: not built or without a
+// stable signing identity is `blocked` (secrets, or their stable Keychain trust, are not available yet); a helper that
+// is present but speaks another broker protocol or whose signature does not verify is `fail`.
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
 // a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
 // capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
@@ -88,7 +89,7 @@ export async function inspectRuntime({home, live = false, pins, host = {platform
   checks.push(result('helper.permissions', 'blocked',
     'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
     + `Confirm with a live probe (${LIVE_PROBE}).`));
-  checks.push(...classifyKeychainHelper(await inspectSecrets()));
+  checks.push(...classifyKeychainHelper(await inspectSecrets({home})));
   checks.push(await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home}));
 

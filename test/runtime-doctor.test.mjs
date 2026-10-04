@@ -137,7 +137,9 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
 test('Keychain helper checks are reported beside runtime health: blocked leaves ok alone, a broken helper fails', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper};
-  const unbuilt = await inspectRuntime({...common, inspectSecrets: noSecrets});
+  let asked;
+  const unbuilt = await inspectRuntime({...common, inspectSecrets: async args => { asked = args; return noSecrets(); }});
+  assert.equal(asked.home, home, 'the helper is looked up for the inspected home');
   assert.equal(unbuilt.ok, true);
   assert.equal(check(unbuilt, 'secrets.helper').status, 'blocked');
   assert.match(check(unbuilt, 'secrets.helper').detail, /npm run build:helper/);

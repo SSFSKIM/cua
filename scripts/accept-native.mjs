@@ -33,7 +33,7 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {loadPins, readInstalledRecord, resolveRuntime, selectPin} from '../src/runtime/manifest.mjs';
 import {NATIVE_SOCKET} from '../src/runtime/doctor.mjs';
-import {locateHelper} from '../src/secrets/helper.mjs';
+import {locateHelper, BUILD_OUTPUT} from '../src/secrets/helper.mjs';
 import {isLabel} from '../src/secrets/label.mjs';
 import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
@@ -130,7 +130,7 @@ const state = {};
 async function item1() {
   const checks = await suites(REPO, {label: ''});
   state.npmTest = checks[0].status;
-  const helper = locateHelper();
+  const helper = locateHelper({path: BUILD_OUTPUT});
   if (!helper.built) checks.push(check('npm run test:helper', 'BLOCKED', 'the Keychain helper is not built in this checkout: run npm run build:helper first (the clean clone in item 10 builds it from scratch)'));
   else checks.push(await helperSuite(REPO, {label: ''}));
   state.helperSuite = checks.at(-1).status;
@@ -396,7 +396,8 @@ async function item10() {
     else {
       const dir = join(clone, 'cua');
       const [node] = await suites(dir, {label: 'clean clone: '});
-      const build = await run('npm', ['run', 'build:helper'], {cwd: dir, env: suiteEnv()});
+      // build:helper installs what it built into $CUA_HOME/bin: here a home inside the clone directory, never the user's.
+      const build = await run('npm', ['run', 'build:helper'], {cwd: dir, env: {...suiteEnv(), CUA_HOME: join(clone, 'home')}});
       const buildCheck = check('clean clone: npm run build:helper', build.code === 0 ? 'PASS' : 'FAIL', `exit ${build.code ?? build.error} in ${seconds(build.ms)}`);
       const helper = build.code === 0 ? await helperSuite(dir, {label: 'clean clone: '}) : check('clean clone: npm run test:helper', 'FAIL', 'not run: build:helper failed');
       checks.push(node, buildCheck, helper);

@@ -38,7 +38,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {HELPER_PATH, locateHelper} from '../src/secrets/helper.mjs';
+import {locateHelper} from '../src/secrets/helper.mjs';
 import {runCaptured} from '../src/secrets/commands.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
@@ -51,6 +51,8 @@ const STEP_MS = 15_000;
 const PROMPT_ACTION = 'a Keychain prompt may be waiting: dismiss it (do not allow) and re-run when a human can answer Keychain prompts, or sign the helper with a stable identity';
 
 const home = defaultHome();
+// The helper the server under this home runs, so the seeded item and the broker share one code identity.
+const HELPER = locateHelper({home}).path;
 const label = `cua-m5-probe-${randomUUID()}`;
 const sentinels = [1, 2].map(() => `cua-m5-sentinel-${randomBytes(18).toString('base64url')}`);
 const REF = `{{secret:${label}}}`;
@@ -170,7 +172,7 @@ const errorCode = out => out?.message?.match(/\[([a-z_]+)\]$/)?.[1] ?? null;
 const exec = (method, input) => ({type: 'execute', method, args: [input]});
 
 async function seed(name, value) {
-  const r = await setThroughTerminal({helper: HELPER_PATH, label, value, timeoutMs: STEP_MS});
+  const r = await setThroughTerminal({helper: HELPER, label, value, timeoutMs: STEP_MS});
   if (r.echoed) return record(name, 'FAIL', 'the value appeared in terminal output');
   if (r.timedOut) return record(name, 'BLOCKED', `set did not finish within ${STEP_MS} ms; ${PROMPT_ACTION}`);
   if (r.exit !== 0 || !r.terminalRestored) return record(name, 'FAIL', `set exited ${r.exit ?? r.signal}; terminal restored: ${r.terminalRestored}`);
@@ -312,7 +314,7 @@ let recorder;
 const scratch = realpathSync(mkdtempSync('/tmp/cm5-'));
 try {
   const runtime = resolveRuntime({home});
-  if (!locateHelper().built || !locateHelper({path: PTY_DRIVER}).built) {
+  if (!locateHelper({home}).built || !locateHelper({path: PTY_DRIVER}).built) {
     record('preconditions', 'BLOCKED', 'build the helper (npm run build:helper) and the test products (npm run test:helper) first');
   } else {
     record('preconditions', 'PASS', `runtime ${runtime.release}; label ${label}`);
@@ -340,8 +342,8 @@ try {
 } finally {
   for (const child of children) child.kill('SIGTERM');
   if (created) {
-    const removed = await runCaptured(HELPER_PATH, ['remove', label, '--yes']);
-    const after = await runCaptured(HELPER_PATH, ['list']);
+    const removed = await runCaptured(HELPER, ['remove', label, '--yes']);
+    const after = await runCaptured(HELPER, ['list']);
     let gone = false;
     try { gone = !JSON.parse(after.stdout).labels.includes(label); } catch {}
     const notFound = /\[not_found\]/.test(removed.stderr ?? '');

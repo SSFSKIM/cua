@@ -13,7 +13,7 @@ import {PassThrough} from 'node:stream';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
@@ -377,4 +377,61 @@ test('serve without a built helper still serves, and secrets_list says how to bu
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
   input.end();
   assert.equal(await served, 0);
+});
+
+// In process: a fake installed home with a bound personal profile whose Default extension manifest exists (a scratch
+// Chrome user-data directory), served with the browser surface and an injected readiness listing.
+function boundBrowserServe(t, listBackends) {
+  const home = fakeInstalledHome(t, {short: true});
+  const userData = join(home, 'user', 'Library', 'Application Support', 'Google', 'Chrome');
+  const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const frames = [];
+  createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+  const diagnostics = [];
+  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'browser'}, input, output,
+    chrome: chromeFacts({userData}), listBackends, diagnostics: line => diagnostics.push(line)});
+  t.after(async () => { input.end(); await served; });
+  const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
+  const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
+  send({id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}});
+  return {input, send, reply, served, diagnostics};
+}
+
+test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported}, async t => {
+  const unconfirmed = async () => ({backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: false, steps: ['eof', 'sigterm', 'sigkill'], reason: 'a group member survived'}});
+  const {input, send, reply, served, diagnostics} = boundBrowserServe(t, unconfirmed);
+  await reply(1);
+  send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
+  assert.deepEqual((await reply(2)).result.structuredContent, {status: 'ok', profiles: [{key: 'personal', ready: false, reason: 'backends_unlistable'}]});
+  input.end();
+  assert.equal(await served, 1);
+  assert.ok(diagnostics.some(l => /readiness listing's runtime could not be confirmed stopped; owned processes may remain/.test(l)), diagnostics.join('\n'));
+});
+
+test('serve waits for a readiness listing still running at close, keeping its signal handlers until it settles', {skip: !supported}, async t => {
+  let started;
+  const begun = new Promise(resolve => { started = resolve; });
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const baseline = new Set(process.listeners('SIGTERM'));
+  const {input, send, reply, served} = boundBrowserServe(t, async () => { started(); await held; return {backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: true, steps: ['eof']}}; });
+  await reply(1);
+  const own = process.listeners('SIGTERM').filter(h => !baseline.has(h));
+  assert.equal(own.length, 1, 'serve installed its SIGTERM handler');
+  send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
+  await begun;
+  input.end();
+  let settled = false;
+  served.then(() => { settled = true; });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(settled, false, 'serve does not return while the listing runs');
+  assert.ok(process.listeners('SIGTERM').includes(own[0]), 'serve\'s SIGTERM handler is still installed while it waits');
+  release();
+  assert.equal(await served, 0);
+  assert.ok(!process.listeners('SIGTERM').includes(own[0]), 'the handler goes once the listing settled');
 });

@@ -330,15 +330,18 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including the
 // session's app-approval file the runtime wrote). With the browser surface, profiles_list reads $CUA_HOME's profile
 // registry and, when a profile is bound, checks it against the live backends with one bounded listing launch
-// (inventory.mjs, no tab counts), which serve waits for before returning. Returns the exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
-// tests and the opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and
-// are not reachable from the CLI.
+// (inventory.mjs, no tab counts); serve waits for such a listing before returning, keeping its signal handlers, and
+// exits 1 when a listing's runtime could not be confirmed stopped. Returns the exit code. `keychainHelper` is the
+// located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the opt-in live probes
+// (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not reachable from the CLI.
+// `chrome` (the Chrome facts) and `listBackends` (the readiness listing) exist for tests only.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper({home}),
-  prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`)}) {
+  prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome = chromeFacts(),
+  listBackends}) {
   const {secrets: secretsEnabled, ...settings} = settingsFrom(env);
   const services = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
-  const chrome = chromeFacts();
   const runtime = resolveRuntime({home});
+  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false});
   const sessionId = randomUUID();
   mkdirSync(homeLayout(realHome(home)).run, {recursive: true, mode: 0o700});
   const secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics});
@@ -358,28 +361,35 @@ export async function serve({home, env = process.env, input = process.stdin, out
   }
   const onSignal = () => server.close('signal');
   const listings = new Set();
+  let listingLeftover = false;
   let server;
+  let code;
   try {
     const profiles = {list: async () => {
-      const pending = profileReadiness({home, chrome, listBackends: () => listLiveBackends({home, runtime, ambient: env, tabCounts: false})});
+      const pending = profileReadiness({home, chrome, listBackends});
       listings.add(pending);
       try {
         const {profiles: list, listingError} = await pending;
         if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
+        if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
         return list;
       } finally { listings.delete(pending); }
     }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics, ...settings});
     for (const signal of SIGNALS) process.on(signal, onSignal);
-    return (await server.closed).code;
+    code = (await server.closed).code;
   } finally {
-    for (const signal of SIGNALS) process.off(signal, onSignal);
-    // A readiness listing still running owns a runtime of its own; it is bounded and always tears it down.
+    // A readiness listing still running owns a runtime of its own; it is bounded and always tears it down, and a
+    // signal meanwhile must not cut that short.
     await Promise.allSettled([...listings]);
+    for (const signal of SIGNALS) process.off(signal, onSignal);
     await secrets.close();
     rmSync(launch.cwd, {recursive: true, force: true});
     // The runtime records a "session" app approval under this connection's random session ID, which no later
     // connection can use; it goes with the connection. Other sessions' files are never touched.
     rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
   }
+  if (!listingLeftover) return code;
+  diagnostics('a profiles_list readiness listing\'s runtime could not be confirmed stopped; owned processes may remain');
+  return 1;
 }

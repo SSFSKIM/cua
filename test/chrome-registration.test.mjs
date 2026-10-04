@@ -2,7 +2,7 @@
 // browser's NativeMessagingHosts directory: every test passes its own scratch `userHome`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, chmodSync, linkSync, renameSync} from 'node:fs';
+import {readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, chmodSync, linkSync, renameSync, openSync, writeSync, closeSync, statSync, fstatSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {join, dirname} from 'node:path';
@@ -202,12 +202,25 @@ test('unregister of our manifest with no record of what it replaced is BLOCKED r
   assert.equal(existsSync(m.manifests.chrome), false);
 });
 
-test('an unreadable manifest replaced with --replace is backed up and restored exactly', async t => {
-  const m = machine(t, {chromeManifest: '{not json'});
-  await register(m, {replace: true, onReplace: () => {}});
-  assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), '{not json');
-  unregister(m);
-  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), '{not json');
+// Review fix: only a whole native-messaging manifest becomes a backup. Anything else in the slot is left as it is,
+// even with --replace, and reported contended (it may be mid-write) with the way to clear a damaged one.
+test('a slot that does not hold a whole manifest is never backed up or replaced, even with --replace', async t => {
+  const name = 'com.openai.codexextension';
+  for (const bytes of ['{not json', '', '[]', JSON.stringify({name, type: 'stdio'}), JSON.stringify({name, type: 'stdio', path: ''}),
+    JSON.stringify({name: 'com.example.other', type: 'stdio', path: '/opt/host'}), JSON.stringify({name, type: 'sockets', path: '/opt/host'})]) {
+    const m = machine(t, {chromeManifest: bytes});
+    const steps = [];
+    await assert.rejects(register(m, {replace: true, onReplace: () => assert.fail('nothing may be announced'), onStep: name => steps.push(name)}), err => {
+      assert.equal(err.code, 'registration_contended', bytes);
+      assert.match(err.message, /did not read as a whole native-messaging manifest in 3 attempts/, bytes);
+      assert.ok(err.hint.includes(`mv "${m.manifests.chrome}"`), err.hint);
+      return true;
+    });
+    assert.deepEqual(steps, ['settle', 'settle'], `${bytes}: it waited between attempts and never took the file`);
+    assert.equal(readFileSync(m.manifests.chrome, 'utf8'), bytes, bytes);
+    assert.equal(existsSync(m.backups), false, bytes);
+    assert.equal(existsSync(m.manifests.brave), false, `${bytes}: nothing else was registered`);
+  }
 });
 
 test('register refuses before writing when the host signature fails, the component is missing, or no browser exists', async t => {
@@ -720,4 +733,49 @@ test('a lock left by a process that no longer runs is broken, and no run leaves 
   assert.equal(unregisterHost({home: m.home, userHome: m.userHome, lockTiming: FAST}).blocked, false);
   assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original);
   assert.deepEqual(readdirSync(join(m.runtime.home, 'chrome')).sort(), ['manifest-backup', 'registration.json']);
+});
+
+// Review fix: the vendor installer publishes with an asynchronous writeFile (truncating open, then write). A read in
+// between saw an empty manifest, which was backed up over the verified backup; the write then landed on the inode cua
+// had taken aside and deleted, and unregister later "restored" the empty manifest and deleted the real backup.
+const resynced = userHome => ourManifest(join(userHome, '.codex/plugins/cache/openai-bundled/chrome/26.999/extension-host/macos/arm64/ChatGPT for Chrome'));
+
+test('a manifest caught between its writer\'s truncate and write is not backed up; cua waits and backs up the whole one', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  await register(m, {replace: true, onReplace: () => {}});
+  // The desktop re-syncs its manifest over cua's: opened (truncated) now, written a moment later.
+  const later = resynced(m.userHome);
+  const fd = openSync(m.manifests.chrome, 'w');
+  const announced = [];
+  let settled = 0;
+  const result = await register(m, {replace: true, onReplace: () => announced.push(readFileSync(m.manifests.chrome, 'utf8')),
+    onStep: hook('chrome', 'settle', () => { settled++; writeSync(fd, later); closeSync(fd); })});
+  assert.equal(settled, 1);
+  assert.deepEqual(announced, [later], 'announced once the whole manifest is there, before replacing it');
+  assert.deepEqual(result.browsers.map(b => [b.browser, b.action]), [['chrome', 'replaced'], ['brave', 'unchanged']]);
+  assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), later);
+  assert.deepEqual(record(m).browsers.chrome, {manifest: m.manifests.chrome, replaced: true, backupSha256: sha(later)});
+  const after = unregister(m);
+  assert.deepEqual([after.browsers[0].action, after.browsers[0].restoration], ['restored', 'restored']);
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), later);
+});
+
+test('a manifest that stays truncated is left to its writer and never overwrites the verified backup: registration_contended', async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  await register(m, {replace: true, onReplace: () => {}});
+  const verified = record(m).browsers.chrome;
+  const fd = openSync(m.manifests.chrome, 'w');
+  try {
+    await assert.rejects(register(m, {replace: true, onReplace: () => assert.fail('nothing may be announced')}), err => {
+      assert.equal(err.code, 'registration_contended');
+      assert.match(err.message, /whole native-messaging manifest/);
+      return true;
+    });
+    assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original, 'the verified backup is untouched');
+    assert.deepEqual(record(m).browsers.chrome, verified);
+    assert.equal(statSync(m.manifests.chrome).ino, fstatSync(fd).ino, 'the writer\'s file is still in the slot, never taken aside');
+    // The writer's write lands in the slot, where it belongs.
+    writeSync(fd, resynced(m.userHome));
+  } finally { closeSync(fd); }
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), resynced(m.userHome));
 });

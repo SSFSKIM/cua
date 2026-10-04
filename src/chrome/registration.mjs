@@ -9,7 +9,8 @@
 //     that appears mid-run, or any other failure there, makes register undo what it already wrote in this run
 //     (undoRun), or report exactly what it could not undo.
 //   - register --replace backs each such manifest up byte-for-byte under <home>/chrome/manifest-backup/<browser>.json
-//     and records it before overwriting; the caller announces the consequences first (REPLACE_CONSEQUENCES).
+//     and records it before overwriting; the caller announces the consequences first (REPLACE_CONSEQUENCES). Only a
+//     whole native-messaging manifest is backed up (see `isManifestSnapshot`); anything else is left in place.
 //   - unregister removes only manifests that name cua's host in this home. Where cua replaced one, it restores the
 //     backup and verifies the restored bytes. A backup is restored only when the record holds its hash; when there is
 //     no backup, no record, or no matching hash, or the restore does not verify, restoration is BLOCKED with the exact
@@ -25,6 +26,7 @@
 import {linkSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {createHash, randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
+import {setTimeout as delay} from 'node:timers/promises';
 import {basename, dirname, isAbsolute, join, normalize} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
@@ -267,12 +269,32 @@ function refusal(foreign, nativeHost) {
 }
 
 const ATTEMPTS = 3;
-const contended = path => fail('registration_contended', `${path} kept changing while cua was writing it; nothing more was changed there`, {hint: 'quit the application that keeps rewriting it, then run the command again'});
+const contended = (path, unsettled) => fail('registration_contended', unsettled
+  ? `${path} did not read as a whole native-messaging manifest in ${ATTEMPTS} attempts (another program may be writing it, or it is damaged); cua backs up only a whole manifest, so nothing more was changed there`
+  : `${path} kept changing while cua was writing it; nothing more was changed there`,
+{hint: unsettled
+  ? `if an application is rewriting it, quit it and run the command again; if it stays like this, inspect it, move it aside yourself (mv "${path}" "${path}.damaged") and run the command again`
+  : 'quit the application that keeps rewriting it, then run the command again'});
+
+// A snapshot of a manifest cua is about to replace may become its backup, which unregister later restores, only when
+// it is a whole native-messaging manifest for this name. The vendor installer publishes with an asynchronous
+// fs/promises writeFile, whose truncating open and whose write are separate steps: a read between them sees an empty
+// (or partly written) file, and that write then lands on the inode cua took aside. Such a read is contention, never a
+// backup; a verified backup from an earlier run is therefore never replaced by one.
+function isManifestSnapshot(bytes, name) {
+  let manifest;
+  try { manifest = JSON.parse(bytes.toString('utf8')); } catch { return false; }
+  return manifest !== null && typeof manifest === 'object' && !Array.isArray(manifest) && manifest.name === name
+    && typeof manifest.path === 'string' && manifest.path.length > 0 && manifest.type === 'stdio';
+}
+// How long register gives a writer before reading a manifest that did not read whole again.
+const SETTLE_MS = 100;
 
 // Registers the active release's Chrome host. `onReplace(consequences)` is called once, immediately before the first
 // manifest cua did not write is actually replaced (including one that appeared after the plan); the consequences are
 // therefore always announced before anything foreign is overwritten. `onStep(step, {browser, manifestPath})` (called
-// right before each publish or take), `io` (see FS) and `lockTiming` (see LOCK_TIMING) are test seams, module API only.
+// right before each publish or take, and as `settle` before waiting for a manifest that did not read whole), `io`
+// (see FS) and `lockTiming` (see LOCK_TIMING) are test seams, module API only.
 export async function registerHost({home, runtime, replace = false, userHome = homedir(), verifySignatures = verifyCodeSignatures, onReplace, onStep, pins = loadPins(), io = FS, lockTiming = LOCK_TIMING}) {
   const cuaHome = realHome(home);
   const lock = acquireLock(cuaHome, lockTiming);
@@ -308,7 +330,9 @@ async function registerLocked({cuaHome, runtime, replace, userHome, verifySignat
       const step = name => onStep?.(name, row);
       const backup = backupFile(cuaHome, s.browser);
       let done = null;
+      let unsettled = false;
       for (let attempt = 0; attempt < ATTEMPTS && !done; attempt++) {
+        unsettled = false;
         // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
         const slot = readSlot(s.manifestPath, context);
         if (slot.state === 'absent') {
@@ -334,6 +358,12 @@ async function registerLocked({cuaHome, runtime, replace, userHome, verifySignat
           if (placed) done = {...row, action: 'updated'};
         } else {
           if (!replace) fail('registration_in_use', refusal([{...s, slot}], native.name), {hint: `it appeared while cua was registering; ${replaceHint}`});
+          if (!isManifestSnapshot(slot.bytes, native.name)) {
+            // Mid-write or damaged: nothing is taken, backed up or announced; give a writer a moment, then read again.
+            unsettled = true;
+            if (attempt + 1 < ATTEMPTS) { step('settle'); await delay(SETTLE_MS); }
+            continue;
+          }
           announce();
           step('take');
           const aside = take(s.manifestPath, slot.bytes, io);
@@ -351,7 +381,7 @@ async function registerLocked({cuaHome, runtime, replace, userHome, verifySignat
         }
         if (done && done.action !== 'unchanged') applied.push({...row, action: done.action, prior: done.action === 'placed' ? null : slot.bytes});
       }
-      browsers.push(done ?? contended(s.manifestPath));
+      browsers.push(done ?? contended(s.manifestPath, unsettled));
     }
   } catch (error) {
     throw undoRun(error, applied, {cuaHome, record, desired, io, onStep, context});

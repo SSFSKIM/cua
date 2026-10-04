@@ -315,7 +315,10 @@ node bin/cua.mjs chrome unregister           # removes cua's manifests and resto
   and records it, prints two consequences before the first replacement, then writes cua's. The consequences: while
   cua's host is registered, the desktop's Codex side panel and app-server features in Chrome stop working (no desktop
   registry entry names cua's host, and that registry gates the app-server; cua writes none); and the desktop app writes
-  its own manifest back when it next runs, which silently undoes cua's registration.
+  its own manifest back when it next runs, which silently undoes cua's registration. Only a whole native-messaging
+  manifest is backed up: an empty, partly written or unparseable one (another program may be writing it right then)
+  is left in place and, if it still is after three attempts a moment apart, reported as `registration_contended`
+  with how to move a damaged one aside. A backup from an earlier run is never replaced by such a read.
 - `unregister` removes only manifests that name cua's host. Where cua replaced one, it restores the backup only when
   cua's record holds that backup's SHA-256 and the backup matches it, then verifies the restored bytes. With no backup,
   no record (or no hash for that browser), a backup that does not match, or a restore that does not read back

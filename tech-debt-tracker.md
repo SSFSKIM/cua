@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-04 — Narrow races left after the PR #1 panel-review fixes (minor).** (a) `bindProfile`'s compare-and-set is read-compare-rename with no registry lock, so a millisecond window remains between the comparison and the write (the multi-second discovery window is closed). (b) Breaking a stale `chrome/registration.lock` can race when three processes hit it within the same microseconds. (c) A dead lock holder whose pid is reused looks live; the refusal names the lock file to remove. Revisit if any is observed; a registry lock reusing the registration lock's pattern would close (a).
+
 - **2026-10-02 — Stale node_repl active-exec records after a forced teardown (minor, M3).** When the server has to
   signal the runtime while a cell runs (the uncertain-completion path), node_repl leaves
   `$CUA_HOME/state/codex/node_repl/active_execs/<exec>.json` behind. No reader was found in node_repl; the files are

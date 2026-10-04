@@ -86,6 +86,7 @@ All are folded into the spec's Decision Log and Surprises (2026-10-03/04 entries
 - Ledger Minors still open from phases A+B (M2–M5) are unchanged in the tracker.
 - New tech debt (in `tech-debt-tracker.md`): `--all` cannot tie a supplied live report to a commit; verify's `run/` leftover check also sees other connections in the same home; two runner helpers are duplicated from `accept-native.mjs`.
 - The M11 "other-profile" label minor was fixed (`d52482c`).
+- **Post-PR panel review (2026-10-04, `review-code` max over `54cf811..a4dbe5c`):** 10 confirmed findings (1 P1: binding ignored the backend's browser family; 9 P2 across runtime activation, doctor, helper distribution, MCP teardown, registration concurrency and profile compare-and-set), all fixed in three parallel waves (`4cf2ceb..`), `npm test` 366/366. The secret-substitution lens confirmed nothing. Details in the spec's Decision Log (2026-10-04, PR #1 panel review fold-back).
 
 ## Residue (candidates for tickets)
 

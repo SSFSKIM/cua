@@ -73,8 +73,10 @@ function readRecord(root, pin) {
   return valid ? record : null;
 }
 
-// Files present and the host signed by the pinned team.
-export async function verifyChromeComponent(root, pin, {verifySignatures}) {
+// Files present and the host signed by the pinned team. This is all a staged component can show: install writes the
+// host configuration after it passes. Anything that keeps, activates or registers a placed component uses
+// verifyPlacedChromeComponent, which also checks that configuration.
+async function verifyChromeComponent(root, pin, {verifySignatures}) {
   const missing = Object.entries(pin.chromePlugin.layout).filter(([, rel]) => !exists(join(root, rel))).map(([key, rel]) => `${key} (${rel})`);
   if (missing.length) fail('layout_invalid', `Chrome plugin component of ${pin.release} is missing ${missing.join(', ')}`);
   const signatures = await verifySignatures(root, componentSigning(pin));
@@ -107,12 +109,39 @@ export function locateChromeComponent(runtime) {
   return paths;
 }
 
+// Why the host configuration beside a placed host is not the one the host must read, or null: it parses as a
+// schemaVersion 1 object, names executables and scripts that resolve to files inside the release, and points
+// CODEX_HOME at the server's own <home>/state/codex.
+function hostConfigProblem(paths, runtime) {
+  let config;
+  try { config = JSON.parse(readFileSync(paths.config, 'utf8')); } catch (error) {
+    return `${paths.config} cannot be read as JSON (${error.code ?? error.message})`;
+  }
+  if (config === null || typeof config !== 'object' || Array.isArray(config) || config.schemaVersion !== 1)
+    return `${paths.config} is not a schemaVersion 1 host configuration`;
+  const outside = CONFIG_PATH_KEYS.filter(key => !insideRelease(config[key], runtime.root));
+  if (outside.length) return `${paths.config}: ${outside.map(key => `${key} ${JSON.stringify(config[key] ?? null)}`).join(', ')} does not resolve to a file inside the release ${runtime.root}`;
+  const codexHome = homeLayout(runtime.home).codexHome;
+  if (config.codexHome !== codexHome) return `${paths.config}: codexHome ${JSON.stringify(config.codexHome ?? null)} is not the server's own ${codexHome}`;
+  return null;
+}
+
+// A component this tool placed in `runtime`'s release, whole: its files, the host signed by the pinned team, and the
+// host configuration install wrote beside it. Install's "already placed" path, `runtime use` and `chrome register`
+// all accept a placed component only through this check. Returns the component paths.
+export async function verifyPlacedChromeComponent(runtime, {verifySignatures}) {
+  const paths = chromeComponentPaths(runtime);
+  await verifyChromeComponent(paths.root, runtime.manifest, {verifySignatures});
+  const problem = hostConfigProblem(paths, runtime);
+  if (problem) fail('host_config_invalid', `Chrome plugin component of ${runtime.release}: ${problem}`, {hint: componentRecoveryHint(paths.root)});
+  return paths;
+}
+
 const result = (status, detail) => ({name: 'chrome.host.config', status, detail});
 
-// Doctor's chrome.host.config: the component is placed and its host signed by the pinned team; the configuration the
-// host reads is present, names executables and scripts that exist inside the active release, and points CODEX_HOME at
-// the owned, writable <home>/state/codex. A missing component is `blocked` (install adds it); anything wrong with what
-// cua placed is `fail`.
+// Doctor's chrome.host.config: the placed component verifies whole (verifyPlacedChromeComponent) and the CODEX_HOME
+// its configuration names is a writable directory. A missing component is `blocked` (install adds it); anything wrong
+// with what cua placed is `fail`.
 export async function inspectChromeHostConfig({runtime, verifySignatures}) {
   let paths;
   try { paths = locateChromeComponent(runtime); } catch (error) {
@@ -120,20 +149,11 @@ export async function inspectChromeHostConfig({runtime, verifySignatures}) {
     return result(error.code === 'chrome_host_not_installed' ? 'blocked' : 'fail', `${error.message}; ${error.hint}`);
   }
   const broken = why => result('fail', `${why}; ${componentRecoveryHint(paths.root)}`);
-  try { await verifyChromeComponent(paths.root, runtime.manifest, {verifySignatures}); } catch (error) {
+  try { await verifyPlacedChromeComponent(runtime, {verifySignatures}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return broken(error.message);
   }
-  let config;
-  try { config = JSON.parse(readFileSync(paths.config, 'utf8')); } catch (error) {
-    return broken(`${paths.config} cannot be read as JSON (${error.code ?? error.message})`);
-  }
-  if (config === null || typeof config !== 'object' || Array.isArray(config) || config.schemaVersion !== 1)
-    return broken(`${paths.config} is not a schemaVersion 1 host configuration`);
-  const outside = CONFIG_PATH_KEYS.filter(key => !insideRelease(config[key], runtime.root));
-  if (outside.length) return broken(`${paths.config}: ${outside.map(key => `${key} ${JSON.stringify(config[key] ?? null)}`).join(', ')} does not resolve to a file inside the active release ${runtime.root}`);
   const codexHome = homeLayout(runtime.home).codexHome;
-  if (config.codexHome !== codexHome) return broken(`${paths.config}: codexHome ${JSON.stringify(config.codexHome ?? null)} is not the server's own ${codexHome}`);
   if (!writableDirectory(codexHome)) return broken(`${paths.config}: codexHome ${codexHome} is not a writable directory`);
   return result('pass', `host ${paths.host} signed by team ${runtime.manifest.signing.team}; ${HOST_CONFIG_FILE} names node, node_repl, the codex CLI and the browser scripts inside the active release, codexHome ${codexHome} (owned, writable)`);
 }

@@ -229,6 +229,27 @@ test('register refuses before writing when the host signature fails, the compone
   assert.deepEqual(readdirSync(join(noComponent.support, 'Google', 'Chrome', 'NativeMessagingHosts')), []);
 });
 
+test('register refuses before writing when the host configuration is missing or names paths outside the release', async t => {
+  const gone = machine(t);
+  rmSync(join(dirname(gone.component.host), 'extension-host-config.json'));
+  await assert.rejects(register(gone), err => {
+    assert.equal(err.code, 'host_config_invalid');
+    assert.match(err.message, /extension-host-config\.json/);
+    assert.match(err.hint, /cua install/);
+    return true;
+  });
+  assert.equal(existsSync(gone.manifests.chrome), false);
+  assert.equal(existsSync(gone.manifests.brave), false);
+
+  for (const config of [{browserServicePath: '/Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/scripts/browser-service.mjs'}, {codexHome: '/Users/x/.codex'}, {schemaVersion: 2}]) {
+    const m = machine(t);
+    forgeChromeComponent(m.home, {config});
+    await assert.rejects(register(m), expectCode('host_config_invalid'), JSON.stringify(config));
+    assert.equal(existsSync(m.manifests.chrome), false, JSON.stringify(config));
+    assert.equal(existsSync(m.manifests.brave), false, JSON.stringify(config));
+  }
+});
+
 // Review fixes (M12 frontier review): concurrent writers, late announcement, exact ownership, restoration I/O failure.
 const hook = (browser, step, act) => (name, row) => { if (row.browser === browser && name === step) act(row); };
 

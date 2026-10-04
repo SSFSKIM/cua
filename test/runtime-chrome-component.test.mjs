@@ -218,3 +218,28 @@ test('a damaged component is never repaired in place, and a component path that 
   assert.equal(listing(), before);
   assert.deepEqual(stagingLeftovers(other.home), []);
 });
+
+test('a placed component whose host configuration is missing or wrong is refused by a repeated install, not reported unchanged', {skip: !darwin}, async t => {
+  const damage = {
+    'configuration removed': config => rmSync(config),
+    'configuration unreadable': config => writeFileSync(config, 'not json'),
+    'node outside the release': config => writeFileSync(config, JSON.stringify({...JSON.parse(readFileSync(config, 'utf8')), nodePath: '/usr/bin/true'})),
+    'codexHome not the server\'s own': config => writeFileSync(config, JSON.stringify({...JSON.parse(readFileSync(config, 'utf8')), codexHome: '/Users/x/.codex'})),
+  };
+  for (const [name, apply] of Object.entries(damage)) {
+    const ctx = setup(t);
+    await install(ctx);
+    const root = join(realpathSync(ctx.home), 'runtimes', ctx.pin.release);
+    const config = join(root, 'chrome-plugin/extension-host/macos/arm64', HOST_CONFIG_FILE);
+    apply(config);
+    const before = snapshot(root);
+    await assert.rejects(install(ctx), err => {
+      assert.equal(err.code, 'chrome_component_invalid', `${name}: ${err.code} ${err.message}`);
+      assert.equal(err.cause?.code, 'host_config_invalid', name);
+      assert.match(err.message, /extension-host-config\.json/, name);
+      assert.ok(err.hint.includes(join(root, 'chrome-plugin')), err.hint);
+      return true;
+    });
+    assert.deepEqual(snapshot(root), before, `${name}: never repaired in place`);
+  }
+});

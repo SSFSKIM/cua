@@ -28,7 +28,7 @@ import {basename, dirname, isAbsolute, join, normalize} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {verifyCodeSignatures} from '../runtime/checks.mjs';
-import {locateChromeComponent, verifyChromeComponent} from '../runtime/chrome-component.mjs';
+import {locateChromeComponent, verifyPlacedChromeComponent} from '../runtime/chrome-component.mjs';
 import {loadPins} from '../runtime/manifest.mjs';
 import {hostPathClass} from '../profiles/chrome.mjs';
 
@@ -207,8 +207,8 @@ export async function registerHost({home, runtime, replace = false, userHome = h
   const foreign = planned.filter(s => s.slot.state === 'foreign');
   const replaceHint = `\`cua chrome register --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister\` restores it`;
   if (foreign.length && !replace) fail('registration_in_use', refusal(foreign, native.name), {hint: replaceHint});
-  // The host must be cua's verified host before any browser is pointed at it.
-  await verifyChromeComponent(paths.root, runtime.manifest, {verifySignatures});
+  // The host must be cua's verified host, with the configuration it reads, before any browser is pointed at it.
+  await verifyPlacedChromeComponent(runtime, {verifySignatures});
 
   let announced = false;
   const announce = () => { if (!announced) { announced = true; onReplace?.(REPLACE_CONSEQUENCES); } };

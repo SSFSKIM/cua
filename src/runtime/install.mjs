@@ -30,7 +30,7 @@ import {CuaError, fail} from './errors.mjs';
 import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
 import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, runtimeFor, RECORD_FILE} from './manifest.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
-import {componentState, componentRecoveryHint, stageChromeComponent, verifyChromeComponent} from './chrome-component.mjs';
+import {componentState, componentRecoveryHint, stageChromeComponent, verifyPlacedChromeComponent} from './chrome-component.mjs';
 
 
 function run(command, args) {
@@ -97,12 +97,7 @@ async function ensureChromeComponent({real, target, record, acquisition, verifyS
   const {state} = componentState(root, manifest);
   if (state === 'occupied') occupied(root);
   if (state === 'placed') {
-    try {
-      await verifyChromeComponent(root, manifest, {verifySignatures});
-    } catch (error) {
-      if (!(error instanceof CuaError)) throw error;
-      fail('chrome_component_invalid', `the Chrome host component of ${manifest.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: componentRecoveryHint(root), cause: error});
-    }
+    await assertPlacedComponent(runtimeFor({home: real, pin: manifest, record}), verifySignatures);
     return {root, changed: false};
   }
   return withStage(acquisition, async (stage, {extracted, source}) => {
@@ -111,6 +106,17 @@ async function ensureChromeComponent({real, target, record, acquisition, verifyS
     moveIntoPlace(placed, root);
     return {root, changed: true};
   });
+}
+
+// A placed component must verify whole (files, host signature, host configuration) before its release is kept or
+// activated; one that does not is refused, never repaired in place.
+async function assertPlacedComponent(runtime, verifySignatures) {
+  try {
+    await verifyPlacedChromeComponent(runtime, {verifySignatures});
+  } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    fail('chrome_component_invalid', `the Chrome host component of ${runtime.release} no longer verifies (${error.message}); it is not repaired in place`, {hint: componentRecoveryHint(join(runtime.root, runtime.manifest.chromePlugin.dir)), cause: error});
+  }
 }
 
 // Acquires and verifies the pinned archive in a staging directory owned by this operation, extracts it there, runs

@@ -148,3 +148,31 @@ The user switched the ChatGPT extension off and back on at chrome://extensions i
 - PASS: placement, the backup and replace, a host from cua's tree launched by Chrome, and a byte-for-byte restore.
 - BLOCKED: the owned-page round trip through that host, because the binding went stale when the extension was toggled.
 - `/tmp/cua-c6-replace.json` (shape `{scenario: "C6-replace-live-gate", servingHost, roundTrip, unregister}`) carries `servingHost.pathClass: "cua"` with `backendMappingProven: false` and the note above, the round-trip report (`status: FAIL` at selection) and the unregister output.
+
+### Closing C6's round trip through cua's still-running host (2026-10-03, after the user's explicit pick)
+
+The user picked backend `94c9fc71-4bfb-4a14-9d99-2caf6eebbabd` as Default, and confirmed Default's window shows about 21 tabs. The registration stayed desktop throughout: no new register, and all five manifests remain byte-identical to the pre-step-1 reference.
+
+1. **Host still running: PASS.** pid 79354, parent 69284 (Google Chrome), started 17:03:13, running from `…/cua/runtimes/26.928.40906-darwin-arm64/chrome-plugin/…/ChatGPT for Chrome`. Its socket is `/tmp/codex-browser-use/af823d87-34a8-493c-89c2-92c088bc4b63.sock` (from `lsof`, metadata only).
+2. **Mapping proven: PASS.** One read-only, probe-only listing, not committed (`/tmp/m12-single-socket-listing.mjs`). It ran bind's own listing cell (`listBrowsers` plus tab counts, nothing else) through the relocated runtime with `BROWSER_USE_BACKEND_PATHS` set to exactly that one socket, as M9 restricted the vendor to explicit sockets. It listed exactly one backend, `94c9fc71-4bfb-4a14-9d99-2caf6eebbabd` (18 tabs), with 0 elicitations and teardown confirmed. So `94c9…` is served by cua's host 79354, proven at the socket level.
+3. **Bind: PASS.** `env -u CUA_HOME node bin/cua.mjs profiles bind personal --extension-instance-id 94c9fc71-4bfb-4a14-9d99-2caf6eebbabd`: exit 0, `how: explicit`. This is the user's explicit pick, relayed by the parent. The live listing at bind time was `41f3…4954` (0 tabs) and `94c9…abd` (18 tabs), both unlabelled.
+4. **Round trip: PASS, 17/17.** `node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-m12-replace-roundtrip.json`, exit 0. Host 79354 with the same socket was the serving host both immediately before and immediately after the run.
+   - `select-profile-backend` ok, and `create-tab` in 3679 ms (limit 60000).
+   - `owned-page` found its marker.
+   - The fill of the `{{secret:…}}` reference succeeded, and `page-digest-matches-sentinel` passed.
+   - `induced-failure-value-free` passed (`secret_input_failed`/`failed`).
+   - The screenshot was 18557 bytes, sha256 `6f26f242e1e73c6a2bb38b8adf37cab16102d81bedcafe22cf834d062bf13ffa`.
+   - `close-created-tab` reports leftover `none`, there were 7 tab operations, `end_task` ended, and serve exited 0.
+   - The disposable secret was removed.
+   - One elicitation: the exact own-origin request, accepted for the session.
+   - The sentinel scan passed. The MCP transport contains the `{{secret:…}}` reference, which is the agent's code; it contains no value, and stderr was empty.
+5. **C6 report:** `/tmp/cua-c6-replace.json` was rebuilt.
+   - `servingHost`: `{pathClass: "cua", pid: 79354, backendMappingProven: true, proof: {socketCount: 1, instanceIdsListed: ["94c9fc71-…"]}}`.
+   - `roundTrip`: this run.
+   - `unregister`: gate step 6's output.
+
+   M13's own checker (`replaceGateChecks` in `scripts/accept/chrome-all-lib.mjs`) passes all six checks on it.
+
+Caveat on what this proves: Chrome launched cua's host while cua's manifest was registered (gate steps 1–3). The round trip then ran through that same, still-running host after the desktop manifest had been restored. The host is cua's placed binary with cua's own configuration, proven by socket. Its continued operation after unregister shows that a host Chrome has already started keeps serving until Chrome lets it go.
+
+**C6 live verdict: PASS.** Placement, backup and replace, a Chrome-launched host from cua's tree with the backend mapping proven, the owned-page round trip through it, and a byte-for-byte restore.

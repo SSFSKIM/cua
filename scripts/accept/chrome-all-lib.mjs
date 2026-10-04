@@ -77,8 +77,8 @@ const LIVE_COMMAND = `node scripts/accept-chrome.mjs --live --profile personal -
 export function c2LiveBlocked(personal) {
   const rerun = `then rerun this runner with --c2-report ${LIVE_REPORT}`;
   if (!personal) return check('live: round trip through cua serve', 'BLOCKED', `personal is not registered in this home: node bin/cua.mjs profiles add personal --chrome-profile Default, bind it, run ${LIVE_COMMAND}, ${rerun}`);
-  if (personal.reason === 'not_bound')
-    return check('live: round trip through cua serve', 'BLOCKED', `personal not bound; user pick pending. The user picks personal's backend from \`node bin/cua.mjs profiles bind personal\` (instance ids with tab counts), then node bin/cua.mjs profiles bind personal --extension-instance-id <picked id>, then ${LIVE_COMMAND} (Chrome open on the Default profile), ${rerun}`);
+  if (personal.reason === 'not_bound' || personal.reason === 'binding_stale')
+    return check('live: round trip through cua serve', 'BLOCKED', `personal ${personal.reason === 'not_bound' ? 'not bound' : 'binding stale (its extension instance is no longer live)'}; user pick pending. The user picks personal's backend from \`node bin/cua.mjs profiles bind personal\` (instance ids with tab counts), then node bin/cua.mjs profiles bind personal --extension-instance-id <picked id>, then ${LIVE_COMMAND} (Chrome open on the Default profile), ${rerun}`);
   if (!personal.ready) return check('live: round trip through cua serve', 'BLOCKED', `personal is not ready (${personal.reason}); once it is, run ${LIVE_COMMAND}, ${rerun}`);
   return check('live: round trip through cua serve', 'BLOCKED', `no live report was supplied; personal is ready: run ${LIVE_COMMAND} (Chrome open on the Default profile), ${rerun}`);
 }
@@ -161,8 +161,8 @@ export function defaultRegistryChecks(statuses) {
   const personal = byKey.get('personal');
   const checks = [personal?.ready
     ? check('default home: personal ready after bind', 'PASS', 'personal is bound to a live-picked extension instance and its extension is installed')
-    : check('default home: personal ready after bind', 'BLOCKED', personal?.reason === 'not_bound'
-      ? 'personal not bound; user pick pending: the user picks its backend, then node bin/cua.mjs profiles bind personal --extension-instance-id <picked id>'
+    : check('default home: personal ready after bind', 'BLOCKED', personal?.reason === 'not_bound' || personal?.reason === 'binding_stale'
+      ? `personal ${personal.reason === 'not_bound' ? 'not bound' : 'binding stale (its extension instance is no longer live)'}; user pick pending: the user picks its backend, then node bin/cua.mjs profiles bind personal --extension-instance-id <picked id>`
       : personal ? `personal not ready (${personal.reason})` : 'personal is not registered here: node bin/cua.mjs profiles add personal --chrome-profile Default')];
   for (const key of ['work', 'school']) {
     const p = byKey.get(key);
@@ -189,11 +189,16 @@ export function hostNotesCheck(instructions) {
 }
 
 // profiles_list over MCP against the registry it reads: the same keys, readiness and reasons, an instance id only when
-// ready, and no directory names.
+// ready, and no directory names. Liveness is checked on each request, so a profile the registry has ready may come
+// back not ready for a stale binding or unlistable backends, without its instance id.
+const LIVENESS_REASONS = ['binding_stale', 'backends_unlistable'];
+const viewMatches = (view, status) => isDeepStrictEqual(view, profileView(status))
+  || (status.ready && LIVENESS_REASONS.includes(view?.reason) && isDeepStrictEqual(view, {key: status.key, ready: false, reason: view.reason}));
 export function profilesListCheck(structured, statuses) {
   const name = 'profiles_list returns the registered keys with readiness';
   if (structured?.status !== 'ok' || !Array.isArray(structured.profiles)) return check(name, 'FAIL', `status ${JSON.stringify(structured?.status ?? null)}${structured?.code ? ` (${structured.code})` : ''}`);
-  const ok = isDeepStrictEqual(structured.profiles, statuses.map(profileView)) && structured.profiles.every(p => !('chromeProfileDirectory' in p));
+  const ok = structured.profiles.length === statuses.length && structured.profiles.every((view, i) => viewMatches(view, statuses[i]))
+    && structured.profiles.every(p => !('chromeProfileDirectory' in p));
   return check(name, ok ? 'PASS' : 'FAIL', `${describe(structured.profiles)}; ${ok ? 'equal to the registry (instance ids only for ready profiles, no directories)' : 'differs from the registry'}`);
 }
 

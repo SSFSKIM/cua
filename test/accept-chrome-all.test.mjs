@@ -132,6 +132,12 @@ test('the default home: personal ready after bind passes, unbound is BLOCKED on 
   const unbound = defaultRegistryChecks([{key: 'personal', ready: false, reason: 'not_bound'}, ...others]);
   assert.equal(rollup(statuses(unbound)), 'BLOCKED');
   assert.match(unbound.find(c => c.status === 'BLOCKED').detail, /user pick pending/);
+  const stale = defaultRegistryChecks([{key: 'personal', ready: false, reason: 'binding_stale', extensionInstanceId: 'old-id'}, ...others]);
+  assert.equal(rollup(statuses(stale)), 'BLOCKED');
+  assert.match(stale.find(c => c.status === 'BLOCKED').detail, /binding stale.*user pick pending.*profiles bind personal --extension-instance-id/);
+  assert.ok(!JSON.stringify(stale).includes('old-id'));
+  const staleC2 = c2LiveBlocked({key: 'personal', ready: false, reason: 'binding_stale'});
+  assert.match(staleC2.detail, /personal binding stale.*profiles bind personal --extension-instance-id/);
   assert.ok(!JSON.stringify(defaultRegistryChecks([{key: 'personal', ready: true, extensionInstanceId: 'secret-ish-id'}, ...others])).includes('secret-ish-id'), 'instance ids stay out of the report');
   assert.equal(rollup(statuses(defaultRegistryChecks([]))), 'BLOCKED');
 });
@@ -153,6 +159,13 @@ test('profiles_list must equal the registry: keys, readiness, reasons, instance 
   assert.equal(profilesListCheck({...good, profiles: [{...good.profiles[0], chromeProfileDirectory: 'Default'}, good.profiles[1]]}, registry).status, 'FAIL');
   assert.equal(profilesListCheck({...good, profiles: good.profiles.slice(1)}, registry).status, 'FAIL');
   assert.equal(profilesListCheck({status: 'error', code: 'profiles_invalid'}, registry).status, 'FAIL');
+  // Liveness is checked per request: a profile the registry has ready may be reported stale or unverifiable, never
+  // with its instance id; a profile the registry has not ready cannot become a liveness case.
+  for (const reason of ['binding_stale', 'backends_unlistable'])
+    assert.equal(profilesListCheck({...good, profiles: [{key: 'personal', ready: false, reason}, good.profiles[1]]}, registry).status, 'PASS', reason);
+  assert.equal(profilesListCheck({...good, profiles: [{key: 'personal', ready: false, reason: 'binding_stale', extensionInstanceId: 'i1'}, good.profiles[1]]}, registry).status, 'FAIL');
+  assert.equal(profilesListCheck({...good, profiles: [good.profiles[0], {key: 'work', ready: false, reason: 'binding_stale'}]}, registry).status, 'FAIL');
+  assert.equal(profilesListCheck({...good, profiles: [{key: 'personal', ready: false, reason: 'not_bound'}, good.profiles[1]]}, registry).status, 'FAIL');
 });
 
 const doctorOf = over => ({ok: true, checks: Object.entries({

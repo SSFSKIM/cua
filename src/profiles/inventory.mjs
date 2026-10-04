@@ -1,13 +1,14 @@
-// The live extension backends, as the vendor browser service sees them, for `cua profiles bind`: one bounded,
-// serve-less launch of the installed runtime with the browser surface only (the same launch `cua serve` makes, with
-// secrets off), one MCP handshake and one read-only cell — cua.listBrowsers, then cua.listTabs per Chrome backend
-// for a tab count — then teardown through the owned anchor. Every elicitation is declined. The cell reduces the
-// inventory inside the REPL: only each extension backend's browser family and, for Google Chrome's (family "chrome"),
-// its instance id, the vendor's profile label and a tab count leave it; tab titles and URLs never do. Another
-// browser's extension backend (Edge, say; the vendor's chrome backend setting selects by type, not family) leaves only
-// its family and is never asked for tabs, and a backend that reports no family is not Chrome's. The label is the
-// profile display name the vendor's own enrichment attached (browser-service.mjs `aL`, read from that browser's own
-// Local State); callers use it for the bind rule and never print or store it.
+// The live extension backends, as the vendor browser service sees them, for `cua profiles bind` and for readiness
+// (`cua profiles list`, profiles_list): one bounded, serve-less launch of the installed runtime with the browser surface
+// only (the same launch `cua serve` makes, with secrets off), one MCP handshake and one read-only cell — cua.listBrowsers,
+// then, for bind only, cua.listTabs per Chrome backend for a tab count — then teardown through the owned anchor. Every
+// elicitation is declined. The cell reduces the inventory inside the REPL: only each extension backend's browser family
+// and, for Google Chrome's (family "chrome"), its instance id, the vendor's profile label and (bind) a tab count leave
+// it; tab titles and URLs never do, and a readiness listing never asks for tabs at all. Another browser's extension
+// backend (Edge, say; the vendor's chrome backend setting selects by type, not family) leaves only its family and is
+// never asked for tabs, and a backend that reports no family is not Chrome's. The label is the profile display name the
+// vendor's own enrichment attached (browser-service.mjs `aL`, read from that browser's own Local State); callers use it
+// for the bind rule and never print or store it.
 import {randomUUID} from 'node:crypto';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
@@ -20,7 +21,7 @@ export const MARKER = 'CUABACKENDS';
 export const LIMITS = {initializeMs: 60_000, cellMs: 45_000, callMs: 60_000, teardownMs: 5000};
 const INSTANCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
-export const LIST_CELL = `const __out = {};
+const listCell = ({tabCounts}) => `const __out = {};
 try {
   const list = await cua.listBrowsers({emit: false});
   __out.backends = [];
@@ -28,11 +29,12 @@ try {
     if (b?.type !== "extension") continue;
     if (b.family !== "chrome") { __out.backends.push({family: typeof b.family === "string" ? (/^[a-z]{1,20}$/.test(b.family) ? b.family : "other") : null}); continue; }
     const entry = {instanceId: typeof b.metadata?.extensionInstanceId === "string" ? b.metadata.extensionInstanceId : null, family: "chrome", profileName: typeof b.profileName === "string" && b.profileName ? b.profileName : null, tabCount: null};
-    try { const tabs = await cua.listTabs({browser: b.id, emit: false}); entry.tabCount = Array.isArray(tabs) ? tabs.length : null; } catch {}
-    __out.backends.push(entry);
+${tabCounts ? '    try { const tabs = await cua.listTabs({browser: b.id, emit: false}); entry.tabCount = Array.isArray(tabs) ? tabs.length : null; } catch {}\n' : ''}    __out.backends.push(entry);
   }
 } catch { __out.error = "list_failed"; }
 nodeRepl.write(${JSON.stringify(MARKER + ' ')} + JSON.stringify(__out));`;
+export const LIST_CELL = listCell({tabCounts: true});
+export const LIVENESS_CELL = listCell({tabCounts: false});
 
 function within(promise, ms, onTimeout) {
   let timer;
@@ -57,8 +59,9 @@ function parseBackends(result) {
   });
 }
 
-// Talks to an already started runtime (an upstream as spawnUpstream returns it) and always terminates it.
-export async function listBackendsWith(upstream, {limits = LIMITS} = {}) {
+// Talks to an already started runtime (an upstream as spawnUpstream returns it) and always terminates it. Without tab
+// counts the cell never calls cua.listTabs.
+export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = true} = {}) {
   const limit = {...LIMITS, ...limits};
   let next = 0;
   let elicitationsDeclined = 0;
@@ -83,7 +86,9 @@ export async function listBackendsWith(upstream, {limits = LIMITS} = {}) {
     upstream.send({jsonrpc: '2.0', method: 'notifications/initialized'});
     const sessionId = randomUUID();
     const meta = {'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: randomUUID(), call_id: randomUUID(), model: 'cua-profiles-bind'}};
-    const result = await request('tools/call', {name: 'js', arguments: {code: LIST_CELL, title: 'cua profiles bind: list Chrome backends', timeout_ms: limit.cellMs}, _meta: meta}, limit.callMs);
+    const code = tabCounts ? LIST_CELL : LIVENESS_CELL;
+    const title = tabCounts ? 'cua profiles bind: list Chrome backends' : 'cua profiles: check live Chrome backends';
+    const result = await request('tools/call', {name: 'js', arguments: {code, title, timeout_ms: limit.cellMs}, _meta: meta}, limit.callMs);
     backends = parseBackends(result);
   } catch (error) {
     failure = error;
@@ -106,7 +111,7 @@ export function teardownUnconfirmed(teardown, failure) {
 
 // One bounded launch of the installed runtime in this home, as `cua serve` would make it with the browser surface
 // only and secrets off, in its own session directory (removed afterwards with the session's approval file).
-export async function listLiveBackends({home, runtime, ambient = process.env, limits}) {
+export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true}) {
   const sessionId = randomUUID();
   const owned = homeLayout(realHome(home));
   mkdirSync(owned.run, {recursive: true, mode: 0o700});
@@ -115,7 +120,7 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
   mkdirSync(launch.cwd, {mode: 0o700});
   chmodSync(launch.cwd, 0o700);
   try {
-    const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits});
+    const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts});
     return {backends: result.backends, elicitationsDeclined: result.elicitationsDeclined, teardown: result.teardown};
   } finally {
     rmSync(launch.cwd, {recursive: true, force: true});

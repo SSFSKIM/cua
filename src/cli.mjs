@@ -13,8 +13,8 @@ import {serve as serveMcp} from './mcp/server.mjs';
 import {runSecrets} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts} from './profiles/chrome.mjs';
-import {addProfile, removeProfile, profileStatuses, REASONS} from './profiles/registry.mjs';
-import {bindCommand} from './profiles/commands.mjs';
+import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
+import {bindCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {UNDETERMINED} from './profiles/bind.mjs';
 import {registerHost, unregisterHost} from './chrome/registration.mjs';
@@ -167,8 +167,9 @@ async function login(args) {
   return code === 0 ? 0 : 1;
 }
 
-// Chrome profile registrations (src/profiles). Registering, listing and removing only touch $CUA_HOME/profiles.json;
-// bind also runs one bounded, browser-only launch of the runtime to list the live extension backends.
+// Chrome profile registrations (src/profiles). Registering and removing only touch $CUA_HOME/profiles.json; bind runs
+// one bounded, browser-only launch of the runtime to list the live extension backends, and list runs one (without tab
+// counts) when some profile is bound, to check that its bound instance is live.
 const PROFILES_USAGE = {
   add: 'profiles add takes a key and --chrome-profile <directory>',
   list: 'profiles list takes only --json',
@@ -180,8 +181,10 @@ const LABELS = {'this-profile': 'labelled as this profile', 'other-profile': 'la
   'comparison-unknown': 'labelled, but this profile\'s own name is unknown, so whether it is this profile cannot be told'};
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${LABELS[b.label]}`;
 const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
+const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. An extension disable/enable or reinstall mints a new id; pick this profile's new one from the live backends.`;
 
-async function pickBackend(list, reason, nonChromeExcluded) {
+async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {}) {
+  if (staleBinding) process.stderr.write(`${describeStale(staleBinding)}\n`);
   process.stderr.write(`which live backend is this profile could not be determined: ${UNDETERMINED[reason]}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
   const {createInterface} = await import('node:readline/promises');
   const rl = createInterface({input: process.stdin, output: process.stderr});
@@ -214,10 +217,14 @@ async function profiles(args) {
   }
   if (command === 'list') {
     const {values} = parsed({}, 0);
-    const list = profileStatuses({home, chrome});
-    if (values.json) return done({ok: true, profiles: list});
+    const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends: () => {
+      if (!values.json) process.stderr.write('checking the live Chrome extension backends through the runtime (one bounded launch)...\n');
+      return listLiveBackends({home, runtime: resolveRuntime({home}), tabCounts: false});
+    }});
+    if (values.json) return done({ok: true, profiles: list, ...(listingError ? {listingError: listingError.code} : {})});
+    if (listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${listingError.code}: ${listingError.message})\n`);
     if (!list.length) return done('no Chrome profiles are registered (cua profiles add <key> --chrome-profile <directory>)');
-    for (const p of list) print(`${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : REASONS[p.reason]}`);
+    for (const p of list) print(`${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`);
     return 0;
   }
   if (command === 'remove') {
@@ -234,10 +241,11 @@ async function profiles(args) {
     listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined});
   if (values.json) { print(result); return result.ok ? 0 : 1; }
   if (result.ok) {
-    print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (${result.how === 'automatic' ? 'the runtime labelled exactly one live backend with this profile\'s unique name' : 'your explicit pick'})`);
+    print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (${result.how === 'automatic' ? 'the runtime labelled exactly one live backend with this profile\'s unique name' : 'your explicit pick'})${result.staleBinding ? `, replacing the stale binding ${result.staleBinding}` : ''}`);
     return 0;
   }
   print(`${result.key} was not bound: ${UNDETERMINED[result.reason]}${describeExcluded(result.nonChromeExcluded)}`);
+  if (result.staleBinding) print(describeStale(result.staleBinding));
   if (result.backends.length) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}\nrerun with the instance of this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
   return 1;
 }

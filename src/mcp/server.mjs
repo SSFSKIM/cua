@@ -11,7 +11,8 @@
 //   turn ID and a fresh call ID. end_task, secrets_list and (with the browser surface) profiles_list are answered here;
 //   hidden upstream tools are refused.
 // - profiles_list reads the registered Chrome profiles (src/profiles) when asked: key, readiness, the instance id of a
-//   ready profile, the reason of one that is not; never a Chrome directory.
+//   ready profile, the reason of one that is not (with what to tell the user in the text); never a Chrome directory.
+//   Readiness includes the live check (a bound instance among the live backends), so it can take a runtime launch.
 // - secrets_list asks the connection's secrets provider (its private broker, src/secrets/broker.mjs) for labels; it
 //   never sees a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
@@ -35,7 +36,9 @@ import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {locateHelper} from '../secrets/helper.mjs';
 import {openSecrets} from '../secrets/broker.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
-import {profileStatuses} from '../profiles/registry.mjs';
+import {reasonText} from '../profiles/registry.mjs';
+import {profileReadiness} from '../profiles/commands.mjs';
+import {listLiveBackends} from '../profiles/inventory.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
@@ -167,9 +170,13 @@ export function createServer({
     }
   }
 
-  function profilesList(msg) {
+  // A profile that is not ready says why in the text too: binding (and choosing between profiles) is the user's step.
+  async function profilesList(msg) {
     try {
-      respond(msg.id, statusResult({status: 'ok', profiles: profiles.list().map(profileView)}));
+      const list = await profiles.list();
+      const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p)}.`);
+      const message = notReady.length ? `${notReady.join('\n')}\nTell the user; do not bind or pick a profile for them.` : undefined;
+      respond(msg.id, statusResult({status: 'ok', profiles: list.map(profileView)}, {message}));
     } catch (error) {
       const code = error?.code === 'profiles_invalid' ? 'profiles_invalid' : 'unavailable';
       respond(msg.id, statusResult({status: 'error', code}, {isError: true, message: `cua: the registered profiles could not be read (${code}); run cua profiles list for details`}));
@@ -322,8 +329,8 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // use, src/services/browser.mjs for the browser) and the broker's endpoint and token (or the reason there is no
 // broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including the
 // session's app-approval file the runtime wrote). With the browser surface, profiles_list reads $CUA_HOME's profile
-// registry. Returns the
-// exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
+// registry and, when a profile is bound, checks it against the live backends with one bounded listing launch
+// (inventory.mjs, no tab counts), which serve waits for before returning. Returns the exit code. `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for
 // tests and the opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and
 // are not reachable from the CLI.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper({home}),
@@ -350,14 +357,25 @@ export async function serve({home, env = process.env, input = process.stdin, out
     throw error;
   }
   const onSignal = () => server.close('signal');
+  const listings = new Set();
   let server;
   try {
-    const profiles = {list: () => profileStatuses({home, chrome})};
+    const profiles = {list: async () => {
+      const pending = profileReadiness({home, chrome, listBackends: () => listLiveBackends({home, runtime, ambient: env, tabCounts: false})});
+      listings.add(pending);
+      try {
+        const {profiles: list, listingError} = await pending;
+        if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
+        return list;
+      } finally { listings.delete(pending); }
+    }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics, ...settings});
     for (const signal of SIGNALS) process.on(signal, onSignal);
     return (await server.closed).code;
   } finally {
     for (const signal of SIGNALS) process.off(signal, onSignal);
+    // A readiness listing still running owns a runtime of its own; it is bounded and always tears it down.
+    await Promise.allSettled([...listings]);
     await secrets.close();
     rmSync(launch.cwd, {recursive: true, force: true});
     // The runtime records a "session" app approval under this connection's random session ID, which no later

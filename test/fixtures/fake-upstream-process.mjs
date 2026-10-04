@@ -8,9 +8,11 @@
 //   noise        write a non-JSON line before each response
 // When CODEX_HOME is set (an actual `cua serve` launch), every received message plus the launch environment and
 // working directory are appended to $CODEX_HOME/fake-upstream.jsonl for the test to inspect. A js call with code
-// "approve" writes the session approval file node_repl writes for an accepted app approval.
+// "approve" writes the session approval file node_repl writes for an accepted app approval. A Chrome backend listing
+// cell (src/profiles/inventory.mjs) is answered with $CODEX_HOME/fake-backends.json as its listing when that file
+// exists (otherwise it is echoed like any cell, which the listing reads as a failure).
 import {spawn} from 'node:child_process';
-import {appendFileSync, mkdirSync, writeFileSync, statSync} from 'node:fs';
+import {appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 
@@ -61,6 +63,8 @@ createInterface({input: process.stdin}).on('line', line => {
         mkdirSync(sessions, {recursive: true});
         writeFileSync(join(sessions, `${_meta['x-codex-turn-metadata'].session_id}.toml`), '[apps]\nallowed = ["com.example.app"]\n');
       }
+      const backends = process.env.CODEX_HOME && join(process.env.CODEX_HOME, 'fake-backends.json');
+      if (name === 'js' && String(args.code).includes('"CUABACKENDS "') && backends && existsSync(backends)) return reply(text(`CUABACKENDS ${readFileSync(backends, 'utf8').trim()}`));
       if (name === 'js') return reply(text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}));
       if (name === 'js_reset') return reply(text('js kernel reset'));
       if (name === 'turn_ended') return reply(text('{}'));

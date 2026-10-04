@@ -3,8 +3,8 @@
 // resolver and launcher: allowlisted environment, owned per-connection working directory, and cleanup at close.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
-import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync, chmodSync} from 'node:fs';
+import {spawn, spawnSync} from 'node:child_process';
+import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync, chmodSync, rmSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline';
@@ -13,6 +13,8 @@ import {PassThrough} from 'node:stream';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
 const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
@@ -150,6 +152,53 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   assert.equal(start.env.BROWSER_USE_BACKEND_PATHS, undefined, 'an ambient backend list never reaches the runtime');
   server.child.stdin.end();
   assert.equal((await server.exit).code, 0);
+});
+
+test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  const backendsFile = join(home, 'state', 'codex', 'fake-backends.json');
+  mkdirSync(dirname(backendsFile), {recursive: true});
+  const listingOf = (...ids) => JSON.stringify({backends: ids.map(instanceId => ({instanceId, family: 'chrome', profileName: null, tabCount: null}))});
+
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'browser', HOME: userHome});
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  const seen = {};
+  for (const [state, listing] of [['live', listingOf('other', 'inst-a')], ['stale', listingOf('inst-new')], ['none live', listingOf()], ['listing failed', null]]) {
+    if (listing === null) rmSync(backendsFile); else writeFileSync(backendsFile, listing);
+    const reply = await server.call('profiles_list');
+    seen[state] = reply.result.structuredContent.profiles[0];
+    if (state === 'stale') assert.match(reply.result.content[0].text, /cua profiles bind personal/);
+  }
+  assert.deepEqual(seen, {
+    live: {key: 'personal', ready: true, extensionInstanceId: 'inst-a'},
+    stale: {key: 'personal', ready: false, reason: 'binding_stale'},
+    'none live': {key: 'personal', ready: false, reason: 'backends_unlistable'},
+    'listing failed': {key: 'personal', ready: false, reason: 'backends_unlistable'},
+  });
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 0, stderr);
+  assert.match(stderr, /profiles_list: the live Chrome extension backends could not be listed \(listing_failed\)/);
+  const cells = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params.arguments);
+  assert.equal(cells.length, 4, 'one listing cell per request, nothing on the serving runtime');
+  assert.ok(cells.every(c => c.code === LIVENESS_CELL), 'each listing is the tab-free cell');
+  const starts = records(home).filter(r => r.start).map(r => r.start.env);
+  assert.equal(starts.length, 5, 'the serving runtime and one bounded launch per profiles_list');
+  assert.ok(starts.slice(1).every(env => env.CUA_REPL_ENABLED_SURFACES === 'browser'));
+  assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
+
+  writeFileSync(backendsFile, listingOf('inst-new'));
+  const list = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, /^personal\s+not ready\s+Default\s+its bound extension instance is not among the live backends \(an extension disable\/enable or reinstall mints a new id\): bind it again with cua profiles bind personal$/m);
+  writeFileSync(backendsFile, listingOf('inst-a'));
+  const json = JSON.parse(spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', '--json'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000}).stdout);
+  assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
 });
 
 test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched', {skip: !supported}, async t => {

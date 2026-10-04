@@ -70,9 +70,11 @@ export const DEFAULT_HOST_NOTES = `Host notes (cua serve):
 - Do not drive the same app through osascript or other tools while a cua session is open.`;
 
 // Browser-surface notes: the three Chrome rules (pick a registered profile by instance id, DOM-only input through
-// Playwright locators, a long createBrowserTab limit and a possible leftover tab after its timeout).
+// Playwright locators, a long createBrowserTab limit and a possible leftover tab after its timeout). A failed selection
+// sends the agent back to profiles_list: the vendor's own error for an id that is not live ("The Chrome instance is
+// unavailable.") is raised inside the REPL, where cua cannot see it, while profiles_list names a stale binding.
 const BROWSER_NOTES = [
-  '- Chrome: call profiles_list, then select the profile the user means with cua.getBrowser({extensionInstanceId}). Never choose between profiles yourself.',
+  '- Chrome: call profiles_list, then select the profile the user means with cua.getBrowser({extensionInstanceId}); if that fails, call profiles_list again. Never choose between profiles yourself.',
   '- Chrome tabs are DOM-only: fill and click with tab.playwright locators; native typeText/click throw there.',
   '- createBrowserTab can take over 30 s: give that js call timeout_ms of at least 60000. If it times out, a tab may still have opened: tell the user, do not retry blindly.',
 ];

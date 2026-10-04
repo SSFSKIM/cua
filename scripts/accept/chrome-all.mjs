@@ -210,7 +210,7 @@ export async function runAll(argv) {
       try {
         init = await session.initialize().catch(error => ({error: error.message}));
         tools = (await session.request('tools/list', {})).result?.tools?.map(t => t.name);
-        listed = (await session.call('profiles_list')).result?.structuredContent;
+        listed = (await session.call('profiles_list', {}, 150_000)).result?.structuredContent;
         endTask = (await session.call('end_task')).result?.structuredContent?.status;
       } finally {
         const exit = await session.terminate();

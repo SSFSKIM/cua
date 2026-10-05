@@ -277,4 +277,7 @@ test('the run.stale check removes the sessions of gone owners and says so', asyn
   const failed = check(await inspect({sweep: () => ({run, swept: [], live: [], unowned: [], failed: [{session: stale, pid: 7, errors: [`${run}/${stale}: EACCES`]}]})}), 'run.stale');
   assert.equal(failed.status, 'fail');
   assert.match(failed.detail, /could not remove the leftovers of .*EACCES/);
+  const unreadable = await inspect({sweep: () => { throw Object.assign(new Error('scandir'), {code: 'EACCES'}); }});
+  assert.deepEqual([check(unreadable, 'run.stale').status, check(unreadable, 'helper.live').status], ['fail', 'blocked'], 'the rest of the report still runs');
+  assert.match(check(unreadable, 'run.stale').detail, /could not be swept \(EACCES\)/);
 });

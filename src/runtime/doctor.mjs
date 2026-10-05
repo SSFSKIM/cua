@@ -94,7 +94,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
     checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
   }
   checks.push(sandboxCheck({home, env, runtime}));
-  checks.push(runSweepCheck(sweep(home)));
+  checks.push(runSweepCheck(home, sweep));
 
   const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
   const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
@@ -128,7 +128,11 @@ function sandboxCheck({home, env, runtime}) {
   return result('sandbox', 'pass', `CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells read everywhere but write only their connection's run directory and $TMPDIR${tmpdirRoot(env.TMPDIR) ? ` (${env.TMPDIR})` : ' (unset, empty or relative: no temp root)'}, no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits`);
 }
 
-function runSweepCheck(found) {
+function runSweepCheck(home, sweep) {
+  let found;
+  try { found = sweep(home); } catch (error) {
+    return result('run.stale', 'fail', `${homeLayout(realHome(home)).run} could not be swept (${error.code ?? error.message}); cua serve cannot use it either`);
+  }
   const live = found.live.length ? `; ${found.live.length} live session${found.live.length === 1 ? '' : 's'} left alone` : '';
   return result('run.stale', found.failed.length ? 'fail' : 'pass', `${found.run}: ${describeSweep(found) ?? 'nothing stale'}${live}`);
 }

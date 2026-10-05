@@ -231,8 +231,8 @@ are, and nothing is copied or migrated. The default (`computer`) is unchanged: n
 
 With the browser surface the model gets a fifth tool, `profiles_list`, OpenAI's browser API in the `js` description,
 and the Chrome host notes: select only a profile `profiles_list` returned and never pick one for you, use Playwright
-locators for input, give locators their own timeout, treat page evaluation as read-only, give tab creation a long
-limit (see Operating guidance for agents).
+locators for input, loop short waits past the 3 s browser action cap, treat page evaluation as read-only, give tab
+creation a long limit (see Operating guidance for agents).
 
 ### The server's Codex login
 
@@ -436,9 +436,12 @@ Chrome (browser surface):
   user named; if selection fails, call `profiles_list` again; if the profile is not ready or which one is meant is
   unclear, ask. Binding is the user's act (`cua profiles bind`, see Profiles). The run above bound a profile itself
   by matching tab contents, which proved nothing about the profile and broke this rule.
-- **Locators have their own deadline.** Locator actions run under a short deadline of their own (about 3 s was seen)
-  that the `js` call's `timeout_ms` does not extend. On slow pages pass the locator its own timeout: OpenAI's browser
-  API takes `{timeoutMs}` on each locator action. Which deadline applies by default is being measured (issue #25).
+- **Browser actions stop at 3 s.** Locator actions, waits and `playwright.evaluate` are capped at 3 s by OpenAI's
+  browser service, whatever their `timeoutMs` or the `js` call's `timeout_ms` say: a per-call `timeoutMs` can only
+  shorten the cap, and there is no session setting (spike, issue #25; `pressSequentially` gets 5 s, downloads and
+  file choosers 120 s). To wait longer, loop short waits inside the cell up to a deadline of your own, and give the
+  `js` call a `timeout_ms` above that deadline: a cell that hits its `timeout_ms` resets the kernel and loses the tab
+  handle.
 - **Page evaluation is read-only.** `evaluate` on a page or locator runs in a read-only scope: no `fetch`, no
   `require`, and its objects are non-extensible, so instrumentation and downloads from there fail. Read the DOM with
   it and act through locators.

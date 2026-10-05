@@ -64,31 +64,32 @@ export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
 // stood in for readiness checks. Claude Code caps the server instructions, the vendor's own included, at 2,048
 // characters, so every line has to earn its place.
 const TITLE = 'Host notes (cua serve):';
-const COMPUTER_HEAD = '- Use this when a macOS app\'s GUI is the only way. Read the API document the first js call returns before writing code.';
-const BROWSER_HEAD = '- Use this for the user\'s existing Chrome profiles when no API or skill covers the task. Read the API document the first js call returns before writing more code.';
+const COMPUTER_HEAD = '- Use this when a macOS app\'s GUI is the only way; read the API document the first js call returns.';
+const BROWSER_HEAD = '- Use this for the user\'s existing Chrome profiles when no API or skill covers the task; read the API document the first js call returns.';
 const GENERAL_NOTES = [
-  '- Call end_task as soon as the task is done, before your final reply. If it errors, report it: this connection takes no more work.',
+  '- Call end_task as soon as the task is done, before your final reply. If it errors, report it; the connection is spent.',
   '- One controller per task, one js call at a time.',
   '- Observe, act, verify: a call returning is not success. If the state is unchanged, stop and find out why rather than repeat.',
-  '- Batch deterministic steps, one observation per call. Wait for a visible readiness condition in a bounded poll, not a fixed delay.',
-  '- Cancelling does not stop a running cell; timeout_ms bounds runaway code.',
+  '- Batch deterministic steps between observations. Wait for a visible readiness condition in a bounded poll, not a fixed delay.',
+  '- Cancelling does not stop a running cell; its timeout_ms does.',
 ];
 const COMPUTER_NOTES = [
   '- Each app asks the user for approval once per connection; do not retry a declined app, report it.',
-  '- Address elements by index from the latest accessibility text. Coordinates are screenshot pixels; apply any downscale multiplier the host gives. Role names follow the system language.',
-  '- After quitting an app, drop its handle: getAXState() on it relaunches the app. cua.listApps({emit:false}) can lag behind cmd+q.',
+  '- Prefer element indexes from the latest accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier). Role names follow the system language.',
+  '- After quitting an app, drop its handle: getAXState() on it relaunches the app.',
   '- typeText silently drops characters the keyboard layout cannot key (emoji); paste those and multiline text.',
-  '- If the REPL state is confused, js_reset and bind the app again. Do not drive the app through osascript or other tools meanwhile.',
+  '- If REPL state is confused, js_reset and rebind the app. Do not also drive the app through osascript.',
 ];
 // The Chrome rules. A failed selection sends the agent back to profiles_list: the vendor's own error for an id that is
 // not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
 // profiles_list names a stale binding. Which profile is meant stays the user's call (the dogfood agent bound one
-// itself from tab contents). The locator line rests on the vendor API's per-action timeoutMs option; spike #25
-// measures which deadline applies by default.
+// itself from tab contents). The 3 s line is spike #25's finding: the vendor browser service caps locator actions,
+// waits and playwright.evaluate at 3 s (a per-call timeoutMs can only shorten it), and a cell timeout resets the
+// kernel, losing the tab handle.
 const BROWSER_NOTES = [
   '- Chrome: give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user: ask.',
-  '- Chrome tabs are DOM-only: act through tab.playwright locators; native typeText/click throw there.',
-  '- Locator actions keep their own short deadline whatever the js timeout_ms: pass them {timeoutMs}.',
+  '- Chrome tabs are DOM-only: act through tab.playwright locators, not native typeText/click.',
+  '- Browser locator actions, waits and playwright.evaluate stop at 3 s whatever timeoutMs or the js timeout_ms say (timeoutMs can only shorten it); to wait longer, loop short waits in the cell up to your own deadline and give the js call a timeout_ms above it.',
   '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
   '- createBrowserTab can take over 30 s: give that js call timeout_ms of at least 60000. After a timeout a tab may still have opened: tell the user; do not retry.',
 ];

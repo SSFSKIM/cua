@@ -188,6 +188,27 @@ test('the default home fails when readiness disagrees with doctor\'s facts for a
     assert.equal(judged([school, {...ssfs, reason}], {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': installedRow('Profile 1')}), 'PASS', reason);
 });
 
+test('a list row whose readiness contradicts its reason fails before doctor or unreadable data are considered', () => {
+  const [school, ssfs] = SECOND_MAC.profiles;
+  const judge = (row, doctorRow) => defaultRegistryChecks({profiles: [school, row], doctor: doctorRows({'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': doctorRow}), profile: 'school'})
+    .find(c => c.name.startsWith('default home: ssfs '));
+  // Ready yet not installed, against doctor's absent-extension row: the reproduced case.
+  const contradicted = judge({...ssfs, ready: true, extensionInstanceId: 'inst-x'}, absentRow('Profile 1'));
+  assert.equal(contradicted.status, 'FAIL');
+  assert.doesNotMatch(contradicted.detail, /extension installed/);
+  for (const reason of ['profile_directory_missing', 'not_bound', 'binding_stale', 'backends_unlistable', 'chrome_data_unreadable'])
+    assert.equal(judge({...ssfs, ready: true, reason, extensionInstanceId: 'inst-x'}, installedRow('Profile 1')).status, 'FAIL', reason);
+  const unreadable = ['blocked', 'whether the OpenAI extension is installed is unknown: this process may not read Chrome\'s data directory (EPERM)'];
+  assert.equal(judge({...ssfs, ready: true, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM', extensionInstanceId: 'inst-x'}, unreadable).status, 'FAIL', 'not BLOCKED');
+  // Not ready without a reason, or with an unknown one; ready without a binding.
+  assert.equal(judge({key: 'ssfs', chromeProfileDirectory: 'Profile 1', ready: false}, installedRow('Profile 1')).status, 'FAIL');
+  assert.equal(judge({...ssfs, reason: 'something_else'}, installedRow('Profile 1')).status, 'FAIL');
+  assert.equal(judge({key: 'ssfs', chromeProfileDirectory: 'Profile 1', ready: true}, installedRow('Profile 1')).status, 'FAIL');
+  // The well-formed shapes still pass.
+  assert.equal(rollup(statuses(defaultRegistryChecks({...OWNER, profile: 'personal'}))), 'PASS');
+  assert.equal(rollup(statuses(defaultRegistryChecks({...SECOND_MAC, profile: 'school'}))), 'PASS');
+});
+
 test('the live profile not ready is BLOCKED on the pick or the reason, and an empty registry is BLOCKED, never a pass', () => {
   const rows = {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')};
   const unbound = defaultRegistryChecks({profiles: [{...SECOND_MAC.profiles[0], ready: false, reason: 'not_bound', extensionInstanceId: undefined}, SECOND_MAC.profiles[1]], doctor: doctorRows(rows), profile: 'school'});

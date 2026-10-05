@@ -243,6 +243,10 @@ function doctorAgrees(row, doctorRow) {
   return doctorRow.status === 'pass';
 }
 
+// The list contract's readiness shape: ready only bound and without a reason; not ready only with a known reason.
+const wellFormed = row => row.ready === true ? row.reason === undefined && Boolean(row.extensionInstanceId)
+  : row.ready === false && Object.hasOwn(REASONS, row.reason);
+
 // The default home's registry, read only, judged from its own data rather than fixed keys: every registered key's
 // readiness (`cua profiles list --json`) agrees with doctor's facts for it (`cua doctor --json`), doctor has a row for
 // exactly the registered keys, at least one key is ready, and the live profile (--profile) is among the ready ones.
@@ -261,7 +265,8 @@ export function defaultRegistryChecks({profiles, doctor, profile = 'personal'}) 
       const doctorRow = rows.find(c => c.name === `chrome.extension.${p.key}`);
       const name = `default home: ${p.key} ${p.ready ? 'ready' : `not ready (${p.reason})`}, consistent with doctor chrome.extension.${p.key}`;
       const facts = `doctor ${doctorRow ? doctorRow.status : 'has no row'}${p.chromeDataError ? `; Chrome's data directory unreadable from this process (${p.chromeDataError})` : ''}`;
-      if (!doctorAgrees(p, doctorRow)) checks.push(check(name, 'FAIL', `${facts}: disagrees with the registry's readiness`));
+      if (!wellFormed(p)) checks.push(check(name, 'FAIL', `the list row contradicts itself: ready ${JSON.stringify(p.ready ?? null)} with reason ${JSON.stringify(p.reason ?? null)}${p.ready === true && !p.extensionInstanceId ? ' and no binding' : ''}`));
+      else if (!doctorAgrees(p, doctorRow)) checks.push(check(name, 'FAIL', `${facts}: disagrees with the registry's readiness`));
       else if (p.reason === 'chrome_data_unreadable') checks.push(check(name, 'BLOCKED', `${facts}; ${UNREADABLE_BLOCK}`));
       else checks.push(check(name, 'PASS', `${facts}${p.ready && p.chromeDataError ? ': ready on live evidence (bound, and its bound extension instance is live)' : p.ready ? ': bound, extension installed, bound instance live' : ''}`));
     }

@@ -188,11 +188,13 @@ const describeUnreadable = result => [
   ...(result.chromeDataUnreadable ? [`this process cannot read Chrome's data directory (${result.chromeDataUnreadable}): the extension's presence was not checked, the live listing decides`] : []),
   ...(result.localStateUnreadable ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name`] : []),
 ].map(line => `note: ${line}\n`).join('');
-// Each candidate with the vendor's profile label (JSON-quoted, so a name cannot carry control characters to the
-// terminal), how it compares with this profile's name, and the likely-match mark.
+// Each candidate with the vendor's profile label, how it compares with this profile's name, and the likely-match mark.
+// The label is JSON-quoted with C1 controls and bidirectional overrides escaped too (JSON leaves them raw), so a name
+// can neither drive the terminal (U+009B is a CSI) nor reorder the row the user picks from.
+const quoted = text => JSON.stringify(text).replace(/[\u0080-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 const LABELS = {'this-profile': 'this profile\'s name', 'other-profile': 'another profile\'s name',
   'comparison-unknown': 'this profile\'s own name is unknown, so it cannot be compared'};
-const describeLabel = b => b.profileName === null ? 'unlabelled' : `labelled ${JSON.stringify(b.profileName)} (${LABELS[b.label]})`;
+const describeLabel = b => b.profileName === null ? 'unlabelled' : `labelled ${quoted(b.profileName)} (${LABELS[b.label]})`;
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${describeLabel(b)}${b.likelyMatch ? '  <- likely match' : ''}`;
 const describeLikely = reason => reason === undefined
   ? 'the likely match carries this profile\'s name, which no other Chrome profile has; confirm it by picking it'

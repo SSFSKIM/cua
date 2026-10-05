@@ -229,7 +229,7 @@ test('cua profiles bind shows each candidate\'s label and the likely match, and 
   writeFileSync(join(home, 'profiles.json'), registry);
   mkdirSync(join(home, 'state', 'codex'), {recursive: true});
   writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [
-    {instanceId: 'inst-a', family: 'chrome', profileName: 'Work', tabCount: 2},
+    {instanceId: 'inst-a', family: 'chrome', profileName: 'Work\u009b2J\u202e', tabCount: 2},
     {instanceId: 'inst-b', family: 'chrome', profileName: 'Personal', tabCount: 5},
     {instanceId: 'inst-c', family: 'chrome', profileName: null, tabCount: null},
     {family: 'edge'},
@@ -240,7 +240,8 @@ test('cua profiles bind shows each candidate\'s label and the likely match, and 
   assert.equal(text.status, 1, text.stderr);
   const rows = text.stdout.split('\n').filter(line => /^\s+\d\) extension instance/.test(line));
   assert.equal(rows.length, 3, text.stdout);
-  assert.match(rows[0], /inst-a\s+2 tab\(s\)\s+labelled "Work" \(another profile's name\)$/);
+  assert.match(rows[0], /inst-a\s+2 tab\(s\)\s+labelled "Work\\u009b2J\\u202e" \(another profile's name\)$/, 'a C1 control or bidi override in a label is printed escaped');
+  assert.ok(!/[\u0080-\u009f\u202e]/.test(text.stdout + text.stderr), 'no raw control reaches the terminal');
   assert.match(rows[1], /inst-b\s+5 tab\(s\)\s+labelled "Personal" \(this profile's name\)\s+<- likely match$/);
   assert.match(rows[2], /inst-c\s+\? tab\(s\)\s+unlabelled$/);
   assert.match(text.stdout, /personal was not bound: cua binds only the backend you pick/);
@@ -251,7 +252,7 @@ test('cua profiles bind shows each candidate\'s label and the likely match, and 
   assert.equal(json.status, 1, json.stderr);
   const result = JSON.parse(json.stdout);
   assert.deepEqual({outcome: result.outcome, likelyMatch: result.likelyMatch, backends: result.backends}, {outcome: 'pick_required', likelyMatch: 'inst-b', backends: [
-    {instanceId: 'inst-a', tabCount: 2, profileName: 'Work', label: 'other-profile'},
+    {instanceId: 'inst-a', tabCount: 2, profileName: 'Work\u009b2J\u202e', label: 'other-profile'},
     {instanceId: 'inst-b', tabCount: 5, profileName: 'Personal', label: 'this-profile', likelyMatch: true},
     {instanceId: 'inst-c', profileName: null, label: 'unlabelled'},
   ]});

@@ -205,7 +205,7 @@ export async function runAll(argv) {
       'remove deletes only the named registry entry and never touches the Chrome profile',
       'readiness: bound with the extension installed is ready; otherwise the reason is named',
       'automatic bind: a unique display name and exactly one live backend carrying it',
-      'automatic bind is undetermined, never a guess, when labels are missing, ambiguous or absent',
+      'automatic bind falls back to the user\'s pick, never a guess, when labels are missing, ambiguous or absent',
       'an explicit pick is accepted only for a live backend, and never against the runtime\'s own label',
       'bind stores the automatically labelled backend and says how it was chosen',
     ]));

@@ -210,7 +210,9 @@ const absentGateSteps = profile => [
   liveCommand(profile, '/tmp/cua-c6-absent-roundtrip.json'),
   'node bin/cua.mjs chrome unregister --json (unregister: placed browsers removed, restoration not_needed)',
   'node scripts/accept-chrome.mjs --c6-slots (slotsAfter: every browser absent again)',
-  `assemble {scenario: "${ABSENT_SCENARIO}", slotsBefore, register, slotsRegistered, servingHost: {pathClass: "cua"}, roundTrip: <that report>, unregister, slotsAfter} and rerun this runner with --c6-report <file>${profile === 'personal' ? '' : ` --profile ${profile}`}`,
+  `assemble {scenario: "${ABSENT_SCENARIO}", slotsBefore, register, slotsRegistered, servingHost: {pathClass: "cua"}, roundTrip: <that report>, unregister, slotsAfter}`,
+  're-register: node bin/cua.mjs chrome register (cua\'s own registration is the steady state without the desktop app; the extension needs it to launch a host)',
+  `rerun this runner, registered, with --c6-report <file>${profile === 'personal' ? '' : ` --profile ${profile}`}`,
 ];
 
 export const desktopAbsentGateBlocked = (profile = 'personal') => check('live: desktop-absent gate', 'BLOCKED',
@@ -239,6 +241,18 @@ export function c6GateChecks(report, {profile = 'personal', slotsNow = []} = {})
     ];
   }
   return replaceGateChecks(report, {profile});
+}
+
+// A machine without the desktop app (issue #9): no browser holds a registration cua did not write. Its steady state is
+// cua's own registration written into empty slots, which cua's record proves (replaced: false for every browser cua
+// holds); right after the desktop-absent gate's unregister it is absent. -> 'absent' | 'registered' | null, where null
+// is anything else (a foreign or unreadable slot, or cua's registration replacing something or without a record:
+// the --replace gate).
+export function desktopAbsentState(slots, record) {
+  if (!Array.isArray(slots) || !slots.length || !slots.every(s => s?.state === 'absent' || s?.state === 'ours')) return null;
+  const ours = slots.filter(s => s.state === 'ours');
+  if (!ours.length) return 'absent';
+  return ours.every(s => record?.browsers?.[s.browser]?.replaced === false) ? 'registered' : null;
 }
 
 // Each browser's manifest slot for `--c6-slots` and the runner: its class and, when present, the sha256 of its bytes.
@@ -442,7 +456,7 @@ export function profilesListCheck(structured, statuses) {
 // Doctor on this Mac: the expected statuses pass (the extension check is the live profile's); a check whose evidence
 // needs the user's environment (Chrome open, the server's login) is BLOCKED with what to do; a missing check or an
 // unhealthy report is FAIL. Every other registered key's row is judged against the registry in C3 (defaultRegistryChecks).
-export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow}) {
+export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow, record}) {
   if (!isObject(doctor) || !Array.isArray(doctor.checks)) return [check('doctor --json', 'FAIL', `exit ${code}; no report`)];
   const get = name => doctor.checks.find(c => c.name === name);
   const out = [check('doctor --json: runtime health', code === 0 && doctor.ok === true ? 'PASS' : 'FAIL', `exit ${code}; ok ${doctor.ok}`)];
@@ -457,9 +471,19 @@ export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow
   expect(`chrome.extension.${profile}`, c => c.status === 'pass' ? ['PASS'] : c.status !== 'blocked' ? ['FAIL']
     : UNREADABLE_ROW.test(c.detail) ? ['BLOCKED', PERMISSION_FIX] : ['BLOCKED', `install the OpenAI extension in ${profile}'s Chrome profile; cua never does`]);
   expect('chrome.host.registered', c => {
-    const absent = slotsNow?.every(s => s.state === 'absent');
+    const state = desktopAbsentState(slotsNow, record);
+    const absent = state === 'absent';
     const noManifest = /^no native-messaging manifest for com\.openai\.codexextension in .+: the OpenAI extension cannot reach a host/.test(c.detail);
-    if (absent && c.status === 'blocked' && noManifest) return ['PASS', 'no desktop registration present; absent expected'];
+    const expected = saw => `no desktop registration present; cua's own registration (the steady state) or none (right after the gate's unregister) expected; saw ${saw}`;
+    if (absent && c.status === 'blocked' && noManifest) return ['PASS', expected('absent')];
+    if (state === 'registered') {
+      const chrome = slotsNow.find(s => s.browser === 'chrome');
+      if (chrome?.state === 'ours') return c.status === 'pass' && /^cua:/.test(c.detail) ? ['PASS', expected('cua')]
+        // Doctor could not read the manifest (it reads before the snapshot): unknown, not a disagreement.
+        : c.status === 'blocked' && !noManifest && /is unknown/.test(c.detail) ? ['BLOCKED', 'doctor could not read Chrome\'s manifest; rerun from a process that can read the browsers\' directories']
+          : ['FAIL', 'Chrome\'s slot holds cua\'s registration but doctor does not report class cua'];
+      if (c.status === 'blocked' && noManifest) return ['BLOCKED', `cua is registered only for ${slotsNow.filter(s => s.state === 'ours').map(s => s.browser).join(', ')}; register Chrome too: node bin/cua.mjs chrome register, then rerun`];
+    }
     if (absent && /^(desktop|cua|other):/.test(c.detail)) return ['FAIL', 'doctor reports a registration but every browser slot is absent'];
     const chromeSlot = slotsNow?.find(s => s.browser === 'chrome');
     if (noManifest && ['foreign', 'ours'].includes(chromeSlot?.state)) return ['FAIL', 'doctor reports no manifest but Chrome\'s slot holds a registration'];
@@ -489,8 +513,14 @@ export function classifySlot(text, {home, userHome, suffixes}) {
 // The refusal is shown only where it must refuse (a foreign manifest is present and none is cua's: register refuses as
 // a whole before writing); the no-op only where nothing is cua's (unregister would otherwise remove a live
 // registration, the user's --replace gate included).
-export function registrationGuard(slots) {
+export function registrationGuard(slots, {record} = {}) {
   const ours = slots.filter(s => s.state === 'ours').map(s => s.browser);
+  if (ours.length && desktopAbsentState(slots, record) === 'registered') {
+    // cua's own registration on a machine without the desktop app is its steady state: nothing foreign to refuse, and
+    // unregister would remove the only host registration there is.
+    const na = what => ({run: false, notApplicable: true, reason: `no desktop registration present: cua's own registration in ${ours.join(', ')} is this machine's steady state; ${what}`});
+    return {refusal: na('no manifest cua did not write exists for register to refuse'), noop: na('unregister would remove it, and the desktop-absent gate covers unregister')};
+  }
   if (ours.length) {
     const reason = `cua's host is registered in ${ours.join(', ')} (the --replace gate is in progress or was left registered); not touched. Rerun after node bin/cua.mjs chrome unregister`;
     return {refusal: {run: false, reason}, noop: {run: false, reason}};

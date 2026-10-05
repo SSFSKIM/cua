@@ -8,7 +8,7 @@ import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
-  desktopAbsentGateChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
+  desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
   PHASE_C_MODULES, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck,
   scratchListCheck, slotStates, tapTestStatus, matrixChecks, verifyCheck, writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
@@ -254,7 +254,7 @@ test('without a C6 report the steps follow the machine: the --replace gate where
   assert.deepEqual(c6GateBlocked(none, 'school'), desktopAbsentGateBlocked('school'));
   const blocked = desktopAbsentGateBlocked('school');
   assert.equal(blocked.status, 'BLOCKED');
-  for (const step of ['--c6-slots', 'chrome register --json', 'ChatGPT for Chrome', 'accept-chrome.mjs --live --profile school', 'chrome unregister --json', 'C6-desktop-absent-live-gate', '--c6-report', '--profile school'])
+  for (const step of ['--c6-slots', 'chrome register --json', 'ChatGPT for Chrome', 'accept-chrome.mjs --live --profile school', 'chrome unregister --json', 'C6-desktop-absent-live-gate', '--c6-report', '--profile school', 're-register'])
     assert.ok(blocked.detail.includes(step), step);
   assert.doesNotMatch(blocked.detail, /--replace/);
 });
@@ -557,17 +557,69 @@ test('C5 passes on this Mac\'s expected doctor; environment gaps are BLOCKED and
 
 const noManifest = ['blocked', 'no native-messaging manifest for com.openai.codexextension in /fixture/Chrome: the OpenAI extension cannot reach a host'];
 const unknownManifest = ['blocked', 'whether a native-messaging manifest for com.openai.codexextension exists is unknown: this process may not read it in /fixture/Chrome (EPERM); grant Full Disk Access'];
-const hostCheck = (registered, slotsNow) => doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.host.registered': registered}), slotsNow}).find(c => c.name === 'chrome.host.registered');
+const hostCheck = (registered, slotsNow, record) => doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.host.registered': registered}), slotsNow, record}).find(c => c.name === 'chrome.host.registered');
 
 test('C5 passes an absent registration only when every browser slot is absent, and says absence is expected', () => {
   const slotsNow = absentSlots();
   const doctor = doctorOf({'chrome.host.registered': noManifest});
   const checks = doctorChromeChecks({code: 0, doctor, slotsNow});
   assert.equal(rollup(statuses(checks)), 'PASS');
-  assert.match(checks.find(c => c.name === 'chrome.host.registered').detail, /no desktop registration present; absent expected/);
+  assert.match(checks.find(c => c.name === 'chrome.host.registered').detail, /no desktop registration present; .*saw absent/);
   assert.equal(rollup(statuses(doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.host.registered': noManifest, 'chrome.hosts.live': ['blocked', 'no host']}), slotsNow}))), 'BLOCKED', 'expected absence does not waive the live host check');
   assert.equal(hostCheck(['blocked', 'the native-messaging manifest does not name a host path'], slotsNow).status, 'BLOCKED', 'another blocked reason is not proof of absence');
   assert.equal(hostCheck(['pass', noManifest[1]], slotsNow).status, 'FAIL', 'absence must be reported blocked by doctor');
+});
+
+// The steady state on a Mac without the desktop app is cua's own registration, written into empty slots (issue #9).
+const steadySlots = (browsers = ['chrome']) => absentSlots().map(s => browsers.includes(s.browser) ? {browser: s.browser, state: 'ours', sha256: 'a'.repeat(64)} : s);
+const steadyRecord = (browsers = ['chrome'], replaced = false) => ({schema: 1, browsers: Object.fromEntries(browsers.map(b => [b, {manifest: `/m/${b}.json`, replaced}]))});
+const cuaRegistered = ['pass', 'cua: com.openai.codexextension names ~/Library/Application Support/cua/runtimes/r/chrome-plugin/extension-host/macos/arm64/ChatGPT for Chrome'];
+
+test('the desktop-absent state is absent, or cua registered into empty slots by its record, and nothing else', () => {
+  assert.equal(desktopAbsentState(absentSlots(), null), 'absent');
+  assert.equal(desktopAbsentState(steadySlots(), steadyRecord()), 'registered');
+  assert.equal(desktopAbsentState(steadySlots(['chrome', 'brave']), steadyRecord(['chrome', 'brave'])), 'registered');
+  assert.equal(desktopAbsentState(steadySlots(), steadyRecord(['chrome'], true)), null, 'a replacement on record is the --replace gate, not the steady state');
+  assert.equal(desktopAbsentState(steadySlots(), {schema: 1, browsers: {}}), null, 'no record of what cua wrote: not provable');
+  assert.equal(desktopAbsentState(steadySlots(), null), null);
+  assert.equal(desktopAbsentState(steadySlots().map(s => s.browser === 'edge' ? {...s, state: 'foreign', pathClass: 'desktop'} : s), steadyRecord()), null);
+  assert.equal(desktopAbsentState(absentSlots().map(s => s.browser === 'edge' ? {...s, state: 'unreadable', error: 'EPERM'} : s), null), null);
+  assert.equal(desktopAbsentState(undefined, null), null);
+});
+
+test('C5 on a Mac without the desktop app passes cua\'s own registration as the steady state, and says which state it saw', () => {
+  const checks = doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.host.registered': cuaRegistered}), slotsNow: steadySlots(), record: steadyRecord()});
+  assert.equal(rollup(statuses(checks)), 'PASS');
+  const row = checks.find(c => c.name === 'chrome.host.registered');
+  assert.match(row.detail, /no desktop registration present; .*saw cua/);
+  // The same slots with a replacement on record (or no record) are the --replace gate mid-run: BLOCKED as before.
+  for (const record of [steadyRecord(['chrome'], true), null]) {
+    const gate = hostCheck(cuaRegistered, steadySlots(), record);
+    assert.equal(gate.status, 'BLOCKED');
+    assert.match(gate.detail, /--replace gate is in progress/);
+  }
+  // Doctor disagreeing with a steady-state Chrome slot is a contradiction.
+  for (const registered of [['pass', 'desktop: com.openai.codexextension names ~/.codex/x'], noManifest])
+    assert.equal(hostCheck(registered, steadySlots(), steadyRecord()).status, 'FAIL', registered[1]);
+  assert.equal(hostCheck(unknownManifest, steadySlots(), steadyRecord()).status, 'BLOCKED', 'doctor that could not read the manifest is unknown, not a disagreement');
+  // cua registered for another browser only: Chrome still has no host to launch, so the step is to register Chrome.
+  const braveOnly = hostCheck(noManifest, steadySlots(['brave']), steadyRecord(['brave']));
+  assert.equal(braveOnly.status, 'BLOCKED');
+  assert.match(braveOnly.detail, /node bin\/cua\.mjs chrome register/);
+});
+
+test('in the steady state the refusal and the no-op are N/A, stated; a replacement on record keeps them BLOCKED', () => {
+  const steady = registrationGuard(steadySlots(), {record: steadyRecord()});
+  for (const part of [steady.refusal, steady.noop]) {
+    assert.equal(part.run, false);
+    assert.equal(part.notApplicable, true);
+    assert.match(part.reason, /^no desktop registration present/);
+    assert.match(part.reason, /steady state/);
+  }
+  const gate = registrationGuard(steadySlots(), {record: steadyRecord(['chrome'], true)});
+  assert.equal(gate.refusal.run, false);
+  assert.notEqual(gate.refusal.notApplicable, true);
+  assert.match(gate.refusal.reason, /--replace gate is in progress/);
 });
 
 test('C5 fails contradictions between absent slots and a registered class, or a present Chrome slot and no manifest', () => {

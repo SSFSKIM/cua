@@ -98,7 +98,8 @@ function readSlot(path, {home, userHome, suffixes}) {
   return {state: 'foreign', bytes, pathClass: hostPath ? hostPathClass(hostPath, {cuaHome: home, userHome}) : 'unreadable'};
 }
 
-function readRecord(home) {
+// What cua wrote, per browser ({manifest, replaced}); an absent or unreadable record reads as empty.
+export function readRecord(home) {
   let record;
   try { record = JSON.parse(readFileSync(recordFile(home), 'utf8')); } catch { record = null; }
   const browsers = record?.schema === 1 && record.browsers && typeof record.browsers === 'object' && !Array.isArray(record.browsers) ? record.browsers : {};

@@ -244,10 +244,11 @@ node bin/cua.mjs profiles remove work
 The registry is `$CUA_HOME/profiles.json`. A profile is ready when its directory exists, the extension is installed
 there (file presence only), it is bound, and its bound extension instance is live now; otherwise `list` says why:
 `profile_directory_missing`, `extension_not_installed` (install it in that profile yourself), `not_bound`,
-`binding_stale` (the bound instance is gone while other backends are live: bind again, below), `backends_unlistable`
-(no backend could be listed at all, usually because Chrome is closed, so whether the binding is current cannot be
-told) or `chrome_data_unreadable` (below). The live part is checked on every request: when some profile is bound,
-`list` and the agent's `profiles_list` each make the same bounded launch as `bind` (below), without tab counts.
+`host_not_live` (no Chrome extension backend is live at all: wake it, below), `binding_stale` (the bound instance is
+not among the live backends while others are: wake it or bind again, below), `backends_unlistable` (the listing launch
+itself failed, so whether the binding is live cannot be told) or `chrome_data_unreadable` (below). The live part is
+checked on every request: when some profile is bound, `list` and the agent's `profiles_list` each make the same
+bounded launch as `bind` (below), without tab counts.
 
 On macOS 26 and later, Chrome's data directory (`~/Library/Application Support/Google/Chrome`) can be behind privacy
 protection: a terminal without Full Disk Access, and everything started from it (`cua serve` included), gets
@@ -271,17 +272,29 @@ refused when the runtime labels that backend as another profile. A single live b
 label; cua never chooses between profiles for you, and neither does the agent (its host notes say so).
 
 A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
-`chrome://extensions`, or reinstalling it, gives it a new instance id: the stored binding then points at an instance
+`chrome://extensions`, or reinstalling it, can give it a new instance id: the stored binding then points at an instance
 that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chrome instance is unavailable.", and
 `list` and `profiles_list` report the profile `binding_stale` (the agent is told to ask you to rebind). Run
 `cua profiles bind <key>` again: it names the stale id beside the live backends, and the pick stays yours, even when
 exactly one new unlabelled backend appeared.
 
+A binding also needs its extension host to be running. Chrome starts the OpenAI host when the extension connects, and
+on some Macs the host exits about a minute after the extension goes idle; with Chrome closed there is none. When no
+Chrome backend is live at all, `list` and `profiles_list` report the profile `host_not_live` and name the step, with
+the profile's Chrome directory: open that Chrome profile and click the OpenAI (ChatGPT) extension's icon to wake it,
+then retry. Turning the extension off and on at `chrome://extensions` wakes it too, but can mint a new instance id,
+so run `cua profiles bind <key>` afterwards. cua never wakes the extension itself; it does not drive Chrome. When
+other profiles' backends are live but not the bound one, the backends' missing labels leave two causes cua cannot tell
+apart (this profile's host asleep, or a new instance id), so `binding_stale` names both steps, the wake first.
+
 ### Using it
 
 The agent calls `profiles_list` (keys, readiness, and the instance id of each ready profile), selects the profile you
 mean with `cua.getBrowser({extensionInstanceId})` (calling `profiles_list` again if that fails), and opens its own tab
-with `cua.createBrowserTab(...)`. Three rules, also in the host notes:
+with `cua.createBrowserTab(...)`. `profiles_list` is the readiness gate: it hands out only a live profile's instance
+id, and for one that is not ready it tells the agent to pass the reason's step on to you. A host that exits after
+that check makes the selection fail inside the runtime with OpenAI's own "The Chrome instance is unavailable."; the
+agent's next `profiles_list` then names the cause. Three rules, also in the host notes:
 
 - Tabs the extension creates are DOM-only: fill and click with `tab.playwright` locators (for example
   `tab.playwright.getByLabel("Email").fill(...)`, `tab.playwright.getByRole("button", {name: "Sign in"}).click()`).

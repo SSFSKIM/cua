@@ -53,9 +53,10 @@ test('with the browser surface, profiles_list is the fifth tool and returns keys
   assert.equal(h.upstream.calls('profiles_list').length, 0, 'answered by the server');
 });
 
-test('profiles_list hides a stale or unverifiable binding\'s instance id and says what the user has to do', async () => {
+test('profiles_list hides a stale, sleeping or unverifiable binding\'s instance id and says what the user has to do', async () => {
   const bound = {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-old', boundAt: '2026-10-03T00:00:00.000Z'};
   const h = harness({server: {surfaces: ['browser'], profiles: {list: async () => [
+    {key: 'home', ...bound, chromeProfileDirectory: 'Profile 3', extensionInstanceId: 'inst-h', ready: false, reason: 'host_not_live'},
     {key: 'personal', ...bound, ready: false, reason: 'binding_stale'},
     {key: 'school', ...bound, chromeProfileDirectory: 'Profile 6', extensionInstanceId: 'inst-s', ready: false, reason: 'backends_unlistable'},
     {key: 'work', chromeProfileDirectory: 'Profile 8', ready: true, extensionInstanceId: 'inst-w'},
@@ -64,15 +65,19 @@ test('profiles_list hides a stale or unverifiable binding\'s instance id and say
   const response = await h.client.call('profiles_list').response;
   assert.equal(response.result.isError, false);
   assert.deepEqual(structured(response), {status: 'ok', profiles: [
+    {key: 'home', ready: false, reason: 'host_not_live'},
     {key: 'personal', ready: false, reason: 'binding_stale'},
     {key: 'school', ready: false, reason: 'backends_unlistable'},
     {key: 'work', ready: true, extensionInstanceId: 'inst-w'},
   ]});
+  assert.ok(!/Default|Profile/.test(JSON.stringify(structured(response))), 'the structured entries carry no directory');
   const text = response.result.content[0].text;
-  assert.match(text, /personal is not ready \(binding_stale\): .*disable\/enable or reinstall mints a new id.*cua profiles bind personal\./);
-  assert.match(text, /school is not ready \(backends_unlistable\): .*is Chrome open/);
+  // The user's step happens in that Chrome profile, so the guidance names its directory (never its display name).
+  assert.match(text, /home is not ready \(host_not_live\): .*Chrome profile "Profile 3".*click the OpenAI \(ChatGPT\) extension's icon.*then retry/);
+  assert.match(text, /personal is not ready \(binding_stale\): .*Chrome profile "Default".*can mint a new instance id.*cua profiles bind personal/);
+  assert.match(text, /school is not ready \(backends_unlistable\): .*could not be listed/);
   assert.match(text, /do not bind or pick a profile for them/);
-  assert.ok(!/inst-old|inst-s\b|Default|Profile/.test(text), 'neither the stale id nor a directory reaches the model');
+  assert.ok(!/inst-old|inst-s\b|inst-h|Profile 6|Profile 8/.test(text), 'no instance id, and no directory where the user has no step');
 });
 
 test('a registry that cannot be read is a value-free error, not an empty list', async () => {

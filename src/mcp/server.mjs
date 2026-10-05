@@ -11,8 +11,12 @@
 //   turn ID and a fresh call ID. end_task, secrets_list and (with the browser surface) profiles_list are answered here;
 //   hidden upstream tools are refused.
 // - profiles_list reads the registered Chrome profiles (src/profiles) when asked: key, readiness, the instance id of a
-//   ready profile, the reason of one that is not (with what to tell the user in the text); never a Chrome directory.
-//   Readiness includes the live check (a bound instance among the live backends), so it can take a runtime launch.
+//   ready profile, the reason of one that is not (with what to tell the user in the text, which names the registered
+//   profile's Chrome directory only where the user's step happens there); never a directory in the structured entries.
+//   Readiness includes the live check (a bound instance among the live backends), so it can take a runtime launch. It
+//   is the gate before profile selection: only a ready profile's instance id is handed out, and a profile with no live
+//   host reads host_not_live with the wake step. A selection that fails later (the host exited after profiles_list)
+//   fails closed inside the REPL with the vendor's own error; the host notes send the agent back to profiles_list.
 // - secrets_list asks the connection's secrets provider (its private broker, src/secrets/broker.mjs) for labels; it
 //   never sees a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.

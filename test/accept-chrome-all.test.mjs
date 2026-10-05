@@ -184,7 +184,7 @@ test('the default home fails when readiness disagrees with doctor\'s facts for a
   assert.equal(judged([school], {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')}), 'FAIL');
   assert.equal(rollup(statuses(defaultRegistryChecks({profiles: SECOND_MAC.profiles, doctor: null, profile: 'school'}))), 'FAIL');
   // Not ready only for its binding or the live check: the extension is installed, so doctor passes, and that agrees.
-  for (const reason of ['not_bound', 'binding_stale', 'backends_unlistable'])
+  for (const reason of ['not_bound', 'binding_stale', 'host_not_live', 'backends_unlistable'])
     assert.equal(judged([school, {...ssfs, reason}], {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': installedRow('Profile 1')}), 'PASS', reason);
 });
 
@@ -196,7 +196,7 @@ test('a list row whose readiness contradicts its reason fails before doctor or u
   const contradicted = judge({...ssfs, ready: true, extensionInstanceId: 'inst-x'}, absentRow('Profile 1'));
   assert.equal(contradicted.status, 'FAIL');
   assert.doesNotMatch(contradicted.detail, /extension installed/);
-  for (const reason of ['profile_directory_missing', 'not_bound', 'binding_stale', 'backends_unlistable', 'chrome_data_unreadable'])
+  for (const reason of ['profile_directory_missing', 'not_bound', 'binding_stale', 'host_not_live', 'backends_unlistable', 'chrome_data_unreadable'])
     assert.equal(judge({...ssfs, ready: true, reason, extensionInstanceId: 'inst-x'}, installedRow('Profile 1')).status, 'FAIL', reason);
   const unreadable = ['blocked', 'whether the OpenAI extension is installed is unknown: this process may not read Chrome\'s data directory (EPERM)'];
   assert.equal(judge({...ssfs, ready: true, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM', extensionInstanceId: 'inst-x'}, unreadable).status, 'FAIL', 'not BLOCKED');
@@ -307,7 +307,7 @@ test('profiles_list must equal the registry: keys, readiness, reasons, instance 
   assert.equal(profilesListCheck({status: 'error', code: 'profiles_invalid'}, registry).status, 'FAIL');
   // Liveness is checked per request: a profile the registry has ready may be reported stale or unverifiable, never
   // with its instance id; a profile the registry has not ready cannot become a liveness case.
-  for (const reason of ['binding_stale', 'backends_unlistable'])
+  for (const reason of ['binding_stale', 'host_not_live', 'backends_unlistable'])
     assert.equal(profilesListCheck({...good, profiles: [{key: 'personal', ready: false, reason}, good.profiles[1]]}, registry).status, 'PASS', reason);
   assert.equal(profilesListCheck({...good, profiles: [{key: 'personal', ready: false, reason: 'binding_stale', extensionInstanceId: 'i1'}, good.profiles[1]]}, registry).status, 'FAIL');
   assert.equal(profilesListCheck({...good, profiles: [good.profiles[0], {key: 'work', ready: false, reason: 'binding_stale'}]}, registry).status, 'FAIL');

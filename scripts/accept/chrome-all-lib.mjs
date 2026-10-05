@@ -302,9 +302,10 @@ export function hostNotesCheck(instructions) {
 
 // profiles_list over MCP against the registry it reads: the same keys, readiness and reasons, an instance id only when
 // ready, and no directory names. Liveness is checked on each request, so a profile the registry has ready may come
-// back not ready for a stale binding or unlistable backends, without its instance id; and a bound profile whose Chrome
-// data this process may not read may come back ready with its stored instance id (the live backend is the evidence).
-const LIVENESS_REASONS = ['binding_stale', 'backends_unlistable'];
+// back not ready for a stale binding, no live host or unlistable backends, without its instance id; and a bound profile
+// whose Chrome data this process may not read may come back ready with its stored instance id (the live backend is the
+// evidence).
+const LIVENESS_REASONS = ['binding_stale', 'host_not_live', 'backends_unlistable'];
 const viewMatches = (view, status) => isDeepStrictEqual(view, profileView(status))
   || (status.ready && LIVENESS_REASONS.includes(view?.reason) && isDeepStrictEqual(view, {key: status.key, ready: false, reason: view.reason}))
   || (awaitsLiveEvidence(status) && isDeepStrictEqual(view, {key: status.key, ready: true, extensionInstanceId: status.extensionInstanceId}));

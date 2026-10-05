@@ -9,7 +9,7 @@ import {chmodSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
-import {addProfile, bindProfile, readRegistry, removeProfile} from '../src/profiles/registry.mjs';
+import {addProfile, bindProfile, readRegistry, reasonText, removeProfile} from '../src/profiles/registry.mjs';
 import {bindCommand, profileReadiness} from '../src/profiles/commands.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 
@@ -158,7 +158,7 @@ test('a registration that changes during discovery is not bound with the instanc
 
 const failing = error => async () => { throw error; };
 
-test('readiness: a bound profile is ready only while its instance is live; a new id is binding_stale, no listing is backends_unlistable', async t => {
+test('readiness: a bound profile is ready only while its instance is live; other live backends is binding_stale, none live is host_not_live, no listing is backends_unlistable', async t => {
   const {home, chrome} = setup(t, {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}});
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   addProfile({home, key: 'work', directory: 'Profile 8', chrome});
@@ -170,14 +170,15 @@ test('readiness: a bound profile is ready only while its instance is live; a new
   assert.deepEqual(await personal(listing([{instanceId: 'other'}, {instanceId: 'inst-a'}])), {...bound, ready: true});
   // stale: backends are live, the bound one is not (a toggle or reinstall minted a new id), even a lone new one
   assert.deepEqual(await personal(listing([{instanceId: 'inst-new'}])), {...bound, ready: false, reason: 'binding_stale'});
-  // only Google Chrome's backends are evidence: the bound id on another browser's or a family-less backend is not live,
-  // and with no Chrome backend listed at all whether the binding is current cannot be told
+  // only Google Chrome's backends are evidence: the bound id on another browser's or a family-less backend is not live
   const edge = {instanceId: 'inst-a', family: 'edge'};
   const noFamily = {instanceId: 'inst-a', family: undefined};
   assert.deepEqual(await personal(listing([edge, noFamily, {instanceId: 'other'}])), {...bound, ready: false, reason: 'binding_stale'});
-  assert.deepEqual(await personal(listing([edge, noFamily])), {...bound, ready: false, reason: 'backends_unlistable'});
-  // unlistable: nothing live, or the listing itself failed; never stale, never ready
-  assert.deepEqual(await personal(listing([])), {...bound, ready: false, reason: 'backends_unlistable'});
+  // host_not_live: the listing worked and no Google Chrome backend is live at all, so no host serves this profile
+  // (Chrome closed, or its host exited); never stale, never ready
+  assert.deepEqual(await personal(listing([edge, noFamily])), {...bound, ready: false, reason: 'host_not_live'});
+  assert.deepEqual(await personal(listing([])), {...bound, ready: false, reason: 'host_not_live'});
+  // unlistable: the listing itself failed
   const failed = await profileReadiness({home, chrome, listBackends: failing(Object.assign(new Error('the runtime did not answer initialize in time'), {code: 'runtime_unresponsive'}))});
   assert.deepEqual(failed.profiles.find(p => p.key === 'personal'), {...bound, ready: false, reason: 'backends_unlistable'});
   assert.deepEqual(failed.listingError, {code: 'runtime_unresponsive', message: 'the runtime did not answer initialize in time'});
@@ -186,6 +187,26 @@ test('readiness: a bound profile is ready only while its instance is live; a new
   assert.equal(unconfirmed.listingError.code, 'runtime_teardown_unconfirmed');
   // a profile that is not ready for a file reason keeps that reason whatever is live
   for (const list of [[{instanceId: 'inst-a'}], []]) assert.equal((await profileReadiness({home, chrome, listBackends: listing(list)})).profiles.find(p => p.key === 'work').reason, 'extension_not_installed');
+});
+
+test('the not-live reasons name the key, the Chrome profile directory and the one wake action; toggling is not offered as a plain wake', () => {
+  const p = {key: 'personal', chromeProfileDirectory: 'Profile 8', extensionInstanceId: 'inst-a'};
+  const notLive = reasonText({...p, reason: 'host_not_live'});
+  assert.match(notLive, /Chrome profile "Profile 8"/);
+  assert.match(notLive, /click the OpenAI \(ChatGPT\) extension's icon.*then retry/);
+  assert.match(notLive, /chrome:\/\/extensions.*new instance id.*cua profiles bind personal/, 'a toggle wakes it too but needs a rebind');
+  // Other profiles' backends are live but not this one's: unlabelled backends cannot tell a sleeping host from a new id,
+  // so the text says so and gives both steps, the wake first.
+  const stale = reasonText({...p, reason: 'binding_stale'});
+  assert.match(stale, /Chrome profile "Profile 8".*click the OpenAI \(ChatGPT\) extension's icon.*cua profiles bind personal/);
+  assert.match(stale, /cannot tell which/);
+});
+
+test('reason text inserts the key and the Chrome directory verbatim, never as replacement patterns', () => {
+  const dir = 'Profile $& $` $\'';
+  const text = reasonText({key: 'personal', chromeProfileDirectory: dir, extensionInstanceId: 'inst-a', reason: 'host_not_live'});
+  assert.ok(text.includes(`Chrome profile "${dir}"`), text);
+  assert.ok(!text.includes('<dir>') && !text.includes('<key>'));
 });
 
 test('readiness lists nothing when no profile is bound and otherwise ready', async t => {
@@ -257,7 +278,7 @@ test('cua profiles list reports a bound profile it cannot check as backends_unli
   assert.equal(listed.listingError, 'runtime_not_installed');
   const human = cua(['profiles', 'list'], env);
   assert.equal(human.status, 0, human.stderr);
-  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend could be listed .*whether its binding is current cannot be told$/m);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+the live OpenAI extension backends could not be listed .*whether its bound instance is live cannot be told$/m);
   assert.match(human.stderr, /could not be listed \(runtime_not_installed: /);
 });
 

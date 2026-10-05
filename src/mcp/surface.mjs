@@ -90,7 +90,7 @@ export function hostNotesFor(surfaces) {
 }
 
 // A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
-// Chrome directory.
+// Chrome directory (the text guidance names it where the user has to act in that profile).
 export const profileView = ({key, ready, reason, extensionInstanceId}) => ({key, ready, ...(extensionInstanceId && ready ? {extensionInstanceId} : {}), ...(reason ? {reason} : {})});
 
 export function withHostNotes(instructions, hostNotes) {

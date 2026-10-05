@@ -7,7 +7,7 @@
 // Registering or removing a key never creates, changes or deletes anything in Chrome. Readiness is computed when asked
 // (the user may install the extension later): a profile is ready when its directory exists, the extension is
 // installed there, it is bound, and (where the live backends were listed, withLiveness) its bound instance is live: an
-// extension disable/enable or reinstall mints a new instance id, so a binding can go stale. When this process may not
+// extension disable/enable or reinstall can mint a new instance id, so a binding can go stale. When this process may not
 // read Chrome's data directory (macOS privacy protection, chrome.mjs), the file facts are unknown, never "absent": a
 // bound profile whose instance is live is ready on that live evidence, and otherwise it is chrome_data_unreadable.
 // Parsing is strict: a damaged or unknown file is refused with a fix, never silently rewritten.
@@ -134,38 +134,48 @@ export function profileStatuses({home, chrome}) {
 export const awaitsLiveEvidence = p => p.reason === 'chrome_data_unreadable' && Boolean(p.extensionInstanceId);
 
 // A bound, otherwise ready profile against the live Google Chrome backends' instance ids at this request (another
-// browser's backends are no evidence): ready only when its id is among them; binding_stale when other backends are live
-// but not its id; backends_unlistable when no backend was listed at all (Chrome closed, no host, or the listing failed),
-// since then whether the binding is current cannot be told. `liveIds` is empty for a failed listing. A bound profile
-// whose Chrome data this process may not read is ready when its id is live (the live backend is the evidence) and stays
-// chrome_data_unreadable otherwise: without the files, a stale binding cannot be told from a removed extension.
+// browser's backends are no evidence; `liveIds` is null when the listing failed): ready only when its id is among them;
+// host_not_live when the listing worked and no Chrome backend is live at all (Chrome closed, or its host exited, which
+// on some Macs happens about a minute after the extension wakes), since then no host serves this profile whatever its
+// binding; binding_stale when other backends are live but not its id, which is either a new instance id or this
+// profile's host alone not running (backends are usually unlabelled, so the two cannot be told apart);
+// backends_unlistable when the listing failed. A bound profile whose Chrome data this process may not read is ready
+// when its id is live (the live backend is the evidence) and stays chrome_data_unreadable otherwise: without the files,
+// a stale binding cannot be told from a removed extension.
 export function withLiveness(statuses, liveIds) {
   return statuses.map(p => {
     if (awaitsLiveEvidence(p)) {
-      if (!liveIds.includes(p.extensionInstanceId)) return p;
+      if (!liveIds?.includes(p.extensionInstanceId)) return p;
       const {reason, ...rest} = p;
       return {...rest, ready: true};
     }
     if (!p.ready) return p;
-    const reason = !liveIds.length ? 'backends_unlistable' : !liveIds.includes(p.extensionInstanceId) ? 'binding_stale' : null;
+    const reason = !liveIds ? 'backends_unlistable' : !liveIds.length ? 'host_not_live' : !liveIds.includes(p.extensionInstanceId) ? 'binding_stale' : null;
     return reason ? {...p, ready: false, reason} : p;
   });
 }
+
+// The one step that brings a profile's host back without changing its binding. Toggling the extension wakes it too,
+// but can mint a new instance id (Surprises, 2026-10-04; not always, second-mac-acceptance.md), so it is offered only
+// with the rebind it may then need.
+const WAKE = 'open Chrome profile "<dir>" and click the OpenAI (ChatGPT) extension\'s icon to wake it, then retry';
 
 export const REASONS = {
   profile_directory_missing: 'the Chrome profile directory no longer exists',
   extension_not_installed: 'the OpenAI extension is not installed in this Chrome profile (install it there yourself; cua never does)',
   not_bound: 'not bound to an extension instance yet: run cua profiles bind',
-  binding_stale: 'its bound extension instance is not among the live backends (an extension disable/enable or reinstall mints a new id): bind it again with cua profiles bind <key>',
-  backends_unlistable: 'no live OpenAI extension backend could be listed (is Chrome open with the extension enabled?), so whether its binding is current cannot be told',
+  host_not_live: `no live OpenAI extension backend serves it (Chrome is closed, or its extension host exited): ${WAKE}; turning the extension off and on at chrome://extensions also wakes it but can mint a new instance id, so run cua profiles bind <key> after that`,
+  binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile's host is not running (${WAKE}), or the extension was turned off and on or reinstalled, which can mint a new instance id (bind it again with cua profiles bind <key>)`,
+  backends_unlistable: 'the live OpenAI extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',
   chrome_data_unreadable: 'this process cannot read Chrome\'s data directory (macOS Privacy & Security → Full Disk Access for your terminal, or run from a process that has it); the live check still works',
 };
 
 // The unreadable case says what the live check can still do for this profile.
 const UNREADABLE_NEXT = {
-  bound: 'its bound extension instance was not confirmed live (is Chrome open with the extension enabled in this profile?)',
+  bound: `its bound extension instance was not confirmed live: if Chrome is closed or its extension host exited, ${WAKE}`,
   unbound: 'it is not bound yet: cua profiles bind <key> works without that access',
 };
 
-export const reasonText = ({key, reason, extensionInstanceId}) => (reason === 'chrome_data_unreadable'
-  ? `${REASONS[reason]}; ${UNREADABLE_NEXT[extensionInstanceId ? 'bound' : 'unbound']}` : REASONS[reason]).replaceAll('<key>', key);
+// The registered profile's Chrome directory appears only where the user's step happens in that profile.
+export const reasonText = ({key, reason, extensionInstanceId, chromeProfileDirectory}) => (reason === 'chrome_data_unreadable'
+  ? `${REASONS[reason]}; ${UNREADABLE_NEXT[extensionInstanceId ? 'bound' : 'unbound']}` : REASONS[reason]).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);

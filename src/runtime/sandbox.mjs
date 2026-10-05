@@ -11,6 +11,9 @@ export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['disabled', 'default'];
 
 export function sandboxModeFrom(env) {
+  // Spike #33 only, undocumented: CUA_SHIM_SANDBOX_JSON sends this JSON object verbatim as the sandbox state
+  // (sandboxCwd filled in with the launch's directory when absent).
+  if (env.CUA_SHIM_SANDBOX_JSON) return {json: JSON.parse(env.CUA_SHIM_SANDBOX_JSON)};
   const mode = env.CUA_SHIM_SANDBOX ?? 'disabled';
   if (!MODES.includes(mode)) fail('invalid_setting', 'CUA_SHIM_SANDBOX must be disabled or default');
   return mode;
@@ -18,6 +21,7 @@ export function sandboxModeFrom(env) {
 
 // The value sent under SANDBOX_META_KEY for a launch working in `cwd`, or null to send none.
 export function sandboxState(mode, cwd) {
+  if (mode?.json) return {sandboxCwd: pathToFileURL(cwd).href, ...mode.json};
   return mode === 'disabled' ? {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(cwd).href} : null;
 }
 

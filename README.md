@@ -425,6 +425,11 @@ node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accep
 node scripts/accept-chrome.mjs --all --c2-report /tmp/cua-accept-chrome.json --report /tmp/cua-accept-chrome-all.json
 ```
 
+`--profile <key>` (default `personal`) tells `--all` which registered profile the live reports drove: it must be
+registered and bound in your home, be ready, and be the `profile` of the `--c2-report`/`--c6-report` runs. Nothing
+else assumes a key or a Chrome directory: the scratch profile commands run against a fixture Chrome user-data
+directory the runner creates (and deletes), and your home's registry is checked key by key against `cua doctor`.
+
 `--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface,
 the profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for
 `profiles_list` and the host notes, `cua doctor`, a no-op `cua install`, `cua chrome register` without `--replace`

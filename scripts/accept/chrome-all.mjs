@@ -1,14 +1,17 @@
-// Phase C acceptance as a whole: `node scripts/accept-chrome.mjs --all --report <file> [--c2-report <file>]
-// [--c6-report <file>]` evaluates C1-C7 of the spec against $CUA_HOME (default ~/Library/Application Support/cua) and
-// writes one PASS/FAIL/BLOCKED report per item, metadata only. The verdict rules live in chrome-all-lib.mjs.
+// Phase C acceptance as a whole: `node scripts/accept-chrome.mjs --all --report <file> [--profile <key>] [--c2-report
+// <file>] [--c6-report <file>]` evaluates C1-C7 of the spec against $CUA_HOME (default ~/Library/Application
+// Support/cua) and writes one PASS/FAIL/BLOCKED report per item, metadata only. The verdict rules live in
+// chrome-all-lib.mjs. `--profile` (default personal) is the registered key the live reports drove: it must be
+// registered and bound here, ready, and the reports' profile; nothing else assumes a key or a Chrome directory.
 //
 // What runs (none of it creates a tab, binds a profile, registers cua's host, or makes a native call):
 //   shared  `npm test` in this checkout (C2's matrix and each item's covering tests are read from its TAP)
 //   C1      `node verify.mjs` with the default surface, then with CUA_SHIM_SURFACES=computer,browser; the launch
 //           record `cua serve` builds for each (buildLaunch, not spawned) for its browser environment
 //   C2      the hermetic matrix; the live round trip only from a supplied `accept-chrome --live` report (--c2-report)
-//   C3      `cua profiles add/list/remove` in a scratch CUA_HOME against this Mac's Chrome (read only), deleted
-//           afterwards; the default home's registry through `cua profiles list --json` (read only)
+//   C3      `cua profiles add/list/remove` in a scratch CUA_HOME against a scratch Chrome user-data fixture (HOME
+//           points the CLI at it), both deleted afterwards; the default home's registry through `cua profiles list
+//           --json` judged against `cua doctor --json` (both read only)
 //   C4      one `cua serve` connection (computer,browser, secrets off): initialize, tools/list, profiles_list, end_task;
 //           no js cell
 //   C5      `cua doctor --json` (passive)
@@ -32,20 +35,21 @@ import {buildLaunch, BROWSER_SERVICE, SKY_SERVICE} from '../../src/runtime/launc
 import {locateChromeComponent} from '../../src/runtime/chrome-component.mjs';
 import {settingsFrom} from '../../src/mcp/server.mjs';
 import {chromeFacts} from '../../src/profiles/chrome.mjs';
-import {profileStatuses, REASONS} from '../../src/profiles/registry.mjs';
+import {PROFILE_KEY, profileStatuses, REASONS} from '../../src/profiles/registry.mjs';
 import {BROWSERS, hostSuffixes} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
-  c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveRoundTripChecks,
-  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, verifyCheck,
+  c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
+  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck, scratchListCheck,
+  tapTestStatus, verifyCheck, writeScratchChrome,
 } from './chrome-all-lib.mjs';
 
 const REPO = realpathSync(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(REPO, 'bin', 'cua.mjs');
 const NATIVE_HOST = 'com.openai.codexextension';
 const NO_DOWNLOAD_GUARD = '/nonexistent/cua-accept-chrome-reinstall-must-not-read-an-archive.zip';
-const USAGE = 'usage: node scripts/accept-chrome.mjs --all --report <file> [--c2-report <live C2 report>] [--c6-report <--replace gate report>]';
+const USAGE = 'usage: node scripts/accept-chrome.mjs --all --report <file> [--profile <registered key the live reports drove, default personal>] [--c2-report <live C2 report>] [--c6-report <--replace gate report>]';
 
 const check = (name, status, detail) => ({name, status, detail});
 const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
@@ -66,7 +70,8 @@ function run(command, args, {cwd = REPO, env = process.env, timeoutMs = 600_000}
   });
 }
 const ended = r => r.timedOut ? `timed out after ${seconds(r.ms)}` : `exit ${r.code ?? r.error ?? r.signal}`;
-// Suites and commands run without the caller's server settings; each is given the home it needs explicitly.
+// Suites and commands run without the caller's server settings; each is given the home it needs explicitly (C3's
+// scratch commands also get the fixture's HOME).
 const cleanEnv = extra => ({...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'CUA_HOME' && !key.startsWith('CUA_SHIM_'))), ...extra});
 
 // Claims backed by named tests of this run's npm test.
@@ -86,9 +91,11 @@ function readReport(path, judge, label) {
 export async function runAll(argv) {
   let options;
   try {
-    ({values: options} = parseArgs({args: argv, options: {all: {type: 'boolean'}, report: {type: 'string'}, 'c2-report': {type: 'string'}, 'c6-report': {type: 'string'}}, strict: true}));
+    ({values: options} = parseArgs({args: argv, options: {all: {type: 'boolean'}, report: {type: 'string'}, profile: {type: 'string', default: 'personal'},
+      'c2-report': {type: 'string'}, 'c6-report': {type: 'string'}}, strict: true}));
   } catch { options = {}; }
-  if (!options.all || !options.report) { process.stderr.write(`${USAGE}\n`); return 2; }
+  if (!options.all || !options.report || !PROFILE_KEY.test(options.profile)) { process.stderr.write(`${USAGE}\n`); return 2; }
+  const {profile} = options;
 
   const home = realHome(defaultHome());
   const userHome = homedir();
@@ -99,7 +106,7 @@ export async function runAll(argv) {
     items.push(item);
     process.stderr.write(`accept-chrome --all: ${id} ${item.status}\n`);
   };
-  const cua = (args, cuaHome = home) => run(process.execPath, [CLI, ...args], {env: cleanEnv({CUA_HOME: cuaHome}), timeoutMs: 180_000});
+  const cua = (args, cuaHome = home, extra = {}) => run(process.execPath, [CLI, ...args], {env: cleanEnv({CUA_HOME: cuaHome, ...extra}), timeoutMs: 180_000});
   const chrome = chromeFacts();
   const started = new Date();
 
@@ -110,6 +117,7 @@ export async function runAll(argv) {
   let registryError = null;
   try { registry = profileStatuses({home, chrome}); } catch (error) { registry = []; registryError = error.code ?? error.message; }
   const instanceIds = registry.map(p => p.extensionInstanceId).filter(Boolean);
+  const liveEntry = registry.find(p => p.key === profile);
 
   // ---- shared: this checkout's npm test -------------------------------------------------------------------------
   const suite = await run('npm', ['test'], {env: testReporterEnv(cleanEnv()), timeoutMs: 300_000});
@@ -146,41 +154,52 @@ export async function runAll(argv) {
   addItem('C2', 'Browser secret substitution: the hermetic matrix, and the live round trip through cua serve', [
     suiteCheck,
     ...matrixChecks(tap),
-    ...(options['c2-report'] ? readReport(options['c2-report'], report => liveRoundTripChecks(report), 'live')
-      : registryError ? [check('live: round trip through cua serve', 'BLOCKED', `the default profile registry cannot be read (${registryError}); fix it, bind personal, then run the live round trip`)]
-        : [c2LiveBlocked(registry.find(p => p.key === 'personal'))]),
+    ...(options['c2-report'] ? [liveProfileCheck(liveEntry, profile, {registryError}), ...readReport(options['c2-report'], report => liveRoundTripChecks(report, {profile}), 'live')]
+      : registryError ? [check('live: round trip through cua serve', 'BLOCKED', `the default profile registry cannot be read (${registryError}); fix it, bind ${profile}, then run the live round trip`)]
+        : [c2LiveBlocked(liveEntry, profile)]),
   ]);
+
+  // Doctor is passive; C3 judges the default registry against it and C5 reads it.
+  const doctorRun = await cua(['doctor', '--json']);
+  const doctor = parseJson(doctorRun.stdout);
 
   // ---- C3 -----------------------------------------------------------------------------------------------------------
   {
     const checks = [];
     const scratch = mkdtempSync('/tmp/cua-accept-c3.');
+    const fixtureHome = mkdtempSync('/tmp/cua-accept-c3-chrome.');
     try {
-      const adds = [['personal', 'Default', 'installed'], ['work', 'Profile 8', 'absent'], ['school', 'Profile 6', 'absent']];
+      const fixture = chromeFacts({userData: writeScratchChrome(fixtureHome)});
+      const fixtureBefore = snapshotTree(fixtureHome);
+      const scratchCua = args => cua(args, scratch, {HOME: fixtureHome});
       const added = [];
-      for (const [key, directory, extension] of adds) {
-        const r = await cua(['profiles', 'add', key, '--chrome-profile', directory, '--json'], scratch);
+      for (const {key, directory, extension} of SCRATCH_PROFILES) {
+        const r = await scratchCua(['profiles', 'add', key, '--chrome-profile', directory, '--json']);
         added.push(scratchAddCheck({key, directory, expected: extension, code: r.code, out: parseJson(r.stdout)}));
       }
-      checks.push(check('scratch home: profiles add personal Default, work "Profile 8", school "Profile 6"', rollup(added.map(a => a.status)), added.map(a => a.detail).join('; ')));
-      const list = parseJson((await cua(['profiles', 'list', '--json'], scratch)).stdout);
+      checks.push(check('scratch home: profiles add personal Default, work "Profile 8", school "Profile 6" (fixture Chrome)', rollup(added.map(a => a.status)), added.map(a => a.detail).join('; ')));
+      const list = parseJson((await scratchCua(['profiles', 'list', '--json'])).stdout);
       checks.push(scratchListCheck(list?.profiles));
-      checks.push(scratchHumanCheck((await cua(['profiles', 'list'], scratch)).stdout.split('\n'), REASONS));
+      checks.push(scratchHumanCheck((await scratchCua(['profiles', 'list'])).stdout.split('\n'), REASONS));
       const before = parseJson(readFileSync(join(scratch, 'profiles.json'), 'utf8'))?.profiles ?? {};
-      const removed = await cua(['profiles', 'remove', 'school', '--json'], scratch);
+      const removed = await scratchCua(['profiles', 'remove', 'school', '--json']);
       const after = parseJson(readFileSync(join(scratch, 'profiles.json'), 'utf8'))?.profiles ?? {};
       const {school, ...rest} = before;
       const onlyEntry = removed.code === 0 && parseJson(removed.stdout)?.removed === true && JSON.stringify(after) === JSON.stringify(rest) && Boolean(school);
-      const profileDir = chrome.profileDirectoryExists('Profile 6');
+      const profileDir = fixture.profileDirectoryExists('Profile 6');
       checks.push(check('scratch home: remove school removes only that entry', !onlyEntry || profileDir === 'missing' ? 'FAIL' : profileDir === 'exists' ? 'PASS' : 'BLOCKED',
-        `exit ${removed.code}; entries now ${Object.keys(after).join(', ')}; the others unchanged: ${JSON.stringify(after) === JSON.stringify(rest)}; Chrome profile "Profile 6": ${profileDir}${profileDir === 'unreadable' ? ' (this process may not read Chrome\'s data directory)' : ''}`));
+        `exit ${removed.code}; entries now ${Object.keys(after).join(', ')}; the others unchanged: ${JSON.stringify(after) === JSON.stringify(rest)}; fixture Chrome profile "Profile 6": ${profileDir}${profileDir === 'unreadable' ? ' (this process may not read the fixture)' : ''}`));
       const written = readdirSync(scratch);
-      checks.push(check('scratch home: the registry is the only file written', written.length === 1 && written[0] === 'profiles.json' ? 'PASS' : 'FAIL',
-        `scratch home holds ${written.join(', ') || 'nothing'}; the commands read Chrome's directories (profile and extension presence) and write nothing there`));
-    } finally { rmSync(scratch, {recursive: true, force: true}); }
+      const chromeDiff = diffSnapshots(fixtureBefore, snapshotTree(fixtureHome));
+      checks.push(check('scratch home: the registry is the only file written', written.length === 1 && written[0] === 'profiles.json' && chromeDiff.same ? 'PASS' : 'FAIL',
+        `scratch home holds ${written.join(', ') || 'nothing'}; the fixture Chrome the commands read (profile and extension presence) is ${chromeDiff.same ? 'unchanged' : `changed: ${chromeDiff.added.length} added, ${chromeDiff.removed.length} removed, ${chromeDiff.changed.length} changed`}`));
+    } finally {
+      rmSync(scratch, {recursive: true, force: true});
+      rmSync(fixtureHome, {recursive: true, force: true});
+    }
     const listed = await cua(['profiles', 'list', '--json']);
     const defaults = parseJson(listed.stdout)?.profiles;
-    checks.push(...(Array.isArray(defaults) ? defaultRegistryChecks(defaults) : [check('default home: profiles list --json', 'FAIL', `${ended(listed)}; no list`)]));
+    checks.push(...(Array.isArray(defaults) ? defaultRegistryChecks({profiles: defaults, doctor, profile}) : [check('default home: profiles list --json', 'FAIL', `${ended(listed)}; no list`)]));
     checks.push(suiteClaims('npm test: registry CRUD, readiness and the bind rule', tap, [
       'an empty home has an empty registry; add records an existing directory and reports extension presence',
       'remove deletes only the named registry entry and never touches the Chrome profile',
@@ -190,7 +209,7 @@ export async function runAll(argv) {
       'an explicit pick is accepted only for a live backend, and never against the runtime\'s own label',
       'bind stores the automatically labelled backend and says how it was chosen',
     ]));
-    addItem('C3', 'Profile registry: add, list with readiness, remove only the entry; personal ready after bind', checks);
+    addItem('C3', `Profile registry: add, list with readiness, remove only the entry (fixture Chrome); this home's readiness agrees with doctor and ${profile} is ready`, checks);
   }
 
   // ---- C4 -----------------------------------------------------------------------------------------------------------
@@ -228,10 +247,8 @@ export async function runAll(argv) {
   }
 
   // ---- C5 -----------------------------------------------------------------------------------------------------------
-  const doctorRun = await cua(['doctor', '--json']);
-  const doctor = parseJson(doctorRun.stdout);
   addItem('C5', 'doctor --json on this Mac (passive)', [
-    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}}),
+    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile}),
     suiteClaims('npm test: the Chrome doctor checks', tap, [
       'per-profile extension checks, the native host registration by path class, and the live host count',
       'doctor reports the Chrome checks beside runtime health and they never change ok',
@@ -299,7 +316,8 @@ export async function runAll(argv) {
       checks.push(check('cua chrome unregister is a no-op when the manifest is not ours', ok ? 'PASS' : 'FAIL',
         `exit ${r.code}; ${out?.browsers?.map(b => `${b.browser} ${b.action}${b.pathClass ? ` (${b.pathClass})` : ''}`).join(', ') ?? 'no result'}; manifests and <home>/chrome unchanged: ${unchanged}`));
     }
-    checks.push(...(options['c6-report'] ? readReport(options['c6-report'], replaceGateChecks, 'live: --replace gate') : [replaceGateBlocked()]));
+    checks.push(...(options['c6-report'] ? [liveProfileCheck(liveEntry, profile, {prefix: 'live: --replace gate', registryError}), ...readReport(options['c6-report'], report => replaceGateChecks(report, {profile}), 'live: --replace gate')]
+      : [replaceGateBlocked(profile)]));
     checks.push(suiteClaims('npm test: placement, the coexistence rule, backup/restore and the CLI refusal', tap, [
       'a fresh install places the Chrome plugin as its own recorded component with the host configuration beside the host',
       'register refuses when the desktop\'s manifest is present, naming its class, and changes nothing anywhere',
@@ -351,7 +369,7 @@ export async function runAll(argv) {
   const report = {
     scenario: 'accept-chrome-all', status, release: runtime?.release ?? null, home: '$CUA_HOME', host: `${process.platform}-${process.arch}`, node: process.version,
     head, startedAt: started.toISOString(), finishedAt: new Date().toISOString(),
-    supplied: {c2Report: Boolean(options['c2-report']), c6Report: Boolean(options['c6-report'])},
+    profile, supplied: {c2Report: Boolean(options['c2-report']), c6Report: Boolean(options['c6-report'])},
     summary: Object.fromEntries(items.map(i => [i.id, i.status])), items,
   };
   const text = JSON.stringify(report, (key, value) => typeof value === 'string' ? sanitize(value) : value, 2);

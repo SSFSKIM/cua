@@ -46,7 +46,7 @@ import {startAcceptancePage} from './accept/chrome-page.mjs';
 import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, profilePrecondition, runAgentScript} from './accept/chrome-run.mjs';
 
 // `--all` (M13) evaluates C1-C7 as a whole and never drives a browser; see scripts/accept/chrome-all.mjs:
-//   node scripts/accept-chrome.mjs --all --report <file> [--c2-report <file>] [--c6-report <file>]
+//   node scripts/accept-chrome.mjs --all --report <file> [--profile <key>] [--c2-report <file>] [--c6-report <file>]
 if (process.argv.includes('--all')) {
   const {runAll} = await import('./accept/chrome-all.mjs');
   process.exit(await runAll(process.argv.slice(2)));

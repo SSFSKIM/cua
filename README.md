@@ -30,7 +30,8 @@ Chrome extension and native host (see Chrome). The design and its status are in
 
 A clean Mac without ChatGPT installed has been shown, in a macOS 27 VM
 (`docs/evidence/clean-machine-acceptance.md`). There, the pinned helper started from cua's release tree, macOS asked
-for Accessibility and Screen Recording on the helper's behalf once, and the native and Chrome acceptance passed. The
+for Accessibility and Screen Recording on the helper's behalf once, the native slice passed (`accept-native` items 1 and 3–8, with item 2 shown by the download installs and item 9 BLOCKED
+by design), and the Chrome acceptance passed C1–C7. The
 helper first shows its own "Enable ChatGPT Computer Use" window, which lists the permissions. Not yet shown, and a
 release gate rather than a defect: stable Developer ID signing of the Keychain helper (see Acceptance).
 

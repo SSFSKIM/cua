@@ -258,18 +258,19 @@ and a bound profile is ready whenever its bound extension instance is live, beca
 runtime and does not need that access. A profile that is unbound or not live reads `chrome_data_unreadable`; to get
 the file checks back, grant your terminal Full Disk Access (System Settings → Privacy & Security → Full Disk Access).
 
-`bind` records which live extension instance is this profile, because the browser service selects a browser by that
-id (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
+`bind` records which live extension instance is this profile, because the browser service selects a browser by that id
+(`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
 extension backends with their tab counts. Only Google Chrome's backends are candidates: another browser's (Edge with
 the OpenAI extension, say, or a backend that reports no browser family) is never offered or bound, and the listing
-says only how many it left out. It binds automatically only when OpenAI's browser service labels exactly one
-live backend with the profile's display name and no other profile has that name. In practice that label is usually
-absent (the vendor's lookup fails silently; it reads Chrome's `Local State` and copies the extension's settings store
-to a temporary directory to do so), so expect to pick: at a terminal `bind` shows the backends and asks which one is
-this profile; elsewhere it prints the listing and exits 1, and you pick with
-`cua profiles bind <key> --extension-instance-id <id>`. A pick is accepted only for a backend that is live now, and
-refused when the runtime labels that backend as another profile. A single live backend is never bound without the
-label; cua never chooses between profiles for you, and neither does the agent (its host notes say so).
+says only how many it left out. It binds automatically only when OpenAI's browser service labels exactly one live
+backend with the profile's display name and no other profile has that name. The vendor reads Chrome's `Local State`
+and copies the extension's settings store to a temporary directory to find that label, so it needs Chrome's directory
+readable and the `disabled` sandbox (`CUA_SHIM_SANDBOX`, the default). Without either, the lookup fails silently and
+the label is absent. Then, or when two profiles share a display name, you pick: at a terminal `bind` shows the
+backends and asks which one is this profile; elsewhere it prints the listing and exits 1, and you pick with `cua
+profiles bind <key> --extension-instance-id <id>`. A pick is accepted only for a backend that is live now, and refused
+when the runtime labels that backend as another profile. A single live backend is never bound without the label; cua
+never chooses between profiles for you, and neither does the agent (its host notes say so).
 
 A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
 `chrome://extensions`, or reinstalling it, can give it a new instance id: the stored binding then points at an instance
@@ -376,7 +377,8 @@ configuration) and `codex.login`.
   you present, and a machine without the desktop app is a separate release gate.
 - Only tabs the agent creates have been exercised. Operations on your existing tabs, downloads, file choosers,
   dialogs, frames, saved-password autofill and Chrome tab-group side effects are untested.
-- The vendor's profile label is usually absent, so `bind` needs your explicit pick (above).
+- When the vendor's profile label is absent (Chrome's directory unreadable, or `CUA_SHIM_SANDBOX=default`) or shared
+  by two profiles, `bind` needs your explicit pick (above).
 - A profile without the extension stays not ready; cua never installs it.
 - The Playwright-extension route explored earlier is parked, not shipped.
 
@@ -469,6 +471,16 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
+| `CUA_SHIM_SANDBOX` | `disabled` | the sandbox node_repl applies to the runtime's JavaScript: `disabled` turns it off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` |
+
+With the `disabled` default, cua sends node_repl the sandbox state Codex sends with each call
+(`_meta["codex/sandbox-state-meta"]` with the `disabled` permission profile) on every call it makes, so JavaScript
+cells and the vendor's trusted services can write wherever your user account can, and the sandbox no longer refuses
+their network connections. This fits the trust model: the agent is trusted, and cua adds no policy against
+exfiltration. The vendor features that need scratch space depend on it, such as the profile labels behind `cua
+profiles bind`, which copy each Chrome profile's extension store to a temp directory. With `default`, cua sends
+nothing. node_repl then allows reads and denies all writes, including to `$TMPDIR` and `/tmp`, as well as network
+connections, and those features fail. Any sandbox state a client puts in its own `_meta` is replaced by cua's.
 
 Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
 runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session) and

@@ -16,6 +16,7 @@ import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
 import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
 import {bindCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
+import {sandboxModeFrom} from './runtime/sandbox.mjs';
 import {UNDETERMINED} from './profiles/bind.mjs';
 import {registerHost, unregisterHost} from './chrome/registration.mjs';
 
@@ -223,6 +224,9 @@ async function profiles(args) {
     if (values.json) return done({ok: true, ...added});
     return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${ADDED[added.extension](added)}`);
   }
+  // list and bind launch the runtime with the sandbox state CUA_SHIM_SANDBOX picks; a bad value fails the command here,
+  // before readiness would fold a listing failure into its report.
+  if (command === 'list' || command === 'bind') sandboxModeFrom(process.env);
   if (command === 'list') {
     const {values} = parsed({}, 0);
     const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends: () => {

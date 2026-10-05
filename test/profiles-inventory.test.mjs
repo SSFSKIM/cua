@@ -147,6 +147,21 @@ test('a readiness listing (no tab counts) sends a cell that never asks for tabs,
   assert.equal(tabReads, 0, 'a readiness listing never reads tabs');
 });
 
+test('the listing cell carries the sandbox state it is given, and none when given none', async () => {
+  const state = {permissionProfile: {type: 'disabled'}, sandboxCwd: 'file:///tmp/run/sess'};
+  for (const sandboxState of [state, null]) {
+    const upstream = fakeUpstream();
+    const listing = listBackendsWith(upstream, {tabCounts: false, sandboxState});
+    await answerHandshake(upstream);
+    const call = await upstream.nextCall('js');
+    if (sandboxState) assert.deepEqual(call.params._meta['codex/sandbox-state-meta'], state);
+    else assert.equal('codex/sandbox-state-meta' in call.params._meta, false);
+    assert.equal(typeof call.params._meta['x-codex-turn-metadata'].session_id, 'string');
+    replyCell(upstream, call, {backends: []});
+    await listing;
+  }
+});
+
 test('an unconfirmed runtime teardown fails the listing, classified, and keeps a listing failure\'s diagnostic too', async () => {
   const unconfirmed = {confirmed: false, steps: ['eof', 'sigterm', 'sigkill'], reason: 'a group member survived'};
   const upstream = fakeUpstream();

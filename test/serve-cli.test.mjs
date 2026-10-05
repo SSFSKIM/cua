@@ -117,6 +117,9 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, 'secrets_disabled');
   const turnEnded = records(home).find(r => r.received?.params?.name === 'turn_ended').received;
   assert.equal(turnEnded.params.arguments.session_id, echoed.turn.session_id);
+  const sent = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
+  assert.deepEqual(sent.map(p => p.name), ['js', 'turn_ended']);
+  for (const p of sent) assert.deepEqual(p._meta['codex/sandbox-state-meta'], {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(sessionDir).href}, `${p.name} carries the default sandbox state`);
   assert.equal(turnEnded.params.arguments.turn_id, echoed.turn.turn_id);
   assert.equal(dirname(sessionDir).endsWith('run'), true);
   assert.equal(sessionDir.endsWith(echoed.turn.session_id), true, 'the run directory is named by the connection session');
@@ -189,6 +192,12 @@ test('profiles_list and cua profiles list check a bound profile against the live
   const cells = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params.arguments);
   assert.equal(cells.length, 4, 'one listing cell per request, nothing on the serving runtime');
   assert.ok(cells.every(c => c.code === LIVENESS_CELL), 'each listing is the tab-free cell');
+  // Each listing launch sends the default sandbox state for its own working directory.
+  let launchCwd;
+  for (const r of records(home)) {
+    if (r.start) launchCwd = r.start.cwd;
+    if (r.received?.method === 'tools/call') assert.deepEqual(r.received.params._meta['codex/sandbox-state-meta'], {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(launchCwd).href});
+  }
   const starts = records(home).filter(r => r.start).map(r => r.start.env);
   assert.equal(starts.length, 5, 'the serving runtime and one bounded launch per profiles_list');
   assert.ok(starts.slice(1).every(env => env.CUA_REPL_ENABLED_SURFACES === 'browser'));
@@ -236,6 +245,44 @@ test('cua profiles list still shows the profiles but fails when its listing runt
   assert.deepEqual(JSON.parse(empty.stdout), {ok: true, profiles: [{...unlistable, reason: 'host_not_live'}]}, 'an empty listing is evidence: no host is live');
   assert.equal(cua([]).status, 0);
   assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
+});
+
+test('with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid value fails classified before anything is launched', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SANDBOX: 'default'});
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  await server.call('js', {code: 'hello'});
+  await server.call('js_reset');
+  await server.call('end_task');
+  server.child.stdin.end();
+  assert.equal((await server.exit).code, 0);
+  const sent = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
+  assert.deepEqual(sent.map(p => p.name), ['js', 'js_reset', 'turn_ended']);
+  for (const p of sent) assert.equal('codex/sandbox-state-meta' in p._meta, false, p.name);
+
+  const other = fakeInstalledHome(t);
+  const invalid = launch(join(REPO, 'bin', 'cua.mjs'), other, ['serve'], {CUA_SHIM_SANDBOX: 'managed'});
+  invalid.child.stdin.end();
+  const {code, stderr} = await invalid.exit;
+  assert.equal(code, 1);
+  assert.match(stderr, /CUA_SHIM_SANDBOX must be disabled or default \[invalid_setting\]/);
+  assert.equal(existsSync(join(other, 'state', 'codex', 'fake-upstream.jsonl')), false);
+});
+
+test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, before any listing launch', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  for (const args of [['profiles', 'list', '--json'], ['profiles', 'list'], ['profiles', 'bind', 'personal', '--json']]) {
+    const run = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome, CUA_SHIM_SANDBOX: 'managed'}, encoding: 'utf8', timeout: 30_000});
+    assert.notEqual(run.status, 0, args.join(' '));
+    assert.match(run.stdout + run.stderr, /CUA_SHIM_SANDBOX must be disabled or default/, args.join(' '));
+    assert.match(run.stdout + run.stderr, /invalid_setting/, args.join(' '));
+  }
+  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'no listing launch was made');
 });
 
 test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched', {skip: !supported}, async t => {

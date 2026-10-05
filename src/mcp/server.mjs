@@ -8,7 +8,8 @@
 //   reply can never answer a caller. Requests the runtime sends the client keep the runtime's IDs; the server sends
 //   the client none of its own.
 // - js/js_reset go through the task state machine (task.mjs): serialized, stamped with the session ID, the task ID as
-//   turn ID and a fresh call ID. end_task, secrets_list and (with the browser surface) profiles_list are answered here;
+//   turn ID and a fresh call ID. Every call the server makes upstream (js, js_reset, turn_ended) carries the
+//   connection's sandbox state (CUA_SHIM_SANDBOX, src/runtime/sandbox.mjs) in place of any the client sent. end_task, secrets_list and (with the browser surface) profiles_list are answered here;
 //   hidden upstream tools are refused.
 // - profiles_list reads the registered Chrome profiles (src/profiles) when asked: key, readiness, the instance id of a
 //   ready profile, the reason of one that is not (with what to tell the user in the text, which names the registered
@@ -44,6 +45,7 @@ import {chromeFacts} from '../profiles/chrome.mjs';
 import {reasonText} from '../profiles/registry.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
+import {sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
@@ -58,7 +60,7 @@ const NO_PROFILES = {list: () => []};
 
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
-  persist = 'session', hostNotes = hostNotesFor(surfaces), model,
+  persist = 'session', hostNotes = hostNotesFor(surfaces), model, sandboxState = null,
   completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
 }) {
@@ -87,10 +89,11 @@ export function createServer({
   const respond = (id, result) => write({jsonrpc: '2.0', id, result});
   const respondError = (id, code, message) => write({jsonrpc: '2.0', id, error: {code, message}});
 
-  const turnMeta = (taskId, callId) => ({
-    callId, threadId: sessionId, sessionId,
+  // The turn metadata and the sandbox state, over whatever `_meta` the client sent.
+  const turnMeta = (taskId, callId, clientMeta) => withSandbox({
+    ...clientMeta, callId, threadId: sessionId, sessionId,
     'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: taskId, call_id: callId, model: clientModel ?? 'mcp-client'},
-  });
+  }, sandboxState);
 
   function upstreamRequest(method, params, {clientKey} = {}) {
     const id = ++nextUpstreamId;
@@ -141,7 +144,7 @@ export function createServer({
     const key = idKey(msg.id);
     const ticket = lifecycle.submit(({taskId, callId}) => upstreamRequest('tools/call', {
       ...msg.params,
-      _meta: {...(msg.params._meta ?? {}), ...turnMeta(taskId, callId)},
+      _meta: turnMeta(taskId, callId, msg.params._meta),
     }, {clientKey: key}));
     queuedWork.set(key, ticket);
     ticket.promise.then(({taskId, reply}) => {
@@ -338,7 +341,7 @@ export function settingsFrom(env) {
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces};
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env)};
 }
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
@@ -359,7 +362,7 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper({home}),
   prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome = chromeFacts(),
   listBackends}) {
-  const {secrets: secretsEnabled, ...settings} = settingsFrom(env);
+  const {secrets: secretsEnabled, sandbox, ...settings} = settingsFrom(env);
   const services = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
   const runtime = resolveRuntime({home});
   listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false});
@@ -391,7 +394,8 @@ export async function serve({home, env = process.env, input = process.stdin, out
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
       return list;
     }};
-    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics, ...settings});
+    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
+      sandboxState: sandboxStateFor(sandbox, launch.cwd), ...settings});
     for (const signal of SIGNALS) process.on(signal, onSignal);
     code = (await server.closed).code;
   } finally {

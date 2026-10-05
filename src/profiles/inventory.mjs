@@ -8,7 +8,9 @@
 // backend (Edge, say; the vendor's chrome backend setting selects by type, not family) leaves only its family and is
 // never asked for tabs, and a backend that reports no family is not Chrome's. The label is the profile display name the
 // vendor's own enrichment attached (browser-service.mjs `aL`, read from that browser's own Local State); callers use it
-// for the bind rule and never print or store it.
+// for the bind rule and never print or store it. The cell's call carries the sandbox state CUA_SHIM_SANDBOX picks
+// (src/runtime/sandbox.mjs), as `cua serve`'s do: the vendor's labelling copies each profile's extension store to a
+// temp directory, which node_repl's default sandbox refuses.
 import {randomUUID} from 'node:crypto';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
@@ -16,6 +18,7 @@ import {CuaError, fail} from '../runtime/errors.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
+import {sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
 
 export const MARKER = 'CUABACKENDS';
 export const LIMITS = {initializeMs: 60_000, cellMs: 45_000, callMs: 60_000, teardownMs: 5000};
@@ -60,8 +63,8 @@ function parseBackends(result) {
 }
 
 // Talks to an already started runtime (an upstream as spawnUpstream returns it) and always terminates it. Without tab
-// counts the cell never calls cua.listTabs.
-export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = true} = {}) {
+// counts the cell never calls cua.listTabs. `sandboxState` (or null for none) goes on the cell's call.
+export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = true, sandboxState = null} = {}) {
   const limit = {...LIMITS, ...limits};
   let next = 0;
   let elicitationsDeclined = 0;
@@ -85,7 +88,7 @@ export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = t
     await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-profiles-bind', version: '0'}}, limit.initializeMs);
     upstream.send({jsonrpc: '2.0', method: 'notifications/initialized'});
     const sessionId = randomUUID();
-    const meta = {'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: randomUUID(), call_id: randomUUID(), model: 'cua-profiles-bind'}};
+    const meta = withSandbox({'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: randomUUID(), call_id: randomUUID(), model: 'cua-profiles-bind'}}, sandboxState);
     const code = tabCounts ? LIST_CELL : LIVENESS_CELL;
     const title = tabCounts ? 'cua profiles bind: list Chrome backends' : 'cua profiles: check live Chrome backends';
     const result = await request('tools/call', {name: 'js', arguments: {code, title, timeout_ms: limit.cellMs}, _meta: meta}, limit.callMs);
@@ -110,8 +113,10 @@ export function teardownUnconfirmed(teardown, failure) {
 }
 
 // One bounded launch of the installed runtime in this home, as `cua serve` would make it with the browser surface
-// only and secrets off, in its own session directory (removed afterwards with the session's approval file).
+// only and secrets off, in its own session directory (removed afterwards with the session's approval file), with the
+// sandbox state CUA_SHIM_SANDBOX in `ambient` picks for that directory.
 export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true}) {
+  const sandbox = sandboxModeFrom(ambient);
   const sessionId = randomUUID();
   const owned = homeLayout(realHome(home));
   mkdirSync(owned.run, {recursive: true, mode: 0o700});
@@ -120,7 +125,7 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
   mkdirSync(launch.cwd, {mode: 0o700});
   chmodSync(launch.cwd, 0o700);
   try {
-    const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts});
+    const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts, sandboxState: sandboxStateFor(sandbox, launch.cwd)});
     return {backends: result.backends, elicitationsDeclined: result.elicitationsDeclined, teardown: result.teardown};
   } finally {
     rmSync(launch.cwd, {recursive: true, force: true});

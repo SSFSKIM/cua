@@ -96,6 +96,9 @@ All are folded into the spec's Decision Log and Surprises (2026-10-03/04 entries
 4. **User-tab operations, downloads, dialogs, frames and Chrome tab-group side effects** are untested on the original route.
 5. **The Playwright route's parking status** (`wip/m8-playwright-transport`): keep, retire or document as the login-free alternative.
 6. **Phase D:** the MAWS in-app-browser adapter.
+7. **Remote control (logged 2026-10-05, owner's question; not addressed):** can `cua serve` drive a remote Mac's GUI and its Chrome tabs? cua_repl itself only reaches local sockets (the native helper's group-container socket, the Chrome hosts' `/tmp/codex-browser-use` sockets), so this is an MCP-transport question (`cua serve` on the remote machine, stdio forwarded over SSH) plus the console-session constraints seen on the second Mac (Keychain and permission dialogs need the GUI session, not an SSH session).
+8. **Linux (logged 2026-10-05, owner's question; not addressed):** the vendor's cua_repl carries Linux code paths; whether a Linux `node_repl` and computer-control service are shipped in any obtainable archive, and under what pin, is the research question. The current pin is darwin-arm64 only.
+9. **Independence from the ChatGPT extension (logged 2026-10-05, owner's question; not addressed):** our own extension (or extension + host pair) speaking the native-messaging protocol the host expects. The parked Playwright route (`wip/m8-playwright-transport`, item 5) is one form of this; decide them together.
 
 ## Open gates
 

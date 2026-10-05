@@ -14,9 +14,12 @@ import {parseOtool, stringRefs, calls, parseSections, makeReader, literalAddress
 import {verifiedVendor} from './hosts.mjs';
 
 const HOST_SUBPATH = 'extension-host/macos/arm64/ChatGPT for Chrome';
-export const BINARIES = [
+// The archived host is read from the reference-app source tree (the directory holding `_dist/` with the extracted
+// ChatGPT.app of each build). Its location is a required input of the static layer, never a default here.
+export const ARCHIVED_HOST = join('_dist/chatgpt-26.928.40906/ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/chrome', HOST_SUBPATH);
+export const binaries = readableSource => [
   {label: 'installed', path: join(homedir(), '.codex/plugins/cache/openai-bundled/chrome/latest', HOST_SUBPATH)},
-  {label: 'archived-26.928.40906', path: join('/Users/new/codex-app-src/_dist/chatgpt-26.928.40906/ChatGPT.app/Contents/Resources/plugins/openai-bundled/plugins/chrome', HOST_SUBPATH)},
+  {label: 'archived-26.928.40906', path: join(readableSource, ARCHIVED_HOST)},
 ];
 
 // Literals of interest, grouped by the question they serve. Matching is exact: a literal counts as referenced by a
@@ -163,8 +166,9 @@ export function findings(results) {
   return out;
 }
 
-export function runStaticLayer() {
-  const results = BINARIES.map(analyzeBinary);
+export function runStaticLayer({readableSource}) {
+  if (!readableSource) throw new Error('the static layer needs the reference-app source tree (--readable-source or CUA_READABLE_SOURCE)');
+  const results = binaries(readableSource).map(analyzeBinary);
   const all = findings(results);
   const s = (pass, blocked) => pass ? 'PASS' : blocked ? 'BLOCKED' : 'FAIL';
   const present = results.filter(r => r.present);

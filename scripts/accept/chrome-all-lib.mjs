@@ -6,7 +6,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {profileView} from '../../src/mcp/surface.mjs';
 import {hostPathClass} from '../../src/profiles/chrome.mjs';
 import {isOwnHostPath} from '../../src/chrome/registration.mjs';
-import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, tapTotals, tokenLike} from './lib.mjs';
+import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
 
 const check = (name, status, detail) => ({name, status, detail});
 
@@ -298,12 +298,11 @@ export function packChecks({files, tracked, read, userHome}) {
   ];
 }
 
-// `npm run test:helper`: swift-testing's summary line and the Node-driven executable tests' TAP summary must both show
+// `npm run test:helper`: swift-testing's summary line and the Node-driven executable tests' node:test summary must both show
 // executed, passing coverage.
 export function helperSuiteVerdict({code, text}) {
   const swift = text.match(/Test run with (\d+) tests? in \d+ suites? (passed|failed)/);
-  const node = tapTotals(text);
-  const nodeVerdict = suiteVerdict({code, totals: node});
+  const nodeVerdict = suiteVerdict({code, ...testSummary(text)});
   const swiftSkipped = /^\S*\s*Test .* skipped/m.test(text);
   const swiftStatus = code !== 0 || !swift || swift[2] !== 'passed' ? 'FAIL' : Number(swift[1]) === 0 || swiftSkipped ? 'BLOCKED' : 'PASS';
   return {status: rollup([swiftStatus, nodeVerdict.status]),

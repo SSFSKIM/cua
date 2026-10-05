@@ -259,4 +259,14 @@ test('the helper suite passes only when both the Swift and the Node-driven tests
   assert.equal(helperSuiteVerdict({code: 0, text: node}).status, 'FAIL', 'no Swift summary');
   assert.equal(helperSuiteVerdict({code: 0, text: 'Test run with 55 tests in 9 suites passed after 1 s.\n'}).status, 'FAIL', 'no Node summary');
   assert.equal(helperSuiteVerdict({code: 0, text: `Test run with 0 tests in 0 suites passed after 0 s.\n${node}`}).status, 'BLOCKED');
+  // The Node summary must be one coherent block: a partial TAP block after a passing spec block, or counters spread over
+  // a truncated block and a complete one, are not a pass.
+  const swiftPassed = 'Test run with 55 tests in 9 suites passed after 1.2 seconds.\n';
+  const spec = node.replaceAll('# ', 'ℹ ');
+  for (const tail of [`${spec}# tests 7\n# pass 6\n# skipped 1\n`, `ℹ tests 7\nℹ pass 7\nℹ fail 0\n--\n${spec.replace('pass 7', 'pass 6').replace('skipped 0', 'skipped 1')}`]) {
+    const verdict = helperSuiteVerdict({code: 0, text: swiftPassed + tail});
+    assert.equal(verdict.status, 'FAIL');
+    assert.match(verdict.detail, /incomplete test summary/);
+  }
+  assert.match(helperSuiteVerdict({code: 0, text: `${swiftPassed}${spec}${node.replace('pass 7', 'pass 6').replace('skipped 0', 'skipped 1')}`}).detail, /conflicting test summaries/);
 });

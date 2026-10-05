@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // M9/M10 prototyping probe: the original OpenAI Chrome backend through the relocated runtime.
 //
-//   node scripts/probe-chrome-original.mjs --static --report /tmp/cua-chrome-original-static.json
+//   node scripts/probe-chrome-original.mjs --static --readable-source <dir> --report /tmp/cua-chrome-original-static.json
 //   CUA_HOME=<home with the pinned runtime> node scripts/probe-chrome-original.mjs --live --report FILE
 //   node scripts/probe-chrome-original.mjs --fixtures --report /tmp/cua-chrome-original-fixtures.json
 //   CUA_HOME="$HOME/Library/Application Support/cua" node scripts/probe-chrome-original.mjs --live --with-tabs \
 //     [--browser-index N] --report FILE      (only after `cua login` with that CUA_HOME)
 //
 // --static  nm -u / otool / strings (and otool -tV for the specific liveness and gating questions) on the installed
-//           and archived "ChatGPT for Chrome" host binaries. Neither binary is executed.
+//           and archived "ChatGPT for Chrome" host binaries. Neither binary is executed. The archived one is read
+//           from the reference-app source tree, the directory holding _dist/chatgpt-26.928.40906/ChatGPT.app, given as
+//           --readable-source <dir> or CUA_READABLE_SOURCE (required; there is no default).
 // --live    the relocated pinned runtime, browser surface only, the vendor's own @oai/browser-desktop service, an owned
 //           empty CODEX_HOME, default vendor network behaviour, and BROWSER_USE_BACKEND_PATHS set to exactly the live
 //           sockets held by original hosts whose parent is the user's Chrome. Cells: cua.listBrowsers, then
@@ -25,7 +27,7 @@
 // Reports are metadata-only (no socket paths beyond a count, no tab data, no profile names, no auth material) and
 // carry PASS/FAIL/BLOCKED per scenario. Live and fixture reports pass a leak guard (no URL, absolute path, token-like
 // run or known sensitive value) before they are written. stdout is a short summary.
-import {writeFileSync} from 'node:fs';
+import {existsSync, statSync, writeFileSync} from 'node:fs';
 import {parseArgs} from 'node:util';
 
 const {values: opts} = parseArgs({options: {
@@ -35,6 +37,7 @@ const {values: opts} = parseArgs({options: {
   'with-tabs': {type: 'boolean', default: false},
   'browser-index': {type: 'string'},
   report: {type: 'string'},
+  'readable-source': {type: 'string'},
   home: {type: 'string', default: process.env.CUA_HOME},
 }});
 const usage = message => { process.stderr.write(`probe-chrome-original: ${message}\n`); process.exit(2); };
@@ -43,12 +46,16 @@ if (opts['with-tabs'] && !opts.live) usage('--with-tabs needs --live');
 if (opts['browser-index'] !== undefined && !opts['with-tabs']) usage('--browser-index needs --with-tabs');
 if (opts['browser-index'] !== undefined && !/^\d{1,2}$/.test(opts['browser-index'])) usage('--browser-index takes a small non-negative integer');
 if (!opts.report) usage('--report FILE is required');
+if (opts['readable-source'] !== undefined && !opts.static) usage('--readable-source needs --static');
+const readableSource = opts['readable-source'] ?? process.env.CUA_READABLE_SOURCE;
+if (opts.static && !readableSource) usage('--static needs the reference-app source tree (the directory holding _dist/chatgpt-26.928.40906/ChatGPT.app): pass --readable-source <dir> or set CUA_READABLE_SOURCE');
+if (opts.static && !(existsSync(readableSource) && statSync(readableSource).isDirectory())) usage(`the reference-app source tree ${readableSource} is not a directory`);
 
 const base = {probe: 'scripts/probe-chrome-original.mjs', milestone: 'M9', at: new Date().toISOString()};
 let layer;
 if (opts.static) {
   const {runStaticLayer} = await import('./probe/chrome/original/static-layer.mjs');
-  layer = runStaticLayer();
+  layer = runStaticLayer({readableSource});
 } else if (opts.fixtures) {
   const {runFixturesLayer} = await import('./probe/chrome/original/fixtures-layer.mjs');
   layer = await runFixturesLayer();

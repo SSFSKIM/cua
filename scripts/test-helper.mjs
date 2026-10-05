@@ -4,6 +4,7 @@
 // next to it, then runs the Swift tests (production code with injected in-memory storage and pseudo-terminals) and
 // the Node-driven tests of the built executables. Nothing here reads or writes the Keychain or needs a prompt.
 import {spawnSync} from 'node:child_process';
+import {existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {PACKAGE_DIR, BUILD_OUTPUT, locateHelper} from '../src/secrets/helper.mjs';
 
@@ -20,7 +21,13 @@ const swift = ['--package-path', PACKAGE_DIR];
 const binDir = join(PACKAGE_DIR, '.build', 'release');
 const built = ['cua-keychain-testhost', 'cua-keychain-pty'].every(product => run('swift', ['build', '-c', 'release', ...swift, '--product', product]));
 if (!built) process.exit(1);
-const swiftTests = run('swift', ['test', ...swift], {CUA_KEYCHAIN_BIN_DIR: binDir});
+// The Command Line Tools for Swift 6.4 ship swift-testing's macro plugin in usr/lib/swift/host/plugins/testing but
+// do not hand that directory to the compiler, so `swift test` stops at "plugin for module 'TestingMacros' not found"
+// (found by the clean-machine gate, issue #9). Name it there; Xcode is unchanged.
+const developerDir = process.env.DEVELOPER_DIR || spawnSync('xcode-select', ['-p'], {encoding: 'utf8'}).stdout?.trim() || '';
+const testingPlugins = join(developerDir, 'usr', 'lib', 'swift', 'host', 'plugins', 'testing');
+const pluginArgs = developerDir.endsWith('/CommandLineTools') && existsSync(testingPlugins) ? ['-Xswiftc', '-plugin-path', '-Xswiftc', testingPlugins] : [];
+const swiftTests = run('swift', ['test', ...swift, ...pluginArgs], {CUA_KEYCHAIN_BIN_DIR: binDir});
 const nodeTests = run(process.execPath, ['--test', join(PACKAGE_DIR, 'test', '*.test.mjs')], {CUA_KEYCHAIN_BIN_DIR: binDir});
 console.log(`\ntest:helper: swift tests ${swiftTests ? 'passed' : 'FAILED'}; node-driven executable tests ${nodeTests ? 'passed' : 'FAILED'}`);
 process.exit(swiftTests && nodeTests ? 0 : 1);

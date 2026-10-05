@@ -14,7 +14,7 @@ layer.
 ## Commands and results
 
 ```sh
-node scripts/probe-chrome-original.mjs --static --report /tmp/cua-chrome-original-static.json     # ~1 s
+node scripts/probe-chrome-original.mjs --static --readable-source "$HOME/codex-app-src" --report /tmp/cua-chrome-original-static.json     # ~1 s
 CUA_HOME=/tmp/cua-m7.lxJbgf node scripts/probe-chrome-original.mjs --live --report /tmp/cua-chrome-original-live.json   # ~13 s
 node --test scripts/probe/chrome/original/test/   # prototype helper tests, outside npm test: 22/22
 npm test                                           # 188/188

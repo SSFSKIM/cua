@@ -328,7 +328,7 @@ Promote when: the real browser service lists the existing hosts as `extension` b
 Commands, from the CUA checkout (the retained scratch install `/tmp/cua-m7.lxJbgf` or a fresh `install --archive`):
 
 ```sh
-node scripts/probe-chrome-original.mjs --static --report /tmp/cua-chrome-original-static.json
+node scripts/probe-chrome-original.mjs --static --readable-source "$HOME/codex-app-src" --report /tmp/cua-chrome-original-static.json
 CUA_HOME=/tmp/cua-m7.lxJbgf node scripts/probe-chrome-original.mjs --live --report /tmp/cua-chrome-original-live.json
 npm test
 ```

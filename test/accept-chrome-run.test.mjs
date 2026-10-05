@@ -3,7 +3,7 @@
 // created still closes it, with the leftover read from the tab record rather than from a normal return.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, runAgentScript} from '../scripts/accept/chrome-run.mjs';
+import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, profilePrecondition, runAgentScript} from '../scripts/accept/chrome-run.mjs';
 import {expectedDigest} from '../scripts/accept/chrome-page.mjs';
 import {originAccessRequest, downloadRequest} from '../scripts/probe/chrome/original/vendor-shapes.mjs';
 
@@ -128,4 +128,15 @@ test('a failed digest or induced-failure step stops every later browser operatio
     assert.deepEqual(stop.detail.notSent, notSent, name);
     assert.deepEqual(leftoverOf(h.tab), {status: 'none'}, name);
   }
+});
+
+test('the live run\'s profile precondition: ready or bound-with-unreadable-data proceeds and records the state; anything else blocks', () => {
+  assert.deepEqual(profilePrecondition({key: 'personal', ready: true, extensionInstanceId: 'i'}, 'personal'), {chromeData: 'readable'});
+  assert.deepEqual(profilePrecondition({key: 'personal', ready: false, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM', extensionInstanceId: 'i'}, 'personal'),
+    {chromeData: {unreadable: 'EPERM'}}, 'the run\'s profiles_list step decides on live evidence');
+  assert.deepEqual(profilePrecondition({key: 'personal', ready: false, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM'}, 'personal'),
+    {missing: 'profile "personal" is not ready (chrome_data_unreadable)', chromeData: {unreadable: 'EPERM'}}, 'unbound: nothing to check live');
+  assert.deepEqual(profilePrecondition({key: 'personal', ready: false, reason: 'extension_not_installed'}, 'personal'),
+    {missing: 'profile "personal" is not ready (extension_not_installed)', chromeData: 'readable'});
+  assert.deepEqual(profilePrecondition(undefined, 'personal'), {missing: 'profile "personal" is not registered'});
 });

@@ -19,6 +19,18 @@ import {cellOutcome} from '../probe/chrome/original/classify.mjs';
 import {RESULT_MARKER} from '../probe/chrome/original/cells.mjs';
 import {PAGE_TITLE, expectedDigest} from './chrome-page.mjs';
 import * as cells from './chrome-cells.mjs';
+import {awaitsLiveEvidence} from '../../src/profiles/registry.mjs';
+
+// The registered profile's precondition for the live run, from the registry's file-only status: ready proceeds; so does
+// a bound profile whose Chrome data this process may not read (macOS privacy protection), because the run's own
+// profiles_list step then decides on live evidence (ready with the stored instance id, or FAIL). Anything else blocks.
+// -> {missing?: string, chromeData: 'readable' | {unreadable: code}}
+export function profilePrecondition(profile, key) {
+  if (!profile) return {missing: `profile "${key}" is not registered`};
+  const chromeData = profile.reason === 'chrome_data_unreadable' ? {unreadable: profile.chromeDataError ?? 'unknown'} : 'readable';
+  if (profile.ready || awaitsLiveEvidence(profile)) return {chromeData};
+  return {missing: `profile "${key}" is not ready (${profile.reason})`, chromeData};
+}
 
 export const LIMITS = {
   select: {cellMs: 30_000, callMs: 60_000}, create: {cellMs: 60_000, callMs: 90_000}, goto: {cellMs: 45_000, callMs: 75_000},

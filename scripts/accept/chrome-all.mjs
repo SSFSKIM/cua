@@ -38,7 +38,7 @@ import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
   c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveRoundTripChecks,
-  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, scratchListCheck, tapTestStatus, verifyCheck,
+  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchListCheck, tapTestStatus, verifyCheck,
 } from './chrome-all-lib.mjs';
 
 const REPO = realpathSync(fileURLToPath(new URL('../..', import.meta.url)));
@@ -156,14 +156,11 @@ export async function runAll(argv) {
     const checks = [];
     const scratch = mkdtempSync('/tmp/cua-accept-c3.');
     try {
-      const adds = [['personal', 'Default', true], ['work', 'Profile 8', false], ['school', 'Profile 6', false]];
+      const adds = [['personal', 'Default', 'installed'], ['work', 'Profile 8', 'absent'], ['school', 'Profile 6', 'absent']];
       const added = [];
       for (const [key, directory, extension] of adds) {
         const r = await cua(['profiles', 'add', key, '--chrome-profile', directory, '--json'], scratch);
-        const out = parseJson(r.stdout);
-        if (out?.error?.code === 'chrome_profile_not_found') added.push({key, status: 'BLOCKED', detail: `${key}: this Mac has no Chrome profile directory "${directory}"`});
-        else added.push({key, status: r.code === 0 && out?.ok && out.extensionInstalled === extension ? 'PASS' : 'FAIL',
-          detail: `${key} -> "${directory}": ${r.code === 0 ? `extension ${out?.extensionInstalled ? 'installed' : 'absent'} (expected ${extension ? 'installed' : 'absent'})` : `exit ${r.code} ${out?.error?.code ?? ''}`}`});
+        added.push(scratchAddCheck({key, directory, expected: extension, code: r.code, out: parseJson(r.stdout)}));
       }
       checks.push(check('scratch home: profiles add personal Default, work "Profile 8", school "Profile 6"', rollup(added.map(a => a.status)), added.map(a => a.detail).join('; ')));
       const list = parseJson((await cua(['profiles', 'list', '--json'], scratch)).stdout);
@@ -171,15 +168,17 @@ export async function runAll(argv) {
       const human = (await cua(['profiles', 'list'], scratch)).stdout.split('\n');
       const line = key => human.find(l => l.startsWith(`${key} `)) ?? '';
       const named = ['work', 'school'].every(k => line(k).includes(REASONS.extension_not_installed)) && line('personal').includes(REASONS.not_bound);
-      checks.push(check('scratch home: the human list names each reason', named ? 'PASS' : 'FAIL', named ? 'work and school: extension not installed; personal: not bound yet' : 'a reason is missing from cua profiles list'));
+      const unreadable = ['personal', 'work', 'school'].some(k => line(k).includes(REASONS.chrome_data_unreadable));
+      checks.push(check('scratch home: the human list names each reason', named ? 'PASS' : unreadable ? 'BLOCKED' : 'FAIL', named ? 'work and school: extension not installed; personal: not bound yet'
+        : unreadable ? 'the list names chrome_data_unreadable: this process may not read Chrome\'s data directory, so presence reasons cannot be shown from it' : 'a reason is missing from cua profiles list'));
       const before = parseJson(readFileSync(join(scratch, 'profiles.json'), 'utf8'))?.profiles ?? {};
       const removed = await cua(['profiles', 'remove', 'school', '--json'], scratch);
       const after = parseJson(readFileSync(join(scratch, 'profiles.json'), 'utf8'))?.profiles ?? {};
       const {school, ...rest} = before;
-      const onlyEntry = removed.code === 0 && parseJson(removed.stdout)?.removed === true && JSON.stringify(after) === JSON.stringify(rest) && Boolean(school)
-        && chrome.profileDirectoryExists('Profile 6');
-      checks.push(check('scratch home: remove school removes only that entry', onlyEntry ? 'PASS' : 'FAIL',
-        `exit ${removed.code}; entries now ${Object.keys(after).join(', ')}; the others unchanged: ${JSON.stringify(after) === JSON.stringify(rest)}; Chrome profile "Profile 6" still present: ${chrome.profileDirectoryExists('Profile 6')}`));
+      const onlyEntry = removed.code === 0 && parseJson(removed.stdout)?.removed === true && JSON.stringify(after) === JSON.stringify(rest) && Boolean(school);
+      const profileDir = chrome.profileDirectoryExists('Profile 6');
+      checks.push(check('scratch home: remove school removes only that entry', !onlyEntry || profileDir === 'missing' ? 'FAIL' : profileDir === 'exists' ? 'PASS' : 'BLOCKED',
+        `exit ${removed.code}; entries now ${Object.keys(after).join(', ')}; the others unchanged: ${JSON.stringify(after) === JSON.stringify(rest)}; Chrome profile "Profile 6": ${profileDir}${profileDir === 'unreadable' ? ' (this process may not read Chrome\'s data directory)' : ''}`));
       const written = readdirSync(scratch);
       checks.push(check('scratch home: the registry is the only file written', written.length === 1 && written[0] === 'profiles.json' ? 'PASS' : 'FAIL',
         `scratch home holds ${written.join(', ') || 'nothing'}; the commands read Chrome's directories (profile and extension presence) and write nothing there`));

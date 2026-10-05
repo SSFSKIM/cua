@@ -43,7 +43,7 @@ import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {openSession} from './accept/mcp-session.mjs';
 import {reportLeaks} from './probe/chrome/original/classify.mjs';
 import {startAcceptancePage} from './accept/chrome-page.mjs';
-import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, runAgentScript} from './accept/chrome-run.mjs';
+import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, profilePrecondition, runAgentScript} from './accept/chrome-run.mjs';
 
 // `--all` (M13) evaluates C1-C7 as a whole and never drives a browser; see scripts/accept/chrome-all.mjs:
 //   node scripts/accept-chrome.mjs --all --report <file> [--c2-report <file>] [--c6-report <file>]
@@ -82,8 +82,9 @@ function preconditions() {
   if (!locateHelper({home}).built || !locateHelper({path: PTY_DRIVER}).built) missing.push('Keychain helper or pty driver not built (npm run build:helper, npm run test:helper)');
   let profile;
   try { profile = profileStatuses({home, chrome: chromeFacts()}).find(p => p.key === options.profile); } catch (error) { missing.push(`profiles: ${error.code}`); }
-  if (!profile) missing.push(`profile "${options.profile}" is not registered`);
-  else if (!profile.ready) missing.push(`profile "${options.profile}" is not ready (${profile.reason})`);
+  const gate = profilePrecondition(profile, options.profile);
+  if (gate.missing) missing.push(gate.missing);
+  if (gate.chromeData) facts.chromeData = gate.chromeData;
   facts.liveHosts = countLiveHosts(processTable());
   if (!facts.liveHosts) missing.push('no OpenAI Chrome host is running');
   return {runtime, profile, missing};
@@ -105,7 +106,8 @@ try {
     try { login = await loginStatus({home, runtime}); } catch (error) { login = {state: `refused: ${error.code}`}; }
     if (login.state !== LOGIN_STATES.loggedIn) record('preconditions', 'BLOCKED', `the server has no Codex login (${login.state}); run cua login`);
     else {
-      record('preconditions', 'PASS', {release: runtime.release, profileReady: true, liveHosts: facts.liveHosts, login: login.state});
+      record('preconditions', 'PASS', {release: runtime.release, liveHosts: facts.liveHosts, login: login.state, ...(profile.ready ? {profileReady: true}
+        : {profileReady: 'pending the live check', chromeData: facts.chromeData, why: 'this process may not read Chrome\'s data directory; the profile is bound, so profiles_list decides on live evidence'})});
       const seed = await setThroughTerminal({helper: HELPER, label, value: sentinel, timeoutMs: SEED_MS});
       seeded = true;
       if (seed.echoed) record('seed-disposable-secret', 'FAIL', 'the value appeared in terminal output');

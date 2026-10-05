@@ -4,7 +4,8 @@
 // check names the exact command and human step that would produce it.
 import {isDeepStrictEqual} from 'node:util';
 import {profileView} from '../../src/mcp/surface.mjs';
-import {hostPathClass} from '../../src/profiles/chrome.mjs';
+import {hostPathClass, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
+import {awaitsLiveEvidence} from '../../src/profiles/registry.mjs';
 import {isOwnHostPath} from '../../src/chrome/registration.mjs';
 import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
 
@@ -79,6 +80,8 @@ export function c2LiveBlocked(personal) {
   if (!personal) return check('live: round trip through cua serve', 'BLOCKED', `personal is not registered in this home: node bin/cua.mjs profiles add personal --chrome-profile Default, bind it, run ${LIVE_COMMAND}, ${rerun}`);
   if (personal.reason === 'not_bound' || personal.reason === 'binding_stale')
     return check('live: round trip through cua serve', 'BLOCKED', `personal ${personal.reason === 'not_bound' ? 'not bound' : 'binding stale (its extension instance is no longer live)'}; user pick pending. The user picks personal's backend from \`node bin/cua.mjs profiles bind personal\` (instance ids with tab counts), then node bin/cua.mjs profiles bind personal --extension-instance-id <picked id>, then ${LIVE_COMMAND} (Chrome open on the Default profile), ${rerun}`);
+  if (awaitsLiveEvidence(personal))
+    return check('live: round trip through cua serve', 'BLOCKED', `no live report was supplied; personal is bound but this process may not read Chrome's data directory (${personal.chromeDataError ?? 'unknown'}), so the live run decides on the live check: run ${LIVE_COMMAND} (Chrome open on the Default profile), ${rerun}`);
   if (!personal.ready) return check('live: round trip through cua serve', 'BLOCKED', `personal is not ready (${personal.reason}); once it is, run ${LIVE_COMMAND}, ${rerun}`);
   return check('live: round trip through cua serve', 'BLOCKED', `no live report was supplied; personal is ready: run ${LIVE_COMMAND} (Chrome open on the Default profile), ${rerun}`);
 }
@@ -148,10 +151,24 @@ export function launchEnvCheck(name, env, {browser}) {
 const EXPECTED_SCRATCH = {personal: 'not_bound', school: 'extension_not_installed', work: 'extension_not_installed'};
 const describe = list => list.map(p => `${p.key} ${p.ready ? 'ready' : `not ready (${p.reason})`}`).join(', ') || 'no profiles registered';
 
+// Where this process may not read Chrome's data directory (macOS privacy protection), presence cannot be shown here.
+const UNREADABLE_BLOCK = `this process may not read Chrome's data directory, so extension presence cannot be shown from it: ${PERMISSION_FIX}`;
+
 export function scratchListCheck(list) {
+  const name = 'scratch home: list shows personal not yet bound and work/school not ready (extension manifest absent)';
+  if (Array.isArray(list) && list.some(p => p.reason === 'chrome_data_unreadable')) return check(name, 'BLOCKED', `${describe(list)}; ${UNREADABLE_BLOCK}`);
   const ok = Array.isArray(list) && isDeepStrictEqual(list.map(p => p.key), Object.keys(EXPECTED_SCRATCH))
     && list.every(p => p.ready === false && p.reason === EXPECTED_SCRATCH[p.key]);
-  return check('scratch home: list shows personal not yet bound and work/school not ready (extension manifest absent)', ok ? 'PASS' : 'FAIL', Array.isArray(list) ? describe(list) : 'no list');
+  return check(name, ok ? 'PASS' : 'FAIL', Array.isArray(list) ? describe(list) : 'no list');
+}
+
+// One scratch `profiles add` against this Mac's Chrome: the reported extension state must be the expected one; an
+// unreadable state is BLOCKED (the registration itself still succeeded).
+export function scratchAddCheck({key, directory, expected, code, out}) {
+  if (out?.error?.code === 'chrome_profile_not_found') return {key, status: 'BLOCKED', detail: `${key}: this Mac has no Chrome profile directory "${directory}"`};
+  if (code !== 0 || !out?.ok) return {key, status: 'FAIL', detail: `${key} -> "${directory}": exit ${code} ${out?.error?.code ?? ''}`};
+  if (out.extension === 'unreadable') return {key, status: 'BLOCKED', detail: `${key} -> "${directory}": registered; extension unreadable (${out.chromeDataError}): ${UNREADABLE_BLOCK}`};
+  return {key, status: out.extension === expected ? 'PASS' : 'FAIL', detail: `${key} -> "${directory}": extension ${out.extension} (expected ${expected})`};
 }
 
 // The default home's registry, read only: personal ready after its bind, work and school not ready for the absent
@@ -160,14 +177,17 @@ export function defaultRegistryChecks(statuses) {
   const byKey = new Map((statuses ?? []).map(p => [p.key, p]));
   const personal = byKey.get('personal');
   const checks = [personal?.ready
-    ? check('default home: personal ready after bind', 'PASS', 'personal is bound to a live-picked extension instance and its extension is installed')
+    ? check('default home: personal ready after bind', 'PASS', personal.chromeDataError
+      ? `personal is bound and its bound extension instance is live (Chrome's data directory unreadable from this process, ${personal.chromeDataError}: ready on live evidence)`
+      : 'personal is bound to a live-picked extension instance and its extension is installed')
     : check('default home: personal ready after bind', 'BLOCKED', personal?.reason === 'not_bound' || personal?.reason === 'binding_stale'
       ? `personal ${personal.reason === 'not_bound' ? 'not bound' : 'binding stale (its extension instance is no longer live)'}; user pick pending: the user picks its backend, then node bin/cua.mjs profiles bind personal --extension-instance-id <picked id>`
       : personal ? `personal not ready (${personal.reason})` : 'personal is not registered here: node bin/cua.mjs profiles add personal --chrome-profile Default')];
   for (const key of ['work', 'school']) {
     const p = byKey.get(key);
     checks.push(!p ? check(`default home: ${key} not ready (extension absent)`, 'BLOCKED', `${key} is not registered in this home (the scratch home shows the behaviour)`)
-      : check(`default home: ${key} not ready (extension absent)`, !p.ready && p.reason === 'extension_not_installed' ? 'PASS' : 'FAIL', p.ready ? 'ready' : `not ready (${p.reason})`));
+      : p.reason === 'chrome_data_unreadable' ? check(`default home: ${key} not ready (extension absent)`, 'BLOCKED', `not ready (${p.reason}); ${UNREADABLE_BLOCK}`)
+        : check(`default home: ${key} not ready (extension absent)`, !p.ready && p.reason === 'extension_not_installed' ? 'PASS' : 'FAIL', p.ready ? 'ready' : `not ready (${p.reason})`));
   }
   return checks;
 }
@@ -190,16 +210,20 @@ export function hostNotesCheck(instructions) {
 
 // profiles_list over MCP against the registry it reads: the same keys, readiness and reasons, an instance id only when
 // ready, and no directory names. Liveness is checked on each request, so a profile the registry has ready may come
-// back not ready for a stale binding or unlistable backends, without its instance id.
+// back not ready for a stale binding or unlistable backends, without its instance id; and a bound profile whose Chrome
+// data this process may not read may come back ready with its stored instance id (the live backend is the evidence).
 const LIVENESS_REASONS = ['binding_stale', 'backends_unlistable'];
 const viewMatches = (view, status) => isDeepStrictEqual(view, profileView(status))
-  || (status.ready && LIVENESS_REASONS.includes(view?.reason) && isDeepStrictEqual(view, {key: status.key, ready: false, reason: view.reason}));
+  || (status.ready && LIVENESS_REASONS.includes(view?.reason) && isDeepStrictEqual(view, {key: status.key, ready: false, reason: view.reason}))
+  || (awaitsLiveEvidence(status) && isDeepStrictEqual(view, {key: status.key, ready: true, extensionInstanceId: status.extensionInstanceId}));
 export function profilesListCheck(structured, statuses) {
   const name = 'profiles_list returns the registered keys with readiness';
   if (structured?.status !== 'ok' || !Array.isArray(structured.profiles)) return check(name, 'FAIL', `status ${JSON.stringify(structured?.status ?? null)}${structured?.code ? ` (${structured.code})` : ''}`);
   const ok = structured.profiles.length === statuses.length && structured.profiles.every((view, i) => viewMatches(view, statuses[i]))
     && structured.profiles.every(p => !('chromeProfileDirectory' in p));
-  return check(name, ok ? 'PASS' : 'FAIL', `${describe(structured.profiles)}; ${ok ? 'equal to the registry (instance ids only for ready profiles, no directories)' : 'differs from the registry'}`);
+  const unreadable = statuses.filter(p => p.reason === 'chrome_data_unreadable');
+  const state = unreadable.length ? `; Chrome's data directory unreadable from this process for ${unreadable.map(p => `${p.key} (${p.chromeDataError ?? 'unknown'}, ${p.extensionInstanceId ? 'bound: readiness from the live check' : 'unbound'})`).join(', ')}` : '';
+  return check(name, ok ? 'PASS' : 'FAIL', `${describe(structured.profiles)}; ${ok ? 'equal to the registry (instance ids only for ready profiles, no directories)' : 'differs from the registry'}${state}`);
 }
 
 // ---- C5 ------------------------------------------------------------------------------------------------------------
@@ -218,7 +242,8 @@ export function doctorChromeChecks({code, doctor}) {
     const [status, why] = judge(c);
     out.push(check(name, status, `${c.status}: ${c.detail}${why ? ` (${why})` : ''}`));
   };
-  expect('chrome.extension.personal', c => c.status === 'pass' ? ['PASS'] : c.status === 'blocked' ? ['BLOCKED', 'install the OpenAI extension in the Default profile; cua never does'] : ['FAIL']);
+  expect('chrome.extension.personal', c => c.status === 'pass' ? ['PASS'] : c.status !== 'blocked' ? ['FAIL']
+    : /may not read Chrome's data directory/.test(c.detail) ? ['BLOCKED', PERMISSION_FIX] : ['BLOCKED', 'install the OpenAI extension in the Default profile; cua never does']);
   expect('chrome.host.registered', c => c.status !== 'pass' ? [c.status === 'blocked' ? 'BLOCKED' : 'FAIL', 'expected the desktop\'s registration on this Mac']
     : /^desktop:/.test(c.detail) ? ['PASS'] : /^cua:/.test(c.detail) ? ['BLOCKED', 'cua\'s host is registered: the --replace gate is in progress or was left registered; rerun after node bin/cua.mjs chrome unregister']
       : ['FAIL', 'expected the desktop\'s registration on this Mac']);

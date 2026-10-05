@@ -39,7 +39,7 @@ import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
   approvalObservation, diffSnapshots, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, rollup, scenarioVerdict,
-  snapshotTree, suiteVerdict, tapTotals, tokenLike,
+  snapshotTree, suiteVerdict, testReporterEnv, testTotals, tokenLike,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
 
@@ -103,8 +103,8 @@ function addItem(id, title, checks, evidence) {
 // --- 1. suites -------------------------------------------------------------------------------------------------
 async function suites(cwd, {label}) {
   const out = [];
-  const node = await run('npm', ['test'], {cwd, env: suiteEnv(), timeoutMs: 300_000});
-  const totals = tapTotals(node.stdout);
+  const node = await run('npm', ['test'], {cwd, env: testReporterEnv(suiteEnv()), timeoutMs: 300_000});
+  const totals = testTotals(node.stdout);
   const failed = [...node.stdout.matchAll(/^not ok \d+ - (.*)$/gm)].map(m => m[1]);
   const verdict = suiteVerdict({code: node.code, totals});
   out.push(check(`${label}npm test`, verdict.status,
@@ -113,10 +113,10 @@ async function suites(cwd, {label}) {
   return out;
 }
 async function helperSuite(cwd, {label}) {
-  const r = await run('npm', ['run', 'test:helper'], {cwd, env: suiteEnv()});
+  const r = await run('npm', ['run', 'test:helper'], {cwd, env: testReporterEnv(suiteEnv())});
   // swift-testing's summary ("Test run with N tests in M suites passed|failed ..."); XCTest's own line reports 0.
   const swift = (r.stdout + r.stderr).match(/Test run with (\d+) tests? in \d+ suites? (passed|failed)/);
-  const node = tapTotals(r.stdout);
+  const node = testTotals(r.stdout);
   const nodeVerdict = suiteVerdict({code: r.code, totals: node});
   const swiftSkipped = /^\S*\s*Test .* skipped/m.test(r.stdout + r.stderr);
   const swiftStatus = r.code !== 0 || !swift || swift[2] !== 'passed' ? 'FAIL' : Number(swift[1]) === 0 || swiftSkipped ? 'BLOCKED' : 'PASS';

@@ -27,15 +27,32 @@ export function suiteVerdict({code, totals}) {
   return {status: 'PASS', reason: `${totals.pass}/${totals.tests} passed`};
 }
 
-// The `# tests N` ... summary node:test prints at the end of a run, or null when there is none.
-export function tapTotals(text) {
-  const totals = {};
-  for (const key of ['tests', 'pass', 'fail', 'cancelled', 'skipped', 'todo']) {
-    const match = text.match(new RegExp(`^# ${key} (\\d+)$`, 'm'));
-    if (!match) return null;
-    totals[key] = Number(match[1]);
+// The summary node:test prints at the end of a run, or null when there is none. Two forms are read: the TAP
+// reporter's `# tests N` lines, which the runners request (testReporterEnv), and the spec reporter's `ℹ tests N` lines,
+// which Node 23 and later print by default even when stdout is not a terminal. All six counts must come from one form;
+// colour codes are ignored.
+const SUMMARY_KEYS = ['tests', 'pass', 'fail', 'cancelled', 'skipped', 'todo'];
+export function testTotals(text) {
+  const plain = text.replace(/\x1b\[[0-9;]*m/g, '');
+  for (const prefix of ['#', '\u2139']) {
+    const totals = {};
+    for (const key of SUMMARY_KEYS) {
+      const match = plain.match(new RegExp(`^${prefix} ${key} (\\d+)$`, 'm'));
+      if (!match) break;
+      totals[key] = Number(match[1]);
+    }
+    if (Object.keys(totals).length === SUMMARY_KEYS.length) return totals;
   }
-  return totals;
+  return null;
+}
+
+// The environment for a spawned test command (`npm test`, `npm run test:helper`): node:test's default reporter differs
+// by Node version and terminal, so every node process in the run, nested runners included, is told through
+// NODE_OPTIONS to report TAP on stdout. A reporter already named in NODE_OPTIONS is replaced, not doubled.
+export const TAP_REPORTER_OPTIONS = ['--test-reporter=tap', '--test-reporter-destination=stdout'];
+export function testReporterEnv(env) {
+  const kept = (env.NODE_OPTIONS ?? '').split(/\s+/).filter(option => option && !option.startsWith('--test-reporter'));
+  return {...env, NODE_OPTIONS: [...kept, ...TAP_REPORTER_OPTIONS].join(' ')};
 }
 
 // The vendor's app-use elicitation, exactly as the pinned computer-use policy builds it, for TextEdit and nothing

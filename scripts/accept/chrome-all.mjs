@@ -35,7 +35,7 @@ import {chromeFacts} from '../../src/profiles/chrome.mjs';
 import {profileStatuses, REASONS} from '../../src/profiles/registry.mjs';
 import {BROWSERS, hostSuffixes} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
-import {diffSnapshots, rollup, snapshotTree, suiteVerdict, tapTotals, tokenLike} from './lib.mjs';
+import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testTotals, tokenLike} from './lib.mjs';
 import {
   c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveRoundTripChecks,
   matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, scratchListCheck, tapTestStatus, verifyCheck,
@@ -112,9 +112,9 @@ export async function runAll(argv) {
   const instanceIds = registry.map(p => p.extensionInstanceId).filter(Boolean);
 
   // ---- shared: this checkout's npm test -------------------------------------------------------------------------
-  const suite = await run('npm', ['test'], {env: cleanEnv(), timeoutMs: 300_000});
+  const suite = await run('npm', ['test'], {env: testReporterEnv(cleanEnv()), timeoutMs: 300_000});
   const tap = suite.stdout;
-  const suiteResult = suiteVerdict({code: suite.code, totals: tapTotals(tap)});
+  const suiteResult = suiteVerdict({code: suite.code, totals: testTotals(tap)});
   const suiteCheck = check('npm test (this checkout)', suiteResult.status, `${suiteResult.reason} in ${seconds(suite.ms)}`);
 
   // ---- C1 -----------------------------------------------------------------------------------------------------------
@@ -330,14 +330,14 @@ export async function runAll(argv) {
       const cloned = await run('git', ['clone', '--quiet', '--branch', branch, REPO, dir], {cwd: parent, timeoutMs: 120_000});
       if (cloned.code !== 0) checks.push(check('clean clone', 'FAIL', `git clone failed: ${cloned.stderr.trim()}`));
       else {
-        const test = await run('npm', ['test'], {cwd: dir, env: cleanEnv(), timeoutMs: 300_000});
-        const verdict = suiteVerdict({code: test.code, totals: tapTotals(test.stdout)});
+        const test = await run('npm', ['test'], {cwd: dir, env: testReporterEnv(cleanEnv()), timeoutMs: 300_000});
+        const verdict = suiteVerdict({code: test.code, totals: testTotals(test.stdout)});
         checks.push(check('clean clone: npm test', verdict.status, `${verdict.reason} in ${seconds(test.ms)}`));
         // build:helper installs what it built into $CUA_HOME/bin: here a home inside the clone directory, never the user's.
         const build = await run('npm', ['run', 'build:helper'], {cwd: dir, env: cleanEnv({CUA_HOME: join(parent, 'home')}), timeoutMs: 900_000});
         checks.push(check('clean clone: npm run build:helper', build.code === 0 ? 'PASS' : 'FAIL', `${ended(build)} in ${seconds(build.ms)} (built inside the clone and installed into a home there; this checkout's helper and the installed one are untouched)`));
         if (build.code === 0) {
-          const helper = await run('npm', ['run', 'test:helper'], {cwd: dir, env: cleanEnv(), timeoutMs: 900_000});
+          const helper = await run('npm', ['run', 'test:helper'], {cwd: dir, env: testReporterEnv(cleanEnv()), timeoutMs: 900_000});
           const h = helperSuiteVerdict({code: helper.code, text: helper.stdout + helper.stderr});
           checks.push(check('clean clone: npm run test:helper', h.status, `${h.detail} in ${seconds(helper.ms)}`));
         } else checks.push(check('clean clone: npm run test:helper', 'FAIL', 'not run: build:helper failed'));

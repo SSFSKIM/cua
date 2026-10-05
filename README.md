@@ -28,9 +28,12 @@ Chrome extension and native host (see Chrome). The design and its status are in
   enabled in each profile you want to use, and a Codex login of the server's own (`cua login`, once). cua never installs
   the extension or signs anything in for you.
 
-Not yet shown, and release gates rather than defects: a first run on a clean Mac without ChatGPT installed, the pinned
-helper's own cold start and first-run permission prompts, and stable Developer ID signing of the Keychain helper (see
-Acceptance).
+A clean Mac without ChatGPT installed has been shown, in a macOS 27 VM (`docs/evidence/clean-machine-acceptance.md`).
+There, the pinned helper started from cua's release tree, macOS asked for Accessibility and Screen Recording on the
+helper's behalf once, the native slice passed (`accept-native` items 1 and 3–8, with item 2 shown by the download
+installs and item 9 BLOCKED by design), and the Chrome acceptance passed C1–C7. The helper first shows its own "Enable
+ChatGPT Computer Use" window, which lists the permissions. Not yet shown, and a release gate rather than a defect:
+stable Developer ID signing of the Keychain helper (see Acceptance).
 
 ## Install
 
@@ -410,9 +413,10 @@ configuration) and `codex.login`.
 
 ### Limitations
 
-- Desktop absence is not shown. Every live run so far had the ChatGPT desktop app installed, and the extension was
-  served by the desktop's registered host; cua's own host serving the extension needs `chrome register --replace` with
-  you present, and a machine without the desktop app is a separate release gate.
+- Without the desktop app, `cua chrome register` is required: the extension needs a manifest to launch any host, and
+  until one exists it reports that the ChatGPT app is required. This has been shown on a clean VM
+  (`docs/evidence/clean-machine-acceptance.md`). There, cua's placed host served the live round trip, and C1–C7 passed
+  with it registered.
 - Only tabs the agent creates have been exercised. Operations on your existing tabs, downloads, file choosers,
   dialogs, frames, saved-password autofill and Chrome tab-group side effects are untested.
 - When the vendor's profile label is absent (Chrome's directory unreadable, or `CUA_SHIM_SANDBOX=default`) or shared

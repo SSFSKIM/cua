@@ -90,7 +90,12 @@ All are folded into the spec's Decision Log and Surprises (2026-10-03/04 entries
 
 ## Residue (candidates for tickets)
 
-1. **Clean-machine release gate** (2026-10-05: a second Mac with the desktop app present passed the whole native and Chrome acceptance from a fresh clone — `docs/evidence/second-mac-acceptance.md`; desktop-absent and fresh-TCC remain open)**:** desktop-absent install/serve, fresh-TCC onboarding, and the original host serving with no desktop present. The cold start and the cua-host round trip ran with the desktop installed.
+1. **Clean-machine release gate: closed for desktop absence and fresh permissions (2026-10-05, issue #9).** The run was in a macOS 27.0 VM with no ChatGPT app, never signed in to Codex, and fresh permissions; the evidence is `docs/evidence/clean-machine-acceptance.md`. It showed:
+   - `cua install` (download mode) and `accept-native` items 1 and 3–8 PASS.
+   - The pinned helper started from cua's release tree through LaunchServices, with the Accessibility and Screen Recording prompts attributed to it and granted once.
+   - The desktop-absent Chrome gate passed, and `accept-chrome --all` C1–C7 PASS with cua's own host registered as the steady state.
+
+   Developer ID signing of the Keychain helper remains open (#14). The earlier coexistence run is `docs/evidence/second-mac-acceptance.md`.
 2. **Stale-binding readiness:** resolved on `fix/stale-binding-readiness` (`941b42a`): readiness checks the bound id against the live backends (`binding_stale`, `backends_unlistable`), and `bind` marks a stale id while the pick stays the user's (spec Decision Log, 2026-10-04).
 3. **Vendor profile enrichment never labels backends here** — diagnosed 2026-10-05 (spike #8): not Full Disk Access (hypothesis refuted) but node_repl's default sandbox, which denies writes even to temp directories because cua sends no `codex/sandbox-state-meta`; the enrichment fails at `mkdtemp`. With the sandbox disabled the label appears (`profileName: "ucsd.edu"` for Profile 12). Follow-ups: cua-side candidate labelling by profile directory; owner decision on the sandbox metadata (spec Surprises and Decision Log, 2026-10-05).
 4. **User-tab operations, downloads, dialogs, frames and Chrome tab-group side effects** are untested on the original route.

@@ -17,9 +17,9 @@ export function rollup(statuses) {
 
 // What a required suite's run proves. Exit 0 with no failure is not enough: a suite that executed nothing, or skipped
 // or left TODO any test, has not shown its coverage, so it is BLOCKED (never PASS); a failure, cancellation, nonzero
-// exit or missing summary is FAIL.
-export function suiteVerdict({code, totals}) {
-  if (!totals) return {status: 'FAIL', reason: 'no test summary'};
+// exit or a missing, incomplete or conflicting summary (testSummary's `problem`) is FAIL.
+export function suiteVerdict({code, totals, problem}) {
+  if (!totals) return {status: 'FAIL', reason: problem ?? 'no test summary'};
   if (code !== 0 || totals.fail > 0 || totals.cancelled > 0) return {status: 'FAIL', reason: `exit ${code}, ${totals.fail} failed, ${totals.cancelled} cancelled`};
   if (totals.tests === 0 || totals.pass === 0) return {status: 'BLOCKED', reason: 'no test was executed'};
   if (totals.skipped > 0 || totals.todo > 0) return {status: 'BLOCKED', reason: `${totals.skipped} skipped and ${totals.todo} TODO of ${totals.tests}: required coverage did not run`};
@@ -27,32 +27,75 @@ export function suiteVerdict({code, totals}) {
   return {status: 'PASS', reason: `${totals.pass}/${totals.tests} passed`};
 }
 
-// The summary node:test prints at the end of a run, or null when there is none. Two forms are read: the TAP
-// reporter's `# tests N` lines, which the runners request (testReporterEnv), and the spec reporter's `ℹ tests N` lines,
-// which Node 23 and later print by default even when stdout is not a terminal. All six counts must come from one form;
-// colour codes are ignored.
+// The summary node:test prints at the end of a run. Two forms are read: the TAP reporter's `# tests N` lines, which the
+// runners request (testReporterEnv), and the spec reporter's `ℹ tests N` lines, which Node 23 and later print by
+// default even when stdout is not a terminal. Colour codes are ignored. A summary block is a run of consecutive counter
+// lines of one form; every block must carry each of the six counts exactly once, and every complete block must agree,
+// or the run has no totals (a truncated or contradictory summary is not evidence). The last block is the run's.
 const SUMMARY_KEYS = ['tests', 'pass', 'fail', 'cancelled', 'skipped', 'todo'];
-export function testTotals(text) {
-  const plain = text.replace(/\x1b\[[0-9;]*m/g, '');
-  for (const prefix of ['#', '\u2139']) {
-    const totals = {};
-    for (const key of SUMMARY_KEYS) {
-      const match = plain.match(new RegExp(`^${prefix} ${key} (\\d+)$`, 'm'));
-      if (!match) break;
-      totals[key] = Number(match[1]);
-    }
-    if (Object.keys(totals).length === SUMMARY_KEYS.length) return totals;
+const SUMMARY_LINE = /^(#|ℹ) (tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) (\S+)$/;
+export function testSummary(text) {
+  const blocks = [];
+  let open = null;
+  for (const line of text.replace(/\x1b\[[0-9;]*m/g, '').split(/\r?\n/)) {
+    const match = line.match(SUMMARY_LINE);
+    if (!match) { open = null; continue; }
+    const [, form, key, value] = match;
+    if (!open || open.form !== form) blocks.push(open = {form, lines: []});
+    open.lines.push([key, value]);
   }
-  return null;
+  if (!blocks.length) return {totals: null, problem: 'no test summary'};
+  const complete = [];
+  for (const {lines} of blocks) {
+    const counts = lines.filter(([key]) => SUMMARY_KEYS.includes(key));
+    const totals = Object.fromEntries(counts.map(([key, value]) => [key, /^\d+$/.test(value) ? Number(value) : NaN]));
+    const whole = counts.length === SUMMARY_KEYS.length && SUMMARY_KEYS.every(key => Number.isInteger(totals[key]));
+    if (!whole) return {totals: null, problem: 'incomplete test summary'};
+    complete.push(Object.fromEntries(SUMMARY_KEYS.map(key => [key, totals[key]])));
+  }
+  const last = complete.at(-1);
+  if (complete.some(totals => SUMMARY_KEYS.some(key => totals[key] !== last[key]))) return {totals: null, problem: 'conflicting test summaries'};
+  return {totals: last, problem: null};
 }
 
 // The environment for a spawned test command (`npm test`, `npm run test:helper`): node:test's default reporter differs
 // by Node version and terminal, so every node process in the run, nested runners included, is told through
-// NODE_OPTIONS to report TAP on stdout. A reporter already named in NODE_OPTIONS is replaced, not doubled.
+// NODE_OPTIONS to report TAP on stdout. Reporter and destination options already there (either spelling, `=value` or
+// separate value) are removed with their values; every other option is kept as written, quoting included.
 export const TAP_REPORTER_OPTIONS = ['--test-reporter=tap', '--test-reporter-destination=stdout'];
+const REPORTER_OPTIONS = new Set(['test-reporter', 'test-reporter-destination']);
 export function testReporterEnv(env) {
-  const kept = (env.NODE_OPTIONS ?? '').split(/\s+/).filter(option => option && !option.startsWith('--test-reporter'));
+  const tokens = nodeOptionsTokens(env.NODE_OPTIONS ?? '');
+  const kept = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const {raw, value} = tokens[i];
+    const option = value.startsWith('--') ? value.slice(2).split('=')[0].replaceAll('_', '-') : null;
+    if (!REPORTER_OPTIONS.has(option)) { kept.push(raw); continue; }
+    if (!value.includes('=')) i++;   // its value is the next argument
+  }
   return {...env, NODE_OPTIONS: [...kept, ...TAP_REPORTER_OPTIONS].join(' ')};
+}
+
+// NODE_OPTIONS split as Node splits it: whitespace separates arguments except inside double quotes, where a backslash
+// escapes the next character. Each argument keeps its text as written (`raw`) and its unquoted value.
+function nodeOptionsTokens(text) {
+  const tokens = [];
+  let raw = '', value = '', quoted = false, started = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (!quoted && /\s/.test(ch)) {
+      if (started) tokens.push({raw, value});
+      raw = value = ''; started = false;
+      continue;
+    }
+    started = true;
+    raw += ch;
+    if (ch === '"') quoted = !quoted;
+    else if (quoted && ch === '\\' && i + 1 < text.length) { raw += text[++i]; value += text[i]; }
+    else value += ch;
+  }
+  if (started) tokens.push({raw, value});
+  return tokens;
 }
 
 // The vendor's app-use elicitation, exactly as the pinned computer-use policy builds it, for TextEdit and nothing

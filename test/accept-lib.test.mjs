@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
   approvalObservation, inventoryCheck, PROBE_SECRETS_PHASES, scenarioVerdict,
-  diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testTotals, tokenLike,
+  diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from '../scripts/accept/lib.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
@@ -20,49 +20,84 @@ test('an item passes only when every check passed; nothing evaluated is blocked,
   assert.equal(rollup(['BLOCKED', 'FAIL', 'PASS']), 'FAIL');
 });
 
+const totalsOf = text => testSummary(text).totals;
+const verdictOf = text => suiteVerdict({code: 0, ...testSummary(text)});
+const tapBlock = ({tests = 2, pass = 2, skipped = 0} = {}) => `# tests ${tests}\n# suites 0\n# pass ${pass}\n# fail 0\n# cancelled 0\n# skipped ${skipped}\n# todo 0\n# duration_ms 5\n`;
+const specBlock = ({tests = 2, pass = 2, skipped = 0} = {}) => tapBlock({tests, pass, skipped}).replaceAll('# ', 'ℹ ');
+
 test('the node:test summary is read whole or not at all', () => {
   const summary = '1..3\n# tests 3\n# suites 0\n# pass 2\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 5\n';
-  assert.deepEqual(testTotals(`ok 1 - a\n${summary}`), {tests: 3, pass: 2, fail: 1, cancelled: 0, skipped: 0, todo: 0});
-  assert.equal(testTotals('ok 1 - a\n# tests 3\n'), null);
-  assert.equal(testTotals(''), null);
+  assert.deepEqual(totalsOf(`ok 1 - a\n${summary}`), {tests: 3, pass: 2, fail: 1, cancelled: 0, skipped: 0, todo: 0});
+  assert.deepEqual(testSummary('ok 1 - a\n# tests 3\n'), {totals: null, problem: 'incomplete test summary'});
+  assert.deepEqual(testSummary(''), {totals: null, problem: 'no test summary'});
 });
 
 // Node 26.7.0's spec-reporter output with stdout piped (not a terminal), as `npm test` printed it on the second Mac.
-const NODE26_SPEC = '\u2714 first (0.406334ms)\n\ufe63 second (0.060667ms) # SKIP\n\u2139 tests 2\n\u2139 suites 0\n\u2139 pass 1\n'
-  + '\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 1\n\u2139 todo 0\n\u2139 duration_ms 58.145083\n';
+const NODE26_SPEC = '✔ first (0.406334ms)\n﹣ second (0.060667ms) # SKIP\nℹ tests 2\nℹ suites 0\nℹ pass 1\n'
+  + 'ℹ fail 0\nℹ cancelled 0\nℹ skipped 1\nℹ todo 0\nℹ duration_ms 58.145083\n';
 const SUMMARY_SUITE = fileURLToPath(new URL('./fixtures/summary-suite.mjs', import.meta.url));
 // A child `node --test` must not see this runner's NODE_TEST_CONTEXT, or it reports to this runner instead of stdout.
 const outsideRunner = () => Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_OPTIONS' && key !== 'NODE_TEST_CONTEXT'));
 
 test('the spec reporter\'s summary is read too, coloured or not, with the same coverage rule', () => {
-  assert.deepEqual(testTotals(NODE26_SPEC), {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0});
-  assert.equal(suiteVerdict({code: 0, totals: testTotals(NODE26_SPEC)}).status, 'BLOCKED', 'a skipped test is not coverage');
+  assert.deepEqual(totalsOf(NODE26_SPEC), {tests: 2, pass: 1, fail: 0, cancelled: 0, skipped: 1, todo: 0});
+  assert.equal(verdictOf(NODE26_SPEC).status, 'BLOCKED', 'a skipped test is not coverage');
   const coloured = NODE26_SPEC.replace('pass 1', 'pass 2').replace('skipped 1', 'skipped 0').split('\n').map(line => line && `\x1b[34m${line}\x1b[39m`).join('\n');
-  assert.equal(suiteVerdict({code: 0, totals: testTotals(coloured)}).status, 'PASS');
-  // The six counts come from one form: half a TAP summary and half a spec one is no summary.
-  assert.equal(testTotals('# tests 2\n# suites 0\n# pass 2\n\u2139 fail 0\n\u2139 cancelled 0\n\u2139 skipped 0\n\u2139 todo 0\n'), null);
+  assert.equal(verdictOf(coloured).status, 'PASS');
+});
+
+test('only coherent summary blocks count: a partial, mixed or contradictory summary is no evidence', () => {
+  // Half a TAP summary and half a spec one: two incomplete blocks.
+  assert.deepEqual(verdictOf('# tests 2\n# suites 0\n# pass 2\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\n'), {status: 'FAIL', reason: 'incomplete test summary'});
+  // A complete passing spec summary followed by a partial TAP one that shows a skip.
+  assert.deepEqual(verdictOf(`${specBlock()}# tests 2\n# pass 1\n# skipped 1\n`), {status: 'FAIL', reason: 'incomplete test summary'});
+  // Counters are never combined across blocks: a truncated passing block, then a complete one with a skip.
+  assert.deepEqual(verdictOf(`ℹ tests 2\nℹ pass 2\nℹ fail 0\nsomething else\n${specBlock({pass: 1, skipped: 1})}`), {status: 'FAIL', reason: 'incomplete test summary'});
+  // Two complete blocks that disagree.
+  assert.deepEqual(verdictOf(`${specBlock()}${tapBlock({pass: 1, skipped: 1})}`), {status: 'FAIL', reason: 'conflicting test summaries'});
+  assert.deepEqual(verdictOf(`${tapBlock({pass: 1, skipped: 1})}\n${tapBlock()}`), {status: 'FAIL', reason: 'conflicting test summaries'});
+  // Agreeing blocks are one summary; the last is the run's.
+  assert.deepEqual(verdictOf(`${tapBlock()}ok\n${specBlock()}`), {status: 'PASS', reason: '2/2 passed'});
+  assert.equal(verdictOf('# tests 2\n# pass 2\n# fail 0\n# cancelled 0\n# skipped 0\n# todo x\n').reason, 'incomplete test summary');
 });
 
 test('a real spec-reporter run reaches the same verdict as a TAP run', () => {
   for (const [skip, status] of [['0', 'PASS'], ['1', 'BLOCKED']]) {
     for (const reporter of ['spec', 'tap']) {
       const r = spawnSync(process.execPath, ['--test', `--test-reporter=${reporter}`, SUMMARY_SUITE], {encoding: 'utf8', env: {...outsideRunner(), SUMMARY_SUITE_SKIP: skip}});
-      const totals = testTotals(r.stdout);
-      assert.equal(totals?.tests, 2, `${reporter}: ${r.stdout}`);
-      assert.equal(suiteVerdict({code: r.status, totals}).status, status, `${reporter}, skip=${skip}`);
+      const summary = testSummary(r.stdout);
+      assert.equal(summary.totals?.tests, 2, `${reporter}: ${r.stdout}`);
+      assert.equal(suiteVerdict({code: r.status, ...summary}).status, status, `${reporter}, skip=${skip}`);
     }
   }
 });
 
+test('the runners\' reporter options replace any reporter in NODE_OPTIONS and keep everything else as written', () => {
+  const rewrite = options => testReporterEnv({NODE_OPTIONS: options}).NODE_OPTIONS;
+  const TAP = '--test-reporter=tap --test-reporter-destination=stdout';
+  assert.equal(testReporterEnv({}).NODE_OPTIONS, TAP);
+  assert.equal(rewrite('--max-old-space-size=512 --test-reporter=spec --test-reporter-destination=stderr'), `--max-old-space-size=512 ${TAP}`);
+  // A separate-argument value goes with its option.
+  assert.equal(rewrite('--test-reporter spec --max-old-space-size=512'), `--max-old-space-size=512 ${TAP}`);
+  assert.equal(rewrite('--test-reporter-destination stderr --trace-warnings'), `--trace-warnings ${TAP}`);
+  // Node accepts underscores in option names.
+  assert.equal(rewrite('--test_reporter=spec --test_reporter_destination stderr'), TAP);
+  // Quoted arguments stay whole, quotes included, even when they mention a reporter option.
+  assert.equal(rewrite('--title="cua --test-reporter=spec" --test-reporter "my reporter" --require "./a \\"b\\".js"'), `--title="cua --test-reporter=spec" --require "./a \\"b\\".js" ${TAP}`);
+  // Node itself starts with the rewritten options and a nested test run reports TAP once.
+  const env = {...outsideRunner(), ...testReporterEnv({NODE_OPTIONS: '--title="cua accept" --test_reporter spec --test-reporter-destination=stderr --max-old-space-size=512'})};
+  const nested = `if (process.title !== 'cua accept') process.exit(9); require('node:child_process').spawnSync(process.execPath, ['--test', ${JSON.stringify(SUMMARY_SUITE)}], {stdio: 'inherit'})`;
+  const r = spawnSync(process.execPath, ['-e', nested], {encoding: 'utf8', env});
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.match(/^# tests 2$/gm)?.length, 1, r.stdout);
+});
+
 test('the runners\' test environment makes nested node:test runs report TAP on stdout', () => {
-  const env = testReporterEnv({PATH: process.env.PATH, NODE_OPTIONS: '--max-old-space-size=512 --test-reporter=spec --test-reporter-destination=stderr'});
-  assert.equal(env.NODE_OPTIONS, '--max-old-space-size=512 --test-reporter=tap --test-reporter-destination=stdout');
-  assert.equal(testReporterEnv({}).NODE_OPTIONS, '--test-reporter=tap --test-reporter-destination=stdout');
   // As scripts/test-helper.mjs does: a node process that starts `node --test` with the environment it inherited.
   const nested = `require('node:child_process').spawnSync(process.execPath, ['--test', ${JSON.stringify(SUMMARY_SUITE)}], {stdio: 'inherit'})`;
   const r = spawnSync(process.execPath, ['-e', nested], {encoding: 'utf8', env: {...outsideRunner(), ...testReporterEnv({}), FORCE_COLOR: '1'}});
   assert.match(r.stdout, /^# tests 2$/m);
-  assert.equal(suiteVerdict({code: r.status, totals: testTotals(r.stdout)}).status, 'PASS');
+  assert.equal(suiteVerdict({code: r.status, ...testSummary(r.stdout)}).status, 'PASS');
 });
 
 test('a required suite passes only with positive executed coverage: nothing run, skipped or TODO is never a pass', () => {

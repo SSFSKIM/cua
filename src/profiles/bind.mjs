@@ -6,12 +6,12 @@
 // profiles) can never be this profile, even when its label happens to match; a backend without a family is not
 // Chrome's. Everything below applies to the candidates only.
 //
-// Never automatic (issue #21): nothing is bound without the user's pick. Without one, the rule only marks the likely
-// match for the user to confirm: the vendor's own profile enrichment labels a backend with the display name of the
-// profile whose extension instance it is (browser-service.mjs `aL`, metadata.profileName), and a backend is the likely
-// match only when the registered directory's display name is unique among all profiles in Local State and exactly one
-// live backend carries it. The vendor's enrichment fails silently, so a missing label is reported as a reason for no
-// likely match, never as a diagnosed cause. Unlabelled backends are never marked.
+// Automatic: the vendor's own profile enrichment labels a backend with the display name of the profile whose extension
+// instance it is (browser-service.mjs `aL`, metadata.profileName). A backend is bound automatically only when the
+// registered directory's display name is unique among all profiles in Local State and exactly one live backend
+// carries it. Every other case needs the user's pick (`pick_required`, with the reason): the vendor's enrichment fails
+// silently, so a missing label is a reason, never a diagnosed cause. A singleton backend is never bound without the
+// name match; unlabelled backends are never chosen.
 //
 // Explicit: an instance id the user picked (interactively, or relayed with --extension-instance-id) is accepted only
 // when that backend is live now, and refused when the runtime itself labels it as another profile. A label can only
@@ -20,7 +20,7 @@
 export const isChromeBackend = backend => backend?.family === 'chrome';
 
 // -> {outcome:'bound', how:'explicit', instanceId} | {outcome:'refused', reason}   (with explicitId)
-//  | {outcome:'pick_required', likelyMatch} | {outcome:'pick_required', reason} | {outcome:'undetermined', reason:'no_live_backends'}
+//  | {outcome:'bound', how:'automatic', instanceId} | {outcome:'pick_required', reason} | {outcome:'undetermined', reason:'no_live_backends'}
 export function decideBinding({directory, displayNames, backends: live, explicitId}) {
   const backends = live.filter(isChromeBackend);
   const name = displayNames.get(directory);
@@ -31,18 +31,18 @@ export function decideBinding({directory, displayNames, backends: live, explicit
     return {outcome: 'bound', how: 'explicit', instanceId: explicitId};
   }
   if (!backends.length) return {outcome: 'undetermined', reason: 'no_live_backends'};
-  const unmarked = reason => ({outcome: 'pick_required', reason});
-  if (!backends.some(b => typeof b.profileName === 'string')) return unmarked('unlabelled');
-  if (name === undefined) return unmarked('no_display_name');
-  if ([...displayNames.values()].filter(n => n === name).length !== 1) return unmarked('display_name_not_unique');
+  const pickRequired = reason => ({outcome: 'pick_required', reason});
+  if (!backends.some(b => typeof b.profileName === 'string')) return pickRequired('unlabelled');
+  if (name === undefined) return pickRequired('no_display_name');
+  if ([...displayNames.values()].filter(n => n === name).length !== 1) return pickRequired('display_name_not_unique');
   const matching = backends.filter(b => b.profileName === name);
-  if (matching.length === 0) return unmarked('no_matching_backend');
-  if (matching.length > 1) return unmarked('several_matching_backends');
-  return {outcome: 'pick_required', likelyMatch: matching[0].instanceId};
+  if (matching.length === 0) return pickRequired('no_matching_backend');
+  if (matching.length > 1) return pickRequired('several_matching_backends');
+  return {outcome: 'bound', how: 'automatic', instanceId: matching[0].instanceId};
 }
 
-// Why no backend is marked as the likely match (no_live_backends: why there is nothing to pick from at all).
-export const NO_LIKELY_MATCH = {
+// Why the user must pick (no_live_backends: why there is nothing to pick from at all).
+export const PICK_REASONS = {
   no_live_backends: 'no OpenAI extension backend of Google Chrome is live (is Chrome open with the extension enabled in this profile?)',
   unlabelled: 'the runtime labelled no live backend with a profile name',
   no_display_name: 'Chrome\'s Local State has no display name for this profile directory',

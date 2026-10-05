@@ -4,7 +4,7 @@
 // listing bind returns carries, per candidate, the vendor's own profile label (`profileName`, null when unlabelled;
 // shown to the user so the pick is easy, never stored), its comparison with the registered profile's display name
 // (this-profile / other-profile / unlabelled, or comparison-unknown when that name is unknown: Local State unreadable
-// or silent about it), its tab count, and `likelyMatch` on the one backend bind.mjs's rule marks. The registered
+// or silent about it), its tab count, and `likelyMatch` on the backend bind.mjs's automatic rule bound. The registered
 // profile's own display name from Local State is never reported. Only Google Chrome's backends are listed, can be
 // bound (bind.mjs) and count as live for readiness; another browser's are reported as a count (`nonChromeExcluded`),
 // nothing more, not even its label.
@@ -37,12 +37,12 @@ export async function profileReadiness({home, chrome, listBackends}) {
   }
 }
 
-// -> {ok:true, key, extensionInstanceId, how:'explicit', backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
-//  | {ok:false, outcome:'pick_required', likelyMatch | reason, key, backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
+// -> {ok:true, key, extensionInstanceId, how:'automatic'|'explicit', backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
+//  | {ok:false, outcome:'pick_required', reason, key, backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
 //  | {ok:false, outcome:'undetermined', reason:'no_live_backends', key, backends:[], ...}
-// Nothing is bound without the user's pick (the picker's, or --extension-instance-id), even the likely match.
-// `staleBinding` is the recorded instance id when Chrome backends are live but it is not among them. It changes nothing
-// in the rule: the picker is told, and the user still picks.
+// Outside bind.mjs's automatic rule, nothing is bound without the user's pick (the picker's, or
+// --extension-instance-id). `staleBinding` is the recorded instance id when Chrome backends are live but it is not among
+// them. It changes nothing in the rule: the picker is told, and a lone new unlabelled backend is never bound for them.
 // `chromeDataUnreadable` / `localStateUnreadable` carry the error code when this process may not read the profile's
 // Chrome data or Local State: the presence check is skipped (the live listing decides) and labels cannot be compared.
 // Throws classified errors for an unknown key, a profile that cannot be ready, a refused explicit pick, and a
@@ -82,13 +82,16 @@ export async function bindCommand({home, key, chrome, listBackends, explicitId, 
   };
 
   if (explicitId !== undefined) return bind(decideBinding({directory, displayNames, backends, explicitId}));
-  const {outcome, likelyMatch, reason: why} = decideBinding({directory, displayNames, backends});
+  const automatic = decideBinding({directory, displayNames, backends});
+  if (automatic.outcome === 'bound') {
+    listing.find(entry => entry.instanceId === automatic.instanceId).likelyMatch = true;
+    return bind(automatic);
+  }
   // No display name because Local State was refused, not because Chrome has none.
-  const reason = why === 'no_display_name' && localStateUnreadable ? 'local_state_unreadable' : why;
-  for (const entry of listing) if (entry.instanceId === likelyMatch) entry.likelyMatch = true;
+  const reason = automatic.reason === 'no_display_name' && localStateUnreadable ? 'local_state_unreadable' : automatic.reason;
   if (pick && listing.length) {
     const choice = await pick(listing, reason, nonChromeExcluded, {staleBinding});
     if (choice) return bind(decideBinding({directory, displayNames, backends, explicitId: choice}));
   }
-  return {ok: false, outcome, ...(likelyMatch ? {likelyMatch} : {reason}), ...base};
+  return {ok: false, outcome: automatic.outcome, reason, ...base};
 }

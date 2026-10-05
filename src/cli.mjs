@@ -17,7 +17,7 @@ import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
 import {bindCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
-import {NO_LIKELY_MATCH} from './profiles/bind.mjs';
+import {PICK_REASONS} from './profiles/bind.mjs';
 import {registerHost, unregisterHost} from './chrome/registration.mjs';
 
 const USAGE = `usage: cua <command>
@@ -188,7 +188,8 @@ const describeUnreadable = result => [
   ...(result.chromeDataUnreadable ? [`this process cannot read Chrome's data directory (${result.chromeDataUnreadable}): the extension's presence was not checked, the live listing decides`] : []),
   ...(result.localStateUnreadable ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name`] : []),
 ].map(line => `note: ${line}\n`).join('');
-// Each candidate with the vendor's profile label, how it compares with this profile's name, and the likely-match mark.
+// Each candidate with the vendor's profile label, how it compares with this profile's name, and the likely-match mark
+// (on the backend an automatic bind chose, so the user sees which label decided it).
 // The label is JSON-quoted with C1 controls and bidirectional overrides escaped too (JSON leaves them raw), so a name
 // can neither drive the terminal (U+009B is a CSI) nor reorder the row the user picks from.
 const quoted = text => JSON.stringify(text).replace(/[\u0080-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
@@ -196,15 +197,12 @@ const LABELS = {'this-profile': 'this profile\'s name', 'other-profile': 'anothe
   'comparison-unknown': 'this profile\'s own name is unknown, so it cannot be compared'};
 const describeLabel = b => b.profileName === null ? 'unlabelled' : `labelled ${quoted(b.profileName)} (${LABELS[b.label]})`;
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${describeLabel(b)}${b.likelyMatch ? '  <- likely match' : ''}`;
-const describeLikely = reason => reason === undefined
-  ? 'the likely match carries this profile\'s name, which no other Chrome profile has; confirm it by picking it'
-  : `no backend is marked as the likely match: ${NO_LIKELY_MATCH[reason]}`;
 const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
 const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. An extension disable/enable or reinstall mints a new id; pick this profile's new one from the live backends.`;
 
 async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {}) {
   if (staleBinding) process.stderr.write(`${describeStale(staleBinding)}\n`);
-  process.stderr.write(`cua binds only the backend you pick; ${describeLikely(reason)}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
+  process.stderr.write(`which live backend is this profile could not be determined: ${PICK_REASONS[reason]}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
   const {createInterface} = await import('node:readline/promises');
   const rl = createInterface({input: process.stdin, output: process.stderr});
   try {
@@ -263,11 +261,12 @@ async function profiles(args) {
   if (values.json) { print(result); return result.ok ? 0 : 1; }
   process.stderr.write(describeUnreadable(result));
   if (result.ok) {
-    print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (your explicit pick)${result.staleBinding ? `, replacing the stale binding ${result.staleBinding}` : ''}`);
+    const automatic = result.how === 'automatic';
+    print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (${automatic ? 'the runtime labelled exactly one live backend with this profile\'s unique name' : 'your explicit pick'})${result.staleBinding ? `, replacing the stale binding ${result.staleBinding}` : ''}`);
+    if (automatic) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}${describeExcluded(result.nonChromeExcluded)}\nif the marked one is not this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
     return 0;
   }
-  const why = result.outcome === 'pick_required' ? `cua binds only the backend you pick; ${describeLikely(result.reason)}` : NO_LIKELY_MATCH[result.reason];
-  print(`${result.key} was not bound: ${why}${describeExcluded(result.nonChromeExcluded)}`);
+  print(`${result.key} was not bound: ${PICK_REASONS[result.reason]}${describeExcluded(result.nonChromeExcluded)}`);
   if (result.staleBinding) print(describeStale(result.staleBinding));
   if (result.backends.length) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}\nrerun with the instance of this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
   return 1;

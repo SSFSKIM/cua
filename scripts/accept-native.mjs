@@ -18,7 +18,8 @@
 //   6  `secrets set` without a terminal, `secrets list --json`, MCP `secrets_list`; --live-keychain runs
 //      scripts/probe-secrets.mjs (generated disposable sentinels, one test-owned Keychain item removed in finally);
 //      with both flags the TextEdit fixture also types a disposable secret into its document (target observation)
-//   7  substitution suites, and the live probe's substitution steps when --live-keychain ran it
+//   7  substitution suites, and the live probe's substitution steps when --live-keychain ran it, with its trusted-root
+//      rows: unwritable with the sandbox on (a guarantee) and, informational (INFO), what the disabled default allows
 //   8  lifecycle suites, scripts/probe-lifecycle.mjs (live, read-only), per-connection approvals (--live-textedit)
 //   9  release gates: clean machine, cold start, fresh permission onboarding, stable signing (always BLOCKED here)
 //   10 README/plugin/package contents, tracked files, and a clean clone of HEAD running npm test, build:helper and
@@ -38,7 +39,7 @@ import {isLabel} from '../src/secrets/label.mjs';
 import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  approvalObservation, diffSnapshots, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, rollup, scenarioVerdict,
+  approvalObservation, diffSnapshots, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
@@ -286,7 +287,7 @@ async function item6(keychain, textedit) {
     mcp ? `verify.mjs: ${JSON.stringify(mcp)}` : 'verify.mjs produced no secrets_list result'));
   checks.push(fromHelperSuite('hidden input and terminal restoration on the actual helper', 'no-TTY refusal, hidden input on real ptys, restoration on success/cancel/error/signals'));
   if (!keychain) checks.push(NOT_REQUESTED('--live-keychain'));
-  else checks.push(...probeChecks(keychain, PROBE_SECRETS_PHASES.filter(p => !/ordinary input|plant code/.test(p.name))));
+  else checks.push(...probeChecks(keychain, probePhasesFor(6)));
   if (textedit?.scenario === 'live-textedit-with-secret') {
     // The optional UI delivery counts only if it actually happened: each of its steps must have run and passed.
     for (const step of SECRET_STEPS) checks.push(inventoryCheck(`UI delivery (optional, combined): ${step.slice('secret: '.length)}`, textedit.steps, [step]));
@@ -302,7 +303,7 @@ async function item7(keychain) {
     fromSuite('broker client: unauthenticated or wrong-token requests get nothing; close releases owned resources', ['test/secrets-client.test.mjs', 'test/secrets-broker.test.mjs']),
     fromHelperSuite('the actual Swift broker refuses forged, malformed and oversized requests', 'BrokerTests and native/keychain/test/broker-interop.test.mjs'),
   ];
-  if (keychain) checks.push(...probeChecks(keychain, PROBE_SECRETS_PHASES.filter(p => /first substitution|ordinary input|plant code|fail closed/.test(p.name))));
+  if (keychain) checks.push(...probeChecks(keychain, probePhasesFor(7)));
   addItem(7, 'Native input substitution: methods, rejection before dispatch, broker authentication', checks);
 }
 

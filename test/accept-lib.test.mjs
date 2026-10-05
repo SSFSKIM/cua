@@ -8,7 +8,7 @@ import {mkdirSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
-  approvalObservation, inventoryCheck, PROBE_SECRETS_PHASES, scenarioVerdict,
+  approvalObservation, inventoryCheck, PROBE_SECRETS_PHASES, probePhasesFor, scenarioVerdict,
   diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from '../scripts/accept/lib.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
@@ -18,6 +18,14 @@ test('an item passes only when every check passed; nothing evaluated is blocked,
   assert.equal(rollup(['PASS', 'PASS']), 'PASS');
   assert.equal(rollup(['PASS', 'BLOCKED']), 'BLOCKED');
   assert.equal(rollup(['BLOCKED', 'FAIL', 'PASS']), 'FAIL');
+});
+
+test('an informational row is neutral: it never fails or blocks an item, and alone it stays informational', () => {
+  assert.equal(rollup(['PASS', 'INFO']), 'PASS');
+  assert.equal(rollup(['INFO', 'BLOCKED']), 'BLOCKED');
+  assert.equal(rollup(['INFO', 'FAIL']), 'FAIL');
+  assert.equal(rollup(['INFO']), 'INFO');
+  assert.equal(rollup(['INFO', 'INFO']), 'INFO');
 });
 
 const totalsOf = text => testSummary(text).totals;
@@ -220,6 +228,37 @@ test('a child scenario\'s own verdict keeps every failure, even of a step no pha
   assert.equal(scenarioVerdict('v', null, expected).status, 'FAIL');
   assert.equal(scenarioVerdict('v', {status: 'PASS', steps: []}, expected).status, 'FAIL');
   assert.equal(scenarioVerdict('v', {status: 'BLOCKED', steps: allProbeSteps()}, expected).status, 'BLOCKED');
+});
+
+test('the trusted-root rows: a sandbox-on guarantee and an informational row for the disabled default, both in item 7 only', () => {
+  const on = PROBE_SECRETS_PHASES.find(p => p.name.includes('sandbox on (CUA_SHIM_SANDBOX=default): trusted roots unwritable'));
+  const off = PROBE_SECRETS_PHASES.find(p => p.name.includes('sandbox disabled (default)'));
+  assert.ok(on && off);
+  assert.match(off.name, /informational/);
+  assert.match(off.name, /accepted/);
+  for (const phase of [on, off]) {
+    assert.ok(probePhasesFor(7).includes(phase));
+    assert.ok(!probePhasesFor(6).includes(phase));
+  }
+  assert.ok(PROBE_SECRETS_PHASES.find(p => p.name.includes('every connection closed')).steps.includes('real serve (sandbox on): close'));
+  const steps = allProbeSteps().map(s => off.steps.includes(s.name) ? {...s, status: 'INFO', detail: 'writable: src/services'} : s);
+  const row = inventoryCheck(off.name, steps, off.steps);
+  assert.equal(row.status, 'INFO');
+  assert.match(row.detail, /INFO \(writable: src\/services\)/);
+  assert.equal(inventoryCheck(off.name, steps.filter(s => !off.steps.includes(s.name)), off.steps).status, 'BLOCKED', 'an informational step that never ran is not quietly informational');
+  const verdict = scenarioVerdict('v', {status: 'PASS', steps}, PROBE_SECRETS_PHASES.flatMap(p => p.steps));
+  assert.equal(verdict.status, 'PASS');
+  assert.doesNotMatch(verdict.detail, /not passed/);
+  assert.match(verdict.detail, /informational: sandbox disabled/);
+});
+
+test('items 6 and 7 split the probe\'s phases as before: 6 the roundtrip, 7 substitution and its boundaries', () => {
+  const names = item => probePhasesFor(item).map(p => p.name);
+  assert.ok(names(6).some(n => n.includes('preconditions')) && names(6).some(n => n.includes('finally cleanup')));
+  assert.ok(!names(6).some(n => n.includes('ordinary input')));
+  assert.deepEqual(names(7).filter(n => !/trusted roots/.test(n)).map(n => n.split(':')[1].trim().split(' ')[0]), ['first', 'ordinary', 'fail']);
+  assert.ok(names(6).some(n => n.includes('first substitution')) && names(6).some(n => n.includes('fail closed')));
+  for (const phase of PROBE_SECRETS_PHASES) assert.ok(probePhasesFor(6).includes(phase) || probePhasesFor(7).includes(phase), phase.name);
 });
 
 test('per-connection approval is observed only with both connections bound, asked, answered and their files handled', () => {

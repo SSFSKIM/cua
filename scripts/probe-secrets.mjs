@@ -17,7 +17,10 @@
 //     flight (node_repl writes the cell source to stderr); then the item is replaced and substitution re-checked.
 //   real `cua serve` with the vendor sky service: a substituted command against a nonexistent app (a real vendor
 //     failure after substitution), an unknown label, and model cells trying to write an importable module into every
-//     trusted code root (and, for comparison, their own working and temporary directories).
+//     trusted code root (and, for comparison, their own working and temporary directories), once under the default
+//     sandbox (`disabled`: informational, what a cell could write, accepted under #20) and once on a second connection
+//     with CUA_SHIM_SANDBOX=default (the guarantee: nothing written). Every file a cell manages to write is removed
+//     and checked gone before the step is recorded (scripts/probe/trusted-roots.mjs).
 //   fail-closed connections through the fake target: with CUA_SHIM_SECRETS=off (secrets_disabled) and with no broker
 //     (the helper treated as not built: secrets_unavailable), a reference in each of the three methods fails before
 //     anything reaches the target.
@@ -26,12 +29,13 @@
 // both directions, serve/anchor/cua-repl/node_repl/kernel/trusted-worker/broker stderr (all inherited by the served
 // process), every regular file the runtime left under $CUA_HOME/state and run (read whole; an unreadable one fails the
 // scan as incomplete evidence), and this report. Keychain prompts never get answered: a step that stalls is BLOCKED.
-// Behavioural failures, including cleanup, are FAIL. Exit 0 PASS, 1 FAIL, 3 BLOCKED. The report holds metadata only.
+// Behavioural failures, including cleanup, are FAIL; an informational step is INFO and never decides the verdict.
+// Exit 0 PASS, 1 FAIL, 3 BLOCKED. The report holds metadata only.
 import {spawn} from 'node:child_process';
 import {randomBytes, randomUUID} from 'node:crypto';
 import {existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import net from 'node:net';
-import {dirname, join} from 'node:path';
+import {basename, dirname, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -42,6 +46,7 @@ import {locateHelper} from '../src/secrets/helper.mjs';
 import {runCaptured} from '../src/secrets/commands.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
+import {plantCell, trustedRootStep} from './probe/trusted-roots.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -252,7 +257,8 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
 
 // Real `cua serve`, real vendor sky service: what a model cell can and cannot do around the trusted worker.
 async function realServeConnection(runtime) {
-  const c = connect('real-serve', [CLI, 'serve']);
+  // The default sandbox, whatever the probe's own environment says.
+  const c = connect('real-serve', [CLI, 'serve'], {CUA_SHIM_SANDBOX: undefined});
   await c.open();
   {
     const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: REF})), 60_000));
@@ -264,27 +270,41 @@ async function realServeConnection(runtime) {
     const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: `{{secret:${label}-absent}}`}))));
     record('real vendor: unknown label', !out.ok && errorCode(out) === 'secret_not_found' ? 'PASS' : 'FAIL', 'fails before input with secret_not_found');
   }
-  {
-    const roots = [join(runtime.home, 'state', 'codex'), dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS, runtime.paths.moduleDir];
-    const name = `cua-m5-planted-${randomUUID()}.mjs`;
-    const code = `const fs = await import("node:fs");
-const attempt = path => { try { fs.writeFileSync(path, "export const planted = true;\\n"); return "written"; } catch (error) { return error.code ?? "error"; } };
-const roots = ${JSON.stringify(roots)};
-const out = {roots: roots.map(root => attempt(root + "/${name}")), cwd: attempt(nodeRepl.cwd + "/${name}"), tmp: attempt(nodeRepl.tmpDir + "/${name}"), tmpDir: nodeRepl.tmpDir};
-nodeRepl.write(JSON.stringify({ok: true, result: out}));`;
-    const out = cellOutput(await c.js(code));
-    const results = out.result?.roots ?? [];
-    const planted = roots.filter(root => existsSync(join(root, name)));
-    for (const root of planted) rmSync(join(root, name), {force: true});
-    if (typeof out.result?.tmpDir === 'string') rmSync(join(out.result.tmpDir, name), {force: true});
-    const runDir = join(runtime.home, 'run');
-    for (const entry of readdirSync(runDir, {withFileTypes: true})) if (entry.isDirectory()) rmSync(join(runDir, entry.name, name), {force: true});
-    const ok = results.length === roots.length && results.every(r => r !== 'written') && planted.length === 0;
-    record('model cells cannot plant a module in a trusted code root', ok ? 'PASS' : 'FAIL',
-      `${roots.length} trusted-root candidates (state/codex, src/services, src/secrets, vendor modules): ${results.join(', ') || out.raw}; for comparison, own cwd ${out.result?.cwd}, tmpDir ${out.result?.tmp}`);
-  }
+  await plantModules(c, runtime, 'disabled');
   const exit = await c.close();
   record('real serve: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+}
+
+// The same attempt on a connection with the sandbox on, where it is a guarantee.
+async function sandboxOnConnection(runtime) {
+  const c = connect('real-serve sandbox on', [CLI, 'serve'], {CUA_SHIM_SANDBOX: 'default'});
+  await c.open();
+  await plantModules(c, runtime, 'default');
+  const exit = await c.close();
+  record('real serve (sandbox on): close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+}
+
+// A model cell tries to create a uniquely named importable module in every trusted code root. Whatever it wrote is
+// removed, in the trusted roots and in its own directories, and the trusted roots are checked again before the step
+// is recorded: the probe must leave cua's checkout and the installed runtime as it found them.
+async function plantModules(c, runtime, mode) {
+  const roots = [
+    {label: 'state/codex', path: join(runtime.home, 'state', 'codex')},
+    {label: 'src/services', path: dirname(SKY_SERVICE)},
+    ...SERVICE_SUPPORT_DIRS.map(path => ({label: `src/${basename(path)}`, path})),
+    {label: 'vendor modules', path: runtime.paths.moduleDir},
+  ];
+  const name = `cua-m5-planted-${randomUUID()}.mjs`;
+  const out = cellOutput(await c.js(plantCell(roots.map(root => root.path), name)));
+  const planted = roots.filter(root => existsSync(join(root.path, name)));
+  for (const root of planted) rmSync(join(root.path, name), {force: true});
+  for (const dir of [out.result?.cwdDir, out.result?.tmpDir]) if (typeof dir === 'string') rmSync(join(dir, name), {force: true});
+  const runDir = join(runtime.home, 'run');
+  for (const entry of readdirSync(runDir, {withFileTypes: true})) if (entry.isDirectory()) rmSync(join(runDir, entry.name, name), {force: true});
+  const survivors = roots.map(root => join(root.path, name)).filter(path => existsSync(path));
+  const step = trustedRootStep(mode, {roots, results: out.result?.roots ?? null, planted: planted.map(root => root.label), survivors,
+    cwd: out.result?.cwd, tmp: out.result?.tmp, raw: out.raw ?? (out.result ? undefined : JSON.stringify(out).slice(0, 200))});
+  record(step.name, step.status, step.detail);
 }
 
 // Secrets turned off, or no broker at all (the Keychain helper "not built"): an exact reference must fail closed
@@ -332,6 +352,7 @@ try {
         const exit2 = await second.close();
         record('replaced value: close', exit2?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit2?.code ?? 'timeout'}`);
         await realServeConnection(runtime);
+        await sandboxOnConnection(runtime);
       }
       await failClosedConnection('secrets off', recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
       await failClosedConnection('broker unavailable', recorder, targetModule, {args: ['--no-helper'], expected: 'secrets_unavailable', reason: 'helper_not_built'});

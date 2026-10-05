@@ -192,7 +192,15 @@ export function createServer({
     });
   }
 
+  // Before `initialize`, the runtime (rmcp) exits on any other request, so a client's pre-initialize probe (Claude Code
+  // sends `server/discover` first) is answered here as method-not-found and never forwarded; the connection stays usable.
+  let initializeSeen = false;
+
   function onRequest(msg) {
+    if (!initializeSeen) {
+      if (msg.method !== 'initialize') return respondError(msg.id, -32601, `cua: ${msg.method} is not available before initialize`);
+      initializeSeen = true;
+    }
     if (msg.method === 'tools/call') {
       const name = msg.params?.name;
       if (WORK_TOOLS.has(name)) return runWork(msg);

@@ -5,7 +5,7 @@
 // holds one manifest per name, so cua's host and the desktop app's cannot both be registered in one browser. The rule:
 //   - register writes the manifest only where none exists, or where the existing one already names cua's host in this
 //     home (the pinned host location of a release directory; rewritten if it names another release). Any other existing manifest (the desktop's, another host's, or
-//     one that cannot be read) makes register refuse as a whole, before anything is written, naming its class. One
+//     one that does not parse) makes register refuse as a whole, before anything is written, naming its class. One
 //     that appears mid-run, or any other failure there, makes register undo what it already wrote in this run
 //     (undoRun), or report exactly what it could not undo.
 //   - register --replace backs each such manifest up byte-for-byte under <home>/chrome/manifest-backup/<browser>.json
@@ -17,6 +17,11 @@
 //     user action and an unverified backup is kept, never installed.
 // The manifest is the vendor installManifest.mjs format byte-for-byte except `path`. Browsers are the five the vendor
 // targets on macOS whose user-data directory exists; their NativeMessagingHosts directory is created when missing.
+// A slot this process may not read is `unreadable`, never absent or foreign: macOS 26+ puts browsers' user-data
+// directories behind privacy protection, so a process without Full Disk Access gets EPERM there. A user-data directory
+// it may not even stat counts as present (whether that browser is installed is unknown). Register and unregister both
+// read every slot first and refuse as a whole with chrome_data_unreadable, before anything is written, when any slot is
+// unreadable; one that becomes unreadable mid-run is never reported as removed or absent.
 // The slots are shared with the desktop app, which re-syncs its manifest: cua takes exactly the file it read before
 // replacing or removing it and publishes without clobbering (see `publish`/`take`), so a concurrent write is detected
 // and never destroyed. Two cua commands sharing a CUA_HOME never interleave: register and unregister each hold the
@@ -33,7 +38,7 @@ import {realHome} from '../runtime/layout.mjs';
 import {verifyCodeSignatures} from '../runtime/checks.mjs';
 import {locateChromeComponent, verifyPlacedChromeComponent} from '../runtime/chrome-component.mjs';
 import {loadPins} from '../runtime/manifest.mjs';
-import {hostPathClass} from '../profiles/chrome.mjs';
+import {hostPathClass, PERMISSION_FIX, readFailure} from '../profiles/chrome.mjs';
 
 // macOS user-data directories, relative to the user's home (the vendor's chromium-family manifest directories).
 export const BROWSERS = [
@@ -50,7 +55,8 @@ export const REPLACE_CONSEQUENCES = [
 ];
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const isDirectory = path => { try { return statSync(path).isDirectory(); } catch { return false; } };
+// A user-data directory this process may not stat counts as present: whether that browser is installed is unknown.
+const mayBePresent = path => { try { return statSync(path).isDirectory(); } catch (error) { return readFailure(error) !== null; } };
 const chromeDir = home => join(home, 'chrome');
 const recordFile = home => join(chromeDir(home), 'registration.json');
 const backupFile = (home, browser) => join(chromeDir(home), 'manifest-backup', `${browser}.json`);
@@ -62,7 +68,7 @@ export function manifestText({name, description, extensionIds}, hostPath) {
 }
 
 function slots({userHome, nativeHost, onlyPresent}) {
-  return BROWSERS.filter(b => !onlyPresent || isDirectory(join(userHome, b.dataDir))).map(b => {
+  return BROWSERS.filter(b => !onlyPresent || mayBePresent(join(userHome, b.dataDir))).map(b => {
     const manifestDir = join(userHome, b.dataDir, 'NativeMessagingHosts');
     return {...b, manifestDir, manifestPath: join(manifestDir, `${nativeHost}.json`)};
   });
@@ -83,13 +89,14 @@ export function isOwnHostPath(hostPath, {home, suffixes}) {
   return slash > 0 && RELEASE_DIR.test(rest.slice(0, slash)) && suffixes.has(rest.slice(slash + 1));
 }
 
-// What a browser's manifest slot holds: nothing, a manifest naming cua's host in this home, or anything else (with
-// the class of the host it names, or `unreadable`).
+// What a browser's manifest slot holds: nothing, a manifest naming cua's host in this home, anything else (with the
+// class of the host it names, or `unreadable` when it names none), or `unreadable` with the code when this process may
+// not read the slot at all (so what it holds is unknown).
 function readSlot(path, {home, userHome, suffixes}) {
   let bytes;
   try { bytes = readFileSync(path); } catch (error) {
-    if (error.code === 'ENOENT') return {state: 'absent'};
-    fail('manifest_unreadable', `cannot read ${path}: ${error.code ?? error.message}`);
+    const code = readFailure(error);
+    return code ? {state: 'unreadable', code} : {state: 'absent'};
   }
   let manifest;
   try { manifest = JSON.parse(bytes.toString('utf8')); } catch { manifest = null; }
@@ -269,6 +276,13 @@ function refusal(foreign, nativeHost) {
   return `${nativeHost} is already registered for another host in ${where}: ${why}. Nothing was changed.`;
 }
 
+// Slots this process may not read: what they hold is unknown, so the command refuses as a whole and names the fix.
+function unreadable(slotsRead, nativeHost, command) {
+  const where = slotsRead.map(s => `${s.name} (${dirname(s.manifestPath)}: ${s.slot.code})`).join(', ');
+  fail('chrome_data_unreadable', `this process cannot read the native-messaging directory of ${where}, so whether ${nativeHost} is registered there is unknown. Nothing was changed.`,
+    {hint: `${PERMISSION_FIX}; then run \`cua chrome ${command}\` again`});
+}
+
 const ATTEMPTS = 3;
 const contended = (path, unsettled) => fail('registration_contended', unsettled
   ? `${path} did not read as a whole native-messaging manifest in ${ATTEMPTS} attempts (another program may be writing it, or it is damaged); cua backs up only a whole manifest, so nothing more was changed there`
@@ -314,6 +328,8 @@ async function registerLocked({cuaHome, runtime, replace, userHome, verifySignat
   const planned = slots({userHome, nativeHost: native.name, onlyPresent: true}).map(s => ({...s, slot: readSlot(s.manifestPath, context)}));
   if (!planned.length)
     fail('no_supported_browser', `no Chrome, Edge, Brave, Opera or Vivaldi user-data directory under ${join(userHome, 'Library', 'Application Support')}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
+  const refused = planned.filter(s => s.slot.state === 'unreadable');
+  if (refused.length) unreadable(refused, native.name, 'register');
   const foreign = planned.filter(s => s.slot.state === 'foreign');
   const replaceHint = `\`cua chrome register --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister\` restores it`;
   if (foreign.length && !replace) fail('registration_in_use', refusal(foreign, native.name), {hint: replaceHint});
@@ -336,6 +352,7 @@ async function registerLocked({cuaHome, runtime, replace, userHome, verifySignat
         unsettled = false;
         // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
         const slot = readSlot(s.manifestPath, context);
+        if (slot.state === 'unreadable') unreadable([{...s, slot}], native.name, 'register');
         if (slot.state === 'absent') {
           record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
           writeRecord(cuaHome, record);
@@ -427,16 +444,18 @@ function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}
   const note = superseded.length ? `; in ${superseded.join(', ')} another program's manifest now stands, so nothing of cua's remains there` : '';
   if (!left.length) {
     // Nothing of cua's from this run remains, so a refusal's "Nothing was changed." stands as written.
-    if (error.code === 'registration_in_use') return error;
+    if (error.code === 'registration_in_use' || error.code === 'chrome_data_unreadable') return error;
     error.message += `; cua undid what it had registered earlier in this run (${applied.map(c => c.browser).join(', ')})${note}`;
     return error;
   }
   const base = error.message.replace(/ Nothing was changed\.$/, '');
   const undone = outcomes.filter(o => (o.state === 'restored' || o.state === 'superseded' || o.state === 'cleanup') && o.browser !== 'record').map(o => o.browser);
   const unfinished = left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ');
+  // A run stopped by an unreadable directory needs the access first: without it the recovery steps are denied too.
+  const access = error.code === 'chrome_data_unreadable' ? [PERMISSION_FIX] : [];
   return new CuaError('registration_partial',
     `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not finish ${unfinished}`,
-    {hint: [...left.filter(l => l.hint).map(l => l.hint), 'then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)'].join('; '), cause: error});
+    {hint: [...new Set([...access, ...left.filter(l => l.hint).map(l => l.hint)])].concat('then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)').join('; '), cause: error});
 }
 
 // One change's undo: `restored` (cua's write is gone and the earlier bytes, if any, are back), `superseded` (another
@@ -450,6 +469,7 @@ function undoChange(change, {desired, io, context, step}) {
   // What a slot that cua could not (or no longer could) restore now holds.
   const settle = () => {
     const now = readSlot(path, context);
+    if (now.state === 'unreadable') return {state: 'unconfirmed', why: `this process can no longer read it (${now.code}), so whether cua's manifest is still there is unknown; its recovery data was kept`, hint: PERMISSION_FIX};
     if (now.state === 'foreign') return {state: 'superseded'};
     if (now.state === 'absent') {
       if (!prior || restore()) return {state: 'restored'};
@@ -469,8 +489,10 @@ function undoChange(change, {desired, io, context, step}) {
 const restoreYourself = (name, manifestPath) => `restore ${name}'s previous registration yourself: if it was the ChatGPT desktop app's, quit and reopen ChatGPT so it writes ${manifestPath} again, then run \`cua doctor\` and check that chrome.host.registered names the desktop host`;
 
 // Removes cua's manifests from every browser and restores what cua replaced. Never touches a manifest it did not write:
-// each removal takes exactly the file it read (see `take`), and a restore publishes without clobbering. Every browser
-// is processed; an I/O failure in one is that browser's BLOCKED result (backup and record kept), never a stop.
+// each removal takes exactly the file it read (see `take`), and a restore publishes without clobbering. Every slot is
+// read first; when any is unreadable the command refuses as a whole (chrome_data_unreadable) before changing anything.
+// Then every browser is processed; an I/O failure in one is that browser's BLOCKED result (backup and record kept),
+// never a stop.
 export function unregisterHost({home, userHome = homedir(), nativeHost = 'com.openai.codexextension', pins = loadPins(), onStep, io = FS, lockTiming = LOCK_TIMING}) {
   const cuaHome = realHome(home);
   const lock = acquireLock(cuaHome, lockTiming);
@@ -486,19 +508,29 @@ function unregisterLocked({cuaHome, userHome, nativeHost, pins, onStep, io}) {
   const record = readRecord(cuaHome);
   let recordChanged = false;
   const forget = browser => { if (record.browsers[browser]) { delete record.browsers[browser]; recordChanged = true; } };
-  const browsers = slots({userHome, nativeHost, onlyPresent: false}).map(s => {
+  const all = slots({userHome, nativeHost, onlyPresent: false});
+  const refused = all.map(s => ({...s, slot: readSlot(s.manifestPath, context)})).filter(s => s.slot.state === 'unreadable');
+  if (refused.length) unreadable(refused, nativeHost, 'unregister');
+  const browsers = all.map(s => {
     const row = {browser: s.browser, manifestPath: s.manifestPath};
     try {
       return unregisterSlot(s, row, {context, record, cuaHome, forget, io, step: name => onStep?.(name, row)});
     } catch (error) {
       const backup = backupFile(cuaHome, s.browser);
-      const stillOurs = (() => { try { return readSlot(s.manifestPath, context).state === 'ours'; } catch { return false; } })();
-      return {...row, action: stillOurs ? 'not_removed' : 'removed', restoration: 'blocked',
-        reason: `${error.code === 'manifest_rollback_failed' || error.code === 'manifest_write_failed' ? error.message : error.code ?? error.message} while unregistering ${s.manifestPath}; ${stillOurs ? 'cua\'s registration is still in place' : 'cua\'s registration is no longer there'}, and the backup and its record were kept`,
-        userAction: error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again`
-          : record.browsers[s.browser]?.replaced
-          ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
-          : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`};
+      // What the slot holds now decides what is reported; one this process cannot read is unknown, never "removed".
+      const now = readSlot(s.manifestPath, context);
+      const [action, state] = now.state === 'ours' ? ['not_removed', 'cua\'s registration is still in place']
+        : now.state === 'unreadable' ? ['unknown', `whether cua's registration is still there is unknown (this process cannot read it: ${now.code})`]
+        : ['removed', 'cua\'s registration is no longer there'];
+      // Every recovery step touches the slot, so for one this process cannot read the access comes first.
+      const recovery = error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again`
+        : now.state === 'unreadable' ? 'run `cua chrome unregister` again'
+        : record.browsers[s.browser]?.replaced
+        ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
+        : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`;
+      return {...row, action, restoration: 'blocked',
+        reason: `${['manifest_rollback_failed', 'manifest_write_failed', 'chrome_data_unreadable'].includes(error.code) ? error.message : error.code ?? error.message} while unregistering ${s.manifestPath}; ${state}, and the backup and its record were kept`,
+        userAction: now.state === 'unreadable' ? `${PERMISSION_FIX}; then ${recovery}` : recovery};
     }
   });
   if (recordChanged) writeRecord(cuaHome, record);
@@ -509,6 +541,7 @@ function unregisterSlot(s, row, {context, record, cuaHome, forget, io, step}) {
   const backup = backupFile(cuaHome, s.browser);
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     const slot = readSlot(s.manifestPath, context);
+    if (slot.state === 'unreadable') fail('chrome_data_unreadable', `this process cannot read ${s.manifestPath} (${slot.code})`);
     if (slot.state === 'absent') return {...row, action: 'absent'};
     if (slot.state === 'foreign') return {...row, action: 'not_ours', pathClass: slot.pathClass};
     const entry = record.browsers[s.browser];

@@ -181,6 +181,7 @@ The reports stay in the guest; their metadata is summarized here, with instance 
 
 - Developer ID signing of the Keychain helper across an upgrade (#14). The helper here is ad-hoc signed.
 - The first run in a fresh *user account* on a Mac that has other users. The VM's only user is `admin`.
+- File-level TCC (Full Disk Access). The VM image has SIP disabled (`csrutil status`, found during #16), so a process without Full Disk Access can still read `~/Library/Mail`, `~/Library/Safari` and Chrome's user-data directory there. The Accessibility and Screen Recording prompts above were real, but any claim about unreadable Chrome directories rests on the second Mac's observation, not on this VM.
 
 ## Defects found by this run (all fixed on main)
 

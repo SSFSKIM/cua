@@ -373,13 +373,17 @@ node bin/cua.mjs chrome unregister           # removes cua's manifests and resto
 ```
 
 - Coexistence rule: `register` writes only into empty slots or over a manifest that already names cua's host in this
-  `CUA_HOME`. If any browser holds a manifest cua did not write (the desktop's, another host's, or an unreadable one),
+  `CUA_HOME`. If any browser holds a manifest cua did not write (the desktop's, another host's, or one that does not parse),
   it refuses as a whole, names each browser with the class of host found there, and writes nothing anywhere. For the
   desktop's it says the desktop's registration is in use and already works with `cua serve`. If such a manifest
   appears, or anything else fails, partway through a run, `register` undoes what it already wrote in that run (putting
   back the bytes that were there, newest first) so that "Nothing was changed." stays true; if it cannot finish that
   undo (another program wrote the slot meanwhile, say), it fails with `registration_partial`, names each unfinished
   path, keeps the backup and record, and tells you to run `cua chrome unregister`.
+- A browser directory this process may not read (a terminal without Full Disk Access on macOS 26 and later; see
+  Profiles) makes `register` and `unregister` refuse as a whole with `chrome_data_unreadable`, naming each browser's
+  directory, its error code and the Full Disk Access fix, before anything is written. What such a slot holds is
+  unknown, so it is never reported as empty, removed, or another host's.
 - `--replace` first copies each existing manifest byte-for-byte to `$CUA_HOME/chrome/manifest-backup/<browser>.json`
   and records it, prints two consequences before the first replacement, then writes cua's. The consequences: while
   cua's host is registered, the desktop's Codex side panel and app-server features in Chrome stop working (no desktop

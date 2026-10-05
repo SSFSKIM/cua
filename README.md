@@ -151,7 +151,9 @@ screenshots and page content included, reaches the client's transcript as the ru
 - Token-bearing URLs are redacted in text content and structured content, at any depth. The value of a query or
   fragment parameter whose name ends in the word `token`, `key`, `secret` or `apikey` (`token`, `access_token`,
   `refresh_token`, `api_key`, `apiKey`, `key`, `client_secret`, `X-Refresh-Token`; not `monkey`, `keyword` or
-  `tokens_left`) becomes `<redacted>`, also when the URL sits URL-encoded inside another parameter. The Playwright MCP
+  `tokens_left`; a percent-encoded name is decoded first) becomes `<redacted>`, also inside a redirect parameter, raw
+  or URL-encoded. A value runs to the next delimiter of its URL; closing punctuation that ends the sentence or link
+  around it (`)`, `]`, `}`, `,`, `.`) is left in place. The Playwright MCP
   extension's connection URL (`chrome-extension://<id>/connect.html?mcpRelayUrl=…&token=…`) has every parameter value
   redacted, and a loopback relay URL (`ws://127.0.0.1:<port>/extension/…`) its path. The rest of the result is
   unchanged.
@@ -159,7 +161,9 @@ screenshots and page content included, reaches the client's transcript as the ru
 The redaction exists because a first real run printed an extension connection URL with its token in a tab inventory
 (`docs/evidence/2026-10-05-homework-1b-dogfooding.md`). It is a pattern list, not a data-loss filter: a credential in
 any other shape (a cookie value, a header, a token in page text, a password typed into a field and read back), a URL
-in an image, and JSON-RPC error replies pass unchanged, and nothing the agent sends is rewritten. Keep secrets out of
+in an image, and JSON-RPC error replies pass unchanged, and nothing the agent sends is rewritten. In the other
+direction, URL-like text that is not a URL (`x?key=1` in code or prose; a `&` or `?` after a space starts no
+parameter) is rewritten too. Keep secrets out of
 results with `{{secret:<label>}}` (see Secrets) and by asking for focused reads.
 
 ## Secrets

@@ -136,27 +136,49 @@ export function correctImages(result) {
 
 // Token-bearing URLs in js/js_reset results (issue #24): a page or tab inventory can carry a credential the agent has
 // no use for, and a tool result stays in the client's transcript. The value of a query or fragment parameter named
-// like a token, key or secret (its last word: token, key, secret or apikey, so access_token, apiKey, client_secret,
-// X-Refresh-Token; not monkey, keyword or tokens_left), raw or URL-encoded inside another parameter, becomes
-// <redacted>, and so does every parameter value of the Playwright MCP extension's connect URL
-// (chrome-extension://<id>/connect.html?mcpRelayUrl=…&token=…) and the path of its loopback relay URL. Text content
-// and structured content only; images, _meta and requests are untouched. This is the only output filtering cua does.
+// like a token, key or secret (its decoded name's last word is token, key, secret or apikey, so access_token, apiKey,
+// client_secret, X-Refresh-Token; not monkey, keyword or tokens_left) becomes <redacted>, raw or URL-encoded, also
+// inside a redirect parameter: a parameter start is recognized after a non-space character (so `int &key=v;` in source
+// text is not one), and a non-secret value is scanned on rather than skipped. A value runs to the next delimiter of its
+// URL, less trailing closing punctuation (`)`, `]`, `}`, `,`, `.`) that ends the surrounding text. Every parameter
+// value of the Playwright MCP extension's connect URL (chrome-extension://<id>/connect.html?mcpRelayUrl=…&token=…) and
+// the path of its loopback relay URL are redacted too. Text content and structured content only; images, _meta and
+// requests are untouched. This is the only output filtering cua does.
 const REDACTED = '<redacted>';
 const SECRET_WORDS = new Set(['token', 'key', 'secret', 'apikey']);
-const secretName = name => SECRET_WORDS.has(name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).at(-1));
-// A value ends at a URL delimiter, whitespace, a quote or bracket, or a comma/period that ends a sentence.
-const VALUE_CHAR = String.raw`(?:[^&#\s"'<>()\[\]{},.]|[,.](?!\s|$))`;
-const RAW_PARAM = new RegExp(String.raw`([?&#])([\w.-]+)=${VALUE_CHAR}+`, 'g');
-const ENCODED_PARAM = new RegExp(String.raw`(%3F|%26|%23)([\w.-]+)(%3D)(?:(?!%26|%23)${VALUE_CHAR})+`, 'gi');
+const decoded = name => { try { return decodeURIComponent(name); } catch { return name; } };
+const secretName = name => SECRET_WORDS.has(decoded(name).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).at(-1));
+// A parameter start: a raw or encoded ?, & or # after a non-space character, a name (percent escapes allowed, except the
+// encoded delimiters themselves), then a raw or encoded =.
+const PARAM = /(?<=\S)(?:[?&#]|%3F|%26|%23)((?:[\w.-]|%(?!3[DF]|2[36])[0-9A-F]{2})+)(=|%3D)/gi;
+const RAW_END = /[&#\s"'<>]/g;
+const ENCODED_END = /[&#\s"'<>]|%26|%23/gi;
+const TRAILING = /[)\]},.]/;
 const CONNECT_URL = /(chrome-extension:\/\/[a-p]{32}\/connect\.html\?)([^\s"'<>#]*)/g;
 const RELAY_URL = /(wss?:\/\/(?:127\.0\.0\.1|\[::1\]|localhost)(?::\d+)?\/extension\/)[^\s"'<>]+/g;
 
+function redactParams(text) {
+  let out = '';
+  let last = 0;
+  PARAM.lastIndex = 0;
+  for (let match; (match = PARAM.exec(text));) {
+    if (!secretName(match[1])) continue;
+    const start = PARAM.lastIndex;
+    const stop = match[2] === '=' ? RAW_END : ENCODED_END;
+    stop.lastIndex = start;
+    let end = stop.exec(text)?.index ?? text.length;
+    while (end > start && TRAILING.test(text[end - 1])) end--;
+    if (end === start) continue;
+    out += text.slice(last, start) + REDACTED;
+    last = PARAM.lastIndex = end;
+  }
+  return out + text.slice(last);
+}
+
 function redactText(text) {
-  return text
+  return redactParams(text
     .replace(CONNECT_URL, (_, head, query) => head + query.split('&').map(part => part.replace(/=.*/s, `=${REDACTED}`)).join('&'))
-    .replace(RELAY_URL, `$1${REDACTED}`)
-    .replace(RAW_PARAM, (match, sep, name) => secretName(name) ? `${sep}${name}=${REDACTED}` : match)
-    .replace(ENCODED_PARAM, (match, sep, name, eq) => secretName(name) ? `${sep}${name}${eq}${REDACTED}` : match);
+    .replace(RELAY_URL, `$1${REDACTED}`));
 }
 
 function redactValue(value) {

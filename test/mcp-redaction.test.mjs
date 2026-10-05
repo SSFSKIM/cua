@@ -31,11 +31,25 @@ test('query parameters named like a token, key or secret have their value redact
   for (const [input, expected] of cases) assert.equal(textOf(redactTokens(text(input))), expected, input);
 });
 
+test('a token inside a redirect, raw or URL-encoded, is found behind other parameters; encoded names and bracketed values count', () => {
+  const cases = [
+    [`https://a.example/?next=https://b.example/?token=${FAKE}`, 'https://a.example/?next=https://b.example/?token=<redacted>'],
+    [`https://a.example/?next=%2Fcb%3Fstate%3D1%26token%3D${FAKE}%26x%3D1`, 'https://a.example/?next=%2Fcb%3Fstate%3D1%26token%3D<redacted>%26x%3D1'],
+    [`https://a.example/?access%5Ftoken=${FAKE}&page=2`, 'https://a.example/?access%5Ftoken=<redacted>&page=2'],
+    [`https://a.example/?token=(${FAKE})&page=2`, 'https://a.example/?token=<redacted>)&page=2'],
+    [`https://a.example/?token=abc(${FAKE})x&page=2`, 'https://a.example/?token=<redacted>&page=2'],
+  ];
+  for (const [input, expected] of cases) assert.equal(textOf(redactTokens(text(input))), expected, input);
+  const structured = redactTokens({structuredContent: {tabs: [{url: cases[0][0]}, {url: cases[2][0]}]}}).structuredContent;
+  assert.deepEqual(structured.tabs.map(t => t.url), [cases[0][1], cases[2][1]]);
+});
+
 test('names that merely contain the words, and plain text, are left alone', () => {
   for (const input of [
     'https://a.example/shop?monkey=1&hotkeys=2&tokens_left=3&keyword=cats',
     'the token is shown on screen; key=value pairs in prose are not URLs? no',
     'https://a.example/?token=', // an empty value is left as is
+    'int &key=value; if (a &secret= b) {}', // parameter-like source text: a separator after a space starts no URL parameter
   ]) assert.equal(textOf(redactTokens(text(input))), input);
 });
 

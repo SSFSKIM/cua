@@ -32,6 +32,13 @@ test('scoped: one writable root, a file found planted, an incomplete answer, or 
   assert.match(silent.detail, /no answer/);
 });
 
+test('scoped without a granted temp root ($TMPDIR unset, empty or relative): a refused $TMPDIR write is expected, not a failure', () => {
+  const step = trustedRootStep('scoped', observed(['EPERM', 'EPERM', 'EPERM'], {tmp: 'EPERM', tmpGranted: false}));
+  assert.equal(step.status, 'PASS');
+  assert.match(step.detail, /\$TMPDIR EPERM \(no temp root granted\)/);
+  assert.equal(trustedRootStep('scoped', observed(['EPERM', 'EPERM', 'EPERM'], {cwd: 'EPERM', tmp: 'EPERM', tmpGranted: false})).status, 'FAIL', 'the run directory must still take the write');
+});
+
 test('sandbox disabled (requested explicitly): what a cell could write is informational and accepted, never a failure', () => {
   const step = trustedRootStep('disabled', observed(['written', 'written', 'EACCES'], {planted: ['state/codex', 'src/services']}));
   assert.equal(step.name, SANDBOX_DISABLED_STEP);

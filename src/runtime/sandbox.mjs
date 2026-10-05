@@ -12,8 +12,8 @@
 // Under a managed profile node_repl refuses to start a kernel when a write root covers a trusted code path
 // ("Trusted RPC dependency must resolve within a configured trusted code path"); assertSandboxFits refuses that
 // launch first, saying which root and which path, and also one whose write roots would cover CODEX_HOME.
-import {realpathSync} from 'node:fs';
-import {basename, dirname, isAbsolute, join, relative} from 'node:path';
+import {lstatSync, readlinkSync, realpathSync} from 'node:fs';
+import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 
@@ -46,14 +46,20 @@ export function withSandbox(meta, state) {
   return state ? {...rest, [SANDBOX_META_KEY]: state} : rest;
 }
 
-// The real path of `path`, or of its nearest existing ancestor with the rest appended (a session directory is checked
-// before it is created; macOS temp directories sit below /var -> /private/var).
-function realish(path) {
+// The real path of `path` in the volume's own spelling (realpathSync.native: APFS is case-insensitive, and the JS
+// realpath keeps the caller's casing), or of its nearest existing ancestor with the rest appended (a session directory
+// is checked before it is created; macOS temp directories sit below /var -> /private/var). A dangling symlink is
+// followed to its target, resolved the same way: it may name a protected directory that is created right after.
+function realish(path, depth = 0) {
   try {
-    return realpathSync(path);
+    return realpathSync.native(path);
   } catch (error) {
-    if (error.code !== 'ENOENT' || dirname(path) === path) throw error;
-    return join(realish(dirname(path)), basename(path));
+    if (error.code !== 'ENOENT' || dirname(path) === path || depth > 40) throw error;
+    const parent = realish(dirname(path), depth + 1);
+    const here = join(parent, basename(path));
+    let link = null;
+    try { if (lstatSync(here).isSymbolicLink()) link = readlinkSync(here); } catch (missing) { if (missing.code !== 'ENOENT') throw missing; }
+    return link === null ? here : realish(resolve(parent, link), depth + 1);
   }
 }
 
@@ -90,11 +96,15 @@ export function sandboxConflicts({protectedPaths: guarded, writeRoots}) {
   return conflicts;
 }
 
+// The `tmpdir` write root node_repl derives from the TMPDIR it is given: the value when non-empty and absolute, else
+// none (Codex's resolution: AbsolutePathBuf::from_absolute_path).
+export const tmpdirRoot = value => (typeof value === 'string' && value !== '' && isAbsolute(value) ? value : null);
+
 // The write roots node_repl derives under the scoped profile for a launch: its working directory (project_roots) and
-// the TMPDIR it hands the runtime (tmpdir; none when unset or empty, as in Codex's resolution).
+// the TMPDIR it hands the runtime (tmpdir).
 export const scopedWriteRoots = ({cwd, cwdLabel = 'the run directory', tmpdir}) => [
   {label: cwdLabel, path: cwd},
-  ...(tmpdir ? [{label: '$TMPDIR', path: tmpdir}] : []),
+  ...(tmpdirRoot(tmpdir) ? [{label: '$TMPDIR', path: tmpdir}] : []),
 ];
 
 export function describeConflicts(conflicts) {

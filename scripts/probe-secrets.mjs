@@ -48,6 +48,7 @@ import {runCaptured} from '../src/secrets/commands.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {plantCell, trustedRootStep} from './probe/trusted-roots.mjs';
+import {tmpdirRoot} from '../src/runtime/sandbox.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -304,7 +305,8 @@ async function plantModules(c, runtime, mode) {
   for (const entry of readdirSync(runDir, {withFileTypes: true})) if (entry.isDirectory()) rmSync(join(runDir, entry.name, name), {force: true});
   const survivors = roots.map(root => join(root.path, name)).filter(path => existsSync(path));
   const step = trustedRootStep(mode, {roots, results: out.result?.roots ?? null, planted: planted.map(root => root.label), survivors,
-    cwd: out.result?.cwd, tmp: out.result?.tmp, raw: out.raw ?? (out.result ? undefined : JSON.stringify(out).slice(0, 200))});
+    // The served process inherits this probe's TMPDIR, which is what the scoped profile's temp root comes from.
+    cwd: out.result?.cwd, tmp: out.result?.tmp, tmpGranted: tmpdirRoot(process.env.TMPDIR) !== null, raw: out.raw ?? (out.result ? undefined : JSON.stringify(out).slice(0, 200))});
   record(step.name, step.status, step.detail);
 }
 

@@ -30,7 +30,7 @@ import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SKY_SERVICE} from './launch.mjs';
-import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
+import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
@@ -120,7 +120,7 @@ function sandboxCheck({home, env, runtime}) {
     writeRoots: scopedWriteRoots({cwd: owned.run, cwdLabel: '$CUA_HOME/run', tmpdir: env.TMPDIR}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);
-  return result('sandbox', 'pass', `CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells read everywhere but write only their connection's run directory and $TMPDIR${env.TMPDIR ? ` (${env.TMPDIR})` : ' (unset: none)'}, no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits`);
+  return result('sandbox', 'pass', `CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells read everywhere but write only their connection's run directory and $TMPDIR${tmpdirRoot(env.TMPDIR) ? ` (${env.TMPDIR})` : ' (unset, empty or relative: no temp root)'}, no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits`);
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});

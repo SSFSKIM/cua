@@ -4,13 +4,13 @@
 // or lie inside one: cua refuses that launch, saying why (node_repl itself refuses a kernel over writable trusted code).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, realpathSync, symlinkSync} from 'node:fs';
+import {existsSync, mkdirSync, realpathSync, symlinkSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {harness, initialized, structured} from './fixtures/mcp-harness.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
-import {SANDBOX_META_KEY, assertSandboxFits, protectedPaths, sandboxConflicts, sandboxModeFrom, sandboxState, withSandbox} from '../src/runtime/sandbox.mjs';
+import {SANDBOX_META_KEY, assertSandboxFits, protectedPaths, sandboxConflicts, scopedWriteRoots, tmpdirRoot, sandboxModeFrom, sandboxState, withSandbox} from '../src/runtime/sandbox.mjs';
 
 const CWD = '/Users/someone/Library/Application Support/cua/run/sess';
 const DISABLED = {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(CWD).href};
@@ -67,6 +67,33 @@ test('sandboxConflicts names a protected path inside a write root, or a write ro
     [{root: {label: 'the run directory', path: join(base, 'checkout/src/services/run/sess')}, protected: {label: 'the trusted code path', path: join(base, 'checkout/src/services')}, inside: 'root'}]);
   // Siblings and shared prefixes are not overlaps.
   assert.deepEqual(sandboxConflicts({protectedPaths: protectedPaths({trustedCodePaths: [join(base, 'tmp2x'), join(base, 'checkout/src/services')]}), writeRoots: [{label: '$TMPDIR', path: join(base, 'tmp2')}, {label: 'the run directory', path: join(base, 'checkout/src/servicesX')}]}), []);
+});
+
+test('sandboxConflicts sees through a case variant on a case-insensitive volume and a dangling symlink to a protected path', t => {
+  const s = shortScratch();
+  t.after(s.cleanup);
+  const base = realpathSync.native(s.dir);
+  mkdirSync(join(base, 'home/state'), {recursive: true});
+  const codexHome = join(base, 'home/state/codex');
+  // TMPDIR names the not-yet-created CODEX_HOME through a symlink: serve creates the directory right after the check.
+  symlinkSync(codexHome, join(base, 'tmp-alias'));
+  assert.deepEqual(sandboxConflicts({protectedPaths: protectedPaths({trustedCodePaths: [], codexHome}), writeRoots: [{label: '$TMPDIR', path: join(base, 'tmp-alias')}]}),
+    [{root: {label: '$TMPDIR', path: codexHome}, protected: {label: 'the runtime\'s configuration and approvals', path: codexHome}, inside: 'protected'}]);
+  // A relative link target resolves against the link's own directory.
+  symlinkSync('home/state/codex', join(base, 'tmp-relative'));
+  assert.equal(sandboxConflicts({protectedPaths: protectedPaths({trustedCodePaths: [], codexHome}), writeRoots: [{label: '$TMPDIR', path: join(base, 'tmp-relative')}]}).length, 1);
+  const upper = join(base, 'HOME');
+  if (existsSync(upper)) {
+    const conflicts = sandboxConflicts({protectedPaths: protectedPaths({trustedCodePaths: [join(base, 'home/state')]}), writeRoots: [{label: '$TMPDIR', path: upper}]});
+    assert.deepEqual(conflicts.map(c => [c.root.path, c.inside]), [[join(base, 'home'), 'protected']], 'a case variant resolves to the on-disk spelling');
+  }
+});
+
+test('the tmpdir write root exists only for a non-empty absolute TMPDIR, as in Codex\'s resolution', () => {
+  assert.equal(tmpdirRoot('/var/folders/x/T/'), '/var/folders/x/T/');
+  for (const value of [undefined, '', '.', 'tmp', './T']) assert.equal(tmpdirRoot(value), null, String(value));
+  assert.deepEqual(scopedWriteRoots({cwd: '/h/run/s', tmpdir: '.'}), [{label: 'the run directory', path: '/h/run/s'}]);
+  assert.deepEqual(scopedWriteRoots({cwd: '/h/run/s', tmpdir: '/T'}).map(r => r.label), ['the run directory', '$TMPDIR']);
 });
 
 test('assertSandboxFits refuses a scoped launch whose $TMPDIR covers a protected path, naming both and the remedy; other modes pass', t => {

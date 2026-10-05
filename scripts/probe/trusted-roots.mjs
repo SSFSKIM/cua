@@ -18,15 +18,16 @@ nodeRepl.write(JSON.stringify({ok: true, result: out}));`;
 
 // mode: the CUA_SHIM_SANDBOX of the connection, scoped or disabled. roots: [{label, path}]. results: the cell's per-root
 // outcome ('written' or an error code), null when the cell gave none (raw: what it gave instead). cwd, tmp: its outcome
-// in its run directory and $TMPDIR. planted: labels of roots where the probe found its file after the cell; survivors:
-// paths still present after the probe removed them.
-export function trustedRootStep(mode, {roots, results, planted = [], survivors = [], cwd, tmp, raw}) {
+// in its run directory and $TMPDIR. tmpGranted: whether the served process's TMPDIR gives the scoped profile a temp
+// root (non-empty and absolute); without one a refused $TMPDIR write is the profile working. planted: labels of roots
+// where the probe found its file after the cell; survivors: paths still present after the probe removed them.
+export function trustedRootStep(mode, {roots, results, planted = [], survivors = [], cwd, tmp, tmpGranted = true, raw}) {
   if (mode !== 'scoped' && mode !== 'disabled') throw new Error(`trustedRootStep takes scoped or disabled, not ${mode}`);
   const complete = Array.isArray(results) && results.length === roots.length;
   const leftBehind = survivors.length ? `; the probe could not remove ${survivors.join(', ')}: delete it by hand` : '';
   if (mode === 'scoped') {
-    const ok = complete && results.every(r => r !== 'written') && !planted.length && !survivors.length && cwd === 'written' && tmp === 'written';
-    const observed = complete ? `${roots.map((root, i) => `${root.label} ${results[i]}`).join(', ')}; run directory ${cwd}, $TMPDIR ${tmp}` : `no complete answer: ${raw ?? 'none'}`;
+    const ok = complete && results.every(r => r !== 'written') && !planted.length && !survivors.length && cwd === 'written' && (!tmpGranted || tmp === 'written');
+    const observed = complete ? `${roots.map((root, i) => `${root.label} ${results[i]}`).join(', ')}; run directory ${cwd}, $TMPDIR ${tmp}${tmpGranted ? '' : ' (no temp root granted)'}` : `no complete answer: ${raw ?? 'none'}`;
     return {name: SANDBOX_SCOPED_STEP, status: ok ? 'PASS' : 'FAIL', detail: `${roots.length} trusted roots: ${observed}${planted.length ? `; planted in ${planted.join(', ')}` : ''}${leftBehind}`};
   }
   const name = SANDBOX_DISABLED_STEP;

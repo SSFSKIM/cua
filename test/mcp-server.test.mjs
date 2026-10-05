@@ -309,3 +309,17 @@ test('a cancel arriving in the same input chunk as its js call is still forwarde
   const cancel = await h.upstream.next(m => m.method === 'notifications/cancelled', {label: 'forwarded cancel'});
   assert.equal(cancel.params.requestId, upJs.id);
 });
+
+test('a request before initialize (Claude Code\'s server/discover probe) is refused locally, never reaches the runtime, and initialize still succeeds', async () => {
+  const h = harness();
+  const probe = h.client.request('server/discover', {_meta: {'io.modelcontextprotocol/protocolVersion': '2026-07-28'}}, 'server-discover-probe-1');
+  const response = await probe.response;
+  assert.equal(response.id, 'server-discover-probe-1');
+  assert.equal(response.error.code, -32601);
+  assert.match(response.error.message, /server\/discover/);
+  await tick(10);
+  assert.equal(h.upstream.sent.length, 0);
+  const init = await initialized(h);
+  assert.equal(init.result.serverInfo.name, 'rmcp');
+  assert.equal(h.upstream.sent.filter(m => m.method === 'server/discover').length, 0);
+});

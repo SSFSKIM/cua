@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-05 — Residual shapes the js-result URL redaction does not cover (minor, issue #24, PR #28).** The redactor in `src/mcp/surface.mjs` is a pattern list. After two review rounds it still lets through: names encoded three or more times; a credential containing an unbalanced `)` or `]` (the value stops there and the rest stays visible); and a parameter after whitespace (`text &token=v`). It also rewrites URL-like non-URLs such as `x?key=1` in code or prose (README states this). Revisit if a real result shows one of these; URL-span detection would trade them for missed relative references.
+
 - **2026-10-04 — Narrow races left after the PR #1 panel-review fixes (minor).** (a) `bindProfile`'s compare-and-set is read-compare-rename with no registry lock, so a millisecond window remains between the comparison and the write (the multi-second discovery window is closed). (b) Breaking a stale `chrome/registration.lock` can race when three processes hit it within the same microseconds. (c) A dead lock holder whose pid is reused looks live; the refusal names the lock file to remove. Revisit if any is observed; a registry lock reusing the registration lock's pattern would close (a).
 
 - **2026-10-02 — Stale node_repl active-exec records after a forced teardown (minor, M3).** When the server has to

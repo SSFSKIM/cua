@@ -241,7 +241,7 @@ export async function runAll(argv) {
     }
     checks.push(suiteClaims('npm test: profiles_list and the host notes', tap, [
       'with the browser surface, profiles_list is the fifth tool and returns keys, readiness and instance ids only',
-      'the browser host notes carry the three Chrome rules and keep the instructions within 2048 characters',
+      'the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters',
     ]));
     addItem('C4', 'profiles_list and the browser host notes', checks);
   }

@@ -127,8 +127,9 @@ app's whole front window (see Use).
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns OpenAI's API document to the model, which then writes small JavaScript cells against the `cua`
-API. The server adds host notes to the server instructions covering what that document leaves out (one approval per
-app, index-first addressing, dropping an app handle after quitting it, `typeText` and emoji, and so on).
+API. The server adds host notes to the server instructions covering what that document leaves out: how to run a
+task (see Operating guidance for agents) and the native quirks (one approval per app, index-first addressing,
+dropping an app handle after quitting it, `typeText` and emoji, and so on).
 
 The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (the labels of your
 stored secrets, never values; see Secrets). Calls on one connection form a task until the model calls `end_task`, which waits for
@@ -140,6 +141,30 @@ means control has been handed back.
 
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.
+
+### What cua changes in results
+
+cua relays `js` and `js_reset` results with two rewrites and no other filtering: what a cell returns, text,
+screenshots and page content included, reaches the client's transcript as the runtime produced it.
+
+- Image MIME types are corrected to what the bytes are (the runtime labels JPEG screenshots `image/png`).
+- Token-bearing URLs are redacted in text content and structured content, at any depth. The value of a query or
+  fragment parameter whose name ends in the word `token`, `key`, `secret` or `apikey` (`token`, `access_token`,
+  `refresh_token`, `api_key`, `apiKey`, `key`, `client_secret`, `X-Refresh-Token`; not `monkey`, `keyword` or
+  `tokens_left`; a percent-encoded name is decoded first) becomes `<redacted>`, also inside a redirect parameter, raw
+  or URL-encoded, and in a bare `?…` or `#…` reference. A value runs to the next delimiter of its URL or to a closing
+  bracket it did not open (the `)` of a Markdown link), less a trailing `}`, `,` or `.`. The Playwright MCP
+  extension's connection URL (`chrome-extension://<id>/connect.html?mcpRelayUrl=…&token=…`) has every parameter value
+  redacted, and a loopback relay URL (`ws://127.0.0.1:<port>/extension/…`) its path. The rest of the result is
+  unchanged.
+
+The redaction exists because a first real run printed an extension connection URL with its token in a tab inventory
+(`docs/evidence/2026-10-05-homework-1b-dogfooding.md`). It is a pattern list, not a data-loss filter: a credential in
+any other shape (a cookie value, a header, a token in page text, a password typed into a field and read back), a URL
+in an image, and JSON-RPC error replies pass unchanged, and nothing the agent sends is rewritten. In the other
+direction, URL-like text that is not a URL (`x?key=1` in code or prose; a `&` or `?` after a space starts no
+parameter) is rewritten too. Keep secrets out of
+results with `{{secret:<label>}}` (see Secrets) and by asking for focused reads.
 
 ## Secrets
 
@@ -209,7 +234,9 @@ agent works in your real profiles: their cookies, signed-in sessions, settings a
 are, and nothing is copied or migrated. The default (`computer`) is unchanged: no browser API, no browser environment.
 
 With the browser surface the model gets a fifth tool, `profiles_list`, OpenAI's browser API in the `js` description,
-and three host notes: pick a registered profile, use Playwright locators for input, give tab creation a long limit.
+and the Chrome host notes: select only a profile `profiles_list` returned and never pick one for you, use Playwright
+locators for input, loop short waits past the 3 s browser action cap, treat page evaluation as read-only, give tab
+creation a long limit (see Operating guidance for agents).
 
 ### The server's Codex login
 
@@ -392,6 +419,54 @@ configuration) and `codex.login`.
   by two profiles, `bind` needs your explicit pick (above).
 - A profile without the extension stays not ready; cua never installs it.
 - The Playwright-extension route explored earlier is parked, not shipped.
+
+## Operating guidance for agents
+
+The first real task run through `cua serve`, a graded ten-question assignment in an existing signed-in Chrome profile,
+finished with full marks and was still slow and rough, mostly from agent technique and undocumented API semantics
+rather than transport faults (`docs/evidence/2026-10-05-homework-1b-dogfooding.md`). These rules come from it. The
+host notes carry each one in a line (the server instructions are capped at 2,048 characters, the runtime's own
+included); this section is the longer form, for whoever writes prompts, skills or controllers around cua.
+
+Every surface:
+
+- **Finish with `end_task`.** Call it as soon as the task is done, before the final reply. It is what has the runtime
+  complete the task and clean up; the run above never called it, so its cleanup is unverified. If `end_task` reports
+  an error, the connection takes no more work: report it, do not retry.
+- **One serial controller.** One agent drives a task, one `js` call at a time. The server queues concurrent calls on
+  a connection anyway, so parallel calls gain nothing and blur which observation follows which action.
+- **Observe, act, verify.** A call that returns without an error is not a success signal: a click on "Begin
+  Experiment" returned and did nothing. Check the state the action should have changed. If it is unchanged, stop and
+  find out why (focus, the wrong target, a key the widget ignores) instead of repeating the input; the run above lost
+  minutes answering a prompt that never advanced.
+- **Wait for readiness, not for time.** Wait for a visible condition (the element, text or state the next step
+  needs) in a bounded poll, not a fixed delay; navigation can return before the page is usable. Batch the
+  deterministic steps between two observations into one call, which cuts model round trips, where most of the run's
+  wall time went.
+- **`timeout_ms` bounds a cell.** Cancelling a call does not stop a running cell, and `js_reset` waits for it.
+
+Chrome (browser surface):
+
+- **Never pick or bind a profile for the user.** Use only an instance id `profiles_list` returned, for the profile the
+  user named; if selection fails, call `profiles_list` again; if the profile is not ready or which one is meant is
+  unclear, ask. Binding is the user's act (`cua profiles bind`, see Profiles). The run above bound a profile itself
+  by matching tab contents, which proved nothing about the profile and broke this rule.
+- **Browser actions stop at 3 s.** Locator actions, waits and `playwright.evaluate` are capped at 3 s by OpenAI's
+  browser service, whatever their `timeoutMs` or the `js` call's `timeout_ms` say: a per-call `timeoutMs` can only
+  shorten the cap, and there is no session setting (spike, issue #25; `pressSequentially` gets 5 s, downloads and
+  file choosers 120 s). To wait longer, loop short waits inside the cell up to a deadline of your own, and give the
+  `js` call a `timeout_ms` above that deadline: a cell that hits its `timeout_ms` resets the kernel and loses the tab
+  handle.
+- **Page evaluation is read-only.** `evaluate` on a page or locator runs in a read-only scope: no `fetch`, no
+  `require`, and its objects are non-extensible, so instrumentation and downloads from there fail. Read the DOM with
+  it and act through locators.
+- Tabs the extension creates are DOM-only, `createBrowserTab` needs a long `timeout_ms`, and a timed-out creation can
+  leave a tab (Chrome, Using it).
+
+Beyond the host notes, the report's other lessons for task design: prefer focused reads (one tab, one element) over
+whole inventories and full snapshots, which cost time and expose unrelated content; hand timed tasks whose subject is
+the user's own response to the user rather than simulate them; and before a consequential, irreversible click,
+confirm with the user and do not retry it blindly after a timeout.
 
 ## Verify and acceptance
 

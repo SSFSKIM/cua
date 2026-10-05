@@ -3,10 +3,11 @@
 // tree, launches a runtime or talks to a browser.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, writeFileSync, readFileSync, statSync, existsSync, rmSync} from 'node:fs';
+import {chmodSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
-import {readRegistry, addProfile, removeProfile, bindProfile, profileStatuses, PROFILE_KEY} from '../src/profiles/registry.mjs';
+import {readRegistry, addProfile, removeProfile, bindProfile, profileStatuses, withLiveness, reasonText, PROFILE_KEY} from '../src/profiles/registry.mjs';
+import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID, hostPathClass, countLiveHosts} from '../src/profiles/chrome.mjs';
 import {decideBinding} from '../src/profiles/bind.mjs';
 
@@ -42,9 +43,9 @@ test('an empty home has an empty registry; add records an existing directory and
   const {home, chrome} = fakeChrome(t, THREE);
   assert.deepEqual(readRegistry(home), {version: 1, profiles: {}});
   const personal = addProfile({home, key: 'personal', directory: 'Default', chrome});
-  assert.deepEqual(personal, {key: 'personal', chromeProfileDirectory: 'Default', extensionInstalled: true});
+  assert.deepEqual(personal, {key: 'personal', chromeProfileDirectory: 'Default', extension: 'installed'});
   const work = addProfile({home, key: 'work', directory: 'Profile 8', chrome});
-  assert.equal(work.extensionInstalled, false);
+  assert.equal(work.extension, 'absent');
   const file = join(home, 'profiles.json');
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {version: 1, profiles: {personal: {chromeProfileDirectory: 'Default'}, work: {chromeProfileDirectory: 'Profile 8'}}});
   assert.equal(statSync(file).mode & 0o777, 0o600);
@@ -226,4 +227,81 @@ test('only Google Chrome backends are bind candidates: another browser\'s or a f
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: both}), {outcome: 'bound', how: 'automatic', instanceId: 'c'}, 'not several_matching_backends: Edge is no candidate');
   for (const explicitId of ['e', 'u'])
     assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: [edge, unknown, ...chrome({instanceId: 'c'})], explicitId}), {outcome: 'refused', reason: 'not_live'}, explicitId);
+});
+
+// ---- Chrome data this process may not read (macOS privacy protection) ---------------------------------------------
+
+// A permission-denied read stands in for macOS's EPERM: mode 000 gives EACCES to a non-root process. Permissions are
+// restored before the scratch directory is removed.
+const asRoot = process.getuid?.() === 0;
+function withDenied(paths, body) {
+  for (const path of paths) chmodSync(path, 0o000);
+  try { body(); } finally { for (const path of [...paths].reverse()) chmodSync(path, 0o755); }
+}
+
+test('the Chrome facts are three-valued: a refused read is unreadable with its code, never absent', {skip: asRoot}, t => {
+  const {userData, chrome} = fakeChrome(t, {...THREE, 'Profile 9': {extension: true}});
+  assert.equal(chrome.profileDirectoryExists('Default'), 'exists');
+  assert.equal(chrome.profileDirectoryExists('Profile 99'), 'missing');
+  assert.equal(chrome.extensionInstalled('Default'), 'installed');
+  assert.equal(chrome.extensionInstalled('Profile 8'), 'absent');
+  assert.equal(chrome.extensionInstalled('Profile 99'), 'absent');
+  assert.equal(chrome.readError('Profile 8'), undefined);
+  withDenied([join(userData, 'Profile 9', 'Extensions')], () => {
+    assert.equal(chrome.profileDirectoryExists('Profile 9'), 'exists');
+    assert.equal(chrome.extensionInstalled('Profile 9'), 'unreadable');
+    assert.equal(chrome.readError('Profile 9'), 'EACCES');
+  });
+  withDenied([userData], () => {
+    assert.equal(chrome.profileDirectoryExists('Default'), 'unreadable', 'the whole user-data directory refused');
+    assert.equal(chrome.extensionInstalled('Default'), 'unreadable');
+    assert.equal(chrome.readError('Default'), 'EACCES');
+  });
+});
+
+test('a Local State and a native-messaging manifest this process may not read report the permission cause', {skip: asRoot}, t => {
+  const {userData, chrome} = fakeChrome(t, THREE);
+  mkdirSync(join(userData, 'NativeMessagingHosts'));
+  writeFileSync(join(userData, 'NativeMessagingHosts', 'com.openai.codexextension.json'), '{"path": "/x"}');
+  withDenied([join(userData, 'Local State'), join(userData, 'NativeMessagingHosts')], () => {
+    assert.throws(() => chrome.displayNames(), error => error.code === 'chrome_local_state_unreadable' && error.readError === 'EACCES'
+      && /may not read/.test(error.message) && /Full Disk Access/.test(error.hint) && /live check still works/.test(error.hint));
+    assert.deepEqual(chrome.nativeHost({cuaHome: '/c'}), {readError: 'EACCES'});
+  });
+});
+
+test('readiness never calls unreadable Chrome data "not installed"; a bound profile there is ready only on live evidence', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'home');
+  const chrome = fakeChromeFacts({Default: {extension: 'unreadable'}, 'Profile 8': {directory: 'unreadable'}, 'Profile 6': {extension: 'absent'}, 'Profile 7': {extension: 'installed'}});
+  for (const [key, directory] of [['personal', 'Default'], ['work', 'Profile 8'], ['school', 'Profile 6'], ['spare', 'Profile 7']]) addProfile({home, key, directory, chrome});
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-p', now: new Date('2026-10-05T00:00:00Z')});
+  const files = Object.fromEntries(profileStatuses({home, chrome}).map(p => [p.key, p]));
+  assert.deepEqual(files.personal, {key: 'personal', chromeProfileDirectory: 'Default', ready: false, reason: 'chrome_data_unreadable', extensionInstanceId: 'inst-p', boundAt: '2026-10-05T00:00:00.000Z', chromeDataError: 'EPERM'});
+  assert.deepEqual(files.work, {key: 'work', chromeProfileDirectory: 'Profile 8', ready: false, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM'});
+  assert.equal(files.school.reason, 'extension_not_installed', 'absent stays absent');
+  assert.equal(files.spare.reason, 'not_bound');
+  const statuses = Object.values(files);
+  const live = ids => Object.fromEntries(withLiveness(statuses, ids).map(p => [p.key, p]));
+  assert.deepEqual(live(['inst-p']).personal, {key: 'personal', chromeProfileDirectory: 'Default', ready: true, extensionInstanceId: 'inst-p', boundAt: '2026-10-05T00:00:00.000Z', chromeDataError: 'EPERM'});
+  for (const ids of [['inst-other'], []]) {
+    assert.equal(live(ids).personal.reason, 'chrome_data_unreadable', `not live: ${ids}`);
+    assert.equal(live(ids).work.reason, 'chrome_data_unreadable', 'an unbound profile cannot become ready on live evidence');
+  }
+  assert.match(reasonText(files.personal), /Full Disk Access for your terminal.*the live check still works; its bound extension instance was not confirmed live/);
+  assert.match(reasonText(files.work), /the live check still works; it is not bound yet: cua profiles bind work works without that access/);
+});
+
+test('add registers a profile in each extension state and never refuses an unreadable one', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'home');
+  const chrome = fakeChromeFacts({Default: {extension: 'installed'}, 'Profile 8': {extension: 'absent'}, 'Profile 6': {extension: 'unreadable'}, 'Profile 7': {directory: 'unreadable'}});
+  assert.deepEqual(addProfile({home, key: 'personal', directory: 'Default', chrome}), {key: 'personal', chromeProfileDirectory: 'Default', extension: 'installed'});
+  assert.deepEqual(addProfile({home, key: 'work', directory: 'Profile 8', chrome}), {key: 'work', chromeProfileDirectory: 'Profile 8', extension: 'absent'});
+  assert.deepEqual(addProfile({home, key: 'school', directory: 'Profile 6', chrome}), {key: 'school', chromeProfileDirectory: 'Profile 6', extension: 'unreadable', chromeDataError: 'EPERM'});
+  assert.deepEqual(addProfile({home, key: 'spare', directory: 'Profile 7', chrome}), {key: 'spare', chromeProfileDirectory: 'Profile 7', extension: 'unreadable', chromeDataError: 'EPERM'});
+  assert.throws(() => addProfile({home, key: 'gone', directory: 'Profile 99', chrome}), error => error.code === 'chrome_profile_not_found');
+  assert.deepEqual(Object.keys(readRegistry(home).profiles), ['personal', 'work', 'school', 'spare']);
 });

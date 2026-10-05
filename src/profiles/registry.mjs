@@ -7,7 +7,9 @@
 // Registering or removing a key never creates, changes or deletes anything in Chrome. Readiness is computed when asked
 // (the user may install the extension later): a profile is ready when its directory exists, the extension is
 // installed there, it is bound, and (where the live backends were listed, withLiveness) its bound instance is live: an
-// extension disable/enable or reinstall mints a new instance id, so a binding can go stale.
+// extension disable/enable or reinstall mints a new instance id, so a binding can go stale. When this process may not
+// read Chrome's data directory (macOS privacy protection, chrome.mjs), the file facts are unknown, never "absent": a
+// bound profile whose instance is live is ready on that live evidence, and otherwise it is chrome_data_unreadable.
 // Parsing is strict: a damaged or unknown file is refused with a fix, never silently rewritten.
 import {mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -71,14 +73,19 @@ function entryOf(registry, key) {
 export function addProfile({home, key, directory, chrome}) {
   if (typeof key !== 'string' || !PROFILE_KEY.test(key)) fail('invalid_profile_key', KEY_RULE);
   const registry = readRegistry(home);
-  if (!chrome.profileDirectoryExists(directory)) fail('chrome_profile_not_found', `no Chrome profile directory named ${JSON.stringify(directory)} in ${chrome.userData}`, {hint: 'name an existing directory such as "Default" or "Profile 1" (chrome://version shows a profile\'s directory as the last part of its Profile Path)'});
+  const found = chrome.profileDirectoryExists(directory);
+  if (found !== 'exists' && found !== 'unreadable') fail('chrome_profile_not_found', `no Chrome profile directory named ${JSON.stringify(directory)} in ${chrome.userData}`, {hint: 'name an existing directory such as "Default" or "Profile 1" (chrome://version shows a profile\'s directory as the last part of its Profile Path)'});
   if (Object.hasOwn(registry.profiles, key)) fail('profile_exists', `profile "${key}" is already registered`, {hint: `cua profiles remove ${key} first to register it again`});
   const holder = Object.entries(registry.profiles).find(([, entry]) => entry.chromeProfileDirectory === directory)?.[0];
   if (holder) fail('chrome_profile_registered', `Chrome profile ${JSON.stringify(directory)} is already registered as "${holder}"`);
   registry.profiles[key] = {chromeProfileDirectory: directory};
   writeRegistry(home, registry);
-  return {key, chromeProfileDirectory: directory, extensionInstalled: chrome.extensionInstalled(directory)};
+  // Registered even when this process may not look inside Chrome's data directory: the live check decides later.
+  const extension = found === 'unreadable' ? 'unreadable' : chrome.extensionInstalled(directory);
+  return {key, chromeProfileDirectory: directory, extension, ...unreadableCode(chrome, directory, extension)};
 }
+
+const unreadableCode = (chrome, directory, state) => state === 'unreadable' ? {chromeDataError: chrome.readError?.(directory) ?? 'unknown'} : {};
 
 export function removeProfile({home, key}) {
   const registry = readRegistry(home);
@@ -106,25 +113,39 @@ export function bindProfile({home, key, extensionInstanceId, expected, now = new
 }
 
 // Every registered profile with its readiness from files alone, sorted by key. `reason` names why a profile is not
-// ready: profile_directory_missing, extension_not_installed or not_bound (withLiveness adds the live check).
+// ready: profile_directory_missing, extension_not_installed, chrome_data_unreadable (with `chromeDataError`, the error
+// code) or not_bound (withLiveness adds the live check).
 export function profileStatuses({home, chrome}) {
   const {profiles} = readRegistry(home);
   return Object.keys(profiles).sort().map(key => {
     const {chromeProfileDirectory, extensionInstanceId, boundAt} = profiles[key];
-    const reason = !chrome.profileDirectoryExists(chromeProfileDirectory) ? 'profile_directory_missing'
-      : !chrome.extensionInstalled(chromeProfileDirectory) ? 'extension_not_installed'
-        : !extensionInstanceId ? 'not_bound' : null;
+    const directory = chrome.profileDirectoryExists(chromeProfileDirectory);
+    const extension = directory === 'missing' ? 'absent' : directory === 'unreadable' ? 'unreadable' : chrome.extensionInstalled(chromeProfileDirectory);
+    const reason = directory === 'missing' ? 'profile_directory_missing'
+      : extension === 'absent' ? 'extension_not_installed'
+        : extension === 'unreadable' ? 'chrome_data_unreadable'
+          : !extensionInstanceId ? 'not_bound' : null;
     return {key, chromeProfileDirectory, ready: reason === null, ...(reason ? {reason} : {}),
-      ...(extensionInstanceId ? {extensionInstanceId} : {}), ...(boundAt ? {boundAt} : {})};
+      ...(extensionInstanceId ? {extensionInstanceId} : {}), ...(boundAt ? {boundAt} : {}), ...unreadableCode(chrome, chromeProfileDirectory, extension)};
   });
 }
+
+// A bound profile whose files could not be read: only the live listing can make it ready.
+export const awaitsLiveEvidence = p => p.reason === 'chrome_data_unreadable' && Boolean(p.extensionInstanceId);
 
 // A bound, otherwise ready profile against the live Google Chrome backends' instance ids at this request (another
 // browser's backends are no evidence): ready only when its id is among them; binding_stale when other backends are live
 // but not its id; backends_unlistable when no backend was listed at all (Chrome closed, no host, or the listing failed),
-// since then whether the binding is current cannot be told. `liveIds` is empty for a failed listing.
+// since then whether the binding is current cannot be told. `liveIds` is empty for a failed listing. A bound profile
+// whose Chrome data this process may not read is ready when its id is live (the live backend is the evidence) and stays
+// chrome_data_unreadable otherwise: without the files, a stale binding cannot be told from a removed extension.
 export function withLiveness(statuses, liveIds) {
   return statuses.map(p => {
+    if (awaitsLiveEvidence(p)) {
+      if (!liveIds.includes(p.extensionInstanceId)) return p;
+      const {reason, ...rest} = p;
+      return {...rest, ready: true};
+    }
     if (!p.ready) return p;
     const reason = !liveIds.length ? 'backends_unlistable' : !liveIds.includes(p.extensionInstanceId) ? 'binding_stale' : null;
     return reason ? {...p, ready: false, reason} : p;
@@ -137,6 +158,14 @@ export const REASONS = {
   not_bound: 'not bound to an extension instance yet: run cua profiles bind',
   binding_stale: 'its bound extension instance is not among the live backends (an extension disable/enable or reinstall mints a new id): bind it again with cua profiles bind <key>',
   backends_unlistable: 'no live OpenAI extension backend could be listed (is Chrome open with the extension enabled?), so whether its binding is current cannot be told',
+  chrome_data_unreadable: 'this process cannot read Chrome\'s data directory (macOS Privacy & Security → Full Disk Access for your terminal, or run from a process that has it); the live check still works',
 };
 
-export const reasonText = ({key, reason}) => REASONS[reason].replaceAll('<key>', key);
+// The unreadable case says what the live check can still do for this profile.
+const UNREADABLE_NEXT = {
+  bound: 'its bound extension instance was not confirmed live (is Chrome open with the extension enabled in this profile?)',
+  unbound: 'it is not bound yet: cua profiles bind <key> works without that access',
+};
+
+export const reasonText = ({key, reason, extensionInstanceId}) => (reason === 'chrome_data_unreadable'
+  ? `${REASONS[reason]}; ${UNREADABLE_NEXT[extensionInstanceId ? 'bound' : 'unbound']}` : REASONS[reason]).replaceAll('<key>', key);

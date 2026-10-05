@@ -204,10 +204,10 @@ export async function runAll(argv) {
       'an empty home has an empty registry; add records an existing directory and reports extension presence',
       'remove deletes only the named registry entry and never touches the Chrome profile',
       'readiness: bound with the extension installed is ready; otherwise the reason is named',
-      'automatic bind: a unique display name and exactly one live backend carrying it',
-      'automatic bind is undetermined, never a guess, when labels are missing, ambiguous or absent',
+      'the likely match: a unique display name and exactly one live backend carrying it, never bound without a pick',
+      'no likely match, never a guess, when labels are missing, ambiguous or absent',
       'an explicit pick is accepted only for a live backend, and never against the runtime\'s own label',
-      'bind stores the automatically labelled backend and says how it was chosen',
+      'bind never binds without a pick: it shows each candidate\'s label and marks the likely match',
     ]));
     addItem('C3', `Profile registry: add, list with readiness, remove only the entry (fixture Chrome); this home's readiness agrees with doctor and ${profile} is ready`, checks);
   }

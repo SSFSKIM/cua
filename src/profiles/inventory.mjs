@@ -7,8 +7,8 @@
 // it; tab titles and URLs never do, and a readiness listing never asks for tabs at all. Another browser's extension
 // backend (Edge, say; the vendor's chrome backend setting selects by type, not family) leaves only its family and is
 // never asked for tabs, and a backend that reports no family is not Chrome's. The label is the profile display name the
-// vendor's own enrichment attached (browser-service.mjs `aL`, read from that browser's own Local State); callers use it
-// for the bind rule and never print or store it. The cell's call carries the sandbox state CUA_SHIM_SANDBOX picks
+// vendor's own enrichment attached (browser-service.mjs `aL`, read from that browser's own Local State); bind uses it
+// for the likely-match rule and shows it to the user beside each candidate, and nothing stores it. The cell's call carries the sandbox state CUA_SHIM_SANDBOX picks
 // (src/runtime/sandbox.mjs), as `cua serve`'s do: the vendor's labelling copies each profile's extension store to a
 // temp directory, which node_repl's default sandbox refuses.
 import {randomUUID} from 'node:crypto';

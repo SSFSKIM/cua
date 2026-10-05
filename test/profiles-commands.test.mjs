@@ -36,24 +36,40 @@ function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Pro
 // The live listing; a backend without its own `family` key is a Google Chrome one.
 const listing = backends => async () => ({backends: backends.map(b => 'family' in b ? b : {family: 'chrome', ...b}), elicitationsDeclined: 0, teardown: {confirmed: true, steps: ['eof']}});
 
-test('bind stores the automatically labelled backend and says how it was chosen', async t => {
+test('bind never binds without a pick: it shows each candidate\'s label and marks the likely match', async t => {
   const {home, chrome} = setup(t);
   addProfile({home, key: 'personal', directory: 'Default', chrome});
-  const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal', tabCount: 3}, {instanceId: 'inst-b', tabCount: 0}])});
-  assert.deepEqual({ok: result.ok, how: result.how, id: result.extensionInstanceId}, {ok: true, how: 'automatic', id: 'inst-a'});
-  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-a');
+  const backends = [{instanceId: 'inst-a', profileName: 'Personal', tabCount: 3}, {instanceId: 'inst-b', tabCount: 0}, {instanceId: 'inst-c', profileName: 'Work', tabCount: 1}];
+  const listed = [{instanceId: 'inst-a', tabCount: 3, profileName: 'Personal', label: 'this-profile', likelyMatch: true},
+    {instanceId: 'inst-b', tabCount: 0, profileName: null, label: 'unlabelled'}, {instanceId: 'inst-c', tabCount: 1, profileName: 'Work', label: 'other-profile'}];
+  const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends)});
+  assert.deepEqual(result, {ok: false, outcome: 'pick_required', likelyMatch: 'inst-a', key: 'personal', elicitationsDeclined: 0, backends: listed});
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined, 'the likely match is not bound');
+  const offered = [];
+  const cancelled = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends), pick: async (list, reason) => { offered.push({list, reason}); return null; }});
+  assert.deepEqual({ok: cancelled.ok, outcome: cancelled.outcome}, {ok: false, outcome: 'pick_required'});
+  assert.deepEqual(offered, [{list: listed, reason: undefined}], 'the picker gets the labels and the mark, and no reason when there is a likely match');
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined);
+  const other = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends), pick: async () => 'inst-b'});
+  assert.deepEqual({ok: other.ok, how: other.how, id: other.extensionInstanceId}, {ok: true, how: 'explicit', id: 'inst-b'}, 'the user may pick an unlabelled candidate over the likely match');
 });
 
-test('an undetermined bind without a picker stores nothing and returns the listing with tab counts, never labels', async t => {
+test('without a pick nothing is stored; the listing carries tab counts and each label, null when unlabelled', async t => {
   const {home, chrome} = setup(t);
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', tabCount: 38}, {instanceId: 'inst-b', tabCount: 0}])});
-  assert.deepEqual(result, {ok: false, outcome: 'undetermined', reason: 'unlabelled', key: 'personal', elicitationsDeclined: 0,
-    backends: [{instanceId: 'inst-a', tabCount: 38, label: 'unlabelled'}, {instanceId: 'inst-b', tabCount: 0, label: 'unlabelled'}]});
+  assert.deepEqual(result, {ok: false, outcome: 'pick_required', reason: 'unlabelled', key: 'personal', elicitationsDeclined: 0,
+    backends: [{instanceId: 'inst-a', tabCount: 38, profileName: null, label: 'unlabelled'}, {instanceId: 'inst-b', tabCount: 0, profileName: null, label: 'unlabelled'}]});
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined);
   const labelled = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-b', profileName: 'Work', tabCount: 2}])});
-  assert.deepEqual(labelled.backends, [{instanceId: 'inst-b', tabCount: 2, label: 'other-profile'}]);
-  assert.ok(!JSON.stringify(labelled).includes('Work'), 'display names never leave the bind');
+  assert.deepEqual({reason: labelled.reason, backends: labelled.backends}, {reason: 'no_matching_backend', backends: [{instanceId: 'inst-b', tabCount: 2, profileName: 'Work', label: 'other-profile'}]});
+  assert.ok(!JSON.stringify(labelled).includes('Personal'), 'the registered profile\'s own display name is never reported');
+  const twins = setup(t, {Default: {name: 'Same', extension: true}, 'Profile 8': {name: 'Same'}});
+  addProfile({home: twins.home, key: 'personal', directory: 'Default', chrome: twins.chrome});
+  const shared = await bindCommand({home: twins.home, key: 'personal', chrome: twins.chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Same', tabCount: 1}])});
+  assert.deepEqual({outcome: shared.outcome, reason: shared.reason, likely: shared.likelyMatch, backends: shared.backends},
+    {outcome: 'pick_required', reason: 'display_name_not_unique', likely: undefined, backends: [{instanceId: 'inst-a', tabCount: 1, profileName: 'Same', label: 'this-profile'}]},
+    'a name another profile shares is shown, but not marked');
 });
 
 test('the interactive picker binds the user\'s choice; cancelling stores nothing', async t => {
@@ -88,12 +104,12 @@ test('bind refuses an unknown key and a profile without the extension before lau
   await assert.rejects(bindCommand({home, key: 'work', chrome, listBackends: never}), e => e.code === 'profile_not_ready' && /extension/.test(e.message));
 });
 
-test('an unreadable Local State leaves the automatic branch undetermined but still allows an explicit pick', async t => {
+test('an unreadable Local State leaves no likely match but still allows an explicit pick', async t => {
   const {home, userData, chrome} = setup(t);
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   writeFileSync(join(userData, 'Local State'), 'garbage');
   const auto = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal'}])});
-  assert.deepEqual({ok: auto.ok, reason: auto.reason}, {ok: false, reason: 'no_display_name'});
+  assert.deepEqual({ok: auto.ok, outcome: auto.outcome, reason: auto.reason}, {ok: false, outcome: 'pick_required', reason: 'no_display_name'});
   const pick = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-a', listBackends: listing([{instanceId: 'inst-a'}])});
   assert.equal(pick.ok, true);
   const labelled = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-b', listBackends: listing([{instanceId: 'inst-b', profileName: 'Someone'}])});
@@ -105,8 +121,7 @@ test('without the profile\'s own display name, a labelled backend is listed as n
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   writeFileSync(join(userData, 'Local State'), 'garbage');
   const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal', tabCount: 4}, {instanceId: 'inst-b', tabCount: 0}])});
-  assert.deepEqual(result.backends, [{instanceId: 'inst-a', tabCount: 4, label: 'comparison-unknown'}, {instanceId: 'inst-b', tabCount: 0, label: 'unlabelled'}]);
-  assert.ok(!JSON.stringify(result).includes('Personal'), 'display names never leave the bind');
+  assert.deepEqual(result.backends, [{instanceId: 'inst-a', tabCount: 4, profileName: 'Personal', label: 'comparison-unknown'}, {instanceId: 'inst-b', tabCount: 0, profileName: null, label: 'unlabelled'}]);
 });
 
 // Review fix: the reviewer's reproduction, an Edge backend labelled "Personal" auto-bound to Chrome's "Personal".
@@ -120,15 +135,17 @@ test('bind never binds another browser\'s backend and reports such backends only
   const offered = [];
   const mixed = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge, noFamily, {instanceId: 'inst-c', tabCount: 2}]),
     pick: async (list, reason, excluded) => { offered.push({list, reason, excluded}); return null; }});
-  assert.deepEqual(offered, [{list: [{instanceId: 'inst-c', tabCount: 2, label: 'unlabelled'}], reason: 'unlabelled', excluded: 2}]);
+  assert.deepEqual(offered, [{list: [{instanceId: 'inst-c', tabCount: 2, profileName: null, label: 'unlabelled'}], reason: 'unlabelled', excluded: 2}]);
   assert.deepEqual({ok: mixed.ok, reason: mixed.reason, excluded: mixed.nonChromeExcluded}, {ok: false, reason: 'unlabelled', excluded: 2});
   for (const result of [alone, mixed]) assert.ok(!/inst-edge|inst-none/.test(JSON.stringify(result)), 'a non-Chrome backend is a count, never listed');
   for (const explicitId of ['inst-edge', 'inst-none'])
     await assert.rejects(bindCommand({home, key: 'personal', chrome, explicitId, listBackends: listing([edge, noFamily])}), e => e.code === 'bind_refused' && /Google Chrome/.test(e.message), explicitId);
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined);
-  // With Chrome's own backend labelled too, that one is bound, and the result still counts the excluded one.
-  const bound = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge, {instanceId: 'inst-c', profileName: 'Personal', tabCount: 2}])});
-  assert.deepEqual({ok: bound.ok, how: bound.how, id: bound.extensionInstanceId, excluded: bound.nonChromeExcluded}, {ok: true, how: 'automatic', id: 'inst-c', excluded: 1});
+  // With Chrome's own backend labelled too, that one is the likely match (never bound), and the result still counts
+  // the excluded one without its label.
+  const marked = await bindCommand({home, key: 'personal', chrome, listBackends: listing([edge, {instanceId: 'inst-c', profileName: 'Personal', tabCount: 2}])});
+  assert.deepEqual({ok: marked.ok, likely: marked.likelyMatch, excluded: marked.nonChromeExcluded}, {ok: false, likely: 'inst-c', excluded: 1});
+  assert.ok(!/inst-edge/.test(JSON.stringify(marked)));
 });
 
 // Review fix: the reviewer's reproduction, the key removed and re-added for Profile 8 while discovery for Default ran.
@@ -139,17 +156,17 @@ test('a registration that changes during discovery is not bound with the instanc
   writeFileSync(join(v, 'manifest.json'), '{}');
   const duringDiscovery = (change, backends) => async () => { change(); return listing(backends)(); };
   const reAdd = () => { removeProfile({home, key: 'personal'}); addProfile({home, key: 'personal', directory: 'Profile 8', chrome}); };
-  for (const [how, extra] of [['automatic', {}], ['explicit', {explicitId: 'inst-a'}], ['picked', {pick: async () => 'inst-a'}]]) {
+  for (const [how, extra] of [['explicit', {explicitId: 'inst-a'}], ['picked', {pick: async () => 'inst-a'}], ['picked likely match', {pick: async () => 'inst-a'}]]) {
     if (readRegistry(home).profiles.personal) removeProfile({home, key: 'personal'});
     addProfile({home, key: 'personal', directory: 'Default', chrome});
-    const backends = how === 'automatic' ? [{instanceId: 'inst-a', profileName: 'Personal'}] : [{instanceId: 'inst-a'}, {instanceId: 'inst-b'}];
+    const backends = how === 'picked likely match' ? [{instanceId: 'inst-a', profileName: 'Personal'}] : [{instanceId: 'inst-a'}, {instanceId: 'inst-b'}];
     await assert.rejects(bindCommand({home, key: 'personal', chrome, listBackends: duringDiscovery(reAdd, backends), ...extra}),
       e => e.code === 'profile_changed' && /bind personal again/.test(e.hint), how);
     assert.deepEqual(readRegistry(home).profiles.personal, {chromeProfileDirectory: 'Profile 8'}, `${how}: nothing recorded under the re-added key`);
   }
   // Removed for good during discovery: refused as removed, and nothing re-created.
   addProfile({home, key: 'other', directory: 'Default', chrome});
-  await assert.rejects(bindCommand({home, key: 'other', chrome, listBackends: duringDiscovery(() => removeProfile({home, key: 'other'}), [{instanceId: 'inst-a', profileName: 'Personal'}])}),
+  await assert.rejects(bindCommand({home, key: 'other', chrome, explicitId: 'inst-a', listBackends: duringDiscovery(() => removeProfile({home, key: 'other'}), [{instanceId: 'inst-a', profileName: 'Personal'}])}),
     e => e.code === 'profile_changed' && /was removed/.test(e.message));
   assert.equal(readRegistry(home).profiles.other, undefined);
 });
@@ -224,14 +241,14 @@ test('bind over a stale binding marks it and still needs the user\'s pick, even 
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   bindProfile({home, key: 'personal', extensionInstanceId: 'inst-old'});
   const lone = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-new', tabCount: 21}])});
-  assert.deepEqual(lone, {ok: false, outcome: 'undetermined', reason: 'unlabelled', key: 'personal', elicitationsDeclined: 0, staleBinding: 'inst-old',
-    backends: [{instanceId: 'inst-new', tabCount: 21, label: 'unlabelled'}]});
+  assert.deepEqual(lone, {ok: false, outcome: 'pick_required', reason: 'unlabelled', key: 'personal', elicitationsDeclined: 0, staleBinding: 'inst-old',
+    backends: [{instanceId: 'inst-new', tabCount: 21, profileName: null, label: 'unlabelled'}]});
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-old', 'nothing is rebound for the user');
 
   const offered = [];
   const cancelled = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-new', tabCount: 21}]), pick: async (list, reason, excluded, context) => { offered.push({list, reason, excluded, context}); return null; }});
   assert.equal(cancelled.ok, false);
-  assert.deepEqual(offered, [{list: [{instanceId: 'inst-new', tabCount: 21, label: 'unlabelled'}], reason: 'unlabelled', excluded: 0, context: {staleBinding: 'inst-old'}}]);
+  assert.deepEqual(offered, [{list: [{instanceId: 'inst-new', tabCount: 21, profileName: null, label: 'unlabelled'}], reason: 'unlabelled', excluded: 0, context: {staleBinding: 'inst-old'}}]);
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-old');
 
   const picked = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-new', listBackends: listing([{instanceId: 'inst-new', tabCount: 21}])});
@@ -330,8 +347,8 @@ test('bind skips the presence check when Chrome data is unreadable, still refuse
   const chrome = fakeChromeFacts({Default: {directory: 'unreadable'}}, {localState: 'unreadable'});
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   const labelled = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal', tabCount: 2}])});
-  assert.deepEqual(labelled, {ok: false, outcome: 'undetermined', reason: 'local_state_unreadable', key: 'personal', elicitationsDeclined: 0,
-    backends: [{instanceId: 'inst-a', tabCount: 2, label: 'comparison-unknown'}], chromeDataUnreadable: 'EPERM', localStateUnreadable: 'EPERM'});
+  assert.deepEqual(labelled, {ok: false, outcome: 'pick_required', reason: 'local_state_unreadable', key: 'personal', elicitationsDeclined: 0,
+    backends: [{instanceId: 'inst-a', tabCount: 2, profileName: 'Personal', label: 'comparison-unknown'}], chromeDataUnreadable: 'EPERM', localStateUnreadable: 'EPERM'});
   const picked = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-a', listBackends: listing([{instanceId: 'inst-a'}])});
   assert.deepEqual({ok: picked.ok, id: picked.extensionInstanceId, data: picked.chromeDataUnreadable}, {ok: true, id: 'inst-a', data: 'EPERM'});
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-a');

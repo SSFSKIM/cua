@@ -215,6 +215,53 @@ test('profiles_list and cua profiles list check a bound profile against the live
   assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
 });
 
+// Issue #21: the vendor's label beside each candidate, "unlabelled" without one, the likely match marked, nothing bound.
+test('cua profiles bind shows each candidate\'s label and the likely match, and binds nothing without a pick', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const userData = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
+  const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  mkdirSync(join(userData, 'Profile 8'), {recursive: true});
+  writeFileSync(join(userData, 'Local State'), JSON.stringify({profile: {info_cache: {Default: {name: 'Personal'}, 'Profile 8': {name: 'Work'}}}}));
+  const registry = JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default'}}});
+  writeFileSync(join(home, 'profiles.json'), registry);
+  mkdirSync(join(home, 'state', 'codex'), {recursive: true});
+  writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [
+    {instanceId: 'inst-a', family: 'chrome', profileName: 'Work', tabCount: 2},
+    {instanceId: 'inst-b', family: 'chrome', profileName: 'Personal', tabCount: 5},
+    {instanceId: 'inst-c', family: 'chrome', profileName: null, tabCount: null},
+    {family: 'edge'},
+  ]}));
+  const cua = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'bind', 'personal', ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+
+  const text = cua([]);
+  assert.equal(text.status, 1, text.stderr);
+  const rows = text.stdout.split('\n').filter(line => /^\s+\d\) extension instance/.test(line));
+  assert.equal(rows.length, 3, text.stdout);
+  assert.match(rows[0], /inst-a\s+2 tab\(s\)\s+labelled "Work" \(another profile's name\)$/);
+  assert.match(rows[1], /inst-b\s+5 tab\(s\)\s+labelled "Personal" \(this profile's name\)\s+<- likely match$/);
+  assert.match(rows[2], /inst-c\s+\? tab\(s\)\s+unlabelled$/);
+  assert.match(text.stdout, /personal was not bound: cua binds only the backend you pick/);
+  assert.match(text.stdout, /cua profiles bind personal --extension-instance-id <id>/);
+  assert.match(text.stdout, /1 extension backend\(s\) of a browser other than Google Chrome not listed/);
+
+  const json = cua(['--json']);
+  assert.equal(json.status, 1, json.stderr);
+  const result = JSON.parse(json.stdout);
+  assert.deepEqual({outcome: result.outcome, likelyMatch: result.likelyMatch, backends: result.backends}, {outcome: 'pick_required', likelyMatch: 'inst-b', backends: [
+    {instanceId: 'inst-a', tabCount: 2, profileName: 'Work', label: 'other-profile'},
+    {instanceId: 'inst-b', tabCount: 5, profileName: 'Personal', label: 'this-profile', likelyMatch: true},
+    {instanceId: 'inst-c', profileName: null, label: 'unlabelled'},
+  ]});
+  assert.equal(readFileSync(join(home, 'profiles.json'), 'utf8'), registry, 'neither form wrote the registry');
+
+  const picked = cua(['--extension-instance-id', 'inst-b']);
+  assert.equal(picked.status, 0, picked.stderr);
+  assert.match(picked.stdout, /bound personal to extension instance inst-b \(your explicit pick\)/);
+});
+
 // `cua` with its listing launches' teardown reported unconfirmed (test/fixtures/unconfirmed-teardown-hooks.mjs).
 const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent(`import {register} from 'node:module'; register(${JSON.stringify(pathToFileURL(join(REPO, 'test', 'fixtures', 'unconfirmed-teardown-hooks.mjs')).href)});`)}`;
 

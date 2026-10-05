@@ -451,9 +451,11 @@ function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}
   const base = error.message.replace(/ Nothing was changed\.$/, '');
   const undone = outcomes.filter(o => (o.state === 'restored' || o.state === 'superseded' || o.state === 'cleanup') && o.browser !== 'record').map(o => o.browser);
   const unfinished = left.map(l => `${l.browser} (${l.manifestPath}: ${l.why})`).join('; ');
+  // A run stopped by an unreadable directory needs the access first: without it the recovery steps are denied too.
+  const access = error.code === 'chrome_data_unreadable' ? [PERMISSION_FIX] : [];
   return new CuaError('registration_partial',
     `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not finish ${unfinished}`,
-    {hint: [...left.filter(l => l.hint).map(l => l.hint), 'then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)'].join('; '), cause: error});
+    {hint: [...new Set([...access, ...left.filter(l => l.hint).map(l => l.hint)])].concat('then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)').join('; '), cause: error});
 }
 
 // One change's undo: `restored` (cua's write is gone and the earlier bytes, if any, are back), `superseded` (another
@@ -520,13 +522,15 @@ function unregisterLocked({cuaHome, userHome, nativeHost, pins, onStep, io}) {
       const [action, state] = now.state === 'ours' ? ['not_removed', 'cua\'s registration is still in place']
         : now.state === 'unreadable' ? ['unknown', `whether cua's registration is still there is unknown (this process cannot read it: ${now.code})`]
         : ['removed', 'cua\'s registration is no longer there'];
+      // Every recovery step touches the slot, so for one this process cannot read the access comes first.
+      const recovery = error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again`
+        : now.state === 'unreadable' ? 'run `cua chrome unregister` again'
+        : record.browsers[s.browser]?.replaced
+        ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
+        : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`;
       return {...row, action, restoration: 'blocked',
         reason: `${['manifest_rollback_failed', 'manifest_write_failed', 'chrome_data_unreadable'].includes(error.code) ? error.message : error.code ?? error.message} while unregistering ${s.manifestPath}; ${state}, and the backup and its record were kept`,
-        userAction: error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again`
-          : now.state === 'unreadable' ? `${PERMISSION_FIX}; then run \`cua chrome unregister\` again`
-          : record.browsers[s.browser]?.replaced
-          ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
-          : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`};
+        userAction: now.state === 'unreadable' ? `${PERMISSION_FIX}; then ${recovery}` : recovery};
     }
   });
   if (recordChanged) writeRecord(cuaHome, record);

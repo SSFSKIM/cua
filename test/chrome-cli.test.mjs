@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
+import {unregisterLines} from '../src/cli.mjs';
 import {REPO, scratch, forgeActiveRuntime, forgeChromeComponent} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
@@ -83,4 +84,15 @@ test('chrome register and unregister name an unreadable Chrome directory and the
   }
   assert.equal(readFileSync(join(m.nmh, MANIFEST), 'utf8'), m.desktopBytes);
   assert.equal(existsSync(join(m.home, 'chrome')), false);
+});
+
+test('unregister\'s report claims nothing to unregister only when every slot is empty or another host\'s', () => {
+  const row = (browser, action, extra = {}) => ({browser, manifestPath: `/x/${browser}.json`, action, ...extra});
+  const notOurs = row('edge', 'not_ours', {pathClass: 'desktop'});
+  assert.match(unregisterLines({browsers: [row('chrome', 'absent'), notOurs]})[0], /^nothing to unregister/);
+  for (const action of ['unknown', 'not_removed']) {
+    const lines = unregisterLines({browsers: [row('chrome', action, {restoration: 'blocked', reason: 'r', userAction: 'grant Full Disk Access'}), notOurs]});
+    assert.ok(!lines.some(l => /nothing to unregister/.test(l)), `${action}: ${lines.join('\n')}`);
+    assert.match(lines[0], /chrome .*restoration BLOCKED: r\. To fix: grant Full Disk Access/);
+  }
 });

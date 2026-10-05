@@ -883,3 +883,36 @@ test('a directory that becomes unreadable mid-run: register undoes its earlier w
   assert.ok(readFileSync(m.manifests.chrome).equals(ours), 'it was in fact still there');
   assert.equal(result.blocked, true);
 });
+
+test('a register run stopped by an unreadable directory whose undo also fails keeps the access fix ahead of the recovery', {skip: asRoot}, async t => {
+  const m = machine(t);
+  const braveData = join(m.support, 'BraveSoftware', 'Brave-Browser');
+  const nmh = dirname(m.manifests.chrome);
+  try {
+    await assert.rejects(register(m, {onStep: (name, row) => {
+      if (row.browser === 'chrome' && name === 'publish') chmodSync(braveData, 0o000);
+      if (row.browser === 'chrome' && name === 'undo') chmodSync(nmh, 0o000);
+    }}), err => {
+      assert.equal(err.code, 'registration_partial', err.message);
+      assert.match(err.message, /native-messaging directory of Brave .*EACCES.*\(chrome_data_unreadable\)\. cua had already registered chrome in this run, but could not finish chrome/);
+      assert.match(err.hint, /^grant Full Disk Access.*; then run `cua chrome unregister`/);
+      return true;
+    });
+  } finally { chmodSync(braveData, 0o755); chmodSync(nmh, 0o755); }
+  assert.equal(readFileSync(m.manifests.chrome, 'utf8'), ourManifest(m.component.host), 'the undo did fail: cua\'s manifest is still there');
+});
+
+test('a restore whose rollback fails in a slot that turned unreadable puts the access fix before the aside-file recovery', {skip: asRoot}, async t => {
+  const m = machine(t, {chromeManifest: DESKTOP});
+  await register(m, {replace: true, onReplace: () => {}});
+  const nmh = dirname(m.manifests.chrome);
+  let result;
+  try {
+    result = unregisterHost({home: m.home, userHome: m.userHome, onStep: hook('chrome', 'publish', () => chmodSync(nmh, 0o000))});
+  } finally { chmodSync(nmh, 0o755); }
+  const chrome = result.browsers.find(b => b.browser === 'chrome');
+  assert.deepEqual([chrome.action, chrome.restoration], ['unknown', 'blocked']);
+  assert.match(chrome.reason, /putting the manifest that was there back failed \(EACCES\)/);
+  assert.match(chrome.userAction, /^grant Full Disk Access.*; then restore it yourself: mv ".*\.taken" ".*com\.openai\.codexextension\.json"; then run `cua chrome unregister` again$/);
+  assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original, 'backup kept');
+});

@@ -202,6 +202,13 @@ test('the not-live reasons name the key, the Chrome profile directory and the on
   assert.match(stale, /cannot tell which/);
 });
 
+test('reason text inserts the key and the Chrome directory verbatim, never as replacement patterns', () => {
+  const dir = 'Profile $& $` $\'';
+  const text = reasonText({key: 'personal', chromeProfileDirectory: dir, extensionInstanceId: 'inst-a', reason: 'host_not_live'});
+  assert.ok(text.includes(`Chrome profile "${dir}"`), text);
+  assert.ok(!text.includes('<dir>') && !text.includes('<key>'));
+});
+
 test('readiness lists nothing when no profile is bound and otherwise ready', async t => {
   const {home, chrome} = setup(t);
   addProfile({home, key: 'personal', directory: 'Default', chrome});

@@ -74,7 +74,7 @@ test('profiles_list hides a stale, sleeping or unverifiable binding\'s instance 
   const text = response.result.content[0].text;
   // The user's step happens in that Chrome profile, so the guidance names its directory (never its display name).
   assert.match(text, /home is not ready \(host_not_live\): .*Chrome profile "Profile 3".*click the OpenAI \(ChatGPT\) extension's icon.*then retry/);
-  assert.match(text, /personal is not ready \(binding_stale\): .*Chrome profile "Default".*mints a new (instance )?id.*cua profiles bind personal/);
+  assert.match(text, /personal is not ready \(binding_stale\): .*Chrome profile "Default".*can mint a new instance id.*cua profiles bind personal/);
   assert.match(text, /school is not ready \(backends_unlistable\): .*could not be listed/);
   assert.match(text, /do not bind or pick a profile for them/);
   assert.ok(!/inst-old|inst-s\b|inst-h|Profile 6|Profile 8/.test(text), 'no instance id, and no directory where the user has no step');

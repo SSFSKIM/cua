@@ -282,8 +282,8 @@ A binding also needs its extension host to be running. Chrome starts the OpenAI 
 on some Macs the host exits about a minute after the extension goes idle; with Chrome closed there is none. When no
 Chrome backend is live at all, `list` and `profiles_list` report the profile `host_not_live` and name the step, with
 the profile's Chrome directory: open that Chrome profile and click the OpenAI (ChatGPT) extension's icon to wake it,
-then retry. Turning the extension off and on at `chrome://extensions` wakes it too, but mints a new instance id, so
-it needs `cua profiles bind <key>` afterwards. cua never wakes the extension itself; it does not drive Chrome. When
+then retry. Turning the extension off and on at `chrome://extensions` wakes it too, but can mint a new instance id,
+so run `cua profiles bind <key>` afterwards. cua never wakes the extension itself; it does not drive Chrome. When
 other profiles' backends are live but not the bound one, the backends' missing labels leave two causes cua cannot tell
 apart (this profile's host asleep, or a new instance id), so `binding_stale` names both steps, the wake first.
 

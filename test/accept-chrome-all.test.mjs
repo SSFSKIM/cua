@@ -601,6 +601,7 @@ test('C5 on a Mac without the desktop app passes cua\'s own registration as the 
   // Doctor disagreeing with a steady-state Chrome slot is a contradiction.
   for (const registered of [['pass', 'desktop: com.openai.codexextension names ~/.codex/x'], noManifest])
     assert.equal(hostCheck(registered, steadySlots(), steadyRecord()).status, 'FAIL', registered[1]);
+  assert.equal(hostCheck(unknownManifest, steadySlots(), steadyRecord()).status, 'BLOCKED', 'doctor that could not read the manifest is unknown, not a disagreement');
   // cua registered for another browser only: Chrome still has no host to launch, so the step is to register Chrome.
   const braveOnly = hostCheck(noManifest, steadySlots(['brave']), steadyRecord(['brave']));
   assert.equal(braveOnly.status, 'BLOCKED');

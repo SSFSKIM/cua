@@ -478,7 +478,10 @@ export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow
     if (absent && c.status === 'blocked' && noManifest) return ['PASS', expected('absent')];
     if (state === 'registered') {
       const chrome = slotsNow.find(s => s.browser === 'chrome');
-      if (chrome?.state === 'ours') return c.status === 'pass' && /^cua:/.test(c.detail) ? ['PASS', expected('cua')] : ['FAIL', 'Chrome\'s slot holds cua\'s registration but doctor does not report class cua'];
+      if (chrome?.state === 'ours') return c.status === 'pass' && /^cua:/.test(c.detail) ? ['PASS', expected('cua')]
+        // Doctor could not read the manifest (it reads before the snapshot): unknown, not a disagreement.
+        : c.status === 'blocked' && !noManifest && /is unknown/.test(c.detail) ? ['BLOCKED', 'doctor could not read Chrome\'s manifest; rerun from a process that can read the browsers\' directories']
+          : ['FAIL', 'Chrome\'s slot holds cua\'s registration but doctor does not report class cua'];
       if (c.status === 'blocked' && noManifest) return ['BLOCKED', `cua is registered only for ${slotsNow.filter(s => s.state === 'ours').map(s => s.browser).join(', ')}; register Chrome too: node bin/cua.mjs chrome register, then rerun`];
     }
     if (absent && /^(desktop|cua|other):/.test(c.detail)) return ['FAIL', 'doctor reports a registration but every browser slot is absent'];

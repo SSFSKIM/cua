@@ -58,6 +58,15 @@ test('relative references, doubly encoded names and adjacent Markdown keep worki
   assert.deepEqual(structured.hrefs, [cases[0][1], cases[2][1]]);
 });
 
+test('redaction stays linear on long runs of adjacent token-bearing links', () => {
+  const input = '[a](https://a/?token=x)'.repeat(32000); // 736 KB
+  const started = performance.now();
+  const out = textOf(redactTokens(text(input)));
+  const elapsed = performance.now() - started;
+  assert.equal(out, '[a](https://a/?token=<redacted>)'.repeat(32000));
+  assert.ok(elapsed < 200, `${elapsed.toFixed(0)} ms`);
+});
+
 test('names that merely contain the words, and plain text, are left alone', () => {
   for (const input of [
     'https://a.example/shop?monkey=1&hotkeys=2&tokens_left=3&keyword=cats',

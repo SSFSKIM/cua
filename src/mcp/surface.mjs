@@ -153,17 +153,19 @@ const secretName = name => SECRET_WORDS.has(decoded(name).replace(/([a-z0-9])([A
 // A parameter start: a raw or encoded ?, & or # at the start of a string or after a non-space character, a name (percent escapes allowed, except the
 // encoded delimiters themselves), then a raw or encoded =.
 const PARAM = /(?<!\s)(?:[?&#]|%3F|%26|%23)((?:[\w.-]|%(?!3[DF]|2[36])[0-9A-F]{2})+)(=|%3D)/gi;
-const RAW_END = /[&#\s"'<>]/g;
-const ENCODED_END = /[&#\s"'<>]|%26|%23/gi;
+const DELIMITER = /[&#\s"'<>]/;
 const TRAILING = /[},.]/;
 const CONNECT_URL = /(chrome-extension:\/\/[a-p]{32}\/connect\.html\?)([^\s"'<>#]*)/g;
 const RELAY_URL = /(wss?:\/\/(?:127\.0\.0\.1|\[::1\]|localhost)(?::\d+)?\/extension\/)[^\s"'<>]+/g;
 
-// A value also ends at a closing bracket it did not open: the `)` of a Markdown link, the `]` of a citation.
-function closeOf(text, start, end) {
+// Where a value ends, in one forward scan: at a URL delimiter (also %26 or %23 inside an encoded URL) or at a closing
+// bracket it did not open (the `)` of a Markdown link, the `]` of a citation). One pass keeps the scanner linear.
+function valueEnd(text, start, encoded) {
   const depth = {'(': 0, '[': 0};
-  for (let i = start; i < end; i++) {
+  for (let i = start; i < text.length; i++) {
     const c = text[i];
+    if (DELIMITER.test(c)) return i;
+    if (encoded && c === '%' && /^%(?:26|23)$/.test(text.slice(i, i + 3))) return i;
     if (c === '(' || c === '[') depth[c]++;
     else if (c === ')' || c === ']') {
       const open = c === ')' ? '(' : '[';
@@ -171,7 +173,7 @@ function closeOf(text, start, end) {
       depth[open]--;
     }
   }
-  return end;
+  return text.length;
 }
 
 function redactParams(text) {
@@ -181,9 +183,7 @@ function redactParams(text) {
   for (let match; (match = PARAM.exec(text));) {
     if (!secretName(match[1])) continue;
     const start = PARAM.lastIndex;
-    const stop = match[2] === '=' ? RAW_END : ENCODED_END;
-    stop.lastIndex = start;
-    let end = closeOf(text, start, stop.exec(text)?.index ?? text.length);
+    let end = valueEnd(text, start, match[2] !== '=');
     while (end > start && TRAILING.test(text[end - 1])) end--;
     if (end === start) continue;
     out += text.slice(last, start) + REDACTED;

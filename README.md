@@ -533,12 +533,19 @@ directory the runner creates (and deletes), and your home's registry is checked 
 
 `--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface,
 the profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for
-`profiles_list` and the host notes, `cua doctor`, a no-op `cua install`, `cua chrome register` without `--replace`
+`profiles_list` and the host notes, `cua doctor` (C5 expects no registration where the browsers hold none), a no-op
+`cua install`, `cua chrome register` without `--replace`
 (which must refuse) and `cua chrome unregister` (which must change nothing; both are skipped while cua's own host is
-registered), and a clean clone running the suites and `npm pack --dry-run`. The live parts enter only as reports:
-`--c2-report` takes a `--live` run's report, and `--c6-report` the record of the `--replace` gate run with you (its
-shape and steps are in `scripts/accept/chrome-all-lib.mjs` and `docs/evidence/m12-host-placement.md`). Without them
-those parts are BLOCKED with the exact steps, never passed.
+registered, and reported `N/A` where no browser holds a registration at all, as on a Mac without the desktop app), and
+a clean clone running the suites and `npm pack --dry-run`. The live parts enter only as reports: `--c2-report` takes a
+`--live` run's report, and `--c6-report` the record of the live registration gate run with you. Where the desktop's
+(or another host's) registration is present, that is the `--replace` gate (its shape and steps are in
+`scripts/accept/chrome-all-lib.mjs` and `docs/evidence/m12-host-placement.md`). Without the desktop app it is the
+desktop-absent gate: `cua chrome register` writes cua's manifests into empty slots with nothing backed up, Chrome
+launches cua's placed host when the extension wakes, the `--live` round trip passes through it, and `cua chrome
+unregister` leaves every slot absent again; `node scripts/accept-chrome.mjs --c6-slots` prints the slots for the
+before, registered and after snapshots the report carries. Without a report those parts are BLOCKED with the exact
+steps for the machine they run on, never passed.
 
 `--live` is the browser secret round trip: through `cua serve` it selects the registered profile by its instance id,
 creates one tab, opens the runner's own loopback page, fills its password field with `{{secret:<label>}}` for a

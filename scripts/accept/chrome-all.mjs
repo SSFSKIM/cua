@@ -14,14 +14,19 @@
 //           --json` judged against `cua doctor --json` (both read only)
 //   C4      one `cua serve` connection (computer,browser, secrets off): initialize, tools/list, profiles_list, end_task;
 //           no js cell
-//   C5      `cua doctor --json` (passive)
+//   C5      `cua doctor --json` (passive); no registration is expected where every browser slot is absent
 //   C6      the placed component and its configuration; a no-op `cua install` that cannot download (it names an
 //           archive that does not exist); `cua chrome register` without --replace (it must refuse) and `cua chrome
 //           unregister` (it must change nothing), each only when no manifest names cua's host and each with the
-//           manifests fingerprinted before and after; the --replace gate only from a supplied report (--c6-report)
+//           manifests fingerprinted before and after; both are N/A (stated, not skipped) where no browser holds a
+//           registration at all (no desktop app); the live gate only from a supplied report (--c6-report): the
+//           --replace gate, or on a machine without the desktop app the desktop-absent gate (issue #9)
 //   C7      a clean clone of this branch's HEAD in /tmp: npm test, build:helper and test:helper inside the clone (this
 //           checkout's helper is never rebuilt), npm pack --dry-run; the clone is deleted
 // Exit 0 PASS, 1 FAIL, 3 BLOCKED, 2 usage.
+//
+// `node scripts/accept-chrome.mjs --c6-slots` prints each browser's native-messaging slot (absent, ours or foreign with
+// its class, and the sha256 of a present manifest) for the desktop-absent gate's before/registered/after snapshots.
 import {spawn} from 'node:child_process';
 import {createHash, randomUUID} from 'node:crypto';
 import {existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
@@ -40,8 +45,8 @@ import {BROWSERS, hostSuffixes} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
-  c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
-  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck, scratchListCheck,
+  c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
+  matrixChecks, packChecks, profilesListCheck, registrationGuard, SCRATCH_PROFILES, slotStates, scratchAddCheck, scratchHumanCheck, scratchListCheck,
   tapTestStatus, verifyCheck, writeScratchChrome,
 } from './chrome-all-lib.mjs';
 
@@ -49,7 +54,7 @@ const REPO = realpathSync(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(REPO, 'bin', 'cua.mjs');
 const NATIVE_HOST = 'com.openai.codexextension';
 const NO_DOWNLOAD_GUARD = '/nonexistent/cua-accept-chrome-reinstall-must-not-read-an-archive.zip';
-const USAGE = 'usage: node scripts/accept-chrome.mjs --all --report <file> [--profile <registered key the live reports drove, default personal>] [--c2-report <live C2 report>] [--c6-report <--replace gate report>]';
+const USAGE = 'usage: node scripts/accept-chrome.mjs --all --report <file> [--profile <registered key the live reports drove, default personal>] [--c2-report <live C2 report>] [--c6-report <--replace or desktop-absent gate report>]';
 
 const check = (name, status, detail) => ({name, status, detail});
 const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
@@ -247,8 +252,10 @@ export async function runAll(argv) {
   }
 
   // ---- C5 -----------------------------------------------------------------------------------------------------------
+  const readSlots = () => slotStates({home, userHome, suffixes: hostSuffixes(loadPins())});
+  const slotsNow = readSlots();
   addItem('C5', 'doctor --json on this Mac (passive)', [
-    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile}),
+    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile, slotsNow}),
     suiteClaims('npm test: the Chrome doctor checks', tap, [
       'per-profile extension checks, the native host registration by path class, and the live host count',
       'doctor reports the Chrome checks beside runtime health and they never change ok',
@@ -281,19 +288,13 @@ export async function runAll(argv) {
     }
     // The browsers' manifest slots, and what each run may do to them.
     const slotPaths = BROWSERS.map(b => ({browser: b.browser, path: join(userHome, b.dataDir, 'NativeMessagingHosts', `${NATIVE_HOST}.json`)}));
-    const context = {home, userHome, suffixes: hostSuffixes(loadPins())};
-    const readSlots = () => slotPaths.map(({browser, path}) => {
-      let text = null;
-      try { text = readFileSync(path, 'utf8'); } catch {}
-      return {browser, ...classifySlot(text, context)};
-    });
     const fingerprint = () => JSON.stringify([...slotPaths.map(({path}) => {
       try { const s = statSync(path); return `${createHash('sha256').update(readFileSync(path)).digest('hex')}:${s.mtimeMs}:${s.ino}`; } catch { return 'absent'; }
     }), existsSync(join(home, 'chrome'))]);
-    const slotsNow = readSlots();
     const where = slotsNow.map(s => `${s.browser} ${s.state === 'foreign' ? s.pathClass : s.state}`).join(', ');
     let guard = registrationGuard(slotsNow);
-    if (!guard.refusal.run) checks.push(check('cua chrome register refuses without --replace', 'BLOCKED', `${guard.refusal.reason} (slots: ${where})`));
+    const notRun = part => part.notApplicable ? 'N/A' : 'BLOCKED';
+    if (!guard.refusal.run) checks.push(check('cua chrome register refuses without --replace', notRun(guard.refusal), `${guard.refusal.reason} (slots: ${where})`));
     else {
       const before = fingerprint();
       const r = await cua(['chrome', 'register', '--json']);
@@ -306,7 +307,7 @@ export async function runAll(argv) {
         `exit ${r.code}; ${out?.error?.code ?? 'no error code'}: ${sanitize(out?.error?.message ?? r.stderr.trim())}; manifests and <home>/chrome unchanged (sha256, mtime, inode): ${unchanged}`));
     }
     guard = registrationGuard(readSlots());
-    if (!guard.noop.run) checks.push(check('cua chrome unregister is a no-op when the manifest is not ours', 'BLOCKED', guard.noop.reason));
+    if (!guard.noop.run) checks.push(check('cua chrome unregister is a no-op when the manifest is not ours', notRun(guard.noop), guard.noop.reason));
     else {
       const before = fingerprint();
       const r = await cua(['chrome', 'unregister', '--json']);
@@ -316,8 +317,10 @@ export async function runAll(argv) {
       checks.push(check('cua chrome unregister is a no-op when the manifest is not ours', ok ? 'PASS' : 'FAIL',
         `exit ${r.code}; ${out?.browsers?.map(b => `${b.browser} ${b.action}${b.pathClass ? ` (${b.pathClass})` : ''}`).join(', ') ?? 'no result'}; manifests and <home>/chrome unchanged: ${unchanged}`));
     }
-    checks.push(...(options['c6-report'] ? [liveProfileCheck(liveEntry, profile, {prefix: 'live: --replace gate', registryError}), ...readReport(options['c6-report'], report => replaceGateChecks(report, {profile}), 'live: --replace gate')]
-      : [replaceGateBlocked(profile)]));
+    checks.push(...(options['c6-report'] ? readReport(options['c6-report'], report => [
+      liveProfileCheck(liveEntry, profile, {prefix: report?.scenario === 'C6-desktop-absent-live-gate' ? 'live: desktop-absent gate' : 'live: --replace gate', registryError}),
+      ...c6GateChecks(report, {profile, slotsNow}),
+    ], 'live: C6 gate') : [c6GateBlocked(slotsNow, profile)]));
     checks.push(suiteClaims('npm test: placement, the coexistence rule, backup/restore and the CLI refusal', tap, [
       'a fresh install places the Chrome plugin as its own recorded component with the host configuration beside the host',
       'register refuses when the desktop\'s manifest is present, naming its class, and changes nothing anywhere',
@@ -325,8 +328,9 @@ export async function runAll(argv) {
       'unregister removes only our manifests and restores the backed-up one, verified byte-for-byte',
       'unregister is a no-op when the manifest is not ours: it leaves the desktop\'s registration byte-for-byte',
       'chrome register refuses while the desktop\'s manifest is present, with the stated sentence, and writes nothing',
+      'without the desktop app, register fills only empty slots with nothing backed up, and unregister leaves them empty again',
     ]));
-    addItem('C6', 'Host placement, the coexistence refusal, no-op unregister, and the --replace live gate', checks);
+    addItem('C6', 'Host placement, the coexistence refusal, no-op unregister, and the live gate (--replace, or desktop-absent)', checks);
   }
 
   // ---- C7 -----------------------------------------------------------------------------------------------------------
@@ -385,4 +389,11 @@ export async function runAll(argv) {
     for (const c of item.checks.filter(c => c.status !== 'PASS')) process.stdout.write(`      ${c.status.padEnd(7)} ${c.name}\n`);
   }
   return status === 'PASS' ? 0 : status === 'FAIL' ? 1 : 3;
+}
+
+// `--c6-slots`: the browsers' native-messaging slots now, for the desktop-absent gate's snapshots. Read only.
+export function printSlots() {
+  const home = realHome(defaultHome());
+  process.stdout.write(`${JSON.stringify({scenario: 'C6-slots', takenAt: new Date().toISOString(), slots: slotStates({home, userHome: homedir(), suffixes: hostSuffixes(loadPins())})}, null, 2)}\n`);
+  return 0;
 }

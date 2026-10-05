@@ -47,6 +47,11 @@ import {createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, profilePre
 
 // `--all` (M13) evaluates C1-C7 as a whole and never drives a browser; see scripts/accept/chrome-all.mjs:
 //   node scripts/accept-chrome.mjs --all --report <file> [--profile <key>] [--c2-report <file>] [--c6-report <file>]
+// `--c6-slots` prints the browsers' native-messaging slots (the desktop-absent C6 gate's snapshots; read only).
+if (process.argv.includes('--c6-slots')) {
+  const {printSlots} = await import('./accept/chrome-all.mjs');
+  process.exit(printSlots());
+}
 if (process.argv.includes('--all')) {
   const {runAll} = await import('./accept/chrome-all.mjs');
   process.exit(await runAll(process.argv.slice(2)));

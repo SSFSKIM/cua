@@ -269,6 +269,22 @@ test('with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid val
   assert.equal(existsSync(join(other, 'state', 'codex', 'fake-upstream.jsonl')), false);
 });
 
+test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, before any listing launch', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  for (const args of [['profiles', 'list', '--json'], ['profiles', 'list'], ['profiles', 'bind', 'personal', '--json']]) {
+    const run = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome, CUA_SHIM_SANDBOX: 'managed'}, encoding: 'utf8', timeout: 30_000});
+    assert.notEqual(run.status, 0, args.join(' '));
+    assert.match(run.stdout + run.stderr, /CUA_SHIM_SANDBOX must be disabled or default/, args.join(' '));
+    assert.match(run.stdout + run.stderr, /invalid_setting/, args.join(' '));
+  }
+  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'no listing launch was made');
+});
+
 test('an invalid CUA_SHIM_SURFACES fails classified before anything is launched', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'iab'});

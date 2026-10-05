@@ -52,8 +52,9 @@ its helper copy shares the pinned helper's identity, so existing grants applied.
 3. **macOS 27 protects Chrome's user-data directory behind TCC.** A process without Full Disk Access (Terminal.app, hence
    Claude Code's shell and `cua serve`) gets `EPERM` there, while sshd-spawned processes read it. cua reported that as
    `extension_not_installed`. PR #4: tri-state presence, `chrome_data_unreadable`, live evidence decides readiness, and
-   the Full Disk Access note. Hypothesis recorded: the same protection is why the vendor's profile-name enrichment never
-   labels a backend on these Macs.
+   the Full Disk Access note. The hypothesis recorded at the time (that the same protection explains the vendor's
+   profile-name enrichment never labelling a backend) was refuted on 2026-10-05 by spike #8: the cause is node_repl's
+   default sandbox denying temp-directory writes when cua sends no sandbox metadata.
 4. **`accept-chrome --all` assumed the owner's registry** (personal/work/school, Default/Profile 8/Profile 6, live
    profile personal). PR #5: `--profile <key>`, a fixture Chrome tree for the scratch run, data-driven default-home
    checks.

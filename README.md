@@ -485,7 +485,8 @@ native call such as `cua.getState()` does), and with the browser surface it read
 non-zero exit names what failed.
 
 The acceptance runner checks the whole native + secrets slice against an explicit scratch home and writes a report
-with PASS, FAIL or BLOCKED for each acceptance item of the spec (metadata only, never a secret value):
+with PASS, FAIL or BLOCKED for each acceptance item of the spec (metadata only, never a secret value; a row that only
+records an accepted consequence is `INFO` and does not change its item's status):
 
 ```sh
 export CUA_HOME="$(mktemp -d /tmp/cua-accept.XXXXXX)"
@@ -504,7 +505,12 @@ Without a flag it runs the suites, install/reinstall, doctor, `verify.mjs`, the 
   values, created and replaced through a test-only pseudo-terminal driver typing into the production `set`, read
   through the real helper → broker → trusted service → a controlled fake input target, and deleted at the end. It
   checks every input method, the failures, failing closed with secrets off or no broker, and that neither value
-  appears in the MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME` or the report.
+  appears in the MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME` or the report. Item 7 also
+  carries two trusted-root rows, where a cell tries to create a module in each trusted code root. "sandbox on
+  (`CUA_SHIM_SANDBOX=default`): trusted roots unwritable" runs on a connection with the sandbox on and is the
+  guarantee, PASS or FAIL. The informational row under the `disabled` default records which roots the cell could
+  write, the accepted consequence described under Configuration; it is `INFO`, never a failure. Either way the probe
+  removes every file the cell wrote and checks it is gone, and a file it could not remove fails the row.
 - `--live-textedit` opens a new empty temporary document under `$CUA_HOME` in TextEdit, types a marker through
   `cua serve`, reads it back (accessibility text and a screenshot, recorded as metadata), closes only that window and
   deletes the file. It never touches another document and never quits TextEdit. It accepts the app-approval
@@ -582,6 +588,13 @@ exfiltration. The vendor features that need scratch space depend on it, such as 
 profiles bind`, which copy each Chrome profile's extension store to a temp directory. With `default`, cua sends
 nothing. node_repl then allows reads and denies all writes, including to `$TMPDIR` and `/tmp`, as well as network
 connections, and those features fail. Any sandbox state a client puts in its own `_meta` is replaced by cua's.
+
+Under the `disabled` default a cell can also write cua's own trusted code roots (`src/services` and `src/secrets` in
+the checkout that serves, where the trusted secret-substitution code lives), the runtime's own files under `$CUA_HOME`
+(its configuration and approvals in `state/codex`, the vendor's modules in the installed release) and anything else
+your account can write. You accept this under the trust model: cua no longer protects the integrity of that code from
+the agent, so keeping it intact is your responsibility. `CUA_SHIM_SANDBOX=default` restores the guarantee that model
+cells cannot plant code in a trusted root, at the cost of the features above.
 
 Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
 runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session) and

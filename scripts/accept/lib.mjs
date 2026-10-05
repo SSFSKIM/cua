@@ -3,15 +3,21 @@
 // proves a reinstall mutated nothing, and the packaging/tracking policies of acceptance 10.
 import {lstatSync, readdirSync, readlinkSync} from 'node:fs';
 import {join} from 'node:path';
+import {SANDBOX_DISABLED_STEP, SANDBOX_ON_STEP} from '../probe/trusted-roots.mjs';
 
 export const STATUSES = ['PASS', 'FAIL', 'BLOCKED'];
+// A row that records an accepted consequence rather than checking a guarantee (the trusted roots a cell can write
+// under the disabled sandbox, #34): it is reported, never a failure, and does not change what the rest rolls up to.
+export const INFO = 'INFO';
 
 // An item passes only when it has checks and every one passed; any failure fails it; otherwise it is blocked. An item
-// with nothing evaluated is BLOCKED, never PASS: a skipped check must not read as a pass.
+// with nothing evaluated is BLOCKED, never PASS: a skipped check must not read as a pass. Informational rows are
+// neutral; a roll-up of nothing but informational rows stays INFO.
 export function rollup(statuses) {
   if (!statuses.length) return 'BLOCKED';
   if (statuses.includes('FAIL')) return 'FAIL';
   if (statuses.includes('BLOCKED')) return 'BLOCKED';
+  if (statuses.every(status => status === INFO)) return INFO;
   return 'PASS';
 }
 
@@ -177,22 +183,26 @@ const TOKEN_PATTERNS = [
 ];
 export const tokenLike = text => TOKEN_PATTERNS.some(pattern => pattern.test(text));
 
-// Acceptance 6/7: every step scripts/probe-secrets.mjs records on a complete run, grouped into the spec's phases. A
-// phase passes only when each of its steps ran and passed; a step that never ran is BLOCKED (requested, not executed).
+// Acceptance 6/7: every step scripts/probe-secrets.mjs records on a complete run, grouped into the spec's phases, with
+// the items each phase is evidence for. A phase passes only when each of its steps ran and passed; a step that never
+// ran is BLOCKED (requested, not executed). The trusted-root guarantee is proven with the sandbox on; what the default
+// (`disabled`) lets a cell write is an informational row, the accepted consequence of the owner's decision on #20.
 const FIRST = 'first value: ';
 const failClosed = tag => [...['type_text', 'paste', 'set_value'].map(m => `${tag}: ${m} reference fails closed`), `${tag}: close`];
 export const PROBE_SECRETS_PHASES = [
-  {name: 'live: preconditions and create (generated sentinel, test-owned pty fixture)', steps: ['preconditions', 'create']},
-  {name: 'live: first substitution through helper → broker → trusted wrapper → controlled target', steps: ['paste', 'type_text', 'set_value'].map(m => `${FIRST}${m} substitution`)},
-  {name: 'live: ordinary input, unsupported method, unknown/invalid label, unsupported shape', steps: ['ordinary input', 'unsupported method', 'unknown label', 'invalid label', 'unsupported shape', 'target saw only what it should'].map(s => FIRST + s)},
-  {name: 'live: replace with a second generated sentinel and substitute it', steps: ['replace', 'replaced value: type_text substitution']},
-  {name: 'live: failure output stays value-free (induced and real vendor failures)', steps: [`${FIRST}induced substituted-command failure`, `${FIRST}cell timeout during a substituted call`, 'real vendor: failure after substitution', 'real vendor: unknown label']},
-  {name: 'live: model cells cannot plant code in a trusted root', steps: ['model cells cannot plant a module in a trusted code root']},
-  {name: 'live: fail closed before any input (secrets off, broker unavailable)', steps: [...failClosed('secrets off'), ...failClosed('broker unavailable')]},
-  {name: 'live: every connection closed cleanly', steps: [`${FIRST}close`, 'replaced value: close', 'real serve: close']},
-  {name: 'live: no value in any observed channel or report', steps: ['scanner self-check', 'sentinel scan']},
-  {name: 'live: finally cleanup of only the scenario-owned item', steps: ['cleanup']},
+  {items: [6], name: 'live: preconditions and create (generated sentinel, test-owned pty fixture)', steps: ['preconditions', 'create']},
+  {items: [6, 7], name: 'live: first substitution through helper → broker → trusted wrapper → controlled target', steps: ['paste', 'type_text', 'set_value'].map(m => `${FIRST}${m} substitution`)},
+  {items: [7], name: 'live: ordinary input, unsupported method, unknown/invalid label, unsupported shape', steps: ['ordinary input', 'unsupported method', 'unknown label', 'invalid label', 'unsupported shape', 'target saw only what it should'].map(s => FIRST + s)},
+  {items: [6], name: 'live: replace with a second generated sentinel and substitute it', steps: ['replace', 'replaced value: type_text substitution']},
+  {items: [6], name: 'live: failure output stays value-free (induced and real vendor failures)', steps: [`${FIRST}induced substituted-command failure`, `${FIRST}cell timeout during a substituted call`, 'real vendor: failure after substitution', 'real vendor: unknown label']},
+  {items: [7], name: 'live: sandbox on (CUA_SHIM_SANDBOX=default): trusted roots unwritable', steps: [SANDBOX_ON_STEP]},
+  {items: [7], name: 'live (informational): sandbox disabled (default): trusted roots a cell could write, accepted under the trust model (#20)', steps: [SANDBOX_DISABLED_STEP]},
+  {items: [6, 7], name: 'live: fail closed before any input (secrets off, broker unavailable)', steps: [...failClosed('secrets off'), ...failClosed('broker unavailable')]},
+  {items: [6], name: 'live: every connection closed cleanly', steps: [`${FIRST}close`, 'replaced value: close', 'real serve: close', 'real serve (sandbox on): close']},
+  {items: [6], name: 'live: no value in any observed channel or report', steps: ['scanner self-check', 'sentinel scan']},
+  {items: [6], name: 'live: finally cleanup of only the scenario-owned item', steps: ['cleanup']},
 ];
+export const probePhasesFor = item => PROBE_SECRETS_PHASES.filter(phase => phase.items.includes(item));
 
 // One check per expected step group: statuses of the steps that ran, BLOCKED for each that did not.
 export function inventoryCheck(name, steps, expected) {
@@ -207,9 +217,10 @@ export function inventoryCheck(name, steps, expected) {
 export function scenarioVerdict(name, scenario, expected) {
   if (!scenario || !Array.isArray(scenario.steps) || !scenario.steps.length) return {name, status: 'FAIL', detail: 'the scenario produced no report'};
   const unexpected = scenario.steps.filter(s => !expected.includes(s.name)).map(s => `${s.name}: ${s.status}`);
-  const notPassed = scenario.steps.filter(s => s.status !== 'PASS').map(s => `${s.name}: ${s.status}`);
+  const notPassed = scenario.steps.filter(s => s.status !== 'PASS' && s.status !== INFO).map(s => `${s.name}: ${s.status}`);
+  const informational = scenario.steps.filter(s => s.status === INFO).map(s => s.name);
   const status = STATUSES.includes(scenario.status) ? rollup([scenario.status, ...scenario.steps.map(s => s.status)]) : 'FAIL';
-  return {name, status, detail: `scenario status ${scenario.status}; ${scenario.steps.length} steps${notPassed.length ? `; not passed: ${notPassed.join('; ')}` : ', all passed'}${unexpected.length ? `; steps no phase expects: ${unexpected.join('; ')}` : ''}`};
+  return {name, status, detail: `scenario status ${scenario.status}; ${scenario.steps.length} steps${notPassed.length ? `; not passed: ${notPassed.join('; ')}` : ', all passed'}${informational.length ? `; informational: ${informational.join('; ')}` : ''}${unexpected.length ? `; steps no phase expects: ${unexpected.join('; ')}` : ''}`};
 }
 
 // Acceptance 8, from the live TextEdit fixture: per-connection approval is observed only when both connections bound

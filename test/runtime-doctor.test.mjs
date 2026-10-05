@@ -1,9 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {rmSync, realpathSync} from 'node:fs';
+import {mkdirSync, readdirSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
 import {inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
+import {sweepRun} from '../src/runtime/run-dir.mjs';
 import {parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
 import {scratch, shortScratch, zipFixture, fixturePin, acceptSignatures} from './fixtures/runtime-fixture.mjs';
 
@@ -254,4 +255,26 @@ test('codex.login never executes a release binary the same run found untrusted: 
   const trusted = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
   assert.equal(check(trusted, 'codex.login').status, 'pass');
   assert.equal(exists(marker), true);
+});
+
+// Issue #29: doctor sweeps $CUA_HOME/run as `cua serve` does at start and names what it removed; a session it could
+// not remove fails the row, a live one and an unrecorded entry are left alone.
+test('the run.stale check removes the sessions of gone owners and says so', async t => {
+  const s = shortScratch();
+  t.after(s.cleanup);
+  const run = join(s.dir, 'run');
+  const stale = '00000000-0000-4000-8000-000000000001';
+  mkdirSync(join(run, stale), {recursive: true});
+  writeFileSync(join(run, `${stale}.pid`), '999999\n');
+  writeFileSync(join(run, `${process.pid}-live.pid`), `${process.pid}\n`);
+  const inspect = extra => inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, ...extra});
+  const row = check(await inspect({sweep: home => sweepRun(home, {alive: pid => pid === process.pid})}), 'run.stale');
+  assert.equal(row.status, 'pass');
+  assert.match(row.detail, new RegExp(`removed the leftovers of 1 connection whose cua process is gone \\(${stale}, pid 999999\\); 1 live session left alone$`));
+  assert.deepEqual(readdirSync(run), [`${process.pid}-live.pid`]);
+  rmSync(join(run, `${process.pid}-live.pid`));
+  assert.match(check(await inspect(), 'run.stale').detail, /: nothing stale$/);
+  const failed = check(await inspect({sweep: () => ({run, swept: [], live: [], unowned: [], failed: [{session: stale, pid: 7, errors: [`${run}/${stale}: EACCES`]}]})}), 'run.stale');
+  assert.equal(failed.status, 'fail');
+  assert.match(failed.detail, /could not remove the leftovers of .*EACCES/);
 });

@@ -16,7 +16,7 @@ import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
-import {homeLayout, realHome} from '../runtime/layout.mjs';
+import {claimRunSession} from '../runtime/run-dir.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
 import {assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
 
@@ -118,18 +118,18 @@ export function teardownUnconfirmed(teardown, failure) {
 export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true}) {
   const sandbox = sandboxModeFrom(ambient);
   const sessionId = randomUUID();
-  const owned = homeLayout(realHome(home));
-  mkdirSync(owned.run, {recursive: true, mode: 0o700});
-  const launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
-  assertSandboxFits(sandbox, launch);
-  mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-  mkdirSync(launch.cwd, {mode: 0o700});
-  chmodSync(launch.cwd, 0o700);
+  const claim = claimRunSession(home, sessionId);
+  let launch;
   try {
+    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
+    assertSandboxFits(sandbox, launch);
+    mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
+    mkdirSync(launch.cwd, {mode: 0o700});
+    chmodSync(launch.cwd, 0o700);
     const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts, sandboxState: sandboxStateFor(sandbox, launch.cwd)});
     return {backends: result.backends, elicitationsDeclined: result.elicitationsDeclined, teardown: result.teardown};
   } finally {
-    rmSync(launch.cwd, {recursive: true, force: true});
-    rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
+    claim.release();
+    if (launch) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
   }
 }

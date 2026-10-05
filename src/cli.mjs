@@ -96,10 +96,13 @@ async function runtime(args) {
   else print(`active release is now ${result.release}`);
 }
 
-// stdout carries only the MCP stream from here on; every diagnostic goes to stderr. Once the server has closed and
-// cleaned up what it owns, nothing may keep the process alive: an unreferenced timer exits if anything still does.
+// stdout carries only the MCP stream from here on; every diagnostic goes to stderr. A client that ends without closing
+// in order (killed, its pipes closed) takes stderr with it, and a diagnostic written during the teardown that follows
+// must not crash the server before it has removed what it owns, so stderr write errors are dropped. Once the server has
+// closed and cleaned up, nothing may keep the process alive: an unreferenced timer exits if anything still does.
 async function serve(args) {
   parse(args, {}, 0);
+  process.stderr.on('error', () => {});
   const code = await serveMcp({home: defaultHome()});
   setTimeout(() => process.exit(code), 1000).unref();
   return code;

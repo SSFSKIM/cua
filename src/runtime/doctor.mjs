@@ -23,6 +23,9 @@
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
 // Another mode is the user's choice and only described.
+// `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
+// changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
+// housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
 import {existsSync, readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -35,6 +38,7 @@ import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
 import {loginStatus, LOGIN_STATES} from './login.mjs';
+import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
@@ -44,7 +48,7 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, sweep = sweepRun}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -90,6 +94,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
     checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
   }
   checks.push(sandboxCheck({home, env, runtime}));
+  checks.push(runSweepCheck(sweep(home)));
 
   const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
   const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
@@ -121,6 +126,11 @@ function sandboxCheck({home, env, runtime}) {
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);
   return result('sandbox', 'pass', `CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells read everywhere but write only their connection's run directory and $TMPDIR${tmpdirRoot(env.TMPDIR) ? ` (${env.TMPDIR})` : ' (unset, empty or relative: no temp root)'}, no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits`);
+}
+
+function runSweepCheck(found) {
+  const live = found.live.length ? `; ${found.live.length} live session${found.live.length === 1 ? '' : 's'} left alone` : '';
+  return result('run.stale', found.failed.length ? 'fail' : 'pass', `${found.run}: ${describeSweep(found) ?? 'nothing stale'}${live}`);
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});

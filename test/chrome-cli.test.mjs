@@ -3,7 +3,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync} from 'node:fs';
+import {chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch, forgeActiveRuntime, forgeChromeComponent} from './fixtures/runtime-fixture.mjs';
 
@@ -66,4 +66,21 @@ test('chrome takes register or unregister, and register takes only --replace and
     const r = m.cua(args);
     assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
   }
+});
+
+test('chrome register and unregister name an unreadable Chrome directory and the Full Disk Access fix, and write nothing', {skip: process.getuid?.() === 0}, t => {
+  const m = machine(t, {desktop: true});
+  const chromeData = join(m.user, 'Library', 'Application Support', 'Google', 'Chrome');
+  chmodSync(chromeData, 0o000);
+  let runs;
+  try { runs = ['register', 'unregister'].map(command => [command, m.cua(['chrome', command]), JSON.parse(m.cua(['chrome', command, '--json']).stdout)]); } finally { chmodSync(chromeData, 0o755); }
+  for (const [command, r, json] of runs) {
+    assert.equal(r.status, 1, `${command}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, /cannot read the native-messaging directory of Google Chrome .*EACCES.*Nothing was changed\. \[chrome_data_unreadable\]/, command);
+    assert.match(r.stderr, new RegExp(`Full Disk Access.*then run \`cua chrome ${command}\` again`), command);
+    assert.doesNotMatch(r.stdout + r.stderr, /registration_in_use|nothing to unregister|removed|not ours/, command);
+    assert.deepEqual([json.ok, json.error.code], [false, 'chrome_data_unreadable'], command);
+  }
+  assert.equal(readFileSync(join(m.nmh, MANIFEST), 'utf8'), m.desktopBytes);
+  assert.equal(existsSync(join(m.home, 'chrome')), false);
 });

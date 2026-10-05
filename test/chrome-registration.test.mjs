@@ -9,6 +9,8 @@ import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {registerHost, unregisterHost, BROWSERS, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
 import {resolveRuntime, parsePin} from '../src/runtime/manifest.mjs';
+import {chromeFacts} from '../src/profiles/chrome.mjs';
+import {chromeChecks} from '../src/profiles/checks.mjs';
 import {REPO, scratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures, realPinJson} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
@@ -791,4 +793,93 @@ test('a manifest that stays truncated is left to its writer and never overwrites
     writeSync(fd, resynced(m.userHome));
   } finally { closeSync(fd); }
   assert.equal(readFileSync(m.manifests.chrome, 'utf8'), resynced(m.userHome));
+});
+
+// ---- Browser directories this process may not read (macOS privacy protection) -------------------------------------
+
+// Mode 000 stands in for macOS's EPERM without Full Disk Access: a non-root process gets EACCES. Each denied path is
+// one place the refusal can come from: the browser's user-data directory itself (what macOS protects), its parent
+// (the user-data directory cannot even be stat'ed, so whether the browser is there is unknown), or the manifest
+// directory. Permissions are restored before anything is checked or removed.
+const asRoot = process.getuid?.() === 0;
+const denied = (path, body) => { chmodSync(path, 0o000); try { return body(); } finally { chmodSync(path, 0o755); } };
+const deniedAsync = async (path, body) => { chmodSync(path, 0o000); try { return await body(); } finally { chmodSync(path, 0o755); } };
+const DENIED = ['Google/Chrome', 'Google', 'Google/Chrome/NativeMessagingHosts'];
+const unreadableRefusal = command => err => {
+  assert.equal(err.code, 'chrome_data_unreadable', err.message);
+  assert.match(err.message, /cannot read the native-messaging directory of Google Chrome \(.*NativeMessagingHosts: EACCES\), so whether com\.openai\.codexextension is registered there is unknown\. Nothing was changed\.$/);
+  assert.match(err.hint, new RegExp(`Full Disk Access.*then run \`cua chrome ${command}\` again`));
+  return true;
+};
+
+test('register refuses as a whole when a browser directory cannot be read, naming the fix, and writes nothing anywhere', {skip: asRoot}, async t => {
+  for (const relative of DENIED) {
+    const m = machine(t);
+    await deniedAsync(join(m.support, relative), () => assert.rejects(register(m), unreadableRefusal('register')), relative);
+    assert.equal(existsSync(m.manifests.chrome), false, relative);
+    assert.equal(existsSync(m.manifests.brave), false, `${relative}: Brave, which is readable, is not registered either`);
+    assert.equal(existsSync(join(m.runtime.home, 'chrome')), false, relative);
+  }
+  // A foreign manifest elsewhere does not mask the cause: the unreadable directory is what is named.
+  const m = machine(t);
+  mkdirSync(dirname(m.manifests.brave), {recursive: true});
+  writeFileSync(m.manifests.brave, desktopBytes(m.userHome));
+  await deniedAsync(join(m.support, 'Google/Chrome'), () => assert.rejects(register(m, {replace: true, onReplace: () => assert.fail('nothing may be announced')}), unreadableRefusal('register')));
+  assert.equal(readFileSync(m.manifests.brave, 'utf8'), desktopBytes(m.userHome));
+  assert.equal(existsSync(m.backups), false);
+});
+
+test('unregister refuses as a whole when a browser directory cannot be read, never reporting it removed or absent', {skip: asRoot}, async t => {
+  for (const relative of DENIED) {
+    const m = machine(t, {chromeManifest: DESKTOP});
+    await register(m, {replace: true, onReplace: () => {}});
+    const before = {chrome: readFileSync(m.manifests.chrome), brave: readFileSync(m.manifests.brave), record: record(m)};
+    denied(join(m.support, relative), () => assert.throws(() => unregister(m), unreadableRefusal('unregister')), relative);
+    assert.ok(readFileSync(m.manifests.chrome).equals(before.chrome), `${relative}: Chrome's registration stands`);
+    assert.ok(readFileSync(m.manifests.brave).equals(before.brave), `${relative}: Brave, which is readable, was not unregistered either`);
+    assert.deepEqual(record(m), before.record, relative);
+    assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original, relative);
+  }
+});
+
+test('doctor\'s chrome.host.registered row says the manifest is unknown, not missing, under the same denied directories', {skip: asRoot}, async t => {
+  const m = machine(t);
+  await register(m);
+  const row = () => chromeChecks({home: m.home, chrome: chromeFacts({userData: join(m.support, 'Google/Chrome')}), psText: '', userHome: m.userHome})
+    .find(c => c.name === 'chrome.host.registered');
+  assert.deepEqual([row().status, row().detail.startsWith('cua: ')], ['pass', true]);
+  for (const relative of DENIED) {
+    const check = denied(join(m.support, relative), row);
+    assert.equal(check.status, 'blocked', relative);
+    assert.match(check.detail, /whether a native-messaging manifest for com\.openai\.codexextension exists is unknown: this process may not read it .*\(EACCES\); grant Full Disk Access/, relative);
+  }
+});
+
+test('a directory that becomes unreadable mid-run: register undoes its earlier writes, unregister reports the slot unknown', {skip: asRoot}, async t => {
+  const m = machine(t);
+  const braveData = join(m.support, 'BraveSoftware', 'Brave-Browser');
+  try {
+    await assert.rejects(register(m, {onStep: hook('chrome', 'publish', () => chmodSync(braveData, 0o000))}), err => {
+      assert.equal(err.code, 'chrome_data_unreadable');
+      assert.match(err.message, /native-messaging directory of Brave .*EACCES.*Nothing was changed\.$/);
+      return true;
+    });
+  } finally { chmodSync(braveData, 0o755); }
+  assert.equal(existsSync(m.manifests.chrome), false, 'the Chrome manifest placed earlier in the run was undone');
+  assert.equal(existsSync(m.manifests.brave), false);
+  assert.deepEqual(record(m).browsers, {});
+
+  await register(m);
+  const ours = readFileSync(m.manifests.chrome);
+  const nmh = dirname(m.manifests.chrome);
+  let result;
+  try {
+    result = unregisterHost({home: m.home, userHome: m.userHome, onStep: hook('chrome', 'take', () => chmodSync(nmh, 0o000))});
+  } finally { chmodSync(nmh, 0o755); }
+  const chrome = result.browsers.find(b => b.browser === 'chrome');
+  assert.deepEqual([chrome.action, chrome.restoration], ['unknown', 'blocked']);
+  assert.match(chrome.reason, /whether cua's registration is still there is unknown \(this process cannot read it: EACCES\)/);
+  assert.match(chrome.userAction, /Full Disk Access.*`cua chrome unregister` again/);
+  assert.ok(readFileSync(m.manifests.chrome).equals(ours), 'it was in fact still there');
+  assert.equal(result.blocked, true);
 });

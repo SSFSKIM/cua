@@ -31,7 +31,7 @@ const isDirectoryName = name => typeof name === 'string' && name.length > 0 && n
 const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
 const PERMISSION = new Set(['EPERM', 'EACCES']);
 // What a failed read means: the path is absent, or this process may not read it (kept with its code).
-const readFailure = error => ABSENT.has(error?.code) ? null : (error?.code ?? 'error');
+export const readFailure = error => ABSENT.has(error?.code) ? null : (error?.code ?? 'error');
 // -> 'exists' | 'missing' | {unreadable: code}
 function directoryState(path) {
   try { return statSync(path).isDirectory() ? 'exists' : 'missing'; } catch (error) {

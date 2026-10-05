@@ -1,7 +1,7 @@
 // node_repl's per-call sandbox state (issues #20, #36): CUA_SHIM_SANDBOX picks it, the server attaches it to every call
 // it makes to the runtime (js, js_reset and the private turn_ended), and a caller's own sandbox entry never reaches the
-// runtime, whichever mode is set. Under the scoped default no write root may cover a trusted code path, or lie inside
-// one: node_repl would refuse to start the kernel, so cua refuses first, saying why.
+// runtime, whichever mode is set. Under the scoped default no write root may cover a trusted code path or CODEX_HOME,
+// or lie inside one: cua refuses that launch, saying why (node_repl itself refuses a kernel over writable trusted code).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, realpathSync, symlinkSync} from 'node:fs';
@@ -10,7 +10,7 @@ import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {harness, initialized, structured} from './fixtures/mcp-harness.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
-import {SANDBOX_META_KEY, assertSandboxFits, sandboxConflicts, sandboxModeFrom, sandboxState, withSandbox} from '../src/runtime/sandbox.mjs';
+import {SANDBOX_META_KEY, assertSandboxFits, protectedPaths, sandboxConflicts, sandboxModeFrom, sandboxState, withSandbox} from '../src/runtime/sandbox.mjs';
 
 const CWD = '/Users/someone/Library/Application Support/cua/run/sess';
 const DISABLED = {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(CWD).href};
@@ -48,36 +48,40 @@ test('disabled is the disabled permission profile with the session directory as 
   assert.equal(sandboxState('default', CWD), null);
 });
 
-test('sandboxConflicts names a trusted path inside a write root, or a write root inside a trusted path, by real path', t => {
+test('sandboxConflicts names a protected path inside a write root, or a write root inside one, by real path', t => {
   const s = shortScratch();
   t.after(s.cleanup);
   const base = realpathSync(s.dir);
-  for (const dir of ['tmp/home/runtimes/modules', 'checkout/src/services', 'checkout/src/secrets', 'home2/run', 'tmp2']) mkdirSync(join(base, dir), {recursive: true});
+  for (const dir of ['tmp/home/runtimes/modules', 'tmp/home/state/codex', 'checkout/src/services', 'checkout/src/secrets', 'home2/run', 'tmp2']) mkdirSync(join(base, dir), {recursive: true});
   symlinkSync(join(base, 'tmp'), join(base, 'tmp-link'));
-  const trusted = [join(base, 'tmp/home/runtimes/modules'), join(base, 'checkout/src/services'), join(base, 'checkout/src/secrets')];
-  // $TMPDIR given through a symlink still covers the runtime's modules below its real path.
-  assert.deepEqual(sandboxConflicts({trustedPaths: trusted, writeRoots: [{label: 'the run directory', path: join(base, 'home2/run/sess')}, {label: '$TMPDIR', path: join(base, 'tmp-link')}]}),
-    [{root: {label: '$TMPDIR', path: join(base, 'tmp')}, trusted: join(base, 'tmp/home/runtimes/modules'), inside: 'trusted'}]);
+  const guarded = protectedPaths({trustedCodePaths: [join(base, 'tmp/home/runtimes/modules'), join(base, 'checkout/src/services'), join(base, 'checkout/src/secrets')], codexHome: join(base, 'tmp/home/state/codex')});
+  assert.deepEqual(guarded.map(p => p.label), ['the trusted code path', 'the trusted code path', 'the trusted code path', 'the runtime\'s configuration and approvals']);
+  // $TMPDIR given through a symlink still covers the runtime's modules and its CODEX_HOME below its real path.
+  const tmp = {label: '$TMPDIR', path: join(base, 'tmp')};
+  assert.deepEqual(sandboxConflicts({protectedPaths: guarded, writeRoots: [{label: 'the run directory', path: join(base, 'home2/run/sess')}, {label: '$TMPDIR', path: join(base, 'tmp-link')}]}), [
+    {root: tmp, protected: {label: 'the trusted code path', path: join(base, 'tmp/home/runtimes/modules')}, inside: 'protected'},
+    {root: tmp, protected: {label: 'the runtime\'s configuration and approvals', path: join(base, 'tmp/home/state/codex')}, inside: 'protected'},
+  ]);
   // A run directory inside a trusted path: cells could create modules there.
-  assert.deepEqual(sandboxConflicts({trustedPaths: trusted, writeRoots: [{label: 'the run directory', path: join(base, 'checkout/src/services/run/sess')}]}),
-    [{root: {label: 'the run directory', path: join(base, 'checkout/src/services/run/sess')}, trusted: join(base, 'checkout/src/services'), inside: 'root'}]);
-  // Siblings and shared prefixes are not overlaps; a missing TMPDIR is no write root.
-  assert.deepEqual(sandboxConflicts({trustedPaths: [join(base, 'tmp2x'), join(base, 'checkout/src/services')], writeRoots: [{label: '$TMPDIR', path: join(base, 'tmp2')}, {label: 'the run directory', path: join(base, 'checkout/src/servicesX')}]}), []);
+  assert.deepEqual(sandboxConflicts({protectedPaths: guarded, writeRoots: [{label: 'the run directory', path: join(base, 'checkout/src/services/run/sess')}]}),
+    [{root: {label: 'the run directory', path: join(base, 'checkout/src/services/run/sess')}, protected: {label: 'the trusted code path', path: join(base, 'checkout/src/services')}, inside: 'root'}]);
+  // Siblings and shared prefixes are not overlaps.
+  assert.deepEqual(sandboxConflicts({protectedPaths: protectedPaths({trustedCodePaths: [join(base, 'tmp2x'), join(base, 'checkout/src/services')]}), writeRoots: [{label: '$TMPDIR', path: join(base, 'tmp2')}, {label: 'the run directory', path: join(base, 'checkout/src/servicesX')}]}), []);
 });
 
-test('assertSandboxFits refuses a scoped launch whose $TMPDIR covers a trusted code path, naming both and the remedy; other modes pass', t => {
+test('assertSandboxFits refuses a scoped launch whose $TMPDIR covers a protected path, naming both and the remedy; other modes pass', t => {
   const s = shortScratch();
   t.after(s.cleanup);
   const base = realpathSync(s.dir);
   mkdirSync(join(base, 'T/cua/runtimes/r/modules'), {recursive: true});
+  mkdirSync(join(base, 'T/cua/state/codex'), {recursive: true});
   mkdirSync(join(base, 'T/cua/run'), {recursive: true});
-  const launch = {cwd: join(base, 'T/cua/run/sess'), env: {TMPDIR: join(base, 'T') + '/', NODE_REPL_TRUSTED_CODE_PATHS: join(base, 'T/cua/runtimes/r/modules')}};
+  const launch = {cwd: join(base, 'T/cua/run/sess'), env: {TMPDIR: join(base, 'T') + '/', NODE_REPL_TRUSTED_CODE_PATHS: join(base, 'T/cua/runtimes/r/modules'), CODEX_HOME: join(base, 'T/cua/state/codex')}};
   assert.throws(() => assertSandboxFits('scoped', launch), error => {
     assert.equal(error.code, 'sandbox_conflict');
-    assert.match(error.message, /CUA_SHIM_SANDBOX=scoped/);
-    assert.match(error.message, new RegExp(`\\$TMPDIR \\(${join(base, 'T')}\\)`));
-    assert.match(error.message, /runtimes\/r\/modules/);
-    assert.match(error.message, /node_repl would refuse to start/);
+    assert.match(error.message, /^CUA_SHIM_SANDBOX=scoped lets JavaScript cells write/);
+    assert.ok(error.message.includes(`write $TMPDIR (${join(base, 'T')}), which contains the trusted code path ${join(base, 'T/cua/runtimes/r/modules')}, the runtime's configuration and approvals ${join(base, 'T/cua/state/codex')}. `), error.message);
+    assert.match(error.message, /node_repl refuses to start a kernel over writable trusted code/);
     assert.match(error.hint, /outside \$TMPDIR/);
     assert.match(error.hint, /CUA_SHIM_SANDBOX=disabled/);
     return true;
@@ -85,7 +89,8 @@ test('assertSandboxFits refuses a scoped launch whose $TMPDIR covers a trusted c
   assert.doesNotThrow(() => assertSandboxFits('disabled', launch));
   assert.doesNotThrow(() => assertSandboxFits('default', launch));
   assert.doesNotThrow(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: join(base, 'elsewhere')}}));
-  assert.doesNotThrow(() => assertSandboxFits('scoped', {...launch, env: {NODE_REPL_TRUSTED_CODE_PATHS: launch.env.NODE_REPL_TRUSTED_CODE_PATHS}}), 'no TMPDIR, no tmpdir write root');
+  const {TMPDIR: _unset, ...noTmpdir} = launch.env;
+  assert.doesNotThrow(() => assertSandboxFits('scoped', {...launch, env: noTmpdir}), 'no TMPDIR, no tmpdir write root');
 });
 
 test('withSandbox replaces a caller\'s sandbox entry with the server\'s, or drops it when the server sends none', () => {

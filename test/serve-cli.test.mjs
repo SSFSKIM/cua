@@ -341,7 +341,7 @@ test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the list
   server.child.stdin.end();
   const {code, stderr} = await server.exit;
   assert.equal(code, 1);
-  assert.match(stderr, /CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR \(.*\) contains the trusted code path .*runtimes.*\[sandbox_conflict\]/);
+  assert.match(stderr, /CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR \(.*\), which contains the trusted code path .*runtimes.*\[sandbox_conflict\]/);
   assert.match(stderr, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
   assert.deepEqual(server.frames, []);
   assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'nothing was launched');

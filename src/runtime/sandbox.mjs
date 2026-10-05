@@ -11,7 +11,7 @@
 // node_repl refuses the field without `sandboxCwd`, an absolute file URI; cua gives the launch's working directory.
 // Under a managed profile node_repl refuses to start a kernel when a write root covers a trusted code path
 // ("Trusted RPC dependency must resolve within a configured trusted code path"); assertSandboxFits refuses that
-// launch first, saying which root and which path.
+// launch first, saying which root and which path, and also one whose write roots would cover CODEX_HOME.
 import {realpathSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -62,17 +62,29 @@ const within = (path, root) => {
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('../'));
 };
 
-// Every overlap between the scoped profile's write roots ([{label, path}]) and the trusted code paths, by real path:
-// `inside: 'trusted'` when the trusted path lies in the write root (cells could replace trusted code), `'root'` when the
-// write root lies in a trusted path (cells could add modules there).
-export function sandboxConflicts({trustedPaths, writeRoots}) {
-  const trusted = trustedPaths.filter(Boolean).map(realish);
+// What no scoped write root may contain or lie inside, labelled: the trusted code paths (node_repl refuses to start a
+// kernel when one is writable, and a write root inside one would let cells add modules there) and CODEX_HOME, the
+// runtime's configuration and approvals (writable, it would let cells grant themselves approvals; node_repl does not
+// refuse that on its own: measured, issue #36).
+export const protectedPaths = ({trustedCodePaths, codexHome}) => [
+  ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
+  ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
+];
+
+// Every overlap between the scoped profile's write roots and the protected paths ([{label, path}] each), by real path:
+// `inside: 'protected'` when the protected path lies in the write root, `'root'` when the write root lies in it.
+export function sandboxConflicts({protectedPaths: guarded, writeRoots}) {
+  const targets = [];
+  for (const p of guarded) {
+    const path = realish(p.path);
+    if (!targets.some(t => t.path === path)) targets.push({label: p.label, path});
+  }
   const conflicts = [];
   for (const root of writeRoots.filter(r => r.path)) {
     const path = realish(root.path);
-    for (const t of trusted) {
-      if (within(t, path)) conflicts.push({root: {label: root.label, path}, trusted: t, inside: 'trusted'});
-      else if (within(path, t)) conflicts.push({root: {label: root.label, path}, trusted: t, inside: 'root'});
+    for (const target of targets) {
+      if (within(target.path, path)) conflicts.push({root: {label: root.label, path}, protected: target, inside: 'protected'});
+      else if (within(path, target.path)) conflicts.push({root: {label: root.label, path}, protected: target, inside: 'root'});
     }
   }
   return conflicts;
@@ -85,23 +97,29 @@ export const scopedWriteRoots = ({cwd, cwdLabel = 'the run directory', tmpdir}) 
   ...(tmpdir ? [{label: '$TMPDIR', path: tmpdir}] : []),
 ];
 
-export function describeConflict({root, trusted, inside}) {
-  return inside === 'trusted'
-    ? `${root.label} (${root.path}) contains the trusted code path ${trusted}`
-    : `${root.label} (${root.path}) lies inside the trusted code path ${trusted}`;
+export function describeConflicts(conflicts) {
+  const roots = [...new Set(conflicts.map(c => c.root.path))].map(path => {
+    const mine = conflicts.filter(c => c.root.path === path);
+    const list = (inside, verb) => {
+      const items = mine.filter(c => c.inside === inside).map(c => `${c.protected.label} ${c.protected.path}`);
+      return items.length ? `${verb} ${items.join(', ')}` : null;
+    };
+    return `${mine[0].root.label} (${path}), which ${[list('protected', 'contains'), list('root', 'lies inside')].filter(Boolean).join(' and ')}`;
+  });
+  return `CUA_SHIM_SANDBOX=scoped lets JavaScript cells write ${roots.join('; and ')}. Under scoped, cua's trusted code and the `
+    + 'runtime\'s configuration must stay outside every writable directory (node_repl refuses to start a kernel over writable trusted code)';
 }
 
 export const SANDBOX_CONFLICT_HINT = 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
   + '(the default CUA_HOME, ~/Library/Application Support/cua, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled';
 
 // Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
-// its NODE_REPL_TRUSTED_CODE_PATHS: node_repl would otherwise fail every cell with "kernel exited unexpectedly".
+// its NODE_REPL_TRUSTED_CODE_PATHS or its CODEX_HOME.
 export function assertSandboxFits(mode, launch) {
   if (mode !== 'scoped') return;
   const conflicts = sandboxConflicts({
-    trustedPaths: (launch.env.NODE_REPL_TRUSTED_CODE_PATHS ?? '').split(':'),
+    protectedPaths: protectedPaths({trustedCodePaths: (launch.env.NODE_REPL_TRUSTED_CODE_PATHS ?? '').split(':'), codexHome: launch.env.CODEX_HOME}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
-  if (!conflicts.length) return;
-  fail('sandbox_conflict', `CUA_SHIM_SANDBOX=scoped lets JavaScript cells write ${conflicts.map(describeConflict).join('; ')}; node_repl would refuse to start the kernel`, {hint: SANDBOX_CONFLICT_HINT});
+  if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
 }

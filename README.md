@@ -600,12 +600,13 @@ also have **no network**: `fetch`, sockets and DNS lookups fail (node_repl denie
 under this kind of profile, whatever the profile says about the network). cua's own channels do not need it: the
 native helper, the secrets broker and the Chrome extension are reached through node_repl's pipes.
 
-`scoped` places one requirement on where things live. node_repl refuses to start a kernel when a writable directory
-contains trusted code, so `CUA_HOME` and the cua checkout must not be inside `$TMPDIR` (the per-user
-`/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of cua's may sit under
-`$CUA_HOME/run`. The default `CUA_HOME` and a directory under `/tmp` are both fine. `cua serve` and the profile
-listing refuse such a layout with `sandbox_conflict`, naming the directory and the trusted path, and `cua doctor`'s
-`sandbox` check fails with the same explanation.
+`scoped` places one requirement on where things live: `CUA_HOME` and the cua checkout must not be inside `$TMPDIR`
+(the per-user `/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of cua's
+may sit under `$CUA_HOME/run`. A checkout there would make cua's trusted code writable, and node_repl then refuses to
+start the kernel, so every cell fails; a `CUA_HOME` there would let cells rewrite the runtime's configuration and
+approvals. The default `CUA_HOME` and a directory under `/tmp` are both fine. `cua serve` and the profile listing
+refuse such a layout with `sandbox_conflict`, naming each directory involved, and `cua doctor`'s `sandbox` check
+fails with the same explanation.
 
 `CUA_SHIM_SANDBOX=disabled` is the way to give cells the network and writes everywhere else: cua sends the
 `disabled` permission profile, so cells and trusted services can write wherever your account can and the sandbox no

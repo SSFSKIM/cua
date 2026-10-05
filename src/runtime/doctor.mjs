@@ -20,9 +20,9 @@
 // extension, the com.openai.codexextension native-messaging registration and which host it names, and the running
 // OpenAI hosts, read from files and the process table only.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
-// profile's write roots ($CUA_HOME/run, $TMPDIR) and a trusted code path (the release's modules, the checkout's
-// src/services and src/secrets) overlap: `cua serve` and the listing launch refuse such a launch, because node_repl
-// would refuse the kernel. Another mode is the user's choice and only described.
+// profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
+// src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
+// Another mode is the user's choice and only described.
 import {existsSync, readFileSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -30,7 +30,7 @@ import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SKY_SERVICE} from './launch.mjs';
-import {SANDBOX_CONFLICT_HINT, describeConflict, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
+import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
 import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
@@ -114,11 +114,12 @@ function sandboxCheck({home, env, runtime}) {
   }
   if (mode === 'disabled') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=disabled: JavaScript cells may write wherever your account can, cua\'s trusted code roots included (accepted under the trust model, #20), and reach the network');
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: cua sends no sandbox state; node_repl denies every write and network connection, so profile labels and other features that need scratch space fail');
+  const owned = homeLayout(realHome(home));
   const conflicts = sandboxConflicts({
-    trustedPaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS],
-    writeRoots: scopedWriteRoots({cwd: homeLayout(realHome(home)).run, cwdLabel: '$CUA_HOME/run', tmpdir: env.TMPDIR}),
+    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
+    writeRoots: scopedWriteRoots({cwd: owned.run, cwdLabel: '$CUA_HOME/run', tmpdir: env.TMPDIR}),
   });
-  if (conflicts.length) return result('sandbox', 'fail', `CUA_SHIM_SANDBOX=scoped (the default) lets JavaScript cells write ${conflicts.map(describeConflict).join('; ')}; cua serve and the profile listing refuse to start like this (node_repl would refuse the kernel); ${SANDBOX_CONFLICT_HINT}`);
+  if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);
   return result('sandbox', 'pass', `CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells read everywhere but write only their connection's run directory and $TMPDIR${env.TMPDIR ? ` (${env.TMPDIR})` : ' (unset: none)'}, no trusted code path lies under either, and cells have no network; CUA_SHIM_SANDBOX=disabled lifts both limits`);
 }
 

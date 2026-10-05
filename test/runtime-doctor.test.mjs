@@ -77,7 +77,7 @@ test('the sandbox check describes the mode and fails a scoped home whose runtime
   assert.equal(conflicted.ok, false);
   const failed = check(conflicted, 'sandbox');
   assert.equal(failed.status, 'fail');
-  assert.match(failed.detail, /\$TMPDIR \(.*\) contains the trusted code path .*runtimes/);
+  assert.match(failed.detail, /\$TMPDIR \(.*\), which contains the trusted code path .*runtimes/);
   assert.match(failed.detail, /cua serve .*refuse/);
   assert.match(failed.detail, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
   for (const [mode, text] of [['disabled', /wherever your account can.*network/], ['default', /denies every write/]]) {

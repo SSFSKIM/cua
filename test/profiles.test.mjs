@@ -285,11 +285,11 @@ test('readiness never calls unreadable Chrome data "not installed"; a bound prof
   const statuses = Object.values(files);
   const live = ids => Object.fromEntries(withLiveness(statuses, ids).map(p => [p.key, p]));
   assert.deepEqual(live(['inst-p']).personal, {key: 'personal', chromeProfileDirectory: 'Default', ready: true, extensionInstanceId: 'inst-p', boundAt: '2026-10-05T00:00:00.000Z', chromeDataError: 'EPERM'});
-  for (const ids of [['inst-other'], []]) {
+  for (const ids of [['inst-other'], [], null]) {
     assert.equal(live(ids).personal.reason, 'chrome_data_unreadable', `not live: ${ids}`);
     assert.equal(live(ids).work.reason, 'chrome_data_unreadable', 'an unbound profile cannot become ready on live evidence');
   }
-  assert.match(reasonText(files.personal), /Full Disk Access for your terminal.*the live check still works; its bound extension instance was not confirmed live/);
+  assert.match(reasonText(files.personal), /Full Disk Access for your terminal.*the live check still works; its bound extension instance was not confirmed live: .*Chrome profile "Default".*extension's icon/);
   assert.match(reasonText(files.work), /the live check still works; it is not bound yet: cua profiles bind work works without that access/);
 });
 

@@ -174,11 +174,12 @@ test('profiles_list and cua profiles list check a bound profile against the live
     const reply = await server.call('profiles_list');
     seen[state] = reply.result.structuredContent.profiles[0];
     if (state === 'stale') assert.match(reply.result.content[0].text, /cua profiles bind personal/);
+    if (state === 'none live') assert.match(reply.result.content[0].text, /Chrome profile "Default".*extension's icon/);
   }
   assert.deepEqual(seen, {
     live: {key: 'personal', ready: true, extensionInstanceId: 'inst-a'},
     stale: {key: 'personal', ready: false, reason: 'binding_stale'},
-    'none live': {key: 'personal', ready: false, reason: 'backends_unlistable'},
+    'none live': {key: 'personal', ready: false, reason: 'host_not_live'},
     'listing failed': {key: 'personal', ready: false, reason: 'backends_unlistable'},
   });
   server.child.stdin.end();
@@ -196,7 +197,10 @@ test('profiles_list and cua profiles list check a bound profile against the live
   writeFileSync(backendsFile, listingOf('inst-new'));
   const list = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
   assert.equal(list.status, 0, list.stderr);
-  assert.match(list.stdout, /^personal\s+not ready\s+Default\s+its bound extension instance is not among the live backends \(an extension disable\/enable or reinstall mints a new id\): bind it again with cua profiles bind personal$/m);
+  assert.match(list.stdout, /^personal\s+not ready\s+Default\s+its bound extension instance is not among the live backends.*cua profiles bind personal.*$/m);
+  writeFileSync(backendsFile, listingOf());
+  const asleep = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  assert.match(asleep.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend serves it.*Chrome profile "Default"/m, 'the CLI says what profiles_list says');
   writeFileSync(backendsFile, listingOf('inst-a'));
   const json = JSON.parse(spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', '--json'], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000}).stdout);
   assert.deepEqual(json.profiles.map(p => [p.key, p.ready, p.extensionInstanceId]), [['personal', true, 'inst-a']]);
@@ -223,13 +227,13 @@ test('cua profiles list still shows the profiles but fails when its listing runt
   assert.deepEqual(JSON.parse(json.stdout), {ok: false, profiles: [unlistable], listingError: 'runtime_teardown_unconfirmed'});
   const human = cua([], [UNCONFIRMED_TEARDOWN]);
   assert.equal(human.status, 1, human.stderr);
-  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+no live OpenAI extension backend could be listed/m);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+the live OpenAI extension backends could not be listed/m);
   assert.match(human.stderr, /could not be listed \(runtime_teardown_unconfirmed: .*owned processes may remain/);
 
   writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: []}));
   const empty = cua(['--json']);
   assert.equal(empty.status, 0, empty.stderr);
-  assert.deepEqual(JSON.parse(empty.stdout), {ok: true, profiles: [unlistable]});
+  assert.deepEqual(JSON.parse(empty.stdout), {ok: true, profiles: [{...unlistable, reason: 'host_not_live'}]}, 'an empty listing is evidence: no host is live');
   assert.equal(cua([]).status, 0);
   assert.deepEqual(readdirSync(join(home, 'run')), [], 'every listing removed its working directory');
 });

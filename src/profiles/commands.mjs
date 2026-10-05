@@ -21,7 +21,7 @@ function labelOf(backend, name) {
 // against the live Google Chrome backends (withLiveness). The listing runs only when some profile is otherwise ready,
 // or bound with Chrome data this process may not read (the listing is then the only evidence); a listing that fails
 // leaves those profiles backends_unlistable (or chrome_data_unreadable) and is returned as `listingError` for the
-// caller to report.
+// caller to report. A listing that works and finds no Chrome backend is evidence (host_not_live), not a failure.
 // -> {profiles, listingError?: {code, message}}
 export async function profileReadiness({home, chrome, listBackends}) {
   const statuses = profileStatuses({home, chrome});
@@ -31,7 +31,7 @@ export async function profileReadiness({home, chrome, listBackends}) {
     if (teardown && !teardown.confirmed) throw teardownUnconfirmed(teardown);
     return {profiles: withLiveness(statuses, backends.filter(isChromeBackend).map(b => b.instanceId))};
   } catch (error) {
-    return {profiles: withLiveness(statuses, []), listingError: {code: error?.code ?? 'error', message: String(error?.message ?? error)}};
+    return {profiles: withLiveness(statuses, null), listingError: {code: error?.code ?? 'error', message: String(error?.message ?? error)}};
   }
 }
 

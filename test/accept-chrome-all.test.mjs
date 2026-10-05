@@ -205,6 +205,24 @@ test('the slot reader classifies every browser\'s manifest and fingerprints the 
   assert.equal(chrome.pathClass, 'desktop');
   assert.match(chrome.sha256, /^[0-9a-f]{64}$/);
   assert.ok(slots.filter(x => x.browser !== 'chrome').every(x => x.state === 'absent' && !('sha256' in x)));
+  // A manifest this process may not read is never taken for absence.
+  const edge = join(userHome, 'Library', 'Application Support', 'Microsoft Edge', 'NativeMessagingHosts');
+  mkdirSync(join(edge, 'com.openai.codexextension.json'), {recursive: true});
+  assert.deepEqual(slotStates({home, userHome, suffixes: hostSuffixes(loadPins())}).find(x => x.browser === 'edge'), {browser: 'edge', state: 'unreadable', error: 'EISDIR'});
+});
+
+test('an unreadable slot keeps the refusal, the no-op and the gate choice BLOCKED, never N/A or a pass', () => {
+  const slots = absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'unreadable', error: 'EPERM'} : s);
+  const guard = registrationGuard(slots);
+  for (const part of [guard.refusal, guard.noop]) {
+    assert.equal(part.run, false);
+    assert.notEqual(part.notApplicable, true);
+    assert.match(part.reason, /EPERM/);
+  }
+  assert.equal(c6GateBlocked(slots).status, 'BLOCKED');
+  assert.match(c6GateBlocked(slots).detail, /cannot read chrome's manifest \(EPERM\)/);
+  assert.equal(rollup(statuses(c6GateChecks(passingAbsentGate(), {slotsNow: slots}))), 'BLOCKED');
+  assert.equal(rollup(statuses(desktopAbsentGateChecks(passingAbsentGate({slotsBefore: slots})))), 'FAIL', 'an unreadable snapshot is not "absent before"');
 });
 
 // ---- C1 ---------------------------------------------------------------------------------------------------------------

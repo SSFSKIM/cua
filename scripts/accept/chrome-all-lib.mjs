@@ -150,7 +150,7 @@ export const replaceGateBlocked = (profile = 'personal') => check('live: --repla
 const ABSENT_SCENARIO = 'C6-desktop-absent-live-gate';
 const bySlot = slots => Array.isArray(slots) ? new Map(slots.filter(isObject).map(s => [s.browser, s])) : null;
 const coversEveryBrowser = map => map !== null && map.size === BROWSERS.length && BROWSERS.every(b => map.has(b.browser));
-const slotWords = slots => Array.isArray(slots) ? slots.map(s => `${s?.browser} ${s?.state === 'foreign' ? `foreign (${s.pathClass})` : s?.state}`).join(', ') : 'missing';
+const slotWords = slots => Array.isArray(slots) ? slots.map(s => `${s?.browser} ${s?.state === 'foreign' ? `foreign (${s.pathClass})` : s?.state === 'unreadable' ? `unreadable (${s.error})` : s?.state}`).join(', ') : 'missing';
 
 export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
   const name = 'live: desktop-absent gate';
@@ -200,17 +200,23 @@ export const desktopAbsentGateBlocked = (profile = 'personal') => check('live: d
 
 // Which gate a machine owes: the --replace gate where some browser holds a registration cua did not write (the
 // desktop's, or another host's), the desktop-absent gate otherwise.
-export const c6GateBlocked = (slotsNow, profile = 'personal') =>
-  slotsNow.some(s => s.state === 'foreign') ? replaceGateBlocked(profile) : desktopAbsentGateBlocked(profile);
+export function c6GateBlocked(slotsNow, profile = 'personal') {
+  const unreadable = slotsNow.filter(s => s.state === 'unreadable');
+  if (unreadable.length) return check('live: C6 gate', 'BLOCKED', `cannot read ${unreadable.map(s => `${s.browser}'s manifest (${s.error})`).join(', ')}, so which gate this machine owes cannot be told; rerun from a process that can read the browsers' directories (over SSH, or a terminal with Full Disk Access)`);
+  return slotsNow.some(s => s.state === 'foreign') ? replaceGateBlocked(profile) : desktopAbsentGateBlocked(profile);
+}
 
 // A supplied gate report, judged by its scenario. A desktop-absent report cannot stand for a machine that holds a
 // registration cua did not write: there the --replace gate applies.
 export function c6GateChecks(report, {profile = 'personal', slotsNow = []} = {}) {
   if (report?.scenario === ABSENT_SCENARIO) {
     const foreign = slotsNow.filter(s => s.state === 'foreign');
+    const unreadable = slotsNow.filter(s => s.state === 'unreadable');
     return [
-      check('live: desktop-absent gate: no registration cua did not write on this machine now', foreign.length ? 'FAIL' : 'PASS',
-        foreign.length ? `${foreign.map(s => `${s.browser} ${s.pathClass}`).join(', ')} present: a desktop (or other) registration exists, so the --replace gate applies` : 'no browser holds a foreign registration'),
+      check('live: desktop-absent gate: no registration cua did not write on this machine now', foreign.length ? 'FAIL' : unreadable.length ? 'BLOCKED' : 'PASS',
+        foreign.length ? `${foreign.map(s => `${s.browser} ${s.pathClass}`).join(', ')} present: a desktop (or other) registration exists, so the --replace gate applies`
+          : unreadable.length ? `cannot read ${unreadable.map(s => `${s.browser}'s manifest (${s.error})`).join(', ')}; rerun from a process that can read the browsers' directories`
+          : 'no browser holds a foreign registration'),
       ...desktopAbsentGateChecks(report, {profile}),
     ];
   }
@@ -218,10 +224,14 @@ export function c6GateChecks(report, {profile = 'personal', slotsNow = []} = {})
 }
 
 // Each browser's manifest slot for `--c6-slots` and the runner: its class and, when present, the sha256 of its bytes.
+// Only a path that is not there is absent; a read this process may not make (macOS can protect Chrome's directory from
+// a terminal without Full Disk Access) is `unreadable` with its code, never absence.
 export function slotStates({home, userHome, suffixes, nativeHost = 'com.openai.codexextension'}) {
   return BROWSERS.map(({browser, dataDir}) => {
     let bytes = null;
-    try { bytes = readFileSync(join(userHome, dataDir, 'NativeMessagingHosts', `${nativeHost}.json`)); } catch {}
+    try { bytes = readFileSync(join(userHome, dataDir, 'NativeMessagingHosts', `${nativeHost}.json`)); } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error.code)) return {browser, state: 'unreadable', error: error.code ?? error.message};
+    }
     const slot = classifySlot(bytes === null ? null : bytes.toString('utf8'), {home, userHome, suffixes});
     return {browser, ...slot, ...(bytes === null ? {} : {sha256: createHash('sha256').update(bytes).digest('hex')})};
   });
@@ -455,6 +465,11 @@ export function registrationGuard(slots) {
   const ours = slots.filter(s => s.state === 'ours').map(s => s.browser);
   if (ours.length) {
     const reason = `cua's host is registered in ${ours.join(', ')} (the --replace gate is in progress or was left registered); not touched. Rerun after node bin/cua.mjs chrome unregister`;
+    return {refusal: {run: false, reason}, noop: {run: false, reason}};
+  }
+  const unreadable = slots.filter(s => s.state === 'unreadable');
+  if (unreadable.length) {
+    const reason = `cannot read ${unreadable.map(s => `${s.browser}'s manifest (${s.error})`).join(', ')}, so whether a registration is present cannot be told; not run. Rerun from a process that can read the browsers' directories (over SSH, or a terminal with Full Disk Access)`;
     return {refusal: {run: false, reason}, noop: {run: false, reason}};
   }
   if (!slots.some(s => s.state === 'foreign')) {

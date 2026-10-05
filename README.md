@@ -272,7 +272,7 @@ refused when the runtime labels that backend as another profile. A single live b
 label; cua never chooses between profiles for you, and neither does the agent (its host notes say so).
 
 A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
-`chrome://extensions`, or reinstalling it, gives it a new instance id: the stored binding then points at an instance
+`chrome://extensions`, or reinstalling it, can give it a new instance id: the stored binding then points at an instance
 that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chrome instance is unavailable.", and
 `list` and `profiles_list` report the profile `binding_stale` (the agent is told to ask you to rebind). Run
 `cua profiles bind <key>` again: it names the stale id beside the live backends, and the pick stays yours, even when

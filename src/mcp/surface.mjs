@@ -1,6 +1,6 @@
 // What the model sees of the server: the four-tool surface (five with the browser surface, which adds profiles_list),
 // server instructions with host notes for the enabled surfaces, and the result rewrites the proxy applies (image MIME
-// correction). Pure functions; the server applies them to relayed messages.
+// correction, token-bearing URL redaction). Pure functions; the server applies them to relayed messages.
 
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
 // js_add_node_module_dir (it would widen what model code can import) stay private.
@@ -58,35 +58,48 @@ export const PROFILES_LIST_TOOL = {
 export const LOCAL_TOOLS = new Set([END_TASK_TOOL.name, SECRETS_LIST_TOOL.name, PROFILES_LIST_TOOL.name]);
 export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
 
-export const DEFAULT_HOST_NOTES = `Host notes (cua serve):
-- Use this when a task needs a macOS app's GUI and no CLI, API or skill covers it. The first js call returns the API document; read it before writing more code.
-- js and js_reset calls on this connection form one task until end_task. Call end_task when the GUI work is finished. If end_task reports an error, this connection takes no more work: report it rather than retrying.
-- Each app asks the user for approval once per connection, in a dialog. Do not retry an app the user declined; report it instead.
-- Address elements by index from the latest accessibility text. Coordinates are screenshot pixels; if the host says it downscaled an image, apply the multiplier it gives. Role names follow the system language.
-- After quitting an app, stop using its handle: getAXState() on it relaunches the app. Verify with cua.listApps({emit:false}), which can lag a moment behind cmd+q.
-- typeText goes through the keyboard layout and silently drops characters it cannot key, such as emoji; use paste for those and for multiline text.
-- Batch deterministic actions with one observation per call, and pass timeout_ms for long waits. If the REPL state is confused, call js_reset and bind the app again.
-- Cancelling a js call does not stop a running cell, and js_reset waits for it, so timeout_ms is what bounds runaway code. If the runtime has to be stopped, native cleanup is unconfirmed.
-- Do not drive the same app through osascript or other tools while a cua session is open.`;
-
-// Browser-surface notes: the three Chrome rules (pick a registered profile by instance id, DOM-only input through
-// Playwright locators, a long createBrowserTab limit and a possible leftover tab after its timeout). A failed selection
-// sends the agent back to profiles_list: the vendor's own error for an id that is not live ("The Chrome instance is
-// unavailable.") is raised inside the REPL, where cua cannot see it, while profiles_list names a stale binding.
-const BROWSER_NOTES = [
-  '- Chrome: call profiles_list, then select the profile the user means with cua.getBrowser({extensionInstanceId}); if that fails, call profiles_list again. Never choose between profiles yourself.',
-  '- Chrome tabs are DOM-only: fill and click with tab.playwright locators; native typeText/click throw there.',
-  '- createBrowserTab can take over 30 s: give that js call timeout_ms of at least 60000. If it times out, a tab may still have opened: tell the user, do not retry blindly.',
+// Host notes: what the vendor's API document leaves out, in rules an agent can follow. The general rules apply to every
+// surface; several come from the first real-use run (docs/evidence/2026-10-05-homework-1b-dogfooding.md, issue #23):
+// end_task was never called, calls ran in parallel, inputs were repeated against an unchanged state, and fixed waits
+// stood in for readiness checks. Claude Code caps the server instructions, the vendor's own included, at 2,048
+// characters, so every line has to earn its place.
+const TITLE = 'Host notes (cua serve):';
+const COMPUTER_HEAD = '- Use this when a macOS app\'s GUI is the only way; read the API document the first js call returns.';
+const BROWSER_HEAD = '- Use this for the user\'s existing Chrome profiles when no API or skill covers the task; read the API document the first js call returns.';
+const GENERAL_NOTES = [
+  '- Call end_task as soon as the task is done, before your final reply. If it errors, report it; the connection is spent.',
+  '- One controller per task, one js call at a time.',
+  '- Observe, act, verify: a call returning is not success. If the state is unchanged, stop and find out why rather than repeat.',
+  '- Batch deterministic steps between observations. Wait for a visible readiness condition in a bounded poll, not a fixed delay.',
+  '- Cancelling does not stop a running cell; its timeout_ms does.',
 ];
-// The surface-independent native notes a browser-only connection keeps.
-const BROWSER_ONLY_HEAD = '- Use this to operate the user\'s existing Chrome profiles when no API or skill covers the task. The first js call returns the API document; read it before writing more code.';
-const GENERAL = line => /^- (js and js_reset calls|Cancelling a js call)/.test(line);
+const COMPUTER_NOTES = [
+  '- Each app asks the user for approval once per connection; do not retry a declined app, report it.',
+  '- Prefer element indexes from the latest accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier). Role names follow the system language.',
+  '- After quitting an app, drop its handle: getAXState() on it relaunches the app.',
+  '- typeText silently drops characters the keyboard layout cannot key (emoji); paste those and multiline text.',
+  '- If REPL state is confused, js_reset and rebind the app. Do not also drive the app through osascript.',
+];
+// The Chrome rules. A failed selection sends the agent back to profiles_list: the vendor's own error for an id that is
+// not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
+// profiles_list names a stale binding. Which profile is meant stays the user's call (the dogfood agent bound one
+// itself from tab contents). The 3 s line is spike #25's finding: the vendor browser service caps locator actions,
+// waits and playwright.evaluate at 3 s (a per-call timeoutMs can only shorten it), and a cell timeout resets the
+// kernel, losing the tab handle.
+const BROWSER_NOTES = [
+  '- Chrome: give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user: ask.',
+  '- Chrome tabs are DOM-only: act through tab.playwright locators, not native typeText/click.',
+  '- Browser locator actions, waits and playwright.evaluate stop at 3 s whatever timeoutMs or the js timeout_ms say (timeoutMs can only shorten it); to wait longer, loop short waits in the cell up to your own deadline and give the js call a timeout_ms above it.',
+  '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
+  '- createBrowserTab can take over 30 s: give that js call timeout_ms of at least 60000. After a timeout a tab may still have opened: tell the user; do not retry.',
+];
+
+export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
 
 export function hostNotesFor(surfaces) {
   if (!surfaces.includes('browser')) return DEFAULT_HOST_NOTES;
   if (surfaces.includes('computer')) return [DEFAULT_HOST_NOTES, ...BROWSER_NOTES].join('\n');
-  const [title, ...lines] = DEFAULT_HOST_NOTES.split('\n');
-  return [title, BROWSER_ONLY_HEAD, ...lines.filter(GENERAL), ...BROWSER_NOTES].join('\n');
+  return [TITLE, BROWSER_HEAD, ...GENERAL_NOTES, ...BROWSER_NOTES].join('\n');
 }
 
 // A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
@@ -119,6 +132,85 @@ function sniff(item) {
 
 export function correctImages(result) {
   return Array.isArray(result?.content) ? {...result, content: result.content.map(sniff)} : result;
+}
+
+// Token-bearing URLs in js/js_reset results (issue #24): a page or tab inventory can carry a credential the agent has
+// no use for, and a tool result stays in the client's transcript. The value of a query or fragment parameter named
+// like a token, key or secret (its decoded name's last word is token, key, secret or apikey, so access_token, apiKey,
+// client_secret, X-Refresh-Token; not monkey, keyword or tokens_left) becomes <redacted>, raw or URL-encoded, also
+// inside a redirect parameter: a parameter start is recognized at the start of a string or after a non-space character
+// (so `int &key=v;` in source text is not one), and a non-secret value is scanned on rather than skipped. A value runs
+// to the next delimiter of its URL or a closing bracket it did not open, less trailing `}`, `,` or `.`. Every parameter
+// value of the Playwright MCP extension's connect URL (chrome-extension://<id>/connect.html?mcpRelayUrl=…&token=…) and
+// the path of its loopback relay URL are redacted too. Text content and structured content only; images, _meta and
+// requests are untouched. This is the only output filtering cua does.
+const REDACTED = '<redacted>';
+const SECRET_WORDS = new Set(['token', 'key', 'secret', 'apikey']);
+const decodeOnce = name => { try { return decodeURIComponent(name); } catch { return name; } };
+// Twice: a name inside an encoded redirect carries its own escapes encoded again (%2574oken is token).
+const decoded = name => decodeOnce(decodeOnce(name));
+const secretName = name => SECRET_WORDS.has(decoded(name).replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).at(-1));
+// A parameter start: a raw or encoded ?, & or # at the start of a string or after a non-space character, a name (percent escapes allowed, except the
+// encoded delimiters themselves), then a raw or encoded =.
+const PARAM = /(?<!\s)(?:[?&#]|%3F|%26|%23)((?:[\w.-]|%(?!3[DF]|2[36])[0-9A-F]{2})+)(=|%3D)/gi;
+const DELIMITER = /[&#\s"'<>]/;
+const TRAILING = /[},.]/;
+const CONNECT_URL = /(chrome-extension:\/\/[a-p]{32}\/connect\.html\?)([^\s"'<>#]*)/g;
+const RELAY_URL = /(wss?:\/\/(?:127\.0\.0\.1|\[::1\]|localhost)(?::\d+)?\/extension\/)[^\s"'<>]+/g;
+
+// Where a value ends, in one forward scan: at a URL delimiter (also %26 or %23 inside an encoded URL) or at a closing
+// bracket it did not open (the `)` of a Markdown link, the `]` of a citation). One pass keeps the scanner linear.
+function valueEnd(text, start, encoded) {
+  const depth = {'(': 0, '[': 0};
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (DELIMITER.test(c)) return i;
+    if (encoded && c === '%' && /^%(?:26|23)$/.test(text.slice(i, i + 3))) return i;
+    if (c === '(' || c === '[') depth[c]++;
+    else if (c === ')' || c === ']') {
+      const open = c === ')' ? '(' : '[';
+      if (!depth[open]) return i;
+      depth[open]--;
+    }
+  }
+  return text.length;
+}
+
+function redactParams(text) {
+  let out = '';
+  let last = 0;
+  PARAM.lastIndex = 0;
+  for (let match; (match = PARAM.exec(text));) {
+    if (!secretName(match[1])) continue;
+    const start = PARAM.lastIndex;
+    let end = valueEnd(text, start, match[2] !== '=');
+    while (end > start && TRAILING.test(text[end - 1])) end--;
+    if (end === start) continue;
+    out += text.slice(last, start) + REDACTED;
+    last = PARAM.lastIndex = end;
+  }
+  return out + text.slice(last);
+}
+
+function redactText(text) {
+  return redactParams(text
+    .replace(CONNECT_URL, (_, head, query) => head + query.split('&').map(part => part.replace(/=.*/s, `=${REDACTED}`)).join('&'))
+    .replace(RELAY_URL, `$1${REDACTED}`));
+}
+
+function redactValue(value) {
+  if (typeof value === 'string') return redactText(value);
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactValue(v)]));
+  return value;
+}
+
+export function redactTokens(result) {
+  if (!result || typeof result !== 'object') return result;
+  const out = {...result};
+  if (Array.isArray(result.content)) out.content = result.content.map(item => item?.type === 'text' && typeof item.text === 'string' ? {...item, text: redactText(item.text)} : item);
+  if (result.structuredContent !== undefined) out.structuredContent = redactValue(result.structuredContent);
+  return out;
 }
 
 // An accepted app-approval elicitation gets `_meta.persist`, which node_repl uses to remember the approval.

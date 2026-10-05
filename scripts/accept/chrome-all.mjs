@@ -210,7 +210,7 @@ export async function runAll(argv) {
       'remove deletes only the named registry entry and never touches the Chrome profile',
       'readiness: bound with the extension installed is ready; otherwise the reason is named',
       'automatic bind: a unique display name and exactly one live backend carrying it',
-      'automatic bind is undetermined, never a guess, when labels are missing, ambiguous or absent',
+      'automatic bind falls back to the user\'s pick, never a guess, when labels are missing, ambiguous or absent',
       'an explicit pick is accepted only for a live backend, and never against the runtime\'s own label',
       'bind stores the automatically labelled backend and says how it was chosen',
     ]));
@@ -246,7 +246,7 @@ export async function runAll(argv) {
     }
     checks.push(suiteClaims('npm test: profiles_list and the host notes', tap, [
       'with the browser surface, profiles_list is the fifth tool and returns keys, readiness and instance ids only',
-      'the browser host notes carry the three Chrome rules and keep the instructions within 2048 characters',
+      'the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters',
     ]));
     addItem('C4', 'profiles_list and the browser host notes', checks);
   }

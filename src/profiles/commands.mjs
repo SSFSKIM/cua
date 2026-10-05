@@ -1,11 +1,13 @@
 // `cua profiles bind`: find the live extension backend of a registered Chrome profile and record its instance id; and
 // readiness with the live check, for `cua profiles list` and profiles_list. The live listing (inventory.mjs) and the
-// interactive picker are injected so the decision path is testable; the CLI and the server wire the real ones. Display
-// names never leave this module: the listing bind returns names each backend's label only as this-profile /
-// other-profile / unlabelled, or comparison-unknown when the registered profile's own display name is unknown (Local
-// State unreadable or silent about it), with its tab count. Only Google Chrome's backends are listed, can be bound
-// (bind.mjs) and count as live for readiness; another browser's are reported as a count (`nonChromeExcluded`), nothing
-// more.
+// interactive picker are injected so the decision path is testable; the CLI and the server wire the real ones. The
+// listing bind returns carries, per candidate, the vendor's own profile label (`profileName`, null when unlabelled;
+// shown to the user so the pick is easy, never stored), its comparison with the registered profile's display name
+// (this-profile / other-profile / unlabelled, or comparison-unknown when that name is unknown: Local State unreadable
+// or silent about it), its tab count, and `likelyMatch` on the backend bind.mjs's automatic rule bound. The registered
+// profile's own display name from Local State is never reported. Only Google Chrome's backends are listed, can be
+// bound (bind.mjs) and count as live for readiness; another browser's are reported as a count (`nonChromeExcluded`),
+// nothing more, not even its label.
 import {fail} from '../runtime/errors.mjs';
 import {readRegistry, bindProfile, profileStatuses, withLiveness, awaitsLiveEvidence, REASONS} from './registry.mjs';
 import {decideBinding, isChromeBackend, REFUSED} from './bind.mjs';
@@ -35,10 +37,12 @@ export async function profileReadiness({home, chrome, listBackends}) {
   }
 }
 
-// -> {ok:true, key, extensionInstanceId, how, backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
-//  | {ok:false, outcome:'undetermined', reason, key, backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
-// `staleBinding` is the recorded instance id when Chrome backends are live but it is not among them. It changes nothing
-// in the rule: the picker is told, and the user still picks (a lone new unlabelled backend is never bound for them).
+// -> {ok:true, key, extensionInstanceId, how:'automatic'|'explicit', backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
+//  | {ok:false, outcome:'pick_required', reason, key, backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
+//  | {ok:false, outcome:'undetermined', reason:'no_live_backends', key, backends:[], ...}
+// Outside bind.mjs's automatic rule, nothing is bound without the user's pick (the picker's, or
+// --extension-instance-id). `staleBinding` is the recorded instance id when Chrome backends are live but it is not among
+// them. It changes nothing in the rule: the picker is told, and a lone new unlabelled backend is never bound for them.
 // `chromeDataUnreadable` / `localStateUnreadable` carry the error code when this process may not read the profile's
 // Chrome data or Local State: the presence check is skipped (the live listing decides) and labels cannot be compared.
 // Throws classified errors for an unknown key, a profile that cannot be ready, a refused explicit pick, and a
@@ -63,7 +67,8 @@ export async function bindCommand({home, key, chrome, listBackends, explicitId, 
   const name = displayNames.get(directory);
   const backends = live.filter(isChromeBackend);
   const nonChromeExcluded = live.length - backends.length;
-  const listing = backends.map(b => ({instanceId: b.instanceId, ...(Number.isInteger(b.tabCount) ? {tabCount: b.tabCount} : {}), label: labelOf(b, name)}));
+  const listing = backends.map(b => ({instanceId: b.instanceId, ...(Number.isInteger(b.tabCount) ? {tabCount: b.tabCount} : {}),
+    profileName: typeof b.profileName === 'string' ? b.profileName : null, label: labelOf(b, name)}));
   const recorded = entry.extensionInstanceId;
   const staleBinding = recorded !== undefined && backends.length && !backends.some(b => b.instanceId === recorded) ? recorded : undefined;
   const base = {key, backends: listing, elicitationsDeclined, ...(nonChromeExcluded ? {nonChromeExcluded} : {}), ...(staleBinding ? {staleBinding} : {}),
@@ -78,12 +83,15 @@ export async function bindCommand({home, key, chrome, listBackends, explicitId, 
 
   if (explicitId !== undefined) return bind(decideBinding({directory, displayNames, backends, explicitId}));
   const automatic = decideBinding({directory, displayNames, backends});
-  if (automatic.outcome === 'bound') return bind(automatic);
+  if (automatic.outcome === 'bound') {
+    listing.find(entry => entry.instanceId === automatic.instanceId).likelyMatch = true;
+    return bind(automatic);
+  }
   // No display name because Local State was refused, not because Chrome has none.
   const reason = automatic.reason === 'no_display_name' && localStateUnreadable ? 'local_state_unreadable' : automatic.reason;
   if (pick && listing.length) {
     const choice = await pick(listing, reason, nonChromeExcluded, {staleBinding});
     if (choice) return bind(decideBinding({directory, displayNames, backends, explicitId: choice}));
   }
-  return {ok: false, outcome: 'undetermined', reason, ...base};
+  return {ok: false, outcome: automatic.outcome, reason, ...base};
 }

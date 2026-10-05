@@ -5,7 +5,7 @@ import {rmSync, realpathSync} from 'node:fs';
 import {inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
-import {scratch, zipFixture, fixturePin, acceptSignatures} from './fixtures/runtime-fixture.mjs';
+import {scratch, shortScratch, zipFixture, fixturePin, acceptSignatures} from './fixtures/runtime-fixture.mjs';
 
 const darwin = process.platform === 'darwin';
 const HOST = {platform: 'darwin', arch: 'arm64'};
@@ -13,8 +13,9 @@ const check = (report, name) => report.checks.find(c => c.name === name);
 const noHelper = async () => ({socket: '/x/computeruse.sock', holders: []});
 const noSecrets = async () => ({path: '/x/cua-keychain', built: false});
 
+// Under /tmp, outside $TMPDIR, where the scoped sandbox allows a home (the `sandbox` check).
 async function installedHome(t) {
-  const s = scratch();
+  const s = shortScratch();
   t.after(s.cleanup);
   const archive = zipFixture(s.dir);
   const pin = parsePin(fixturePin({sha256: archive.sha256, length: archive.length}));
@@ -57,11 +58,36 @@ test('a healthy installed runtime names its release and passes every installed-r
   assert.equal(report.ok, true);
   assert.equal(report.runtime.release, pin.release);
   assert.equal(report.runtime.root, join(realpathSync(home), 'runtimes', pin.release));
-  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures'])
+  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'sandbox'])
     assert.equal(check(report, name)?.status, 'pass', name);
   assert.match(check(report, 'runtime.installed').detail, new RegExp(pin.release));
   // No running helper is not a failure: it is evidence a passive check cannot give.
   assert.equal(check(report, 'helper.live').status, 'blocked');
+});
+
+// Issue #36: under the scoped default a home or checkout below $TMPDIR would make node_repl refuse every kernel; the
+// doctor says so plainly, while disabled and default are choices it only describes.
+test('the sandbox check describes the mode and fails a scoped home whose runtime lies below $TMPDIR, naming the remedy', {skip: !darwin}, async t => {
+  const {home, pin} = await installedHome(t);
+  const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const scoped = check(await inspect({TMPDIR: '/private/var/folders/xx/T/'}), 'sandbox');
+  assert.equal(scoped.status, 'pass');
+  assert.match(scoped.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*run directory and \$TMPDIR.*no network/);
+  const conflicted = await inspect({TMPDIR: realpathSync(home)});
+  assert.equal(conflicted.ok, false);
+  const failed = check(conflicted, 'sandbox');
+  assert.equal(failed.status, 'fail');
+  assert.match(failed.detail, /\$TMPDIR \(.*\) contains the trusted code path .*runtimes/);
+  assert.match(failed.detail, /cua serve .*refuse/);
+  assert.match(failed.detail, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
+  for (const [mode, text] of [['disabled', /wherever your account can.*network/], ['default', /denies every write/]]) {
+    const row = check(await inspect({TMPDIR: realpathSync(home), CUA_SHIM_SANDBOX: mode}), 'sandbox');
+    assert.equal(row.status, 'pass', mode);
+    assert.match(row.detail, text, mode);
+  }
+  const invalid = check(await inspect({CUA_SHIM_SANDBOX: 'managed'}), 'sandbox');
+  assert.equal(invalid.status, 'fail');
+  assert.match(invalid.detail, /must be scoped, disabled or default/);
 });
 
 test('signature and layout damage in the installed tree fail the doctor with the component named', {skip: !darwin}, async t => {

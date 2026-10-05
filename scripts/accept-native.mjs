@@ -19,7 +19,7 @@
 //      scripts/probe-secrets.mjs (generated disposable sentinels, one test-owned Keychain item removed in finally);
 //      with both flags the TextEdit fixture also types a disposable secret into its document (target observation)
 //   7  substitution suites, and the live probe's substitution steps when --live-keychain ran it, with its trusted-root
-//      rows: unwritable with the sandbox on (a guarantee) and, informational (INFO), what the disabled default allows
+//      rows: unwritable under the scoped default (a guarantee) and, informational (INFO), what an explicit disabled allows
 //   8  lifecycle suites, scripts/probe-lifecycle.mjs (live, read-only), per-connection approvals (--live-textedit)
 //   9  release gates: clean machine, cold start, fresh permission onboarding, stable signing (always BLOCKED here)
 //   10 README/plugin/package contents, tracked files, and a clean clone of HEAD running npm test, build:helper and

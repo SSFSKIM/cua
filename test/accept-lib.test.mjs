@@ -230,17 +230,18 @@ test('a child scenario\'s own verdict keeps every failure, even of a step no pha
   assert.equal(scenarioVerdict('v', {status: 'BLOCKED', steps: allProbeSteps()}, expected).status, 'BLOCKED');
 });
 
-test('the trusted-root rows: a sandbox-on guarantee and an informational row for the disabled default, both in item 7 only', () => {
-  const on = PROBE_SECRETS_PHASES.find(p => p.name.includes('sandbox on (CUA_SHIM_SANDBOX=default): trusted roots unwritable'));
-  const off = PROBE_SECRETS_PHASES.find(p => p.name.includes('sandbox disabled (default)'));
+test('the trusted-root rows: a guarantee under the scoped default and an informational row for an explicit disabled, both in item 7 only', () => {
+  const on = PROBE_SECRETS_PHASES.find(p => p.name.includes('sandbox scoped (default): trusted roots unwritable'));
+  const off = PROBE_SECRETS_PHASES.find(p => p.name.includes('sandbox disabled (CUA_SHIM_SANDBOX=disabled)'));
   assert.ok(on && off);
+  assert.doesNotMatch(on.name, /informational/);
   assert.match(off.name, /informational/);
   assert.match(off.name, /accepted/);
   for (const phase of [on, off]) {
     assert.ok(probePhasesFor(7).includes(phase));
     assert.ok(!probePhasesFor(6).includes(phase));
   }
-  assert.ok(PROBE_SECRETS_PHASES.find(p => p.name.includes('every connection closed')).steps.includes('real serve (sandbox on): close'));
+  assert.ok(PROBE_SECRETS_PHASES.find(p => p.name.includes('every connection closed')).steps.includes('real serve (sandbox disabled): close'));
   const steps = allProbeSteps().map(s => off.steps.includes(s.name) ? {...s, status: 'INFO', detail: 'writable: src/services'} : s);
   const row = inventoryCheck(off.name, steps, off.steps);
   assert.equal(row.status, 'INFO');

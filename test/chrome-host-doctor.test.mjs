@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {parsePin, loadPins} from '../src/runtime/manifest.mjs';
-import {scratch, zipFixture, fixturePin, acceptSignatures, forgeActiveRuntime, forgeChromeComponent} from './fixtures/runtime-fixture.mjs';
+import {scratch, shortScratch, zipFixture, fixturePin, acceptSignatures, forgeActiveRuntime, forgeChromeComponent} from './fixtures/runtime-fixture.mjs';
 
 const darwin = process.platform === 'darwin';
 const HOST = {platform: 'darwin', arch: 'arm64'};
@@ -27,7 +27,7 @@ function forged(t, options) {
 const doctor = (home, extra = {}) => inspectRuntime({home, pins: loadPins(), ...passive, ...extra});
 
 test('a fixture install passes chrome.host.config', {skip: !darwin}, async t => {
-  const s = scratch();
+  const s = shortScratch(); // outside $TMPDIR, so the scoped sandbox check passes too and `ok` is this check's
   t.after(s.cleanup);
   const archive = zipFixture(s.dir);
   const pin = parsePin(fixturePin({sha256: archive.sha256, length: archive.length}));

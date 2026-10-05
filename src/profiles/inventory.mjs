@@ -18,7 +18,7 @@ import {CuaError, fail} from '../runtime/errors.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
-import {sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
+import {assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
 
 export const MARKER = 'CUABACKENDS';
 export const LIMITS = {initializeMs: 60_000, cellMs: 45_000, callMs: 60_000, teardownMs: 5000};
@@ -121,6 +121,7 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
   const owned = homeLayout(realHome(home));
   mkdirSync(owned.run, {recursive: true, mode: 0o700});
   const launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
+  assertSandboxFits(sandbox, launch);
   mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
   mkdirSync(launch.cwd, {mode: 0o700});
   chmodSync(launch.cwd, 0o700);

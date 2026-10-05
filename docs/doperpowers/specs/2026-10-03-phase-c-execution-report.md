@@ -90,7 +90,7 @@ All are folded into the spec's Decision Log and Surprises (2026-10-03/04 entries
 
 ## Residue (candidates for tickets)
 
-1. **Clean-machine release gate:** desktop-absent install/serve, fresh-TCC onboarding, and the original host serving with no desktop present. The cold start and the cua-host round trip ran with the desktop installed.
+1. **Clean-machine release gate** (2026-10-05: a second Mac with the desktop app present passed the whole native and Chrome acceptance from a fresh clone — `docs/evidence/second-mac-acceptance.md`; desktop-absent and fresh-TCC remain open)**:** desktop-absent install/serve, fresh-TCC onboarding, and the original host serving with no desktop present. The cold start and the cua-host round trip ran with the desktop installed.
 2. **Stale-binding readiness:** resolved on `fix/stale-binding-readiness` (`941b42a`): readiness checks the bound id against the live backends (`binding_stale`, `backends_unlistable`), and `bind` marks a stale id while the pick stays the user's (spec Decision Log, 2026-10-04).
 3. **Vendor profile enrichment never labels backends here** (static: `classic-level` is present). Diagnose live why `profileName` stays absent; until then every bind needs the user's pick. Hypothesis (2026-10-05, unverified): the enrichment's reads of Chrome's `Local State` and settings store fail with EPERM when the runtime is launched from a process without Full Disk Access (spec Surprises, second Mac).
 4. **User-tab operations, downloads, dialogs, frames and Chrome tab-group side effects** are untested on the original route.
@@ -99,6 +99,7 @@ All are folded into the spec's Decision Log and Surprises (2026-10-03/04 entries
 7. **Remote control (logged 2026-10-05, owner's question; not addressed):** can `cua serve` drive a remote Mac's GUI and its Chrome tabs? cua_repl itself only reaches local sockets (the native helper's group-container socket, the Chrome hosts' `/tmp/codex-browser-use` sockets), so this is an MCP-transport question (`cua serve` on the remote machine, stdio forwarded over SSH) plus the console-session constraints seen on the second Mac (Keychain and permission dialogs need the GUI session, not an SSH session).
 8. **Linux (logged 2026-10-05, owner's question; not addressed):** the vendor's cua_repl carries Linux code paths; whether a Linux `node_repl` and computer-control service are shipped in any obtainable archive, and under what pin, is the research question. The current pin is darwin-arm64 only.
 9. **Independence from the ChatGPT extension (logged 2026-10-05, owner's question; not addressed):** our own extension (or extension + host pair) speaking the native-messaging protocol the host expects. The parked Playwright route (`wip/m8-playwright-transport`, item 5) is one form of this; decide them together.
+10. **Chrome host lifetime (logged 2026-10-05, second Mac):** the OpenAI Chrome host often exited within about a minute of the extension waking, while on the first Mac hosts stay up for hours (desktop 26.924 vs 26.930, same extension). Users may have to wake the extension right before the agent's first browser call. Diagnose; consider having cua detect "no live host" and tell the user exactly that.
 
 ## Open gates
 

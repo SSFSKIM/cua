@@ -9,6 +9,7 @@ import {scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {chromeChecks} from '../src/profiles/checks.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
+import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 
 const PS_TWO_HOSTS = [
   '  100     1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -76,4 +77,19 @@ test('doctor reports the Chrome checks beside runtime health and they never chan
   const capability = report.checks.filter(c => c.name.startsWith('chrome.') && c.name !== 'chrome.host.config');
   assert.deepEqual(capability, injected);
   for (const c of capability) assert.notEqual(c.status, 'fail');
+});
+
+test('Chrome data this process may not read is blocked with the Full Disk Access hint and the code, never "not installed"', t => {
+  const {home} = machine(t);
+  const chrome = fakeChromeFacts({Default: {extension: 'installed'}, 'Profile 8': {extension: 'unreadable'}, 'Profile 6': {directory: 'unreadable'}}, {nativeHost: {readError: 'EPERM'}});
+  const checks = byName(chromeChecks({home, chrome, psText: PS_TWO_HOSTS, userHome: '/Users/x'}));
+  assert.equal(checks['chrome.extension.personal'].status, 'pass');
+  for (const key of ['work', 'school']) {
+    const c = checks[`chrome.extension.${key}`];
+    assert.equal(c.status, 'blocked', key);
+    assert.match(c.detail, /may not read Chrome's data directory \(EPERM\).*Full Disk Access.*the live check still works/, key);
+    assert.doesNotMatch(c.detail, /not installed|no longer exists/, key);
+  }
+  assert.equal(checks['chrome.host.registered'].status, 'blocked');
+  assert.match(checks['chrome.host.registered'].detail, /is unknown: this process may not read it .*\(EPERM\).*Full Disk Access/);
 });

@@ -5,12 +5,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile, readRegistry, removeProfile} from '../src/profiles/registry.mjs';
 import {bindCommand, profileReadiness} from '../src/profiles/commands.mjs';
+import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 
 function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}, 'Profile 6': {name: 'School'}}) {
   const s = scratch();
@@ -232,7 +233,7 @@ test('cua profiles add/list/remove against the user\'s Chrome directory, with re
   assert.equal(add.status, 0, add.stderr);
   assert.match(add.stdout, /registered personal -> Chrome profile "Default"; the OpenAI extension is installed there/);
   const work = cua(['profiles', 'add', 'work', '--chrome-profile', 'Profile 8', '--json'], env);
-  assert.deepEqual(JSON.parse(work.stdout), {ok: true, key: 'work', chromeProfileDirectory: 'Profile 8', extensionInstalled: false});
+  assert.deepEqual(JSON.parse(work.stdout), {ok: true, key: 'work', chromeProfileDirectory: 'Profile 8', extension: 'absent'});
   const list = JSON.parse(cua(['profiles', 'list', '--json'], env).stdout);
   assert.deepEqual(list.profiles.map(p => [p.key, p.ready, p.reason]), [['personal', false, 'not_bound'], ['work', false, 'extension_not_installed']]);
   const human = cua(['profiles', 'list'], env);
@@ -273,4 +274,62 @@ test('a bind whose runtime teardown was unconfirmed stores nothing and reports t
   await assert.rejects(bindCommand({home, key: 'personal', chrome, listBackends: unconfirmed}), e => e.code === 'runtime_teardown_unconfirmed' && /listing timed out/.test(e.message));
   await assert.rejects(bindCommand({home, key: 'personal', chrome, explicitId: 'inst-a', listBackends: unconfirmed}), e => e.code === 'runtime_teardown_unconfirmed');
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, undefined);
+});
+
+// ---- Chrome data this process may not read (macOS privacy protection) ---------------------------------------------
+
+function unreadableHome(t) {
+  const s = scratch();
+  t.after(s.cleanup);
+  return join(s.dir, 'cua');
+}
+
+test('readiness lists the live backends for a bound profile whose Chrome data is unreadable, and the live backend decides', async t => {
+  const home = unreadableHome(t);
+  const chrome = fakeChromeFacts({Default: {extension: 'unreadable'}, 'Profile 8': {extension: 'unreadable'}});
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome});
+  // Only unbound ones: nothing can become ready, so nothing is launched.
+  const idle = await profileReadiness({home, chrome, listBackends: async () => assert.fail('nothing may be launched')});
+  assert.deepEqual(idle.profiles.map(p => [p.key, p.ready, p.reason, p.chromeDataError]), [['personal', false, 'chrome_data_unreadable', 'EPERM'], ['work', false, 'chrome_data_unreadable', 'EPERM']]);
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a'});
+  const personal = async listBackends => (await profileReadiness({home, chrome, listBackends})).profiles.find(p => p.key === 'personal');
+  assert.deepEqual(await personal(listing([{instanceId: 'inst-a'}])).then(p => [p.ready, p.reason, p.extensionInstanceId]), [true, undefined, 'inst-a']);
+  for (const list of [listing([{instanceId: 'inst-new'}]), listing([]), failing(Object.assign(new Error('x'), {code: 'runtime_unresponsive'}))])
+    assert.deepEqual(await personal(list).then(p => [p.ready, p.reason]), [false, 'chrome_data_unreadable']);
+});
+
+test('bind skips the presence check when Chrome data is unreadable, still refuses an absent extension, and names a refused Local State', async t => {
+  const home = unreadableHome(t);
+  const never = async () => assert.fail('nothing may be launched');
+  const absent = fakeChromeFacts({'Profile 8': {extension: 'absent'}});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome: absent});
+  await assert.rejects(bindCommand({home, key: 'work', chrome: absent, listBackends: never}), e => e.code === 'profile_not_ready' && /not installed/.test(e.message));
+
+  const chrome = fakeChromeFacts({Default: {directory: 'unreadable'}}, {localState: 'unreadable'});
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const labelled = await bindCommand({home, key: 'personal', chrome, listBackends: listing([{instanceId: 'inst-a', profileName: 'Personal', tabCount: 2}])});
+  assert.deepEqual(labelled, {ok: false, outcome: 'undetermined', reason: 'local_state_unreadable', key: 'personal', elicitationsDeclined: 0,
+    backends: [{instanceId: 'inst-a', tabCount: 2, label: 'comparison-unknown'}], chromeDataUnreadable: 'EPERM', localStateUnreadable: 'EPERM'});
+  const picked = await bindCommand({home, key: 'personal', chrome, explicitId: 'inst-a', listBackends: listing([{instanceId: 'inst-a'}])});
+  assert.deepEqual({ok: picked.ok, id: picked.extensionInstanceId, data: picked.chromeDataUnreadable}, {ok: true, id: 'inst-a', data: 'EPERM'});
+  assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-a');
+});
+
+test('cua profiles add and list name an unreadable Chrome data directory, never a missing extension', {skip: process.getuid?.() === 0}, t => {
+  const env = setup(t, {Default: {name: 'Personal', extension: true}});
+  const extensions = join(env.userData, 'Default', 'Extensions');
+  chmodSync(extensions, 0o000);
+  try {
+    const add = cua(['profiles', 'add', 'personal', '--chrome-profile', 'Default'], env);
+    assert.equal(add.status, 0, add.stderr);
+    assert.match(add.stdout, /cannot read Chrome's data directory \(EACCES\).*registered anyway \(next: cua profiles bind personal.*Full Disk Access/);
+    const list = JSON.parse(cua(['profiles', 'list', '--json'], env).stdout);
+    assert.deepEqual(list.profiles.map(p => [p.key, p.ready, p.reason, p.chromeDataError]), [['personal', false, 'chrome_data_unreadable', 'EACCES']]);
+    const human = cua(['profiles', 'list'], env);
+    assert.match(human.stdout, /^personal\s+not ready\s+Default\s+this process cannot read Chrome's data directory .*it is not bound yet/m);
+    assert.doesNotMatch(human.stdout, /not installed/);
+  } finally { chmodSync(extensions, 0o755); }
+  const json = JSON.parse(cua(['profiles', 'add', 'again', '--chrome-profile', 'Default', '--json'], {...env, home: join(env.home, 'other')}).stdout);
+  assert.deepEqual(json, {ok: true, key: 'again', chromeProfileDirectory: 'Default', extension: 'installed'});
 });

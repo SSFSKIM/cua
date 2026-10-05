@@ -1,6 +1,7 @@
 // Doctor's Chrome checks: passive capability evidence beside runtime health, `pass` or `blocked`, never `fail` (they
 // never change doctor's `ok`). Read from files and the process table only (chrome.mjs).
-//   chrome.extension.<key>   per registered profile: the OpenAI extension is installed in its Chrome profile
+//   chrome.extension.<key>   per registered profile: the OpenAI extension is installed in its Chrome profile; blocked
+//                            when absent, and when this process may not read Chrome's data directory (with the code)
 //   chrome.profiles          only when $CUA_HOME/profiles.json cannot be read
 //   chrome.host.registered   the native-messaging manifest for com.openai.codexextension exists, and the class of
 //                            the host it names (desktop's, cua's or other); pass either way
@@ -9,7 +10,7 @@ import {execFileSync} from 'node:child_process';
 import {homedir} from 'node:os';
 import {CuaError} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
-import {NATIVE_HOST_NAME, countLiveHosts} from './chrome.mjs';
+import {NATIVE_HOST_NAME, PERMISSION_FIX, PERMISSION_HINT, countLiveHosts} from './chrome.mjs';
 import {profileStatuses, REASONS} from './registry.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -22,13 +23,18 @@ export function chromeChecks({home, chrome, psText, userHome = homedir()}) {
     checks.push(result('chrome.profiles', 'blocked', `${error.message}; ${error.hint ?? ''}`.trim()));
   }
   for (const p of statuses) {
-    const missing = p.reason === 'profile_directory_missing' || p.reason === 'extension_not_installed';
-    checks.push(result(`chrome.extension.${p.key}`, missing ? 'blocked' : 'pass', missing
-      ? `${REASONS[p.reason]} (Chrome profile "${p.chromeProfileDirectory}")`
-      : `the OpenAI extension is installed in Chrome profile "${p.chromeProfileDirectory}" (file presence only; enabled/connected is not checked)`));
+    const name = `chrome.extension.${p.key}`;
+    const where = `(Chrome profile "${p.chromeProfileDirectory}")`;
+    if (p.reason === 'chrome_data_unreadable')
+      checks.push(result(name, 'blocked', `whether the OpenAI extension is installed is unknown: this process may not read Chrome's data directory (${p.chromeDataError}) ${where}; ${PERMISSION_HINT}`));
+    else if (p.reason === 'profile_directory_missing' || p.reason === 'extension_not_installed')
+      checks.push(result(name, 'blocked', `${REASONS[p.reason]} ${where}`));
+    else checks.push(result(name, 'pass', `the OpenAI extension is installed in Chrome profile "${p.chromeProfileDirectory}" (file presence only; enabled/connected is not checked)`));
   }
   const host = chrome.nativeHost({cuaHome: realHome(home), userHome});
-  checks.push(!host.present
+  checks.push(host.readError
+    ? result('chrome.host.registered', 'blocked', `whether a native-messaging manifest for ${NATIVE_HOST_NAME} exists is unknown: this process may not read it in ${chrome.userData} (${host.readError}); ${PERMISSION_FIX}`)
+    : !host.present
     ? result('chrome.host.registered', 'blocked', `no native-messaging manifest for ${NATIVE_HOST_NAME} in ${chrome.userData}: the OpenAI extension cannot reach a host`)
     : host.unreadable
       ? result('chrome.host.registered', 'blocked', `the native-messaging manifest for ${NATIVE_HOST_NAME} does not name a host path`)

@@ -12,7 +12,7 @@ import {CuaError} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
 import {runSecrets} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
-import {chromeFacts} from './profiles/chrome.mjs';
+import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
 import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
 import {bindCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
@@ -178,6 +178,15 @@ const PROFILES_USAGE = {
   bind: 'profiles bind takes a key and optionally --extension-instance-id <id>',
 };
 const done = value => { print(value); return 0; };
+const ADDED = {
+  installed: ({key}) => `the OpenAI extension is installed there (next: cua profiles bind ${key})`,
+  absent: () => 'the OpenAI extension is not installed there, so it stays not ready until you install it in that profile',
+  unreadable: ({key, chromeDataError}) => `this process cannot read Chrome's data directory (${chromeDataError}), so that profile and its OpenAI extension could not be checked; registered anyway (next: cua profiles bind ${key}, whose live check works without that access; for the file checks, ${PERMISSION_FIX})`,
+};
+const describeUnreadable = result => [
+  ...(result.chromeDataUnreadable ? [`this process cannot read Chrome's data directory (${result.chromeDataUnreadable}): the extension's presence was not checked, the live listing decides`] : []),
+  ...(result.localStateUnreadable ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name`] : []),
+].map(line => `note: ${line}\n`).join('');
 const LABELS = {'this-profile': 'labelled as this profile', 'other-profile': 'labelled as another profile', unlabelled: 'unlabelled',
   'comparison-unknown': 'labelled, but this profile\'s own name is unknown, so whether it is this profile cannot be told'};
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${LABELS[b.label]}`;
@@ -212,9 +221,7 @@ async function profiles(args) {
     if (values['chrome-profile'] === undefined) throw new UsageError(PROFILES_USAGE.add);
     const added = addProfile({home, key: positionals[0], directory: values['chrome-profile'], chrome});
     if (values.json) return done({ok: true, ...added});
-    return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${added.extensionInstalled
-      ? `the OpenAI extension is installed there (next: cua profiles bind ${added.key})`
-      : 'the OpenAI extension is not installed there, so it stays not ready until you install it in that profile'}`);
+    return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${ADDED[added.extension](added)}`);
   }
   if (command === 'list') {
     const {values} = parsed({}, 0);
@@ -242,6 +249,7 @@ async function profiles(args) {
   const result = await bindCommand({home, key: positionals[0], chrome, explicitId,
     listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined});
   if (values.json) { print(result); return result.ok ? 0 : 1; }
+  process.stderr.write(describeUnreadable(result));
   if (result.ok) {
     print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (${result.how === 'automatic' ? 'the runtime labelled exactly one live backend with this profile\'s unique name' : 'your explicit pick'})${result.staleBinding ? `, replacing the stale binding ${result.staleBinding}` : ''}`);
     return 0;

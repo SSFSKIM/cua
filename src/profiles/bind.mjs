@@ -43,6 +43,7 @@ export const UNDETERMINED = {
   no_live_backends: 'no OpenAI extension backend of Google Chrome is live (is Chrome open with the extension enabled in this profile?)',
   unlabelled: 'the runtime did not label any live backend with a profile name, so which one is this profile is undetermined',
   no_display_name: 'Chrome\'s Local State has no display name for this profile directory',
+  local_state_unreadable: 'this process may not read Chrome\'s Local State (macOS Privacy & Security → Full Disk Access for your terminal), so this profile\'s display name is unknown',
   display_name_not_unique: 'another Chrome profile has the same display name, so the runtime\'s label cannot tell them apart',
   no_matching_backend: 'no live backend is labelled with this profile\'s name (is this profile\'s Chrome window open?)',
   several_matching_backends: 'several live backends carry this profile\'s name',

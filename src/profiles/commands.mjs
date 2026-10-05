@@ -7,7 +7,7 @@
 // (bind.mjs) and count as live for readiness; another browser's are reported as a count (`nonChromeExcluded`), nothing
 // more.
 import {fail} from '../runtime/errors.mjs';
-import {readRegistry, bindProfile, profileStatuses, withLiveness, REASONS} from './registry.mjs';
+import {readRegistry, bindProfile, profileStatuses, withLiveness, awaitsLiveEvidence, REASONS} from './registry.mjs';
 import {decideBinding, isChromeBackend, REFUSED} from './bind.mjs';
 import {teardownUnconfirmed} from './inventory.mjs';
 
@@ -18,13 +18,14 @@ function labelOf(backend, name) {
 }
 
 // Every registered profile's readiness at this request: profileStatuses, then each bound profile's instance id checked
-// against the live Google Chrome backends (withLiveness). The listing runs only when some profile is otherwise ready; a
-// listing that fails leaves those profiles backends_unlistable and is returned as `listingError` for the caller to
-// report.
+// against the live Google Chrome backends (withLiveness). The listing runs only when some profile is otherwise ready,
+// or bound with Chrome data this process may not read (the listing is then the only evidence); a listing that fails
+// leaves those profiles backends_unlistable (or chrome_data_unreadable) and is returned as `listingError` for the
+// caller to report.
 // -> {profiles, listingError?: {code, message}}
 export async function profileReadiness({home, chrome, listBackends}) {
   const statuses = profileStatuses({home, chrome});
-  if (!statuses.some(p => p.ready)) return {profiles: statuses};
+  if (!statuses.some(p => p.ready || awaitsLiveEvidence(p))) return {profiles: statuses};
   try {
     const {backends, teardown} = await listBackends();
     if (teardown && !teardown.confirmed) throw teardownUnconfirmed(teardown);
@@ -38,28 +39,35 @@ export async function profileReadiness({home, chrome, listBackends}) {
 //  | {ok:false, outcome:'undetermined', reason, key, backends, elicitationsDeclined, nonChromeExcluded?, staleBinding?}
 // `staleBinding` is the recorded instance id when Chrome backends are live but it is not among them. It changes nothing
 // in the rule: the picker is told, and the user still picks (a lone new unlabelled backend is never bound for them).
+// `chromeDataUnreadable` / `localStateUnreadable` carry the error code when this process may not read the profile's
+// Chrome data or Local State: the presence check is skipped (the live listing decides) and labels cannot be compared.
 // Throws classified errors for an unknown key, a profile that cannot be ready, a refused explicit pick, and a
 // registration that changed while the backends were listed (`profile_changed`; nothing is bound, run bind again).
 export async function bindCommand({home, key, chrome, listBackends, explicitId, pick}) {
   const entry = readRegistry(home).profiles[key];
   if (!entry) fail('unknown_profile', `no registered profile "${key}"`, {hint: 'cua profiles list shows the registered keys'});
   const directory = entry.chromeProfileDirectory;
-  if (!chrome.profileDirectoryExists(directory)) fail('profile_not_ready', `profile "${key}": ${REASONS.profile_directory_missing}`);
-  if (!chrome.extensionInstalled(directory)) fail('profile_not_ready', `profile "${key}": ${REASONS.extension_not_installed}`);
+  const found = chrome.profileDirectoryExists(directory);
+  if (found === 'missing') fail('profile_not_ready', `profile "${key}": ${REASONS.profile_directory_missing}`);
+  const extension = found === 'unreadable' ? 'unreadable' : chrome.extensionInstalled(directory);
+  if (extension === 'absent') fail('profile_not_ready', `profile "${key}": ${REASONS.extension_not_installed}`);
+  const chromeDataUnreadable = extension === 'unreadable' ? chrome.readError?.(directory) ?? 'unknown' : undefined;
 
   const {backends: live, elicitationsDeclined, teardown} = await listBackends();
   // A listing whose runtime was not shown stopped binds nothing (the real listing already throws this; a listing
   // that reports it instead is held to the same rule).
   if (teardown && !teardown.confirmed) throw teardownUnconfirmed(teardown);
   let displayNames;
-  try { displayNames = chrome.displayNames(); } catch { displayNames = new Map(); }
+  let localStateUnreadable;
+  try { displayNames = chrome.displayNames(); } catch (error) { displayNames = new Map(); localStateUnreadable = error?.readError; }
   const name = displayNames.get(directory);
   const backends = live.filter(isChromeBackend);
   const nonChromeExcluded = live.length - backends.length;
   const listing = backends.map(b => ({instanceId: b.instanceId, ...(Number.isInteger(b.tabCount) ? {tabCount: b.tabCount} : {}), label: labelOf(b, name)}));
   const recorded = entry.extensionInstanceId;
   const staleBinding = recorded !== undefined && backends.length && !backends.some(b => b.instanceId === recorded) ? recorded : undefined;
-  const base = {key, backends: listing, elicitationsDeclined, ...(nonChromeExcluded ? {nonChromeExcluded} : {}), ...(staleBinding ? {staleBinding} : {})};
+  const base = {key, backends: listing, elicitationsDeclined, ...(nonChromeExcluded ? {nonChromeExcluded} : {}), ...(staleBinding ? {staleBinding} : {}),
+    ...(chromeDataUnreadable ? {chromeDataUnreadable} : {}), ...(localStateUnreadable ? {localStateUnreadable} : {})};
 
   const bind = decision => {
     if (decision.outcome === 'refused') fail('bind_refused', `profile "${key}" was not bound: ${REFUSED[decision.reason]}`, {hint: 'cua profiles bind without --extension-instance-id lists the live backends'});
@@ -71,9 +79,11 @@ export async function bindCommand({home, key, chrome, listBackends, explicitId, 
   if (explicitId !== undefined) return bind(decideBinding({directory, displayNames, backends, explicitId}));
   const automatic = decideBinding({directory, displayNames, backends});
   if (automatic.outcome === 'bound') return bind(automatic);
+  // No display name because Local State was refused, not because Chrome has none.
+  const reason = automatic.reason === 'no_display_name' && localStateUnreadable ? 'local_state_unreadable' : automatic.reason;
   if (pick && listing.length) {
-    const choice = await pick(listing, automatic.reason, nonChromeExcluded, {staleBinding});
+    const choice = await pick(listing, reason, nonChromeExcluded, {staleBinding});
     if (choice) return bind(decideBinding({directory, displayNames, backends, explicitId: choice}));
   }
-  return {ok: false, outcome: 'undetermined', reason: automatic.reason, ...base};
+  return {ok: false, outcome: 'undetermined', reason, ...base};
 }

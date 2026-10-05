@@ -244,10 +244,18 @@ node bin/cua.mjs profiles remove work
 The registry is `$CUA_HOME/profiles.json`. A profile is ready when its directory exists, the extension is installed
 there (file presence only), it is bound, and its bound extension instance is live now; otherwise `list` says why:
 `profile_directory_missing`, `extension_not_installed` (install it in that profile yourself), `not_bound`,
-`binding_stale` (the bound instance is gone while other backends are live: bind again, below) or `backends_unlistable`
+`binding_stale` (the bound instance is gone while other backends are live: bind again, below), `backends_unlistable`
 (no backend could be listed at all, usually because Chrome is closed, so whether the binding is current cannot be
-told). The live part is checked on every request: when some profile is bound, `list` and the agent's `profiles_list`
-each make the same bounded launch as `bind` (below), without tab counts.
+told) or `chrome_data_unreadable` (below). The live part is checked on every request: when some profile is bound,
+`list` and the agent's `profiles_list` each make the same bounded launch as `bind` (below), without tab counts.
+
+On macOS 26 and later, Chrome's data directory (`~/Library/Application Support/Google/Chrome`) can be behind privacy
+protection: a terminal without Full Disk Access, and everything started from it (`cua serve` included), gets
+"Operation not permitted" there. cua then reports the file checks as unreadable, never as a missing extension:
+`add` still registers, `bind` skips the presence check, `doctor` blocks `chrome.extension.<key>` with the error code,
+and a bound profile is ready whenever its bound extension instance is live, because the live check goes through the
+runtime and does not need that access. A profile that is unbound or not live reads `chrome_data_unreadable`; to get
+the file checks back, grant your terminal Full Disk Access (System Settings → Privacy & Security → Full Disk Access).
 
 `bind` records which live extension instance is this profile, because the browser service selects a browser by that
 id (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live

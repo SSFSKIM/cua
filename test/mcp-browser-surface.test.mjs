@@ -6,6 +6,11 @@ import assert from 'node:assert/strict';
 import {harness, initialized, UPSTREAM_TOOLS, structured} from './fixtures/mcp-harness.mjs';
 import {DEFAULT_HOST_NOTES, hostNotesFor, SECRETS_LIST_TOOL} from '../src/mcp/surface.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
+import {join} from 'node:path';
+import {scratch} from './fixtures/runtime-fixture.mjs';
+import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
+import {addProfile, bindProfile} from '../src/profiles/registry.mjs';
+import {profileReadiness} from '../src/profiles/commands.mjs';
 
 const UPSTREAM_INSTRUCTIONS = 'UI automation through cua_repl using the initialized cua API.';
 
@@ -103,4 +108,30 @@ test('CUA_SHIM_SURFACES selects computer (default), browser or both, and anythin
   assert.deepEqual(settingsFrom({CUA_SHIM_SURFACES: 'browser, computer'}).surfaces, ['computer', 'browser']);
   for (const bad of ['', 'iab', 'computer,computer', 'computer,browser,iab', ','])
     assert.throws(() => settingsFrom({CUA_SHIM_SURFACES: bad}), error => error.code === 'invalid_setting', JSON.stringify(bad));
+});
+
+test('profiles_list with unreadable Chrome data: a bound live profile is ready, the rest say why and the agent is told to tell the user', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'cua');
+  const chrome = fakeChromeFacts({Default: {extension: 'unreadable'}, 'Profile 8': {extension: 'unreadable'}, 'Profile 6': {directory: 'unreadable'}});
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  addProfile({home, key: 'school', directory: 'Profile 6', chrome});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome});
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-p'});
+  bindProfile({home, key: 'school', extensionInstanceId: 'inst-s'});
+  const listBackends = async () => ({backends: [{instanceId: 'inst-p', family: 'chrome'}], teardown: {confirmed: true, steps: ['eof']}});
+  const h = harness({server: {surfaces: ['browser'], profiles: {list: async () => (await profileReadiness({home, chrome, listBackends})).profiles}}});
+  await initialized(h);
+  const response = await h.client.call('profiles_list').response;
+  assert.deepEqual(structured(response), {status: 'ok', profiles: [
+    {key: 'personal', ready: true, extensionInstanceId: 'inst-p'},
+    {key: 'school', ready: false, reason: 'chrome_data_unreadable'},
+    {key: 'work', ready: false, reason: 'chrome_data_unreadable'},
+  ]});
+  const text = response.result.content[0].text;
+  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*Full Disk Access.*not confirmed live/);
+  assert.match(text, /work is not ready \(chrome_data_unreadable\): .*not bound yet/);
+  assert.match(text, /Tell the user/);
+  assert.ok(!/EPERM|Default|Profile 8/.test(JSON.stringify(structured(response))), 'no error codes or directory names in the model-visible list');
 });

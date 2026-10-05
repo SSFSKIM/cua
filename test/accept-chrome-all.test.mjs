@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict,
   hostNotesCheck, launchEnvCheck, liveRoundTripChecks, packChecks, PHASE_C_MODULES, profilesListCheck, registrationGuard,
-  replaceGateBlocked, replaceGateChecks, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
+  replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
 } from '../scripts/accept/chrome-all-lib.mjs';
 import {rollup} from '../scripts/accept/lib.mjs';
+import {REASONS} from '../src/profiles/registry.mjs';
 
 const statuses = checks => checks.map(c => c.status);
 
@@ -269,4 +270,52 @@ test('the helper suite passes only when both the Swift and the Node-driven tests
     assert.match(verdict.detail, /incomplete test summary/);
   }
   assert.match(helperSuiteVerdict({code: 0, text: `${swiftPassed}${spec}${node.replace('pass 7', 'pass 6').replace('skipped 0', 'skipped 1')}`}).detail, /conflicting test summaries/);
+});
+
+// ---- Chrome data this process may not read (macOS privacy protection) ---------------------------------------------
+
+test('unreadable Chrome data: a bound live profile passes C4 with the state recorded; presence checks are BLOCKED, never FAIL or PASS', () => {
+  const unreadable = {chromeDataError: 'EPERM', reason: 'chrome_data_unreadable', ready: false};
+  const registry = [{key: 'personal', chromeProfileDirectory: 'Default', extensionInstanceId: 'i1', boundAt: 't', ...unreadable}, {key: 'work', chromeProfileDirectory: 'Profile 8', ...unreadable}];
+  // C4: live evidence makes the bound one ready with its stored id; unbound stays chrome_data_unreadable.
+  const live = {status: 'ok', profiles: [{key: 'personal', ready: true, extensionInstanceId: 'i1'}, {key: 'work', ready: false, reason: 'chrome_data_unreadable'}]};
+  const c4 = profilesListCheck(live, registry);
+  assert.equal(c4.status, 'PASS');
+  assert.match(c4.detail, /unreadable from this process for personal \(EPERM, bound: readiness from the live check\), work \(EPERM, unbound\)/);
+  assert.equal(profilesListCheck({status: 'ok', profiles: [{key: 'personal', ready: false, reason: 'chrome_data_unreadable'}, live.profiles[1]]}, registry).status, 'PASS', 'not live: still unreadable');
+  assert.equal(profilesListCheck({status: 'ok', profiles: [{key: 'personal', ready: true, extensionInstanceId: 'other'}, live.profiles[1]]}, registry).status, 'FAIL', 'only its stored id');
+  assert.equal(profilesListCheck({status: 'ok', profiles: [live.profiles[0], {key: 'work', ready: true, extensionInstanceId: 'w'}]}, registry).status, 'FAIL', 'unbound never ready');
+  // C2 without a report: the live run is what decides.
+  assert.match(c2LiveBlocked(registry[0]).detail, /bound but this process may not read Chrome's data directory \(EPERM\).*live run decides.*accept-chrome\.mjs --live/);
+  // C3: the scratch add registers but presence cannot be shown; the list and the default registry are BLOCKED.
+  assert.deepEqual(scratchAddCheck({key: 'work', directory: 'Profile 8', expected: 'absent', code: 0, out: {ok: true, extension: 'unreadable', chromeDataError: 'EPERM'}}).status, 'BLOCKED');
+  assert.equal(scratchAddCheck({key: 'work', directory: 'Profile 8', expected: 'absent', code: 0, out: {ok: true, extension: 'absent'}}).status, 'PASS');
+  assert.equal(scratchAddCheck({key: 'work', directory: 'Profile 8', expected: 'absent', code: 0, out: {ok: true, extension: 'installed'}}).status, 'FAIL');
+  assert.equal(scratchListCheck([{key: 'personal', ...unreadable}, {key: 'school', ...unreadable}, {key: 'work', ...unreadable}]).status, 'BLOCKED');
+  const defaults = defaultRegistryChecks([{key: 'personal', ready: true, extensionInstanceId: 'i1', chromeDataError: 'EPERM'}, {key: 'school', ...unreadable}, {key: 'work', ...unreadable}]);
+  assert.deepEqual(statuses(defaults), ['PASS', 'BLOCKED', 'BLOCKED']);
+  assert.match(defaults[0].detail, /ready on live evidence/);
+  // C5: doctor's unreadable row is BLOCKED with the Full Disk Access fix.
+  const c5 = doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.extension.personal': ['blocked', 'whether the OpenAI extension is installed is unknown: this process may not read Chrome\'s data directory (EPERM)']})});
+  const row = c5.find(c => c.name === 'chrome.extension.personal');
+  assert.equal(row.status, 'BLOCKED');
+  assert.match(row.detail, /Full Disk Access/);
+});
+
+test('the scratch list checks fail on any contract violation before an unreadable row can make them BLOCKED', () => {
+  const unreadable = key => ({key, ready: false, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM'});
+  assert.equal(scratchListCheck([unreadable('personal'), unreadable('school'), unreadable('work')]).status, 'BLOCKED', 'pure unreadable');
+  assert.equal(scratchListCheck([unreadable('personal'), {key: 'school', ready: false, reason: 'extension_not_installed'}, unreadable('work')]).status, 'BLOCKED', 'readable rows as expected');
+  assert.equal(scratchListCheck([unreadable('personal'), {key: 'school', ready: false, reason: 'extension_not_installed'}, {key: 'work', ready: true, extensionInstanceId: 'w'}]).status, 'FAIL', 'a ready row in an unbound scratch registry');
+  assert.equal(scratchListCheck([unreadable('personal'), {key: 'school', ready: false, reason: 'not_bound'}, unreadable('work')]).status, 'FAIL', 'a readable row with the wrong reason');
+  assert.equal(scratchListCheck([unreadable('personal'), unreadable('work')]).status, 'FAIL', 'a missing key');
+  assert.equal(scratchListCheck([unreadable('extra'), unreadable('personal'), unreadable('school'), unreadable('work')]).status, 'FAIL', 'an unexpected key');
+  assert.equal(scratchListCheck(undefined).status, 'FAIL');
+
+  const row = (key, status, reason) => `${key.padEnd(12)} ${status.padEnd(10)} Default      ${REASONS[reason] ?? `extension instance ${reason}`}`;
+  const lines = rows => rows.map(r => row(...r));
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'not_bound'], ['school', 'not ready', 'extension_not_installed'], ['work', 'not ready', 'extension_not_installed']]), REASONS).status, 'PASS');
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'chrome_data_unreadable'], ['work', 'not ready', 'chrome_data_unreadable']]), REASONS).status, 'BLOCKED', 'pure unreadable');
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'extension_not_installed'], ['work', 'ready', 'inst-w']]), REASONS).status, 'FAIL', 'mixed with a wrongly ready row');
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'not_bound']]), REASONS).status, 'FAIL', 'a wrong reason and a missing key');
 });

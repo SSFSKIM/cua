@@ -152,8 +152,8 @@ screenshots and page content included, reaches the client's transcript as the ru
   fragment parameter whose name ends in the word `token`, `key`, `secret` or `apikey` (`token`, `access_token`,
   `refresh_token`, `api_key`, `apiKey`, `key`, `client_secret`, `X-Refresh-Token`; not `monkey`, `keyword` or
   `tokens_left`; a percent-encoded name is decoded first) becomes `<redacted>`, also inside a redirect parameter, raw
-  or URL-encoded. A value runs to the next delimiter of its URL; closing punctuation that ends the sentence or link
-  around it (`)`, `]`, `}`, `,`, `.`) is left in place. The Playwright MCP
+  or URL-encoded, and in a bare `?…` or `#…` reference. A value runs to the next delimiter of its URL or to a closing
+  bracket it did not open (the `)` of a Markdown link), less a trailing `}`, `,` or `.`. The Playwright MCP
   extension's connection URL (`chrome-extension://<id>/connect.html?mcpRelayUrl=…&token=…`) has every parameter value
   redacted, and a loopback relay URL (`ws://127.0.0.1:<port>/extension/…`) its path. The rest of the result is
   unchanged.

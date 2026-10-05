@@ -36,12 +36,26 @@ test('a token inside a redirect, raw or URL-encoded, is found behind other param
     [`https://a.example/?next=https://b.example/?token=${FAKE}`, 'https://a.example/?next=https://b.example/?token=<redacted>'],
     [`https://a.example/?next=%2Fcb%3Fstate%3D1%26token%3D${FAKE}%26x%3D1`, 'https://a.example/?next=%2Fcb%3Fstate%3D1%26token%3D<redacted>%26x%3D1'],
     [`https://a.example/?access%5Ftoken=${FAKE}&page=2`, 'https://a.example/?access%5Ftoken=<redacted>&page=2'],
-    [`https://a.example/?token=(${FAKE})&page=2`, 'https://a.example/?token=<redacted>)&page=2'],
+    [`https://a.example/?token=(${FAKE})&page=2`, 'https://a.example/?token=<redacted>&page=2'],
     [`https://a.example/?token=abc(${FAKE})x&page=2`, 'https://a.example/?token=<redacted>&page=2'],
   ];
   for (const [input, expected] of cases) assert.equal(textOf(redactTokens(text(input))), expected, input);
   const structured = redactTokens({structuredContent: {tabs: [{url: cases[0][0]}, {url: cases[2][0]}]}}).structuredContent;
   assert.deepEqual(structured.tabs.map(t => t.url), [cases[0][1], cases[2][1]]);
+});
+
+test('relative references, doubly encoded names and adjacent Markdown keep working', () => {
+  const cases = [
+    [`?access_token=${FAKE}`, '?access_token=<redacted>'],
+    [`#access_token=${FAKE}&state=1`, '#access_token=<redacted>&state=1'],
+    [`https://a.example/?next=https%3A%2F%2Fb.example%2F%3F%2574oken%3D${FAKE}`, 'https://a.example/?next=https%3A%2F%2Fb.example%2F%3F%2574oken%3D<redacted>'],
+    [`https://a.example/?next=%2F%3Faccess%255Ftoken%3D${FAKE}%26x%3D1`, 'https://a.example/?next=%2F%3Faccess%255Ftoken%3D<redacted>%26x%3D1'],
+    [`[download](https://a.example/?token=${FAKE})[1]`, '[download](https://a.example/?token=<redacted>)[1]'],
+    [`[one](https://a.example/?token=${FAKE})[two](https://b.example/page)`, '[one](https://a.example/?token=<redacted>)[two](https://b.example/page)'],
+  ];
+  for (const [input, expected] of cases) assert.equal(textOf(redactTokens(text(input))), expected, input);
+  const structured = redactTokens({structuredContent: {hrefs: [cases[0][0], cases[2][0]]}}).structuredContent;
+  assert.deepEqual(structured.hrefs, [cases[0][1], cases[2][1]]);
 });
 
 test('names that merely contain the words, and plain text, are left alone', () => {

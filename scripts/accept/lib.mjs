@@ -3,11 +3,11 @@
 // proves a reinstall mutated nothing, and the packaging/tracking policies of acceptance 10.
 import {lstatSync, readdirSync, readlinkSync} from 'node:fs';
 import {join} from 'node:path';
-import {SANDBOX_DISABLED_STEP, SANDBOX_ON_STEP} from '../probe/trusted-roots.mjs';
+import {SANDBOX_DISABLED_STEP, SANDBOX_SCOPED_STEP} from '../probe/trusted-roots.mjs';
 
 export const STATUSES = ['PASS', 'FAIL', 'BLOCKED'];
 // A row that records an accepted consequence rather than checking a guarantee (the trusted roots a cell can write
-// under the disabled sandbox, #34): it is reported, never a failure, and does not change what the rest rolls up to.
+// under an explicitly requested disabled sandbox, #34, #36): it is reported, never a failure, and does not change what the rest rolls up to.
 export const INFO = 'INFO';
 
 // An item passes only when it has checks and every one passed; any failure fails it; otherwise it is blocked. An item
@@ -185,8 +185,8 @@ export const tokenLike = text => TOKEN_PATTERNS.some(pattern => pattern.test(tex
 
 // Acceptance 6/7: every step scripts/probe-secrets.mjs records on a complete run, grouped into the spec's phases, with
 // the items each phase is evidence for. A phase passes only when each of its steps ran and passed; a step that never
-// ran is BLOCKED (requested, not executed). The trusted-root guarantee is proven with the sandbox on; what the default
-// (`disabled`) lets a cell write is an informational row, the accepted consequence of the owner's decision on #20.
+// ran is BLOCKED (requested, not executed). The trusted-root guarantee is proven under the scoped default; what an
+// explicitly requested `disabled` lets a cell write is an informational row, the accepted consequence of #20.
 const FIRST = 'first value: ';
 const failClosed = tag => [...['type_text', 'paste', 'set_value'].map(m => `${tag}: ${m} reference fails closed`), `${tag}: close`];
 export const PROBE_SECRETS_PHASES = [
@@ -195,10 +195,10 @@ export const PROBE_SECRETS_PHASES = [
   {items: [7], name: 'live: ordinary input, unsupported method, unknown/invalid label, unsupported shape', steps: ['ordinary input', 'unsupported method', 'unknown label', 'invalid label', 'unsupported shape', 'target saw only what it should'].map(s => FIRST + s)},
   {items: [6], name: 'live: replace with a second generated sentinel and substitute it', steps: ['replace', 'replaced value: type_text substitution']},
   {items: [6], name: 'live: failure output stays value-free (induced and real vendor failures)', steps: [`${FIRST}induced substituted-command failure`, `${FIRST}cell timeout during a substituted call`, 'real vendor: failure after substitution', 'real vendor: unknown label']},
-  {items: [7], name: 'live: sandbox on (CUA_SHIM_SANDBOX=default): trusted roots unwritable', steps: [SANDBOX_ON_STEP]},
-  {items: [7], name: 'live (informational): sandbox disabled (default): trusted roots a cell could write, accepted under the trust model (#20)', steps: [SANDBOX_DISABLED_STEP]},
+  {items: [7], name: 'live: sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable', steps: [SANDBOX_SCOPED_STEP]},
+  {items: [7], name: 'live (informational): sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write, accepted under the trust model (#20)', steps: [SANDBOX_DISABLED_STEP]},
   {items: [6, 7], name: 'live: fail closed before any input (secrets off, broker unavailable)', steps: [...failClosed('secrets off'), ...failClosed('broker unavailable')]},
-  {items: [6], name: 'live: every connection closed cleanly', steps: [`${FIRST}close`, 'replaced value: close', 'real serve: close', 'real serve (sandbox on): close']},
+  {items: [6], name: 'live: every connection closed cleanly', steps: [`${FIRST}close`, 'replaced value: close', 'real serve: close', 'real serve (sandbox disabled): close']},
   {items: [6], name: 'live: no value in any observed channel or report', steps: ['scanner self-check', 'sentinel scan']},
   {items: [6], name: 'live: finally cleanup of only the scenario-owned item', steps: ['cleanup']},
 ];

@@ -18,9 +18,10 @@
 //   real `cua serve` with the vendor sky service: a substituted command against a nonexistent app (a real vendor
 //     failure after substitution), an unknown label, and model cells trying to write an importable module into every
 //     trusted code root (and, for comparison, their own working and temporary directories), once under the default
-//     sandbox (`disabled`: informational, what a cell could write, accepted under #20) and once on a second connection
-//     with CUA_SHIM_SANDBOX=default (the guarantee: nothing written). Every file a cell manages to write is removed
-//     and checked gone before the step is recorded (scripts/probe/trusted-roots.mjs).
+//     sandbox (`scoped`, the guarantee: no trusted root written, the run directory and $TMPDIR written) and once on a
+//     second connection with CUA_SHIM_SANDBOX=disabled (informational, what a cell could write, accepted under #20).
+//     Every file a cell manages to write is removed and checked gone before the step is recorded
+//     (scripts/probe/trusted-roots.mjs).
 //   fail-closed connections through the fake target: with CUA_SHIM_SECRETS=off (secrets_disabled) and with no broker
 //     (the helper treated as not built: secrets_unavailable), a reference in each of the three methods fails before
 //     anything reaches the target.
@@ -47,6 +48,7 @@ import {runCaptured} from '../src/secrets/commands.mjs';
 import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {plantCell, trustedRootStep} from './probe/trusted-roots.mjs';
+import {tmpdirRoot} from '../src/runtime/sandbox.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -257,7 +259,7 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
 
 // Real `cua serve`, real vendor sky service: what a model cell can and cannot do around the trusted worker.
 async function realServeConnection(runtime) {
-  // The default sandbox, whatever the probe's own environment says.
+  // The default (scoped) sandbox, whatever the probe's own environment says.
   const c = connect('real-serve', [CLI, 'serve'], {CUA_SHIM_SANDBOX: undefined});
   await c.open();
   {
@@ -270,18 +272,18 @@ async function realServeConnection(runtime) {
     const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: `{{secret:${label}-absent}}`}))));
     record('real vendor: unknown label', !out.ok && errorCode(out) === 'secret_not_found' ? 'PASS' : 'FAIL', 'fails before input with secret_not_found');
   }
-  await plantModules(c, runtime, 'disabled');
+  await plantModules(c, runtime, 'scoped');
   const exit = await c.close();
   record('real serve: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
-// The same attempt on a connection with the sandbox on, where it is a guarantee.
-async function sandboxOnConnection(runtime) {
-  const c = connect('real-serve sandbox on', [CLI, 'serve'], {CUA_SHIM_SANDBOX: 'default'});
+// The same attempt on a connection that asks for the disabled sandbox, where it only records what a cell could write.
+async function sandboxDisabledConnection(runtime) {
+  const c = connect('real-serve sandbox disabled', [CLI, 'serve'], {CUA_SHIM_SANDBOX: 'disabled'});
   await c.open();
-  await plantModules(c, runtime, 'default');
+  await plantModules(c, runtime, 'disabled');
   const exit = await c.close();
-  record('real serve (sandbox on): close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+  record('real serve (sandbox disabled): close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
 // A model cell tries to create a uniquely named importable module in every trusted code root. Whatever it wrote is
@@ -303,7 +305,8 @@ async function plantModules(c, runtime, mode) {
   for (const entry of readdirSync(runDir, {withFileTypes: true})) if (entry.isDirectory()) rmSync(join(runDir, entry.name, name), {force: true});
   const survivors = roots.map(root => join(root.path, name)).filter(path => existsSync(path));
   const step = trustedRootStep(mode, {roots, results: out.result?.roots ?? null, planted: planted.map(root => root.label), survivors,
-    cwd: out.result?.cwd, tmp: out.result?.tmp, raw: out.raw ?? (out.result ? undefined : JSON.stringify(out).slice(0, 200))});
+    // The served process inherits this probe's TMPDIR, which is what the scoped profile's temp root comes from.
+    cwd: out.result?.cwd, tmp: out.result?.tmp, tmpGranted: tmpdirRoot(process.env.TMPDIR) !== null, raw: out.raw ?? (out.result ? undefined : JSON.stringify(out).slice(0, 200))});
   record(step.name, step.status, step.detail);
 }
 
@@ -352,7 +355,7 @@ try {
         const exit2 = await second.close();
         record('replaced value: close', exit2?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit2?.code ?? 'timeout'}`);
         await realServeConnection(runtime);
-        await sandboxOnConnection(runtime);
+        await sandboxDisabledConnection(runtime);
       }
       await failClosedConnection('secrets off', recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
       await failClosedConnection('broker unavailable', recorder, targetModule, {args: ['--no-helper'], expected: 'secrets_unavailable', reason: 'helper_not_built'});

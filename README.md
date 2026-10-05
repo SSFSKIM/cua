@@ -308,8 +308,9 @@ the runtime labels that backend as another profile. A single live backend is nev
 chooses between profiles for you, and neither does the agent (its host notes say so).
 
 The label is the vendor's: it reads Chrome's `Local State` and copies the extension's settings store to a temporary
-directory to find it, so it needs Chrome's directory readable and the `disabled` sandbox (`CUA_SHIM_SANDBOX`, the
-default). Without either, the lookup fails silently and every candidate is unlabelled. Two profiles can share a
+directory to find it, so it needs Chrome's directory readable and a sandbox that lets it write a temporary directory
+(`CUA_SHIM_SANDBOX` `scoped`, the default, or `disabled`). Without either, the lookup fails silently and every
+candidate is unlabelled. Two profiles can share a
 display name; their backends then carry the same label and you pick (telling them apart by profile directory is a
 planned second step).
 
@@ -448,6 +449,9 @@ Every surface:
   deterministic steps between two observations into one call, which cuts model round trips, where most of the run's
   wall time went.
 - **`timeout_ms` bounds a cell.** Cancelling a call does not stop a running cell, and `js_reset` waits for it.
+- **Cells have no network and write only scratch space.** Under the default sandbox (`scoped`, Configuration) `fetch`,
+  sockets and DNS fail in a cell, and files can be written only under the connection's run directory and `$TMPDIR`.
+  Do the work through the computer or browser API instead; an `EPERM` there is the sandbox, not a transient fault.
 
 Chrome (browser surface):
 
@@ -510,11 +514,13 @@ Without a flag it runs the suites, install/reinstall, doctor, `verify.mjs`, the 
   through the real helper → broker → trusted service → a controlled fake input target, and deleted at the end. It
   checks every input method, the failures, failing closed with secrets off or no broker, and that neither value
   appears in the MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME` or the report. Item 7 also
-  carries two trusted-root rows, where a cell tries to create a module in each trusted code root. "sandbox on
-  (`CUA_SHIM_SANDBOX=default`): trusted roots unwritable" runs on a connection with the sandbox on and is the
-  guarantee, PASS or FAIL. The informational row under the `disabled` default records which roots the cell could
-  write, the accepted consequence described under Configuration; it is `INFO`, never a failure. Either way the probe
-  removes every file the cell wrote and checks it is gone, and a file it could not remove fails the row.
+  carries two trusted-root rows, where a cell tries to create a module in each trusted code root and, for
+  comparison, in its own run directory and `$TMPDIR`. "sandbox scoped (default): trusted roots unwritable, run
+  directory and `$TMPDIR` writable" runs on a connection with the default sandbox and is the guarantee, PASS or FAIL.
+  The informational row runs on a second connection that asks for `CUA_SHIM_SANDBOX=disabled` and records which roots
+  the cell could write there, the accepted consequence described under Configuration; it is `INFO`, never a failure.
+  Either way the probe removes every file the cell wrote and checks it is gone, and a file it could not remove fails
+  the row.
 - `--live-textedit` opens a new empty temporary document under `$CUA_HOME` in TextEdit, types a marker through
   `cua serve`, reads it back (accessibility text and a screenshot, recorded as metadata), closes only that window and
   deletes the file. It never touches another document and never quits TextEdit. It accepts the app-approval
@@ -582,23 +588,38 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
-| `CUA_SHIM_SANDBOX` | `disabled` | the sandbox node_repl applies to the runtime's JavaScript: `disabled` turns it off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` |
+| `CUA_SHIM_SANDBOX` | `scoped` | the sandbox node_repl applies to the runtime's JavaScript: `scoped` lets it write only its connection's run directory and `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
 
-With the `disabled` default, cua sends node_repl the sandbox state Codex sends with each call
-(`_meta["codex/sandbox-state-meta"]` with the `disabled` permission profile) on every call it makes, so JavaScript
-cells and the vendor's trusted services can write wherever your user account can, and the sandbox no longer refuses
-their network connections. This fits the trust model: the agent is trusted, and cua adds no policy against
-exfiltration. The vendor features that need scratch space depend on it, such as the profile labels behind `cua
-profiles bind`, which copy each Chrome profile's extension store to a temp directory. With `default`, cua sends
-nothing. node_repl then allows reads and denies all writes, including to `$TMPDIR` and `/tmp`, as well as network
-connections, and those features fail. Any sandbox state a client puts in its own `_meta` is replaced by cua's.
+cua sends node_repl a sandbox state, in the field Codex uses for it (`_meta["codex/sandbox-state-meta"]`), on every call
+it makes, including the bounded launch behind `cua profiles list`/`bind` and `profiles_list`. Any sandbox state a client
+puts in its own `_meta` is replaced by cua's.
 
-Under the `disabled` default a cell can also write cua's own trusted code roots (`src/services` and `src/secrets` in
-the checkout that serves, where the trusted secret-substitution code lives), the runtime's own files under `$CUA_HOME`
-(its configuration and approvals in `state/codex`, the vendor's modules in the installed release) and anything else
-your account can write. You accept this under the trust model: cua no longer protects the integrity of that code from
-the agent, so keeping it intact is your responsibility. `CUA_SHIM_SANDBOX=default` restores the guarantee that model
-cells cannot plant code in a trusted root, at the cost of the features above.
+With the `scoped` default, JavaScript cells and the vendor's trusted services can read everywhere your account can,
+but write only to the connection's own run directory (`$CUA_HOME/run/<session>`, removed when the connection closes)
+and `$TMPDIR`, which is where the vendor features that need scratch space write, such as the profile labels behind
+`cua profiles bind`. Everything else refuses the write with `EPERM`: your home folder, `~/Downloads`, `/tmp`, the
+runtime's files under `$CUA_HOME` and cua's own trusted code (`src/services` and `src/secrets` in the checkout that
+serves, where the trusted secret-substitution code lives), so model cells cannot plant code in a trusted root. Cells
+also have **no network**: `fetch`, sockets and DNS lookups fail (node_repl denies every connection from the kernel
+under this kind of profile, whatever the profile says about the network). cua's own channels do not need it: the
+native helper, the secrets broker and the Chrome extension are reached through node_repl's pipes.
+
+`scoped` places one requirement on where things live: `CUA_HOME` and the cua checkout must not be inside `$TMPDIR`
+(the per-user `/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of cua's
+may sit under `$CUA_HOME/run`. A checkout there would make cua's trusted code writable, and node_repl then refuses to
+start the kernel, so every cell fails; a `CUA_HOME` there would let cells rewrite the runtime's configuration and
+approvals. The default `CUA_HOME` and a directory under `/tmp` are both fine. `cua serve` and the profile listing
+refuse such a layout with `sandbox_conflict`, naming each directory involved, and `cua doctor`'s `sandbox` check
+fails with the same explanation.
+
+`CUA_SHIM_SANDBOX=disabled` is the way to give cells the network and writes everywhere else: cua sends the
+`disabled` permission profile, so cells and trusted services can write wherever your account can and the sandbox no
+longer refuses their network connections. This fits the trust model (the agent is trusted, and cua adds no policy
+against exfiltration), but it also lets a cell write cua's trusted code roots, the runtime's configuration and
+approvals in `state/codex` and the vendor's modules in the installed release; you accept that cua no longer protects
+the integrity of that code from the agent. With `default`, cua sends nothing. node_repl then allows reads and denies
+all writes, including to `$TMPDIR` and `/tmp`, as well as network connections, and the features that need scratch
+space fail.
 
 Removed with the standalone runtime: `CUA_SHIM_PLUGIN_MCP` (the desktop launch recipe), `CUA_SHIM_CODEX_HOME` (the
 runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connection has its own random session) and

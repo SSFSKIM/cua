@@ -16,16 +16,19 @@ import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
+import {sandboxState} from '../src/runtime/sandbox.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
 const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
+const SCOPED = sandboxState('scoped', '/');
 
 // A home that looks like a verified install of the checked-in pin to the resolver (which checks structure only), but
 // whose vendor node is this Node and whose cua-repl entry is the fake upstream. Signatures are never involved here.
 // The served processes run with CUA_SHIM_SECRETS=off: the real Keychain helper (if built) is never started by this
-// Node-only suite; the in-process test at the end wires a stand-in helper instead.
-function fakeInstalledHome(t, {short = false} = {}) {
-  const s = short ? shortScratch() : scratch();
+// Node-only suite; the in-process test at the end wires a stand-in helper instead. The home lives under /tmp, outside
+// $TMPDIR, as the scoped sandbox requires (a home under $TMPDIR is the misconfiguration `inTmpdir` sets up).
+function fakeInstalledHome(t, {inTmpdir = false} = {}) {
+  const s = inTmpdir ? scratch() : shortScratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
   const pin = selectPin(loadPins());
@@ -119,7 +122,7 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(turnEnded.params.arguments.session_id, echoed.turn.session_id);
   const sent = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
   assert.deepEqual(sent.map(p => p.name), ['js', 'turn_ended']);
-  for (const p of sent) assert.deepEqual(p._meta['codex/sandbox-state-meta'], {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(sessionDir).href}, `${p.name} carries the default sandbox state`);
+  for (const p of sent) assert.deepEqual(p._meta['codex/sandbox-state-meta'], {...SCOPED, sandboxCwd: pathToFileURL(sessionDir).href}, `${p.name} carries the default (scoped) sandbox state`);
   assert.equal(turnEnded.params.arguments.turn_id, echoed.turn.turn_id);
   assert.equal(dirname(sessionDir).endsWith('run'), true);
   assert.equal(sessionDir.endsWith(echoed.turn.session_id), true, 'the run directory is named by the connection session');
@@ -192,11 +195,11 @@ test('profiles_list and cua profiles list check a bound profile against the live
   const cells = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params.arguments);
   assert.equal(cells.length, 4, 'one listing cell per request, nothing on the serving runtime');
   assert.ok(cells.every(c => c.code === LIVENESS_CELL), 'each listing is the tab-free cell');
-  // Each listing launch sends the default sandbox state for its own working directory.
+  // Each listing launch sends the default (scoped) sandbox state for its own working directory.
   let launchCwd;
   for (const r of records(home)) {
     if (r.start) launchCwd = r.start.cwd;
-    if (r.received?.method === 'tools/call') assert.deepEqual(r.received.params._meta['codex/sandbox-state-meta'], {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(launchCwd).href});
+    if (r.received?.method === 'tools/call') assert.deepEqual(r.received.params._meta['codex/sandbox-state-meta'], {...SCOPED, sandboxCwd: pathToFileURL(launchCwd).href});
   }
   const starts = records(home).filter(r => r.start).map(r => r.start.env);
   assert.equal(starts.length, 5, 'the serving runtime and one bounded launch per profiles_list');
@@ -325,8 +328,43 @@ test('with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid val
   invalid.child.stdin.end();
   const {code, stderr} = await invalid.exit;
   assert.equal(code, 1);
-  assert.match(stderr, /CUA_SHIM_SANDBOX must be disabled or default \[invalid_setting\]/);
+  assert.match(stderr, /CUA_SHIM_SANDBOX must be scoped, disabled or default \[invalid_setting\]/);
   assert.equal(existsSync(join(other, 'state', 'codex', 'fake-upstream.jsonl')), false);
+});
+
+// Issue #36: under the scoped default a CUA_HOME below $TMPDIR puts the runtime's trusted modules inside a write root,
+// and node_repl would refuse every kernel. serve and the listing launch refuse first, naming the conflict; disabled
+// has no write roots to conflict with.
+test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the listing classified, naming the conflict; disabled serves it', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t, {inTmpdir: true});
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve']);
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 1);
+  assert.match(stderr, /CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR \(.*\), which contains the trusted code path .*runtimes.*\[sandbox_conflict\]/);
+  assert.match(stderr, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
+  assert.deepEqual(server.frames, []);
+  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'nothing was launched');
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+
+  const userHome = join(home, 'user');
+  const extension = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  mkdirSync(extension, {recursive: true});
+  writeFileSync(join(extension, 'manifest.json'), '{}');
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
+  const list = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  const json = list(['--json']);
+  assert.equal(JSON.parse(json.stdout).listingError, 'sandbox_conflict', json.stderr);
+  assert.match(list([]).stderr, /sandbox_conflict: CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR/);
+  assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'no listing launch was made');
+
+  const disabled = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SANDBOX: 'disabled'});
+  await disabled.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  await disabled.call('js', {code: 'hello'});
+  disabled.child.stdin.end();
+  assert.equal((await disabled.exit).code, 0);
+  const [js] = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
+  assert.deepEqual(js._meta['codex/sandbox-state-meta'].permissionProfile, {type: 'disabled'});
 });
 
 test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, before any listing launch', {skip: !supported}, async t => {
@@ -339,7 +377,7 @@ test('cua profiles list and bind reject an invalid CUA_SHIM_SANDBOX classified, 
   for (const args of [['profiles', 'list', '--json'], ['profiles', 'list'], ['profiles', 'bind', 'personal', '--json']]) {
     const run = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome, CUA_SHIM_SANDBOX: 'managed'}, encoding: 'utf8', timeout: 30_000});
     assert.notEqual(run.status, 0, args.join(' '));
-    assert.match(run.stdout + run.stderr, /CUA_SHIM_SANDBOX must be disabled or default/, args.join(' '));
+    assert.match(run.stdout + run.stderr, /CUA_SHIM_SANDBOX must be scoped, disabled or default/, args.join(' '));
     assert.match(run.stdout + run.stderr, /invalid_setting/, args.join(' '));
   }
   assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'no listing launch was made');
@@ -441,7 +479,7 @@ test('close is bounded even when the host stops reading the MCP stream', {skip: 
 });
 
 test('serve starts the connection\'s broker before the runtime, hands only the runtime its endpoint and token, lists through it and stops it at close', {skip: !supported}, async t => {
-  const home = fakeInstalledHome(t, {short: true});
+  const home = fakeInstalledHome(t);
   const record = join(home, 'helper-record.json');
   const keychainHelper = {
     built: true, command: process.execPath, args: [join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs'), 'broker'],
@@ -481,7 +519,7 @@ test('serve starts the connection\'s broker before the runtime, hands only the r
 });
 
 test('serve runs the Keychain helper installed in $CUA_HOME/bin when none is passed, as a copy of cua without a build does', {skip: !supported}, async t => {
-  const home = fakeInstalledHome(t, {short: true});
+  const home = fakeInstalledHome(t);
   mkdirSync(join(home, 'bin'));
   const installed = join(home, 'bin', 'cua-keychain');
   const fake = join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs');
@@ -502,7 +540,7 @@ test('serve runs the Keychain helper installed in $CUA_HOME/bin when none is pas
 });
 
 test('serve without a built helper still serves, and secrets_list says how to build it', {skip: !supported}, async t => {
-  const home = fakeInstalledHome(t, {short: true});
+  const home = fakeInstalledHome(t);
   const input = new PassThrough();
   const output = new PassThrough();
   const frames = [];
@@ -528,7 +566,7 @@ test('serve without a built helper still serves, and secrets_list says how to bu
 // destroys itself, so its 'close' marks the server's own close, right after its final flush. `highWaterMark` sizes the
 // MCP stream's buffers: at 1, once the client pauses `lines`, every later write stays pending, as on a full pipe.
 function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
-  const home = fakeInstalledHome(t, {short: true});
+  const home = fakeInstalledHome(t);
   const userData = join(home, 'user', 'Library', 'Application Support', 'Google', 'Chrome');
   const extension = join(userData, 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
   mkdirSync(extension, {recursive: true});

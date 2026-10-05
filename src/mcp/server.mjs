@@ -46,7 +46,7 @@ import {chromeFacts} from '../profiles/chrome.mjs';
 import {reasonText} from '../profiles/registry.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
-import {sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
+import {assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
@@ -377,6 +377,7 @@ export async function serve({home, env = process.env, input = process.stdin, out
       services: Object.assign({}, ...settings.surfaces.map(s => services[s])),
       broker: secrets.broker, secretsUnavailable: secrets.unavailable?.code,
     }));
+    assertSandboxFits(sandbox, launch);
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);

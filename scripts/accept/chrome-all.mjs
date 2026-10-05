@@ -14,7 +14,7 @@
 //           --json` judged against `cua doctor --json` (both read only)
 //   C4      one `cua serve` connection (computer,browser, secrets off): initialize, tools/list, profiles_list, end_task;
 //           no js cell
-//   C5      `cua doctor --json` (passive)
+//   C5      `cua doctor --json` (passive); no registration is expected where every browser slot is absent
 //   C6      the placed component and its configuration; a no-op `cua install` that cannot download (it names an
 //           archive that does not exist); `cua chrome register` without --replace (it must refuse) and `cua chrome
 //           unregister` (it must change nothing), each only when no manifest names cua's host and each with the
@@ -252,8 +252,10 @@ export async function runAll(argv) {
   }
 
   // ---- C5 -----------------------------------------------------------------------------------------------------------
+  const readSlots = () => slotStates({home, userHome, suffixes: hostSuffixes(loadPins())});
+  const slotsNow = readSlots();
   addItem('C5', 'doctor --json on this Mac (passive)', [
-    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile}),
+    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile, slotsNow}),
     suiteClaims('npm test: the Chrome doctor checks', tap, [
       'per-profile extension checks, the native host registration by path class, and the live host count',
       'doctor reports the Chrome checks beside runtime health and they never change ok',
@@ -286,11 +288,9 @@ export async function runAll(argv) {
     }
     // The browsers' manifest slots, and what each run may do to them.
     const slotPaths = BROWSERS.map(b => ({browser: b.browser, path: join(userHome, b.dataDir, 'NativeMessagingHosts', `${NATIVE_HOST}.json`)}));
-    const readSlots = () => slotStates({home, userHome, suffixes: hostSuffixes(loadPins())});
     const fingerprint = () => JSON.stringify([...slotPaths.map(({path}) => {
       try { const s = statSync(path); return `${createHash('sha256').update(readFileSync(path)).digest('hex')}:${s.mtimeMs}:${s.ino}`; } catch { return 'absent'; }
     }), existsSync(join(home, 'chrome'))]);
-    const slotsNow = readSlots();
     const where = slotsNow.map(s => `${s.browser} ${s.state === 'foreign' ? s.pathClass : s.state}`).join(', ');
     let guard = registrationGuard(slotsNow);
     const notRun = part => part.notApplicable ? 'N/A' : 'BLOCKED';

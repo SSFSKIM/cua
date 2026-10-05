@@ -148,8 +148,12 @@ export const replaceGateBlocked = (profile = 'personal') => check('live: --repla
 //    servingHost: {pathClass: 'cua'}, roundTrip: <accept-chrome --live report>, unregister: <`cua chrome unregister
 //    --json`>, slotsAfter}, each slots* the `slots` of `node scripts/accept-chrome.mjs --c6-slots` at that moment.
 const ABSENT_SCENARIO = 'C6-desktop-absent-live-gate';
-const bySlot = slots => Array.isArray(slots) ? new Map(slots.filter(isObject).map(s => [s.browser, s])) : null;
 const coversEveryBrowser = map => map !== null && map.size === BROWSERS.length && BROWSERS.every(b => map.has(b.browser));
+const bySlot = slots => {
+  if (!Array.isArray(slots) || slots.length !== BROWSERS.length || !slots.every(s => isObject(s) && typeof s.browser === 'string' && typeof s.state === 'string')) return null;
+  const map = new Map(slots.map(s => [s.browser, s]));
+  return coversEveryBrowser(map) ? map : null;
+};
 const slotWords = slots => Array.isArray(slots) ? slots.map(s => `${s?.browser} ${s?.state === 'foreign' ? `foreign (${s.pathClass})` : s?.state === 'unreadable' ? `unreadable (${s.error})` : s?.state}`).join(', ') : 'missing';
 
 export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
@@ -161,9 +165,9 @@ export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
   const rows = Array.isArray(report.register?.browsers) ? report.register.browsers.filter(isObject) : [];
   const placed = new Set(rows.filter(r => r.action === 'placed').map(r => r.browser));
   const emptyBefore = coversEveryBrowser(before) && [...before.values()].every(s => s.state === 'absent');
-  const wroteEmptyOnly = report.register?.ok === true && placed.size > 0 && rows.every(r => r.action === 'placed' && !r.backup) && !report.register.consequences
+  const wroteEmptyOnly = report.register?.ok === true && placed.has('chrome') && rows.every(r => r.action === 'placed' && !r.backup) && !report.register.consequences
     && [...placed].every(b => before?.get(b)?.state === 'absent');
-  const namesCua = coversEveryBrowser(registered) && [...registered.values()].every(s => placed.has(s.browser) ? s.state === 'ours' : s.state === 'absent');
+  const namesCua = placed.has('chrome') && coversEveryBrowser(registered) && [...registered.values()].every(s => placed.has(s.browser) ? s.state === 'ours' : s.state === 'absent');
   const unrows = Array.isArray(report.unregister?.browsers) ? report.unregister.browsers.filter(isObject) : [];
   const removedOnly = report.unregister?.ok === true && report.unregister.blocked === false && unrows.length > 0
     && unrows.every(r => placed.has(r.browser) ? r.action === 'removed' && r.restoration === 'not_needed' : r.action === 'absent')
@@ -424,7 +428,7 @@ export function profilesListCheck(structured, statuses) {
 // Doctor on this Mac: the expected statuses pass (the extension check is the live profile's); a check whose evidence
 // needs the user's environment (Chrome open, the server's login) is BLOCKED with what to do; a missing check or an
 // unhealthy report is FAIL. Every other registered key's row is judged against the registry in C3 (defaultRegistryChecks).
-export function doctorChromeChecks({code, doctor, profile = 'personal'}) {
+export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow}) {
   if (!isObject(doctor) || !Array.isArray(doctor.checks)) return [check('doctor --json', 'FAIL', `exit ${code}; no report`)];
   const get = name => doctor.checks.find(c => c.name === name);
   const out = [check('doctor --json: runtime health', code === 0 && doctor.ok === true ? 'PASS' : 'FAIL', `exit ${code}; ok ${doctor.ok}`)];
@@ -438,9 +442,18 @@ export function doctorChromeChecks({code, doctor, profile = 'personal'}) {
   };
   expect(`chrome.extension.${profile}`, c => c.status === 'pass' ? ['PASS'] : c.status !== 'blocked' ? ['FAIL']
     : UNREADABLE_ROW.test(c.detail) ? ['BLOCKED', PERMISSION_FIX] : ['BLOCKED', `install the OpenAI extension in ${profile}'s Chrome profile; cua never does`]);
-  expect('chrome.host.registered', c => c.status !== 'pass' ? [c.status === 'blocked' ? 'BLOCKED' : 'FAIL', 'expected the desktop\'s registration on this Mac']
-    : /^desktop:/.test(c.detail) ? ['PASS'] : /^cua:/.test(c.detail) ? ['BLOCKED', 'cua\'s host is registered: the --replace gate is in progress or was left registered; rerun after node bin/cua.mjs chrome unregister']
-      : ['FAIL', 'expected the desktop\'s registration on this Mac']);
+  expect('chrome.host.registered', c => {
+    const absent = slotsNow?.every(s => s.state === 'absent');
+    const noManifest = /^no native-messaging manifest for com\.openai\.codexextension in .+: the OpenAI extension cannot reach a host/.test(c.detail);
+    if (absent && c.status === 'blocked' && noManifest) return ['PASS', 'no desktop registration present; absent expected'];
+    if (absent && /^(desktop|cua|other):/.test(c.detail)) return ['FAIL', 'doctor reports a registration but every browser slot is absent'];
+    if (noManifest && slotsNow?.some(s => ['foreign', 'ours'].includes(s.state))) return ['FAIL', 'doctor reports no manifest but a browser slot holds a registration'];
+    const unreadable = slotsNow?.filter(s => s.state === 'unreadable');
+    if (unreadable?.length) return ['BLOCKED', `cannot read ${unreadable.map(s => `${s.browser}'s manifest (${s.error})`).join(', ')}, so whether a registration is present cannot be told`];
+    return c.status !== 'pass' ? [c.status === 'blocked' ? 'BLOCKED' : 'FAIL', 'expected the desktop\'s registration on this Mac']
+      : /^desktop:/.test(c.detail) ? ['PASS'] : /^cua:/.test(c.detail) ? ['BLOCKED', 'cua\'s host is registered: the --replace gate is in progress or was left registered; rerun after node bin/cua.mjs chrome unregister']
+        : ['FAIL', 'expected the desktop\'s registration on this Mac'];
+  });
   expect('chrome.hosts.live', c => c.status === 'pass' ? ['PASS'] : c.status === 'blocked' ? ['BLOCKED', `open Chrome on ${profile}'s Chrome profile with the OpenAI extension enabled, then rerun`] : ['FAIL']);
   expect('codex.login', c => c.status === 'pass' ? ['PASS'] : c.status === 'blocked' ? ['BLOCKED', 'the user runs node bin/cua.mjs login at a terminal'] : ['FAIL']);
   return out;

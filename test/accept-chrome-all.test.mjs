@@ -3,13 +3,20 @@
 // exact command and human step.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {mkdirSync} from 'node:fs';
+import {join} from 'node:path';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict,
-  hostNotesCheck, launchEnvCheck, liveRoundTripChecks, packChecks, PHASE_C_MODULES, profilesListCheck, registrationGuard,
-  replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
+  hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks, PHASE_C_MODULES, profilesListCheck, registrationGuard,
+  replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
+  writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
+import {runAll} from '../scripts/accept/chrome-all.mjs';
 import {rollup} from '../scripts/accept/lib.mjs';
+import {chromeFacts} from '../src/profiles/chrome.mjs';
 import {REASONS} from '../src/profiles/registry.mjs';
+import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 
 const statuses = checks => checks.map(c => c.status);
 
@@ -127,20 +134,137 @@ test('the scratch registry lists personal not bound and work/school without the 
   assert.equal(scratchListCheck([{...list[0], reason: 'extension_not_installed'}, list[1], list[2]]).status, 'FAIL');
 });
 
-test('the default home: personal ready after bind passes, unbound is BLOCKED on the pick, never a pass', () => {
-  const others = [{key: 'school', ready: false, reason: 'extension_not_installed'}, {key: 'work', ready: false, reason: 'extension_not_installed'}];
-  assert.equal(rollup(statuses(defaultRegistryChecks([{key: 'personal', ready: true, extensionInstanceId: 'i'}, ...others]))), 'PASS');
-  const unbound = defaultRegistryChecks([{key: 'personal', ready: false, reason: 'not_bound'}, ...others]);
+// The default home is judged from its own registry: the owner's (personal ready, work/school without the extension) and
+// a second Mac's (school ready on "Profile 12", ssfs without the extension) both pass with their own --profile.
+const doctorRows = rows => ({ok: true, checks: Object.entries(rows).map(([name, [status, detail]]) => ({name, status, detail}))});
+const installedRow = dir => ['pass', `the OpenAI extension is installed in Chrome profile "${dir}" (file presence only; enabled/connected is not checked)`];
+const absentRow = dir => ['blocked', `${REASONS.extension_not_installed} (Chrome profile "${dir}")`];
+const OWNER = {
+  profiles: [{key: 'personal', chromeProfileDirectory: 'Default', ready: true, extensionInstanceId: 'inst-owner'},
+    {key: 'school', chromeProfileDirectory: 'Profile 6', ready: false, reason: 'extension_not_installed'},
+    {key: 'work', chromeProfileDirectory: 'Profile 8', ready: false, reason: 'extension_not_installed'}],
+  doctor: doctorRows({'chrome.extension.personal': installedRow('Default'), 'chrome.extension.school': absentRow('Profile 6'), 'chrome.extension.work': absentRow('Profile 8')}),
+};
+const SECOND_MAC = {
+  profiles: [{key: 'school', chromeProfileDirectory: 'Profile 12', ready: true, extensionInstanceId: 'inst-second'},
+    {key: 'ssfs', chromeProfileDirectory: 'Profile 1', ready: false, reason: 'extension_not_installed'}],
+  doctor: doctorRows({'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')}),
+};
+
+test('the default home passes on the owner\'s registry and on a second Mac\'s, each with its own live profile', () => {
+  const owner = defaultRegistryChecks({...OWNER, profile: 'personal'});
+  assert.equal(rollup(statuses(owner)), 'PASS');
+  for (const name of ['default home: personal ready, consistent with doctor chrome.extension.personal', 'default home: work not ready (extension_not_installed), consistent with doctor chrome.extension.work',
+    'default home: at least one registered profile is ready', 'default home: --profile personal is ready'])
+    assert.ok(owner.some(c => c.name === name), name);
+  const second = defaultRegistryChecks({...SECOND_MAC, profile: 'school'});
+  assert.equal(rollup(statuses(second)), 'PASS');
+  assert.ok(second.some(c => c.name === 'default home: school ready, consistent with doctor chrome.extension.school'));
+  assert.ok(second.some(c => c.name === 'default home: ssfs not ready (extension_not_installed), consistent with doctor chrome.extension.ssfs'));
+  // The second Mac without --profile: personal is not registered there, which is BLOCKED with the way out, never FAIL.
+  const unnamed = defaultRegistryChecks({...SECOND_MAC, profile: 'personal'});
+  assert.equal(rollup(statuses(unnamed)), 'BLOCKED');
+  assert.match(unnamed.at(-1).detail, /personal is not registered in this home; pass --profile <a registered key>/);
+  // An owner key that is registered but not ready is not the live profile.
+  assert.equal(rollup(statuses(defaultRegistryChecks({...OWNER, profile: 'work'}))), 'BLOCKED');
+  for (const shape of [OWNER, SECOND_MAC]) assert.ok(!JSON.stringify(defaultRegistryChecks({...shape, profile: 'school'})).includes('inst-'), 'instance ids stay out of the report');
+});
+
+test('the default home fails when readiness disagrees with doctor\'s facts for any registered key', () => {
+  const judged = (profiles, rows, profile = 'school') => rollup(statuses(defaultRegistryChecks({profiles, doctor: doctorRows(rows), profile})));
+  const [school, ssfs] = SECOND_MAC.profiles;
+  // Ready, but doctor says the extension is absent.
+  assert.equal(judged(SECOND_MAC.profiles, {'chrome.extension.school': absentRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')}), 'FAIL');
+  // Not ready for an absent extension, but doctor finds it installed.
+  assert.equal(judged(SECOND_MAC.profiles, {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': installedRow('Profile 1')}), 'FAIL');
+  // A missing directory against doctor's absent-extension row: another reason.
+  assert.equal(judged([school, {...ssfs, reason: 'profile_directory_missing'}], {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')}), 'FAIL');
+  // Doctor has no row for a registered key, or one for an unregistered key.
+  assert.equal(judged(SECOND_MAC.profiles, {'chrome.extension.school': installedRow('Profile 12')}), 'FAIL');
+  assert.equal(judged([school], {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')}), 'FAIL');
+  assert.equal(rollup(statuses(defaultRegistryChecks({profiles: SECOND_MAC.profiles, doctor: null, profile: 'school'}))), 'FAIL');
+  // Not ready only for its binding or the live check: the extension is installed, so doctor passes, and that agrees.
+  for (const reason of ['not_bound', 'binding_stale', 'backends_unlistable'])
+    assert.equal(judged([school, {...ssfs, reason}], {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': installedRow('Profile 1')}), 'PASS', reason);
+});
+
+test('the live profile not ready is BLOCKED on the pick or the reason, and an empty registry is BLOCKED, never a pass', () => {
+  const rows = {'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1')};
+  const unbound = defaultRegistryChecks({profiles: [{...SECOND_MAC.profiles[0], ready: false, reason: 'not_bound', extensionInstanceId: undefined}, SECOND_MAC.profiles[1]], doctor: doctorRows(rows), profile: 'school'});
   assert.equal(rollup(statuses(unbound)), 'BLOCKED');
-  assert.match(unbound.find(c => c.status === 'BLOCKED').detail, /user pick pending/);
-  const stale = defaultRegistryChecks([{key: 'personal', ready: false, reason: 'binding_stale', extensionInstanceId: 'old-id'}, ...others]);
+  assert.match(unbound.at(-1).detail, /school not bound; user pick pending.*profiles bind school --extension-instance-id/);
+  assert.match(unbound.at(-2).detail, /no registered profile is ready|bind one/);
+  const stale = defaultRegistryChecks({profiles: [{...SECOND_MAC.profiles[0], ready: false, reason: 'binding_stale', extensionInstanceId: 'old-id'}, SECOND_MAC.profiles[1]], doctor: doctorRows(rows), profile: 'school'});
   assert.equal(rollup(statuses(stale)), 'BLOCKED');
-  assert.match(stale.find(c => c.status === 'BLOCKED').detail, /binding stale.*user pick pending.*profiles bind personal --extension-instance-id/);
+  assert.match(stale.at(-1).detail, /school binding stale.*user pick pending/);
   assert.ok(!JSON.stringify(stale).includes('old-id'));
-  const staleC2 = c2LiveBlocked({key: 'personal', ready: false, reason: 'binding_stale'});
-  assert.match(staleC2.detail, /personal binding stale.*profiles bind personal --extension-instance-id/);
-  assert.ok(!JSON.stringify(defaultRegistryChecks([{key: 'personal', ready: true, extensionInstanceId: 'secret-ish-id'}, ...others])).includes('secret-ish-id'), 'instance ids stay out of the report');
-  assert.equal(rollup(statuses(defaultRegistryChecks([]))), 'BLOCKED');
+  assert.equal(rollup(statuses(defaultRegistryChecks({profiles: [], doctor: doctorRows({}), profile: 'personal'}))), 'BLOCKED');
+});
+
+test('--profile names the live profile: the reports must have driven it and this home must register it bound', () => {
+  assert.equal(rollup(statuses(liveRoundTripChecks(passingLive({profile: 'school'}), {profile: 'school'}))), 'PASS');
+  const other = liveRoundTripChecks(passingLive(), {profile: 'school'});
+  assert.equal(rollup(statuses(other)), 'FAIL');
+  assert.match(other[0].detail, /drove profile "personal"; --profile is school/);
+  const [school, ssfs] = SECOND_MAC.profiles;
+  assert.equal(liveProfileCheck(school, 'school').status, 'PASS');
+  assert.ok(!JSON.stringify(liveProfileCheck(school, 'school')).includes('inst-second'));
+  assert.equal(liveProfileCheck(ssfs, 'ssfs').status, 'FAIL', 'registered but not bound');
+  assert.equal(liveProfileCheck(undefined, 'personal').status, 'FAIL', 'not registered here');
+  assert.equal(liveProfileCheck(undefined, 'school', {registryError: 'profiles_invalid'}).status, 'FAIL');
+  assert.equal(liveProfileCheck(school, 'school', {prefix: 'live: --replace gate'}).name, 'live: --replace gate: profile school is registered and bound in this home');
+  assert.equal(rollup(statuses(replaceGateChecks(passingGate({roundTrip: passingLive({profile: 'school'})}), {profile: 'school'}))), 'PASS');
+  assert.equal(rollup(statuses(replaceGateChecks(passingGate(), {profile: 'school'}))), 'FAIL');
+  const blocked = c2LiveBlocked({...school, ready: false, reason: 'not_bound'}, 'school');
+  assert.match(blocked.detail, /profiles bind school --extension-instance-id.*--live --profile school.*"Profile 12".*--c2-report \S+ --profile school/);
+  assert.ok(replaceGateBlocked('school').detail.includes('accept-chrome.mjs --live --profile school'));
+  assert.ok(replaceGateBlocked('school').detail.includes('--c6-report <file> --profile school'));
+});
+
+test('C5 reads the live profile\'s extension check: a second Mac passes with --profile school and is BLOCKED without it', () => {
+  const doctor = doctorRows({'chrome.extension.school': installedRow('Profile 12'), 'chrome.extension.ssfs': absentRow('Profile 1'),
+    'chrome.host.registered': ['pass', 'desktop: com.openai.codexextension names ~/.codex/x'], 'chrome.hosts.live': ['pass', '1 OpenAI Chrome host(s) running under Google Chrome'], 'codex.login': ['pass', 'logged in']});
+  assert.equal(rollup(statuses(doctorChromeChecks({code: 0, doctor, profile: 'school'}))), 'PASS');
+  const unnamed = doctorChromeChecks({code: 0, doctor});
+  assert.equal(rollup(statuses(unnamed)), 'BLOCKED');
+  assert.match(unnamed.find(c => c.name === 'chrome.extension.personal').detail, /pass --profile <a registered key>/);
+  assert.equal(rollup(statuses(doctorChromeChecks({code: 0, doctor, profile: 'ssfs'}))), 'BLOCKED', 'its extension is absent');
+});
+
+test('an invalid --profile is a usage error before anything runs', async () => {
+  assert.equal(await runAll(['--all', '--report', '/nonexistent/report.json', '--profile', 'Not A Key']), 2);
+});
+
+// ---- C3's scratch scenario: a fixture Chrome, never this Mac's ------------------------------------------------------
+
+test('the scratch Chrome fixture names three profiles with the OpenAI extension in exactly one', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const chrome = chromeFacts({userData: writeScratchChrome(s.dir)});
+  assert.deepEqual(SCRATCH_PROFILES.map(p => [p.key, chrome.profileDirectoryExists(p.directory), chrome.extensionInstalled(p.directory)]),
+    SCRATCH_PROFILES.map(p => [p.key, 'exists', p.extension]));
+  assert.equal(SCRATCH_PROFILES.filter(p => p.extension === 'installed').length, 1);
+  assert.deepEqual([...chrome.displayNames().keys()].sort(), SCRATCH_PROFILES.map(p => p.directory).sort());
+});
+
+test('the scratch scenario passes through the real CLI against the fixture, and fails when the CLI does not read it', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  writeScratchChrome(join(s.dir, 'user'));
+  mkdirSync(join(s.dir, 'empty'));
+  const cli = (args, user) => {
+    const r = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env: {...process.env, CUA_HOME: join(s.dir, `cua-${user}`), HOME: join(s.dir, user)}, encoding: 'utf8', timeout: 30_000});
+    return {code: r.status, stdout: r.stdout};
+  };
+  const adds = user => SCRATCH_PROFILES.map(({key, directory, extension}) => {
+    const r = cli(['profiles', 'add', key, '--chrome-profile', directory, '--json'], user);
+    return scratchAddCheck({key, directory, expected: extension, code: r.code, out: JSON.parse(r.stdout)});
+  });
+  assert.deepEqual(statuses(adds('user')), ['PASS', 'PASS', 'PASS']);
+  assert.equal(scratchListCheck(JSON.parse(cli(['profiles', 'list', '--json'], 'user').stdout).profiles).status, 'PASS');
+  assert.equal(scratchHumanCheck(cli(['profiles', 'list'], 'user').stdout.split('\n'), REASONS).status, 'PASS');
+  // A HOME without the fixture: every directory is missing, which is a failure of the scenario, not a BLOCKED Mac.
+  assert.deepEqual(statuses(adds('empty')), ['FAIL', 'FAIL', 'FAIL']);
 });
 
 test('the host notes must carry the three browser rules within the instructions limit', () => {
@@ -292,9 +416,12 @@ test('unreadable Chrome data: a bound live profile passes C4 with the state reco
   assert.equal(scratchAddCheck({key: 'work', directory: 'Profile 8', expected: 'absent', code: 0, out: {ok: true, extension: 'absent'}}).status, 'PASS');
   assert.equal(scratchAddCheck({key: 'work', directory: 'Profile 8', expected: 'absent', code: 0, out: {ok: true, extension: 'installed'}}).status, 'FAIL');
   assert.equal(scratchListCheck([{key: 'personal', ...unreadable}, {key: 'school', ...unreadable}, {key: 'work', ...unreadable}]).status, 'BLOCKED');
-  const defaults = defaultRegistryChecks([{key: 'personal', ready: true, extensionInstanceId: 'i1', chromeDataError: 'EPERM'}, {key: 'school', ...unreadable}, {key: 'work', ...unreadable}]);
-  assert.deepEqual(statuses(defaults), ['PASS', 'BLOCKED', 'BLOCKED']);
-  assert.match(defaults[0].detail, /ready on live evidence/);
+  const unreadableRow = key => [`chrome.extension.${key}`, ['blocked', 'whether the OpenAI extension is installed is unknown: this process may not read Chrome\'s data directory (EPERM) (Chrome profile "x")']];
+  const defaults = defaultRegistryChecks({profiles: [{key: 'personal', ready: true, extensionInstanceId: 'i1', chromeDataError: 'EPERM'}, {key: 'school', ...unreadable}, {key: 'work', ...unreadable}],
+    doctor: doctorRows(Object.fromEntries(['personal', 'school', 'work'].map(unreadableRow)))});
+  assert.deepEqual(statuses(defaults), ['PASS', 'PASS', 'BLOCKED', 'BLOCKED', 'PASS', 'PASS']);
+  assert.match(defaults[1].detail, /ready on live evidence/);
+  assert.match(defaults.at(-1).detail, /ready on live evidence/);
   // C5: doctor's unreadable row is BLOCKED with the Full Disk Access fix.
   const c5 = doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.extension.personal': ['blocked', 'whether the OpenAI extension is installed is unknown: this process may not read Chrome\'s data directory (EPERM)']})});
   const row = c5.find(c => c.name === 'chrome.extension.personal');

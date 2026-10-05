@@ -161,6 +161,19 @@ test('unregister removes only our manifests and restores the backed-up one, veri
   assert.equal(readFileSync(m.manifests.chrome, 'utf8'), m.original);
 });
 
+test('without the desktop app, register fills only empty slots with nothing backed up, and unregister leaves them empty again', async t => {
+  const m = machine(t);
+  const result = await register(m);
+  assert.ok(result.browsers.every(b => b.action === 'placed' && !b.backup), JSON.stringify(result.browsers));
+  assert.equal(existsSync(m.backups), false);
+  const removed = unregister(m);
+  assert.equal(removed.blocked, false);
+  assert.deepEqual(removed.browsers.filter(b => b.action !== 'absent').map(b => [b.browser, b.action, b.restoration]), [['chrome', 'removed', 'not_needed'], ['brave', 'removed', 'not_needed']]);
+  for (const path of Object.values(m.manifests)) assert.equal(existsSync(path), false, path);
+  assert.equal(existsSync(m.backups), false);
+  assert.deepEqual(record(m).browsers, {});
+});
+
 test('unregister is a no-op when the manifest is not ours: it leaves the desktop\'s registration byte-for-byte', t => {
   const m = machine(t, {chromeManifest: DESKTOP});
   const result = unregister(m);

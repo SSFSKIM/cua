@@ -2,13 +2,14 @@
 // how each of C1-C7 is judged from the evidence the runner gathers. The rule is the native runner's: only evidence that
 // was produced and checked passes; anything skipped, missing or waiting on a human is FAIL or BLOCKED, and a BLOCKED
 // check names the exact command and human step that would produce it.
-import {mkdirSync, writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {profileView} from '../../src/mcp/surface.mjs';
 import {hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
 import {awaitsLiveEvidence, REASONS} from '../../src/profiles/registry.mjs';
-import {isOwnHostPath} from '../../src/chrome/registration.mjs';
+import {BROWSERS, isOwnHostPath} from '../../src/chrome/registration.mjs';
 import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
 
 const check = (name, status, detail) => ({name, status, detail});
@@ -136,6 +137,95 @@ const replaceGateSteps = profile => [
 
 export const replaceGateBlocked = (profile = 'personal') => check('live: --replace gate', 'BLOCKED',
   `needs the user (docs/evidence/m12-host-placement.md): ${replaceGateSteps(profile).map((s, i) => `(${i + 1}) ${s}`).join('; ')}`);
+
+// ---- C6's desktop-absent live gate (issue #9) ----------------------------------------------------------------------
+
+// On a machine without the desktop app no browser holds a registration, so there is nothing to refuse, replace or
+// restore. C6 there means: register writes cua's manifests into empty slots only (nothing backed up, the slots then
+// name cua's host), Chrome launches that placed host when the extension wakes, the round trip passes through it, and
+// unregister removes cua's manifests so every slot is absent again, as before. The controller assembles:
+//   {scenario: 'C6-desktop-absent-live-gate', slotsBefore, register: <`cua chrome register --json`>, slotsRegistered,
+//    servingHost: {pathClass: 'cua'}, roundTrip: <accept-chrome --live report>, unregister: <`cua chrome unregister
+//    --json`>, slotsAfter}, each slots* the `slots` of `node scripts/accept-chrome.mjs --c6-slots` at that moment.
+const ABSENT_SCENARIO = 'C6-desktop-absent-live-gate';
+const bySlot = slots => Array.isArray(slots) ? new Map(slots.filter(isObject).map(s => [s.browser, s])) : null;
+const coversEveryBrowser = map => map !== null && map.size === BROWSERS.length && BROWSERS.every(b => map.has(b.browser));
+const slotWords = slots => Array.isArray(slots) ? slots.map(s => `${s?.browser} ${s?.state === 'foreign' ? `foreign (${s.pathClass})` : s?.state}`).join(', ') : 'missing';
+
+export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
+  const name = 'live: desktop-absent gate';
+  if (!isObject(report) || report.scenario !== ABSENT_SCENARIO) return [check(`${name}: supplied report`, 'FAIL', `not a ${ABSENT_SCENARIO} report`)];
+  const before = bySlot(report.slotsBefore);
+  const registered = bySlot(report.slotsRegistered);
+  const after = bySlot(report.slotsAfter);
+  const rows = Array.isArray(report.register?.browsers) ? report.register.browsers.filter(isObject) : [];
+  const placed = new Set(rows.filter(r => r.action === 'placed').map(r => r.browser));
+  const emptyBefore = coversEveryBrowser(before) && [...before.values()].every(s => s.state === 'absent');
+  const wroteEmptyOnly = report.register?.ok === true && placed.size > 0 && rows.every(r => r.action === 'placed' && !r.backup) && !report.register.consequences
+    && [...placed].every(b => before?.get(b)?.state === 'absent');
+  const namesCua = coversEveryBrowser(registered) && [...registered.values()].every(s => placed.has(s.browser) ? s.state === 'ours' : s.state === 'absent');
+  const unrows = Array.isArray(report.unregister?.browsers) ? report.unregister.browsers.filter(isObject) : [];
+  const removedOnly = report.unregister?.ok === true && report.unregister.blocked === false && unrows.length > 0
+    && unrows.every(r => placed.has(r.browser) ? r.action === 'removed' && r.restoration === 'not_needed' : r.action === 'absent')
+    && [...placed].every(b => unrows.some(r => r.browser === b));
+  const emptyAfter = coversEveryBrowser(after) && [...after.values()].every(s => s.state === 'absent') && isDeepStrictEqual(report.slotsAfter, report.slotsBefore);
+  return [
+    check(`${name}: no registration before register (desktop absent)`, emptyBefore ? 'PASS' : 'FAIL', `slots before: ${slotWords(report.slotsBefore)}`),
+    check(`${name}: register wrote cua's manifest into empty slots only, nothing backed up`, wroteEmptyOnly ? 'PASS' : 'FAIL',
+      rows.length ? rows.map(r => `${r.browser} ${r.action}${r.backup ? ' (backup)' : ''}`).join(', ') + (report.register?.consequences ? '; replacement consequences announced' : '') : 'register wrote nothing'),
+    check(`${name}: the written slots name cua's host`, namesCua ? 'PASS' : 'FAIL', `slots registered: ${slotWords(report.slotsRegistered)}`),
+    check(`${name}: the backend was served by cua's host`, report.servingHost?.pathClass === 'cua' ? 'PASS' : 'FAIL', `serving host class ${JSON.stringify(report.servingHost?.pathClass ?? null)}`),
+    ...liveRoundTripChecks(report.roundTrip, {profile, prefix: `${name}: round trip`}),
+    check(`${name}: unregister removed cua's manifests, nothing to restore`, removedOnly ? 'PASS' : 'FAIL',
+      unrows.length ? unrows.map(r => `${r.browser} ${r.action}/${r.restoration ?? 'none'}`).join(', ') + `; blocked ${report.unregister?.blocked}` : 'no unregister result'),
+    check(`${name}: absent before, absent after`, emptyAfter ? 'PASS' : 'FAIL', `slots after: ${slotWords(report.slotsAfter)}; identical to before: ${isDeepStrictEqual(report.slotsAfter, report.slotsBefore)}`),
+  ];
+}
+
+const absentGateSteps = profile => [
+  `with the user, Chrome open on ${profile}'s Chrome profile with the OpenAI extension installed and codex.login pass; no ChatGPT desktop app installed`,
+  'node scripts/accept-chrome.mjs --c6-slots (slotsBefore: every browser absent)',
+  'node bin/cua.mjs chrome register --json (register: every present browser placed, nothing backed up)',
+  'node scripts/accept-chrome.mjs --c6-slots (slotsRegistered: the placed browsers ours)',
+  'the user wakes the extension (click its icon, or turn it off and on at chrome://extensions and rebind)',
+  'ps -axo pid=,ppid=,comm= | grep \'ChatGPT for Chrome\' (a host under <home>/runtimes/.../chrome-plugin/: servingHost.pathClass cua)',
+  liveCommand(profile, '/tmp/cua-c6-absent-roundtrip.json'),
+  'node bin/cua.mjs chrome unregister --json (unregister: placed browsers removed, restoration not_needed)',
+  'node scripts/accept-chrome.mjs --c6-slots (slotsAfter: every browser absent again)',
+  `assemble {scenario: "${ABSENT_SCENARIO}", slotsBefore, register, slotsRegistered, servingHost: {pathClass: "cua"}, roundTrip: <that report>, unregister, slotsAfter} and rerun this runner with --c6-report <file>${profile === 'personal' ? '' : ` --profile ${profile}`}`,
+];
+
+export const desktopAbsentGateBlocked = (profile = 'personal') => check('live: desktop-absent gate', 'BLOCKED',
+  `needs the user (issue #9): ${absentGateSteps(profile).map((s, i) => `(${i + 1}) ${s}`).join('; ')}`);
+
+// Which gate a machine owes: the --replace gate where some browser holds a registration cua did not write (the
+// desktop's, or another host's), the desktop-absent gate otherwise.
+export const c6GateBlocked = (slotsNow, profile = 'personal') =>
+  slotsNow.some(s => s.state === 'foreign') ? replaceGateBlocked(profile) : desktopAbsentGateBlocked(profile);
+
+// A supplied gate report, judged by its scenario. A desktop-absent report cannot stand for a machine that holds a
+// registration cua did not write: there the --replace gate applies.
+export function c6GateChecks(report, {profile = 'personal', slotsNow = []} = {}) {
+  if (report?.scenario === ABSENT_SCENARIO) {
+    const foreign = slotsNow.filter(s => s.state === 'foreign');
+    return [
+      check('live: desktop-absent gate: no registration cua did not write on this machine now', foreign.length ? 'FAIL' : 'PASS',
+        foreign.length ? `${foreign.map(s => `${s.browser} ${s.pathClass}`).join(', ')} present: a desktop (or other) registration exists, so the --replace gate applies` : 'no browser holds a foreign registration'),
+      ...desktopAbsentGateChecks(report, {profile}),
+    ];
+  }
+  return replaceGateChecks(report, {profile});
+}
+
+// Each browser's manifest slot for `--c6-slots` and the runner: its class and, when present, the sha256 of its bytes.
+export function slotStates({home, userHome, suffixes, nativeHost = 'com.openai.codexextension'}) {
+  return BROWSERS.map(({browser, dataDir}) => {
+    let bytes = null;
+    try { bytes = readFileSync(join(userHome, dataDir, 'NativeMessagingHosts', `${nativeHost}.json`)); } catch {}
+    const slot = classifySlot(bytes === null ? null : bytes.toString('utf8'), {home, userHome, suffixes});
+    return {browser, ...slot, ...(bytes === null ? {} : {sha256: createHash('sha256').update(bytes).digest('hex')})};
+  });
+}
 
 // ---- C1 ------------------------------------------------------------------------------------------------------------
 
@@ -367,8 +457,13 @@ export function registrationGuard(slots) {
     const reason = `cua's host is registered in ${ours.join(', ')} (the --replace gate is in progress or was left registered); not touched. Rerun after node bin/cua.mjs chrome unregister`;
     return {refusal: {run: false, reason}, noop: {run: false, reason}};
   }
-  const foreign = slots.some(s => s.state === 'foreign');
-  return {refusal: foreign ? {run: true} : {run: false, reason: 'no manifest cua did not write is present, so register would write rather than refuse; not run'}, noop: {run: true}};
+  if (!slots.some(s => s.state === 'foreign')) {
+    // No registration at all: the machine has no desktop app (issue #9). Both checks presuppose one, so they are N/A,
+    // stated as such; the desktop-absent gate covers register and unregister there.
+    const na = what => ({run: false, notApplicable: true, reason: `no desktop registration present: ${what}; the desktop-absent gate covers register and unregister here`});
+    return {refusal: na('no manifest cua did not write exists for register to refuse'), noop: na('no manifest cua did not write exists for unregister to leave alone')};
+  }
+  return {refusal: {run: true}, noop: {run: true}};
 }
 
 // ---- C7 ------------------------------------------------------------------------------------------------------------

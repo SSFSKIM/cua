@@ -4,19 +4,21 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync} from 'node:fs';
+import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
-  binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict,
-  hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks, PHASE_C_MODULES, profilesListCheck, registrationGuard,
-  replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
-  writeScratchChrome,
+  binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
+  desktopAbsentGateChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
+  PHASE_C_MODULES, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck,
+  scratchListCheck, slotStates, tapTestStatus, matrixChecks, verifyCheck, writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
+import {BROWSERS, hostSuffixes, registerHost, unregisterHost} from '../src/chrome/registration.mjs';
+import {loadPins, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {runAll} from '../scripts/accept/chrome-all.mjs';
 import {rollup} from '../scripts/accept/lib.mjs';
 import {chromeFacts} from '../src/profiles/chrome.mjs';
 import {REASONS} from '../src/profiles/registry.mjs';
-import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {acceptSignatures, forgeActiveRuntime, forgeChromeComponent, REPO, scratch} from './fixtures/runtime-fixture.mjs';
 
 const statuses = checks => checks.map(c => c.status);
 
@@ -98,6 +100,111 @@ test('without a gate report the --replace gate is BLOCKED with the exact steps, 
   assert.equal(blocked.status, 'BLOCKED');
   for (const step of ['chrome register --replace', 'reconnect', 'ChatGPT for Chrome', 'accept-chrome.mjs --live --profile personal', 'chrome unregister', '--c6-report'])
     assert.ok(blocked.detail.includes(step), step);
+});
+
+// ---- C6 on a machine without the desktop app (issue #9): register into empty slots, cua's host, unregister to empty --
+
+const absentSlots = () => BROWSERS.map(({browser}) => ({browser, state: 'absent'}));
+const passingAbsentGate = (over = {}) => ({scenario: 'C6-desktop-absent-live-gate',
+  slotsBefore: absentSlots(),
+  register: {ok: true, host: '/h/ChatGPT for Chrome', browsers: [{browser: 'chrome', action: 'placed', manifestPath: '/m/chrome.json'}]},
+  slotsRegistered: absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'ours', sha256: 'a'.repeat(64)} : s),
+  servingHost: {pathClass: 'cua'}, roundTrip: passingLive(),
+  unregister: {ok: true, blocked: false, browsers: BROWSERS.map(({browser}) => browser === 'chrome' ? {browser, action: 'removed', restoration: 'not_needed'} : {browser, action: 'absent'})},
+  slotsAfter: absentSlots(), ...over});
+
+test('the desktop-absent gate passes with empty slots before, cua\'s placed host serving a passing round trip, and empty slots after', () => {
+  const checks = desktopAbsentGateChecks(passingAbsentGate());
+  assert.equal(rollup(statuses(checks)), 'PASS', JSON.stringify(checks.filter(c => c.status !== 'PASS')));
+});
+
+test('the desktop-absent gate fails on any registration before, a replacement or backup, a host that is not cua\'s, a failed round trip, or a slot left behind', () => {
+  const failing = {
+    'a desktop manifest before register': {slotsBefore: absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'foreign', pathClass: 'desktop', sha256: 'b'.repeat(64)} : s)},
+    'cua already registered before': {slotsBefore: absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'ours', sha256: 'a'.repeat(64)} : s)},
+    'a snapshot that does not cover every browser': {slotsBefore: absentSlots().slice(1)},
+    'register replaced something': {register: {ok: true, browsers: [{browser: 'chrome', action: 'replaced', backup: '/b/chrome.json'}]}},
+    'register found its own manifest': {register: {ok: true, browsers: [{browser: 'chrome', action: 'unchanged'}]}},
+    'register placed nothing': {register: {ok: true, browsers: []}},
+    'register announced replacement consequences': {register: {ok: true, browsers: [{browser: 'chrome', action: 'placed'}], consequences: ['x']}},
+    'the placed slot does not name cua\'s host': {slotsRegistered: absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'foreign', pathClass: 'other', sha256: 'c'.repeat(64)} : s)},
+    'another slot changed while registered': {slotsRegistered: absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'ours', sha256: 'a'.repeat(64)} : s.browser === 'edge' ? {browser: 'edge', state: 'ours', sha256: 'a'.repeat(64)} : s)},
+    'the desktop\'s host served': {servingHost: {pathClass: 'desktop'}},
+    'the round trip failed': {roundTrip: passingLive({status: 'FAIL'})},
+    'unregister restored something': {unregister: {ok: true, blocked: false, browsers: [{browser: 'chrome', action: 'restored', restoration: 'restored'}]}},
+    'unregister was blocked': {unregister: {ok: true, blocked: true, browsers: [{browser: 'chrome', action: 'removed', restoration: 'blocked'}]}},
+    'unregister did not remove the placed manifest': {unregister: {ok: true, blocked: false, browsers: [{browser: 'chrome', action: 'not_ours', pathClass: 'desktop'}]}},
+    'a slot is not empty after': {slotsAfter: absentSlots().map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'ours', sha256: 'a'.repeat(64)} : s)},
+    'the after snapshot is missing': {slotsAfter: undefined},
+  };
+  for (const [what, over] of Object.entries(failing)) assert.equal(rollup(statuses(desktopAbsentGateChecks(passingAbsentGate(over)))), 'FAIL', what);
+  assert.equal(rollup(statuses(desktopAbsentGateChecks(passingGate()))), 'FAIL', 'a --replace report is not a desktop-absent report');
+});
+
+test('a supplied C6 report is judged by its scenario, and a desktop-absent report is refused where a desktop registration exists', () => {
+  const none = absentSlots();
+  assert.equal(rollup(statuses(c6GateChecks(passingAbsentGate(), {slotsNow: none}))), 'PASS');
+  assert.equal(rollup(statuses(c6GateChecks(passingGate(), {slotsNow: none}))), 'PASS');
+  const desktop = none.map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'foreign', pathClass: 'desktop'} : s);
+  const refused = c6GateChecks(passingAbsentGate(), {slotsNow: desktop});
+  assert.equal(rollup(statuses(refused)), 'FAIL');
+  assert.ok(refused.some(c => c.status === 'FAIL' && /desktop/.test(c.detail)), JSON.stringify(refused));
+  assert.equal(rollup(statuses(c6GateChecks({scenario: 'something-else'}, {slotsNow: none}))), 'FAIL');
+});
+
+test('without a C6 report the steps follow the machine: the --replace gate where a desktop registration exists, the desktop-absent gate otherwise', () => {
+  const none = absentSlots();
+  const desktop = none.map(s => s.browser === 'chrome' ? {browser: 'chrome', state: 'foreign', pathClass: 'desktop'} : s);
+  assert.deepEqual(c6GateBlocked(desktop, 'school'), replaceGateBlocked('school'));
+  assert.deepEqual(c6GateBlocked(none, 'school'), desktopAbsentGateBlocked('school'));
+  const blocked = desktopAbsentGateBlocked('school');
+  assert.equal(blocked.status, 'BLOCKED');
+  for (const step of ['--c6-slots', 'chrome register --json', 'ChatGPT for Chrome', 'accept-chrome.mjs --live --profile school', 'chrome unregister --json', 'C6-desktop-absent-live-gate', '--c6-report', '--profile school'])
+    assert.ok(blocked.detail.includes(step), step);
+  assert.doesNotMatch(blocked.detail, /--replace/);
+});
+
+// The desktop-absent fixture: a machine whose browsers hold no native-messaging manifest. The real register/unregister
+// run against it, snapshotted with the same reader as `--c6-slots`, make a gate report that passes.
+test('register and unregister on a desktop-absent fixture produce a passing desktop-absent gate report', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'cua');
+  mkdirSync(home);
+  forgeActiveRuntime(home);
+  forgeChromeComponent(home);
+  const userHome = join(s.dir, 'user');
+  mkdirSync(join(userHome, 'Library', 'Application Support', 'Google', 'Chrome'), {recursive: true});
+  const runtime = resolveRuntime({home});
+  const suffixes = hostSuffixes([...loadPins(), runtime.manifest]);
+  // The runner reads slots against the real path of its home, as register writes them (realHome).
+  const snap = () => slotStates({home: realpathSync(home), userHome, suffixes});
+  const slotsBefore = snap();
+  assert.ok(slotsBefore.every(x => x.state === 'absent'));
+  const registered = await registerHost({home, runtime, userHome, verifySignatures: acceptSignatures});
+  const register = {ok: true, host: registered.host, browsers: registered.browsers};
+  const slotsRegistered = snap();
+  const unregister = {ok: true, ...unregisterHost({home, userHome})};
+  const report = passingAbsentGate({slotsBefore, register, slotsRegistered, unregister, slotsAfter: snap()});
+  const checks = desktopAbsentGateChecks(report);
+  assert.equal(rollup(statuses(checks)), 'PASS', JSON.stringify(checks.filter(c => c.status !== 'PASS')));
+});
+
+test('the slot reader classifies every browser\'s manifest and fingerprints the bytes of a present one', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'cua');
+  const userHome = join(s.dir, 'user');
+  const dir = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome', 'NativeMessagingHosts');
+  mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, 'com.openai.codexextension.json'), JSON.stringify({path: join(userHome, '.codex/plugins/cache/x/ChatGPT for Chrome')}));
+  const slots = slotStates({home, userHome, suffixes: hostSuffixes(loadPins())});
+  assert.deepEqual(slots.map(x => x.browser), BROWSERS.map(b => b.browser));
+  const chrome = slots.find(x => x.browser === 'chrome');
+  assert.equal(chrome.state, 'foreign');
+  assert.equal(chrome.pathClass, 'desktop');
+  assert.match(chrome.sha256, /^[0-9a-f]{64}$/);
+  assert.ok(slots.filter(x => x.browser !== 'chrome').every(x => x.state === 'absent' && !('sha256' in x)));
 });
 
 // ---- C1 ---------------------------------------------------------------------------------------------------------------
@@ -352,9 +459,16 @@ test('the live refusal runs only against a foreign manifest and never while cua\
   assert.equal(ours.refusal.run, false);
   assert.equal(ours.noop.run, false, 'unregister would remove cua\'s live registration');
   assert.match(ours.refusal.reason, /chrome/);
-  const empty = registrationGuard([{browser: 'chrome', state: 'absent'}]);
-  assert.equal(empty.refusal.run, false, 'with nothing foreign, register would write');
-  assert.equal(empty.noop.run, true);
+  // With no registration at all (no desktop app), neither check has anything to show: N/A, stated, never skipped silently.
+  const empty = registrationGuard([{browser: 'chrome', state: 'absent'}, {browser: 'edge', state: 'absent'}]);
+  for (const part of [empty.refusal, empty.noop]) {
+    assert.equal(part.run, false);
+    assert.equal(part.notApplicable, true);
+    assert.match(part.reason, /^no desktop registration present/);
+  }
+  assert.equal(ours.refusal.notApplicable, undefined, 'cua\'s own registration in place is BLOCKED, not N/A');
+  assert.equal(rollup(['PASS', 'N/A']), 'PASS');
+  assert.equal(rollup(['N/A', 'BLOCKED']), 'BLOCKED');
 });
 
 // ---- C7 ---------------------------------------------------------------------------------------------------------------

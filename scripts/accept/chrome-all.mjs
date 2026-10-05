@@ -14,12 +14,13 @@
 //           --json` judged against `cua doctor --json` (both read only)
 //   C4      one `cua serve` connection (computer,browser, secrets off): initialize, tools/list, profiles_list, end_task;
 //           no js cell
-//   C5      `cua doctor --json` (passive); no registration is expected where every browser slot is absent
+//   C5      `cua doctor --json` (passive); without the desktop app, cua's own registration (the steady state) or none
+//           is expected, by the browser slots and cua's registration record
 //   C6      the placed component and its configuration; a no-op `cua install` that cannot download (it names an
 //           archive that does not exist); `cua chrome register` without --replace (it must refuse) and `cua chrome
 //           unregister` (it must change nothing), each only when no manifest names cua's host and each with the
 //           manifests fingerprinted before and after; both are N/A (stated, not skipped) where no browser holds a
-//           registration at all (no desktop app); the live gate only from a supplied report (--c6-report): the
+//           registration cua did not write (no desktop app); the live gate only from a supplied report (--c6-report): the
 //           --replace gate, or on a machine without the desktop app the desktop-absent gate (issue #9)
 //   C7      a clean clone of this branch's HEAD in /tmp: npm test, build:helper and test:helper inside the clone (this
 //           checkout's helper is never rebuilt), npm pack --dry-run; the clone is deleted
@@ -41,7 +42,7 @@ import {locateChromeComponent} from '../../src/runtime/chrome-component.mjs';
 import {settingsFrom} from '../../src/mcp/server.mjs';
 import {chromeFacts} from '../../src/profiles/chrome.mjs';
 import {PROFILE_KEY, profileStatuses, REASONS} from '../../src/profiles/registry.mjs';
-import {BROWSERS, hostSuffixes} from '../../src/chrome/registration.mjs';
+import {BROWSERS, hostSuffixes, readRecord} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
@@ -254,8 +255,11 @@ export async function runAll(argv) {
   // ---- C5 -----------------------------------------------------------------------------------------------------------
   const readSlots = () => slotStates({home, userHome, suffixes: hostSuffixes(loadPins())});
   const slotsNow = readSlots();
+  // What cua wrote (replaced or not): tells cua's steady-state registration on a Mac without the desktop app from the
+  // --replace gate mid-run.
+  const record = readRecord(home);
   addItem('C5', 'doctor --json on this Mac (passive)', [
-    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile, slotsNow}),
+    ...doctorChromeChecks({code: doctorRun.code, doctor: doctor && {...doctor, checks: doctor.checks?.map(c => ({...c, detail: sanitize(c.detail)}))}, profile, slotsNow, record}),
     suiteClaims('npm test: the Chrome doctor checks', tap, [
       'per-profile extension checks, the native host registration by path class, and the live host count',
       'doctor reports the Chrome checks beside runtime health and they never change ok',
@@ -292,7 +296,7 @@ export async function runAll(argv) {
       try { const s = statSync(path); return `${createHash('sha256').update(readFileSync(path)).digest('hex')}:${s.mtimeMs}:${s.ino}`; } catch { return 'absent'; }
     }), existsSync(join(home, 'chrome'))]);
     const where = slotsNow.map(s => `${s.browser} ${s.state === 'foreign' ? s.pathClass : s.state}`).join(', ');
-    let guard = registrationGuard(slotsNow);
+    let guard = registrationGuard(slotsNow, {record});
     const notRun = part => part.notApplicable ? 'N/A' : 'BLOCKED';
     if (!guard.refusal.run) checks.push(check('cua chrome register refuses without --replace', notRun(guard.refusal), `${guard.refusal.reason} (slots: ${where})`));
     else {
@@ -306,7 +310,7 @@ export async function runAll(argv) {
       checks.push(check('cua chrome register refuses without --replace', ok ? 'PASS' : 'FAIL',
         `exit ${r.code}; ${out?.error?.code ?? 'no error code'}: ${sanitize(out?.error?.message ?? r.stderr.trim())}; manifests and <home>/chrome unchanged (sha256, mtime, inode): ${unchanged}`));
     }
-    guard = registrationGuard(readSlots());
+    guard = registrationGuard(readSlots(), {record: readRecord(home)});
     if (!guard.noop.run) checks.push(check('cua chrome unregister is a no-op when the manifest is not ours', notRun(guard.noop), guard.noop.reason));
     else {
       const before = fingerprint();

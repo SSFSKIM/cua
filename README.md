@@ -533,10 +533,11 @@ directory the runner creates (and deletes), and your home's registry is checked 
 
 `--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface,
 the profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for
-`profiles_list` and the host notes, `cua doctor` (C5 expects no registration where the browsers hold none), a no-op
+`profiles_list` and the host notes, `cua doctor` (C5 expects the desktop's registration, or, on a Mac without the desktop app, cua's own or none), a no-op
 `cua install`, `cua chrome register` without `--replace`
 (which must refuse) and `cua chrome unregister` (which must change nothing; both are skipped while cua's own host is
-registered, and reported `N/A` where no browser holds a registration at all, as on a Mac without the desktop app), and
+registered for the `--replace` gate, and reported `N/A` on a Mac without the desktop app, where nothing else is
+registered), and
 a clean clone running the suites and `npm pack --dry-run`. The live parts enter only as reports: `--c2-report` takes a
 `--live` run's report, and `--c6-report` the record of the live registration gate run with you. Where the desktop's
 (or another host's) registration is present, that is the `--replace` gate (its shape and steps are in
@@ -546,6 +547,13 @@ launches cua's placed host when the extension wakes, the `--live` round trip pas
 unregister` leaves every slot absent again; `node scripts/accept-chrome.mjs --c6-slots` prints the slots for the
 before, registered and after snapshots the report carries. Without a report those parts are BLOCKED with the exact
 steps for the machine they run on, never passed.
+
+On a Mac without the desktop app, cua's own registration is the steady state: the extension needs a manifest to
+launch any host, and there is nothing else to defer to. The flow there is the desktop-absent gate (ending with every
+slot absent), then `node bin/cua.mjs chrome register` again, then `--all` with the gate's report while registered. C5
+then reports class `cua` as expected (or no manifest, saying which it saw), and the refusal and no-op are `N/A`. cua's
+record that it replaced nothing (`$CUA_HOME/chrome/registration.json`) is what tells this state from a `--replace`
+gate left mid-run, which stays BLOCKED.
 
 `--live` is the browser secret round trip: through `cua serve` it selects the registered profile by its instance id,
 creates one tab, opens the runner's own loopback page, fills its password field with `{{secret:<label>}}` for a

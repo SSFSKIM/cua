@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bench Home</title>
+<style>
+  body { font-family: Helvetica, Arial, sans-serif; margin: 24px; color: #111; background: #fff; }
+  table { border-collapse: collapse; margin-bottom: 16px; }
+  th, td { border: 1px solid #999; padding: 4px 10px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  canvas { border: 1px solid #333; display: block; }
+  #draw { cursor: crosshair; }
+  section { margin-bottom: 24px; }
+  #bench-id { font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Bench Home</h1>
+<p>Bench ID: <span id="bench-id">BENCH-2026-10-05</span></p>
+
+<section>
+<h2>Inventory</h2>
+<table id="inventory">
+  <thead><tr><th>Name</th><th>Qty</th><th>Unit price</th></tr></thead>
+  <tbody>
+    <tr><td>Widget</td><td>10</td><td>12.50</td></tr>
+    <tr><td>Gadget</td><td>4</td><td>37.25</td></tr>
+    <tr><td>Sprocket</td><td>20</td><td>3.75</td></tr>
+    <tr><td>Bolt</td><td>50</td><td>0.90</td></tr>
+    <tr><td>Gear</td><td>6</td><td>22.00</td></tr>
+    <tr><td>Spring</td><td>30</td><td>1.15</td></tr>
+    <tr><td>Valve</td><td>3</td><td>64.00</td></tr>
+    <tr><td>Hinge</td><td>8</td><td>9.25</td></tr>
+    <tr><td>Pulley</td><td>5</td><td>27.50</td></tr>
+    <tr><td>Lever</td><td>12</td><td>8.00</td></tr>
+    <tr><td>Clamp</td><td>7</td><td>15.00</td></tr>
+    <tr><td>Bearing</td><td>10</td><td>27.25</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section>
+<p><a id="to-frame" href="frame-host.html">Go to the frame host</a></p>
+</section>
+
+<section>
+<h2>Graph</h2>
+<canvas id="graph" width="480" height="240" style="width:480px;height:240px"></canvas>
+<p id="graph-caption">Bars A–F from left to right</p>
+</section>
+
+<section>
+<h2>Draw</h2>
+<p>Drag on the canvas to draw a rectangle.</p>
+<canvas id="draw" width="400" height="300" style="width:400px;height:300px"></canvas>
+<p>Rectangle: <span id="draw-result"></span></p>
+</section>
+
+<section id="late-container"></section>
+
+<script>
+(function () {
+  // Bar chart: no labels or values in the DOM.
+  var heights = [90, 120, 70, 210, 100, 60];
+  var g = document.getElementById('graph').getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, 480, 240);
+  g.strokeStyle = '#333';
+  g.beginPath(); g.moveTo(20, 225); g.lineTo(460, 225); g.stroke();
+  var barW = 50, gap = 24, x0 = 32;
+  g.fillStyle = '#3a6fd8';
+  for (var i = 0; i < heights.length; i++) {
+    var x = x0 + i * (barW + gap);
+    g.fillRect(x, 225 - heights[i], barW, heights[i]);
+  }
+
+  // Late element, inserted 8 s after load.
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      var el = document.createElement('p');
+      el.id = 'late';
+      el.textContent = 'LATE-7f3a';
+      document.getElementById('late-container').appendChild(el);
+    }, 8000);
+  });
+
+  // Drag-to-draw rectangle.
+  var canvas = document.getElementById('draw');
+  var ctx = canvas.getContext('2d');
+  var out = document.getElementById('draw-result');
+  var start = null;
+  function pos(ev) {
+    var r = canvas.getBoundingClientRect();
+    // Content-box relative: skip the CSS border, scale CSS px to canvas px.
+    var x = (ev.clientX - r.left - canvas.clientLeft) * (canvas.width / canvas.clientWidth);
+    var y = (ev.clientY - r.top - canvas.clientTop) * (canvas.height / canvas.clientHeight);
+    return {
+      x: Math.round(Math.min(Math.max(x, 0), canvas.width)),
+      y: Math.round(Math.min(Math.max(y, 0), canvas.height))
+    };
+  }
+  function rect(a, b) {
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+  }
+  function paint(r) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!r) return;
+    ctx.fillStyle = 'rgba(58,111,216,0.25)';
+    ctx.strokeStyle = '#3a6fd8';
+    ctx.lineWidth = 2;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+  canvas.addEventListener('mousedown', function (ev) {
+    ev.preventDefault();
+    start = pos(ev);
+    paint(null);
+  });
+  window.addEventListener('mousemove', function (ev) {
+    if (start) paint(rect(start, pos(ev)));
+  });
+  window.addEventListener('mouseup', function (ev) {
+    if (!start) return;
+    var r = rect(start, pos(ev));
+    start = null;
+    paint(r);
+    out.textContent = r.x + ',' + r.y + ',' + r.w + ',' + r.h;
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bench Frame Form</title>
+<style>
+  body { font-family: Helvetica, Arial, sans-serif; margin: 12px; color: #111; background: #fafafa; font-size: 14px; }
+  .row { margin-bottom: 10px; }
+  input[type=number] { width: 70px; }
+  .dropdown { position: relative; display: inline-block; }
+  #dropdown-toggle { display: inline-block; min-width: 120px; padding: 4px 8px; border: 1px solid #666; background: #fff; cursor: pointer; user-select: none; }
+  #dropdown-list { position: absolute; top: 100%; left: 0; min-width: 136px; margin: 0; padding: 0; list-style: none; border: 1px solid #666; background: #fff; z-index: 10; }
+  #dropdown-list[hidden] { display: none; }
+  #dropdown-list [role=option] { padding: 4px 8px; cursor: pointer; }
+  #dropdown-list [role=option]:hover { background: #dde6fa; }
+  #result { font-weight: bold; }
+  iframe { border: 1px solid #333; }
+</style>
+</head>
+<body>
+<form id="bench-form" autocomplete="off">
+  <div class="row">
+    <label for="qty-a">A</label> <input id="qty-a" type="number">
+    <label for="qty-b">B</label> <input id="qty-b" type="number">
+    <label for="qty-c">C</label> <input id="qty-c" type="number">
+  </div>
+
+  <div class="row">
+    <span id="dropdown-label">Pick:</span>
+    <div class="dropdown" id="dropdown">
+      <div id="dropdown-toggle" role="combobox" tabindex="0" aria-haspopup="listbox" aria-expanded="false" aria-controls="dropdown-list" aria-labelledby="dropdown-label">Choose…</div>
+      <ul id="dropdown-list" role="listbox" hidden>
+        <li role="option" data-value="Alpha">Alpha</li>
+        <li role="option" data-value="Bravo">Bravo</li>
+        <li role="option" data-value="Charlie">Charlie</li>
+        <li role="option" data-value="Delta">Delta</li>
+      </ul>
+    </div>
+    Selected: <span id="pick"></span>
+  </div>
+
+  <div class="row">
+    Shape:
+    <label><input type="radio" name="shape" value="square"> square</label>
+    <label><input type="radio" name="shape" value="circle"> circle</label>
+    <label><input type="radio" name="shape" value="triangle"> triangle</label>
+  </div>
+
+  <div class="row">
+    <label for="phrase">Phrase</label> <input id="phrase" type="text">
+  </div>
+
+  <div class="row">
+    <button id="submit" type="submit">Submit</button>
+  </div>
+
+  <div class="row">Result: <span id="result"></span></div>
+</form>
+
+<iframe id="inner" src="frame-inner.html" width="300" height="120" title="Deep frame"></iframe>
+
+<script>
+(function () {
+  var toggle = document.getElementById('dropdown-toggle');
+  var list = document.getElementById('dropdown-list');
+  var pick = document.getElementById('pick');
+  var dropdown = document.getElementById('dropdown');
+
+  function setOpen(open) {
+    list.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+  }
+  toggle.addEventListener('click', function () { setOpen(list.hidden); });
+  toggle.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setOpen(list.hidden); }
+  });
+  list.addEventListener('click', function (ev) {
+    var opt = ev.target.closest('[role=option]');
+    if (!opt) return;
+    var value = opt.getAttribute('data-value');
+    pick.textContent = value;
+    toggle.textContent = value;
+    Array.prototype.forEach.call(list.children, function (o) {
+      o.setAttribute('aria-selected', String(o === opt));
+    });
+    setOpen(false);
+  });
+  document.addEventListener('click', function (ev) {
+    if (!dropdown.contains(ev.target)) setOpen(false);
+  });
+
+  document.getElementById('bench-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    function num(id) { return Number(document.getElementById(id).value) || 0; }
+    var a = num('qty-a'), b = num('qty-b'), c = num('qty-c');
+    var shapeEl = document.querySelector('input[name=shape]:checked');
+    var shape = shapeEl ? shapeEl.value : '';
+    var phrase = document.getElementById('phrase').value;
+    var code = (a + b + c) + '-' + pick.textContent + '-' + shape + '-' + phrase.length;
+    document.getElementById('result').textContent = code;
+    fetch('/submit', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: code });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bench Frame Inner</title>
+<style>
+  body { font-family: Helvetica, Arial, sans-serif; margin: 8px; color: #111; background: #f4f4f4; font-size: 13px; }
+  p { margin: 4px 0; }
+</style>
+</head>
+<body>
+<label for="deep">Deep input</label>
+<input id="deep" type="text" autocomplete="off">
+<p>Keys: <span id="deep-log"></span></p>
+<p>Value: <span id="deep-echo"></span></p>
+<script>
+(function () {
+  var input = document.getElementById('deep');
+  var log = document.getElementById('deep-log');
+  var echo = document.getElementById('deep-echo');
+  input.addEventListener('keydown', function (ev) {
+    log.textContent += ev.key;
+  });
+  input.addEventListener('input', function () {
+    echo.textContent = input.value;
+  });
+})();
+</script>
+</body>
+</html>

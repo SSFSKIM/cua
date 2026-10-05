@@ -276,7 +276,7 @@ async function profiles(args) {
 // host's manifest is present unless --replace, which backs it up first; unregister removes only cua's manifests and
 // restores what cua replaced. Exit 1 on a refusal or when a restoration is BLOCKED.
 const CHROME_USAGE = {register: 'chrome register takes only --replace and --json', unregister: 'chrome unregister takes only --json'};
-const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours', not_removed: 'kept'};
+const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours', not_removed: 'kept', unknown: 'unknown'};
 
 async function chrome(args) {
   const [command, ...rest] = args;
@@ -302,16 +302,23 @@ async function chrome(args) {
   }
   const result = unregisterHost({home});
   if (values.json) { print({ok: true, ...result}); return result.blocked ? 1 : 0; }
+  for (const line of unregisterLines(result)) print(line);
+  return result.blocked ? 1 : 0;
+}
+
+// unregister's human-readable report. "nothing to unregister" is said only when every browser is empty or holds another
+// host's manifest: a slot whose state is unknown, or where cua's manifest was kept, is not evidence of absence.
+export function unregisterLines(result) {
   const shown = result.browsers.filter(b => b.action !== 'absent');
-  if (!shown.some(b => b.action === 'removed' || b.action === 'restored')) print('nothing to unregister: no com.openai.codexextension manifest names cua\'s host');
+  const lines = shown.every(b => b.action === 'not_ours') ? ['nothing to unregister: no com.openai.codexextension manifest names cua\'s host'] : [];
   for (const b of shown) {
     const what = b.action === 'not_ours' ? `names a ${b.pathClass} host; left unchanged`
       : b.restoration === 'restored' ? 'restored the backed-up manifest, verified byte-for-byte'
         : b.restoration === 'not_needed' ? 'nothing to restore (cua placed it in an empty slot)'
           : `restoration BLOCKED: ${b.reason}. To fix: ${b.userAction}`;
-    print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}: ${what}`);
+    lines.push(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}: ${what}`);
   }
-  return result.blocked ? 1 : 0;
+  return lines;
 }
 
 const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome};

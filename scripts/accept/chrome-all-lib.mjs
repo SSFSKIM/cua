@@ -154,12 +154,29 @@ const describe = list => list.map(p => `${p.key} ${p.ready ? 'ready' : `not read
 // Where this process may not read Chrome's data directory (macOS privacy protection), presence cannot be shown here.
 const UNREADABLE_BLOCK = `this process may not read Chrome's data directory, so extension presence cannot be shown from it: ${PERMISSION_FIX}`;
 
+// Failure outranks BLOCKED: the key set, "nothing is ready in an unbound scratch registry" and every readable row are
+// judged first; only the presence reasons an unreadable row cannot show are BLOCKED.
 export function scratchListCheck(list) {
   const name = 'scratch home: list shows personal not yet bound and work/school not ready (extension manifest absent)';
-  if (Array.isArray(list) && list.some(p => p.reason === 'chrome_data_unreadable')) return check(name, 'BLOCKED', `${describe(list)}; ${UNREADABLE_BLOCK}`);
-  const ok = Array.isArray(list) && isDeepStrictEqual(list.map(p => p.key), Object.keys(EXPECTED_SCRATCH))
-    && list.every(p => p.ready === false && p.reason === EXPECTED_SCRATCH[p.key]);
-  return check(name, ok ? 'PASS' : 'FAIL', Array.isArray(list) ? describe(list) : 'no list');
+  if (!Array.isArray(list)) return check(name, 'FAIL', 'no list');
+  const violated = !isDeepStrictEqual(list.map(p => p.key), Object.keys(EXPECTED_SCRATCH)) || list.some(p => p.ready !== false)
+    || list.some(p => p.reason !== 'chrome_data_unreadable' && p.reason !== EXPECTED_SCRATCH[p.key]);
+  if (violated) return check(name, 'FAIL', describe(list));
+  if (list.some(p => p.reason === 'chrome_data_unreadable')) return check(name, 'BLOCKED', `${describe(list)}; ${UNREADABLE_BLOCK}`);
+  return check(name, 'PASS', describe(list));
+}
+
+// The human `cua profiles list` of the same scratch registry, by the same precedence: every key has a "not ready" line
+// naming its expected reason (FAIL otherwise), except lines naming chrome_data_unreadable, which make it BLOCKED.
+export function scratchHumanCheck(lines, reasons) {
+  const name = 'scratch home: the human list names each reason';
+  const rows = Object.keys(EXPECTED_SCRATCH).map(key => ({key, line: (lines ?? []).find(l => l.startsWith(`${key} `))}));
+  const bad = rows.filter(({key, line}) => !line || !new RegExp(`^${key}\\s+not ready\\s`).test(line)
+    || !(line.includes(reasons[EXPECTED_SCRATCH[key]]) || line.includes(reasons.chrome_data_unreadable)));
+  if (bad.length) return check(name, 'FAIL', `missing, ready or with another reason: ${bad.map(r => r.key).join(', ')}`);
+  const unreadable = rows.filter(({line}) => line.includes(reasons.chrome_data_unreadable)).map(r => r.key);
+  if (unreadable.length) return check(name, 'BLOCKED', `${unreadable.join(', ')} name chrome_data_unreadable; ${UNREADABLE_BLOCK}`);
+  return check(name, 'PASS', 'work and school: extension not installed; personal: not bound yet');
 }
 
 // One scratch `profiles add` against this Mac's Chrome: the reported extension state must be the expected one; an

@@ -38,7 +38,7 @@ import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
   c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveRoundTripChecks,
-  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchListCheck, tapTestStatus, verifyCheck,
+  matrixChecks, packChecks, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, verifyCheck,
 } from './chrome-all-lib.mjs';
 
 const REPO = realpathSync(fileURLToPath(new URL('../..', import.meta.url)));
@@ -165,12 +165,7 @@ export async function runAll(argv) {
       checks.push(check('scratch home: profiles add personal Default, work "Profile 8", school "Profile 6"', rollup(added.map(a => a.status)), added.map(a => a.detail).join('; ')));
       const list = parseJson((await cua(['profiles', 'list', '--json'], scratch)).stdout);
       checks.push(scratchListCheck(list?.profiles));
-      const human = (await cua(['profiles', 'list'], scratch)).stdout.split('\n');
-      const line = key => human.find(l => l.startsWith(`${key} `)) ?? '';
-      const named = ['work', 'school'].every(k => line(k).includes(REASONS.extension_not_installed)) && line('personal').includes(REASONS.not_bound);
-      const unreadable = ['personal', 'work', 'school'].some(k => line(k).includes(REASONS.chrome_data_unreadable));
-      checks.push(check('scratch home: the human list names each reason', named ? 'PASS' : unreadable ? 'BLOCKED' : 'FAIL', named ? 'work and school: extension not installed; personal: not bound yet'
-        : unreadable ? 'the list names chrome_data_unreadable: this process may not read Chrome\'s data directory, so presence reasons cannot be shown from it' : 'a reason is missing from cua profiles list'));
+      checks.push(scratchHumanCheck((await cua(['profiles', 'list'], scratch)).stdout.split('\n'), REASONS));
       const before = parseJson(readFileSync(join(scratch, 'profiles.json'), 'utf8'))?.profiles ?? {};
       const removed = await cua(['profiles', 'remove', 'school', '--json'], scratch);
       const after = parseJson(readFileSync(join(scratch, 'profiles.json'), 'utf8'))?.profiles ?? {};

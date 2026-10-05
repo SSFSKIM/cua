@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, classifySlot, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict,
   hostNotesCheck, launchEnvCheck, liveRoundTripChecks, packChecks, PHASE_C_MODULES, profilesListCheck, registrationGuard,
-  replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
+  replaceGateBlocked, replaceGateChecks, scratchAddCheck, scratchHumanCheck, scratchListCheck, tapTestStatus, matrixChecks, verifyCheck,
 } from '../scripts/accept/chrome-all-lib.mjs';
 import {rollup} from '../scripts/accept/lib.mjs';
+import {REASONS} from '../src/profiles/registry.mjs';
 
 const statuses = checks => checks.map(c => c.status);
 
@@ -299,4 +300,22 @@ test('unreadable Chrome data: a bound live profile passes C4 with the state reco
   const row = c5.find(c => c.name === 'chrome.extension.personal');
   assert.equal(row.status, 'BLOCKED');
   assert.match(row.detail, /Full Disk Access/);
+});
+
+test('the scratch list checks fail on any contract violation before an unreadable row can make them BLOCKED', () => {
+  const unreadable = key => ({key, ready: false, reason: 'chrome_data_unreadable', chromeDataError: 'EPERM'});
+  assert.equal(scratchListCheck([unreadable('personal'), unreadable('school'), unreadable('work')]).status, 'BLOCKED', 'pure unreadable');
+  assert.equal(scratchListCheck([unreadable('personal'), {key: 'school', ready: false, reason: 'extension_not_installed'}, unreadable('work')]).status, 'BLOCKED', 'readable rows as expected');
+  assert.equal(scratchListCheck([unreadable('personal'), {key: 'school', ready: false, reason: 'extension_not_installed'}, {key: 'work', ready: true, extensionInstanceId: 'w'}]).status, 'FAIL', 'a ready row in an unbound scratch registry');
+  assert.equal(scratchListCheck([unreadable('personal'), {key: 'school', ready: false, reason: 'not_bound'}, unreadable('work')]).status, 'FAIL', 'a readable row with the wrong reason');
+  assert.equal(scratchListCheck([unreadable('personal'), unreadable('work')]).status, 'FAIL', 'a missing key');
+  assert.equal(scratchListCheck([unreadable('extra'), unreadable('personal'), unreadable('school'), unreadable('work')]).status, 'FAIL', 'an unexpected key');
+  assert.equal(scratchListCheck(undefined).status, 'FAIL');
+
+  const row = (key, status, reason) => `${key.padEnd(12)} ${status.padEnd(10)} Default      ${REASONS[reason] ?? `extension instance ${reason}`}`;
+  const lines = rows => rows.map(r => row(...r));
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'not_bound'], ['school', 'not ready', 'extension_not_installed'], ['work', 'not ready', 'extension_not_installed']]), REASONS).status, 'PASS');
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'chrome_data_unreadable'], ['work', 'not ready', 'chrome_data_unreadable']]), REASONS).status, 'BLOCKED', 'pure unreadable');
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'extension_not_installed'], ['work', 'ready', 'inst-w']]), REASONS).status, 'FAIL', 'mixed with a wrongly ready row');
+  assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'not_bound']]), REASONS).status, 'FAIL', 'a wrong reason and a missing key');
 });

@@ -155,6 +155,14 @@ const bySlot = slots => {
   return coversEveryBrowser(map) ? map : null;
 };
 const slotWords = slots => Array.isArray(slots) ? slots.map(s => `${s?.browser} ${s?.state === 'foreign' ? `foreign (${s.pathClass})` : s?.state === 'unreadable' ? `unreadable (${s.error})` : s?.state}`).join(', ') : 'missing';
+const snapshotStatus = (map, matches) => !coversEveryBrowser(map) ? 'FAIL'
+  : [...map.values()].some(s => s.state !== 'unreadable' && !matches(s)) ? 'FAIL'
+    : [...map.values()].some(s => s.state === 'unreadable') ? 'BLOCKED' : 'PASS';
+const snapshotReadHint = (...maps) => {
+  const unreadable = maps.flatMap(map => map ? [...map.values()].filter(s => s.state === 'unreadable') : []);
+  const words = [...new Set(unreadable.map(s => `${s.browser}'s manifest (${s.error})`))];
+  return words.length ? `; cannot read ${words.join(', ')}; rerun node scripts/accept-chrome.mjs --c6-slots from a process that can read the browsers' directories (over SSH, or a terminal with Full Disk Access)` : '';
+};
 
 export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
   const name = 'live: desktop-absent gate';
@@ -164,25 +172,31 @@ export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
   const after = bySlot(report.slotsAfter);
   const rows = Array.isArray(report.register?.browsers) ? report.register.browsers.filter(isObject) : [];
   const placed = new Set(rows.filter(r => r.action === 'placed').map(r => r.browser));
-  const emptyBefore = coversEveryBrowser(before) && [...before.values()].every(s => s.state === 'absent');
+  const emptyBefore = snapshotStatus(before, s => s.state === 'absent');
   const wroteEmptyOnly = report.register?.ok === true && placed.has('chrome') && rows.every(r => r.action === 'placed' && !r.backup) && !report.register.consequences
-    && [...placed].every(b => before?.get(b)?.state === 'absent');
-  const namesCua = placed.has('chrome') && coversEveryBrowser(registered) && [...registered.values()].every(s => placed.has(s.browser) ? s.state === 'ours' : s.state === 'absent');
+    && [...placed].every(b => before?.has(b));
+  const namesCua = placed.has('chrome') ? snapshotStatus(registered, s => placed.has(s.browser) ? s.state === 'ours' : s.state === 'absent') : 'FAIL';
   const unrows = Array.isArray(report.unregister?.browsers) ? report.unregister.browsers.filter(isObject) : [];
   const removedOnly = report.unregister?.ok === true && report.unregister.blocked === false && unrows.length > 0
     && unrows.every(r => placed.has(r.browser) ? r.action === 'removed' && r.restoration === 'not_needed' : r.action === 'absent')
     && [...placed].every(b => unrows.some(r => r.browser === b));
-  const emptyAfter = coversEveryBrowser(after) && [...after.values()].every(s => s.state === 'absent') && isDeepStrictEqual(report.slotsAfter, report.slotsBefore);
+  const afterStatus = snapshotStatus(after, s => s.state === 'absent');
+  const identical = isDeepStrictEqual(report.slotsAfter, report.slotsBefore);
+  // Unreadable rows cannot prove equality or inequality; readable rows and browser order still must match.
+  const equalityStatus = identical ? 'PASS' : before && after && (emptyBefore === 'BLOCKED' || afterStatus === 'BLOCKED')
+    && report.slotsBefore.every((s, i) => s.browser === report.slotsAfter[i].browser
+      && (s.state === 'unreadable' || report.slotsAfter[i].state === 'unreadable' || isDeepStrictEqual(s, report.slotsAfter[i]))) ? 'BLOCKED' : 'FAIL';
+  const emptyAfter = rollup([emptyBefore, afterStatus, equalityStatus]);
   return [
-    check(`${name}: no registration before register (desktop absent)`, emptyBefore ? 'PASS' : 'FAIL', `slots before: ${slotWords(report.slotsBefore)}`),
-    check(`${name}: register wrote cua's manifest into empty slots only, nothing backed up`, wroteEmptyOnly ? 'PASS' : 'FAIL',
-      rows.length ? rows.map(r => `${r.browser} ${r.action}${r.backup ? ' (backup)' : ''}`).join(', ') + (report.register?.consequences ? '; replacement consequences announced' : '') : 'register wrote nothing'),
-    check(`${name}: the written slots name cua's host`, namesCua ? 'PASS' : 'FAIL', `slots registered: ${slotWords(report.slotsRegistered)}`),
+    check(`${name}: no registration before register (desktop absent)`, emptyBefore, `slots before: ${slotWords(report.slotsBefore)}${snapshotReadHint(before)}`),
+    check(`${name}: register wrote cua's manifest into empty slots only, nothing backed up`, wroteEmptyOnly ? emptyBefore : 'FAIL',
+      (rows.length ? rows.map(r => `${r.browser} ${r.action}${r.backup ? ' (backup)' : ''}`).join(', ') + (report.register?.consequences ? '; replacement consequences announced' : '') : 'register wrote nothing') + snapshotReadHint(before)),
+    check(`${name}: the written slots name cua's host`, namesCua, `slots registered: ${slotWords(report.slotsRegistered)}${snapshotReadHint(registered)}`),
     check(`${name}: the backend was served by cua's host`, report.servingHost?.pathClass === 'cua' ? 'PASS' : 'FAIL', `serving host class ${JSON.stringify(report.servingHost?.pathClass ?? null)}`),
     ...liveRoundTripChecks(report.roundTrip, {profile, prefix: `${name}: round trip`}),
     check(`${name}: unregister removed cua's manifests, nothing to restore`, removedOnly ? 'PASS' : 'FAIL',
       unrows.length ? unrows.map(r => `${r.browser} ${r.action}/${r.restoration ?? 'none'}`).join(', ') + `; blocked ${report.unregister?.blocked}` : 'no unregister result'),
-    check(`${name}: absent before, absent after`, emptyAfter ? 'PASS' : 'FAIL', `slots after: ${slotWords(report.slotsAfter)}; identical to before: ${isDeepStrictEqual(report.slotsAfter, report.slotsBefore)}`),
+    check(`${name}: absent before, absent after`, emptyAfter, `slots after: ${slotWords(report.slotsAfter)}; identical to before: ${identical}${snapshotReadHint(before, after)}`),
   ];
 }
 
@@ -447,7 +461,8 @@ export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow
     const noManifest = /^no native-messaging manifest for com\.openai\.codexextension in .+: the OpenAI extension cannot reach a host/.test(c.detail);
     if (absent && c.status === 'blocked' && noManifest) return ['PASS', 'no desktop registration present; absent expected'];
     if (absent && /^(desktop|cua|other):/.test(c.detail)) return ['FAIL', 'doctor reports a registration but every browser slot is absent'];
-    if (noManifest && slotsNow?.some(s => ['foreign', 'ours'].includes(s.state))) return ['FAIL', 'doctor reports no manifest but a browser slot holds a registration'];
+    const chromeSlot = slotsNow?.find(s => s.browser === 'chrome');
+    if (noManifest && ['foreign', 'ours'].includes(chromeSlot?.state)) return ['FAIL', 'doctor reports no manifest but Chrome\'s slot holds a registration'];
     const unreadable = slotsNow?.filter(s => s.state === 'unreadable');
     if (unreadable?.length) return ['BLOCKED', `cannot read ${unreadable.map(s => `${s.browser}'s manifest (${s.error})`).join(', ')}, so whether a registration is present cannot be told`];
     return c.status !== 'pass' ? [c.status === 'blocked' ? 'BLOCKED' : 'FAIL', 'expected the desktop\'s registration on this Mac']

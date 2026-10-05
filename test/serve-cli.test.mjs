@@ -27,7 +27,9 @@ const SCOPED = sandboxState('scoped', '/');
 // The served processes run with CUA_SHIM_SECRETS=off: the real Keychain helper (if built) is never started by this
 // Node-only suite; the in-process test at the end wires a stand-in helper instead. The home lives under /tmp, outside
 // $TMPDIR, as the scoped sandbox requires (a home under $TMPDIR is the misconfiguration `inTmpdir` sets up).
-function fakeInstalledHome(t, {inTmpdir = false} = {}) {
+// `mode` selects the fake upstream's teardown behavior (fake-upstream-process.mjs); `helper` installs the stand-in
+// Keychain helper as $CUA_HOME/bin/cua-keychain in that FAKE_HELPER_MODE, for runs with CUA_SHIM_SECRETS=on.
+function fakeInstalledHome(t, {inTmpdir = false, mode, helper} = {}) {
   const s = inTmpdir ? scratch() : shortScratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
@@ -38,11 +40,19 @@ function fakeInstalledHome(t, {inTmpdir = false} = {}) {
     if (key === 'moduleDir' || key === 'skyServiceApp') { mkdirSync(path, {recursive: true}); continue; }
     mkdirSync(dirname(path), {recursive: true});
     if (key === 'node') symlinkSync(process.execPath, path);
-    else if (key === 'cuaRepl') writeFileSync(path, `import ${JSON.stringify(pathToFileURL(FAKE).href)};\n`);
+    else if (key === 'cuaRepl') writeFileSync(path, mode
+      ? `process.argv[2] = ${JSON.stringify(mode)};\nawait import(${JSON.stringify(pathToFileURL(FAKE).href)});\n`
+      : `import ${JSON.stringify(pathToFileURL(FAKE).href)};\n`);
     else writeFileSync(path, '');
   }
   writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
   writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: pin.release}));
+  if (helper) {
+    mkdirSync(join(home, 'bin'));
+    const fake = join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs');
+    writeFileSync(join(home, 'bin', 'cua-keychain'), `#!/bin/sh\nFAKE_HELPER_MODE=${helper} exec ${JSON.stringify(process.execPath)} ${JSON.stringify(fake)} "$@"\n`);
+    chmodSync(join(home, 'bin', 'cua-keychain'), 0o755);
+  }
   return home;
 }
 
@@ -641,4 +651,73 @@ test('a readiness listing that settles during close is answered before the final
   assert.ok(Date.now() - releasedAt < 3000, 'serve returns within the 1 s flush bound once the listing settled');
   assert.ok(output.destroyed, 'the unread reply went with the stream at the flush bound instead of staying pending');
   assert.ok(diagnostics.some(l => /did not read the final replies within 1 s/.test(l)), diagnostics.join('\n'));
+});
+
+// Issue #29: a connection's run entries ($CUA_HOME/run/<session>/, its broker socket and its owner record) go on every
+// exit path serve controls, and what a killed server left is swept at the next start.
+const waitFor = async (predicate, ms = 15_000) => {
+  for (const until = Date.now() + ms; Date.now() < until; await new Promise(r => setTimeout(r, 25))) if (predicate()) return true;
+  return false;
+};
+
+test('serve start sweeps the run entries of connections whose process is gone, says so, and leaves live and unrecorded ones', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const run = join(home, 'run');
+  const [stale, live, unrecorded] = ['00000000-0000-4000-8000-00000000000a', '00000000-0000-4000-8000-00000000000b', '00000000-0000-4000-8000-00000000000c'];
+  for (const id of [stale, live, unrecorded]) mkdirSync(join(run, id), {recursive: true});
+  const gone = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))']).stdout.toString();
+  writeFileSync(join(run, `${stale}.pid`), `${gone}\n`);
+  writeFileSync(join(run, `${live}.pid`), `${process.pid}\n`);
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve']);
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  assert.deepEqual(readdirSync(run).filter(n => ![live, `${live}.pid`, unrecorded].includes(n)).length, 2, 'only the connection\'s own directory and record were added');
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 0, stderr);
+  assert.match(stderr, new RegExp(`removed the leftovers of 1 connection whose cua process is gone \\(${stale}, pid ${gone}\\)`));
+  assert.match(stderr, new RegExp(`left alone 1 entry with no owner record \\(${unrecorded}\\)`));
+  assert.deepEqual(readdirSync(run).sort(), [live, `${live}.pid`, unrecorded]);
+});
+
+for (const signal of ['SIGINT', 'SIGHUP']) {
+  test(`${signal} closes a secrets-on connection like SIGTERM, removing its run entries and broker socket`, {skip: !supported}, async t => {
+    const home = fakeInstalledHome(t, {helper: 'serve'});
+    const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on'});
+    await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+    await server.call('js', {code: 'task'});
+    assert.equal(readdirSync(join(home, 'run')).filter(n => n.endsWith('.sock')).length, 1, 'the broker is serving');
+    server.child.kill(signal);
+    const {code, stderr} = await server.exit;
+    assert.equal(code, 0, stderr);
+    assert.deepEqual(readdirSync(join(home, 'run')), []);
+  });
+}
+
+test('a signal that arrives while the connection is still starting closes it once it exists, leaving no run entries', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t, {helper: 'silent'});  // the broker never becomes ready: serve waits out its 3 s start
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on'});
+  assert.ok(await waitFor(() => existsSync(join(home, 'run')) && readdirSync(join(home, 'run')).some(n => n.endsWith('.pid'))), 'serve claimed its session');
+  server.child.kill('SIGTERM');
+  const {code, signal, stderr} = await server.exit;
+  assert.equal(signal, null, 'the signal was handled, not fatal');
+  assert.equal(code, 0, stderr);
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+});
+
+// A client killed outright closes every pipe it held. Here the runtime needs SIGKILL, so the teardown writes diagnostics
+// to a stderr nobody reads any more: that must neither crash the server nor cut its cleanup short.
+test('a client that closes all its pipes mid-task gets an orderly close: exit 0, runtime gone, no run entries', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t, {mode: 'ignore-term', helper: 'serve'});
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on'});
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  await server.call('js', {code: 'task'});
+  const [{start}] = records(home);
+  assert.equal(readdirSync(join(home, 'run')).length, 3, 'directory, broker socket and owner record while the task is open');
+  server.child.stdout.destroy();
+  server.child.stderr.destroy();
+  server.child.stdin.end();
+  const {code, signal} = await server.exit;
+  assert.deepEqual({code, signal}, {code: 0, signal: null});
+  assert.throws(() => process.kill(start.pid, 0), {code: 'ESRCH'});
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
 });

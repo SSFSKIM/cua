@@ -39,7 +39,7 @@ import {
 import {resolveRuntime} from '../runtime/manifest.mjs';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {fail} from '../runtime/errors.mjs';
-import {homeLayout, realHome} from '../runtime/layout.mjs';
+import {claimRunSession, describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {locateHelper} from '../secrets/helper.mjs';
 import {openSecrets} from '../secrets/broker.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
@@ -347,7 +347,8 @@ export function settingsFrom(env) {
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
-// `cua serve`: resolve the installed runtime, start this connection's secrets broker (unless secrets are off or the
+// `cua serve`: resolve the installed runtime, sweep $CUA_HOME/run of sessions whose owning process is gone and claim
+// this connection's session there (src/runtime/run-dir.mjs), start this connection's secrets broker (unless secrets are off or the
 // Keychain helper is not built), launch the runtime for a fresh connection session in an owned working directory with
 // the enabled surfaces (CUA_SHIM_SURFACES) and their trusted services registered (src/services/sky.mjs for computer
 // use, src/services/browser.mjs for the browser) and the broker's endpoint and token (or the reason there is no
@@ -367,11 +368,25 @@ export async function serve({home, env = process.env, input = process.stdin, out
   const services = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
   const runtime = resolveRuntime({home});
   listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false});
-  const sessionId = randomUUID();
-  mkdirSync(homeLayout(realHome(home)).run, {recursive: true, mode: 0o700});
-  const secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics});
-  let launch;
   try {
+    const swept = describeSweep(sweepRun(home));
+    if (swept) diagnostics(`$CUA_HOME/run: ${swept}`);
+  } catch (error) {
+    diagnostics(`$CUA_HOME/run could not be swept (${error.code ?? error.message})`);
+  }
+  const sessionId = randomUUID();
+  const claim = claimRunSession(home, sessionId);
+  // A signal that arrives before the connection exists closes it as soon as it does.
+  let server;
+  let signalled = false;
+  const onSignal = () => { if (server) server.close('signal'); else signalled = true; };
+  for (const signal of SIGNALS) process.on(signal, onSignal);
+  let secrets = NOT_CONFIGURED;
+  let launch;
+  let listingLeftover = false;
+  let code;
+  try {
+    secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics});
     launch = prepareLaunch(buildLaunch({
       runtime, home, sessionId, ambient: env, surfaces: settings.surfaces,
       services: Object.assign({}, ...settings.surfaces.map(s => services[s])),
@@ -381,15 +396,6 @@ export async function serve({home, env = process.env, input = process.stdin, out
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);
-  } catch (error) {
-    await secrets.close();
-    throw error;
-  }
-  const onSignal = () => server.close('signal');
-  let listingLeftover = false;
-  let server;
-  let code;
-  try {
     const profiles = {list: async () => {
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
@@ -398,15 +404,16 @@ export async function serve({home, env = process.env, input = process.stdin, out
     }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
       sandboxState: sandboxStateFor(sandbox, launch.cwd), ...settings});
-    for (const signal of SIGNALS) process.on(signal, onSignal);
+    if (signalled) server.close('signal');
     code = (await server.closed).code;
   } finally {
     for (const signal of SIGNALS) process.off(signal, onSignal);
     await secrets.close();
-    rmSync(launch.cwd, {recursive: true, force: true});
     // The runtime records a "session" app approval under this connection's random session ID, which no later
     // connection can use; it goes with the connection. Other sessions' files are never touched.
-    rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
+    if (launch) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
+    const leftovers = claim.release();
+    if (leftovers.length) diagnostics(`this connection's run entries could not all be removed (${leftovers.join(', ')}); the next cua serve or cua doctor sweeps them`);
   }
   if (!listingLeftover) return code;
   diagnostics('a profiles_list readiness listing\'s runtime could not be confirmed stopped; owned processes may remain');

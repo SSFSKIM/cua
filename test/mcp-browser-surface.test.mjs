@@ -1,5 +1,5 @@
 // The browser surface as the model sees it (M11, acceptance C1/C4 at the protocol level): with the browser surface
-// the server adds profiles_list and the three Chrome host notes; by default nothing changes. The settings parser maps
+// the server adds profiles_list and the Chrome host notes; by default nothing changes. The settings parser maps
 // CUA_SHIM_SURFACES to the launcher's surfaces.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -88,21 +88,41 @@ test('a registry that cannot be read is a value-free error, not an empty list', 
   assert.deepEqual(structured(response), {status: 'error', code: 'profiles_invalid'});
 });
 
-test('the browser host notes carry the three Chrome rules and keep the instructions within 2048 characters', async () => {
-  for (const surfaces of [['browser'], ['computer', 'browser']]) {
+// The operating rules from the Homework 1b dogfood (issue #23,
+// docs/evidence/2026-10-05-homework-1b-dogfooding.md): the general ones on every surface, the Chrome ones with the
+// browser surface only.
+const GENERAL_RULES = {
+  'call end_task when the task is done': /Call end_task as soon as the task is done, before your final reply/,
+  'one serial controller': /One controller per task, one js call at a time\./,
+  'observe, act, verify': /Observe, act, verify: a call returning is not success/,
+  'stop after an unchanged state': /If the state is unchanged, stop and find out why rather than repeat/,
+  'readiness waits, not fixed delays': /Wait for a visible readiness condition in a bounded poll, not a fixed delay/,
+};
+const BROWSER_RULES = {
+  'getBrowser only with an id from profiles_list, which is asked again on failure': /cua\.getBrowser\(\{extensionInstanceId\}\) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again/,
+  'never pick or bind a profile': /Never pick or bind a profile for the user/,
+  'DOM-only tabs': /tab\.playwright/,
+  'locator deadline of its own': /Locator actions keep their own short deadline whatever the js timeout_ms: pass them \{timeoutMs\}/,
+  'read-only evaluate': /evaluate is read-only: no fetch, no require, objects are non-extensible\./,
+  'createBrowserTab limit': /timeout_ms of at least 60000/,
+  'leftover tab': /tab may still have opened/,
+};
+
+test('the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters', async () => {
+  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
     const notes = hostNotesFor(surfaces);
-    assert.match(notes, /profiles_list/, surfaces.join());
-    assert.match(notes, /cua\.getBrowser\(\{extensionInstanceId\}\); if that fails, call profiles_list again/);
-    assert.match(notes, /tab\.playwright/);
-    assert.match(notes, /timeout_ms of at least 60000/);
-    assert.match(notes, /tab may still have opened/);
-    assert.match(notes, /end_task/);
+    const browser = surfaces.includes('browser');
+    for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `${surfaces.join()}: ${rule}`);
+    for (const [rule, pattern] of Object.entries(BROWSER_RULES)) {
+      if (browser) assert.match(notes, pattern, `${surfaces.join()}: ${rule}`);
+      else assert.doesNotMatch(notes, pattern, `${surfaces.join()} has no Chrome rule: ${rule}`);
+    }
     const h = harness({server: {surfaces, profiles: {list: () => []}}});
     const instructions = (await initialized(h)).result.instructions;
     assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${notes}`);
     assert.ok(instructions.length <= 2048, `${surfaces.join()}: ${instructions.length} characters`);
   }
-  assert.ok(!/osascript|getAXState\(\) on it relaunches/.test(hostNotesFor(['browser'])), 'native-only notes stay out of a browser-only connection');
+  assert.doesNotMatch(hostNotesFor(['browser']), /osascript|getAXState\(\) on it relaunches/, 'native-only notes stay out of a browser-only connection');
   assert.ok(hostNotesFor(['computer', 'browser']).startsWith(DEFAULT_HOST_NOTES), 'the native notes are kept whole beside the browser ones');
 });
 

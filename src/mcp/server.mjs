@@ -21,7 +21,8 @@
 // - secrets_list asks the connection's secrets provider (its private broker, src/secrets/broker.mjs) for labels; it
 //   never sees a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
-// - Image MIME types are corrected; accepted app approvals get `_meta.persist`.
+// - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
+//   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
 // On EOF or a signal the connection becomes terminal (Closing), makes a bounded best-effort completion, then tears
 // down the owned runtime and the secrets broker, concurrently and within the teardown budget, and writes any local
 // reply still being computed (a profiles_list listing) before the MCP stream's final bounded flush. A failure
@@ -33,7 +34,7 @@ import {join} from 'node:path';
 import {TaskLifecycle} from './task.mjs';
 import {spawnUpstream} from './upstream.mjs';
 import {
-  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, statusResult, withHostNotes,
+  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, withHostNotes,
 } from './surface.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
@@ -150,7 +151,7 @@ export function createServer({
     ticket.promise.then(({taskId, reply}) => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);
       if (reply.error) return write({jsonrpc: '2.0', id: msg.id, error: reply.error});
-      const result = correctImages(reply.result ?? {});
+      const result = redactTokens(correctImages(reply.result ?? {}));
       respond(msg.id, {...result, _meta: {...(result._meta ?? {}), 'cua/taskId': taskId}});
     }, error => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);

@@ -16,7 +16,7 @@ shape (`e517313`). Neither headless `claude -p` nor interactive Claude Code send
 |---|---|
 | Controlled device | the Mac mini (macOS, Korean UI), uid 501, nobody at its console during the whole run. Agent node: nvm `v24.18.0` (see Findings 5). |
 | Client | the MacBook. Claude Code `2.1.287` for headless runs (`claude -p`), `2.1.291` for interactive runs (in `tmux`). |
-| Mini's "LAN" address | `100.112.79.211`, its tailnet address (Tailscale, WireGuard-encrypted); the agent bound exactly that, never `0.0.0.0`. |
+| Mini's LAN address | `100.112.79.211`, the mini's `en0` address on the network it shares with the MacBook (the MacBook's `en0` is `100.112.102.248`, one hop away). The mini's tailnet address, `100.92.238.1`, was not used, so the LAN runs were plain HTTP on that network, not inside Tailscale. The agent bound exactly that address, never `0.0.0.0`. |
 | Client credential | held on the MacBook in a 0600 file and read into `$T` for curl; never printed. |
 | Branch heads | item 1 `dd7fa6c`; items 2–4 and 7 `2ed7a22`; item 5 `262739a`; item 6 `5bfd657`, its restart proof `e517313`. |
 

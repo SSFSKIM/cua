@@ -493,15 +493,23 @@ node bin/cua.mjs remote show                                     # device id, re
 ```
 
 `enroll` writes `$CUA_HOME/remote/device.json` (mode 0600) holding a random device id and a secret, and prints, this
-once, the **client credential** (what a client presents as its bearer) and the line for the relay's `devices.json`
-(SHA-256 hashes only); `--json` prints `{deviceId, clientCredential, devicesEntry, relayUrl}`. Nothing prints the
-client credential again: keep it where the client will use it. Both legs get their own credential derived from the
-secret, so the copy a client holds cannot be used to pose as the Mac to the relay.
+once, the **client credential** (what a client presents as its bearer), the `claude mcp add` line that registers it
+(on the relay's endpoint when a relay is enrolled, else on this Mac's address; see 4) and the line for the relay's
+`devices.json` (SHA-256 hashes only); `--json` prints `{deviceId, clientCredential, devicesEntry, relayUrl,
+relayEndpoint}`. Nothing prints the client credential again: keep it where the client will use it. Both legs get their
+own credential derived from the secret, so the copy a client holds cannot be used to pose as the Mac to the relay.
+
+The relay URL is `wss://` (the relay behind TLS), or `ws://` only to a loopback address such as a relay on the same
+Mac; anything else is refused (`invalid_relay_url`), because over `ws://` the Mac's credential and every client's
+bearer would cross the network in the clear.
 
 On an enrolled Mac, `enroll` refuses (`remote_already_enrolled`) unless given `--relay <url>` alone, which updates the
 relay URL in place (nothing rotated, no credential shown), or `--rotate`, which replaces the secret under the same
-device id. After `--rotate`: replace the relay's line and restart the relay, re-register the client with the new
-credential, and run `cua agent install` again (a running agent keeps the credentials it started with).
+device id. A running agent follows `device.json`, so neither needs the agent restarted: after `--relay`, an agent that
+dials a relay moves to the new one by itself (an installed job that does not dial a relay yet needs `cua agent
+install` once, and `enroll` says so); after `--rotate`, the agent refuses the old client credential at once and
+presents the new device credential at its next connection to the relay. Then replace the relay's line and restart
+the relay (the agent reconnects with the new credential), and re-register the client with the new credential.
 
 ### 2. Run the agent
 
@@ -517,8 +525,9 @@ node bin/cua.mjs agent uninstall                                 # stop the job 
 (`launchctl bootstrap gui/<uid>`). The job runs `<node> <this checkout>/bin/cua.mjs agent run`, with `--relay` when the
 Mac is enrolled with a relay and `--http <host:port>` when given; with neither it refuses (`agent_nothing_to_serve`).
 It starts at login, is restarted after a crash but not after a deliberate stop, logs to `$CUA_HOME/state/agent.log`,
-and its environment carries `CUA_HOME` (when set) and `CUA_SHIM_SURFACES` (default `computer,browser`). Running
-`install` again replaces the job. A GUI-session job is the point: TCC grants, the login Keychain and the screen belong
+and its environment carries `CUA_HOME` (when set), `CUA_SHIM_SURFACES` (default `computer,browser`) and each of the
+agent's settings (`CUA_AGENT_*`, below) set in the environment `install` runs in. Running `install` again replaces the
+job. A GUI-session job is the point: TCC grants, the login Keychain and the screen belong
 to that session. It can be installed over SSH while you are logged in at the Mac (the job still runs in your GUI
 session), but a first-use permission prompt needs someone at the screen. The relay path needs the `ws` package: run `npm ci` in the checkout,
 or `install` refuses with `relay_unavailable`.
@@ -557,7 +566,8 @@ a quick tunnel like that suits a test, not a standing setup.
 
 ### 4. Register the client
 
-On the client machine, under the name **`cua_repl`**:
+On the client machine, under the name **`cua_repl`** (`enroll` prints the line with the URL filled in, and `remote
+show` prints the relay one again):
 
 ```sh
 claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"
@@ -583,16 +593,21 @@ there are no per-client credentials.
 Each `initialize` opens a session, which is one runtime on the Mac. Two numbers bound them:
 
 - **At most 1 session at a time** (`CUA_AGENT_MAX_SESSIONS`), because every session drives the same mouse, keyboard,
-  front window and Chrome. An `initialize` at the cap first evicts the oldest Idle session (nothing in flight, no
-  approval pending, no task open: its last `js` was followed by `end_task`); only when none is Idle is it answered
-  `503` (`cua: session limit reached (1)`).
-- **Idle close after 15 minutes** (`CUA_AGENT_IDLE_MINUTES`) without a request, with nothing in flight and no approval
-  pending. A long `js` cell or an approval waiting for a human never counts as idle.
+  front window and Chrome. An `initialize` at the cap first evicts the oldest Idle session: nothing in flight, and
+  either no task open (its last `js` was followed by `end_task`) or no stream from its client for 60 seconds (a live
+  Claude Code holds a standing stream open for its whole life, so a session without one for a minute has lost its
+  client, even mid-task). Only when none is Idle is it answered `503` (`cua: session limit reached (1)`).
+- **Idle close after 15 minutes** (`CUA_AGENT_IDLE_MINUTES`) without a request and with nothing in flight. A long `js`
+  cell never counts as idle, nor does an approval waiting for a human while the call it blocks is in flight and the
+  client is connected; an approval left pending after its call ended, or by a client that went away, does not hold the
+  session.
 
 Neither Claude Code mode ends its session: headless `claude -p` sends no `DELETE` when it exits, and interactive
 Claude Code none on `/exit` (seen with 2.1.287 and 2.1.291). Their sessions end by the idle close or when the next
-client's `initialize` evicts them, which needs the task ended: a client that stopped without `end_task` holds a
-one-session Mac until the idle close, and newcomers get `503` meanwhile. The host notes tell agents to call `end_task`. A session the agent has ended answers
+client's `initialize` evicts them: at once when the task was ended, and a minute after the client left when it was
+not, so a client that stopped without `end_task` holds a one-session Mac for that minute (newcomers get `503`
+meanwhile). The host notes tell agents to call `end_task`. A client that reconnects its standing stream (after a
+silent network drop, say) replaces the one the Mac still holds. A session the agent has ended answers
 `404`, and the client must initialize a new one. Restarting the agent (`agent install`, a reboot, a crash) ends every
 session; restarting the relay ends none.
 
@@ -600,10 +615,9 @@ The agent's other settings: `CUA_AGENT_ALLOWED_ORIGINS` (browser origins allowed
 default; requests without an `Origin`, as from Claude Code, pass) and `CUA_AGENT_CONSOLE_CHECK` (`on` by default;
 `off` stops the `console_locked` refusal, for a Mac whose console state cua misreads). Every server setting under
 Configuration applies to each session too. An invalid value stops `agent run` at start (`invalid_setting`). These are
-read from the agent's environment, and `agent install` puts only `CUA_HOME` and `CUA_SHIM_SURFACES` into the job's:
-to change the others for the launchd job, add them under `EnvironmentVariables` in its plist and reload it
-(`launchctl bootout gui/$UID/com.ssfskim.cua.agent`, then `launchctl bootstrap gui/$UID
-~/Library/LaunchAgents/com.ssfskim.cua.agent.plist`); a later `agent install` rewrites the plist without them. Fixed
+read from the agent's environment: for the launchd job, set them when running `agent install` (for example
+`CUA_AGENT_MAX_SESSIONS=2 cua agent install --http <address>:7801`), which checks them as `agent run` does and carries
+those set into the job; an `install` without them leaves them out, back to the defaults. Fixed
 bounds: a request body over 4 MB is `413`; a session whose undelivered server messages would pass 16 MB is closed.
 
 ### When the relay or the Mac is offline
@@ -615,7 +629,7 @@ bounds: a request body over 4 MB is `413`; a session whose undelivered server me
 | a call in flight across a relay restart | its stream was cut | Claude Code resumes it twice, 15 s apart (the server's `retry` hint), and receives the answer the Mac kept for it; an outage longer than that fails the call in the client, although the cell ran on the Mac |
 | `502` from the relay | the Mac's connection dropped before it answered | as above |
 | `console_locked` on `js` | the Mac is locked or another user is at the screen | unlock it and retry |
-| `401` | wrong credential, or the device is missing from `devices.json` (after `--rotate`, both change) | re-register the client or update the relay's line |
+| `401` | wrong credential, or the device is missing from `devices.json` (after `--rotate`, both change, and the Mac refuses the old client credential at once) | re-register the client or update the relay's line |
 | connection refused or timing out (direct `--http`) | the Mac is asleep, its agent stopped, or the firewall blocks node | as for `device offline`; see the firewall note in 2 |
 
 An agent whose relay connection is replaced by another connection for the same enrolment (close code `4001`, such as

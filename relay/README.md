@@ -14,8 +14,9 @@ cd relay && npm ci
 node server.mjs --port 7800 --devices devices.json        # listens on 127.0.0.1:7800; --host <address> to change that
 ```
 
-It speaks plain HTTP and never terminates TLS: put it behind a proxy that does, and give agents a `wss://` URL. The
-proxy must:
+It speaks plain HTTP and never terminates TLS: put it behind a proxy that does, and give agents a `wss://` URL (`cua
+remote enroll` refuses a `ws://` relay URL unless it names a loopback address, `invalid_relay_url`: over `ws://` the
+device credential and every client bearer would cross the network in the clear). The proxy must:
 
 - pass WebSocket upgrades on **`/ws`** (where agents connect) and forward everything under **`/d/`** (where clients
   connect), with the `Authorization` header intact;
@@ -49,10 +50,13 @@ SHA-256 hashes of the two credentials, never the credentials themselves. `device
 ```
 
 The relay reads it at start: restart the relay after editing it (the agents reconnect by themselves). Then, on the Mac,
-`cua agent install` (adds `--relay` to the launchd job), and on the client
+`cua agent install` if its launchd job does not dial a relay yet (it adds `--relay`; `enroll` says when this is
+needed), and on the client the line `enroll` printed:
 `claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"`.
-A `cua remote enroll --rotate` changes both hashes: replace the line (and restart the relay), re-register the client,
-and run `cua agent install` again on the Mac, since a running agent keeps the credentials it started with.
+The agent follows the Mac's `device.json` while it runs, so moving a device to another relay (`cua remote enroll
+--relay <new url>`) needs no restart: the agent redials the new URL by itself. A `cua remote enroll --rotate` changes
+both hashes: replace the line and restart the relay (the agent, which already refuses the old client credential,
+reconnects with the new device credential), and re-register the client.
 
 ## What the answers mean
 

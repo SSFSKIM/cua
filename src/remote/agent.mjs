@@ -8,6 +8,11 @@
 // second agent for one home (a terminal `agent run` beside the launchd job, whatever its flags) refuses, naming the
 // first.
 //
+// The agent follows device.json while it runs (followDevice): the client credential is read at each request, and the
+// device credential and relay URL at each relay dial, so `remote enroll --rotate` refuses the old client credential at
+// once, and `remote enroll --relay <url>` moves the link to the new relay (checked at each request and each relay
+// ping), with no restart. A device.json that is gone or unreadable refuses every client until it is back.
+//
 // Limits, from the environment: CUA_AGENT_MAX_SESSIONS (default 1: every session drives the same mouse, keyboard and
 // Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call,
 // comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js and js_reset
@@ -19,7 +24,7 @@ import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createMcpHttp} from '../mcp/http.mjs';
 import {settingsFrom} from '../mcp/server.mjs';
-import {credentialsOf, readDevice} from './device.mjs';
+import {checkRelayUrl, followDevice, readDevice} from './device.mjs';
 import {parseAddress} from './address.mjs';
 import {checkConsole, consoleCheckFrom} from './console.mjs';
 import {connectRelay, loadWebSocket} from './relay-link.mjs';
@@ -147,6 +152,7 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     const device = readDevice(home);
     if (!device) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll'});
     if (relay && !device.relayUrl) fail('remote_no_relay', 'this Mac is enrolled without a relay, so --relay has nothing to dial', {hint: 'cua remote enroll --relay wss://<relay>/ws adds one (nothing is rotated); or serve this Mac\'s address with --http <host>:<port>'});
+    if (relay) checkRelayUrl(device.relayUrl);
     settingsFrom(env);
     const limits = limitsFrom(env);
     const consoleChecked = consoleCheckFrom(env);
@@ -163,7 +169,13 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     // The handlers are in place before anything serves, so no session can open without a signal closing it.
     const signalled = new Promise(resolve => { onSignal = resolve; });
     for (const signal of SIGNALS) process.on(signal, onSignal);
-    const {deviceCredential, clientCredential} = credentialsOf(device);
+    const current = followDevice(home, {diagnostics});
+    current();
+    // Each request's authentication reads the record as it is now, and gives the relay link its chance to follow a new URL.
+    const clientCredential = () => {
+      link?.refresh();
+      return current()?.clientCredential ?? null;
+    };
     mcp = createHttp({home, env, clientCredential, ...limits, ...(consoleChecked ? {console: checkConsole} : {}), diagnostics});
     const served = `device ${device.deviceId}; at most ${limits.maxSessions} session${limits.maxSessions === 1 ? '' : 's'}, idle after ${limits.idleMs / 60_000} min`;
     if (address) {
@@ -179,7 +191,11 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
       diagnostics(`listening on http://${shown}:${bound.port}/mcp (${served})`);
     }
     if (relay) {
-      link = await connectRelay({url: device.relayUrl, deviceCredential, deviceId: device.deviceId, handle: mcp.handle, diagnostics});
+      const target = () => {
+        const now = current();
+        return now?.relayUrl ? {url: now.relayUrl, deviceCredential: now.deviceCredential, deviceId: now.deviceId} : null;
+      };
+      link = await connectRelay({target, handle: mcp.handle, diagnostics});
       diagnostics(`serving through the relay (${served})`);
     }
 

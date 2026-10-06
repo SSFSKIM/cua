@@ -2,10 +2,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash, createHmac} from 'node:crypto';
-import {readFileSync, statSync, writeFileSync, mkdirSync} from 'node:fs';
+import {readFileSync, rmSync, statSync, utimesSync, writeFileSync, mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
-import {credentialMatches, credentialsOf, devicesEntry, enrollDevice, readDevice} from '../src/remote/device.mjs';
+import {checkRelayUrl, credentialMatches, credentialsOf, devicesEntry, enrollDevice, followDevice, readDevice, relayEndpoint} from '../src/remote/device.mjs';
 
 const home = t => { const s = scratch(); t.after(s.cleanup); return s.dir; };
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -74,10 +74,55 @@ test('enroll records a relay URL, refuses to re-enrol, updates only the relay UR
   assert.equal(statSync(join(dir, 'remote', 'device.json')).mode & 0o777, 0o600);
 });
 
-test('enroll refuses a relay URL that is not ws: or wss:', t => {
+test('a relay URL is wss:, or ws: only to a loopback host: anything else carries the credentials in clear and is refused', t => {
   const dir = home(t);
-  for (const bad of ['https://relay.example/ws', 'not a url', '']) assert.throws(() => enrollDevice({home: dir, relayUrl: bad}), {code: 'invalid_relay_url'}, bad);
+  for (const bad of ['https://relay.example/ws', 'not a url', '', 'ws://relay.example/ws', 'ws://192.168.1.20:7800/ws', 'ws://100.92.238.1/ws', 'ws://localhost.example/ws', 'ws://[::2]/ws'])
+    assert.throws(() => enrollDevice({home: dir, relayUrl: bad}), {code: 'invalid_relay_url'}, bad);
   assert.equal(readDevice(dir), null);
+  for (const good of ['wss://relay.example/ws', 'wss://10.0.0.1:8443/ws', 'ws://127.0.0.1:7800/ws', 'ws://127.8.9.10/ws', 'ws://localhost:7800/ws', 'ws://[::1]:7800/ws'])
+    assert.doesNotThrow(() => checkRelayUrl(good), good);
+});
+
+test('relayEndpoint is the client\'s URL on the enrolled relay: its origin (https for wss, http for loopback ws) and /d/<deviceId>/mcp', t => {
+  const record = enrollDevice({home: home(t)});
+  const of = relayUrl => relayEndpoint({deviceId: record.deviceId, ...(relayUrl ? {relayUrl} : {})});
+  assert.equal(of(undefined), null);
+  assert.equal(of('wss://relay.example/ws'), `https://relay.example/d/${record.deviceId}/mcp`);
+  assert.equal(of('wss://relay.example:8443/ws?x=1'), `https://relay.example:8443/d/${record.deviceId}/mcp`);
+  assert.equal(of('ws://127.0.0.1:7800/ws'), `http://127.0.0.1:7800/d/${record.deviceId}/mcp`);
+});
+
+test('followDevice re-reads device.json only when its mtime, size or file changes, re-deriving both credentials and the relay URL', t => {
+  const dir = home(t);
+  const diagnostics = [];
+  enrollDevice({home: dir});
+  const file = join(dir, 'remote', 'device.json');
+  const fixed = new Date('2026-01-01T00:00:00Z');
+  utimesSync(file, fixed, fixed);
+  const current = followDevice(dir, {diagnostics: line => diagnostics.push(line)});
+  const first = current();
+  assert.deepEqual(first, {...readDevice(dir), ...credentialsOf(readDevice(dir))});
+  assert.equal(current(), first, 'unchanged: the same record, not re-read');
+
+  // The same size and mtime written in place: not noticed (the check is the stamp, never the content).
+  const text = readFileSync(file, 'utf8');
+  writeFileSync(file, text.replace(/"secret": "./, m => m.slice(0, -1) + (m.at(-1) === 'A' ? 'B' : 'A')));
+  utimesSync(file, fixed, fixed);
+  assert.equal(current(), first);
+
+  const rotated = enrollDevice({home: dir, rotate: true, relayUrl: 'wss://relay.example/ws'});
+  const second = current();
+  assert.equal(second.clientCredential, rotated.clientCredential);
+  assert.notEqual(second.deviceCredential, first.deviceCredential);
+  assert.equal(second.relayUrl, 'wss://relay.example/ws');
+  assert.equal(current(), second);
+  assert.ok(diagnostics.some(line => /device\.json changed/.test(line) && /wss:\/\/relay\.example\/ws/.test(line)), diagnostics.join('\n'));
+
+  rmSync(file);
+  assert.equal(current(), null, 'gone: no credential, every client refused');
+  writeFileSync(file, 'not json');
+  assert.equal(current(), null, 'unreadable: likewise');
+  for (const line of diagnostics) for (const secret of [first.clientCredential, second.clientCredential, second.secret]) assert.ok(!line.includes(secret));
 });
 
 test('readDevice is null before enrolment and refuses a record that is not one', t => {

@@ -138,6 +138,33 @@ test('agent run refuses without an enrolment, with --relay on a device enrolled 
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false, 'every refusal released the agent lock');
 });
 
+test('a running agent follows device.json: enroll --rotate refuses the old client credential at once and the new one passes', async t => {
+  const home = emptyHome(t);
+  const {clientCredential} = enroll(home);
+  const agent = await startAgent(t, home);
+  // A GET without a session header is 400 once the bearer passed, 401 before.
+  const status = async credential => (await fetch(agent.endpoint, {headers: {authorization: `Bearer ${credential}`}})).status;
+  assert.equal(await status(clientCredential), 400);
+  const rotated = JSON.parse(cua(['remote', 'enroll', '--rotate', '--json'], home).stdout);
+  assert.equal(await status(clientCredential), 401, 'the old credential is refused without a restart');
+  assert.equal(await status(rotated.clientCredential), 400, 'the new one passes');
+  assert.match(agent.stderr(), /device\.json changed/);
+  for (const secret of [clientCredential, rotated.clientCredential]) assert.ok(!agent.stderr().includes(secret));
+  agent.child.kill('SIGTERM');
+  assert.equal((await agent.exit).code, 0);
+});
+
+test('agent run --relay refuses a relay URL that is not wss: or loopback ws: (a hand-edited device.json)', t => {
+  const home = emptyHome(t);
+  enroll(home);
+  const file = join(home, 'remote', 'device.json');
+  writeFileSync(file, JSON.stringify({...JSON.parse(readFileSync(file, 'utf8')), relayUrl: 'ws://relay.example/ws'}), {mode: 0o600});
+  const r = cua(['agent', 'run', '--relay'], home);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /invalid_relay_url/);
+  assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
+});
+
 test('runAgent hands the HTTP handler the real console check unless CUA_AGENT_CONSOLE_CHECK=off', async t => {
   const home = emptyHome(t);
   enroll(home);
@@ -261,7 +288,7 @@ async function fakeRelay(t, {pingMs, onConnection} = {}) {
 
 async function dial(t, url, options = {}) {
   const diagnostics = [];
-  const link = await connectRelay({url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev', handle: () => {},
+  const link = await connectRelay({target: () => ({url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev'}), handle: () => {},
     diagnostics: line => diagnostics.push(line), minBackoffMs: 10, maxBackoffMs: 40, ...options});
   t.after(() => link.close());
   return {link, diagnostics};
@@ -377,6 +404,38 @@ test('the watchdog closes a link that hears no ping for watchdogMs and reconnect
   await dial(t, pinging.url, {watchdogMs: 60});
   await tick(300);
   assert.equal(pinging.connections.length, 1);
+});
+
+test('the link dials the target as it reads at each dial, redials at once when a ping or a refresh finds its URL changed, and waits while there is none', {skip: NEEDS_WS}, async t => {
+  const a = await fakeRelay(t, {pingMs: 20});
+  const b = await fakeRelay(t);
+  let target = {url: a.url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev'};
+  const diagnostics = [];
+  const link = await connectRelay({target: () => target, handle: () => {}, diagnostics: line => diagnostics.push(line), minBackoffMs: 10, maxBackoffMs: 40});
+  t.after(() => link.close());
+  await until(() => a.connections[0]?.frames.length, 'hello on the first relay');
+
+  target = {url: b.url, deviceCredential: 'e'.repeat(64), deviceId: 'dev2'};
+  await until(() => b.connections[0]?.frames.length, 'a ping found the new URL and the link redialled');
+  assert.equal(b.connections[0].req.headers.authorization, `Bearer ${'e'.repeat(64)}`, 'with the credential as it reads now');
+  assert.deepEqual(b.connections[0].frames[0], {t: 'hello', deviceId: 'dev2'});
+  await a.connections[0].closed;
+  assert.ok(diagnostics.some(line => line.includes(b.url) && /changed/.test(line)), diagnostics.join('\n'));
+
+  target = {...target, deviceCredential: 'f'.repeat(64)};
+  link.refresh();
+  await tick(60);
+  assert.equal(b.connections.length, 1, 'a new credential alone does not redial: the relay may not know it yet');
+
+  target = null;
+  link.refresh();
+  await b.connections[0].closed;
+  await until(() => diagnostics.filter(line => /no relay/.test(line)).length >= 2, 'it keeps checking');
+  target = {url: a.url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev'};
+  await until(() => a.connections[1]?.frames.length, 'dialled once a relay URL is back');
+  link.refresh();
+  await tick(60);
+  assert.equal(a.connections.length, 2, 'an unchanged URL is left alone');
 });
 
 // The real relay in this process, in front of the real HTTP handler over in-process connections.
@@ -568,6 +627,22 @@ test('agent run --http --relay serves both; a newer connection for the device (4
   assert.deepEqual(readdirSync(join(home, 'run')), []);
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
   for (const secret of [clientCredential, deviceCredential]) assert.ok(!stderr.includes(secret), 'no credential in the agent log');
+});
+
+test('agent run --relay redials when enroll --relay moves the device to another relay, without a restart', {skip: NEEDS_WS}, async t => {
+  const home = emptyHome(t);
+  const {deviceId} = enroll(home);
+  const first = await fakeRelay(t, {pingMs: 30});
+  const second = await fakeRelay(t);
+  assert.equal(cua(['remote', 'enroll', '--relay', first.url], home).status, 0);
+  const agent = await startAgent(t, home, ['agent', 'run', '--relay'], {}, {ready: /relay: connected/});
+  await until(() => first.connections[0]?.frames.length, 'hello on the first relay');
+  assert.equal(cua(['remote', 'enroll', '--relay', second.url], home).status, 0);
+  await until(() => second.connections[0]?.frames.length, 'hello on the second relay');
+  assert.deepEqual(second.connections[0].frames[0], {t: 'hello', deviceId});
+  await first.connections[0].closed;
+  agent.child.kill('SIGTERM');
+  assert.equal((await agent.exit).code, 0);
 });
 
 test('a refusal on one path leaves nothing of the other started: a taken --http address never dials the relay', {skip: NEEDS_WS}, async t => {

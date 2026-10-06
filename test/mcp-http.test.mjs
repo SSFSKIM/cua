@@ -559,18 +559,23 @@ test('a resumed stream that is still waiting stays open for the rest of its resp
   assert.deepEqual(resumed.res.messages().map(m => m.id), [2]);
 });
 
-test('a second GET stream is 409 while one is open', async t => {
-  const {send, initialize} = setup(t);
+test('a newer GET replaces the standing stream, which ends; the older one going away later leaves the newer in place', async t => {
+  const {send, initialize, upstreamOf} = setup(t);
   const session = await initialize();
+  const log = data => upstreamOf(0).emit({jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data}});
   const get = send({method: 'GET', session});
   await until(() => get.res.status === 200, 'GET stream');
   const second = send({method: 'GET', session});
-  await second.done;
-  assert.equal(second.res.status, 409);
+  await until(() => second.res.status === 200, 'the newer GET stream');
+  assert.ok(get.res.ended, 'the older standing stream ended');
+  log('one');
+  await until(() => second.res.messages().length === 1, 'a server message on the newer stream');
+  assert.deepEqual(get.res.messages(), []);
   get.abort();
   await tick(5);
-  const third = send({method: 'GET', session});
-  await until(() => third.res.status === 200, 'a GET after the first went away');
+  log('two');
+  await until(() => second.res.messages().length === 2, 'the newer stream still standing');
+  assert.equal(second.res.ended, false);
 });
 
 test('notifications/cancelled for a request withdrawn before dispatch ends its stream, since it is never answered', async t => {
@@ -641,7 +646,7 @@ test('a connection that closes on its own ends its streams and leaves the sessio
   assert.equal(res.status, 404);
 });
 
-test('an idle session closes; an open POST stream or a pending elicitation keeps it, and the quiet time restarts after them', async t => {
+test('an idle session closes; an open POST stream, or an elicitation pending while a call is unanswered, keeps it, and the quiet time restarts after them', async t => {
   const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
   const session = await initialize();
   const upstream = upstreamOf(0);
@@ -653,30 +658,35 @@ test('an idle session closes; an open POST stream or a pending elicitation keeps
   assert.ok(http.sessions.has(session), 'an open POST stream is not idle');
 
   upstream.emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
-  upstream.text(js, 'done');
-  await until(() => post.res.ended, 'the js call to end');
+  await until(() => post.res.messages().length === 1, 'the elicitation on the js call\'s stream');
+  post.abort();
   await tick(150);
-  assert.ok(http.sessions.has(session), 'a pending elicitation is not idle while a stream of the session is open');
+  assert.ok(http.sessions.has(session), 'an elicitation pending while its call is unanswered is not idle while a stream of the session is open');
 
   const answer = send({session, body: {jsonrpc: '2.0', id: 'e1', result: {action: 'accept', content: {}}}});
   await answer.done;
   assert.equal(answer.res.status, 202);
+  upstream.text(js, 'done');
   await tick(20);
   assert.ok(http.sessions.has(session), 'the quiet time starts when the session stops being busy');
   await until(() => !http.sessions.has(session), 'the idle close', 1000);
 });
 
-test('a pending elicitation with no stream of the session open does not hold the session: the client went away', async t => {
+test('an elicitation pending once every call it could block is answered does not hold the session, even with the GET stream open', async t => {
   const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
   const session = await initialize();
+  const upstream = upstreamOf(0);
   const get = send({method: 'GET', session});
   await until(() => get.res.status === 200, 'GET stream');
-  upstreamOf(0).emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
-  await until(() => get.res.messages().length === 1, 'the elicitation on the GET stream');
-  await tick(150);
-  assert.ok(http.sessions.has(session), 'pending with the GET stream open');
-  get.abort();
-  await until(() => !http.sessions.has(session), 'the idle close once no stream is open', 1000);
+  const post = send({session, body: call(1, 'js', {code: 'asks'})});
+  const js = await upstream.nextCall('js');
+  upstream.emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
+  await until(() => post.res.messages().length === 1, 'the elicitation on the js call\'s stream');
+  upstream.text(js, 'done without the approval');
+  await until(() => post.res.ended, 'the js call to end');
+  upstream.emit({jsonrpc: '2.0', id: 'e2', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
+  await until(() => get.res.messages().length === 1, 'an elicitation outside any call, on the GET stream');
+  await until(() => !http.sessions.has(session), 'the idle close although two elicitations are pending and the GET is open', 1000);
 });
 
 test('an elicitation pending behind a js call whose stream dropped, with no stream open, does not hold the session: the client vanished mid-approval', async t => {
@@ -757,6 +767,53 @@ test('at the cap an Idle session is evicted for a new initialize; a session with
   await until(() => end.res.ended, 'end_task');
   assert.ok(await initialize(), 'once the task ended the session is Idle and evicted');
   assert.equal(http.sessions.has(second), false);
+});
+
+test('at the cap a session whose task is open but whose client left (no stream for abandonedMs, nothing unanswered) is evicted; one holding its GET or with a call unanswered is not', async t => {
+  const {http, send, initialize, upstreamOf} = setup(t, {abandonedMs: 80});
+  const first = await initialize();
+  const upstream = upstreamOf(0);
+  const get = send({method: 'GET', session: first});
+  await until(() => get.res.status === 200, 'GET stream');
+  const post = send({session: first, body: call(1, 'js', {code: 'one'})});
+  upstream.text(await upstream.nextCall('js'), 'done');
+  await until(() => post.res.ended, 'the js call to end');
+  await tick(150);
+  const refused = async why => {
+    const r = send({body: INITIALIZE});
+    await r.done;
+    assert.equal(r.res.status, 503, why);
+  };
+  await refused('a session holding its standing GET is never evicted mid-task');
+
+  get.abort();
+  await refused('not before abandonedMs without a stream');
+  const dropped = send({session: first, body: call(2, 'js', {code: 'two'})});
+  const running = await upstream.next(m => m.method === 'tools/call' && m.params?.arguments?.code === 'two');
+  dropped.abort();
+  await tick(150);
+  await refused('a call still unanswered keeps it, whatever its streams');
+
+  upstream.text(running, 'done');
+  await tick(10);
+  const second = await initialize();
+  assert.ok(second && !http.sessions.has(first), 'once answered, the session no stream has held for abandonedMs is evicted');
+});
+
+test('the client credential may be a function, read at each request: a rotation takes effect at once, and none refuses every bearer', async t => {
+  let current = CREDENTIAL;
+  const {send, initialize} = setup(t, {clientCredential: () => current});
+  const session = await initialize();
+  const ping = async (auth, id) => {
+    const r = send({session, auth, body: {jsonrpc: '2.0', id, method: 'ping'}});
+    await r.done;
+    return r.res.status;
+  };
+  current = 'd'.repeat(64);
+  assert.equal(await ping(`Bearer ${CREDENTIAL}`, 1), 401, 'the old credential no longer passes');
+  assert.notEqual(await ping(`Bearer ${'d'.repeat(64)}`, 2), 401, 'the new one does');
+  current = null;
+  for (const auth of [`Bearer ${'d'.repeat(64)}`, 'Bearer null', 'Bearer ']) assert.equal(await ping(auth, 3), 401, auth);
 });
 
 test('a connection whose release fails is logged, not an unhandled rejection: DELETE still answers and the session is gone', async t => {

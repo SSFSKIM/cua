@@ -7,14 +7,17 @@
 //   res: {writeHead(status, headers), write(chunk), end(chunk?)}
 //
 // Who may call: a bearer equal to the client credential (constant-time), checked before anything else is read, then an
-// Origin, when one is sent, from the allowlist (`null` never is). An MCP-Protocol-Version header, when sent, must be a
+// Origin, when one is sent, from the allowlist (`null` never is). `clientCredential` is the credential or a function
+// returning it (null: none, every bearer refused), called at each request, so the agent follows a rotated device.json. An MCP-Protocol-Version header, when sent, must be a
 // known revision or the version the session's runtime negotiated in its InitializeResult; anything else is 400.
 // Sessions:
 // - `initialize` without a session header opens one: its InitializeResult is the JSON body, with Mcp-Session-Id (the
 //   connection's own session id). An open that fails is 500 with `cua: <code>`; at the session cap the oldest Idle
 //   session is evicted first, and with none Idle the answer is 503.
 // - A POST of requests on a session answers on a text/event-stream that ends once each of its requests is answered; a
-//   POST of only notifications and responses is 202. A GET opens the session's one standing stream (a second is 409).
+//   POST of only notifications and responses is 202. A GET opens the session's one standing stream; a newer GET
+//   replaces the older, which ends (a client reconnecting after a silent drop is never refused by a stream the server
+//   has not yet seen die).
 //   DELETE ends the session and answers once its connection has released everything (the id is 404 from the start).
 // Routing: a response goes on the POST stream that carried its request id. A message the connection starts (an
 // elicitation, a progress or log notification) goes on the oldest open POST stream, else the GET stream, else into a
@@ -31,13 +34,14 @@
 // such stream is an ordinary GET. A request body over `bodyLimit` (4 MB) is 413. Every open stream (POST or GET) that
 // has been silent for `keepaliveMs` gets an SSE comment (`: keepalive`), so proxies and NATs do not cut a long js
 // call; comments are never events.
-// Idle: a session with no request for `idleMs`, nothing it was asked still unanswered (an open or dropped POST stream's
-// requests) and no request of its own awaiting the client's answer (a pending elicitation), closes; while such a
-// request is pending with no stream of the session open the client went away mid-approval, and then neither it nor the
-// requests left on dropped streams keep the session; the quiet time is
+// Idle: a session with no request for `idleMs` and nothing it was asked still unanswered (an open or dropped POST
+// stream's requests) closes. A request of the session's own awaiting the client (a pending elicitation) never keeps it
+// alone: an approval cannot outlive the call it blocks. While one is pending with no stream of the session open the
+// client went away mid-approval, and then the requests left on dropped streams do not keep it either. The quiet time is
 // counted from the last request or from the moment the session stopped being busy, whichever is later. For eviction a
-// session is Idle when it is not busy in that sense and has no task open (no js work since its last end_task), at any
-// age.
+// session is Idle when it is not busy in that sense and either has no task open (no js work since its last end_task)
+// or has had no stream (POST or GET) open for `abandonedMs` (60 s): a live client holds its standing GET for its whole
+// life, so a session no stream has held for that long has lost its client, even mid-task.
 //
 // The console: js and js_reset drive the Mac's screen, which a locked session or one not on the console cannot, so each
 // such call reads `console()` ({onConsole, locked}, possibly a promise; the agent passes src/remote/console.mjs) and,
@@ -121,7 +125,7 @@ const onAbort = (signal, fn) => {
 
 export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1,
   idleMs = 15 * 60_000, bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, bodyLimit = 4 * 1024 * 1024,
-  streamGraceMs = 90_000, console: consoleState = () => ({onConsole: true, locked: false}),
+  streamGraceMs = 90_000, abandonedMs = 60_000, console: consoleState = () => ({onConsole: true, locked: false}),
   diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection}) {
   const sessions = new Map();
   const ending = new Set();        // close promises of sessions on their way out
@@ -131,11 +135,14 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   // ---- one session ----
 
   const streamOpen = session => session.get !== null || [...session.streams.values()].some(s => s.res);
-  // A request of the session's own awaiting the client (an approval) with no stream open means the client went away:
-  // then neither it nor the call blocked on it (a route left on a dropped stream) keeps the session. Otherwise any
-  // unanswered request does, a dropped long js call included.
-  const busy = session => session.serverPending.size > 0 ? streamOpen(session) : session.routes.size > 0;
-  const evictable = session => !busy(session) && session.connection.state === 'idle';
+  // Busy: a request the client made is unanswered, a dropped long js call included; but a request of the session's own
+  // awaiting the client (an approval) with no stream open means the client went away, and then the call blocked on it
+  // does not keep the session.
+  const busy = session => session.routes.size > 0 && (session.serverPending.size === 0 || streamOpen(session));
+  // Marks the moment the session's last open stream ended (eviction's `abandonedMs` counts from it).
+  const streamEnded = session => { if (!streamOpen(session)) session.streamlessSince = Date.now(); };
+  const abandoned = session => !streamOpen(session) && Date.now() - session.streamlessSince >= abandonedMs;
+  const evictable = session => !busy(session) && (session.connection.state === 'idle' || abandoned(session));
 
   function touch(session) {
     clearTimeout(session.timer);
@@ -201,6 +208,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     if (stream.pending.size || !stream.res) return;
     stream.res.end();
     stream.res = null;
+    streamEnded(session);
     clearTimeout(stream.grace);
     stream.grace = setTimeout(() => {
       if (!stream.res && !stream.pending.size && session.streams.get(stream.id) === stream) session.streams.delete(stream.id);
@@ -249,7 +257,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   function createSession(id, connection, input, output) {
     const session = {id, connection, input, streams: new Map(), nextStream: 1, routes: new Map(), get: null,
       buffer: [], bufferBytes: 0, serverPending: new Map(), timer: null, gone: false, closing: null, closed: null,
-      protocolVersion: null, inbound: Promise.resolve()};
+      protocolVersion: null, inbound: Promise.resolve(), streamlessSince: Date.now()};
     input.on('error', () => {});
     // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
     createInterface({input: output}).on('line', line => {
@@ -376,6 +384,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       if (stream.res !== out) return;
       stream.res = null;
       out.end();
+      streamEnded(session);
       touch(session);
     });
     return out;
@@ -438,7 +447,11 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       settle(session, stream);
       return touch(session);
     }
-    if (session.get) return rpcError(res, 409, -32000, 'cua: this session already has its GET stream open');
+    if (session.get) {
+      const older = session.get;
+      session.get = null;
+      older.res.end();
+    }
     res.writeHead(200, SSE_HEADERS);
     const standing = {res: sse(res, keepaliveMs)};
     session.get = standing;
@@ -446,6 +459,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       if (session.get !== standing) return;
       session.get = null;
       standing.res.end();
+      streamEnded(session);
       touch(session);
     });
     drain(session, msg => toGet(session, msg));
@@ -460,7 +474,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   async function route(req, res) {
     const bearer = /^Bearer +(\S+) *$/i.exec(req.headers.authorization ?? '')?.[1];
-    if (!credentialMatches(clientCredential, bearer)) return rpcError(res, 401, -32000, 'cua: unauthorized');
+    const expected = typeof clientCredential === 'function' ? clientCredential() : clientCredential;
+    if (typeof expected !== 'string' || !credentialMatches(expected, bearer)) return rpcError(res, 401, -32000, 'cua: unauthorized');
     const origin = req.headers.origin;
     if (origin !== undefined && (origin === 'null' || !allowedOrigins.includes(origin))) return rpcError(res, 403, -32000, 'cua: this Origin is not allowed');
     if (pathOf(req.url) !== '/mcp') return rpcError(res, 404, -32000, 'cua: the MCP endpoint is /mcp');

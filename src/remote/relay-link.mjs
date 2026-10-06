@@ -15,9 +15,15 @@
 // (another connection for this device replaced this one) and 4003 (the relay refused the hello) are deliberate: the
 // link stops for good and `stopped` resolves, so two agents for one device never take turns replacing each other.
 //
+// What to dial is `target()`, {url, deviceCredential, deviceId} as device.json reads now (null: no relay enrolled),
+// called at each dial, so a rotated credential is presented at the next connection. `refresh()` (the agent calls it at
+// each request, and the link at each ping) redials at once when the URL changed; a new credential alone does not
+// redial, since the relay accepts it only once restarted with the new devices.json line, and that restart reconnects.
+//
 // The `ws` package is loaded here, on first use, and nowhere else: `cua serve`, `agent run --http` and the plugin copy
 // (which has no node_modules) never need it.
 import {fail} from '../runtime/errors.mjs';
+import {checkRelayUrl} from './device.mjs';
 
 const STOP_CODES = new Map([[4001, 'another connection for this device replaced this one'], [4003, 'the relay refused this device\'s hello']]);
 
@@ -36,20 +42,32 @@ export function loadWebSocket() {
 
 const seconds = ms => `${ms / 1000} s`;
 
-export async function connectRelay({url, deviceCredential, deviceId, handle, diagnostics = () => {},
+export async function connectRelay({target, handle, diagnostics = () => {},
   minBackoffMs = 1000, maxBackoffMs = 30_000, watchdogMs = 60_000, bodyLimit = 4 * 1024 * 1024}) {
   const WebSocket = await loadWebSocket();
   let delay = minBackoffMs;
   let connections = 0;
   let socket = null;
+  let dialled = null;   // the URL of the latest dial (null: none was enrolled)
   let retry = null;
   let stopping = false;
   let resolveStopped;
   const stopped = new Promise(resolve => { resolveStopped = resolve; });
 
+  function later(why) {
+    diagnostics(`relay: ${why}; retrying in ${seconds(delay)}`);
+    retry = setTimeout(dial, delay);
+    delay = Math.min(delay * 2, maxBackoffMs);
+  }
+
   function dial() {
     retry = null;
-    const ws = new WebSocket(url, {headers: {authorization: `Bearer ${deviceCredential}`}, perMessageDeflate: false, handshakeTimeout: 15_000});
+    const to = target();
+    dialled = to?.url ?? null;
+    if (!to) return later('no relay URL is enrolled in device.json');
+    try { checkRelayUrl(to.url); } catch (error) { return later(error.message); }
+    const {url, deviceId} = to;
+    const ws = new WebSocket(url, {headers: {authorization: `Bearer ${to.deviceCredential}`}, perMessageDeflate: false, handshakeTimeout: 15_000});
     socket = ws;
     const channels = new Map();
     let opened = false;
@@ -73,7 +91,10 @@ export async function connectRelay({url, deviceCredential, deviceId, handle, dia
       diagnostics(`relay: ${connections === 1 ? 'connected' : 'reconnected'} to ${url} as device ${deviceId}`);
       arm();
     });
-    ws.on('ping', arm);
+    ws.on('ping', () => {
+      arm();
+      refresh();
+    });
     ws.on('error', error => { failure = error.code ?? error.message; });
     ws.on('message', (data, isBinary) => onFrame(data, isBinary));
     ws.on('close', (code, reasonBytes) => {
@@ -82,6 +103,7 @@ export async function connectRelay({url, deviceCredential, deviceId, handle, dia
       channels.clear();
       if (socket === ws) socket = null;
       if (stopping) return;
+      if (ws.redial) return dial();
       const reason = reasonBytes.toString('utf8');
       if (STOP_CODES.has(code)) {
         diagnostics(`relay: closed with ${code} (${reason || STOP_CODES.get(code)}): ${STOP_CODES.get(code)}; not reconnecting`);
@@ -92,9 +114,7 @@ export async function connectRelay({url, deviceCredential, deviceId, handle, dia
       const why = opened
         ? `connection lost (code ${code}${reason ? `, ${reason}` : ''}${failure ? `, ${failure}` : ''})`
         : `could not connect (${failure ?? `code ${code}`}${refused})`;
-      diagnostics(`relay: ${why}; retrying in ${seconds(delay)}`);
-      retry = setTimeout(dial, delay);
-      delay = Math.min(delay * 2, maxBackoffMs);
+      later(why);
     });
 
     function abort(channel) {
@@ -173,11 +193,30 @@ export async function connectRelay({url, deviceCredential, deviceId, handle, dia
     }
   }
 
-  diagnostics(`relay: dialling ${url} as device ${deviceId}`);
+  // Redials at once when the enrolled URL is no longer the one dialled: the open link (its channels aborted, the sessions
+  // kept) or a pending retry gives way.
+  function refresh() {
+    if (stopping) return;
+    const url = target()?.url ?? null;
+    if (url === dialled) return;
+    diagnostics(`relay: the enrolled relay URL changed to ${url ?? 'none'}; dialling again`);
+    delay = minBackoffMs;
+    if (socket) {
+      socket.redial = true;
+      socket.terminate();
+    } else {
+      clearTimeout(retry);
+      dial();
+    }
+  }
+
+  const first = target();
+  diagnostics(`relay: dialling ${first?.url} as device ${first?.deviceId}`);
   dial();
 
   return {
     stopped,
+    refresh,
     // Closes the link in order and stops dialling; resolves once the socket is gone.
     async close() {
       if (!stopping) {

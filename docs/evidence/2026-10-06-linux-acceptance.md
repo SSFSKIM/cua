@@ -2,8 +2,9 @@
 
 Date: 2026-10-06. Spec: `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md` (acceptance 8–12). Spike
 #12's unverified items are answered at the end. Branch `feat/phase-f`. The code under test is the F1 head `d66a813`
-plus F2's fixes (`92322a4`, `2a0d1a2`, `5f2ffd9`, `1356921`, and this document's commit). The F1 code's own results
-are recorded where they differ.
+plus F2's fixes (`92322a4`, `2a0d1a2`, `5f2ffd9`, `1356921`, `2bdd240`, `fef5777`, `e9009aa`), then Phase E merged
+in (`91d70ec`) and F2's fix wave (`3eea184`, `bb9f6ce`, `ece7420`, `1e24556`): the VM's `~/cua` is at the fix wave's
+head. The F1 code's own results are recorded where they differ.
 
 Summary:
 
@@ -12,8 +13,8 @@ Summary:
 | 8 Install and doctor | **PASS**. Install from the mirror deb and from the pinned URL. Doctor passes every row except `codex.login` (blocked: no Codex login, an owner step). `sandbox.userns` was `blocked` before the sysctl and `pass` after it |
 | 9 Native action | **PASS**. A gedit window bound by X11 id; marker typed, read back through AT-SPI and visible in the screenshot; `run/` empty afterwards |
 | 10 Chrome | **Partial**. Done: `chrome register` writes the Linux manifest; the extension starts cua's host **without sign-in**; `countLiveHosts` counts it; `profiles add` and `bind` work. **Blocked**: the `js` tab cell stops at `Codex auth token is unavailable`, which needs the owner's `cua login` and, possibly, the extension's sign-in |
-| 11 Sandbox and bus from inside | Recorded as the item allows: item 9 **fails under `scoped`** (X11 connect `EPERM`) and passes under `disabled`. F2 makes `disabled` the Linux default for the computer surface |
-| 12 Tests | **PASS**. macOS 614/614. VM 614 tests: 571 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail. `verify.mjs` passes on the VM in four configurations |
+| 11 Sandbox and bus from inside | **PASS** as revised: item 9 **fails under `scoped`** (X11 connect `EPERM`) and passes under `disabled`, the Linux default for the computer surface; with user namespaces refused, a scoped connection and the profile listing are **refused at launch** (`sandbox_unavailable`) instead of running unconfined |
+| 12 Tests | **PASS**. macOS 699 tests: 698 pass, 1 Linux-only skip. VM 699 tests: 656 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail. `verify.mjs` passes on the VM and on the MacBook |
 
 ## The machine
 
@@ -59,8 +60,14 @@ was run there. `CUA_HOME` was the XDG default `~/.local/share/cua`; the download
     runs bwrap unconfined, so `sandbox.userns` still read `blocked`, and the profile must follow every release path
     and `CUA_HOME`. The profile was removed after the test.
 
+  - **An AppArmor profile for bubblewrap itself** (`profile bwrap /usr/bin/bwrap flags=(unconfined) { userns, }`,
+    fix wave) satisfies both: with the restriction on, `bwrap --ro-bind / / true` exits 0, a scoped cell gets `EROFS`
+    and `EPERM` on everything, `verify.mjs` with `CUA_SHIM_SURFACES=browser` passes with two bwrap subtrees, and
+    doctor's `sandbox` and `sandbox.userns` pass. It was removed after the test.
+
   The sysctl was chosen because it fits a disposable single-user agent VM, it survives releases, and with it doctor's
-  probe tells the truth. The README documents both routes.
+  probe tells the truth. The README documents the sysctl and the bubblewrap profile; a profile on `codex` alone is not
+  enough for cua, whose launch check runs bubblewrap unconfined.
 - **Doctor after the step** (F2 code, `doctor --json` exit 0, `ok: true`). Every row passes except two:
   `secrets.helper` (`skip`) and `codex.login` (`blocked`: "no Codex login in the server's own CODEX_HOME …; the
   browser route needs one: run cua login"). With the default surface (computer) `sandbox` reads `pass`: "CUA_SHIM_SANDBOX
@@ -160,7 +167,7 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
 - **Fail-open under the restriction.** With user namespaces restricted, bwrap's user-namespace setup is denied
   (`audit: apparmor="DENIED" operation="capable" profile="unprivileged_userns" comm="bwrap" capname="setpcap"`). The
   runtime then starts the kernel and the trusted worker with **no sandbox at all**: no `codex` or bwrap is in the
-  tree, cells write anywhere and reach the network. Nothing reports this. Item 9 "passes under `scoped`" here only
+  tree, cells write anywhere and reach the network. The vendor reports nothing; cua now refuses this state (below). Item 9 "passes under `scoped`" here only
   because nothing is confined.
 - **`disabled` uses no sandbox** (no `codex` or bwrap in the tree), so it does not need user namespaces.
 - **Teardown.** A bubblewrap subtree is outside the anchor's process group, because bwrap's `--new-session` gives it
@@ -172,21 +179,43 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
 
 - `CUA_SHIM_SANDBOX` now defaults to `disabled` on Linux when the computer surface is on, and to `scoped` otherwise.
   An explicit value always wins.
-- Doctor's `sandbox` row fails for `scoped` together with the computer surface, and for `scoped` where user
-  namespaces are refused. `sandbox.userns` reads `skip` while no sandbox runs.
+- **Fail closed (fix wave, the coordinator's decision).** A scoped connection, and the scoped profile listing, run
+  doctor's probe (`bwrap --ro-bind / / true`) once per open on Linux and are refused with `sandbox_unavailable` when
+  it does not pass, before any runtime starts.
+- Doctor's `sandbox` row fails for `scoped` where user namespaces are refused (naming the fail-open state and the
+  refusal first), and for `scoped` with the computer surface. `sandbox.userns` reads `skip` while no sandbox runs.
+
+**The refusal on the VM** (fix-wave head, sysctl set back to 1 for the test, then restored to 0):
+
+- `CUA_SHIM_SURFACES=browser node verify.mjs` exits 1: `cua serve exited ({"code":1}) before answering`, and serve's
+  stderr reads "cua: CUA_SHIM_SANDBOX=scoped, but bubblewrap cannot create an unprivileged user namespace here
+  (bwrap --ro-bind / / true: bwrap: setting up uid map: Permission denied), and the runtime would then run JavaScript
+  cells with no sandbox at all; nothing was started [sandbox_unavailable]", with the hint naming the sysctl, an
+  AppArmor userns profile for `/usr/bin/bwrap` and `CUA_SHIM_SANDBOX=disabled`. `run/` stayed empty.
+- `cua profiles list --json`: `listingError: "sandbox_unavailable"`, `me` not ready (`backends_unlistable`).
+- `CUA_SHIM_SURFACES=browser cua doctor`: `sandbox` `fail` ("… the runtime's sandbox fails open in that state, …, so
+  cua serve and the profile listing refuse scoped connections (sandbox_unavailable) …"), `sandbox.userns` `blocked`.
+- With the sysctl back at 0: `verify.mjs` passes by default (no bwrap) and with `CUA_SHIM_SURFACES=browser` (two
+  bwrap subtrees, `me` ready), and doctor passes every row except `codex.login` (blocked) and the `skip` rows
+  (`secrets.helper`, and Phase E's `agent.*`, macOS-only).
 - `verify.mjs` accepts the system bubblewrap and its subtree's own process group, and fails if any runtime process
   outlives the close.
 
 ## Item 12: tests
 
 - **macOS (the MacBook):**
-  - `npm test`: 614 tests, 614 pass, 0 fail, 0 skipped.
-  - That includes `test/accept-linux-native.test.mjs` and the new `probe-lib`, `mcp-sandbox` and
-    `runtime-linux-doctor` cases.
+  - `npm test` at the fix-wave head (Phase E merged): 699 tests, 698 pass, 0 fail, 1 skipped (a Linux-only test).
+    Before the merge, at `fef5777`: 614/614.
+  - That includes `test/accept-linux-native.test.mjs`, `test/linux-sandbox-refusal.test.mjs` and the new
+    `probe-lib`, `mcp-sandbox` and `runtime-linux-doctor` cases.
+  - `node verify.mjs` once against the MacBook's own installed runtime (read only; default surface, trivial cells, no
+    app): exit 0, `problems: []`, release `26.928.40906-darwin-arm64`, 1,154 characters of instructions, the new
+    survivors check passed (every runtime process ended with the connection), and the native helper is the existing
+    `~/.codex/computer-use` one, reused and not started or stopped by cua.
 - **The VM**, with the runtime installed under the default home, so the classic-level tests that F1's simulated
   Linux run had to skip now ran:
-  - `npm test`: 614 tests, 571 pass, 43 skipped, 0 fail. The skips are the darwin-only codesign, `ditto` and Keychain
-    tests named in the F1 report.
+  - `npm test` at the fix-wave head: 699 tests, 656 pass, 43 skipped, 0 fail (614/571/43 before the Phase E merge).
+    The skips are the darwin-only codesign, `ditto` and Keychain tests named in the F1 report.
   - The first VM run, with the F1 code plus the sandbox default, found four failures that only a real Linux host with
     an installed runtime exercises. They are fixed in `1356921`:
     - a macOS "Full Disk Access" literal;

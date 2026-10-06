@@ -10,8 +10,8 @@ Chrome extension and native host (see Chrome). The design and its status are in
 
 ## Requirements
 
-- macOS on Apple silicon (the only pinned runtime is `darwin-arm64`; other platforms get `unsupported_platform`) and
-  `node` 22 or newer on `PATH`. There are no npm dependencies.
+- macOS on Apple silicon, or Linux on x64 or arm64 with an X11 desktop (see Linux; other platforms get
+  `unsupported_platform`), and `node` 22 or newer on `PATH`. There are no npm dependencies.
 - The pinned runtime, installed into `CUA_HOME` (default `~/Library/Application Support/cua`) by `cua install`: it
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
   `--archive <zip>`, and refuses anything whose length, SHA-256, layout or OpenAI code signatures (team `2DC432GLL2`)
@@ -463,6 +463,86 @@ configuration) and `codex.login`.
 - A profile without the extension stays not ready; cua never installs it.
 - The Playwright-extension route explored earlier is parked, not shipped.
 
+## Linux
+
+cua runs on Linux from OpenAI's official Linux package of the same ChatGPT release, the `chatgpt` deb for amd64 or
+arm64 (pins `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`). The `@oai/*` JavaScript is the macOS release's
+byte for byte; the platform binaries are Linux ones: `node_repl`, the computer-use helper `sky_linux`, the Chrome
+native host and `codex`. It has been shown on an Ubuntu 24.04 arm64 VM with Xorg and Openbox
+(`docs/evidence/2026-10-06-linux-acceptance.md`). There, install, doctor, `verify.mjs`, a native action in gedit and
+the Chrome host and profile binding all worked; the browser round trip waits on a signed-in extension and a Codex login.
+
+What it needs:
+
+- **An X11 session.** Use Xorg, Xvfb or a VNC session, with an EWMH window manager (Openbox is enough) and the XTEST,
+  Composite and XFIXES extensions. Wayland is not supported; the helper has no Wayland code. cua passes `DISPLAY` and
+  `XAUTHORITY` through to the runtime. Over SSH, export `DISPLAY` (and `XAUTHORITY` when the file is not
+  `~/.Xauthority`). When `DBUS_SESSION_BUS_ADDRESS` is unset, cua derives the session bus from `XDG_RUNTIME_DIR`.
+- **A session bus with AT-SPI** (`at-spi2-core`). Without it, accessibility trees fall back to window-level X11
+  entries.
+- **Packages.** On Debian or Ubuntu:
+
+  ```sh
+  sudo apt-get install binutils xz-utils x11-utils dbus-x11 at-spi2-core bubblewrap
+  ```
+
+  `ar`, `tar` and `xz` unpack the deb, `xdpyinfo` and `dbus-send` are doctor's probes, and `bwrap` is the sandbox.
+  `cua install` refuses with `missing_tool`, naming the package, when one is absent.
+- **Google Chrome as a deb or rpm, never Flatpak or snap.** A Flatpak or snap Chrome cannot start a native host outside
+  its own sandbox. Install OpenAI's extension in each profile you want to use, as on macOS.
+
+Install and register from a checkout. The default `CUA_HOME` is `${XDG_DATA_HOME:-~/.local/share}/cua`:
+
+```sh
+node bin/cua.mjs install --archive ~/mirror/chatgpt_26.928.40906_arm64.deb   # or no --archive: download the pinned deb
+node bin/cua.mjs doctor
+node bin/cua.mjs chrome register         # writes ~/.config/google-chrome/NativeMessagingHosts/com.openai.codexextension.json
+node bin/cua.mjs login                   # in the X session (it opens the browser through xdg-open); over SSH: --device-auth
+```
+
+**Keep a copy of the deb.** The repository's signed `Packages` index lists only the newest version, and keeping old
+pool files is not promised (the pinned file still downloaded on 2026-10-06). `--archive` takes the copy and checks it
+against the pin as it would a download. Trust is the archive's pinned length and SHA-256, because nothing in the deb
+is code-signed. Doctor's `runtime.signatures` says so. Each deb's own OpenPGP signature (`_gpgorigin`) was checked
+against OpenAI's repository key when the pin was written; the pin's `notes` record the check.
+
+**The sandbox.** With the computer surface, `CUA_SHIM_SANDBOX` defaults to `disabled` on Linux. Under any
+`node_repl` sandbox, no runtime process may connect to a socket. On Linux that applies to the helper too, so it could
+not reach the X display or the session bus, and every computer-use call would fail. So, with the computer surface,
+JavaScript cells can write wherever your account can and reach the network. Doctor's `sandbox` row says so.
+
+The browser surface alone (`CUA_SHIM_SURFACES=browser`) keeps `scoped`, which works there. It needs bubblewrap to
+create unprivileged user namespaces, and Ubuntu 23.10 and later restrict those through AppArmor. Where they are
+refused, the runtime silently runs cells with no sandbox. Doctor then fails `sandbox` and reads `sandbox.userns`
+`blocked`. To lift the restriction:
+
+```sh
+echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-cua-userns.conf
+sudo sysctl --system
+```
+
+The other way is an AppArmor profile that grants `userns` to the release's `codex` (a `flags=(unconfined)` profile
+attached to `$CUA_HOME/runtimes/<release>/codex`). It keeps Ubuntu's restriction for everything else, but it has to
+follow each release, and doctor's own probe runs bubblewrap outside that profile, so `sandbox.userns` still reads
+`blocked` while the runtime is in fact sandboxed.
+
+**What differs from macOS:**
+
+- **Apps are bound by window.** Use `cua.getApp({windowId})` with an id from `listWindows()`. No app asks for
+  approval, so one connection can drive every window of the session. `DISPLAY` and `XAUTHORITY` reach the runtime, so
+  a model cell can talk to X directly. The trusted wrapper is not a boundary on Linux. The host notes say so.
+- **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
+  they crashed the app. `pressKey`, one X keysym per character, types there. In GTK4 they inserted the text and then
+  threw.
+- **No secrets.** Linux has no secrets backend. `secrets_list` reports `secrets_unsupported_platform`, a
+  `{{secret:…}}` reference is refused with that code before anything is typed, and `cua secrets` exits 1.
+- **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows, and
+  `secrets.helper` reads `skip`.
+- **Chrome's own window.** Read through the native route, it exposes no accessibility tree by default. Chrome joins
+  AT-SPI when toolkit accessibility is on (`gsettings set org.gnome.desktop.interface toolkit-accessibility true`).
+  Web content appears only when Chrome is also started with `--force-renderer-accessibility`. The browser surface
+  needs neither.
+
 ## Operating guidance for agents
 
 The first real task run through `cua serve`, a graded ten-question assignment in an existing signed-in Chrome profile,
@@ -628,13 +708,13 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 
 | variable | default | meaning |
 |---|---|---|
-| `CUA_HOME` | `~/Library/Application Support/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory, broker socket and a record of the process that owns them; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
+| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory, broker socket and a record of the process that owns them; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through the original OpenAI extension and host, with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
-| `CUA_SHIM_SANDBOX` | `scoped` | the sandbox node_repl applies to the runtime's JavaScript: `scoped` lets it write only its connection's run directory and `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
+| `CUA_SHIM_SANDBOX` | `scoped`; on Linux with the computer surface `disabled` (see Linux) | the sandbox node_repl applies to the runtime's JavaScript: `scoped` lets it write only its connection's run directory and `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
 
 cua sends node_repl a sandbox state, in the field Codex uses for it (`_meta["codex/sandbox-state-meta"]`), on every call
 it makes, including the bounded launch behind `cua profiles list`/`bind` and `profiles_list`. Any sandbox state a client

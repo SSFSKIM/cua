@@ -2,6 +2,16 @@
 
 ## Open
 
+- **2026-10-06 — Phase E relay leftovers (minor, issue #11).** (a) The agent's relay adapter logs one "unknown
+  channel" line per later `body` frame after it refuses an oversized body (the shipped relay stops at the same 4 MB
+  first, so only a relay with a larger limit shows it); marking the channel done until its `end`/`abort` would silence
+  it. (b) `ws` `maxPayload` stays at its 100 MiB default: one SSE event over about 75 MB (base64) would close the device
+  link with 1009 and every replay would close it again. (c) The LAN path (`node:http`) and the relay's WebSocket sends
+  ignore write backpressure; only credential holders reach either, and the relay cuts a client whose unsent buffer
+  passes 32 MB. (d) SSE keepalive comments are probably dropped by SSE-normalising proxies such as ngrok's edge (they
+  still keep the proxy's upstream leg busy); a named keepalive event would survive if a proxy's idle timeout ever cuts
+  a long call. Revisit if any is observed.
+
 - **2026-10-06 — Two E1 review leftovers in the Streamable HTTP handler (minor, Phase E, issue #11).** (a) A POST
   stream that drops and is never resumed keeps every event it carried (including `js` results with screenshots) until
   its session ends; these retained events sit outside the 16 MB server-message buffer cap. The idle close bounds them;

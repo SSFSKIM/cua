@@ -5,7 +5,9 @@
 // in the js description, while the default documents none) and instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
 // (its banner), which reaches the native helper read-only. Then end_task, a second task, and EOF. It records which
 // executables served (none may come from an installed desktop app), which helper held the native socket, and that
-// the connection's working directory is gone afterwards. Elicitations are declined; nothing is registered anywhere.
+// the connection's own run entries are gone afterwards: the session is the one whose $CUA_HOME/run record names the
+// server's pid (src/runtime/run-dir.mjs), so other connections in the same home are never mistaken for leftovers.
+// Elicitations are declined; nothing is registered anywhere.
 // secrets_list is checked for shape only (labels, or a value-free unavailable/error status): with a built Keychain
 // helper the server runs that connection's broker as its second child, which must be gone after close too.
 //
@@ -14,7 +16,7 @@
 //   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
 //   CUA_SHIM_SURFACES=computer,browser node verify.mjs   the same with the browser surface
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, readdirSync, realpathSync} from 'node:fs';
+import {existsSync, lstatSync, readFileSync, readdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -45,7 +47,16 @@ try {
   process.exit(1);
 }
 const runDir = join(runtime.home, 'run');
-const runBefore = existsSync(runDir) ? readdirSync(runDir) : [];
+const runEntries = () => existsSync(runDir) ? readdirSync(runDir) : [];
+const runBefore = runEntries();
+// The sessions whose run record names `pid` (a record still being written by another process reads empty: skipped).
+const sessionsOf = pid => runEntries().flatMap(name => {
+  const session = /^(.+)\.pid$/.exec(name)?.[1];
+  if (!session) return [];
+  try { return readFileSync(join(runDir, name), 'utf8').trim() === String(pid) ? [session] : []; } catch { return []; }
+});
+const present = path => { try { lstatSync(path); return true; } catch { return false; } };
+const sessionEntries = session => [`${session}.pid`, session, `${session}.sock`];
 
 const server = spawn(process.execPath, [CLI, 'serve'], {stdio: ['pipe', 'pipe', 'inherit'], env: {...process.env, CUA_HOME: home}});
 const exited = new Promise(resolve => server.on('exit', (code, signal) => resolve({code, signal})));
@@ -74,6 +85,10 @@ const taskOf = result => result?._meta?.['cua/taskId'] ?? null;
 try {
   const init = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-verify', version: '0'}}, 120_000);
   send({jsonrpc: '2.0', method: 'notifications/initialized'});
+  // The server claims its session before it reads the client, so the record is there once initialize is answered.
+  const own = sessionsOf(server.pid);
+  report.session = own.length === 1 ? {id: own[0], entries: sessionEntries(own[0]).filter(name => present(join(runDir, name)))} : null;
+  check(own.length === 1, `expected one run record naming the server's pid ${server.pid} under ${runDir}, found ${own.length}`);
   const instructions = init.instructions ?? '';
   report.server = init.serverInfo;
   report.protocolVersion = init.protocolVersion;
@@ -157,8 +172,13 @@ try {
   if (!exit) { server.kill('SIGTERM'); problems.push('cua serve did not exit within 15 s of EOF'); }
   report.exit = exit ?? await exited;
   check(report.exit.code === 0, `cua serve exited with ${JSON.stringify(report.exit)}`);
-  const leftover = (existsSync(runDir) ? readdirSync(runDir) : []).filter(name => !runBefore.includes(name));
-  check(leftover.length === 0, `connection directories or broker endpoints left under ${runDir}: ${leftover.join(', ')}`);
+  // This connection's entries (and any other session its process claimed, e.g. a profiles_list listing) must be gone.
+  const leftover = [...new Set([...(report.session ? [report.session.id] : []), ...sessionsOf(server.pid)])]
+    .flatMap(sessionEntries).filter(name => present(join(runDir, name)));
+  check(leftover.length === 0, `this connection's run entries left under ${runDir}: ${leftover.join(', ')}`);
+  // Informational: entries that appeared while verify ran belong to other connections in this home, not to this one.
+  const others = runEntries().filter(name => !runBefore.includes(name) && !leftover.includes(name));
+  if (others.length) report.runNote = `${others.length} other entr${others.length === 1 ? 'y' : 'ies'} appeared under ${runDir} while verify ran (another cua serve or listing in this home; not counted): ${others.join(', ')}`;
   for (const broker of report.secretsBroker ?? []) {
     let gone = false;
     try { process.kill(broker.pid, 0); } catch { gone = true; }

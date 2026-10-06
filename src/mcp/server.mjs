@@ -374,13 +374,18 @@ export async function serve({home, env = process.env, input = process.stdin, out
   } catch (error) {
     diagnostics(`$CUA_HOME/run could not be swept (${error.code ?? error.message})`);
   }
-  const sessionId = randomUUID();
-  const claim = claimRunSession(home, sessionId);
-  // A signal that arrives before the connection exists closes it as soon as it does.
+  // A signal that arrives before the connection exists closes it as soon as it does. The handlers are in place before
+  // the session is claimed, so no signal can end the process between the claim and the cleanup that releases it.
   let server;
   let signalled = false;
   const onSignal = () => { if (server) server.close('signal'); else signalled = true; };
   for (const signal of SIGNALS) process.on(signal, onSignal);
+  const sessionId = randomUUID();
+  let claim;
+  try { claim = claimRunSession(home, sessionId); } catch (error) {
+    for (const signal of SIGNALS) process.off(signal, onSignal);
+    throw error;
+  }
   let secrets = NOT_CONFIGURED;
   let launch;
   let listingLeftover = false;

@@ -27,7 +27,8 @@ function inProcess() {
     const send = upstream.send;
     upstream.send = msg => {
       send(msg);
-      if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, UPSTREAM_INIT));
+      // `open.negotiate` (when set) is the protocol version this runtime answers initialize with.
+      if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, {...UPSTREAM_INIT, ...(open.negotiate ? {protocolVersion: open.negotiate} : {})}));
     };
     const server = createServer({input, output, upstream, sessionId, onWithdrawn, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
     const closed = server.closed.then(result => ({...result, listingLeftover: false}));
@@ -162,13 +163,17 @@ test('a missing or wrong bearer is 401 before the body is read; a foreign or nul
   assert.ok(await initialize({origin: 'https://allowed.example'}));
 });
 
-test('protocol versions 2025-03-26 and 2025-06-18 (or none) are accepted and any other is 400; other paths 404, other methods 405', async t => {
+test('protocol versions 2025-03-26, 2025-06-18 and 2025-11-25 (or none) are accepted and an unknown one is 400; other paths 404, other methods 405', async t => {
   const {send, initialize} = setup(t, {maxSessions: 4});
   assert.ok(await initialize());
   assert.ok(await initialize({'mcp-protocol-version': '2025-03-26'}));
+  assert.ok(await initialize({'mcp-protocol-version': '2025-11-25'}));
   const session = await initialize({'mcp-protocol-version': '2025-06-18'});
   for (const [request, status] of [
     [{body: INITIALIZE, headers: {'mcp-protocol-version': '2024-11-05'}}, 400],
+    [{body: INITIALIZE, headers: {'mcp-protocol-version': '2026-01-01'}}, 400],
+    [{session, body: {jsonrpc: '2.0', method: 'notifications/initialized'}, headers: {'mcp-protocol-version': '2026-01-01'}}, 400],
+    [{method: 'GET', session, headers: {'mcp-protocol-version': '2026-01-01'}}, 400],
     [{session, body: {jsonrpc: '2.0', method: 'notifications/initialized'}, headers: {'mcp-protocol-version': 'nonsense'}}, 400],
     [{url: '/other', body: INITIALIZE}, 404],
     [{url: '/mcp/extra', body: INITIALIZE}, 404],
@@ -178,6 +183,34 @@ test('protocol versions 2025-03-26 and 2025-06-18 (or none) are accepted and any
     await done;
     assert.equal(res.status, status, JSON.stringify(request));
   }
+});
+
+test('the version a session negotiated with its runtime is accepted on that session, and only there', async t => {
+  const {open, send, initialize} = setup(t, {maxSessions: 4});
+  open.negotiate = '2025-11-25';
+  const current = await initialize();
+  open.negotiate = '2026-01-01';
+  const newer = await initialize();
+  open.negotiate = undefined;
+  const plain = await initialize();
+  const notify = {jsonrpc: '2.0', method: 'notifications/initialized'};
+  for (const [session, version, status] of [
+    [current, '2025-11-25', 202],
+    [newer, '2026-01-01', 202],
+    [plain, '2025-11-25', 202],
+    [plain, '2026-01-01', 400],
+    [current, '2026-01-01', 400],
+    [newer, '2027-01-01', 400],
+  ]) {
+    const {res, done} = send({session, body: notify, headers: {'mcp-protocol-version': version}});
+    await done;
+    assert.equal(res.status, status, `${version} on the session that negotiated ${session === newer ? '2026-01-01' : session === current ? '2025-11-25' : '2025-06-18'}`);
+  }
+  const get = send({method: 'GET', session: newer, headers: {'mcp-protocol-version': '2026-01-01'}});
+  await until(() => get.res.status === 200, 'a GET with the negotiated version');
+  const del = send({method: 'DELETE', session: newer, headers: {'mcp-protocol-version': '2026-01-01'}});
+  await del.done;
+  assert.equal(del.res.status, 200);
 });
 
 test('initialize with a session header is 400; an unknown session is 404; invalid JSON is 400 with a parse error and no session effect', async t => {

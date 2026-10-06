@@ -51,7 +51,8 @@ SHA-256 hashes of the two credentials, never the credentials themselves. `device
 The relay reads it at start: restart the relay after editing it (the agents reconnect by themselves). Then, on the Mac,
 `cua agent install` (adds `--relay` to the launchd job), and on the client
 `claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"`.
-A `cua remote enroll --rotate` changes both hashes: replace the line and re-register the client.
+A `cua remote enroll --rotate` changes both hashes: replace the line (and restart the relay), re-register the client,
+and run `cua agent install` again on the Mac, since a running agent keeps the credentials it started with.
 
 ## What the answers mean
 

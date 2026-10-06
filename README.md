@@ -683,13 +683,17 @@ against OpenAI's repository key when the pin was written; the pin's `notes` reco
 **The sandbox.** With the computer surface, `CUA_SHIM_SANDBOX` defaults to `disabled` on Linux. Under any
 `node_repl` sandbox, no runtime process may connect to a socket. On Linux that applies to the helper too, so it could
 not reach the X display or the session bus, and every computer-use call would fail. So, with the computer surface,
-JavaScript cells can write wherever your account can and reach the network. Doctor's `sandbox` row says so.
+JavaScript cells can write wherever your account can and reach the network. Doctor's `sandbox` row says so. A
+connection's own `profiles_list` check runs under the connection's mode, so with `computer,browser` it is `disabled`
+too.
 
-The browser surface alone (`CUA_SHIM_SURFACES=browser`) keeps `scoped`, which works there. It needs bubblewrap to
-create unprivileged user namespaces, and Ubuntu 23.10 and later restrict those through AppArmor. Where they are
-refused, the vendor's sandbox fails open: the runtime would run cells with no sandbox at all. So `cua serve` and the
-profile listing refuse a scoped launch there with `sandbox_unavailable`, before anything starts. Doctor fails
-`sandbox` and reads `sandbox.userns` `blocked`. To lift the restriction:
+The browser surface alone (`CUA_SHIM_SURFACES=browser`) keeps `scoped`, which works there, and so do `cua profiles
+list` and `bind` unless `CUA_SHIM_SANDBOX` says otherwise. `scoped` needs bubblewrap to create unprivileged user
+namespaces, and Ubuntu 23.10 and later restrict those through AppArmor. Where they are refused, the vendor's sandbox
+fails open: the runtime would run cells with no sandbox at all. So `cua serve` and the profile listing refuse a scoped
+launch there with `sandbox_unavailable`, before anything starts. Doctor fails `sandbox` for a scoped setup and reads
+`sandbox.userns` `blocked` whenever the browser surface is on and the mode is not explicitly something other than
+`scoped`, since `cua profiles list` and `bind` would be refused. To lift the restriction:
 
 ```sh
 echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-cua-userns.conf

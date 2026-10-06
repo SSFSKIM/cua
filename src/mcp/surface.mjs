@@ -1,6 +1,17 @@
 // What the model sees of the server: the four-tool surface (five with the browser surface, which adds profiles_list),
 // server instructions with host notes for the enabled surfaces, and the result rewrites the proxy applies (image MIME
 // correction, token-bearing URL redaction). Pure functions; the server applies them to relayed messages.
+import {fail} from '../runtime/errors.mjs';
+
+const SURFACES = ['computer', 'browser'];
+
+// CUA_SHIM_SURFACES: computer (the default), browser, or both (comma-separated, any order), in canonical order.
+export function surfacesFrom(value = 'computer') {
+  const named = value.split(',').map(s => s.trim());
+  if (!named.length || !named.every(s => SURFACES.includes(s)) || new Set(named).size !== named.length)
+    fail('invalid_setting', 'CUA_SHIM_SURFACES must be computer, browser or computer,browser');
+  return SURFACES.filter(s => named.includes(s));
+}
 
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
 // js_add_node_module_dir (it would widen what model code can import) stay private. Their search hints name the

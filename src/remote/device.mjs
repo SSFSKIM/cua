@@ -5,8 +5,9 @@
 //   clientCredential = hex(HMAC-SHA256(secret, "client"))   the cloud client presents it to the endpoint
 // (the HMAC key is the secret's 32 bytes). The relay knows only their SHA-256 hashes, from the `devices.json` line
 // `devicesEntry` prints. The secret is never printed, and the client credential only by the enrolment that minted it.
+// A running agent follows the record (followDevice), so a rotation or a new relay URL takes effect without a restart.
 import {createHash, createHmac, randomBytes, randomUUID, timingSafeEqual} from 'node:crypto';
-import {chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fail} from '../runtime/errors.mjs';
 
@@ -15,11 +16,24 @@ const deviceFile = home => join(deviceDir(home), 'device.json');
 const B64URL = /^[A-Za-z0-9_-]+$/;
 const ofLength = (text, bytes) => typeof text === 'string' && B64URL.test(text) && Buffer.from(text, 'base64url').length === bytes;
 
-function checkRelayUrl(relayUrl) {
+const isLoopback = host => host === 'localhost' || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host);
+
+// A relay URL is wss:, or ws: only to this Mac's loopback (a relay on the same Mac, or a test): over ws: the device
+// credential and every client bearer would cross the network in clear. A #fragment is refused too, as the WebSocket
+// client refuses it.
+export function checkRelayUrl(relayUrl) {
   let url;
   try { url = new URL(relayUrl); } catch {}
-  if (url?.protocol !== 'wss:' && url?.protocol !== 'ws:')
-    fail('invalid_relay_url', 'the relay URL must be a ws:// or wss:// URL', {hint: 'for example --relay wss://relay.example/ws'});
+  if (url?.protocol !== 'wss:' && !(url?.protocol === 'ws:' && isLoopback(url.hostname)) || url.hash)
+    fail('invalid_relay_url', `the relay URL must be wss://, or ws:// to a loopback address, without a #fragment (got ${JSON.stringify(relayUrl)})`, {hint: 'put the relay behind TLS and enrol it as wss://<relay>/ws, for example cua remote enroll --relay wss://relay.example/ws'});
+}
+
+// The URL a client registers to reach this device through its relay: the relay's origin (https for wss:, http for a
+// loopback ws:) and /d/<deviceId>/mcp. Null without a relay.
+export function relayEndpoint(record) {
+  if (!record.relayUrl) return null;
+  const url = new URL(record.relayUrl);
+  return `${url.protocol === 'wss:' ? 'https:' : 'http:'}//${url.host}/d/${record.deviceId}/mcp`;
 }
 
 export function readDevice(home) {
@@ -93,6 +107,37 @@ export function enrollDevice({home, relayUrl, rotate = false}) {
   };
   writeDevice(home, record);
   return {deviceId: record.deviceId, clientCredential: credentialsOf(record).clientCredential, devicesEntry: devicesEntry(record), relayUrl: record.relayUrl ?? null};
+}
+
+// The device record as it is now, for a process that outlives an `enroll`: `current()` returns the record with both
+// credentials ({...record, deviceCredential, clientCredential}), re-read only when device.json's mtime, size or inode
+// changed since the last call (enroll writes a new file and renames it into place), and null while the record is gone
+// or unreadable, so every client is refused until it is back.
+export function followDevice(home, {diagnostics = () => {}} = {}) {
+  let stamp;
+  let record = null;
+  const describe = r => r ? `device ${r.deviceId}, relay ${r.relayUrl ?? 'none'}` : 'none';
+  return function current() {
+    let next;
+    try {
+      const stat = statSync(deviceFile(home), {bigint: true});
+      next = `${stat.mtimeNs}:${stat.size}:${stat.ino}`;
+    } catch (error) { next = `missing:${error.code}`; }
+    if (next === stamp) return record;
+    const first = stamp === undefined;
+    stamp = next;
+    const previous = record;
+    try {
+      const read = readDevice(home);
+      record = read && {...read, ...credentialsOf(read)};
+      if (!record) diagnostics(`${deviceFile(home)} is gone; every client is refused until this Mac is enrolled again`);
+    } catch (error) {
+      record = null;
+      diagnostics(`${deviceFile(home)} could not be read (${error.code ?? error.message}); every client is refused until it can`);
+    }
+    if (!first && record) diagnostics(`device.json changed: credentials re-derived (${describe(record)}; was ${describe(previous)})`);
+    return record;
+  };
 }
 
 // --rotate also replaces a record that no longer reads as one.

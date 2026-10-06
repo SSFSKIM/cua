@@ -12,8 +12,9 @@ import {resolveRuntime} from './runtime/manifest.mjs';
 import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
 import {CuaError, fail} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
-import {devicesEntry, enrollDevice, readDevice} from './remote/device.mjs';
+import {devicesEntry, enrollDevice, readDevice, relayEndpoint} from './remote/device.mjs';
 import {runAgent} from './remote/agent.mjs';
+import {agentStatus, installAgent, installedJob, uninstallAgent} from './remote/launchd.mjs';
 import {runSecrets} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
@@ -25,13 +26,14 @@ import {PICK_REASONS} from './profiles/bind.mjs';
 import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
 import {registerHost, unregisterHost} from './chrome/registration.mjs';
 
-// The usage text names this platform's archive kind and default home.
+// The usage text names this platform's archive kind and default home; the launchd agent (agent install, uninstall,
+// status) and its console check are macOS-only.
 const PLATFORM_USAGE = {
-  darwin: {archive: 'ChatGPT zip', home: '~/Library/Application Support/cua'},
-  linux: {archive: 'ChatGPT deb', home: '$XDG_DATA_HOME/cua, else ~/.local/share/cua'},
+  darwin: {archive: 'ChatGPT zip', home: '~/Library/Application Support/cua', launchd: true},
+  linux: {archive: 'ChatGPT deb', home: '$XDG_DATA_HOME/cua, else ~/.local/share/cua', launchd: false},
 };
 export const usageFor = platform => {
-  const {archive, home} = PLATFORM_USAGE[platform] ?? PLATFORM_USAGE.darwin;
+  const {archive, home, launchd} = PLATFORM_USAGE[platform] ?? PLATFORM_USAGE.darwin;
   return `usage: cua <command>
   install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
@@ -52,9 +54,17 @@ export const usageFor = platform => {
   remote enroll [--relay <wss url>] [--rotate] [--json]        enrol this Mac for remote control; shows the client credential once
   remote show [--json]                                         the device id, relay URL and the relay's devices.json line
   agent run [--http <host:port>] [--relay]                     serve MCP to remote clients until a signal; --http 127.0.0.1:7801
-                                                               serves this Mac only, its LAN address serves the LAN
-environment: CUA_HOME (default ${home}); for agent run: CUA_AGENT_MAX_SESSIONS (default 1),
-  CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call; none by default)`;
+                                                               serves this Mac only, its LAN address serves the LAN; --relay
+                                                               dials the relay enrolled with remote enroll --relay (both: both)
+${launchd ? `  agent install [--http <host:port>] [--surfaces <list>] [--json]  run the agent as a launchd job in this login session
+                                                               (--relay when enrolled with one; surfaces default computer,browser)
+  agent uninstall [--json]                                     stop the launchd job and remove it
+  agent status [--json]                                        the launchd job: installed, its node, running (pid)
+environment: CUA_HOME (default ${home}); for agent run (agent install carries those set into
+  the job): CUA_AGENT_MAX_SESSIONS (default 1), CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser
+  origins allowed to call; none by default), CUA_AGENT_CONSOLE_CHECK (on: js answers console_locked while the screen is
+  locked; off)` : `environment: CUA_HOME (default ${home}); for agent run: CUA_AGENT_MAX_SESSIONS (default 1),
+  CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call; none by default)`}`;
 };
 const USAGE = usageFor(process.platform);
 
@@ -131,7 +141,7 @@ async function serve(args) {
 
 // Remote control (src/remote). enroll mints the device record and shows the client credential this once; nothing
 // else ever prints it (or the secret): a relay-only update and show print the device id and the relay's line, hashes
-// only.
+// only. Both suggest the client's registration: on the relay's endpoint when one is enrolled, else on this Mac's address.
 const REMOTE_USAGE = {enroll: 'remote enroll takes only --relay <wss url>, --rotate and --json', show: 'remote show takes only --json'};
 
 function remote(args) {
@@ -143,40 +153,102 @@ function remote(args) {
     throw error;
   }
   const home = defaultHome();
+  const register = (endpoint, credential) => `  claude mcp add --transport http cua_repl ${endpoint ?? 'http://<this Mac\'s address>:7801/mcp'} --header "Authorization: Bearer ${credential}"`;
   if (command === 'show') {
     const record = readDevice(home);
     if (!record) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll'});
-    const shown = {deviceId: record.deviceId, relayUrl: record.relayUrl ?? null, enrolledAt: record.enrolledAt, devicesEntry: devicesEntry(record)};
+    const shown = {deviceId: record.deviceId, relayUrl: record.relayUrl ?? null, relayEndpoint: relayEndpoint(record), enrolledAt: record.enrolledAt, devicesEntry: devicesEntry(record)};
     if (values.json) return done({ok: true, ...shown});
-    return done(`device    ${shown.deviceId}\nrelay     ${shown.relayUrl ?? 'none (local only)'}\nenrolled  ${shown.enrolledAt}\nthe relay's devices.json line:\n  ${shown.devicesEntry}`);
+    return done([
+      `device    ${shown.deviceId}\nrelay     ${shown.relayUrl ?? 'none (local only)'}\nenrolled  ${shown.enrolledAt}\nthe relay's devices.json line:\n  ${shown.devicesEntry}`,
+      ...(shown.relayEndpoint ? ['a client registers on the relay under the name cua_repl, with the credential enroll showed:', register(shown.relayEndpoint, '<client credential>')] : []),
+    ].join('\n'));
   }
   const result = enrollDevice({home, relayUrl: values.relay, rotate: values.rotate});
-  if (values.json) return done({ok: true, ...result});
+  const endpoint = relayEndpoint(result);
+  // A job installed before the relay was enrolled serves only its --http address until install rewrites it.
+  const job = values.relay === undefined ? null : installedJob().job;
+  const lacksRelay = Boolean(job && !job.args.includes('--relay'));
+  if (values.json) return done({ok: true, ...result, relayEndpoint: endpoint, ...(lacksRelay ? {agentJobLacksRelay: true} : {})});
   const relayLine = `the relay's devices.json line:\n  ${result.devicesEntry}`;
-  if (result.updated) return done(`device ${result.deviceId} now uses the relay ${result.relayUrl}; its secret and credentials are unchanged\n${relayLine}`);
+  const installHint = lacksRelay ? ['the installed agent job does not dial the relay: run cua agent install to add --relay'] : [];
+  if (result.updated) return done([
+    `device ${result.deviceId} now uses the relay ${result.relayUrl}; its secret and credentials are unchanged`,
+    relayLine,
+    'a client registers on the relay under the name cua_repl, with the credential enroll showed:',
+    register(endpoint, '<client credential>'),
+    ...installHint,
+  ].join('\n'));
   return done([
     `${values.rotate ? 'rotated the secret of' : 'enrolled this Mac as'} device ${result.deviceId} (relay: ${result.relayUrl ?? 'none, local only'})`,
     'client credential, shown this once (cua never prints it again; --rotate replaces it):',
     `  ${result.clientCredential}`,
-    'register it on the client under the name cua_repl, for example:',
-    `  claude mcp add --transport http cua_repl http://<this Mac's address>:7801/mcp --header "Authorization: Bearer ${result.clientCredential}"`,
+    `register it on the client under the name cua_repl, ${endpoint ? 'on the relay' : 'on this Mac\'s address'}, for example:`,
+    register(endpoint, result.clientCredential),
     relayLine,
+    ...installHint,
   ].join('\n'));
 }
 
-// The resident agent (src/remote/agent.mjs). Its diagnostics go to stderr; once it has closed every session nothing
-// may keep the process alive.
-const AGENT_USAGE = 'agent run takes --http <host:port>, --relay, or both';
+// The resident agent (src/remote/agent.mjs) and its launchd job (src/remote/launchd.mjs). run's diagnostics go to
+// stderr; once it has closed every session nothing may keep the process alive.
+const AGENT_USAGE = {
+  run: 'agent run takes --http <host:port>, --relay, or both',
+  install: 'agent install takes only --http <host:port>, --surfaces <list> and --json',
+  uninstall: 'agent uninstall takes only --json',
+  status: 'agent status takes only --json',
+};
+const AGENT_OPTIONS = {run: {http: {type: 'string'}, relay: {type: 'boolean'}}, install: {http: {type: 'string'}, surfaces: {type: 'string'}}, uninstall: {}, status: {}};
 
 async function agent(args) {
   const [command, ...rest] = args;
-  if (command !== 'run') throw new UsageError('agent takes run');
+  if (!Object.hasOwn(AGENT_USAGE, command)) throw new UsageError('agent takes run, install, uninstall or status');
   let values;
   try {
-    ({values} = parseArgs({args: rest, options: {http: {type: 'string'}, relay: {type: 'boolean'}}, allowPositionals: false, strict: true}));
-  } catch { throw new UsageError(AGENT_USAGE); }
-  if (values.http === undefined && !values.relay) throw new UsageError(AGENT_USAGE);
-  return agentRun({http: values.http ?? null, relay: values.relay === true});
+    if (command === 'run') ({values} = parseArgs({args: rest, options: AGENT_OPTIONS.run, allowPositionals: false, strict: true}));
+    else ({values} = parse(rest, AGENT_OPTIONS[command], 0));
+  } catch { throw new UsageError(AGENT_USAGE[command]); }
+  if (command === 'run') {
+    if (values.http === undefined && !values.relay) throw new UsageError(AGENT_USAGE.run);
+    return agentRun({http: values.http ?? null, relay: values.relay === true});
+  }
+  if (process.platform !== 'darwin')
+    fail('unsupported_platform', `agent ${command} manages a launchd job, which exists only on macOS`, {hint: 'run cua agent run under this host\'s own service manager (the agent is untested off macOS)'});
+  if (command === 'install') {
+    const result = await installAgent({home: defaultHome(), http: values.http, surfaces: values.surfaces});
+    if (values.json) return done({ok: true, ...result});
+    return done([
+      `installed the launchd job ${result.label} (${result.plist})`,
+      `  runs    ${result.programArguments.join(' ')}`,
+      `  node    ${result.node}; after upgrading or moving node, run cua agent install again${values.http ? ' (macOS\'s firewall judges this node binary for incoming connections: allow it if asked)' : ''}`,
+      `  log     ${result.log}`,
+      `  env     ${Object.entries(result.environment).map(([key, value]) => `${key}=${value}`).join(' ')}`,
+      `  status  ${describeRunning(result.status)}`,
+    ].join('\n'));
+  }
+  if (command === 'uninstall') {
+    const result = await uninstallAgent();
+    if (values.json) return done({ok: true, ...result});
+    if (!result.bootedOut && !result.removed) return done(`no launchd job ${result.label} was installed; nothing changed`);
+    return done(`${result.bootedOut ? 'stopped' : 'found no running'} launchd job ${result.label}${result.removed ? ` and removed ${result.plist}` : ''}`);
+  }
+  const status = await agentStatus();
+  if (values.json) return done({ok: true, ...status});
+  if (!status.installed) return done(`not installed (no ${status.plist}); run cua agent install`);
+  return done([
+    `job     ${status.label} (${status.plist})`,
+    ...(status.job
+      ? [`runs    ${status.job.programArguments.join(' ')}`, `node    ${status.job.node}`, `log     ${status.job.standardErrorPath ?? 'none'}`]
+      : [`invalid ${status.invalid}`]),
+    `status  ${describeRunning(status)}`,
+  ].join('\n'));
+}
+
+function describeRunning(status) {
+  if (status.launchdError) return `unknown: ${status.launchdError}`;
+  if (status.running) return `running, pid ${status.pid}`;
+  if (status.loaded) return `loaded but not running (state ${status.state ?? 'unknown'}, last exit code ${status.lastExitCode ?? 'unknown'})`;
+  return 'not loaded in this login session';
 }
 
 async function agentRun({http, relay}) {

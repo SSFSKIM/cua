@@ -7,38 +7,13 @@ import assert from 'node:assert/strict';
 import {existsSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createMcpHttp} from '../src/mcp/http.mjs';
-import {createServer} from '../src/mcp/server.mjs';
-import {fakeUpstream, tick} from './fixtures/mcp-harness.mjs';
+import {inProcessConnections as inProcess, tick} from './fixtures/mcp-harness.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const CREDENTIAL = 'c'.repeat(64);
 const INITIALIZE = {jsonrpc: '2.0', id: 0, method: 'initialize', params: {protocolVersion: '2025-03-26', capabilities: {elicitation: {}}, clientInfo: {name: 'test', version: '0'}}};
-const UPSTREAM_INIT = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'rmcp', version: '1.5.0'}, instructions: 'Upstream.'};
 const call = (id, name, args = {}) => ({jsonrpc: '2.0', id, method: 'tools/call', params: {name, arguments: args}});
-
-// In-process connections: each session's createServer runs over a fake upstream that answers initialize by itself;
-// everything else waits for the test (`opened[i].upstream`).
-function inProcess() {
-  const opened = [];
-  const open = async ({sessionId, input, output, onWithdrawn}) => {
-    if (open.failWith) throw Object.assign(new Error('open failed'), {code: open.failWith});
-    const upstream = fakeUpstream();
-    const send = upstream.send;
-    upstream.send = msg => {
-      send(msg);
-      // `open.negotiate` (when set) is the protocol version this runtime answers initialize with.
-      if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, {...UPSTREAM_INIT, ...(open.negotiate ? {protocolVersion: open.negotiate} : {})}));
-    };
-    const server = createServer({input, output, upstream, sessionId, onWithdrawn, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
-    const closed = server.closed.then(result => ({...result, listingLeftover: false}));
-    const connection = {sessionId, closed, upstream, close: reason => { server.close(reason); return closed; }, get state() { return server.state; }};
-    opened.push(connection);
-    return connection;
-  };
-  open.opened = opened;
-  return open;
-}
 
 // A response recorder satisfying {writeHead, write, end}, with its SSE events parsed.
 function recorder() {
@@ -51,7 +26,7 @@ function recorder() {
     },
     write(chunk) { assert.ok(!res.ended, 'no write after end'); res.body += chunk; },
     end(chunk) { assert.ok(!res.ended, 'end once'); if (chunk !== undefined) res.body += chunk; res.ended = true; },
-    // Every SSE event in order; a priming event (an id and empty data) has `message: null`.
+    // Every SSE event in order; a priming event (named `priming`) has `message: null`.
     // Comment blocks (`: keepalive`) are not events and are left out.
     allEvents() {
       return res.body.split('\n\n').filter(block => block && !block.startsWith(':')).map(block => {
@@ -60,7 +35,7 @@ function recorder() {
           const at = line.indexOf(': ');
           event[line.slice(0, at)] = line.slice(at + 2);
         }
-        return {id: event.id, retry: event.retry, message: event.data === '' ? null : JSON.parse(event.data)};
+        return {id: event.id, retry: event.retry, event: event.event, message: event.event === 'priming' ? null : JSON.parse(event.data)};
       });
     },
     events: () => res.allEvents().filter(e => e.message !== null),
@@ -280,7 +255,7 @@ test('a request\'s response goes on the POST stream that carried it, with two co
   await until(() => b.res.ended, 'stream b to end');
   assert.equal(b.res.status, 200);
   assert.equal(b.res.headers['content-type'], 'text/event-stream');
-  assert.equal(b.res.headers['cache-control'], 'no-cache');
+  assert.equal(b.res.headers['cache-control'], 'no-cache, no-transform', 'no proxy or CDN buffers or compresses the stream');
   assert.deepEqual(b.res.messages(), [{jsonrpc: '2.0', id: 'b', result: {}}]);
   assert.equal(a.res.ended, false);
   assert.deepEqual(a.res.events(), []);
@@ -292,7 +267,7 @@ test('a request\'s response goes on the POST stream that carried it, with two co
     assert.equal(first.message, null, 'every POST stream opens with a priming event');
     assert.match(first.id, /^\d+-0$/);
     assert.equal(first.retry, '15000', 'carrying the reconnection delay');
-    assert.ok(stream.res.body.startsWith(`retry: 15000\nid: ${first.id}\ndata: \n\n`), stream.res.body);
+    assert.ok(stream.res.body.startsWith(`retry: 15000\nid: ${first.id}\nevent: priming\ndata: {}\n\n`), stream.res.body);
     assert.equal(rest.length, 1);
     assert.equal(rest[0].id, first.id.replace(/-0$/, '-1'));
   }
@@ -354,6 +329,57 @@ test('a server-initiated request goes to the oldest open POST stream, else the G
   assert.deepEqual(next.res.messages().map(m => m.id ?? m.method), ['e3', 'notifications/message']);
 });
 
+test('the agent log records each server request sent to the client and how it was answered, never its content', async t => {
+  const {send, initialize, upstreamOf, diagnostics} = setup(t);
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'one'})});
+  await upstream.nextCall('js');
+  const secretish = 'Allow Computer Use to use "Calculator"?';
+  const elicit = (id, extra = {}) => ({jsonrpc: '2.0', id, method: 'elicitation/create', params: {message: secretish, requestedSchema: {type: 'object', properties: {}}}, ...extra});
+  upstream.emit(elicit('e1'));
+  await until(() => post.res.messages().length === 1, 'the elicitation on the POST stream');
+  upstream.emit(elicit(7));
+  upstream.emit({jsonrpc: '2.0', id: 'r1', method: 'roots/list'});
+  await until(() => post.res.messages().length === 3, 'all three requests');
+  const sent = diagnostics.filter(l => / sent to the client$/.test(l));
+  assert.deepEqual(sent, [
+    `session ${session}: elicitation/create "e1" sent to the client`,
+    `session ${session}: elicitation/create 7 sent to the client`,
+    `session ${session}: roots/list "r1" sent to the client`,
+  ]);
+  const answer = send({session, body: [
+    {jsonrpc: '2.0', id: 'e1', result: {action: 'accept', content: {secret: 'hunter2'}}},
+    {jsonrpc: '2.0', id: 7, result: {action: 'decline'}},
+    {jsonrpc: '2.0', id: 'r1', error: {code: -32601, message: 'no roots here'}},
+  ]});
+  await answer.done;
+  const answered = diagnostics.filter(l => / answered /.test(l));
+  assert.equal(answered.length, 3, diagnostics.join('\n'));
+  assert.match(answered[0], new RegExp(`^session ${session}: elicitation/create "e1" answered accept after \\d+ ms$`));
+  assert.match(answered[1], new RegExp(`^session ${session}: elicitation/create 7 answered decline after \\d+ ms$`));
+  assert.match(answered[2], new RegExp(`^session ${session}: roots/list "r1" answered error after \\d+ ms$`));
+  // An answer to a request the session never sent is not logged; a strange action is not echoed.
+  upstream.emit(elicit('e2'));
+  await until(() => post.res.messages().length === 4, 'e2');
+  const odd = send({session, body: [{jsonrpc: '2.0', id: 'e2', result: {action: 'sure, my password is x'}}, {jsonrpc: '2.0', id: 'nobody', result: {}}]});
+  await odd.done;
+  assert.match(diagnostics.at(-1), /elicitation\/create "e2" answered result after \d+ ms$/);
+  assert.equal(diagnostics.filter(l => /nobody/.test(l)).length, 0);
+  for (const line of diagnostics) assert.ok(!line.includes('Calculator') && !line.includes('hunter2') && !line.includes('password'), line);
+});
+
+test('a server request held in the buffer is logged as sent when it reaches a stream', async t => {
+  const {send, initialize, upstreamOf, diagnostics} = setup(t);
+  const session = await initialize();
+  upstreamOf(0).emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'm', requestedSchema: {type: 'object', properties: {}}}});
+  await tick(10);
+  assert.equal(diagnostics.some(l => / sent to the client$/.test(l)), false, 'buffered, not yet sent');
+  const get = send({method: 'GET', session});
+  await until(() => get.res.messages().length === 1, 'the drained elicitation');
+  assert.ok(diagnostics.includes(`session ${session}: elicitation/create "e1" sent to the client`), diagnostics.join('\n'));
+});
+
 test('the buffer of undeliverable server messages is capped: a session that would exceed it is closed', async t => {
   const {http, send, initialize, upstreamOf, diagnostics} = setup(t, {bufferLimit: 1024});
   const session = await initialize();
@@ -370,7 +396,7 @@ test('the buffer of undeliverable server messages is capped: a session that woul
 });
 
 test('a response whose POST stream dropped is kept and replayed on a GET naming that stream in Last-Event-ID', async t => {
-  const {send, initialize, upstreamOf} = setup(t);
+  const {send, initialize, upstreamOf} = setup(t, {streamGraceMs: 30});
   const session = await initialize();
   const upstream = upstreamOf(0);
   const post = send({session, body: call(1, 'js', {code: 'long'})});
@@ -393,11 +419,99 @@ test('a response whose POST stream dropped is kept and replayed on a GET naming 
   assert.match(events[0].message.result.content[0].text, /cell finished/);
   assert.equal(events[0].id, `${lastEventId.split('-')[0]}-2`, 'the stream\'s numbering continues');
 
-  // Replayed once: the same Last-Event-ID now names no stream and opens the ordinary GET stream.
+  // Once the completed stream's grace has passed, the same Last-Event-ID names no stream and opens the ordinary GET stream.
+  await tick(60);
   const again = send({method: 'GET', session, headers: {'last-event-id': lastEventId}});
   await until(() => again.res.status === 200, 'a plain GET stream');
   assert.equal(again.res.ended, false);
   assert.equal(again.res.body, '');
+});
+
+test('a stream that completed keeps its events for the grace period, so an answer sent into a dead link is replayed; then it is gone', async t => {
+  const {send, initialize, upstreamOf} = setup(t, {streamGraceMs: 50});
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'quick'})});
+  const js = await upstream.nextCall('js');
+  const [priming] = post.res.primings();
+  upstream.text(js, 'answered into the void');
+  await until(() => post.res.ended, 'the stream to complete');   // as far as the agent knows, delivered
+
+  const resumed = send({method: 'GET', session, headers: {'last-event-id': priming}});
+  await until(() => resumed.res.ended, 'the replay to end');
+  assert.deepEqual(resumed.res.events().map(e => [e.id, e.message.id]), [[priming.replace(/-0$/, '-1'), 1]]);
+  assert.match(resumed.res.events()[0].message.result.content[0].text, /answered into the void/);
+
+  await tick(80);
+  const late = send({method: 'GET', session, headers: {'last-event-id': priming}});
+  await until(() => late.res.status === 200, 'a plain GET stream');
+  assert.equal(late.res.ended, false, 'past the grace the id names no stream');
+  assert.equal(late.res.body, '');
+});
+
+test('a request body over the limit is 413 and reaches no session', async t => {
+  const {send, initialize, upstreamOf} = setup(t, {bodyLimit: 1000});
+  const session = await initialize();
+  const big = send({session, body: call(1, 'js', {code: 'x'.repeat(2000)})});
+  await big.done;
+  assert.equal(big.res.status, 413);
+  assert.equal(big.res.json().error.code, -32000);
+  await tick(10);
+  assert.deepEqual(upstreamOf(0).calls('js'), []);
+  const opening = send({body: {...INITIALIZE, params: {...INITIALIZE.params, pad: 'y'.repeat(2000)}}});
+  await opening.done;
+  assert.equal(opening.res.status, 413, 'initialize too');
+});
+
+// An SSE parser as WHATWG specifies dispatch (an event with an empty data buffer is never dispatched), reporting each
+// event's type, data and the last event id it carried.
+function parseSse(text) {
+  const events = [];
+  let data = '';
+  let type = '';
+  let lastEventId = '';
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    if (line === '') {
+      if (data !== '') events.push({type: type || 'message', data: data.slice(0, -1), lastEventId});
+      data = '';
+      type = '';
+      continue;
+    }
+    if (line.startsWith(':')) continue;
+    const colon = line.indexOf(':');
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let value = colon === -1 ? '' : line.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'event') type = value;
+    else if (field === 'data') data += `${value}\n`;
+    else if (field === 'id' && !value.includes('\0')) lastEventId = value;
+  }
+  return events;
+}
+
+// What an SSE-normalising proxy did to the stream (ngrok's edge, Surprises): every event re-serialised with its
+// empty-valued fields dropped and its fields in another order; comments dropped.
+const normalised = text => text.split('\n\n').filter(block => block && !block.startsWith(':'))
+  .map(block => `${block.split('\n').filter(line => !/^[a-z]+: ?$/.test(line)).reverse().join('\n')}\n\n`).join('');
+
+test('the priming event surfaces its id to an SSE client and is never taken for a message, also through a proxy that drops empty fields', async t => {
+  const {send, initialize, upstreamOf} = setup(t);
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'x'})});
+  upstream.text(await upstream.nextCall('js'), 'done');
+  await until(() => post.res.ended, 'the stream to end');
+  for (const [label, text] of [['as sent', post.res.body], ['through the proxy', normalised(post.res.body)]]) {
+    const events = parseSse(text);
+    const priming = events.find(e => e.lastEventId.endsWith('-0'));
+    assert.ok(priming, `${label}: the priming id reaches the client`);
+    assert.notEqual(priming.type, 'message', `${label}: and the client does not parse it as a message`);
+    // Claude Code's client parses only unnamed (`message`) events as JSON-RPC messages.
+    const messages = events.filter(e => e.type === 'message').map(e => JSON.parse(e.data));
+    assert.deepEqual(messages.map(m => m.id), [1], label);
+  }
+  // The form this replaced: through the proxy its id never reached the client.
+  assert.equal(parseSse(normalised('retry: 15000\nid: 3-0\ndata: \n\n')).length, 0);
 });
 
 test('a js call whose stream dropped after only its priming event is replayed whole on Last-Event-ID <stream>-0', async t => {
@@ -445,18 +559,23 @@ test('a resumed stream that is still waiting stays open for the rest of its resp
   assert.deepEqual(resumed.res.messages().map(m => m.id), [2]);
 });
 
-test('a second GET stream is 409 while one is open', async t => {
-  const {send, initialize} = setup(t);
+test('a newer GET replaces the standing stream, which ends; the older one going away later leaves the newer in place', async t => {
+  const {send, initialize, upstreamOf} = setup(t);
   const session = await initialize();
+  const log = data => upstreamOf(0).emit({jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data}});
   const get = send({method: 'GET', session});
   await until(() => get.res.status === 200, 'GET stream');
   const second = send({method: 'GET', session});
-  await second.done;
-  assert.equal(second.res.status, 409);
+  await until(() => second.res.status === 200, 'the newer GET stream');
+  assert.ok(get.res.ended, 'the older standing stream ended');
+  log('one');
+  await until(() => second.res.messages().length === 1, 'a server message on the newer stream');
+  assert.deepEqual(get.res.messages(), []);
   get.abort();
   await tick(5);
-  const third = send({method: 'GET', session});
-  await until(() => third.res.status === 200, 'a GET after the first went away');
+  log('two');
+  await until(() => second.res.messages().length === 2, 'the newer stream still standing');
+  assert.equal(second.res.ended, false);
 });
 
 test('notifications/cancelled for a request withdrawn before dispatch ends its stream, since it is never answered', async t => {
@@ -527,7 +646,7 @@ test('a connection that closes on its own ends its streams and leaves the sessio
   assert.equal(res.status, 404);
 });
 
-test('an idle session closes; an open POST stream or a pending elicitation keeps it, and the quiet time restarts after them', async t => {
+test('an idle session closes; an open POST stream, or an elicitation pending while a call is unanswered, keeps it, and the quiet time restarts after them', async t => {
   const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
   const session = await initialize();
   const upstream = upstreamOf(0);
@@ -539,30 +658,35 @@ test('an idle session closes; an open POST stream or a pending elicitation keeps
   assert.ok(http.sessions.has(session), 'an open POST stream is not idle');
 
   upstream.emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
-  upstream.text(js, 'done');
-  await until(() => post.res.ended, 'the js call to end');
+  await until(() => post.res.messages().length === 1, 'the elicitation on the js call\'s stream');
+  post.abort();
   await tick(150);
-  assert.ok(http.sessions.has(session), 'a pending elicitation is not idle while a stream of the session is open');
+  assert.ok(http.sessions.has(session), 'an elicitation pending while its call is unanswered is not idle while a stream of the session is open');
 
   const answer = send({session, body: {jsonrpc: '2.0', id: 'e1', result: {action: 'accept', content: {}}}});
   await answer.done;
   assert.equal(answer.res.status, 202);
+  upstream.text(js, 'done');
   await tick(20);
   assert.ok(http.sessions.has(session), 'the quiet time starts when the session stops being busy');
   await until(() => !http.sessions.has(session), 'the idle close', 1000);
 });
 
-test('a pending elicitation with no stream of the session open does not hold the session: the client went away', async t => {
+test('an elicitation pending once every call it could block is answered does not hold the session, even with the GET stream open', async t => {
   const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
   const session = await initialize();
+  const upstream = upstreamOf(0);
   const get = send({method: 'GET', session});
   await until(() => get.res.status === 200, 'GET stream');
-  upstreamOf(0).emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
-  await until(() => get.res.messages().length === 1, 'the elicitation on the GET stream');
-  await tick(150);
-  assert.ok(http.sessions.has(session), 'pending with the GET stream open');
-  get.abort();
-  await until(() => !http.sessions.has(session), 'the idle close once no stream is open', 1000);
+  const post = send({session, body: call(1, 'js', {code: 'asks'})});
+  const js = await upstream.nextCall('js');
+  upstream.emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
+  await until(() => post.res.messages().length === 1, 'the elicitation on the js call\'s stream');
+  upstream.text(js, 'done without the approval');
+  await until(() => post.res.ended, 'the js call to end');
+  upstream.emit({jsonrpc: '2.0', id: 'e2', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
+  await until(() => get.res.messages().length === 1, 'an elicitation outside any call, on the GET stream');
+  await until(() => !http.sessions.has(session), 'the idle close although two elicitations are pending and the GET is open', 1000);
 });
 
 test('an elicitation pending behind a js call whose stream dropped, with no stream open, does not hold the session: the client vanished mid-approval', async t => {
@@ -645,6 +769,67 @@ test('at the cap an Idle session is evicted for a new initialize; a session with
   assert.equal(http.sessions.has(second), false);
 });
 
+test('at the cap a session whose task is open but whose client left (no stream for abandonedMs, nothing unanswered) is evicted; one holding its GET or with a call unanswered is not', async t => {
+  const {http, send, initialize, upstreamOf} = setup(t, {abandonedMs: 80});
+  const first = await initialize();
+  const upstream = upstreamOf(0);
+  const get = send({method: 'GET', session: first});
+  await until(() => get.res.status === 200, 'GET stream');
+  const post = send({session: first, body: call(1, 'js', {code: 'one'})});
+  upstream.text(await upstream.nextCall('js'), 'done');
+  await until(() => post.res.ended, 'the js call to end');
+  await tick(150);
+  const refused = async why => {
+    const r = send({body: INITIALIZE});
+    await r.done;
+    assert.equal(r.res.status, 503, why);
+  };
+  await refused('a session holding its standing GET is never evicted mid-task');
+
+  get.abort();
+  await refused('not before abandonedMs without a stream');
+  const dropped = send({session: first, body: call(2, 'js', {code: 'two'})});
+  const running = await upstream.next(m => m.method === 'tools/call' && m.params?.arguments?.code === 'two');
+  dropped.abort();
+  await tick(150);
+  await refused('a call still unanswered keeps it, whatever its streams');
+
+  upstream.text(running, 'done');
+  await tick(10);
+  const second = await initialize();
+  assert.ok(second && !http.sessions.has(first), 'once answered, the session no stream has held for abandonedMs is evicted');
+});
+
+test('the client credential may be a function, read at each request: a rotation takes effect at once, and none refuses every bearer', async t => {
+  let current = CREDENTIAL;
+  const {send, initialize} = setup(t, {clientCredential: () => current});
+  const session = await initialize();
+  const ping = async (auth, id) => {
+    const r = send({session, auth, body: {jsonrpc: '2.0', id, method: 'ping'}});
+    await r.done;
+    return r.res.status;
+  };
+  current = 'd'.repeat(64);
+  assert.equal(await ping(`Bearer ${CREDENTIAL}`, 1), 401, 'the old credential no longer passes');
+  assert.notEqual(await ping(`Bearer ${'d'.repeat(64)}`, 2), 401, 'the new one does');
+  current = null;
+  for (const auth of [`Bearer ${'d'.repeat(64)}`, 'Bearer null', 'Bearer ']) assert.equal(await ping(auth, 3), 401, auth);
+});
+
+test('endSessions ends every open session and its streams, and the handler goes on serving new ones', async t => {
+  const {http, send, initialize} = setup(t, {maxSessions: 2});
+  const sessions = [await initialize(), await initialize()];
+  const get = send({method: 'GET', session: sessions[0]});
+  await until(() => get.res.status === 200, 'GET stream');
+  await http.endSessions('eof');
+  assert.equal(http.sessions.size, 0);
+  assert.ok(get.res.ended, 'the standing stream ended');
+  const gone = send({session: sessions[1], body: {jsonrpc: '2.0', id: 1, method: 'ping'}});
+  await gone.done;
+  assert.equal(gone.res.status, 404);
+  assert.ok(await initialize(), 'a new session opens');
+});
+
 test('a connection whose release fails is logged, not an unhandled rejection: DELETE still answers and the session is gone', async t => {
   const failing = async options => {
     const connection = await inProcess()(options);
@@ -671,6 +856,93 @@ test('with a cap of 2 two sessions live side by side, and close(signal) closes b
   assert.equal(http.sessions.size, 0);
   const results = await Promise.all(open.opened.map(c => c.closed));
   assert.deepEqual(results.map(r => r.reason), ['signal', 'signal']);
+});
+
+// The console refusal (E2): js and js_reset need the Mac's screen, which a locked or background session cannot drive.
+const CONSOLE_LOCKED = {status: 'error', code: 'console_locked'};
+const consoleAs = state => {
+  const read = async () => { read.reads++; if (state instanceof Error) throw state; return state; };
+  read.reads = 0;
+  return read;
+};
+
+test('js and js_reset over HTTP are answered console_locked while the screen is locked or the session is off the console, and never reach the runtime', async t => {
+  for (const state of [{onConsole: true, locked: true}, {onConsole: false, locked: false}]) {
+    const read = consoleAs(state);
+    const {send, initialize, upstreamOf, diagnostics} = setup(t, {console: read});
+    const session = await initialize();
+    const upstream = upstreamOf(0);
+    for (const [id, name] of [[1, 'js'], [2, 'js_reset']]) {
+      const {res} = send({session, body: call(id, name, name === 'js' ? {code: '1'} : {})});
+      await until(() => res.ended, `${name} to be answered`);
+      assert.equal(res.status, 200);
+      const [reply] = res.messages();
+      assert.equal(reply.id, id);
+      assert.equal(reply.result.isError, true);
+      assert.deepEqual(reply.result.structuredContent, CONSOLE_LOCKED);
+      assert.match(reply.result.content[0].text, /^cua: the Mac's screen is locked or the session is not on the console; unlock it and retry/);
+    }
+    assert.equal(read.reads, 2, 'the console is read for each call');
+    assert.deepEqual([...upstream.calls('js'), ...upstream.calls('js_reset')], []);
+    assert.ok(diagnostics.some(line => line.includes(session) && /js refused: (the screen is locked|this user's session is not on the console)/.test(line)), diagnostics.join('\n'));
+    // Everything else still reaches the runtime; tools/list is not a console action.
+    const list = send({session, body: {jsonrpc: '2.0', id: 3, method: 'tools/list'}});
+    upstream.reply(await upstream.nextRequest('tools/list'), {tools: []});
+    await until(() => list.res.ended, 'tools/list');
+    assert.equal(read.reads, 2, 'only js and js_reset read the console');
+  }
+});
+
+test('in a batch only the console actions are refused; with the console unlocked, or unreadable, js goes through', async t => {
+  const locked = consoleAs({onConsole: true, locked: true});
+  const {send, initialize, upstreamOf} = setup(t, {console: locked, maxSessions: 3});
+  let session = await initialize();
+  let upstream = upstreamOf(0);
+  const batch = send({session, body: [call(1, 'js', {code: '1'}), {jsonrpc: '2.0', id: 2, method: 'ping'}]});
+  upstream.reply(await upstream.nextRequest('ping'), {});
+  await until(() => batch.res.ended, 'the batch');
+  assert.deepEqual(batch.res.messages().map(m => [m.id, m.result.structuredContent ?? m.result]).sort(), [[1, CONSOLE_LOCKED], [2, {}]]);
+  assert.deepEqual(upstream.calls('js'), []);
+
+  for (const [read, logged] of [
+    [consoleAs({onConsole: true, locked: false}), null],
+    [consoleAs(Object.assign(new Error('ioreg failed'), {code: 'console_unreadable'})), /the console state could not be read \(console_unreadable\); the call goes through/],
+  ]) {
+    const {send: post, initialize: open, upstreamOf: upstreamAt, diagnostics} = setup(t, {console: read});
+    session = await open();
+    upstream = upstreamAt(0);
+    const js = post({session, body: call(1, 'js', {code: 'through'})});
+    upstream.text(await upstream.nextCall('js'), 'ran');
+    await until(() => js.res.ended, 'js');
+    assert.equal(js.res.messages()[0].result.isError, false);
+    assert.equal(read.reads, 1);
+    if (logged) assert.match(diagnostics.join('\n'), logged);
+  }
+});
+
+test('a message POSTed while a js call waits for the console check reaches the connection after that call', async t => {
+  let release;
+  const read = () => new Promise(resolve => { release = () => resolve({onConsole: true, locked: false}); });
+  // What the connection reads, in order.
+  const received = [];
+  const base = inProcess();
+  const open = async options => {
+    options.input.on('data', chunk => received.push(...chunk.toString().split('\n').filter(Boolean).map(line => JSON.parse(line).method)));
+    return base(options);
+  };
+  open.opened = base.opened;
+  const {send, initialize} = setup(t, {console: read, open});
+  const session = await initialize();
+  send({session, body: call(1, 'js', {code: 'first'})});
+  await until(() => release, 'the console check to start');
+  const cancel = send({session, body: {jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 1}}});
+  await cancel.done;
+  assert.equal(cancel.res.status, 202, 'the notification is accepted at once');
+  await tick(10);
+  assert.deepEqual(received, ['initialize'], 'it waits behind the js call');
+  release();
+  await until(() => received.length === 3, 'both messages to reach the connection');
+  assert.deepEqual(received, ['initialize', 'tools/call', 'notifications/cancelled']);
 });
 
 // Real connections: openConnection on a scratch home whose runtime is the fake upstream process.

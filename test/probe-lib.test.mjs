@@ -96,11 +96,18 @@ test('the native-socket holder step applies on macOS only and reads skip on Linu
   assert.deepEqual(nativeSocketStep('linux'), {status: 'skip', reason: 'linux: the computer-use helper (sky_linux) is a child process of the runtime over stdio, not a native socket holder'});
 });
 
-test('a Linux process table pairs each pid and parent with its /proc executable, skipping what cannot be read', () => {
-  const exe = {10: '/usr/bin/node', 11: '/home/u/.local/share/cua/runtimes/r/cua_node/bin/node', 12: '/home/u/a dir/node_repl'};
-  const text = procTable('   10     1\n   11    10\n   12    11\n   13    11\n', pid => exe[pid] ?? null);
-  assert.equal(text, '10 1 /usr/bin/node\n11 10 /home/u/.local/share/cua/runtimes/r/cua_node/bin/node\n12 11 /home/u/a dir/node_repl');
-  assert.deepEqual(descendants(text, 11).map(p => p.executable), ['/home/u/.local/share/cua/runtimes/r/cua_node/bin/node', '/home/u/a dir/node_repl']);
+test('a Linux process table pairs each pid and parent with its /proc executable; an unreadable one stays, marked', () => {
+  const exe = {10: '/usr/bin/node', 11: '/home/u/.local/share/cua/runtimes/r/cua_node/bin/node', 12: '/home/u/a dir/node_repl', 14: '/usr/lib/chatgpt/resources/cua_node/bin/node_repl'};
+  const fails = {13: 'EACCES', 15: 'ENOENT'};
+  const readExe = pid => { if (fails[pid]) throw Object.assign(new Error(fails[pid]), {code: fails[pid]}); return exe[pid]; };
+  const text = procTable('   10     1\n   11    10\n   12    11\n   13    11\n   14    13\n   15    11\n', readExe);
+  assert.equal(text, ['10 1 /usr/bin/node', '11 10 /home/u/.local/share/cua/runtimes/r/cua_node/bin/node', '12 11 /home/u/a dir/node_repl',
+    '13 11 <unreadable EACCES>', '14 13 /usr/lib/chatgpt/resources/cua_node/bin/node_repl'].join('\n'), 'a gone process (ENOENT) is dropped');
+  const tree = descendants(text, 11);
+  assert.deepEqual(tree.map(p => p.pid), [11, 12, 13, 14], 'the subtree below an unreadable process is kept');
+  const verdict = classifyProcesses(tree, {relocatedRoot: '/home/u/.local/share/cua/runtimes/r'});
+  assert.equal(verdict.allExecutablesRelocated, false, 'an unreadable process never passes as relocated');
+  assert.deepEqual(verdict.desktopRuntimePaths.map(p => p.pid), [14]);
 });
 
 test('the Linux desktop app\'s runtime under /usr/lib/chatgpt is an installed-desktop path', () => {

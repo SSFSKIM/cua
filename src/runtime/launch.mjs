@@ -58,10 +58,9 @@ import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROKER_ENV} from '../secrets/client.mjs';
-import {sessionBusAddress} from './linux-desktop.mjs';
+import {desktopSessionEnv} from './linux-desktop.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
-const LINUX_DESKTOP_ALLOWLIST = ['DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'XDG_DATA_DIRS'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 // Each surface the vendor launcher knows, in its canonical order, and the trusted service that serves it.
 const SURFACE_SERVICES = {computer: 'sky', browser: 'browser'};
@@ -85,11 +84,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const linux = runtime.manifest.platform === 'linux';
 
   const env = {};
-  for (const key of [...AMBIENT_ALLOWLIST, ...(linux ? LINUX_DESKTOP_ALLOWLIST : [])]) if (typeof ambient[key] === 'string') env[key] = ambient[key];
-  if (linux && !env.DBUS_SESSION_BUS_ADDRESS) {
-    const bus = sessionBusAddress(env);
-    if (bus) env.DBUS_SESSION_BUS_ADDRESS = bus;
-  }
+  for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
+  if (linux) Object.assign(env, desktopSessionEnv(ambient));
   const trustedCodePaths = [p.moduleDir];
   Object.assign(env, {
     PATH: FIXED_PATH,

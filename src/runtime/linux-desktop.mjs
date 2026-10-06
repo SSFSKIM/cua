@@ -6,9 +6,11 @@
 //   accessibility.bus  the session bus answers ListNames and AT-SPI's org.a11y.Bus is on it, or activatable on it (a
 //                      minimal session starts it on first use); without it accessibility trees fall back to X11
 //                      window-level only
-//   sandbox.userns     `bwrap --ro-bind / / true` exits 0: the runtime's sandbox (the pinned `codex`) needs system
-//                      bubblewrap and unprivileged user namespaces, which Ubuntu 23.10 and later restrict through
-//                      AppArmor (kernel.apparmor_restrict_unprivileged_userns)
+//   sandbox.userns     `bwrap --ro-bind / / true` exits 0: bubblewrap can create an unprivileged user namespace. The
+//                      runtime's sandbox (the pinned `codex`) uses system bubblewrap (its legacy Landlock path is the
+//                      other one; which it takes when bwrap fails is unverified), and Ubuntu 23.10 and later restrict
+//                      these namespaces through AppArmor (kernel.apparmor_restrict_unprivileged_userns). The row says
+//                      what bubblewrap did, not whether the runtime's sandbox starts
 // A missing tool reads `blocked` naming it and its package (missing_tool); a display or bus that is absent, refuses or
 // lacks what the helper needs is `fail`; a sandbox refusal is `blocked` with bubblewrap's own words, because whether to
 // lift the restriction (or run with CUA_SHIM_SANDBOX=disabled) is the owner's call.
@@ -25,6 +27,18 @@ const PROBE_TIMEOUT_MS = 5000;
 export function sessionBusAddress(env) {
   if (env.DBUS_SESSION_BUS_ADDRESS) return env.DBUS_SESSION_BUS_ADDRESS;
   return env.XDG_RUNTIME_DIR ? `unix:path=${env.XDG_RUNTIME_DIR}/bus` : undefined;
+}
+
+// The desktop session a Linux runtime (or the login CLI's browser opener) needs from the caller's environment: the X11
+// display and its cookie, the session bus (derived from XDG_RUNTIME_DIR when an SSH session lacks the address), and
+// where app discovery reads .desktop entries. Copied when set; nothing else.
+const DESKTOP_SESSION_KEYS = ['DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR', 'XDG_DATA_DIRS'];
+export function desktopSessionEnv(ambient) {
+  const env = {};
+  for (const key of DESKTOP_SESSION_KEYS) if (typeof ambient[key] === 'string') env[key] = ambient[key];
+  const bus = sessionBusAddress(env);
+  if (bus) env.DBUS_SESSION_BUS_ADDRESS = bus;
+  return env;
 }
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -47,7 +61,7 @@ function restrictsUserns(osRelease) {
 
 // -> [display, accessibility.bus, sandbox.userns]. `exec`, `findTool` and `osRelease` are test seams.
 export async function linuxDesktopChecks({env = process.env, exec = defaultExec, findTool = name => findOnPath(name, env.PATH), osRelease = defaultOsRelease}) {
-  return [await displayCheck(env, exec, findTool), await busCheck(env, exec, findTool), await usernsCheck(env, exec, findTool, osRelease)];
+  return [await displayCheck(env, exec, findTool), await busCheck(env, exec, findTool), await usernsCheck(exec, findTool, osRelease)];
 }
 
 async function displayCheck(env, exec, findTool) {
@@ -77,13 +91,13 @@ async function busCheck(env, exec, findTool) {
   return result('accessibility.bus', 'fail', `the session bus at ${address} has no AT-SPI (${A11Y_BUS}), running or activatable; install at-spi2-core, or accessibility trees fall back to X11 window-level only`);
 }
 
-async function usernsCheck(env, exec, findTool, osRelease) {
+async function usernsCheck(exec, findTool, osRelease) {
   const bwrap = findTool('bwrap');
-  if (!bwrap) return missing('sandbox.userns', 'bwrap', 'bubblewrap', 'the runtime\'s sandbox');
+  if (!bwrap) return missing('sandbox.userns', 'bwrap', 'bubblewrap', 'whether bubblewrap can create a user namespace');
   const run = await exec(bwrap, ['--ro-bind', '/', '/', 'true'], {env: {PATH: '/usr/bin:/bin'}});
-  if (run.code === 0) return result('sandbox.userns', 'pass', 'bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), as the runtime\'s sandbox needs');
+  if (run.code === 0) return result('sandbox.userns', 'pass', 'bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), which the runtime\'s sandbox uses');
   const ubuntu = restrictsUserns(osRelease())
     ? '; Ubuntu restricts unprivileged user namespaces: set kernel.apparmor_restrict_unprivileged_userns=0 (sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0) or install an AppArmor profile allowing userns for the release\'s codex'
     : '';
-  return result('sandbox.userns', 'blocked', `bwrap --ro-bind / / true failed (${lastLine(run.stderr)}): the runtime's sandbox cannot start${ubuntu}; or choose CUA_SHIM_SANDBOX=disabled`);
+  return result('sandbox.userns', 'blocked', `bubblewrap could not create an unprivileged user namespace: bwrap --ro-bind / / true failed (${lastLine(run.stderr)})${ubuntu}; or choose CUA_SHIM_SANDBOX=disabled`);
 }

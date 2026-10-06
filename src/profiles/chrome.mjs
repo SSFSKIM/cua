@@ -16,17 +16,18 @@
 // ${CHROME_CONFIG_HOME:-${XDG_CONFIG_HOME:-~/.config}}/google-chrome (the deb Chrome; Flatpak and snap are not supported).
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {join} from 'node:path';
+import {isAbsolute, join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 
 const hostTarget = () => ({platform: process.platform, arch: process.arch});
 
 // The base of the Linux browsers' configuration directories, as the vendor's installManifest.mjs resolves it: the
 // Chrome family (Chrome and its channels, Chromium) honours CHROME_CONFIG_HOME, then XDG_CONFIG_HOME, then ~/.config;
-// the other browsers XDG_CONFIG_HOME, then ~/.config. Empty values count as unset.
+// the other browsers XDG_CONFIG_HOME, then ~/.config. Empty or relative values count as unset (the XDG Base Directory
+// specification has relative paths ignored).
 export function linuxConfigHome({env, userHome, chromeFamily}) {
-  if (chromeFamily && env.CHROME_CONFIG_HOME) return env.CHROME_CONFIG_HOME;
-  return env.XDG_CONFIG_HOME || join(userHome, '.config');
+  if (chromeFamily && isAbsolute(env.CHROME_CONFIG_HOME ?? '')) return env.CHROME_CONFIG_HOME;
+  return isAbsolute(env.XDG_CONFIG_HOME ?? '') ? env.XDG_CONFIG_HOME : join(userHome, '.config');
 }
 
 export function chromeUserData({host = hostTarget(), env = process.env, userHome = homedir()} = {}) {
@@ -36,8 +37,12 @@ export function chromeUserData({host = hostTarget(), env = process.env, userHome
 export const OPENAI_EXTENSION_ID = 'hehggadaopoacecdllhhajmbjkdcmajg';
 export const NATIVE_HOST_NAME = 'com.openai.codexextension';
 export const HOST_BASENAME = 'ChatGPT for Chrome';
-// What to do about a read macOS privacy protection refused; the live check (the runtime's own listing) does not need it.
-export const PERMISSION_FIX = 'grant Full Disk Access to your terminal (System Settings → Privacy & Security → Full Disk Access), or run from a process that has it';
+// What to do about a read this process was refused; the live check (the runtime's own listing) does not need it. On
+// macOS that is privacy protection (Full Disk Access); on Linux, ordinary file permissions.
+export const permissionFix = platform => platform === 'darwin'
+  ? 'grant Full Disk Access to your terminal (System Settings → Privacy & Security → Full Disk Access), or run from a process that has it'
+  : 'make the browser\'s data directory readable by the user cua runs as (check its owner and mode), or run cua as the user whose browser it is';
+export const PERMISSION_FIX = permissionFix(process.platform);
 export const PERMISSION_HINT = `${PERMISSION_FIX}; the live check still works without it`;
 const CHROME_EXECUTABLE = /\/Google Chrome\.app\/Contents\/MacOS\/Google Chrome$/;
 

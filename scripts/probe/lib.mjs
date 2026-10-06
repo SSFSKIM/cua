@@ -71,12 +71,24 @@ export function classifyProcesses(tree, {relocatedRoot}) {
   };
 }
 
-// `ps -eo pid=,ppid=` text and a reader of /proc/<pid>/exe (null when it cannot be read: another user's process, or
-// one gone meanwhile) -> the same `pid ppid executable` lines `descendants` reads. Linux's ps truncates `comm` to 15
-// characters, so the executable path comes from /proc.
-export function procTable(psText, exeOf) {
+// `ps -eo pid=,ppid=` text and a reader of /proc/<pid>/exe -> the same `pid ppid executable` lines `descendants`
+// reads. Linux's ps truncates `comm` to 15 characters, so the executable path comes from /proc. `readExe(pid)` returns
+// the path or throws: a process that is gone by then (ENOENT, ESRCH) is dropped, its children having been reparented
+// already; any other failure (EACCES: another user's process, or one that made itself non-dumpable, as a sandbox
+// launcher may) keeps its row as `<unreadable CODE>`, so the tree stays connected and such a process can never pass
+// as relocated. The report's process ancestry names its pid.
+export const UNREADABLE_EXE = code => `<unreadable ${code}>`;
+const GONE = new Set(['ENOENT', 'ESRCH']);
+export function procTable(psText, readExe) {
   return psText.split('\n').map(line => line.match(/^\s*(\d+)\s+(\d+)\s*$/)).filter(Boolean)
-    .flatMap(([, pid, ppid]) => { const exe = exeOf(Number(pid)); return exe ? [`${pid} ${ppid} ${exe}`] : []; }).join('\n');
+    .flatMap(([, pid, ppid]) => {
+      let exe;
+      try { exe = readExe(Number(pid)); } catch (error) {
+        if (GONE.has(error?.code)) return [];
+        exe = UNREADABLE_EXE(error?.code ?? 'error');
+      }
+      return [`${pid} ${ppid} ${exe}`];
+    }).join('\n');
 }
 
 // The native-socket holder step of verify.mjs: null where it applies (macOS), else why it is skipped. On Linux the

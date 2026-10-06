@@ -7,15 +7,16 @@
 //   run/<session>/        per-connection working directory and private endpoints
 import {readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {join, resolve} from 'node:path';
+import {isAbsolute, join, resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {fail} from './errors.mjs';
 
 // $CUA_HOME, else the platform's per-user data directory: ~/Library/Application Support/cua on macOS,
-// ${XDG_DATA_HOME:-~/.local/share}/cua on Linux.
+// ${XDG_DATA_HOME:-~/.local/share}/cua on Linux (a relative XDG_DATA_HOME is ignored, as the XDG Base Directory
+// specification requires).
 export function defaultHome(env = process.env, host = {platform: process.platform}) {
   if (env.CUA_HOME) return env.CUA_HOME;
-  if (host.platform === 'linux') return join(env.XDG_DATA_HOME || join(env.HOME || homedir(), '.local', 'share'), 'cua');
+  if (host.platform === 'linux') return join(isAbsolute(env.XDG_DATA_HOME ?? '') ? env.XDG_DATA_HOME : join(env.HOME || homedir(), '.local', 'share'), 'cua');
   return join(env.HOME || homedir(), 'Library', 'Application Support', 'cua');
 }
 

@@ -3,6 +3,7 @@
 // system probe are injected, so this runs on any machine.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
@@ -141,6 +142,8 @@ test('sandbox.userns runs bwrap --ro-bind / / true; a refusal is blocked with it
   assert.equal(ubuntu.status, 'blocked');
   assert.match(ubuntu.detail, /setting up uid map: Permission denied/);
   assert.match(ubuntu.detail, /kernel\.apparmor_restrict_unprivileged_userns/);
+  assert.match(ubuntu.detail, /^bubblewrap could not create an unprivileged user namespace/);
+  assert.doesNotMatch(ubuntu.detail, /cannot start/, 'it says what bubblewrap did, not that the runtime\'s sandbox cannot start');
   const older = (await rowsOf(env, system({answers: denied, osRelease: 'ID=ubuntu\nVERSION_ID="22.04"\n'})))['sandbox.userns'];
   assert.doesNotMatch(older.detail, /apparmor_restrict_unprivileged_userns/);
   const debian = (await rowsOf(env, system({answers: denied})))['sandbox.userns'];
@@ -148,4 +151,19 @@ test('sandbox.userns runs bwrap --ro-bind / / true; a refusal is blocked with it
   const noBwrap = (await rowsOf(env, system({tools: ['xdpyinfo', 'dbus-send']})))['sandbox.userns'];
   assert.equal(noBwrap.status, 'blocked');
   assert.match(noBwrap.detail, /missing_tool.*bwrap.*bubblewrap/);
+});
+
+test('the default Chrome checks on Linux read the host\'s Chrome under $XDG_CONFIG_HOME, as doctor\'s env and host say', async t => {
+  const {home, pin} = await linuxHome(t);
+  const config = join(home, '..', 'config');
+  const manifestDir = join(config, 'google-chrome', 'NativeMessagingHosts');
+  mkdirSync(manifestDir, {recursive: true});
+  const host = join(realpathSync(home), 'runtimes', pin.release, 'chrome-plugin', 'extension-host', 'linux', 'x64', 'extension-host');
+  writeFileSync(join(manifestDir, 'com.openai.codexextension.json'), JSON.stringify({name: 'com.openai.codexextension', type: 'stdio', path: host}));
+  const report = await inspectRuntime({home, env: {XDG_CONFIG_HOME: realpathSync(config)}, pins: [pin], host: LINUX,
+    inspectLinux: async () => DESKTOP_ROWS, inspectLogin: async () => ({state: 'logged-in'})});
+  const rows = byName(report);
+  assert.equal(rows['chrome.host.registered'].status, 'pass');
+  assert.equal(rows['chrome.host.registered'].detail, `cua: com.openai.codexextension names ${host}`);
+  assert.ok(rows['chrome.hosts.live'], 'the live-host row is computed from the Linux process table');
 });

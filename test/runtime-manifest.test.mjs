@@ -1,15 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {join} from 'node:path';
-import {parsePin, loadPins, selectPin, resolveRuntime, runtimeFor, RELEASES_DIR} from '../src/runtime/manifest.mjs';
+import {parsePin, loadPins, selectPin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {checkIpc} from '../src/runtime/checks.mjs';
-import {realPinJson, scratch} from './fixtures/runtime-fixture.mjs';
+import {realPinJson, linuxPinJson, scratch} from './fixtures/runtime-fixture.mjs';
 
 const LINUX_X64 = {platform: 'linux', arch: 'x64'};
 const LINUX_ARM64 = {platform: 'linux', arch: 'arm64'};
-const linuxPinJson = (arch = 'x64') => JSON.parse(readFileSync(join(RELEASES_DIR, `26.928.40906-linux-${arch}.json`), 'utf8'));
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 
@@ -168,4 +165,29 @@ test('resolving with no pointer is a classified not-installed error with install
       return true;
     });
   } finally { cleanup(); }
+});
+
+test('install and recovery hints name the archive this host installs: a zip on macOS (unchanged), a deb on Linux', async () => {
+  const {installHint, recoveryHint} = await import('../src/runtime/manifest.mjs');
+  assert.equal(installHint('darwin'), 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)');
+  assert.equal(installHint('linux'), 'run `cua install` (or `cua install --archive <ChatGPT deb>` with the pinned archive)');
+  assert.match(recoveryHint('/r', 'linux'), /^stop any `cua serve` using it, remove \/r, then run `cua install` .*<ChatGPT deb>/);
+  const {dir, cleanup} = scratch();
+  try {
+    assert.throws(() => resolveRuntime({home: dir, host: LINUX_X64}), err => /<ChatGPT deb>/.test(err.hint));
+    assert.throws(() => resolveRuntime({home: dir, host: {platform: 'darwin', arch: 'arm64'}}), err => /<ChatGPT zip>/.test(err.hint));
+  } finally { cleanup(); }
+});
+
+test('the sandbox-conflict hint names this platform\'s default home', async () => {
+  const {sandboxConflictHint} = await import('../src/runtime/sandbox.mjs');
+  assert.equal(sandboxConflictHint('darwin'), 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
+    + '(the default CUA_HOME, ~/Library/Application Support/cua, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled');
+  assert.match(sandboxConflictHint('linux'), /the default CUA_HOME, ~\/\.local\/share\/cua,/);
+  assert.doesNotMatch(sandboxConflictHint('linux'), /Library/);
+});
+
+test('a relative XDG_DATA_HOME is ignored, as the XDG Base Directory spec requires', () => {
+  assert.equal(defaultHome({HOME: '/home/u', XDG_DATA_HOME: 'data'}, LINUX_X64), '/home/u/.local/share/cua');
+  assert.equal(defaultHome({HOME: '/home/u', XDG_DATA_HOME: './x'}, LINUX_X64), '/home/u/.local/share/cua');
 });

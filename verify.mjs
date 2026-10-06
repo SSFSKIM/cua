@@ -40,7 +40,7 @@ const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ?
 const report = {home, surfaces, problems};
 const check = (ok, problem) => { if (!ok) problems.push(problem); return ok; };
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8'}).stdout ?? '';
-const exeOf = pid => { try { return readlinkSync(`/proc/${pid}/exe`); } catch { return null; } };
+const exeOf = pid => readlinkSync(`/proc/${pid}/exe`);
 // `pid ppid executable` for every process (descendants reads it).
 const processTable = () => process.platform === 'linux' ? procTable(sh('ps', ['-eo', 'pid=,ppid=']), exeOf) : sh('ps', ['-axo', 'pid=,ppid=,comm=']);
 
@@ -156,7 +156,7 @@ try {
   check(anchor?.executable === hostNode && runtimeTree.every(p => p.ppid !== server.pid), 'the runtime is not started under the server\'s anchor');
   check(anchor && tree.every(p => pgid(p.pid) === anchor.pid), 'a runtime process is outside the anchor\'s process group');
   check(classification.desktopRuntimePaths.length === 0, 'an installed-desktop runtime path served this connection');
-  check(classification.allExecutablesRelocated, 'not every runtime process runs from the installed release');
+  check(classification.allExecutablesRelocated, `not every runtime process runs from the installed release: ${runtimeTree.filter(p => !p.executable.startsWith(runtime.root + '/')).map(p => `pid ${p.pid} ${label(p.executable)}`).join(', ') || 'no runtime process found'}`);
   report.nativeHelper = nativeSocketStep(process.platform) ?? (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])
     .map(h => ({pid: h.pid, executable: sh('ps', ['-o', 'comm=', '-p', String(h.pid)]).trim()}))
     .map(h => ({pid: h.pid, executable: h.executable.replace(homedir(), '~'), origin: h.executable.startsWith(runtime.root) ? 'pinned runtime' : 'another installation (not started or stopped by cua)'}));

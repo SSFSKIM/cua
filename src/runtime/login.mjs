@@ -13,8 +13,8 @@
 //                                                                                           is network traffic
 //   PATH          fixed system path (the CLI opens the browser with /usr/bin/open, or xdg-open on Linux)
 //   CODEX_HOME    <home>/state/codex
-//   DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR   linux only, copied when set (the bus address derived
-//                 from XDG_RUNTIME_DIR when unset), so xdg-open reaches the desktop's browser
+//   DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_DATA_DIRS   linux only (linux-desktop.mjs
+//                 desktopSessionEnv, as the runtime's launch), so xdg-open reaches the desktop's browser
 // On Linux without xdg-open (a headless VM) no browser opens; login says so before the CLI prints its URL, and names
 // --device-auth for a machine whose localhost the browser cannot reach.
 import {spawn} from 'node:child_process';
@@ -23,14 +23,13 @@ import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {sessionBusAddress} from './linux-desktop.mjs';
+import {desktopSessionEnv} from './linux-desktop.mjs';
 import {findTool} from './tools.mjs';
 
 const AMBIENT_ALLOWLIST = [
   'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING', 'TERM', 'COLORTERM',
   'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
 ];
-const LINUX_DESKTOP_ALLOWLIST = ['DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'XDG_RUNTIME_DIR'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 const isLinux = runtime => runtime.manifest?.platform === 'linux';
 export const NO_BROWSER_NOTE = 'xdg-open is not installed, so no browser opens: open the URL the Codex CLI prints in a browser on this machine, or on a headless machine run `cua login --device-auth`';
@@ -53,8 +52,8 @@ export function loginInvocation({runtime, home, mode, ambient = process.env}) {
   if (!Object.hasOwn(MODES, mode)) throw new Error(`unknown login mode ${JSON.stringify(mode)}`);
   const codexHome = ownedCodexHome(home, ambient);
   const env = {};
-  for (const key of [...AMBIENT_ALLOWLIST, ...(isLinux(runtime) ? LINUX_DESKTOP_ALLOWLIST : [])]) if (typeof ambient[key] === 'string') env[key] = ambient[key];
-  if (isLinux(runtime) && !env.DBUS_SESSION_BUS_ADDRESS && sessionBusAddress(env)) env.DBUS_SESSION_BUS_ADDRESS = sessionBusAddress(env);
+  for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
+  if (isLinux(runtime)) Object.assign(env, desktopSessionEnv(ambient));
   Object.assign(env, {PATH: FIXED_PATH, CODEX_HOME: codexHome});
   return {command: runtime.paths.codexCli, args: [...MODES[mode]], env, codexHome};
 }

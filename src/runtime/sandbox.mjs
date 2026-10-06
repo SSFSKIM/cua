@@ -120,8 +120,11 @@ export function describeConflicts(conflicts) {
     + 'runtime\'s configuration must stay outside every writable directory (node_repl refuses to start a kernel over writable trusted code)';
 }
 
-export const SANDBOX_CONFLICT_HINT = 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
-  + '(the default CUA_HOME, ~/Library/Application Support/cua, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled';
+// The remedy names this platform's default CUA_HOME (src/runtime/layout.mjs defaultHome).
+const DEFAULT_HOME_TEXT = {darwin: '~/Library/Application Support/cua', linux: '~/.local/share/cua'};
+export const sandboxConflictHint = platform => 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
+  + `(the default CUA_HOME, ${DEFAULT_HOME_TEXT[platform] ?? DEFAULT_HOME_TEXT.darwin}, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled`;
+export const SANDBOX_CONFLICT_HINT = sandboxConflictHint(process.platform);
 
 // Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
 // its NODE_REPL_TRUSTED_CODE_PATHS or its CODEX_HOME.

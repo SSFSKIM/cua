@@ -194,3 +194,28 @@ test('profiles_list with unreadable Chrome data: a bound live profile is ready, 
   assert.match(text, /Tell the user/);
   assert.ok(!/EPERM|Default|Profile 8/.test(JSON.stringify(structured(response))), 'no error codes or directory names in the model-visible list');
 });
+
+// The tools' search hints name the platform too (spike #12 (d)): Linux says linux, macOS keeps its exact hints.
+test('search hints say linux on Linux and keep their macOS wording on macOS, on every surface', async () => {
+  const {modelTools} = await import('../src/mcp/surface.mjs');
+  const hints = tools => Object.fromEntries(tools.map(t => [t.name, t._meta?.['anthropic/searchHint']]));
+  assert.deepEqual(hints(modelTools(UPSTREAM_TOOLS, {surfaces: ['computer'], platform: 'darwin'})), {
+    js: 'control macos apps through their gui (computer use): click, type, read the screen, screenshot',
+    js_reset: 'reset the computer-use session for macos gui control',
+    end_task: 'finish end complete the current macos gui computer-use task',
+    secrets_list: 'list stored secret credential labels for computer-use typing',
+  });
+  assert.equal(hints(modelTools(UPSTREAM_TOOLS, {surfaces: ['computer', 'browser'], platform: 'darwin'})).js, 'control macos apps and the user\'s chrome browser profiles: click, type, fill forms, read, screenshot');
+  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
+    const tools = modelTools(UPSTREAM_TOOLS, {surfaces, platform: 'linux'});
+    assert.doesNotMatch(JSON.stringify(tools.map(t => t._meta)), /macos/i, surfaces.join());
+    if (surfaces.includes('computer')) assert.match(hints(tools).js, /linux/);
+  }
+  const h = harness({server: {surfaces: ['computer'], platform: 'linux', profiles: {list: () => []}}});
+  await initialized(h);
+  const list = h.client.request('tools/list', {});
+  h.upstream.reply(await h.upstream.nextRequest('tools/list'), {tools: UPSTREAM_TOOLS});
+  const served = (await list.response).result.tools;
+  assert.match(hints(served).js, /linux/);
+  assert.equal(settingsFrom({}, {platform: 'linux'}).platform, 'linux');
+});

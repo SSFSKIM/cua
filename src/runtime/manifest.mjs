@@ -23,12 +23,14 @@ export const LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCl
 export const LINUX_LAYOUT_KEYS = ['node', 'nodeRepl', 'moduleDir', 'cuaRepl', 'codexCli', 'skyLinuxBin', 'skyVendorService', 'browserVendorService', 'vendorManifest'];
 // The Chrome plugin is an additive component of a release (its own directory and record, src/runtime/chrome-component.mjs).
 export const CHROME_LAYOUT_KEYS = ['host', 'browserClient', 'browserService', 'installManifest'];
-const INSTALL_HINT = 'run `cua install` (or `cua install --archive <ChatGPT zip>` with the pinned archive)';
+// What `cua install --archive` takes on each platform.
+const ARCHIVE_KIND = {darwin: 'ChatGPT zip', linux: 'ChatGPT deb'};
+export const installHint = (platform = process.platform) => `run \`cua install\` (or \`cua install --archive <${ARCHIVE_KIND[platform] ?? ARCHIVE_KIND.darwin}>\` with the pinned archive)`;
 const hostTarget = () => ({platform: process.platform, arch: process.arch});
 
 // A damaged installed release is never repaired in place (a running connection may still execute from it), so its
 // recovery is offline and explicit.
-export const recoveryHint = root => `stop any \`cua serve\` using it, remove ${root}, then ${INSTALL_HINT}`;
+export const recoveryHint = (root, platform = process.platform) => `stop any \`cua serve\` using it, remove ${root}, then ${installHint(platform)}`;
 
 // Release trees are real directories; a symlink at a release path is never followed as an installed release.
 export function isRealDirectory(path) {
@@ -193,7 +195,7 @@ export function readInstalledRecord(root, pin) {
   try { record = JSON.parse(readFileSync(file, 'utf8')); } catch { record = null; }
   const valid = isObject(record) && record.schema === 1 && record.release === pin.release && isObject(record.archive)
     && record.archive.sha256 === pin.archive.sha256 && record.archive.length === pin.archive.length;
-  if (!valid) fail('installed_record_invalid', `${file} does not record a verified install of ${pin.release} from its pinned archive`, {hint: recoveryHint(root)});
+  if (!valid) fail('installed_record_invalid', `${file} does not record a verified install of ${pin.release} from its pinned archive`, {hint: recoveryHint(root, pin.platform)});
   return record;
 }
 
@@ -203,11 +205,11 @@ export function readInstalledRecord(root, pin) {
 export function locateRuntime({home, release, pins = loadPins(), host = hostTarget()}) {
   const real = realHome(home);
   const selected = release ?? readPointer(real);
-  if (!selected) fail('runtime_not_installed', `no runtime is installed in ${real}`, {hint: INSTALL_HINT});
+  if (!selected) fail('runtime_not_installed', `no runtime is installed in ${real}`, {hint: installHint(host.platform)});
   const pin = findPin(pins, selected);
   assertHostSupports(pin, host);
   const root = join(homeLayout(real).runtimes, pin.release);
-  if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: INSTALL_HINT});
+  if (!isRealDirectory(root)) fail('release_not_installed', `release ${pin.release} is not installed in ${real}`, {hint: installHint(host.platform)});
   return runtimeFor({home: real, pin, record: readInstalledRecord(root, pin)});
 }
 
@@ -216,6 +218,6 @@ export function locateRuntime({home, release, pins = loadPins(), host = hostTarg
 export function resolveRuntime({home, release, pins = loadPins(), host = hostTarget()}) {
   const runtime = locateRuntime({home, release, pins, host});
   const layout = checkLayout(runtime.root, runtime.manifest);
-  if (!layout.ok) fail('layout_invalid', `installed release ${runtime.release} is missing ${layout.missing.join(', ')}`, {hint: recoveryHint(runtime.root)});
+  if (!layout.ok) fail('layout_invalid', `installed release ${runtime.release} is missing ${layout.missing.join(', ')}`, {hint: recoveryHint(runtime.root, runtime.manifest.platform)});
   return runtime;
 }

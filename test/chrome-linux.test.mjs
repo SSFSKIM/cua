@@ -20,7 +20,6 @@ import {addProfile} from '../src/profiles/registry.mjs';
 const LINUX = {platform: 'linux', arch: 'x64'};
 const DARWIN = {platform: 'darwin', arch: 'arm64'};
 const MANIFEST = 'com.openai.codexextension.json';
-const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const tableOf = browsers => Object.fromEntries(browsers.map(b => [b.browser, b.dataDir]));
 
 test('on macOS the browser table is the five browsers under ~/Library/Application Support, as before', () => {
@@ -157,4 +156,19 @@ test('profiles open on Linux starts google-chrome detached in the profile and na
     assert.match(err.hint, /google-chrome-stable/);
     return true;
   });
+});
+
+test('the fix for an unreadable Chrome directory is Full Disk Access on macOS only; on Linux it is plain file access', async () => {
+  const {permissionFix} = await import('../src/profiles/chrome.mjs');
+  assert.equal(permissionFix('darwin'), 'grant Full Disk Access to your terminal (System Settings → Privacy & Security → Full Disk Access), or run from a process that has it');
+  assert.doesNotMatch(permissionFix('linux'), /Full Disk Access|System Settings/);
+  assert.match(permissionFix('linux'), /read/);
+});
+
+test('relative XDG_CONFIG_HOME and CHROME_CONFIG_HOME are ignored, as the XDG Base Directory spec requires', () => {
+  assert.equal(chromeUserData({host: LINUX, env: {XDG_CONFIG_HOME: 'cfg'}, userHome: '/home/u'}), '/home/u/.config/google-chrome');
+  assert.equal(chromeUserData({host: LINUX, env: {CHROME_CONFIG_HOME: 'c', XDG_CONFIG_HOME: '/x'}, userHome: '/home/u'}), '/x/google-chrome');
+  const table = tableOf(browsersFor({host: LINUX, env: {CHROME_CONFIG_HOME: 'c', XDG_CONFIG_HOME: 'x'}, userHome: '/home/u'}));
+  assert.equal(table.chrome, '/home/u/.config/google-chrome');
+  assert.equal(table.edge, '/home/u/.config/microsoft-edge');
 });

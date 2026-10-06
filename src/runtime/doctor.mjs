@@ -82,7 +82,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   if (runtime) {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
-    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
+    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root, manifest.platform)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);

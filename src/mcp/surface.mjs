@@ -3,16 +3,18 @@
 // correction, token-bearing URL redaction). Pure functions; the server applies them to relayed messages.
 
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
-// js_add_node_module_dir (it would widen what model code can import) stay private.
+// js_add_node_module_dir (it would widen what model code can import) stay private. Their search hints name the
+// platform the computer surface drives (`os`: macos, or linux on Linux).
 const PASSED_THROUGH = new Map([
-  ['js', 'control macos apps through their gui (computer use): click, type, read the screen, screenshot'],
-  ['js_reset', 'reset the computer-use session for macos gui control'],
+  ['js', os => `control ${os} apps through their gui (computer use): click, type, read the screen, screenshot`],
+  ['js_reset', os => `reset the computer-use session for ${os} gui control`],
 ]);
 // Search hints when the browser surface is on (alone, or with computer use).
 const BROWSER_HINTS = {
-  browser: {js: 'operate the user\'s chrome browser profiles: open tabs, read pages, fill forms, screenshot', js_reset: 'reset the browser-use session'},
-  both: {js: 'control macos apps and the user\'s chrome browser profiles: click, type, fill forms, read, screenshot', js_reset: 'reset the computer-use and browser-use session'},
+  browser: {js: () => 'operate the user\'s chrome browser profiles: open tabs, read pages, fill forms, screenshot', js_reset: () => 'reset the browser-use session'},
+  both: {js: os => `control ${os} apps and the user's chrome browser profiles: click, type, fill forms, read, screenshot`, js_reset: () => 'reset the computer-use and browser-use session'},
 };
+const hintOs = platform => platform === 'linux' ? 'linux' : 'macos';
 
 const NO_ARGUMENTS = {type: 'object', properties: {}, additionalProperties: false};
 
@@ -26,6 +28,7 @@ export const END_TASK_TOOL = {
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'finish end complete the current macos gui computer-use task'},
 };
+const LINUX_END_TASK_TOOL = {...END_TASK_TOOL, _meta: {'anthropic/searchHint': 'finish end complete the current linux gui computer-use task'}};
 
 export const SECRETS_LIST_TOOL = {
   name: 'secrets_list',
@@ -125,16 +128,17 @@ export function withHostNotes(instructions, hostNotes) {
   return [instructions, hostNotes].filter(Boolean).join('\n\n');
 }
 
-const hintFor = (name, surfaces) => !surfaces.includes('browser') ? PASSED_THROUGH.get(name)
-  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name];
+const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)
+  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
-export function modelTools(upstreamTools, {surfaces = ['computer']} = {}) {
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform} = {}) {
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
-    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces)}}));
+    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)}}));
+  const endTask = platform === 'linux' ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   return surfaces.includes('browser')
-    ? [...passed, END_TASK_TOOL, SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
-    : [...passed, END_TASK_TOOL, SECRETS_LIST_TOOL];
+    ? [...passed, endTask, SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
+    : [...passed, endTask, SECRETS_LIST_TOOL];
 }
 
 // node_repl labels JPEG screenshots image/png; the bytes say what they are.

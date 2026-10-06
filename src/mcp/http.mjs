@@ -1,4 +1,4 @@
-// MCP Streamable HTTP (protocol revision 2025-03-26, accepting 2025-06-18 clients) at the path /mcp: one session per
+// MCP Streamable HTTP (protocol revision 2025-03-26, accepting later clients) at the path /mcp: one session per
 // `initialize`, each session one connection (src/mcp/connection.mjs) fed through an in-memory stream pair.
 //
 // The handler works on an abstract request and response, so the agent's node:http listener (src/remote/agent.mjs) and
@@ -7,7 +7,9 @@
 //   res: {writeHead(status, headers), write(chunk), end(chunk?)}
 //
 // Who may call: a bearer equal to the client credential (constant-time), checked before anything else is read, then an
-// Origin, when one is sent, from the allowlist (`null` never is). Sessions:
+// Origin, when one is sent, from the allowlist (`null` never is). An MCP-Protocol-Version header, when sent, must be a
+// known revision or the version the session's runtime negotiated in its InitializeResult; anything else is 400.
+// Sessions:
 // - `initialize` without a session header opens one: its InitializeResult is the JSON body, with Mcp-Session-Id (the
 //   connection's own session id). An open that fails is 500 with `cua: <code>`; at the session cap the oldest Idle
 //   session is evicted first, and with none Idle the answer is 503.
@@ -39,7 +41,8 @@ import {createInterface} from 'node:readline';
 import {openConnection} from './connection.mjs';
 import {credentialMatches} from '../remote/device.mjs';
 
-const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18']);
+// MCP-Protocol-Version values accepted on any request; a session also accepts the version its runtime negotiated.
+const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18', '2025-11-25']);
 const SSE_HEADERS = {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache'};
 const RETRY_MS = 15_000;
 const idKey = id => JSON.stringify(id);
@@ -161,6 +164,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     session.routes.delete(key);
     stream.pending.delete(key);
     if (stream.json) {
+      if (typeof msg.result?.protocolVersion === 'string') session.protocolVersion = msg.result.protocolVersion;
       if (stream.res) {
         stream.res.writeHead(200, {'Content-Type': 'application/json', 'Mcp-Session-Id': session.id});
         stream.res.end(JSON.stringify(msg));
@@ -190,7 +194,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   function createSession(id, connection, input, output) {
     const session = {id, connection, input, streams: new Map(), nextStream: 1, routes: new Map(), get: null,
-      buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null, closed: null};
+      buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null, closed: null,
+      protocolVersion: null};
     input.on('error', () => {});
     // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
     createInterface({input: output}).on('line', line => {
@@ -378,9 +383,10 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       res.writeHead(405, {Allow: 'GET, POST, DELETE'});
       return res.end();
     }
-    const version = req.headers['mcp-protocol-version'];
-    if (version !== undefined && !PROTOCOL_VERSIONS.has(version)) return rpcError(res, 400, -32000, `cua: unsupported MCP-Protocol-Version (supported: ${[...PROTOCOL_VERSIONS].join(', ')})`);
     const sessionId = req.headers['mcp-session-id'];
+    const version = req.headers['mcp-protocol-version'];
+    if (version !== undefined && !PROTOCOL_VERSIONS.has(version) && sessions.get(sessionId)?.protocolVersion !== version)
+      return rpcError(res, 400, -32000, `cua: unsupported MCP-Protocol-Version (supported: ${[...PROTOCOL_VERSIONS].join(', ')} and the version a session negotiated)`);
     if (req.method === 'POST') return post(req, res, sessionId);
     if (sessionId === undefined) return rpcError(res, 400, -32000, 'cua: the Mcp-Session-Id header is required');
     const session = sessions.get(sessionId);

@@ -7,7 +7,10 @@
   started by absolute path (`/usr/bin/strace /…/extension-host`) is counted as a live host; reading `ppid` and requiring
   a Chrome parent, as on darwin, would close it. (b) `install` of a deb peaks at about 2.6 GB of scratch (the staged deb,
   `data.tar.xz`, and the whole 1.7 GB payload unpacked); streaming `ar p … data.tar.xz | tar -xJf -` and extracting only
-  the three pinned resource paths would cut it. Revisit if a miscount or a small VM disk is seen.
+  the three pinned resource paths would cut it. Revisit if a miscount or a small VM disk is seen. (c) `procTable` in
+  `scripts/probe/lib.mjs` drops a process that exits between the `ps` snapshot and its `/proc` read, but the snapshot's
+  children still name it as parent, so that subtree drops out of verify's walk for that read; the window is
+  milliseconds, and a `<gone>` row would trade it for false failures.
 
 - **2026-10-06 — Two E1 review leftovers in the Streamable HTTP handler (minor, Phase E, issue #11).** (a) A POST
   stream that drops and is never resumed keeps every event it carried (including `js` results with screenshots) until

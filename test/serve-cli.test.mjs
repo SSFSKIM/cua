@@ -17,6 +17,7 @@ import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 import {sandboxState} from '../src/runtime/sandbox.mjs';
+import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 
 const supported = process.platform === 'darwin' && process.arch === 'arm64';
 const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
@@ -257,11 +258,11 @@ test('cua profiles bind shows each candidate\'s label, binds a unique name autom
   assert.equal(text.status, 1, text.stderr);
   const rows = rowsOf(text.stdout);
   assert.equal(rows.length, 4, text.stdout);
-  assert.match(rows[0], /inst-a\s+2 tab\(s\)\s+labelled "Work\\u009b2J\\u202e" \(another profile's name\)$/, 'a C1 control or bidi override in a label is printed escaped');
+  assert.match(rows[0], /inst-a\s+2 tab\(s\)\s+profile directory unknown\s+labelled "Work\\u009b2J\\u202e" \(another profile's name\)$/, 'a C1 control or bidi override in a label is printed escaped');
   assert.ok(!/[\u0080-\u009f\u202e]/.test(text.stdout + text.stderr), 'no raw control reaches the terminal');
-  assert.match(rows[1], /inst-b\s+5 tab\(s\)\s+labelled "Personal" \(this profile's name\)$/);
-  assert.match(rows[2], /inst-c\s+\? tab\(s\)\s+unlabelled$/);
-  assert.match(rows[3], /inst-d\s+1 tab\(s\)\s+labelled "Personal" \(this profile's name\)$/);
+  assert.match(rows[1], /inst-b\s+5 tab\(s\)\s+profile directory unknown\s+labelled "Personal" \(this profile's name\)$/);
+  assert.match(rows[2], /inst-c\s+\? tab\(s\)\s+profile directory unknown\s+unlabelled$/);
+  assert.match(rows[3], /inst-d\s+1 tab\(s\)\s+profile directory unknown\s+labelled "Personal" \(this profile's name\)$/);
   assert.match(text.stdout, /personal was not bound: several live backends carry this profile's name/);
   assert.match(text.stdout, /cua profiles bind personal --extension-instance-id <id>/);
   assert.match(text.stdout, /1 extension backend\(s\) of a browser other than Google Chrome not listed/);
@@ -278,7 +279,7 @@ test('cua profiles bind shows each candidate\'s label, binds a unique name autom
   const automatic = cua([]);
   assert.equal(automatic.status, 0, automatic.stderr);
   assert.match(automatic.stdout, /bound personal to extension instance inst-b \(the runtime labelled exactly one live backend with this profile's unique name\)/);
-  assert.match(rowsOf(automatic.stdout)[1], /inst-b\s+5 tab\(s\)\s+labelled "Personal" \(this profile's name\)\s+<- likely match$/, 'the listing shows which label decided it');
+  assert.match(rowsOf(automatic.stdout)[1], /inst-b\s+5 tab\(s\)\s+profile directory unknown\s+labelled "Personal" \(this profile's name\)\s+<- likely match$/, 'the listing shows which label decided it');
   assert.equal(JSON.parse(readFileSync(join(home, 'profiles.json'), 'utf8')).profiles.personal.extensionInstanceId, 'inst-b');
   const again = JSON.parse(cua(['--json']).stdout);
   assert.deepEqual({how: again.how, id: again.extensionInstanceId, marked: again.backends.filter(b => b.likelyMatch).map(b => b.instanceId)}, {how: 'automatic', id: 'inst-b', marked: ['inst-b']});
@@ -286,6 +287,56 @@ test('cua profiles bind shows each candidate\'s label, binds a unique name autom
   const picked = cua(['--extension-instance-id', 'inst-c']);
   assert.equal(picked.status, 0, picked.stderr);
   assert.match(picked.stdout, /bound personal to extension instance inst-c \(your explicit pick\)/);
+});
+
+// Issue #21 step 2: cua's own directory mapping beside each candidate, with the installed release's classic-level (the
+// fake release links a real one in) reading copies of fixture extension stores; colliding names bind by directory.
+test('cua profiles bind shows each candidate\'s profile directory, binds by directory where names collide, and --dry-run records nothing', {skip: !supported || NO_CLASSIC_LEVEL}, async t => {
+  const home = fakeInstalledHome(t);
+  const pin = selectPin(loadPins());
+  symlinkSync(join(CLASSIC_LEVEL_MODULES, 'classic-level'), join(home, 'runtimes', pin.release, pin.layout.moduleDir, 'classic-level'));
+  const userHome = join(home, 'user');
+  const userData = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
+  for (const [dir, id] of [['Default', 'inst-a'], ['Profile 12', 'inst-b']]) {
+    const extension = join(userData, dir, 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+    mkdirSync(extension, {recursive: true});
+    writeFileSync(join(extension, 'manifest.json'), '{}');
+    mkdirSync(join(userData, dir, 'Local Extension Settings'), {recursive: true});
+    const db = await writeStore(join(userData, dir, 'Local Extension Settings', OPENAI_EXTENSION_ID), id, {keepOpen: true});
+    t.after(() => db.close());
+  }
+  writeFileSync(join(userData, 'Local State'), JSON.stringify({profile: {info_cache: {Default: {name: '직장'}, 'Profile 12': {name: '직장'}}}}));
+  const registry = JSON.stringify({version: 1, profiles: {school: {chromeProfileDirectory: 'Profile 12'}}});
+  writeFileSync(join(home, 'profiles.json'), registry);
+  mkdirSync(join(home, 'state', 'codex'), {recursive: true});
+  writeFileSync(join(home, 'state', 'codex', 'fake-backends.json'), JSON.stringify({backends: [
+    {instanceId: 'inst-a', family: 'chrome', profileName: '직장', tabCount: 3}, {instanceId: 'inst-b', family: 'chrome', profileName: '직장', tabCount: 1},
+    {instanceId: 'inst-c', family: 'chrome', profileName: null, tabCount: 0}]}));
+  const cua = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'bind', 'school', ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+  const rowsOf = stdout => stdout.split('\n').filter(line => /^\s+\d\) extension instance/.test(line));
+
+  const dry = cua(['--dry-run']);
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.match(dry.stdout, /would bind school to extension instance inst-b \(this profile directory's extension store records exactly this live backend\); dry run, nothing was recorded/);
+  const rows = rowsOf(dry.stdout);
+  assert.match(rows[0], /inst-a\s+3 tab\(s\)\s+Chrome profile "Default" "직장" \(another profile's directory\)\s+labelled "직장"/);
+  assert.match(rows[1], /inst-b\s+1 tab\(s\)\s+Chrome profile "Profile 12" "직장" \(this profile's directory\)\s+labelled "직장" .*<- likely match$/);
+  assert.match(rows[2], /inst-c\s+0 tab\(s\)\s+profile directory unknown\s+unlabelled$/);
+  assert.equal(readFileSync(join(home, 'profiles.json'), 'utf8'), registry, 'the dry run wrote nothing');
+  assert.deepEqual(readdirSync(join(home, 'staging')), [], 'no store copy left behind');
+
+  const json = JSON.parse(cua(['--json']).stdout);
+  assert.deepEqual({ok: json.ok, by: json.by, id: json.extensionInstanceId, map: json.directoryMap, placed: json.backends.map(b => b.chromeProfile?.directory ?? null)},
+    {ok: true, by: 'directory', id: 'inst-b', map: {status: 'complete'}, placed: ['Default', 'Profile 12', null]});
+  assert.equal(JSON.parse(readFileSync(join(home, 'profiles.json'), 'utf8')).profiles.school.extensionInstanceId, 'inst-b');
+
+  if (process.getuid?.() === 0) return;
+  chmodSync(join(userData, 'Local State'), 0o000);
+  let denied;
+  try { denied = cua(['--dry-run']); } finally { chmodSync(join(userData, 'Local State'), 0o644); }
+  assert.equal(denied.status, 1, 'unplaced and with names unknown: the pick is the user\'s');
+  assert.match(denied.stderr, /note: this process cannot read Chrome's Local State \(EACCES\), so the candidates' profile directories are unknown; grant Full Disk Access/);
+  assert.equal(rowsOf(denied.stdout).filter(row => /profile directory unknown/.test(row)).length, 3);
 });
 
 // `cua` with its listing launches' teardown reported unconfirmed (test/fixtures/unconfirmed-teardown-hooks.mjs).

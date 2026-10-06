@@ -18,6 +18,7 @@ import {bindCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
 import {PICK_REASONS} from './profiles/bind.mjs';
+import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
 import {registerHost, unregisterHost} from './chrome/registration.mjs';
 
 const USAGE = `usage: cua <command>
@@ -33,7 +34,7 @@ const USAGE = `usage: cua <command>
   profiles add <key> --chrome-profile <directory> [--json]     register an existing Chrome profile under a key
   profiles list [--json]                                       registered profiles and whether each is ready
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
-  profiles bind <key> [--extension-instance-id <id>] [--json]  bind a key to its live OpenAI extension backend
+  profiles bind <key> [--extension-instance-id <id>] [--dry-run] [--json]  bind a key to its live OpenAI extension backend
   chrome register [--replace] [--json]                         register cua's Chrome host with the browsers
   chrome unregister [--json]                                   remove cua's registration, restoring what it replaced
 environment: CUA_HOME (default ~/Library/Application Support/cua)`;
@@ -179,7 +180,7 @@ const PROFILES_USAGE = {
   add: 'profiles add takes a key and --chrome-profile <directory>',
   list: 'profiles list takes only --json',
   remove: 'profiles remove takes exactly one key',
-  bind: 'profiles bind takes a key and optionally --extension-instance-id <id>',
+  bind: 'profiles bind takes a key and optionally --extension-instance-id <id> and --dry-run',
 };
 const done = value => { print(value); return 0; };
 const ADDED = {
@@ -187,9 +188,21 @@ const ADDED = {
   absent: () => 'the OpenAI extension is not installed there, so it stays not ready until you install it in that profile',
   unreadable: ({key, chromeDataError}) => `this process cannot read Chrome's data directory (${chromeDataError}), so that profile and its OpenAI extension could not be checked; registered anyway (next: cua profiles bind ${key}, whose live check works without that access; for the file checks, ${PERMISSION_FIX})`,
 };
+// Why the candidates carry no (or only some) profile directories: the mapping of directory-map.mjs, never a failure.
+const MAP_UNAVAILABLE = {
+  chrome_data_unreadable: ({readError}) => `this process cannot read Chrome's Local State (${readError}), so the candidates' profile directories are unknown; ${PERMISSION_FIX}`,
+  local_state_unreadable: () => 'Chrome\'s Local State could not be read as a profile list, so the candidates\' profile directories are unknown',
+  classic_level_unavailable: () => 'the installed runtime\'s classic-level could not be loaded, so the candidates\' profile directories are unknown',
+  staging_unavailable: ({readError}) => `no scratch directory could be made under CUA_HOME/staging (${readError}), so the candidates' profile directories are unknown`,
+  error: () => 'the candidates\' profile directories could not be determined',
+};
+const describeMap = map => !map || map.status === 'complete' ? []
+  : map.status === 'unavailable' ? [MAP_UNAVAILABLE[map.reason]?.(map) ?? MAP_UNAVAILABLE.error()]
+  : [`${map.unreadableStores} Chrome extension store(s) could not be read (${map.readError}), so some candidates may have no profile directory${isPermissionError(map.readError) ? `; ${PERMISSION_FIX}` : ''}`];
 const describeUnreadable = result => [
   ...(result.chromeDataUnreadable ? [`this process cannot read Chrome's data directory (${result.chromeDataUnreadable}): the extension's presence was not checked, the live listing decides`] : []),
   ...(result.localStateUnreadable ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name`] : []),
+  ...describeMap(result.directoryMap),
 ].map(line => `note: ${line}\n`).join('');
 // Each candidate with the vendor's profile label, how it compares with this profile's name, and the likely-match mark
 // (on the backend an automatic bind chose, so the user sees which label decided it).
@@ -199,7 +212,11 @@ const quoted = text => JSON.stringify(text).replace(/[\u0080-\u009f\u200e\u200f\
 const LABELS = {'this-profile': 'this profile\'s name', 'other-profile': 'another profile\'s name',
   'comparison-unknown': 'this profile\'s own name is unknown, so it cannot be compared'};
 const describeLabel = b => b.profileName === null ? 'unlabelled' : `labelled ${quoted(b.profileName)} (${LABELS[b.label]})`;
-const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)  ${describeLabel(b)}${b.likelyMatch ? '  <- likely match' : ''}`;
+// Where cua's own read of the extension stores places the candidate (absent when the mapping did not run).
+const describeDirectory = b => b.chromeProfile === undefined ? ''
+  : b.chromeProfile === null ? '  profile directory unknown'
+  : `  Chrome profile ${quoted(b.chromeProfile.directory)}${b.chromeProfile.name === null ? '' : ` ${quoted(b.chromeProfile.name)}`} (${b.chromeProfile.thisProfile ? 'this profile\'s directory' : 'another profile\'s directory'})`;
+const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)${describeDirectory(b)}  ${describeLabel(b)}${b.likelyMatch ? '  <- likely match' : ''}`;
 const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
 const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. An extension disable/enable or reinstall mints a new id; pick this profile's new one from the live backends.`;
 
@@ -254,18 +271,21 @@ async function profiles(args) {
     removeProfile({home, key: positionals[0]});
     return done(values.json ? {ok: true, key: positionals[0], removed: true} : `removed the registration ${positionals[0]}; the Chrome profile itself is unchanged`);
   }
-  const {values, positionals} = parsed({'extension-instance-id': {type: 'string'}}, 1);
+  const {values, positionals} = parsed({'extension-instance-id': {type: 'string'}, 'dry-run': {type: 'boolean'}}, 1);
   const explicitId = values['extension-instance-id'];
-  const interactive = !values.json && explicitId === undefined && process.stdin.isTTY && process.stderr.isTTY;
+  const dryRun = values['dry-run'] === true;
+  const interactive = !values.json && !dryRun && explicitId === undefined && process.stdin.isTTY && process.stderr.isTTY;
   const runtime = resolveRuntime({home});
   if (!values.json) process.stderr.write('listing the live Chrome extension backends through the runtime (one bounded launch)...\n');
-  const result = await bindCommand({home, key: positionals[0], chrome, explicitId,
-    listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined});
+  const result = await bindCommand({home, key: positionals[0], chrome, explicitId, dryRun,
+    listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined,
+    mapDirectories: () => mapExtensionDirectories({home, chrome, moduleDir: runtime.paths.moduleDir, extensionIds: runtime.manifest.chromePlugin.nativeHost.extensionIds})});
   if (values.json) { print(result); return result.ok ? 0 : 1; }
   process.stderr.write(describeUnreadable(result));
   if (result.ok) {
     const automatic = result.how === 'automatic';
-    print(`bound ${result.key} to extension instance ${result.extensionInstanceId} (${automatic ? 'the runtime labelled exactly one live backend with this profile\'s unique name' : 'your explicit pick'})${result.staleBinding ? `, replacing the stale binding ${result.staleBinding}` : ''}`);
+    const why = !automatic ? 'your explicit pick' : result.by === 'directory' ? 'this profile directory\'s extension store records exactly this live backend' : 'the runtime labelled exactly one live backend with this profile\'s unique name';
+    print(`${result.dryRun ? 'would bind' : 'bound'} ${result.key} to extension instance ${result.extensionInstanceId} (${why})${result.staleBinding ? `, replacing the stale binding ${result.staleBinding}` : ''}${result.dryRun ? '; dry run, nothing was recorded' : ''}`);
     if (automatic) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}${describeExcluded(result.nonChromeExcluded)}\nif the marked one is not this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
     return 0;
   }

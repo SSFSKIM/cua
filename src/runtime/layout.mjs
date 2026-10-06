@@ -1,7 +1,8 @@
 // CUA_HOME layout and the active-release pointer. Everything the server owns lives under one home:
 //   runtimes/<release>/   immutable verified vendor components plus our install.json record
 //   current.json          {schema, release}: the active release, replaced atomically
-//   staging/              per-operation scratch for downloads and extraction (same volume, so renames are atomic)
+//   staging/              per-operation scratch for downloads and extraction (same volume, so renames are atomic), and
+//                         bind's short-lived copies of Chrome extension stores (src/profiles/directory-map.mjs)
 //   state/codex/          CODEX_HOME for the runtime: its config and per-user approvals
 //   run/<session>/        per-connection working directory and private endpoints
 import {readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, realpathSync} from 'node:fs';

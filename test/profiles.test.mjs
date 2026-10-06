@@ -184,7 +184,7 @@ const chrome = (...backends) => backends.map(b => ({family: 'chrome', ...b}));
 
 test('automatic bind: a unique display name and exactly one live backend carrying it', () => {
   const backends = chrome({instanceId: 'a', profileName: 'Personal'}, {instanceId: 'b', profileName: 'Work'}, {instanceId: 'c'});
-  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends}), {outcome: 'bound', how: 'automatic', instanceId: 'a'});
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends}), {outcome: 'bound', how: 'automatic', by: 'name', instanceId: 'a'});
 });
 
 test('automatic bind falls back to the user\'s pick, never a guess, when labels are missing, ambiguous or absent', () => {
@@ -224,9 +224,47 @@ test('only Google Chrome backends are bind candidates: another browser\'s or a f
   const mixed = [edge, ...chrome({instanceId: 'c'})];
   assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: mixed}), {outcome: 'pick_required', reason: 'unlabelled'}, 'the matching Edge label does not count');
   const both = [edge, ...chrome({instanceId: 'c', profileName: 'Personal'})];
-  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: both}), {outcome: 'bound', how: 'automatic', instanceId: 'c'}, 'not several_matching_backends: Edge is no candidate');
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: both}), {outcome: 'bound', how: 'automatic', by: 'name', instanceId: 'c'}, 'not several_matching_backends: Edge is no candidate');
   for (const explicitId of ['e', 'u'])
     assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: [edge, unknown, ...chrome({instanceId: 'c'})], explicitId}), {outcome: 'refused', reason: 'not_live'}, explicitId);
+});
+
+// Issue #21 step 2: cua's own directory mapping (`stores`: directory -> the instance ids its extension store records).
+const TWINS = new Map([['Default', 'Same'], ['Profile 12', 'Same'], ['Profile 3', 'Other']]);
+const stores = entries => new Map(Object.entries(entries));
+
+test('the directory beats the name: the registered directory\'s own store decides, even when names collide', () => {
+  const backends = chrome({instanceId: 'a', profileName: 'Same'}, {instanceId: 'b', profileName: 'Same'}, {instanceId: 'c'});
+  const mapped = stores({Default: ['a'], 'Profile 12': ['b']});
+  assert.deepEqual(decideBinding({directory: 'Profile 12', displayNames: TWINS, backends}), {outcome: 'pick_required', reason: 'display_name_not_unique'}, 'without the mapping, step 1 stands');
+  assert.deepEqual(decideBinding({directory: 'Profile 12', displayNames: TWINS, backends, stores: mapped}), {outcome: 'bound', how: 'automatic', by: 'directory', instanceId: 'b'});
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: TWINS, backends, stores: mapped}), {outcome: 'bound', how: 'automatic', by: 'directory', instanceId: 'a'});
+  assert.deepEqual(decideBinding({directory: 'Profile 3', displayNames: TWINS, backends: chrome({instanceId: 'c'}), stores: stores({'Profile 3': ['c']})}),
+    {outcome: 'bound', how: 'automatic', by: 'directory', instanceId: 'c'}, 'an unlabelled backend the store places is this profile');
+  assert.deepEqual(decideBinding({directory: 'Default', displayNames: NAMES, backends: chrome({instanceId: 'a', profileName: 'Work'}), stores: stores({Default: ['a']})}),
+    {outcome: 'bound', how: 'automatic', by: 'directory', instanceId: 'a'}, 'even against the vendor label');
+});
+
+test('with the mapping, nothing ambiguous or contradicted is bound automatically', () => {
+  const decide = (backends, mapped, directory = 'Default', names = NAMES) => decideBinding({directory, displayNames: names, backends: chrome(...backends), stores: stores(mapped)});
+  assert.deepEqual(decide([{instanceId: 'x', profileName: 'Personal'}], {Default: ['old']}), {outcome: 'pick_required', reason: 'directory_backend_not_live'},
+    'the registered store records another instance: the uniquely labelled backend is not bound by name');
+  assert.deepEqual(decide([{instanceId: 'a', profileName: 'Personal'}], {'Profile 8': ['a']}), {outcome: 'pick_required', reason: 'labelled_backend_other_directory'});
+  assert.deepEqual(decide([{instanceId: 'a'}], {Default: ['a'], 'Profile 8': ['a']}), {outcome: 'pick_required', reason: 'instance_in_several_directories'});
+  assert.deepEqual(decide([{instanceId: 'a'}, {instanceId: 'b'}], {Default: ['a', 'b']}), {outcome: 'pick_required', reason: 'several_directory_backends'});
+  assert.deepEqual(decide([{instanceId: 'a', profileName: 'Personal'}], {'Profile 8': ['z']}), {outcome: 'bound', how: 'automatic', by: 'name', instanceId: 'a'},
+    'the registered store unread or absent: the name rule, unchanged, for a backend placed nowhere');
+  assert.deepEqual(decide([{instanceId: 'a', profileName: 'Personal'}], {Default: []}), {outcome: 'bound', how: 'automatic', by: 'name', instanceId: 'a'}, 'a store without the key decides nothing');
+  assert.deepEqual(decide([{instanceId: 'a', profileName: 'Same'}], {}, 'Default', TWINS), {outcome: 'pick_required', reason: 'display_name_not_unique'});
+});
+
+test('an explicit pick the mapping places in another directory is refused; one it places here stands against the label', () => {
+  const backends = chrome({instanceId: 'a', profileName: 'Work'}, {instanceId: 'b', profileName: 'Personal'}, {instanceId: 'c', profileName: 'Work'});
+  const mapped = stores({Default: ['a'], 'Profile 8': ['b']});
+  const pick = explicitId => decideBinding({directory: 'Default', displayNames: NAMES, backends, explicitId, stores: mapped});
+  assert.deepEqual(pick('b'), {outcome: 'refused', reason: 'other_profile_directory'}, 'even though its label is this profile\'s name');
+  assert.deepEqual(pick('a'), {outcome: 'bound', how: 'explicit', instanceId: 'a'});
+  assert.deepEqual(pick('c'), {outcome: 'refused', reason: 'labelled_other_profile'}, 'placed nowhere: the label rule');
 });
 
 // ---- Chrome data this process may not read (macOS privacy protection) ---------------------------------------------

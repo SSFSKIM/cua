@@ -28,13 +28,22 @@ function within(promise, ms, fallback) {
 }
 
 // The group's members, or null if the listing failed or did not finish within `ms` (its process is then killed).
-// pgrep never lists itself or its ancestors, and the server is not a member.
+// pgrep never lists itself or its ancestors, and the server is not a member. The deadline is kept here, not by
+// execFile's `timeout`: that one discards the output of a listing that had already exited 0 but was not yet read,
+// and reports success with nothing listed, which would read as an empty group. For the same reason a success that
+// lists nobody is a failed listing (pgrep exits 0 only when something matched; no match is status 1).
 function listGroup(pgrep, pgid, ms) {
   if (ms <= 0) return Promise.resolve(null);
-  return new Promise(resolve => execFile(pgrep, ['-g', String(pgid)], {timeout: ms, killSignal: 'SIGKILL'}, (error, stdout) => {
-    if (error && !(error.code === 1 && !error.killed)) return resolve(null);
-    resolve(stdout.split('\n').filter(Boolean).map(Number));
-  }));
+  return new Promise(resolve => {
+    let late = false;
+    const child = execFile(pgrep, ['-g', String(pgid)], (error, stdout) => {
+      clearTimeout(timer);
+      const members = String(stdout ?? '').split('\n').filter(Boolean).map(Number);
+      if (late || (error ? !(error.code === 1 && !error.killed) : !members.length)) return resolve(null);
+      resolve(members);
+    });
+    const timer = setTimeout(() => { late = true; child.kill('SIGKILL'); }, ms);
+  });
 }
 
 export function spawnUpstream({command, args, env, cwd}, {

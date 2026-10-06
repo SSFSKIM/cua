@@ -221,3 +221,18 @@ test('search hints say linux on Linux and keep their macOS wording on macOS, on 
   assert.match(hints(served).js, /linux/);
   assert.equal(settingsFrom({}, {platform: 'linux'}).platform, 'linux');
 });
+
+// On Linux there is no secrets backend: secrets_list says so instead of teaching references Linux refuses.
+test('secrets_list tells the model on Linux that secrets are unavailable there; macOS keeps its description', async () => {
+  const {modelTools} = await import('../src/mcp/surface.mjs');
+  const secretsTool = (surfaces, platform) => modelTools(UPSTREAM_TOOLS, {surfaces, platform}).find(t => t.name === 'secrets_list');
+  assert.deepEqual(secretsTool(['computer'], 'darwin'), SECRETS_LIST_TOOL);
+  assert.match(secretsTool(['computer', 'browser'], 'darwin').description, /or of a Chrome tab's locator\.fill/);
+  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
+    const tool = secretsTool(surfaces, 'linux');
+    assert.match(tool.description, /secrets_unsupported_platform/, surfaces.join());
+    assert.doesNotMatch(tool.description, /typeText|paste|setValue|locator\.fill|\{\{secret:/, surfaces.join());
+    assert.deepEqual(tool.inputSchema, SECRETS_LIST_TOOL.inputSchema);
+    assert.deepEqual(tool.annotations, SECRETS_LIST_TOOL.annotations);
+  }
+});

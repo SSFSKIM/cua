@@ -1,6 +1,6 @@
 // A scratch CUA_HOME that looks like a verified install of the checked-in pin to the resolver (which checks structure
 // only), but whose vendor node is this Node and whose cua-repl entry is the fake upstream (fake-upstream-process.mjs).
-// Signatures are never involved. The home lives under /tmp, outside $TMPDIR, as the scoped sandbox requires (a home
+// Signatures are never involved. The home lives in a short directory outside $TMPDIR (shortScratch), as the scoped sandbox requires (a home
 // under $TMPDIR is the misconfiguration `inTmpdir` sets up). `mode` selects the fake upstream's teardown behavior;
 // `helper` installs the stand-in Keychain helper as $CUA_HOME/bin/cua-keychain in that FAKE_HELPER_MODE, for runs with
 // CUA_SHIM_SECRETS=on (otherwise served processes run with secrets off and no Keychain helper is ever started).

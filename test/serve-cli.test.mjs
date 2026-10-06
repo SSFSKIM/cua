@@ -378,7 +378,10 @@ test('with CUA_SHIM_SANDBOX=default serve sends no sandbox state; an invalid val
 // has no write roots to conflict with.
 test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the listing classified, naming the conflict; disabled serves it', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t, {inTmpdir: true});
-  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve']);
+  // The conflict is with $TMPDIR as the launch sees it, so it is set here: the home's own parent. A caller without a
+  // TMPDIR (stock Ubuntu exports none) would otherwise give the launch no temp root and nothing to conflict with.
+  const tmpdir = dirname(home);
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {TMPDIR: tmpdir});
   server.child.stdin.end();
   const {code, stderr} = await server.exit;
   assert.equal(code, 1);
@@ -393,13 +396,13 @@ test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the list
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}}}));
-  const list = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome}), encoding: 'utf8', timeout: 30_000});
+  const list = args => spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'profiles', 'list', ...args], {env: withoutConfigHomes({...process.env, CUA_HOME: home, HOME: userHome, TMPDIR: tmpdir}), encoding: 'utf8', timeout: 30_000});
   const json = list(['--json']);
   assert.equal(JSON.parse(json.stdout).listingError, 'sandbox_conflict', json.stderr);
   assert.match(list([]).stderr, /sandbox_conflict: CUA_SHIM_SANDBOX=scoped lets JavaScript cells write \$TMPDIR/);
   assert.equal(existsSync(join(home, 'state', 'codex', 'fake-upstream.jsonl')), false, 'no listing launch was made');
 
-  const disabled = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SANDBOX: 'disabled'});
+  const disabled = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SANDBOX: 'disabled', TMPDIR: tmpdir});
   await disabled.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   await disabled.call('js', {code: 'hello'});
   disabled.child.stdin.end();

@@ -48,6 +48,15 @@ const SECRETS_LIST_BROWSER_TOOL = {
   description: SECRETS_LIST_TOOL.description.replace('or the whole value of setValue:', 'or the whole value of setValue or of a Chrome tab\'s locator.fill:'),
 };
 
+// On Linux there is no secrets backend (src/secrets/broker.mjs): the tool stays, so the surface is the same everywhere,
+// but says that secrets are unavailable rather than teaching references the platform refuses.
+const LINUX_SECRETS_LIST_TOOL = {
+  ...SECRETS_LIST_TOOL,
+  description: 'List the labels of stored secrets for computer-use input. On this platform cua has no secrets backend, so '
+    + 'it returns status "unavailable" with code "secrets_unsupported_platform", and secret references in input are '
+    + 'refused; ask the user to type such values themselves.',
+};
+
 export const PROFILES_LIST_TOOL = {
   name: 'profiles_list',
   description: 'List the Chrome profiles the user registered for browser use, by key, with whether each is ready and, '
@@ -135,10 +144,11 @@ export function modelTools(upstreamTools, {surfaces = ['computer'], platform = p
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
     .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)}}));
-  const endTask = platform === 'linux' ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
+  const linux = platform === 'linux';
+  const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   return surfaces.includes('browser')
-    ? [...passed, endTask, SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
-    : [...passed, endTask, SECRETS_LIST_TOOL];
+    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
+    : [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_TOOL];
 }
 
 // node_repl labels JPEG screenshots image/png; the bytes say what they are.

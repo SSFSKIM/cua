@@ -19,8 +19,17 @@ export function scratch(prefix = 'cua-test-', parent = tmpdir()) {
   return {dir, cleanup: () => rmSync(dir, {recursive: true, force: true})};
 }
 
-// A scratch directory short enough for unix socket paths below it (the macOS per-user temp directory is not).
-export const shortScratch = (prefix = 'cua-') => scratch(prefix, '/tmp');
+// A scratch directory short enough for unix socket paths below it (the macOS per-user temp directory is not), and
+// outside $TMPDIR, where the scoped sandbox requires a CUA_HOME to be: /tmp, or /var/tmp where $TMPDIR covers /tmp (a
+// Linux session may export TMPDIR=/tmp).
+const SHORT_PARENTS = ['/tmp', '/var/tmp'];
+const realOrSelf = path => { try { return realpathSync(path); } catch { return path; } };
+export function shortScratch(prefix = 'cua-') {
+  const tmp = process.env.TMPDIR?.startsWith('/') ? realOrSelf(process.env.TMPDIR).replace(/\/+$/, '') : null;
+  const parent = SHORT_PARENTS.find(dir => { const real = realOrSelf(dir); return !tmp || (real !== tmp && !real.startsWith(`${tmp}/`)); });
+  if (!parent) throw new Error(`no short scratch parent outside $TMPDIR (${process.env.TMPDIR}) among ${SHORT_PARENTS.join(', ')}`);
+  return scratch(prefix, parent);
+}
 
 // Writes the fixture app tree under `root`. `vendor` overrides fields of cua_node/manifest.json (`vendorRaw` replaces
 // its text outright); `ipc` replaces the IPC version string; `omit` lists layout-relative paths (inside the extracted

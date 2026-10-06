@@ -131,7 +131,10 @@ This may be specific to arm64 or to these GTK builds; no x64 machine was used. T
   - `cua.getBrowser({extensionInstanceId})` returned browser `1`, with the vendor's documentation.
   - `cua.createBrowserTab(browserId, 'https://example.com/')` failed with **`Codex auth token is unavailable`**. The
     browser route needs the server's Codex login (`cua login`), which only the owner may make. Whether the
-    extension must also be signed in is not known until then. The owner's steps are in the F2 task report.
+    extension must also be signed in is not known until then. `scripts/accept/linux-chrome.mjs` finishes the item
+    once the owner has signed in: it checks the live host's path, reads the bound instance id from
+    `profiles_list`, opens, reads and closes the tab, and checks `run/`. A dry run before the login passed the
+    host and `profiles_list` steps and stopped at that same error.
 
 ## Item 11: sandbox and bus from inside
 

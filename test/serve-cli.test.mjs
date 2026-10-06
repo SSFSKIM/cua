@@ -12,7 +12,7 @@ import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
 import {once} from 'node:events';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
-import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
+import {fakeInstalledHome, installedHomeSupported, NO_SCOPED_LAUNCH} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
@@ -153,7 +153,7 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   assert.equal((await server.exit).code, 0);
 });
 
-test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported}, async t => {
+test('profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
@@ -212,7 +212,7 @@ test('profiles_list and cua profiles list check a bound profile against the live
 
 // Issue #21: the vendor's label beside each candidate, "unlabelled" without one; an ambiguous name binds nothing, a
 // unique one binds automatically and marks the backend that decided it.
-test('cua profiles bind shows each candidate\'s label, binds a unique name automatically and nothing ambiguous', {skip: !supported}, async t => {
+test('cua profiles bind shows each candidate\'s label, binds a unique name automatically and nothing ambiguous', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
   const userData = chromeDataUnder(userHome);
@@ -272,7 +272,7 @@ test('cua profiles bind shows each candidate\'s label, binds a unique name autom
 
 // Issue #21 step 2: cua's own directory mapping beside each candidate, with the installed release's classic-level (the
 // fake release links a real one in) reading copies of fixture extension stores; colliding names bind by directory.
-test('cua profiles bind shows each candidate\'s profile directory, binds by directory where names collide, and --dry-run records nothing', {skip: !supported || NO_CLASSIC_LEVEL}, async t => {
+test('cua profiles bind shows each candidate\'s profile directory, binds by directory where names collide, and --dry-run records nothing', {skip: !supported || NO_CLASSIC_LEVEL || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
   const pin = selectPin(loadPins());
   symlinkSync(join(CLASSIC_LEVEL_MODULES, 'classic-level'), join(home, 'runtimes', pin.release, pin.layout.moduleDir, 'classic-level'));
@@ -324,7 +324,7 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
 // `cua` with its listing launches' teardown reported unconfirmed (test/fixtures/unconfirmed-teardown-hooks.mjs).
 const UNCONFIRMED_TEARDOWN = `--import=data:text/javascript,${encodeURIComponent(`import {register} from 'node:module'; register(${JSON.stringify(pathToFileURL(join(REPO, 'test', 'fixtures', 'unconfirmed-teardown-hooks.mjs')).href)});`)}`;
 
-test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported}, async t => {
+test('cua profiles list still shows the profiles but fails when its listing runtime was not confirmed stopped; an empty listing does not fail', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const home = fakeInstalledHome(t);
   const userHome = join(home, 'user');
   const extension = join(chromeDataUnder(userHome), 'Default', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
@@ -633,7 +633,7 @@ function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
   return {input, output, lines, send, reply, served, diagnostics};
 }
 
-test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported}, async t => {
+test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   const unconfirmed = async () => ({backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: false, steps: ['eof', 'sigterm', 'sigkill'], reason: 'a group member survived'}});
   const {input, send, reply, served, diagnostics} = boundBrowserServe(t, unconfirmed);
   await reply(1);
@@ -644,7 +644,7 @@ test('a readiness listing whose runtime teardown is unconfirmed makes profiles_l
   assert.ok(diagnostics.some(l => /readiness listing's runtime could not be confirmed stopped; owned processes may remain/.test(l)), diagnostics.join('\n'));
 });
 
-test('serve waits for a readiness listing still running at close, keeping its signal handlers until it settles', {skip: !supported}, async t => {
+test('serve waits for a readiness listing still running at close, keeping its signal handlers until it settles', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   let started;
   const begun = new Promise(resolve => { started = resolve; });
   let release;
@@ -668,7 +668,7 @@ test('serve waits for a readiness listing still running at close, keeping its si
   assert.ok(!process.listeners('SIGTERM').includes(own[0]), 'the handler goes once the listing settled');
 });
 
-test('a readiness listing that settles during close is answered before the final bounded flush, which drops the reply with the stream when the client stopped reading', {skip: !supported}, async t => {
+test('a readiness listing that settles during close is answered before the final bounded flush, which drops the reply with the stream when the client stopped reading', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
   let started;
   const begun = new Promise(resolve => { started = resolve; });
   let release;

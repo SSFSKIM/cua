@@ -3,7 +3,8 @@
 Date: 2026-10-06. Spec: `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md` (acceptance 8–12). Spike
 #12's unverified items are answered at the end. Branch `feat/phase-f`. The code under test is the F1 head `d66a813`
 plus F2's fixes (`92322a4`, `2a0d1a2`, `5f2ffd9`, `1356921`, `2bdd240`, `fef5777`, `e9009aa`), then Phase E merged
-in (`91d70ec`) and F2's fix wave (`3eea184`, `bb9f6ce`, `ece7420`, `1e24556`): the VM's `~/cua` is at the fix wave's
+in (`91d70ec`), F2's fix wave (`3eea184`, `bb9f6ce`, `ece7420`, `1e24556`) and fix wave 2 (`8128b9f`, `5de5f4a`,
+`d9d0e3b`, `100cd3e`): the VM's `~/cua` is at the fix wave 2
 head. The F1 code's own results are recorded where they differ.
 
 Summary:
@@ -14,7 +15,7 @@ Summary:
 | 9 Native action | **PASS**. A gedit window bound by X11 id; marker typed, read back through AT-SPI and visible in the screenshot; `run/` empty afterwards |
 | 10 Chrome | **Partial**. Done: `chrome register` writes the Linux manifest; the extension starts cua's host **without sign-in**; `countLiveHosts` counts it; `profiles add` and `bind` work. **Blocked**: the `js` tab cell stops at `Codex auth token is unavailable`, which needs the owner's `cua login` and, possibly, the extension's sign-in |
 | 11 Sandbox and bus from inside | **PASS** as revised: item 9 **fails under `scoped`** (X11 connect `EPERM`) and passes under `disabled`, the Linux default for the computer surface; with user namespaces refused, a scoped connection and the profile listing are **refused at launch** (`sandbox_unavailable`) instead of running unconfined |
-| 12 Tests | **PASS**. macOS 699 tests: 698 pass, 1 Linux-only skip. VM 699 tests: 656 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail. `verify.mjs` passes on the VM and on the MacBook |
+| 12 Tests | **PASS**. macOS 701 tests: 700 pass, 1 Linux-only skip. VM 701 tests: 658 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail; with user namespaces restricted, 651 pass and 50 skipped (the 7 scoped-launch CLI tests skip as `sandbox_unavailable`), 0 fail. `verify.mjs` passes on the VM and on the MacBook |
 
 ## The machine
 
@@ -182,8 +183,15 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
 - **Fail closed (fix wave, the coordinator's decision).** A scoped connection, and the scoped profile listing, run
   doctor's probe (`bwrap --ro-bind / / true`) once per open on Linux and are refused with `sandbox_unavailable` when
   it does not pass, before any runtime starts.
+- **A connection's own readiness listing** (`profiles_list`) runs under the connection's mode (fix wave 2). With
+  `computer,browser` and the mode unset the connection is `disabled`, so its listing is too: its cells already run
+  unconfined, and refusing the listing would protect nothing. `cua profiles list` and `bind` stay `scoped` and
+  fail-closed.
 - Doctor's `sandbox` row fails for `scoped` where user namespaces are refused (naming the fail-open state and the
-  refusal first), and for `scoped` with the computer surface. `sandbox.userns` reads `skip` while no sandbox runs.
+  refusal first), and for `scoped` with the computer surface. `sandbox.userns` reads `skip` only when no scoped launch
+  can happen (the browser surface off, or `CUA_SHIM_SANDBOX` set to another mode); otherwise a refusal stays `blocked`
+  and names the refused `cua profiles list`/`bind`. Doctor and the launch check both find bwrap on the system path
+  `/usr/bin:/bin`.
 
 **The refusal on the VM** (fix-wave head, sysctl set back to 1 for the test, then restored to 0):
 
@@ -195,6 +203,12 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
 - `cua profiles list --json`: `listingError: "sandbox_unavailable"`, `me` not ready (`backends_unlistable`).
 - `CUA_SHIM_SURFACES=browser cua doctor`: `sandbox` `fail` ("… the runtime's sandbox fails open in that state, …, so
   cua serve and the profile listing refuse scoped connections (sandbox_unavailable) …"), `sandbox.userns` `blocked`.
+- **Fix wave 2, same restricted state:** `CUA_SHIM_SURFACES=computer,browser node verify.mjs` passes (`problems: []`,
+  `profilesList` `me` ready: the connection and its listing run `disabled`), while `cua profiles list --json` still
+  reports `listingError: "sandbox_unavailable"`. `CUA_SHIM_SURFACES=computer,browser cua doctor` reads `sandbox` `pass`
+  and `sandbox.userns` `blocked` ("… The connection runs under disabled, but cua profiles list and bind launch under
+  scoped and are refused (sandbox_unavailable)"), so the verdict names it: "live capability remains unverified
+  (blocked: sandbox.userns, codex.login)". The refused browser-only `verify.mjs` now ends in 15 s.
 - With the sysctl back at 0: `verify.mjs` passes by default (no bwrap) and with `CUA_SHIM_SURFACES=browser` (two
   bwrap subtrees, `me` ready), and doctor passes every row except `codex.login` (blocked) and the `skip` rows
   (`secrets.helper`, and Phase E's `agent.*`, macOS-only).
@@ -204,7 +218,8 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
 ## Item 12: tests
 
 - **macOS (the MacBook):**
-  - `npm test` at the fix-wave head (Phase E merged): 699 tests, 698 pass, 0 fail, 1 skipped (a Linux-only test).
+  - `npm test` at fix wave 2's head: 701 tests, 700 pass, 0 fail, 1 skipped (a Linux-only test). At the first fix
+    wave's head: 699 tests, 698 pass.
     Before the merge, at `fef5777`: 614/614.
   - That includes `test/accept-linux-native.test.mjs`, `test/linux-sandbox-refusal.test.mjs` and the new
     `probe-lib`, `mcp-sandbox` and `runtime-linux-doctor` cases.
@@ -214,7 +229,10 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
     `~/.codex/computer-use` one, reused and not started or stopped by cua.
 - **The VM**, with the runtime installed under the default home, so the classic-level tests that F1's simulated
   Linux run had to skip now ran:
-  - `npm test` at the fix-wave head: 699 tests, 656 pass, 43 skipped, 0 fail (614/571/43 before the Phase E merge).
+  - `npm test` at fix wave 2's head: 701 tests, 658 pass, 43 skipped, 0 fail; with
+    `kernel.apparmor_restrict_unprivileged_userns=1`, 651 pass and 50 skipped, 0 fail (the 7 `serve-cli` tests that
+    spawn the real CLI on a scoped path skip, naming `sandbox_unavailable`). 699/656/43 at the first fix wave's head,
+    614/571/43 before the Phase E merge.
     The skips are the darwin-only codesign, `ditto` and Keychain tests named in the F1 report.
   - The first VM run, with the F1 code plus the sandbox default, found four failures that only a real Linux host with
     an installed runtime exercises. They are fixed in `1356921`:

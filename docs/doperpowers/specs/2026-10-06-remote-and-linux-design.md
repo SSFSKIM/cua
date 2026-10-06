@@ -402,6 +402,9 @@ node verify.mjs           # the stdio smoke the parent ships; the native-socket 
 - Decision (2026-10-06, Phase F execution, executor session): E1's reviewed head `ee6362c` is merged into `feat/phase-f` (merge `c74e19d`); `openConnection` keeps F1's `host` and gains E1's `onWithdrawn`. Suite 598/598.
   Rationale: the coordinator's instruction; F1 builds on the reviewed E1.
   Date/Author: 2026-10-06, the Phase F executor session.
+- Decision (2026-10-06, Phase F execution, F1 review fold-back): the F1 task review's findings are fixed (`16aaee5`, `57a6bbd`): `verify.mjs`'s Linux process tree keeps a process whose `/proc/<pid>/exe` is unreadable as `<unreadable CODE>` so it fails the relocation check by pid instead of hiding its subtree; the model-visible search hints, the install/recovery hint (`<ChatGPT deb>`), the permission fix and the default-home hint are per platform (darwin text byte-identical); `sandbox.userns` says what was observed (bubblewrap could not create an unprivileged user namespace) rather than that the runtime's sandbox cannot start (spike (a): `codex` may fall back to Landlock); relative `XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `CHROME_CONFIG_HOME` are ignored per the XDG Base Directory spec (replacing "empty counts as unset"); launch and login share `desktopSessionEnv()`; and, for acceptance 12 on the VM, the suite injects or derives its host instead of assuming darwin (host injection over skips, the coordinator's direction), skipping off macOS only the codesign, Keychain and `ditto`-zip tests. Linux `countLiveHosts` without a parent check and install's peak scratch go to `tech-debt-tracker.md`. E1's protocol-version fix `2ed7a22` merged (`ed0ce2e`); suite 606/606.
+  Rationale: the reviewer's Important finding was a fail-open in acceptance 12's tool; the rest are cheap now and model- or user-visible on Linux.
+  Date/Author: 2026-10-06, the Phase F executor session.
 
 ## Outcomes & Retrospective
 

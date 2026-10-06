@@ -2,6 +2,13 @@
 
 ## Open
 
+- **2026-10-06 — Two F1 review leftovers on Linux (minor, Phase F, issue #51).** (a) `countLiveHosts` on Linux
+  (`src/profiles/chrome.mjs`) reads `ps -eo pid=,args=` with no parent check, as the spec specified, so a wrapper
+  started by absolute path (`/usr/bin/strace /…/extension-host`) is counted as a live host; reading `ppid` and requiring
+  a Chrome parent, as on darwin, would close it. (b) `install` of a deb peaks at about 2.6 GB of scratch (the staged deb,
+  `data.tar.xz`, and the whole 1.7 GB payload unpacked); streaming `ar p … data.tar.xz | tar -xJf -` and extracting only
+  the three pinned resource paths would cut it. Revisit if a miscount or a small VM disk is seen.
+
 - **2026-10-06 — Two E1 review leftovers in the Streamable HTTP handler (minor, Phase E, issue #11).** (a) A POST
   stream that drops and is never resumed keeps every event it carried (including `js` results with screenshots) until
   its session ends; these retained events sit outside the 16 MB server-message buffer cap. The idle close bounds them;

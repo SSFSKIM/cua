@@ -61,6 +61,14 @@ relay/deploy/update.sh --devices devices.json   # install a devices.json and res
 relay/deploy/update.sh --ref main               # run another ref (git fetch, npm ci, restart)
 ```
 
+`--devices` replaces the server's whole table, so keep every device's line in the file you send (the current one:
+`ssh root@<ip> cat /etc/cua-relay/devices.json`). To rebuild (or after a failed cloud-init), `hcloud server delete
+cua-relay` and run `create-server.sh` again: the address and firewall are reused, the stale SSH host key is dropped,
+and `devices.json` starts empty again, so send it with `update.sh --devices` (agents retry until their line is back).
+Each rebuild requests a new certificate for the same name, and Let's Encrypt allows five per name a week. Caddy and Node
+come from their own apt repositories, which unattended upgrades skip: upgrade them with
+`apt-get -o Dpkg::Options::=--force-confold upgrade`, which keeps the site's Caddyfile.
+
 A real domain later: point its DNS at the address, change the site line of `/etc/caddy/Caddyfile` on the server,
 `systemctl reload caddy`, and move each Mac with `cua remote enroll --relay wss://<domain>/ws` (the agent follows it
 without a restart; clients re-register on the new URL). Logs: `journalctl -u cua-relay` and `journalctl -u caddy`.

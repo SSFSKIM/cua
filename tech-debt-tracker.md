@@ -2,6 +2,11 @@
 
 ## Open
 
+- **2026-10-06 — The hosted relay's Caddy advertises HTTP/3 with UDP 443 closed (minor, issue #53).** Caddy's default
+  `Alt-Svc: h3` points browsers at UDP 443, which the `cua-relay` firewall does not admit; MCP clients and agents use
+  HTTP/1.1 or 2 and are unaffected. Either `servers { protocols h1 h2 }` in `relay/deploy/Caddyfile` or a UDP 443 rule
+  in `create-server.sh` would close it at the next rebuild or Caddyfile change.
+
 - **2026-10-06 — Claude Code 2.1.292 probes MCP `2026-07-28` before `initialize` (minor, issue #53).** Its first
   request is `POST` with `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method: server/discover`; the agent's version gate
   answers `400` and the client falls back to `initialize` at `2025-11-25`, so nothing breaks today. When the pinned

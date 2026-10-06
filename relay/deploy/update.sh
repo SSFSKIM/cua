@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Change the running cua-relay server: run another git ref of https://github.com/SSFSKIM/cua, or install a new
-# devices.json; either restarts the relay (agents reconnect by themselves, sessions survive on the Macs).
+# devices.json; either restarts the relay (agents reconnect by themselves, sessions survive on the Macs). The file
+# replaces the server's whole table: keep every device in it (the current one: ssh root@<host> cat /etc/cua-relay/devices.json).
 #
 #   relay/deploy/update.sh [--ref <git ref>] [--devices <devices.json>] [--host <address>]
 #
@@ -9,15 +10,19 @@
 set -euo pipefail
 
 ref='' devices='' host=''
+usage() { echo "usage: $0 [--ref <git ref>] [--devices <devices.json>] [--host <address>]" >&2; exit 2; }
 while (($#)); do
+  (($# >= 2)) || usage
   case "$1" in
-    --ref) ref="$2"; shift 2 ;;
-    --devices) devices="$2"; shift 2 ;;
-    --host) host="$2"; shift 2 ;;
-    *) echo "usage: $0 [--ref <git ref>] [--devices <devices.json>] [--host <address>]" >&2; exit 2 ;;
+    --ref) ref="$2" ;;
+    --devices) devices="$2" ;;
+    --host) host="$2" ;;
+    *) usage ;;
   esac
+  shift 2
 done
 [[ -z "$ref" && -z "$devices" ]] && ref=main
+[[ -z "$ref" || "$ref" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "not a plain git ref: $ref" >&2; exit 2; }
 if [[ -z "$host" ]]; then
   export HCLOUD_CONTEXT="${HCLOUD_CONTEXT:-cua}"
   host="$(hcloud server ip cua-relay)"

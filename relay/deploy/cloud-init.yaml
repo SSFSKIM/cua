@@ -20,16 +20,19 @@ write_files:
   - path: /etc/cua-relay/devices.json
     content: "{}\n"
 runcmd:
-  - set -eux
+  - set -eux  # runcmd is one /bin/sh script; one command per line, so set -e sees every failure
   - curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   - curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt -o /etc/apt/sources.list.d/caddy-stable.list
   - chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
   - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy nodejs
-  - chown root:cua-relay /etc/cua-relay/devices.json && chmod 0640 /etc/cua-relay/devices.json
+  - chown root:cua-relay /etc/cua-relay/devices.json
+  - chmod 0640 /etc/cua-relay/devices.json
   - git clone https://github.com/SSFSKIM/cua /opt/cua
-  - git -C /opt/cua fetch origin @REF@ && git -C /opt/cua checkout --detach FETCH_HEAD
-  - cd /opt/cua/relay && npm ci --omit=dev
+  - git -C /opt/cua fetch origin @REF@
+  - git -C /opt/cua checkout --detach FETCH_HEAD
+  - cd /opt/cua/relay
+  - npm ci --omit=dev
   - install -m 0644 /etc/cua-relay/Caddyfile /etc/caddy/Caddyfile
   - systemctl daemon-reload
   - systemctl enable --now cua-relay

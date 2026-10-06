@@ -22,7 +22,8 @@ middle of a 45 s `js` call delivered that call's result. This is the standing se
 | Software | Caddy 2.11.7 (official apt repo), Node 22.23.3 (NodeSource), relay at `/opt/cua` `a1870fb`, unit `cua-relay.service` (user `cua-relay`), both units enabled |
 | Cost | `cx23` lists at $6.49 a month in nbg1 (`hcloud server-type describe cx23`, this account's currency), 20 TiB traffic included |
 
-Created with `relay/deploy/create-server.sh` (16:30:01 to 16:31:59 PDT, 1 min 58 s from nothing to a TLS answer):
+Created with `relay/deploy/create-server.sh` (16:30:01 to 16:31:59 PDT, 1 min 58 s from nothing to a TLS answer;
+output abridged; the review fold-back later made the script also require the relay's `401` behind Caddy):
 
 ```
 creating cua-relay (cx23, nbg1) at 178.104.102.73, ref main
@@ -130,7 +131,7 @@ from the main checkout (running 21 h, as in Phase E).
    agent's WebSocket with `1001`; the agent redials after its 1 s backoff.
 2. **Access log.** Added to the Caddyfile during the run (`log`, to the journal) and kept: it is the only record of
    the client's resumes and reconnects, and Caddy redacts `Authorization` in it. The URI carries the device id, which
-   the relay already logs.
+   the relay already logs, and the response headers carry `Mcp-Session-Id` values (useless without the bearer).
 3. **Claude Code 2.1.292 probes a newer protocol first.** Before `initialize` it sends `POST` with
    `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method: server/discover`; the agent answers `400` and the client falls back
    to `initialize` at `2025-11-25` with no visible effect. Recorded in `tech-debt-tracker.md` (the gate will need the new version

@@ -8,8 +8,9 @@
 //
 // Who may call: a bearer equal to the client credential (constant-time), checked before anything else is read, then an
 // Origin, when one is sent, from the allowlist (`null` never is). `clientCredential` is the credential or a function
-// returning it (null: none, every bearer refused), called at each request, so the agent follows a rotated device.json. An MCP-Protocol-Version header, when sent, must be a
-// known revision or the version the session's runtime negotiated in its InitializeResult; anything else is 400.
+// returning it (null: none, every bearer refused), called at each request, so the agent follows a rotated device.json.
+// An MCP-Protocol-Version header, when sent, must be a known revision or the version the session's runtime negotiated
+// in its InitializeResult; anything else is 400.
 // Sessions:
 // - `initialize` without a session header opens one: its InitializeResult is the JSON body, with Mcp-Session-Id (the
 //   connection's own session id). An open that fails is 500 with `cua: <code>`; at the session cap the oldest Idle

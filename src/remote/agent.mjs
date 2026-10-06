@@ -15,8 +15,9 @@
 //
 // Limits, from the environment (src/remote/limits.mjs): CUA_AGENT_MAX_SESSIONS (default 1: every session drives the
 // same mouse, keyboard and Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins
-// allowed to call, comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js and js_reset
-// answer console_locked while this user's session is off the console or its screen is locked (src/remote/console.mjs).
+// allowed to call, comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js
+// and js_reset answer console_locked while this user's session is off the console or its screen is locked
+// (src/remote/console.mjs).
 // Diagnostics go to stderr (under launchd, $CUA_HOME/state/agent.log); no credential ever appears in them.
 import {createServer as createHttpServer} from 'node:http';
 import {linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';

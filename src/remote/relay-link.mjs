@@ -211,7 +211,7 @@ export async function connectRelay({target, handle, diagnostics = () => {},
   }
 
   const first = target();
-  diagnostics(`relay: dialling ${first?.url} as device ${first?.deviceId}`);
+  if (first) diagnostics(`relay: dialling ${first.url} as device ${first.deviceId}`);
   dial();
 
   return {

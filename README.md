@@ -268,6 +268,7 @@ node bin/cua.mjs profiles add personal --chrome-profile Default
 node bin/cua.mjs profiles add work --chrome-profile "Profile 8"
 node bin/cua.mjs profiles bind personal          # needs Chrome open on that profile with the extension enabled
 node bin/cua.mjs profiles list                   # --json for the structured list
+node bin/cua.mjs profiles open personal          # open a window in that profile so its extension host comes back
 node bin/cua.mjs profiles remove work
 ```
 
@@ -347,8 +348,20 @@ it still has no backend, then retry. Chrome unloads a profile, and with it the e
 profile's last window closes; a cua task in a profile that had no window opens one for its tab, so closing that tab, or
 ending the task without marking the tab handoff, unloads the profile again (issue #41). Turning the extension off and
 on at `chrome://extensions` wakes it too, but can mint a new instance id, so run `cua profiles bind <key>` afterwards.
-cua never opens a window or wakes the extension itself; it does not drive Chrome. When
-other profiles' backends are live but not the bound one, the backends' missing labels leave two causes cua cannot tell
+cua never opens a window or wakes the extension on its own; it does not drive Chrome.
+
+`cua profiles open <key>` opens that window for you when you ask, which saves a trip to the screen on a Mac whose
+Chrome runs without a window (started with `--no-startup-window`, say). It runs
+`open -n -a "Google Chrome" --args --profile-directory=<directory>` with the registered directory and prints that
+command (`-n` because a running Chrome takes `--args` only from a newly started process, which hands them to it and
+exits), then checks the key's readiness as `list` does, at 5, 10 and 20 seconds, each check one bounded runtime
+launch, stopping as soon as it is ready or nothing a window changes is left to wait for. It prints the last readiness
+line and exits 0 only when the profile is ready: `host_not_live` turning `ready` is the expected outcome, and a
+`binding_stale` that stays may need `cua profiles bind <key>`. `--json` gives `{ok, key, directory, opened, command,
+readiness}`. An unknown key or a profile directory that no longer exists is refused before anything opens. Only you
+run it: the agent has no tool for it, and nothing in cua calls it.
+
+When other profiles' backends are live but not the bound one, the backends' missing labels leave two causes cua cannot tell
 apart (this profile's host asleep, or a new instance id), so `binding_stale` names both steps, the wake first.
 
 ### Using it

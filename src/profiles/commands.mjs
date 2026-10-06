@@ -112,3 +112,50 @@ export async function bindCommand({home, key, chrome, listBackends, mapDirectori
   }
   return {ok: false, outcome: automatic.outcome, reason, ...base};
 }
+
+// `cua profiles open <key>`: open a window in the registered Chrome profile so Chrome loads it, and with it the OpenAI
+// extension and its host (a profile with no window is unloaded; Surprises, 2026-10-06), then report the key's readiness.
+// CLI only, on the user's request: nothing calls it for them. `open -n` because `--args` reaches only a newly launched
+// process: with Chrome already running, `-n` starts one that hands its command line to the running Chrome (which opens
+// the window in that profile) and exits, where a plain `open -a` would only bring Chrome forward. The runner and the
+// live listing are injected; each readiness check is one bounded runtime launch, so there are at most `pollAt.length`
+// (at those many milliseconds after the open), and the wait stops early once the profile is ready or its state is one a
+// window cannot change (not bound, extension missing, a listing that failed).
+export const CHROME_APP = 'Google Chrome';
+export const OPEN_POLL_MS = [5_000, 10_000, 20_000];
+export const openInvocation = directory => ({command: 'open', args: ['-n', '-a', CHROME_APP, '--args', `--profile-directory=${directory}`]});
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// Only these can turn ready through a window: no host live, a host this binding is not among, or a bound profile whose
+// Chrome data this process may not read (the live backend decides).
+const awaitsWindow = p => p.reason === 'host_not_live' || p.reason === 'binding_stale' || awaitsLiveEvidence(p);
+
+// -> {ok, key, directory, opened: true, command: [command, ...args], readiness: {ready, reason?, extensionInstanceId?, checks, listingError?}}
+// Throws unknown_profile, profile_not_ready (the directory is gone) and chrome_open_failed (open exited non-zero);
+// nothing is opened for a refused key.
+export async function openCommand({home, key, chrome, run, listBackends, pollAt = OPEN_POLL_MS, wait = sleep, onCheck}) {
+  const entry = readRegistry(home).profiles[key];
+  if (!entry) fail('unknown_profile', `no registered profile "${key}"`, {hint: 'cua profiles list shows the registered keys'});
+  const directory = entry.chromeProfileDirectory;
+  if (chrome.profileDirectoryExists(directory) === 'missing') fail('profile_not_ready', `profile "${key}": ${REASONS.profile_directory_missing}`, {hint: `cua profiles remove ${key}, then add the profile again under its current directory`});
+  const {command, args} = openInvocation(directory);
+  const result = await run(command, args);
+  if (result.code !== 0) fail('chrome_open_failed', `${command} exited ${result.code} opening Chrome profile ${JSON.stringify(directory)}${result.stderr?.trim() ? `: ${result.stderr.trim()}` : ''}`, {hint: `is ${CHROME_APP} installed in /Applications?`});
+  let status;
+  let listingError;
+  let checks = 0;
+  let waited = 0;
+  for (const at of pollAt) {
+    await wait(at - waited);
+    waited = at;
+    checks += 1;
+    onCheck?.({check: checks, of: pollAt.length, afterMs: at});
+    const readiness = await profileReadiness({home, chrome, listBackends});
+    status = readiness.profiles.find(p => p.key === key);
+    listingError = readiness.listingError;
+    if (!status || status.ready || listingError || !awaitsWindow(status)) break;
+  }
+  if (!status) fail('profile_changed', `profile "${key}" was removed while its readiness was being checked`, {hint: 'cua profiles list shows the registered keys'});
+  const {key: _key, chromeProfileDirectory: _directory, ...rest} = status;
+  return {ok: status.ready, key, directory, opened: true, command: [command, ...args],
+    readiness: {...rest, checks, ...(listingError ? {listingError: listingError.code, listingMessage: listingError.message} : {})}};
+}

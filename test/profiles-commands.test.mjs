@@ -5,12 +5,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {chmodSync, mkdirSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile, readRegistry, reasonText, removeProfile} from '../src/profiles/registry.mjs';
-import {bindCommand, profileReadiness} from '../src/profiles/commands.mjs';
+import {bindCommand, openCommand, profileReadiness} from '../src/profiles/commands.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 import {mapExtensionDirectories} from '../src/profiles/directory-map.mjs';
@@ -226,6 +226,12 @@ test('the not-live reasons name the key, the Chrome profile directory and the on
   assert.match(stale, /cannot tell which/);
 });
 
+test('the wake step names cua profiles open <key> as the one-line way to open the window', () => {
+  const p = {key: 'personal', chromeProfileDirectory: 'Profile 8', extensionInstanceId: 'inst-a'};
+  for (const reason of ['host_not_live', 'binding_stale', 'chrome_data_unreadable'])
+    assert.match(reasonText({...p, reason}), /Chrome profile "Profile 8" \(one line: cua profiles open personal;/, reason);
+});
+
 test('reason text inserts the key and the Chrome directory verbatim, never as replacement patterns', () => {
   const dir = 'Profile $& $` $\'';
   const text = reasonText({key: 'personal', chromeProfileDirectory: dir, extensionInstanceId: 'inst-a', reason: 'host_not_live'});
@@ -265,6 +271,81 @@ test('bind over a stale binding marks it and still needs the user\'s pick, even 
   // With no backend live (or only another browser's), or with the bound one live, nothing is called stale.
   for (const backends of [[], [{instanceId: 'inst-x', family: 'edge'}], [{instanceId: 'inst-new'}, {instanceId: 'inst-b'}]])
     assert.equal((await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends)})).staleBinding, undefined);
+});
+
+// ---- profiles open ---------------------------------------------------------------------------------------------------
+
+// The open runner and the waits, recorded; the readiness listings are served in order, the last one repeating.
+function opener({code = 0, stderr = ''} = {}) {
+  const runs = [];
+  return {runs, run: async (command, args) => { runs.push([command, ...args]); return {code, stderr}; }};
+}
+function listings(...lists) {
+  let calls = 0;
+  const listBackends = async () => listing(lists[Math.min(calls++, lists.length - 1)])();
+  return {listBackends, calls: () => calls};
+}
+const waits = () => { const at = []; return {at, wait: async ms => { at.push(ms); }}; };
+
+test('profiles open runs open -n -a "Google Chrome" for the registered directory, then polls until the profile is ready', async t => {
+  const {home, chrome} = setup(t, {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work', extension: true}});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome});
+  bindProfile({home, key: 'work', extensionInstanceId: 'inst-w', now: new Date('2026-10-06T00:00:00Z')});
+  const {runs, run} = opener();
+  const live = listings([], [{instanceId: 'inst-w'}]);
+  const timer = waits();
+  const result = await openCommand({home, key: 'work', chrome, run, listBackends: live.listBackends, wait: timer.wait});
+  assert.deepEqual(runs, [['open', '-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8']], 'one argument, no shell: the space stays inside it');
+  assert.deepEqual(result, {ok: true, key: 'work', directory: 'Profile 8', opened: true, command: runs[0],
+    readiness: {ready: true, extensionInstanceId: 'inst-w', boundAt: '2026-10-06T00:00:00.000Z', checks: 2}});
+  assert.deepEqual(timer.at, [5_000, 5_000], 'checked at 5 s and 10 s, stopping once ready');
+  assert.equal(live.calls(), 2);
+});
+
+test('profiles open checks at most three times (5, 10, 20 s) and reports the last readiness when the host never comes back', async t => {
+  const {home, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a'});
+  for (const [backends, reason] of [[[], 'host_not_live'], [[{instanceId: 'inst-new'}], 'binding_stale']]) {
+    const live = listings(backends);
+    const timer = waits();
+    const result = await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: live.listBackends, wait: timer.wait});
+    assert.deepEqual({ok: result.ok, ready: result.readiness.ready, reason: result.readiness.reason, checks: result.readiness.checks}, {ok: false, ready: false, reason, checks: 3});
+    assert.deepEqual(timer.at, [5_000, 5_000, 10_000]);
+    assert.equal(live.calls(), 3, 'one bounded launch per check, three at most');
+  }
+});
+
+test('profiles open stops after one check when a window cannot change the answer: not bound, or the listing failed', async t => {
+  const {home, chrome} = setup(t);
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const unbound = listings([]);
+  const first = await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: unbound.listBackends, wait: waits().wait});
+  assert.deepEqual(first.readiness, {ready: false, reason: 'not_bound', checks: 1});
+  assert.equal(unbound.calls(), 0, 'nothing is bound, so nothing is launched');
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a'});
+  const failed = await openCommand({home, key: 'personal', chrome, run: opener().run, wait: waits().wait,
+    listBackends: failing(Object.assign(new Error('no runtime is installed'), {code: 'runtime_not_installed'}))});
+  assert.deepEqual(failed.readiness, {ready: false, reason: 'backends_unlistable', extensionInstanceId: 'inst-a', boundAt: failed.readiness.boundAt, checks: 1,
+    listingError: 'runtime_not_installed', listingMessage: 'no runtime is installed'});
+  assert.equal(failed.ok, false);
+});
+
+test('profiles open refuses an unknown key and a vanished directory without opening anything, and reports a failed open', async t => {
+  const {home, chrome} = setup(t);
+  const {runs, run} = opener();
+  const never = async () => assert.fail('no readiness check for a refusal');
+  await assert.rejects(openCommand({home, key: 'nope', chrome, run, listBackends: never, wait: never}), e => e.code === 'unknown_profile');
+  addProfile({home, key: 'school', directory: 'Profile 6', chrome});
+  const gone = fakeChromeFacts({});
+  await assert.rejects(openCommand({home, key: 'school', chrome: gone, run, listBackends: never, wait: never}),
+    e => e.code === 'profile_not_ready' && /directory no longer exists/.test(e.message));
+  assert.deepEqual(runs, []);
+  // A directory this process may not read is not refused: opening it does not need that access.
+  const unreadable = fakeChromeFacts({'Profile 6': {directory: 'unreadable'}});
+  assert.equal((await openCommand({home, key: 'school', chrome: unreadable, run, listBackends: never, wait: waits().wait})).opened, true);
+  await assert.rejects(openCommand({home, key: 'school', chrome, run: opener({code: 1, stderr: 'Unable to find application named \'Google Chrome\'\n'}).run, listBackends: never, wait: never}),
+    e => e.code === 'chrome_open_failed' && /exited 1 opening Chrome profile "Profile 6": Unable to find application/.test(e.message));
 });
 
 // ---- the CLI routes ----------------------------------------------------------------------------------------------
@@ -308,7 +389,8 @@ test('cua profiles list reports a bound profile it cannot check as backends_unli
 
 test('cua profiles usage errors exit 2', t => {
   const env = setup(t);
-  for (const args of [['profiles'], ['profiles', 'add', 'x'], ['profiles', 'add', '--chrome-profile', 'Default'], ['profiles', 'bind'], ['profiles', 'list', 'extra'], ['profiles', 'nope']])
+  for (const args of [['profiles'], ['profiles', 'add', 'x'], ['profiles', 'add', '--chrome-profile', 'Default'], ['profiles', 'bind'], ['profiles', 'list', 'extra'], ['profiles', 'nope'],
+    ['profiles', 'open'], ['profiles', 'open', 'a', 'b'], ['profiles', 'open', 'a', '--dry-run']])
     assert.equal(cua(args, env).status, 2, args.join(' '));
 });
 
@@ -433,4 +515,35 @@ test('an unreadable Local State leaves the candidates unplaced and the name rule
     {ok: false, reason: 'local_state_unreadable', map: {status: 'unavailable', reason: 'chrome_data_unreadable', readError: 'EACCES'}, placed: [null, null]});
   const failing = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends), mapDirectories: async () => { throw new Error('unexpected'); }, dryRun: true});
   assert.deepEqual({ok: failing.ok, by: failing.by, map: failing.directoryMap}, {ok: true, by: 'name', map: {status: 'unavailable', reason: 'error'}});
+});
+
+// The real runner through a stand-in `open` that only records its arguments: PATH holds nothing else, so no real
+// window can open. No runtime is installed, so the one check after 5 s reports why the backends could not be listed.
+test('cua profiles open prints the command it ran and the readiness line; --json mirrors it; an unknown key is refused', t => {
+  const env = setup(t, {'Profile 8': {name: 'Work', extension: true}});
+  assert.equal(cua(['profiles', 'add', 'work', '--chrome-profile', 'Profile 8'], env).status, 0);
+  bindProfile({home: env.home, key: 'work', extensionInstanceId: 'inst-w'});
+  const bin = join(env.userHome, 'bin');
+  mkdirSync(bin);
+  const log = join(env.userHome, 'open.log');
+  writeFileSync(join(bin, 'open'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`);
+  chmodSync(join(bin, 'open'), 0o755);
+  const run = args => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: env.home, HOME: env.userHome, PATH: bin}, encoding: 'utf8', timeout: 30_000});
+  const human = run(['profiles', 'open', 'work']);
+  assert.equal(human.status, 1, human.stderr);
+  assert.match(human.stdout, /^ran: open -n -a 'Google Chrome' --args '--profile-directory=Profile 8'$/m);
+  assert.match(human.stdout, /^work\s+not ready\s+Profile 8\s+the live OpenAI extension backends could not be listed/m);
+  assert.match(human.stderr, /checking its readiness 5 s after opening \(1 of at most 3/);
+  assert.match(human.stderr, /could not be listed \(runtime_not_installed: /);
+  assert.deepEqual(readFileSync(log, 'utf8').split('\n').slice(0, 5), ['-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8']);
+  const json = run(['profiles', 'open', 'work', '--json']);
+  assert.equal(json.status, 1, json.stderr);
+  const result = JSON.parse(json.stdout);
+  assert.deepEqual({...result, readiness: {...result.readiness, boundAt: undefined, listingMessage: undefined}}, {ok: false, key: 'work', directory: 'Profile 8', opened: true,
+    command: ['open', '-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8'],
+    readiness: {ready: false, reason: 'backends_unlistable', extensionInstanceId: 'inst-w', boundAt: undefined, checks: 1, listingError: 'runtime_not_installed', listingMessage: undefined}});
+  const unknown = run(['profiles', 'open', 'nope', '--json']);
+  assert.equal(unknown.status, 1);
+  assert.equal(JSON.parse(unknown.stdout).error.code, 'unknown_profile');
+  assert.equal(readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 10, 'two opens, none for the unknown key');
 });

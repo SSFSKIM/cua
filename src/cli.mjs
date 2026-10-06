@@ -2,6 +2,7 @@
 // both run `main`. The home is $CUA_HOME, default ~/Library/Application Support/cua. Exit codes: 0 success, 1 failure
 // or an unhealthy doctor report, 2 usage error.
 import {parseArgs} from 'node:util';
+import {execFile} from 'node:child_process';
 import {defaultHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
@@ -14,7 +15,7 @@ import {runSecrets} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
 import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
-import {bindCommand, profileReadiness} from './profiles/commands.mjs';
+import {bindCommand, openCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
 import {PICK_REASONS} from './profiles/bind.mjs';
@@ -35,6 +36,7 @@ const USAGE = `usage: cua <command>
   profiles list [--json]                                       registered profiles and whether each is ready
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
   profiles bind <key> [--extension-instance-id <id>] [--dry-run] [--json]  bind a key to its live OpenAI extension backend
+  profiles open <key> [--json]                                 open a window in that Chrome profile, then report its readiness
   chrome register [--replace] [--json]                         register cua's Chrome host with the browsers
   chrome unregister [--json]                                   remove cua's registration, restoring what it replaced
 environment: CUA_HOME (default ~/Library/Application Support/cua)`;
@@ -175,12 +177,15 @@ async function login(args) {
 // Chrome profile registrations (src/profiles). Registering and removing only touch $CUA_HOME/profiles.json; bind runs
 // one bounded, browser-only launch of the runtime to list the live extension backends, and list runs one (without tab
 // counts) when some profile is bound, to check that its bound instance is live. Either fails (exit 1) when that
-// launch's runtime could not be confirmed stopped; list still shows the profiles.
+// launch's runtime could not be confirmed stopped; list still shows the profiles. open opens a window in the profile
+// (the user's request, never automatic), then checks its readiness the way list does, at most three times; it exits 1
+// unless the profile is ready by then.
 const PROFILES_USAGE = {
   add: 'profiles add takes a key and --chrome-profile <directory>',
   list: 'profiles list takes only --json',
   remove: 'profiles remove takes exactly one key',
   bind: 'profiles bind takes a key and optionally --extension-instance-id <id> and --dry-run',
+  open: 'profiles open takes exactly one key',
 };
 const done = value => { print(value); return 0; };
 const ADDED = {
@@ -237,9 +242,15 @@ async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {})
   } finally { rl.close(); }
 }
 
+const readinessLine = p => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`;
+// The command as the user could paste it; it runs without a shell (execFile).
+const shellWord = word => /^[A-Za-z0-9_./=:-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
+const runOpen = (command, args) => new Promise(resolve => execFile(command, args, {encoding: 'utf8', timeout: 30_000}, (error, _stdout, stderr) =>
+  resolve({code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '')})));
+
 async function profiles(args) {
   const [command, ...rest] = args;
-  if (!Object.hasOwn(PROFILES_USAGE, command)) throw new UsageError('profiles takes add, list, remove or bind');
+  if (!Object.hasOwn(PROFILES_USAGE, command)) throw new UsageError('profiles takes add, list, remove, bind or open');
   const parsed = (options, positionals) => {
     try { return parse(rest, options, positionals); } catch (error) {
       if (error instanceof UsageError) throw new UsageError(PROFILES_USAGE[command]);
@@ -257,7 +268,7 @@ async function profiles(args) {
   }
   // list and bind launch the runtime with the sandbox state CUA_SHIM_SANDBOX picks; a bad value fails the command here,
   // before readiness would fold a listing failure into its report.
-  if (command === 'list' || command === 'bind') sandboxModeFrom(process.env);
+  if (command === 'list' || command === 'bind' || command === 'open') sandboxModeFrom(process.env);
   if (command === 'list') {
     const {values} = parsed({}, 0);
     const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends: () => {
@@ -268,8 +279,20 @@ async function profiles(args) {
     if (values.json) { print({ok: !leftover, profiles: list, ...(listingError ? {listingError: listingError.code} : {})}); return leftover ? 1 : 0; }
     if (listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${listingError.code}: ${listingError.message})\n`);
     if (!list.length) return done('no Chrome profiles are registered (cua profiles add <key> --chrome-profile <directory>)');
-    for (const p of list) print(`${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`);
+    for (const p of list) print(readinessLine(p));
     return leftover ? 1 : 0;
+  }
+  if (command === 'open') {
+    const {values, positionals} = parsed({}, 1);
+    const runtime = () => resolveRuntime({home});
+    const result = await openCommand({home, key: positionals[0], chrome, run: runOpen,
+      listBackends: () => listLiveBackends({home, runtime: runtime(), tabCounts: false}),
+      onCheck: values.json ? undefined : ({check, of, afterMs}) => process.stderr.write(`checking its readiness ${afterMs / 1000} s after opening (${check} of at most ${of}; one bounded runtime launch)...\n`)});
+    if (values.json) { print(result); return result.ok ? 0 : 1; }
+    print(`ran: ${result.command.map(shellWord).join(' ')}`);
+    if (result.readiness.listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${result.readiness.listingError}: ${result.readiness.listingMessage})\n`);
+    print(readinessLine({key: result.key, chromeProfileDirectory: result.directory, ...result.readiness}));
+    return result.ok ? 0 : 1;
   }
   if (command === 'remove') {
     const {values, positionals} = parsed({}, 1);

@@ -76,7 +76,7 @@ test('enroll records a relay URL, refuses to re-enrol, updates only the relay UR
 
 test('a relay URL is wss:, or ws: only to a loopback host: anything else carries the credentials in clear and is refused', t => {
   const dir = home(t);
-  for (const bad of ['https://relay.example/ws', 'not a url', '', 'ws://relay.example/ws', 'ws://192.168.1.20:7800/ws', 'ws://100.92.238.1/ws', 'ws://localhost.example/ws', 'ws://[::2]/ws'])
+  for (const bad of ['https://relay.example/ws', 'not a url', '', 'ws://relay.example/ws', 'ws://192.168.1.20:7800/ws', 'ws://100.92.238.1/ws', 'ws://localhost.example/ws', 'ws://[::2]/ws', 'wss://relay.example/ws#x'])
     assert.throws(() => enrollDevice({home: dir, relayUrl: bad}), {code: 'invalid_relay_url'}, bad);
   assert.equal(readDevice(dir), null);
   for (const good of ['wss://relay.example/ws', 'wss://10.0.0.1:8443/ws', 'ws://127.0.0.1:7800/ws', 'ws://127.8.9.10/ws', 'ws://localhost:7800/ws', 'ws://[::1]:7800/ws'])

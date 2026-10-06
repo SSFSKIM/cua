@@ -10,8 +10,9 @@
 //
 // The agent follows device.json while it runs (followDevice): the client credential is read at each request, and the
 // device credential and relay URL at each relay dial, so `remote enroll --rotate` refuses the old client credential at
-// once, and `remote enroll --relay <url>` moves the link to the new relay (checked at each request and each relay
-// ping), with no restart. A device.json that is gone or unreadable refuses every client until it is back.
+// once and ends every open session (a leaked credential's standing stream included), and `remote enroll --relay <url>`
+// moves the link to the new relay (checked at each request and each relay ping), with no restart. A device.json that
+// is gone or unreadable refuses every client until it is back.
 //
 // Limits, from the environment (src/remote/limits.mjs): CUA_AGENT_MAX_SESSIONS (default 1: every session drives the
 // same mouse, keyboard and Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins
@@ -160,8 +161,20 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     // The handlers are in place before anything serves, so no session can open without a signal closing it.
     const signalled = new Promise(resolve => { onSignal = resolve; });
     for (const signal of SIGNALS) process.on(signal, onSignal);
-    const current = followDevice(home, {diagnostics});
-    current();
+    const followed = followDevice(home, {diagnostics});
+    let credential = followed()?.clientCredential ?? null;
+    // The record as it is now. A different client credential ends every open session: whoever held the old one, its
+    // standing stream and in-flight results included, is cut off (the legitimate client initializes again).
+    const current = () => {
+      const now = followed();
+      const next = now?.clientCredential ?? null;
+      if (next !== credential) {
+        credential = next;
+        diagnostics('the client credential changed (device.json was rotated or removed); ending every open session');
+        mcp.endSessions('eof');
+      }
+      return now;
+    };
     // Each request's authentication reads the record as it is now, and gives the relay link its chance to follow a new URL.
     const clientCredential = () => {
       link?.refresh();

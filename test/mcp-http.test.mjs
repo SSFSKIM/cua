@@ -816,6 +816,20 @@ test('the client credential may be a function, read at each request: a rotation 
   for (const auth of [`Bearer ${'d'.repeat(64)}`, 'Bearer null', 'Bearer ']) assert.equal(await ping(auth, 3), 401, auth);
 });
 
+test('endSessions ends every open session and its streams, and the handler goes on serving new ones', async t => {
+  const {http, send, initialize} = setup(t, {maxSessions: 2});
+  const sessions = [await initialize(), await initialize()];
+  const get = send({method: 'GET', session: sessions[0]});
+  await until(() => get.res.status === 200, 'GET stream');
+  await http.endSessions('eof');
+  assert.equal(http.sessions.size, 0);
+  assert.ok(get.res.ended, 'the standing stream ended');
+  const gone = send({session: sessions[1], body: {jsonrpc: '2.0', id: 1, method: 'ping'}});
+  await gone.done;
+  assert.equal(gone.res.status, 404);
+  assert.ok(await initialize(), 'a new session opens');
+});
+
 test('a connection whose release fails is logged, not an unhandled rejection: DELETE still answers and the session is gone', async t => {
   const failing = async options => {
     const connection = await inProcess()(options);

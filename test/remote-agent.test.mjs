@@ -203,6 +203,27 @@ test('a running agent follows device.json: enroll --rotate refuses the old clien
   assert.equal((await agent.exit).code, 0);
 });
 
+test('a rotation ends every open session: a standing stream on the old credential is cut, its session gone', {skip: !installedHomeSupported}, async t => {
+  const home = fakeInstalledHome(t);
+  const {clientCredential} = enroll(home);
+  const agent = await startAgent(t, home);
+  const init = await post(agent.endpoint, clientCredential, INITIALIZE);
+  const session = init.headers.get('mcp-session-id');
+  await init.text();
+  const get = await fetch(agent.endpoint, {headers: {authorization: `Bearer ${clientCredential}`, accept: 'text/event-stream', 'mcp-session-id': session}});
+  assert.equal(get.status, 200);
+  const standing = get.text();
+  const rotated = JSON.parse(cua(['remote', 'enroll', '--rotate', '--json'], home).stdout);
+  const after = await post(agent.endpoint, rotated.clientCredential, {jsonrpc: '2.0', id: 1, method: 'tools/list'}, session);
+  assert.equal(after.status, 404, 'the session opened under the old credential is gone');
+  await standing;
+  assert.match(agent.stderr(), /client credential changed.*ending every open session/);
+  await until(() => new RegExp(`session ${session}: closed \\(eof`).test(agent.stderr()), 'the session closed as eof');
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+  agent.child.kill('SIGTERM');
+  assert.equal((await agent.exit).code, 0);
+});
+
 test('agent run --relay refuses a relay URL that is not wss: or loopback ws: (a hand-edited device.json)', t => {
   const home = emptyHome(t);
   enroll(home);
@@ -485,6 +506,45 @@ test('the link dials the target as it reads at each dial, redials at once when a
   link.refresh();
   await tick(60);
   assert.equal(a.connections.length, 2, 'an unchanged URL is left alone');
+});
+
+test('a dial the WebSocket constructor would refuse (a URL with a fragment, an unsendable credential) is logged and retried, never thrown', {skip: NEEDS_WS}, async t => {
+  const relay = await fakeRelay(t);
+  const good = {url: relay.url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev'};
+  let target = {...good, url: `${relay.url}#x`};
+  const diagnostics = [];
+  const link = await connectRelay({target: () => target, handle: () => {}, diagnostics: line => diagnostics.push(line), minBackoffMs: 10, maxBackoffMs: 20});
+  t.after(() => link.close());
+  await until(() => diagnostics.filter(line => /fragment|invalid_relay_url|must be wss/.test(line)).length >= 2, 'a fragment URL refused and retried at startup');
+
+  target = good;
+  await until(() => relay.connections[0]?.frames.length, 'connected once the URL is good');
+  target = {...good, url: `${relay.url}#y`};
+  link.refresh();
+  await relay.connections[0].closed;
+  await until(() => diagnostics.filter(line => /#y/.test(line) && /retrying/.test(line)).length >= 2, 'a switch to a fragment URL is logged and retried, not thrown');
+
+  target = {...good, url: relay.url.replace('/ws', '/other'), deviceCredential: 'bad\ncredential'};
+  link.refresh();
+  await until(() => diagnostics.filter(line => /could not dial/.test(line) && /retrying/.test(line)).length >= 2, 'a constructor failure is logged and retried');
+  assert.equal(relay.connections.length, 1);
+  target = good;
+  await until(() => relay.connections[1]?.frames.length, 'connected again once the target is good');
+});
+
+test('repeated refreshes before the old socket closes log the URL change and terminate the socket once', {skip: NEEDS_WS}, async t => {
+  const a = await fakeRelay(t);
+  const b = await fakeRelay(t);
+  let target = {url: a.url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev'};
+  const diagnostics = [];
+  const link = await connectRelay({target: () => target, handle: () => {}, diagnostics: line => diagnostics.push(line), minBackoffMs: 10, maxBackoffMs: 40});
+  t.after(() => link.close());
+  await until(() => a.connections[0]?.frames.length, 'hello');
+  target = {...target, url: b.url};
+  for (let i = 0; i < 5; i++) link.refresh();
+  await until(() => b.connections[0]?.frames.length, 'hello on the new relay');
+  assert.equal(diagnostics.filter(line => /relay URL changed/.test(line)).length, 1, diagnostics.join('\n'));
+  assert.equal(b.connections.length, 1);
 });
 
 // The real relay in this process, in front of the real HTTP handler over in-process connections.

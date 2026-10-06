@@ -55,8 +55,8 @@ needed), and on the client the line `enroll` printed:
 `claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"`.
 The agent follows the Mac's `device.json` while it runs, so moving a device to another relay (`cua remote enroll
 --relay <new url>`) needs no restart: the agent redials the new URL by itself. A `cua remote enroll --rotate` changes
-both hashes: replace the line and restart the relay (the agent, which already refuses the old client credential,
-reconnects with the new device credential), and re-register the client.
+both hashes: replace the line and restart the relay (the agent, which already refuses the old client credential and
+has ended the sessions opened with it, reconnects with the new device credential), and re-register the client.
 
 ## What the answers mean
 

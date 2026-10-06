@@ -506,6 +506,12 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     }
   }
 
+  // Ends every open session with `reason` (the agent does when the client credential is rotated) and keeps serving;
+  // resolves once they have released everything.
+  async function endSessions(reason) {
+    await Promise.allSettled([...sessions.values()].map(session => endSession(session, reason)));
+  }
+
   // Closes every session (and any still opening) with `reason`; resolves once all have released everything.
   async function close(reason = 'signal') {
     shutdown ??= reason;
@@ -514,5 +520,5 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     await Promise.allSettled([...ending]);
   }
 
-  return {handle, sessions, close};
+  return {handle, sessions, endSessions, close};
 }

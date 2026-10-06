@@ -19,12 +19,13 @@ const ofLength = (text, bytes) => typeof text === 'string' && B64URL.test(text) 
 const isLoopback = host => host === 'localhost' || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host);
 
 // A relay URL is wss:, or ws: only to this Mac's loopback (a relay on the same Mac, or a test): over ws: the device
-// credential and every client bearer would cross the network in clear.
+// credential and every client bearer would cross the network in clear. A #fragment is refused too, as the WebSocket
+// client refuses it.
 export function checkRelayUrl(relayUrl) {
   let url;
   try { url = new URL(relayUrl); } catch {}
-  if (url?.protocol !== 'wss:' && !(url?.protocol === 'ws:' && isLoopback(url.hostname)))
-    fail('invalid_relay_url', `the relay URL must be wss://, or ws:// to a loopback address (got ${JSON.stringify(relayUrl)})`, {hint: 'put the relay behind TLS and enrol it as wss://<relay>/ws, for example cua remote enroll --relay wss://relay.example/ws'});
+  if (url?.protocol !== 'wss:' && !(url?.protocol === 'ws:' && isLoopback(url.hostname)) || url.hash)
+    fail('invalid_relay_url', `the relay URL must be wss://, or ws:// to a loopback address, without a #fragment (got ${JSON.stringify(relayUrl)})`, {hint: 'put the relay behind TLS and enrol it as wss://<relay>/ws, for example cua remote enroll --relay wss://relay.example/ws'});
 }
 
 // The URL a client registers to reach this device through its relay: the relay's origin (https for wss:, http for a

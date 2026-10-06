@@ -67,7 +67,12 @@ export async function connectRelay({target, handle, diagnostics = () => {},
     if (!to) return later('no relay URL is enrolled in device.json');
     try { checkRelayUrl(to.url); } catch (error) { return later(error.message); }
     const {url, deviceId} = to;
-    const ws = new WebSocket(url, {headers: {authorization: `Bearer ${to.deviceCredential}`}, perMessageDeflate: false, handshakeTimeout: 15_000});
+    let ws;
+    // The constructor throws on what it cannot send (a URL or header it refuses); that is a failed dial, retried, since
+    // a throw here (in a 'close' listener or a timer) would end the agent.
+    try {
+      ws = new WebSocket(url, {headers: {authorization: `Bearer ${to.deviceCredential}`}, perMessageDeflate: false, handshakeTimeout: 15_000});
+    } catch (error) { return later(`could not dial ${url} (${error.code ?? error.message})`); }
     socket = ws;
     const channels = new Map();
     let opened = false;
@@ -200,6 +205,7 @@ export async function connectRelay({target, handle, diagnostics = () => {},
     const url = target()?.url ?? null;
     if (url === dialled) return;
     diagnostics(`relay: the enrolled relay URL changed to ${url ?? 'none'}; dialling again`);
+    dialled = url;   // once per change: later refreshes, before the old socket has closed, find nothing to do
     delay = minBackoffMs;
     if (socket) {
       socket.redial = true;

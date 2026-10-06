@@ -507,8 +507,9 @@ On an enrolled Mac, `enroll` refuses (`remote_already_enrolled`) unless given `-
 relay URL in place (nothing rotated, no credential shown), or `--rotate`, which replaces the secret under the same
 device id. A running agent follows `device.json`, so neither needs the agent restarted: after `--relay`, an agent that
 dials a relay moves to the new one by itself (an installed job that does not dial a relay yet needs `cua agent
-install` once, and `enroll` says so); after `--rotate`, the agent refuses the old client credential at once and
-presents the new device credential at its next connection to the relay. Then replace the relay's line and restart
+install` once, and `enroll` says so); after `--rotate`, the agent refuses the old client credential at once, ends
+every open session (so whoever held the old credential loses its open streams too; your client initializes again),
+and presents the new device credential at its next connection to the relay. Then replace the relay's line and restart
 the relay (the agent reconnects with the new credential), and re-register the client with the new credential.
 
 ### 2. Run the agent

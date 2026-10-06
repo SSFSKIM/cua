@@ -13,7 +13,7 @@ Summary:
 |---|---|
 | 8 Install and doctor | **PASS**. Install from the mirror deb and from the pinned URL. Doctor passes every row except `codex.login` (blocked: no Codex login, an owner step). `sandbox.userns` was `blocked` before the sysctl and `pass` after it |
 | 9 Native action | **PASS**. A gedit window bound by X11 id; marker typed, read back through AT-SPI and visible in the screenshot; `run/` empty afterwards |
-| 10 Chrome | **Partial**. Done: `chrome register` writes the Linux manifest; the extension starts cua's host **without sign-in**; `countLiveHosts` counts it; `profiles add` and `bind` work. **Blocked**: the `js` tab cell stops at `Codex auth token is unavailable`, which needs the owner's `cua login` and, possibly, the extension's sign-in |
+| 10 Chrome | **PASS** (finished 2026-10-06 23:10 UTC on main `f41c037` plus the fixture fix `b56aafa`, after the owner's `cua login`). `chrome register` writes the Linux manifest; the extension starts cua's host without sign-in; `countLiveHosts` counts it; `profiles add` and `bind` work; `scripts/accept/linux-chrome.mjs me` opens example.com through the extension's host, reads "Example Domain", closes the tab, ends the task, `run/` empty; `verify.mjs` with the browser surface exits 0 |
 | 11 Sandbox and bus from inside | **PASS** as revised: item 9 **fails under `scoped`** (X11 connect `EPERM`) and passes under `disabled`, the Linux default for the computer surface; with user namespaces refused, a scoped connection and the profile listing are **refused at launch** (`sandbox_unavailable`) instead of running unconfined |
 | 12 Tests | **PASS**. macOS 702 tests: 701 pass, 1 Linux-only skip. VM 702 tests: 659 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail; with user namespaces restricted, 655 pass and 47 skipped (the 4 CLI tests that need a scoped launch skip as `sandbox_unavailable`), 0 fail. `verify.mjs` passes on the VM and on the MacBook |
 
@@ -135,7 +135,7 @@ This may be specific to arm64 or to these GTK builds; no x64 machine was used. T
   (`e579ff6c-…`, Chrome profile `Default`, "Your Chrome"), and bound it automatically by directory
   (`"directoryMap": {"status": "complete"}`). `profiles list` shows `me` ready. `verify.mjs` with
   `CUA_SHIM_SURFACES=computer,browser` reports `profilesList` `{"status": "ok", "keys": ["me"], "ready": ["me"]}`.
-- **The tab cell (blocked).** Over `cua serve` with `CUA_SHIM_SURFACES=computer,browser`:
+- **The tab cell (blocked before the login; finished below).** Over `cua serve` with `CUA_SHIM_SURFACES=computer,browser`:
   - `cua.getBrowser({extensionInstanceId})` returned browser `1`, with the vendor's documentation.
   - `cua.createBrowserTab(browserId, 'https://example.com/')` failed with **`Codex auth token is unavailable`**. The
     browser route needs the server's Codex login (`cua login`), which only the owner may make. Whether the
@@ -143,6 +143,33 @@ This may be specific to arm64 or to these GTK builds; no x64 machine was used. T
     once the owner has signed in: it checks the live host's path, reads the bound instance id from
     `profiles_list`, opens, reads and closes the tab, and checks `run/`. A dry run before the login passed the
     host and `profiles_list` steps and stopped at that same error.
+
+- **The tab cell, finished (2026-10-06, 23:08–23:11 UTC).** After the owner signed in to ChatGPT in the VM's Chrome
+  and ran `cua login`, and with Chrome relaunched (`google-chrome --profile-directory=Default` on `:0`), the VM's
+  `~/cua` was moved to main `f41c037` (no dependency changes since `30c77ab`). All on the VM with
+  `DISPLAY=:0 XAUTHORITY=/home/admin/.Xauthority`:
+  - `node bin/cua.mjs doctor --json` (23:08:48): `ok: true`; `codex.login` **pass** ("the server has a Codex login in
+    its own CODEX_HOME"); `chrome.hosts.live` **pass** ("1 OpenAI Chrome host(s) running"). Every other row pass, or
+    skip for `secrets.helper` and the four `agent.*` rows.
+  - `node scripts/accept/linux-chrome.mjs me` at `f41c037` (23:08:52–23:09:11): **FAIL**. Host and `profiles_list`
+    passed (host pid 47556 under `$CUA_HOME/runtimes/26.928.40906-linux-arm64/…`, `me` ready, instance
+    `e579ff6c-…`); the tab step failed with "Browser Use rejected this action due to browser security policy. Reason:
+    The user declined permission for this action." The Codex login error was gone. The vendor asks for access to each
+    new website origin as an MCP elicitation, and the fixture's client declined every elicitation. Fixed in `b56aafa`:
+    the fixture answers as the macOS live acceptance does (`decideElicitation` with its own origin: only the structured
+    origin-access request for `https://example.com`, session scope; anything else declined) and reports each request.
+  - `node scripts/accept/linux-chrome.mjs me` with `b56aafa` (23:10:01–23:10:28): **PASS**, exit 0. Every step passed:
+    live host from `$CUA_HOME/runtimes`; `profiles_list` `me` ready; tab opened, title `"Example Domain"`; `close`
+    returned `closed`; `end_task` `ended`; `cua serve` exit 0 with no signal; `run/` `[]` before and after. One
+    elicitation: `origin-access`, form mode, own origin, answered `accept (session)`, text "Allow Browser use to
+    access <url>".
+  - `CUA_SHIM_SURFACES=computer,browser node verify.mjs` (23:10:35–23:10:52): **PASS**, exit 0. `problems: []`,
+    `elicitationsDeclined: 0`, tools `js, js_reset, end_task, secrets_list, profiles_list`, `browserApiDocumented:
+    true`, `profilesList` ok with `me` ready, `secretsList` `secrets_unsupported_platform`, task ids stable within
+    a task, a repeated `end_task` a `noop`, and the next task's id different; `allExecutablesRelocated: true`; exit
+    code 0. `$CUA_HOME/run` was empty afterwards.
+  - Item 10 is **PASS**. Whether the tab cell also needs the extension's own ChatGPT sign-in remains untested:
+    the extension was signed in for this run.
 
 ## Item 11: sandbox and bus from inside
 

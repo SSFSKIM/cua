@@ -292,34 +292,51 @@ the file checks back, grant your terminal Full Disk Access (System Settings → 
 (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
 extension backends with their tab counts. Only Google Chrome's backends are candidates: another browser's (Edge with
 the OpenAI extension, say, or a backend that reports no browser family) is never offered or bound, and the listing
-says only how many it left out. Beside each candidate it shows the profile label OpenAI's browser service gives it
-(the Chrome profile's display name, such as an account's name or domain), or `unlabelled` when there is none, and
-whether that is this profile's name or another's.
+says only how many it left out. Beside each candidate it shows two things:
 
-`bind` binds automatically only when exactly one live backend carries this profile's display name and no other
-Chrome profile has that name; it then prints the candidates with that backend marked `<- likely match`, so you can see
-which label decided it. Otherwise you pick: at a terminal `bind` shows the candidates and asks for the number of this
+- the Chrome profile directory it belongs to (`Profile 12`, say) and that directory's display name, and whether that
+  is this profile's directory or another's. cua works this out itself: for each profile in Chrome's `Local State` that
+  has the OpenAI extension's settings store, it copies the store to a temporary directory under `$CUA_HOME/staging`,
+  reads the extension's instance id from the copy with the installed runtime's own `classic-level`, and removes the
+  copy. Chrome's own files are only read, never opened as a database or written. A candidate no store accounts for
+  shows `profile directory unknown`;
+- the profile label OpenAI's browser service gives it (the Chrome profile's display name, such as an account's name
+  or domain), or `unlabelled` when there is none, and whether that is this profile's name or another's.
+
+`bind` binds automatically in two cases. When this profile directory's own store records exactly one live backend,
+that backend is this profile, even if another Chrome profile has the same display name. Otherwise (this profile's
+store could not be read, or it has none) it binds when exactly one live backend carries this profile's display name,
+no other Chrome profile has that name, and the store does not place that backend in another directory. When this
+profile's store names an instance that is not live, nothing is bound: this profile's backend is not running. After an
+automatic bind it prints the candidates with the bound one marked `<- likely match`, and says whether the directory
+or the name decided it. Otherwise you pick: at a terminal `bind` shows the candidates and asks for the number of this
 profile's backend (Enter cancels); elsewhere it prints the same listing and exits 1, and you pick with `cua profiles
-bind <key> --extension-instance-id <id>`. `--json` returns the listing with each candidate's `profileName` (null when
-unlabelled), `label` (`this-profile`, `other-profile`, `unlabelled`, or `comparison-unknown` when this profile's own
-name could not be read) and, after an automatic bind, `likelyMatch: true` on the bound one; an unbound result has
-`outcome: "pick_required"` and the `reason`. A pick is accepted only for a backend that is live now, and refused when
-the runtime labels that backend as another profile. A single live backend is never bound without the label; cua never
-chooses between profiles for you, and neither does the agent (its host notes say so).
+bind <key> --extension-instance-id <id>`. A pick is accepted only for a backend that is live now, and refused when its
+store places it in another profile directory or, with no placement, when the runtime labels it as another profile. A
+single live backend is never bound without the store or the label; cua never chooses between profiles for you, and
+neither does the agent (its host notes say so).
 
-The label is the vendor's: it reads Chrome's `Local State` and copies the extension's settings store to a temporary
-directory to find it, so it needs Chrome's directory readable and a sandbox that lets it write a temporary directory
-(`CUA_SHIM_SANDBOX` `scoped`, the default, or `disabled`). Without either, the lookup fails silently and every
-candidate is unlabelled. Two profiles can share a
-display name; their backends then carry the same label and you pick (telling them apart by profile directory is a
-planned second step).
+`--dry-run` makes the same decision and prints it as `would bind ...` without recording anything. `--json` returns the
+listing with each candidate's `chromeProfile` (`{directory, name, thisProfile}`, or null when no store accounts for
+it), `profileName` (the runtime's label, null when unlabelled), `label` (`this-profile`, `other-profile`, `unlabelled`,
+or `comparison-unknown` when this profile's own name could not be read) and, after an automatic bind, `likelyMatch:
+true` on the bound one with `by` (`directory` or `name`); `directoryMap.status` is `complete`, `partial` (some stores
+could not be read; `unreadableStores` and `readError` say how many and why) or `unavailable` (with the `reason`). An
+unbound result has `outcome: "pick_required"` and the `reason`.
+
+The directories need Chrome's `Local State` and the extension's stores readable: without Full Disk Access for your
+terminal (see above), every candidate is shown with `profile directory unknown`, `bind` adds a note with the fix, and
+the label rule applies as before; it never fails `bind`. The label is the vendor's, found the same way inside the
+runtime, so it also needs a sandbox that lets the runtime write a temporary directory (`CUA_SHIM_SANDBOX` `scoped`,
+the default, or `disabled`); without one every candidate is unlabelled, silently.
 
 A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
 `chrome://extensions`, or reinstalling it, can give it a new instance id: the stored binding then points at an instance
 that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chrome instance is unavailable.", and
 `list` and `profiles_list` report the profile `binding_stale` (the agent is told to ask you to rebind). Run
-`cua profiles bind <key>` again: it names the stale id beside the live backends, and the pick stays yours, even when
-exactly one new unlabelled backend appeared.
+`cua profiles bind <key>` again: it names the stale id beside the live backends and applies the rules above, so the
+new instance is bound automatically when this profile's store records it, and otherwise the pick stays yours, even
+when exactly one new unlabelled backend appeared.
 
 A binding also needs its extension host to be running. Chrome starts the OpenAI host when the extension connects and
 ends it when that connection closes; with Chrome closed there is none. When no

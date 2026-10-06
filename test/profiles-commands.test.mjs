@@ -12,6 +12,8 @@ import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile, readRegistry, reasonText, removeProfile} from '../src/profiles/registry.mjs';
 import {bindCommand, profileReadiness} from '../src/profiles/commands.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
+import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
+import {mapExtensionDirectories} from '../src/profiles/directory-map.mjs';
 
 function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}, 'Profile 6': {name: 'School'}}) {
   const s = scratch();
@@ -41,7 +43,7 @@ test('bind stores the automatically labelled backend and says how it was chosen'
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   const backends = [{instanceId: 'inst-a', profileName: 'Personal', tabCount: 3}, {instanceId: 'inst-b', tabCount: 0}, {instanceId: 'inst-c', profileName: 'Work', tabCount: 1}];
   const result = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends), pick: async () => assert.fail('no picker for an automatic bind')});
-  assert.deepEqual(result, {ok: true, key: 'personal', extensionInstanceId: 'inst-a', how: 'automatic', elicitationsDeclined: 0, backends: [
+  assert.deepEqual(result, {ok: true, key: 'personal', extensionInstanceId: 'inst-a', how: 'automatic', by: 'name', elicitationsDeclined: 0, backends: [
     {instanceId: 'inst-a', tabCount: 3, profileName: 'Personal', label: 'this-profile', likelyMatch: true},
     {instanceId: 'inst-b', tabCount: 0, profileName: null, label: 'unlabelled'}, {instanceId: 'inst-c', tabCount: 1, profileName: 'Work', label: 'other-profile'}]});
   assert.equal(readRegistry(home).profiles.personal.extensionInstanceId, 'inst-a');
@@ -375,4 +377,60 @@ test('cua profiles add and list name an unreadable Chrome data directory, never 
   } finally { chmodSync(extensions, 0o755); }
   const json = JSON.parse(cua(['profiles', 'add', 'again', '--chrome-profile', 'Default', '--json'], {...env, home: join(env.home, 'other')}).stdout);
   assert.deepEqual(json, {ok: true, key: 'again', chromeProfileDirectory: 'Default', extension: 'installed'});
+});
+
+// ---- issue #21 step 2: the directory mapping in bind, with real fixture extension stores ----------------------------
+
+// Each listed directory's extension store records its instance id; the stores stay open as Chrome keeps them.
+async function withStores(t, ctx, ids) {
+  for (const [dir, id] of Object.entries(ids)) {
+    const path = join(ctx.userData, dir, 'Local Extension Settings', OPENAI_EXTENSION_ID);
+    mkdirSync(join(path, '..'), {recursive: true});
+    const db = await writeStore(path, id, {keepOpen: true});
+    t.after(() => db.close());
+  }
+  return () => mapExtensionDirectories({home: ctx.home, chrome: ctx.chrome, moduleDir: CLASSIC_LEVEL_MODULES, extensionIds: [OPENAI_EXTENSION_ID]});
+}
+
+test('bind places each candidate in its profile directory and binds by directory where display names collide', {skip: NO_CLASSIC_LEVEL}, async t => {
+  const ctx = setup(t, {Default: {name: 'Same', extension: true}, 'Profile 12': {name: 'Same', extension: true}, 'Profile 3': {name: 'Other'}});
+  const {home, chrome} = ctx;
+  addProfile({home, key: 'school', directory: 'Profile 12', chrome});
+  const mapDirectories = await withStores(t, ctx, {Default: 'inst-default', 'Profile 12': 'inst-twelve'});
+  const backends = [{instanceId: 'inst-default', profileName: 'Same', tabCount: 4}, {instanceId: 'inst-twelve', profileName: 'Same', tabCount: 2}, {instanceId: 'inst-x', tabCount: 1}];
+
+  const withoutMap = await bindCommand({home, key: 'school', chrome, listBackends: listing(backends)});
+  assert.deepEqual({ok: withoutMap.ok, reason: withoutMap.reason}, {ok: false, reason: 'display_name_not_unique'}, 'step 1 alone cannot tell them apart');
+
+  const dry = await bindCommand({home, key: 'school', chrome, listBackends: listing(backends), mapDirectories, dryRun: true, pick: async () => assert.fail('no picker')});
+  assert.deepEqual(dry, {ok: true, dryRun: true, key: 'school', extensionInstanceId: 'inst-twelve', how: 'automatic', by: 'directory', elicitationsDeclined: 0,
+    directoryMap: {status: 'complete'}, backends: [
+      {instanceId: 'inst-default', tabCount: 4, profileName: 'Same', label: 'this-profile', chromeProfile: {directory: 'Default', name: 'Same', thisProfile: false}},
+      {instanceId: 'inst-twelve', tabCount: 2, profileName: 'Same', label: 'this-profile', chromeProfile: {directory: 'Profile 12', name: 'Same', thisProfile: true}, likelyMatch: true},
+      {instanceId: 'inst-x', tabCount: 1, profileName: null, label: 'unlabelled', chromeProfile: null}]});
+  assert.equal(readRegistry(home).profiles.school.extensionInstanceId, undefined, 'a dry run records nothing');
+
+  const bound = await bindCommand({home, key: 'school', chrome, listBackends: listing(backends), mapDirectories});
+  assert.deepEqual({ok: bound.ok, how: bound.how, by: bound.by, id: bound.extensionInstanceId}, {ok: true, how: 'automatic', by: 'directory', id: 'inst-twelve'});
+  assert.equal(readRegistry(home).profiles.school.extensionInstanceId, 'inst-twelve');
+
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  await assert.rejects(bindCommand({home, key: 'personal', chrome, explicitId: 'inst-twelve', listBackends: listing(backends), mapDirectories}),
+    e => e.code === 'bind_refused' && /another Chrome profile directory/.test(e.message), 'a pick its store places in another directory is refused');
+});
+
+test('an unreadable Local State leaves the candidates unplaced and the name rule as it was, never failing bind', {skip: NO_CLASSIC_LEVEL || process.getuid?.() === 0}, async t => {
+  const ctx = setup(t);
+  const {home, chrome, userData} = ctx;
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  const mapDirectories = await withStores(t, ctx, {Default: 'inst-a'});
+  const backends = [{instanceId: 'inst-a', profileName: 'Personal', tabCount: 1}, {instanceId: 'inst-b', tabCount: 0}];
+  chmodSync(join(userData, 'Local State'), 0o000);
+  let result;
+  try { result = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends), mapDirectories, dryRun: true}); }
+  finally { chmodSync(join(userData, 'Local State'), 0o644); }
+  assert.deepEqual({ok: result.ok, reason: result.reason, map: result.directoryMap, placed: result.backends.map(b => b.chromeProfile)},
+    {ok: false, reason: 'local_state_unreadable', map: {status: 'unavailable', reason: 'chrome_data_unreadable', readError: 'EACCES'}, placed: [null, null]});
+  const failing = await bindCommand({home, key: 'personal', chrome, listBackends: listing(backends), mapDirectories: async () => { throw new Error('unexpected'); }, dryRun: true});
+  assert.deepEqual({ok: failing.ok, by: failing.by, map: failing.directoryMap}, {ok: true, by: 'name', map: {status: 'unavailable', reason: 'error'}});
 });

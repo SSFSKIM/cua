@@ -1,7 +1,8 @@
 // Passive facts about the user's Chrome that the profile registry and doctor need, read from files and the process
 // table only: never a connection, a profile database, cookies, passwords or extension storage, and nothing is
-// written. Display names are read from Chrome's `Local State` for the bind rule only; callers must never print or
-// store them (they can be the account holder's name).
+// written (bind's directory mapping reads copies of the OpenAI extension's own store; directory-map.mjs). Display names
+// are read from Chrome's `Local State` for the bind rule and for showing beside bind's candidates only; nothing stores
+// them (they can be the account holder's name).
 //   - a registered profile directory exists (a direct child of the user-data directory);
 //   - the OpenAI extension is installed there: some Extensions/<id>/<version>/manifest.json exists (file presence
 //     only; it says nothing about the extension being enabled or connected);

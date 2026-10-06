@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {runtimePaths, probeEnv, descendants, classifyProcesses, socketHolders, sanitize} from '../scripts/probe/lib.mjs';
+import {runtimePaths, probeEnv, descendants, classifyProcesses, socketHolders, sanitize, nativeSocketStep, procTable} from '../scripts/probe/lib.mjs';
 
 const HOME_DIR = '/Users/someone';
 const CUA_HOME = '/tmp/cua-probe.abc';
@@ -87,4 +87,23 @@ test('socket holders are read from lsof field output', () => {
 test('sanitize replaces the scratch home and user home with placeholders, deeply', () => {
   const out = sanitize({a: `${CUA_HOME}/runtimes/x`, b: [`${HOME_DIR}/Library/y`, 3], c: {d: `see ${CUA_HOME}`}}, {cuaHome: CUA_HOME, userHome: HOME_DIR});
   assert.deepEqual(out, {a: '$CUA_HOME/runtimes/x', b: ['~/Library/y', 3], c: {d: 'see $CUA_HOME'}});
+});
+
+// Phase F: on Linux the computer-use helper is the runtime's own child over stdio, so the native-socket holder step
+// reads skip; the process tree is read from /proc (ps's comm is truncated there); the deb's desktop runtime is flagged.
+test('the native-socket holder step applies on macOS only and reads skip on Linux', () => {
+  assert.equal(nativeSocketStep('darwin'), null);
+  assert.deepEqual(nativeSocketStep('linux'), {status: 'skip', reason: 'linux: the computer-use helper (sky_linux) is a child process of the runtime over stdio, not a native socket holder'});
+});
+
+test('a Linux process table pairs each pid and parent with its /proc executable, skipping what cannot be read', () => {
+  const exe = {10: '/usr/bin/node', 11: '/home/u/.local/share/cua/runtimes/r/cua_node/bin/node', 12: '/home/u/a dir/node_repl'};
+  const text = procTable('   10     1\n   11    10\n   12    11\n   13    11\n', pid => exe[pid] ?? null);
+  assert.equal(text, '10 1 /usr/bin/node\n11 10 /home/u/.local/share/cua/runtimes/r/cua_node/bin/node\n12 11 /home/u/a dir/node_repl');
+  assert.deepEqual(descendants(text, 11).map(p => p.executable), ['/home/u/.local/share/cua/runtimes/r/cua_node/bin/node', '/home/u/a dir/node_repl']);
+});
+
+test('the Linux desktop app\'s runtime under /usr/lib/chatgpt is an installed-desktop path', () => {
+  const tree = [{pid: 1, ppid: 0, executable: '/usr/lib/chatgpt/resources/cua_node/bin/node_repl'}];
+  assert.equal(classifyProcesses(tree, {relocatedRoot: '/home/u/.local/share/cua/runtimes/r'}).desktopRuntimePaths.length, 1);
 });

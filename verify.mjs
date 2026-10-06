@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Checks the standalone server end to end through the actual launcher: `cua serve` on the installed runtime in
-// $CUA_HOME (default ~/Library/Application Support/cua). It runs the MCP handshake, checks the tool surface (four
+// $CUA_HOME (default ~/Library/Application Support/cua; on Linux ${XDG_DATA_HOME:-~/.local/share}/cua). It runs the MCP handshake, checks the tool surface (four
 // tools; five with the browser surface of CUA_SHIM_SURFACES, which adds profiles_list and documents the browser API
 // in the js description, while the default documents none) and instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
 // (its banner), which reaches the native helper read-only. Then end_task, a second task, and EOF. It records which
@@ -13,17 +13,20 @@
 //
 // profiles_list (browser surface) is checked for shape only and never opens a tab.
 //
+// On Linux the process tree is read from /proc (ps truncates executable names there), and the native-socket holder
+// step reads skip: the computer-use helper is a child process of the runtime, not a socket holder.
+//
 //   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
 //   CUA_SHIM_SURFACES=computer,browser node verify.mjs   the same with the browser surface
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, lstatSync, readFileSync, readdirSync, realpathSync} from 'node:fs';
+import {existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
-import {descendants, classifyProcesses, socketHolders} from './scripts/probe/lib.mjs';
+import {descendants, classifyProcesses, socketHolders, nativeSocketStep, procTable} from './scripts/probe/lib.mjs';
 import {locateHelper} from './src/secrets/helper.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
 
@@ -37,6 +40,9 @@ const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ?
 const report = {home, surfaces, problems};
 const check = (ok, problem) => { if (!ok) problems.push(problem); return ok; };
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8'}).stdout ?? '';
+const exeOf = pid => { try { return readlinkSync(`/proc/${pid}/exe`); } catch { return null; } };
+// `pid ppid executable` for every process (descendants reads it).
+const processTable = () => process.platform === 'linux' ? procTable(sh('ps', ['-eo', 'pid=,ppid=']), exeOf) : sh('ps', ['-axo', 'pid=,ppid=,comm=']);
 
 let runtime;
 try {
@@ -130,7 +136,7 @@ try {
   // beside it, the connection's secrets broker when the Keychain helper is built.
   const helperPath = locateHelper({home}).path;
   const helper = existsSync(helperPath) ? realpathSync(helperPath) : null;
-  const all = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), server.pid).filter(p => p.pid !== server.pid);
+  const all = descendants(processTable(), server.pid).filter(p => p.pid !== server.pid);
   const brokers = all.filter(p => p.ppid === server.pid && helper && [helperPath, helper].includes(p.executable));
   const tree = all.filter(p => !brokers.includes(p));
   report.secretsBroker = brokers.map(p => ({pid: p.pid, executable: p.executable.replace(homedir(), '~')}));
@@ -151,7 +157,7 @@ try {
   check(anchor && tree.every(p => pgid(p.pid) === anchor.pid), 'a runtime process is outside the anchor\'s process group');
   check(classification.desktopRuntimePaths.length === 0, 'an installed-desktop runtime path served this connection');
   check(classification.allExecutablesRelocated, 'not every runtime process runs from the installed release');
-  report.nativeHelper = (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])
+  report.nativeHelper = nativeSocketStep(process.platform) ?? (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])
     .map(h => ({pid: h.pid, executable: sh('ps', ['-o', 'comm=', '-p', String(h.pid)]).trim()}))
     .map(h => ({pid: h.pid, executable: h.executable.replace(homedir(), '~'), origin: h.executable.startsWith(runtime.root) ? 'pinned runtime' : 'another installation (not started or stopped by cua)'}));
 

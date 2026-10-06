@@ -68,3 +68,19 @@ test('there is no public way to swap the release pins or skip verification', () 
       assert.equal(cua(['install', flag, 'x'], s.dir).status, 2, flag);
   } finally { s.cleanup(); }
 });
+
+test('the usage names the default home per platform: Application Support on macOS, XDG on Linux', async () => {
+  const {usageFor} = await import('../src/cli.mjs');
+  assert.match(usageFor('darwin'), /^environment: CUA_HOME \(default ~\/Library\/Application Support\/cua\); for agent run:/m);
+  assert.match(usageFor('darwin'), /install \[--archive <ChatGPT zip>\]/);
+  assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run:/m);
+  assert.match(usageFor('linux'), /install \[--archive <ChatGPT deb>\]/);
+});
+
+test('a detached opener resolves once the program has started, and reports one that cannot start', async () => {
+  const {runOpen} = await import('../src/cli.mjs');
+  assert.deepEqual(await runOpen('true', [], {detached: true}), {code: 0, stderr: ''});
+  const missing = await runOpen('cua-test-no-such-program', ['--profile-directory=Default'], {detached: true});
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /ENOENT/);
+});

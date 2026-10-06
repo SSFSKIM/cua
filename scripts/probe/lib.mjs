@@ -61,13 +61,29 @@ export function descendants(psText, rootPid) {
   return out;
 }
 
-const DESKTOP_RUNTIME = /\/ChatGPT\.app\/Contents\/|\/\.codex\/computer-use\//;
+// The installed desktop app's runtime: its macOS bundle, its Linux deb, or the computer-use copy it keeps under ~/.codex.
+const DESKTOP_RUNTIME = /\/ChatGPT\.app\/Contents\/|^\/usr\/lib\/chatgpt\/|\/\.codex\/computer-use\//;
 
 export function classifyProcesses(tree, {relocatedRoot}) {
   return {
     desktopRuntimePaths: tree.filter(p => DESKTOP_RUNTIME.test(p.executable)),
     allExecutablesRelocated: tree.length > 0 && tree.every(p => p.executable.startsWith(relocatedRoot + '/')),
   };
+}
+
+// `ps -eo pid=,ppid=` text and a reader of /proc/<pid>/exe (null when it cannot be read: another user's process, or
+// one gone meanwhile) -> the same `pid ppid executable` lines `descendants` reads. Linux's ps truncates `comm` to 15
+// characters, so the executable path comes from /proc.
+export function procTable(psText, exeOf) {
+  return psText.split('\n').map(line => line.match(/^\s*(\d+)\s+(\d+)\s*$/)).filter(Boolean)
+    .flatMap(([, pid, ppid]) => { const exe = exeOf(Number(pid)); return exe ? [`${pid} ${ppid} ${exe}`] : []; }).join('\n');
+}
+
+// The native-socket holder step of verify.mjs: null where it applies (macOS), else why it is skipped. On Linux the
+// computer-use helper is a child process of the runtime over stdio and holds no socket.
+export function nativeSocketStep(platform) {
+  return platform === 'darwin' ? null
+    : {status: 'skip', reason: `${platform}: the computer-use helper (sky_linux) is a child process of the runtime over stdio, not a native socket holder`};
 }
 
 // `lsof -F pc <path>` field output -> [{pid, command}].

@@ -98,13 +98,12 @@ const BROWSER_NOTES = [
 // the macOS-only element setters do not exist and paste types, key names are X keysyms, and nothing asks the user per
 // app (the owner's allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime, so a model cell
 // can talk to X directly: the trusted wrapper is not a boundary there.
-const LINUX_COMPUTER_HEAD = '- Use this when a Linux desktop app\'s GUI is the only way; the first js call returns the API document.';
+const LINUX_COMPUTER_HEAD = '- Use this when a Linux app\'s GUI is the only way; the first js call returns the API document.';
 const LINUX_COMPUTER_NOTES = [
-  '- Bind apps by window: cua.getApp({windowId}) with an id from listWindows(). setValue and selectText do not exist; paste types.',
+  '- Bind by window: cua.getApp({windowId}) with an id from listWindows(). setValue and selectText do not exist; paste types.',
   '- Key names are X keysyms. Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier).',
-  '- No app asks for approval: this connection can drive every window of the session, and the trusted wrapper is not a boundary on Linux.',
-  '- After a window closes, drop its handle and bind again from listWindows().',
-  '- If REPL state is confused, js_reset and rebind the window.',
+  '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
+  '- If REPL state is confused, js_reset and rebind the window from listWindows().',
 ];
 
 export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');

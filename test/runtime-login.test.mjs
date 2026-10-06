@@ -163,3 +163,34 @@ test('cua login with no installed runtime gives the existing install guidance', 
   assert.match(r.stderr, /runtime_not_installed/);
   assert.match(r.stderr, /cua install/);
 });
+
+// ---- Linux (Phase F) ----------------------------------------------------------------------------------------------
+
+test('on Linux the login CLI also gets the desktop session, so xdg-open can reach a browser; macOS gets none of it', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const ambient = {HOME: '/home/u', DISPLAY: ':0', XAUTHORITY: '/home/u/.Xauthority', XDG_RUNTIME_DIR: '/run/user/1000', PATH: '/evil/bin'};
+  const linux = loginInvocation({runtime: {paths: {codexCli: '/r/codex'}, manifest: {platform: 'linux'}}, home: s.dir, mode: 'login', ambient});
+  assert.equal(linux.env.DISPLAY, ':0');
+  assert.equal(linux.env.XAUTHORITY, '/home/u/.Xauthority');
+  assert.equal(linux.env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
+  assert.equal(linux.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin');
+  const darwin = loginInvocation({runtime: {paths: {codexCli: '/r/codex'}, manifest: {platform: 'darwin'}}, home: s.dir, mode: 'login', ambient});
+  for (const key of ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']) assert.equal(key in darwin.env, false, key);
+});
+
+test('on Linux without xdg-open, login says the browser will not open and how to sign in anyway, then runs the CLI', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const runtime = {...fakeRuntime(s.dir), manifest: {platform: 'linux'}};
+  const notes = [];
+  const run = opener => runLogin({home: join(s.dir, 'home'), runtime, isTTY: () => true, ambient: {HOME: s.dir}, stdio: 'ignore', note: line => notes.push(line), opener});
+  assert.equal(await run(() => null), 0);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /xdg-open/);
+  assert.match(notes[0], /--device-auth/);
+  assert.match(fakeLog(join(realpathSync(s.dir), 'home', 'state', 'codex')), /argv: login/);
+  notes.length = 0;
+  assert.equal(await run(() => '/usr/bin/xdg-open'), 0);
+  assert.deepEqual(notes, []);
+});

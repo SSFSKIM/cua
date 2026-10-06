@@ -1,8 +1,9 @@
 // cua: install, diagnose and serve the standalone computer-use runtime. `bin/cua.mjs` and the plugin's `cua-shim.mjs`
-// both run `main`. The home is $CUA_HOME, default ~/Library/Application Support/cua. Exit codes: 0 success, 1 failure
-// or an unhealthy doctor report, 2 usage error.
+// both run `main`. The home is $CUA_HOME, default ~/Library/Application Support/cua on macOS and
+// ${XDG_DATA_HOME:-~/.local/share}/cua on Linux. Exit codes: 0 success, 1 failure or an unhealthy doctor report, 2 usage
+// error.
 import {parseArgs} from 'node:util';
-import {execFile} from 'node:child_process';
+import {execFile, spawn} from 'node:child_process';
 import {defaultHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
@@ -24,8 +25,15 @@ import {PICK_REASONS} from './profiles/bind.mjs';
 import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
 import {registerHost, unregisterHost} from './chrome/registration.mjs';
 
-const USAGE = `usage: cua <command>
-  install [--archive <ChatGPT zip>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host
+// The usage text names this platform's archive kind and default home.
+const PLATFORM_USAGE = {
+  darwin: {archive: 'ChatGPT zip', home: '~/Library/Application Support/cua'},
+  linux: {archive: 'ChatGPT deb', home: '$XDG_DATA_HOME/cua, else ~/.local/share/cua'},
+};
+export const usageFor = platform => {
+  const {archive, home} = PLATFORM_USAGE[platform] ?? PLATFORM_USAGE.darwin;
+  return `usage: cua <command>
+  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
@@ -45,8 +53,10 @@ const USAGE = `usage: cua <command>
   remote show [--json]                                         the device id, relay URL and the relay's devices.json line
   agent run [--http <host:port>] [--relay]                     serve MCP to remote clients until a signal; --http 127.0.0.1:7801
                                                                serves this Mac only, its LAN address serves the LAN
-environment: CUA_HOME (default ~/Library/Application Support/cua); for agent run: CUA_AGENT_MAX_SESSIONS (default 1),
+environment: CUA_HOME (default ${home}); for agent run: CUA_AGENT_MAX_SESSIONS (default 1),
   CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call; none by default)`;
+};
+const USAGE = usageFor(process.platform);
 
 class UsageError extends Error {}
 
@@ -310,8 +320,16 @@ async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {})
 const readinessLine = p => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`;
 // The command as the user could paste it; it runs without a shell (execFile).
 const shellWord = word => /^[A-Za-z0-9_./=:-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
-const runOpen = (command, args) => new Promise(resolve => execFile(command, args, {encoding: 'utf8', timeout: 30_000}, (error, _stdout, stderr) =>
-  resolve({code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '')})));
+// A detached opener (Linux's google-chrome, which becomes the browser itself when none runs) is done once it has
+// started; nothing waits for it to exit.
+export const runOpen = (command, args, {detached = false} = {}) => detached
+  ? new Promise(resolve => {
+    const child = spawn(command, args, {detached: true, stdio: 'ignore'});
+    child.once('spawn', () => { child.unref(); resolve({code: 0, stderr: ''}); });
+    child.once('error', error => resolve({code: 1, stderr: error.message}));
+  })
+  : new Promise(resolve => execFile(command, args, {encoding: 'utf8', timeout: 30_000}, (error, _stdout, stderr) =>
+    resolve({code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '')})));
 
 async function profiles(args) {
   const [command, ...rest] = args;

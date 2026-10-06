@@ -29,11 +29,17 @@ const TOOLS = [
   {name: 'turn_ended', description: 'Fake turn_ended.', inputSchema: {type: 'object', properties: {}}},
 ];
 
+// The SIGTERM-ignoring shapes outlive an aborted test run (a killed runner never reaches the SIGKILL in t.after), so every
+// process this fixture starts exits on its own after WATCHDOG_MS: far longer than any test, short enough not to pile up.
+const WATCHDOG_MS = Number(process.env.FAKE_WATCHDOG_MS ?? 10 * 60 * 1000);
+const LINGER = `process.on("SIGTERM", () => {}); setInterval(() => {}, 1 << 30); setTimeout(() => process.exit(0), ${WATCHDOG_MS})`;
+
 if (process.env.FAKE_PID_FILE) writeFileSync(process.env.FAKE_PID_FILE, String(process.pid));
 const keepAlive = setInterval(() => {}, 1 << 30);
+setTimeout(() => process.exit(0), WATCHDOG_MS);
 if (mode === 'ignore-term') process.on('SIGTERM', () => {});
 if (mode === 'unowned') {
-  const helper = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1 << 30)'], {detached: true, stdio: 'ignore'});
+  const helper = spawn(process.execPath, ['-e', `setInterval(() => {}, 1 << 30); setTimeout(() => process.exit(0), ${WATCHDOG_MS})`], {detached: true, stdio: 'ignore'});
   writeFileSync(pidFile, String(helper.pid));
   helper.unref();
 }
@@ -75,7 +81,7 @@ createInterface({input: process.stdin}).on('line', line => {
 }).on('close', () => {
   if (mode === 'ignore-term') return;
   if (mode === 'orphan') {
-    const child = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1 << 30)'], {stdio: 'ignore'});
+    const child = spawn(process.execPath, ['-e', LINGER], {stdio: 'ignore'});
     writeFileSync(pidFile, String(child.pid));
     child.unref();
   }

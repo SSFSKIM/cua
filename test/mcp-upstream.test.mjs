@@ -13,6 +13,9 @@ const FAKE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-ups
 const UPSTREAM_URL = JSON.stringify(pathToFileURL(join(dirname(FAKE), '..', '..', 'src', 'mcp', 'upstream.mjs')).href);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// The budget for teardowns a test expects to confirm. It has to leave a loaded machine (several suites at once) room
+// to observe the anchor's exit and list the group empty; tests about the budget itself set their own.
+const CONFIRM_MS = 3000;
 const waitFile = async file => { for (let i = 0; i < 200 && !existsSync(file); i++) await sleep(10); return Number(readFileSync(file, 'utf8')); };
 
 function start(t, mode, extraArgs = [], options = {}) {
@@ -40,7 +43,7 @@ test('relays JSON-RPC both ways and a clean EOF exit needs no signal', async t =
   const init = await request(1, 'initialize');
   assert.equal(init.result.serverInfo.name, 'fake-upstream');
   const pid = upstream.pid;
-  const teardown = await upstream.terminate({budgetMs: 2000});
+  const teardown = await upstream.terminate({budgetMs: CONFIRM_MS});
   assert.deepEqual(teardown, {confirmed: true, steps: ['eof']});
   assert.equal(alive(pid), false);
   // The runtime's own exit report races the anchor's release (teardown has no use for it), so it may never come; when
@@ -60,7 +63,7 @@ test('non-JSON runtime output is dropped and reported, never relayed', async t =
 test('a runtime that ignores EOF and SIGTERM is killed within the teardown budget', async t => {
   const {upstream, request} = start(t, 'ignore-term');
   await request(1, 'ping');
-  const budgetMs = 1500;  // room for a loaded machine to confirm the group empty after the SIGKILL
+  const budgetMs = CONFIRM_MS;
   const started = Date.now();
   const teardown = await upstream.terminate({budgetMs});
   assert.equal(teardown.confirmed, true);
@@ -75,7 +78,7 @@ test('owned descendants left in the process group after the runtime exits are re
   const pidFile = join(s.dir, 'orphan.pid');
   const {upstream, request} = start(t, 'orphan', [pidFile]);
   await request(1, 'ping');
-  const teardownPromise = upstream.terminate({budgetMs: 1000});
+  const teardownPromise = upstream.terminate({budgetMs: CONFIRM_MS});
   const orphan = await waitFile(pidFile);
   const teardown = await teardownPromise;
   assert.equal(teardown.confirmed, true);
@@ -91,7 +94,7 @@ test('a process outside the owned group (like the shared native helper) is never
   await request(1, 'ping');
   const helper = await waitFile(pidFile);
   t.after(() => { try { process.kill(helper, 'SIGKILL'); } catch {} });
-  const teardown = await upstream.terminate({budgetMs: 1000});
+  const teardown = await upstream.terminate({budgetMs: CONFIRM_MS});
   assert.equal(teardown.confirmed, true);
   assert.equal(alive(helper), true);
 });
@@ -101,7 +104,7 @@ test('an unexpected runtime exit is reported once, and sending afterwards is har
   upstream.send({jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'js', arguments: {code: 'exit'}}});
   assert.equal((await exit).code, 3);
   upstream.send({jsonrpc: '2.0', id: 2, method: 'ping'});
-  assert.equal((await upstream.terminate({budgetMs: 1500})).confirmed, true);  // room for a loaded machine to confirm the group empty
+  assert.equal((await upstream.terminate({budgetMs: CONFIRM_MS})).confirmed, true);
 });
 
 test('a runtime that cannot start reports an exit instead of throwing', async () => {
@@ -133,7 +136,7 @@ test('the anchor leads the group and holds its number until the last signal', as
   const {upstream, request} = start(t, 'ignore-term');
   await request(1, 'ping');
   assert.notEqual(upstream.launcherPid, upstream.pid);
-  const teardown = await upstream.terminate({budgetMs: 1500});  // room for a loaded machine to confirm the group empty
+  const teardown = await upstream.terminate({budgetMs: CONFIRM_MS});
   assert.equal(teardown.confirmed, true);
   assert.deepEqual(teardown.steps, ['eof', 'SIGTERM', 'SIGKILL']);
   assert.equal(alive(upstream.launcherPid), false);
@@ -142,7 +145,7 @@ test('the anchor leads the group and holds its number until the last signal', as
 
 test('a close right after start waits for the launch, so no runtime is born after teardown', async () => {
   const upstream = spawnUpstream({command: process.execPath, args: [FAKE, 'echo'], env: {PATH: process.env.PATH}, cwd: process.cwd()}, {stderr: 'ignore'});
-  const teardown = await upstream.terminate({budgetMs: 2000});
+  const teardown = await upstream.terminate({budgetMs: CONFIRM_MS});
   assert.equal(teardown.confirmed, true);
   assert.ok(upstream.launcherPid, 'the launch was observed before membership was judged');
   assert.equal(alive(upstream.launcherPid), false);

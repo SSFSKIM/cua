@@ -60,7 +60,7 @@ test('each broker gets a different token', async t => {
 test('a helper that refuses, never answers or speaks another protocol fails classified and is not left running', async t => {
   for (const [mode, code] of [['refuse', 'broker_failed'], ['silent', 'broker_timeout'], ['protocol-2', 'helper_incompatible']]) {
     const f = setup(t, mode);
-    const readyTimeoutMs = 300;
+    const readyTimeoutMs = mode === 'silent' ? 300 : 3000;  // only `silent` is about the timeout; the others must answer in time
     const started = Date.now();
     const error = await startBroker({...f.helper, endpoint: f.endpoint, readyTimeoutMs}).then(() => null, e => e);
     assert.ok(error instanceof CuaError, mode);

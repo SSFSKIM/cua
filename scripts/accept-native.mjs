@@ -39,7 +39,7 @@ import {isLabel} from '../src/secrets/label.mjs';
 import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  approvalObservation, diffSnapshots, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
+  approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
@@ -195,9 +195,10 @@ async function item3() {
   const status = name => doctor?.checks?.find(c => c.name === name)?.status ?? 'missing';
   const required = ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures'];
   const live = ['helper.live', 'helper.permissions', 'secrets.helper', 'secrets.signing'];
-  const healthy = r.code === 0 && doctor?.ok === true && doctor.runtime?.release && required.every(n => status(n) === 'pass');
+  const health = doctorHealth({code: r.code, doctor});
+  const healthy = health.healthy && doctor.runtime?.release && required.every(n => status(n) === 'pass');
   checks.push(check('doctor --json on the installed home', healthy && live.every(n => status(n) !== 'missing') ? 'PASS' : 'FAIL',
-    `exit ${r.code}; ok ${doctor?.ok}; release ${doctor?.runtime?.release ?? 'none'}; ${[...required, ...live].map(n => `${n} ${status(n)}`).join(', ')}`,
+    `${health.detail}; release ${doctor?.runtime?.release ?? 'none'}; ${[...required, ...live].map(n => `${n} ${status(n)}`).join(', ')}`,
     {checks: doctor?.checks?.map(c => ({name: c.name, status: c.status})) ?? null}));
   checks.push(check('runtime health reported apart from live helper and permission evidence', status('helper.permissions') === 'blocked' && status('helper.live') !== 'missing' ? 'PASS' : 'FAIL',
     `helper.live ${status('helper.live')} and helper.permissions ${status('helper.permissions')} are separate checks; a blocked live check does not fail runtime health`));

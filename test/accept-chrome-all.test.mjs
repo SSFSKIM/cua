@@ -560,6 +560,8 @@ test('C5 passes on this Mac\'s expected doctor; environment gaps are BLOCKED and
   missing.checks = missing.checks.filter(c => c.name !== 'chrome.hosts.live');
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 0, doctor: missing}))), 'FAIL');
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf(), ok: false}}))), 'FAIL');
+  assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf({'agent.console': ['fail', 'the screen is locked']}), ok: false}}))), 'PASS', 'remote-control rows never gate it (#56)');
+  assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf({'chrome.host.config': ['fail', 'unsigned']}), ok: false}}))), 'FAIL');
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: null}))), 'FAIL');
 });
 

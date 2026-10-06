@@ -1,0 +1,16 @@
+{
+  "name": "cua-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The relay between cloud MCP clients and enrolled cua agents: one WebSocket per device, one HTTP channel per request.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

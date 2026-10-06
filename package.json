@@ -29,5 +29,8 @@
     "verify.mjs",
     ".claude-plugin/",
     "README.md"
-  ]
+  ],
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
 }

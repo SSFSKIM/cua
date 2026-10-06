@@ -42,7 +42,8 @@ function listGroup(pgrep, pgid, ms) {
       if (late || (error ? !(error.code === 1 && !error.killed) : !members.length)) return resolve(null);
       resolve(members);
     });
-    const timer = setTimeout(() => { late = true; child.kill('SIGKILL'); }, ms);
+    // Closing the pipes too means a listing that left a child holding them cannot hold the callback past `ms`.
+    const timer = setTimeout(() => { late = true; child.stdout?.destroy(); child.stderr?.destroy(); child.kill('SIGKILL'); }, ms);
   });
 }
 

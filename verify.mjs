@@ -173,9 +173,9 @@ try {
   report.exit = exit ?? await exited;
   check(report.exit.code === 0, `cua serve exited with ${JSON.stringify(report.exit)}`);
   // This connection's entries (and any other session its process claimed, e.g. a profiles_list listing) must be gone.
-  const leftover = [...(report.session ? sessionEntries(report.session.id).filter(name => present(join(runDir, name))) : []),
-    ...sessionsOf(server.pid).map(session => `${session}.pid`)];
-  check(leftover.length === 0, `this connection's run entries left under ${runDir}: ${[...new Set(leftover)].join(', ')}`);
+  const leftover = [...new Set([...(report.session ? [report.session.id] : []), ...sessionsOf(server.pid)])]
+    .flatMap(sessionEntries).filter(name => present(join(runDir, name)));
+  check(leftover.length === 0, `this connection's run entries left under ${runDir}: ${leftover.join(', ')}`);
   // Informational: entries that appeared while verify ran belong to other connections in this home, not to this one.
   const others = runEntries().filter(name => !runBefore.includes(name) && !leftover.includes(name));
   if (others.length) report.runNote = `${others.length} other entr${others.length === 1 ? 'y' : 'ies'} appeared under ${runDir} while verify ran (another cua serve or listing in this home; not counted): ${others.join(', ')}`;

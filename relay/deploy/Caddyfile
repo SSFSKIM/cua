@@ -1,0 +1,21 @@
+# cua-relay behind Caddy. create-server.sh fills in the site address (the sslip.io name of the server's IPv4). To
+# move to a real domain, point its DNS at the server, change the site address in /etc/caddy/Caddyfile and run
+# `systemctl reload caddy`; Caddy obtains and renews the certificate itself.
+@HOST@ {
+	# Access log to the journal (journalctl -u caddy); Caddy redacts the Authorization header in it.
+	log
+	# Agents: WebSocket upgrades pass through reverse_proxy as they are.
+	handle /ws {
+		reverse_proxy 127.0.0.1:7800
+	}
+	# Clients: MCP Streamable HTTP. Flush every write so server-sent events are not held back; nothing here
+	# compresses (no `encode`), and Caddy sets no read timeout on a proxied response.
+	handle /d/* {
+		reverse_proxy 127.0.0.1:7800 {
+			flush_interval -1
+		}
+	}
+	handle {
+		respond "cua-relay" 200
+	}
+}

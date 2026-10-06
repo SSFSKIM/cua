@@ -1,0 +1,36 @@
+#cloud-config
+# User data for the cua-relay server. create-server.sh renders the placeholders, and drops these comments:
+# @REF@ (the git ref of https://github.com/SSFSKIM/cua to run), @CADDYFILE_B64@ and @UNIT_B64@ (Caddyfile and
+# cua-relay.service from this directory, base64). Nothing secret goes in here: devices.json starts empty and
+# update.sh --devices fills it.
+package_update: true
+packages: [git, curl, gpg, debian-keyring, debian-archive-keyring, apt-transport-https]
+users:
+  - name: cua-relay
+    system: true
+    shell: /usr/sbin/nologin
+    no_create_home: true
+write_files:
+  - path: /etc/cua-relay/Caddyfile
+    encoding: b64
+    content: @CADDYFILE_B64@
+  - path: /etc/systemd/system/cua-relay.service
+    encoding: b64
+    content: @UNIT_B64@
+  - path: /etc/cua-relay/devices.json
+    content: "{}\n"
+runcmd:
+  - set -eux
+  - curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt -o /etc/apt/sources.list.d/caddy-stable.list
+  - chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y caddy nodejs
+  - chown root:cua-relay /etc/cua-relay/devices.json && chmod 0640 /etc/cua-relay/devices.json
+  - git clone https://github.com/SSFSKIM/cua /opt/cua
+  - git -C /opt/cua fetch origin @REF@ && git -C /opt/cua checkout --detach FETCH_HEAD
+  - cd /opt/cua/relay && npm ci --omit=dev
+  - install -m 0644 /etc/cua-relay/Caddyfile /etc/caddy/Caddyfile
+  - systemctl daemon-reload
+  - systemctl enable --now cua-relay
+  - systemctl restart caddy

@@ -339,11 +339,15 @@ new instance is bound automatically when this profile's store records it, and ot
 when exactly one new unlabelled backend appeared.
 
 A binding also needs its extension host to be running. Chrome starts the OpenAI host when the extension connects and
-ends it when that connection closes; with Chrome closed there is none. When no
+ends it when the profile unloads, which happens when the profile's last window closes; with Chrome closed there is
+none. When no
 Chrome backend is live at all, `list` and `profiles_list` report the profile `host_not_live` and name the step, with
-the profile's Chrome directory: open that Chrome profile and click the OpenAI (ChatGPT) extension's icon to wake it,
-then retry. Turning the extension off and on at `chrome://extensions` wakes it too, but can mint a new instance id,
-so run `cua profiles bind <key>` afterwards. cua never wakes the extension itself; it does not drive Chrome. When
+the profile's Chrome directory: open a window in that Chrome profile, click the OpenAI (ChatGPT) extension's icon if
+it still has no backend, then retry. Chrome unloads a profile, and with it the extension and its host, when the
+profile's last window closes; a cua task in a profile that had no window opens one for its tab, so closing that tab, or
+ending the task without marking the tab handoff, unloads the profile again (issue #41). Turning the extension off and
+on at `chrome://extensions` wakes it too, but can mint a new instance id, so run `cua profiles bind <key>` afterwards.
+cua never opens a window or wakes the extension itself; it does not drive Chrome. When
 other profiles' backends are live but not the bound one, the backends' missing labels leave two causes cua cannot tell
 apart (this profile's host asleep, or a new instance id), so `binding_stale` names both steps, the wake first.
 

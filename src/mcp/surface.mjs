@@ -107,13 +107,18 @@ const BROWSER_NOTES = [
 ];
 
 // The computer surface on Linux (Phase F) differs where the vendor's Linux target does: apps are bound by X11 window,
-// the macOS-only element setters do not exist and paste types, key names are X keysyms, and nothing asks the user per
-// app (the owner's allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime, so a model cell
-// can talk to X directly: the trusted wrapper is not a boundary there.
+// key names are X keysyms, and nothing asks the user per app (the owner's allow-all decision; cua adds no allowlist).
+// DISPLAY and XAUTHORITY reach the runtime, so a model cell can talk to X directly: the trusted wrapper is not a boundary
+// there. Text input is F2's measurement on Ubuntu 24.04 arm64 (docs/evidence/2026-10-06-linux-acceptance.md): the
+// helper's typeText and paste insert through AT-SPI and crashed the GTK3 editors gedit and mousepad (SIGSEGV in
+// gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in GTK4's gnome-text-editor they inserted the
+// text and then threw (Text.SetCaretOffset unsupported), which the general "observe, act, verify" rule covers. The vendor's
+// own document already says that setValue and selectText do not exist on Linux.
 const LINUX_COMPUTER_HEAD = '- Use this when a Linux app\'s GUI is the only way; the first js call returns the API document.';
 const LINUX_COMPUTER_NOTES = [
-  '- Bind by window: cua.getApp({windowId}) with an id from listWindows(). setValue and selectText do not exist; paste types.',
-  '- Key names are X keysyms. Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier).',
+  '- Bind by window: cua.getApp({windowId}) with an id from listWindows().',
+  '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
+  '- Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier).',
   '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
   '- If REPL state is confused, js_reset and rebind the window from listWindows().',
 ];

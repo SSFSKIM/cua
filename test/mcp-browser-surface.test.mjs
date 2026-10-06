@@ -133,8 +133,8 @@ test('the host notes carry every operating rule for their surfaces and keep the 
 // vendor's line, on every surface combination.
 const LINUX_RULES = {
   'bind by X11 window': /cua\.getApp\(\{windowId\}\) with an id from listWindows\(\)/,
-  'no element setters, paste types': /setValue and selectText do not exist; paste types/,
-  'X keysyms': /Key names are X keysyms/,
+  'GTK3 text views: pressKey, not typeText or paste': /typeText and paste crash GTK3 text views: type there with pressKey/,
+  'X keysyms': /one X keysym per call/,
   'no per-app approval': /No app asks for approval: this connection drives every window of the session/,
   'the trusted wrapper is not a boundary': /the trusted wrapper is not a boundary on Linux/,
 };

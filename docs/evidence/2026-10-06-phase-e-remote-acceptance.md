@@ -260,6 +260,8 @@ was re-run on the final code, with the mini's job reinstalled from the worktree 
 
 ## Afterwards
 
-The mini keeps the job `com.ssfskim.cua.agent` (`agent run --relay` from the branch worktree); the relay and the ngrok
-tunnel on the MacBook were still running when this document was written, and are stopped at Phase E's close (Decision
-Log: they exist only for the proof). `npm test` at the head of this document's commit: 618/618; at the branch review's fix head (98cf4a8): 631/631.
+After the final live check on the review's last fix (5c6310f: a `js` call and `end_task` through the relay, then
+`DELETE`), the mini's job was removed with `cua agent uninstall`, its enrolment (`remote/device.json`) deleted so its
+doctor's `agent.*` rows read `skip` again, and its branch worktree removed; its main checkout was not touched. The
+relay and the ngrok tunnel on the MacBook were stopped and the client credential files deleted. `npm test` at
+5c6310f: 635/635; in a copy without `node_modules`: 607 pass, 28 skipped (`needs the ws package`), 0 fail.

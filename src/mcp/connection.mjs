@@ -47,7 +47,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
   keychainHelper = locateHelper({home}), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}), listBackends, onWithdrawn, probeUserns}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
-  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, probeUserns});
+  // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
+  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns});
   const claim = claimRunSession(home, sessionId);
   let secrets = NO_BROKER;
   let launch;

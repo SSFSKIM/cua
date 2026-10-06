@@ -94,11 +94,20 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
     assert.match(rows.sandbox.detail, /CUA_SHIM_SURFACES must be computer, browser or computer,browser/);
   }
 
+  // Fix wave 2: computer,browser with the mode unset serves under disabled, but cua profiles list and bind still
+  // launch scoped and are refused, so the probe's verdict stands.
+  rows = await doctor({CUA_SHIM_SURFACES: 'computer,browser'}, 'blocked');
+  assert.equal(rows.sandbox.status, 'pass');
+  assert.equal(rows['sandbox.userns'].status, 'blocked');
+  assert.match(rows['sandbox.userns'].detail, /cua profiles list and bind launch under scoped and are refused \(sandbox_unavailable\)/);
+  rows = await doctor({CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
+  assert.equal(rows['sandbox.userns'].status, 'skip', 'an explicit disabled reaches the listing too');
+
   rows = await doctor({CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
   assert.equal(rows.sandbox.status, 'pass');
   assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=disabled/);
   assert.equal(rows['sandbox.userns'].status, 'skip');
-  assert.match(rows['sandbox.userns'].detail, /not needed while CUA_SHIM_SANDBOX is disabled/);
+  assert.match(rows['sandbox.userns'].detail, /not needed here: no scoped launch happens with CUA_SHIM_SANDBOX=disabled/);
 });
 
 test('skip is neither a failure nor blocked: ok stays true and the verdict does not list it', () => {
@@ -118,6 +127,7 @@ function system({tools = ['xdpyinfo', 'dbus-send', 'bwrap'], answers = {}, osRel
   return {
     calls,
     findTool: name => tools.includes(name) ? `/usr/bin/${name}` : null,
+    findSystemTool: name => tools.includes(name) ? `/usr/bin/${name}` : null,
     exec: async (command, args, {env}) => {
       calls.push({command, args, env});
       const key = [command.split('/').pop(), ...args].join(' ');
@@ -178,6 +188,14 @@ test('accessibility.bus asks the session bus for AT-SPI, at the derived address 
   const silent = (await rowsOf(env, system({answers: {}})))['accessibility.bus'];
   assert.equal(silent.status, 'fail');
   assert.match(silent.detail, /did not answer/);
+});
+
+test('sandbox.userns finds bwrap where the launch check does, on the system path, not the caller\'s PATH', async () => {
+  const sys = system({answers: {'bwrap --ro-bind / / true': {}}});
+  const onlySystem = {...sys, findTool: name => (name === 'bwrap' ? null : sys.findTool(name))};
+  assert.equal((await rowsOf({PATH: '/home/u/bin'}, onlySystem))['sandbox.userns'].status, 'pass');
+  const noSystem = {...sys, findTool: name => `/home/u/bin/${name}`, findSystemTool: () => null};
+  assert.equal((await rowsOf({PATH: '/home/u/bin'}, noSystem))['sandbox.userns'].status, 'blocked');
 });
 
 test('sandbox.userns runs bwrap --ro-bind / / true; a refusal is blocked with its stderr, naming the Ubuntu sysctl there', async () => {

@@ -118,10 +118,8 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(sandbox.row);
   checks.push(runSweepCheck(home, sweep));
 
+  if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {env, sandbox}) : row)));
   if (linuxRows) {
-    checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' && sandbox.mode === 'disabled' && row.status !== 'pass'
-      ? result('sandbox.userns', 'skip', `not needed while CUA_SHIM_SANDBOX is disabled: no sandbox runs. CUA_SHIM_SANDBOX=scoped would need it, and it would read: ${row.detail}`)
-      : row)));
     checks.push(result('secrets.helper', 'skip', 'secrets_unsupported_platform: cua has no secrets backend on linux, so secrets_list reports it and a {{secret:…}} reference is refused before anything is entered'));
   } else {
     const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
@@ -144,6 +142,18 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
 // -> {mode, row}. On Linux the row also says what F2 measured there (src/runtime/sandbox.mjs defaultSandboxMode): the
 // scoped sandbox keeps the computer-use helper off the X display and the session bus, and where bubblewrap cannot
 // create a user namespace (`userns`, the sandbox.userns row) the runtime runs cells with no sandbox at all.
+// sandbox.userns as it bears on this setup. It is `skip` only when no scoped launch can happen here: the browser surface
+// is off (only the profile listing launches scoped behind a disabled connection), or CUA_SHIM_SANDBOX is set to another
+// mode, which the listing honours too. Otherwise a refusal stays `blocked`: with the computer surface the connection
+// runs disabled, but `cua profiles list` and `bind` launch scoped and are refused (sandbox_unavailable).
+function usernsRow(row, {env, sandbox}) {
+  if (row.status === 'pass' || !sandbox.surfaces) return row;
+  const explicitOther = env.CUA_SHIM_SANDBOX !== undefined && env.CUA_SHIM_SANDBOX !== 'scoped';
+  if (!sandbox.surfaces.includes('browser') || explicitOther) return result('sandbox.userns', 'skip', `not needed here: no scoped launch happens with ${explicitOther ? `CUA_SHIM_SANDBOX=${env.CUA_SHIM_SANDBOX}` : 'the browser surface off'}. CUA_SHIM_SANDBOX=scoped or the browser surface's profile listing would need it, and it would read: ${row.detail}`);
+  if (sandbox.mode !== 'scoped') return result('sandbox.userns', 'blocked', `${row.detail}. The connection runs under ${sandbox.mode}, but cua profiles list and bind launch under scoped and are refused (sandbox_unavailable)`);
+  return row;
+}
+
 function sandboxCheck({home, env, runtime, platform, userns}) {
   let surfaces;
   let mode;
@@ -152,9 +162,9 @@ function sandboxCheck({home, env, runtime, platform, userns}) {
     mode = sandboxModeFrom(env, {platform, surfaces});
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return {mode: null, row: result('sandbox', 'fail', error.message)};
+    return {mode: null, surfaces: null, row: result('sandbox', 'fail', error.message)};
   }
-  return {mode, row: sandboxRow({home, env, runtime, platform, surfaces, userns, mode})};
+  return {mode, surfaces, row: sandboxRow({home, env, runtime, platform, surfaces, userns, mode})};
 }
 
 function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {

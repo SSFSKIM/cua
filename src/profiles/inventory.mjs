@@ -115,13 +115,15 @@ export function teardownUnconfirmed(teardown, failure) {
 
 // One bounded launch of the installed runtime in this home, as `cua serve` would make it with the browser surface
 // only and secrets off, in its own session directory (removed afterwards with the session's approval file), with the
-// sandbox state CUA_SHIM_SANDBOX in `ambient` picks for that directory: scoped unless set otherwise, on Linux too (the
-// browser surface works under it), so on Linux it is refused like a scoped connection where user namespaces are
-// (`probeUserns`, injectable for tests).
+// sandbox state of `sandbox`: a connection's own readiness listing passes the connection's mode (inside a disabled
+// connection the model's cells already run unconfined, so a refused listing would protect nothing). Without it, as for
+// `cua profiles list` and `bind`, it is the mode CUA_SHIM_SANDBOX in `ambient` picks for the browser surface: scoped
+// unless set otherwise, on Linux too (the browser surface works under it), so on Linux it is refused like a scoped
+// connection where user namespaces are (`probeUserns`, injectable for tests).
 export const listingSandboxMode = (ambient, platform) => sandboxModeFrom(ambient, {platform, surfaces: ['browser']});
 
-export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, probeUserns}) {
-  const sandbox = listingSandboxMode(ambient, runtime.manifest.platform);
+export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns}) {
+  sandbox ??= listingSandboxMode(ambient, runtime.manifest.platform);
   const sessionId = randomUUID();
   const claim = claimRunSession(home, sessionId);
   let launch;

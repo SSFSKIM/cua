@@ -21,6 +21,8 @@ import {findTool as findOnPath} from './tools.mjs';
 export const X_EXTENSIONS = ['XTEST', 'Composite', 'XFIXES'];
 const A11Y_BUS = 'org.a11y.Bus';
 const PROBE_TIMEOUT_MS = 5000;
+// The system path the runtime is given (src/runtime/launch.mjs) and on which it finds bubblewrap.
+const findOnSystemPath = name => findOnPath(name, '/usr/bin:/bin');
 
 // The session bus the runtime and doctor use: DBUS_SESSION_BUS_ADDRESS, else the systemd user bus under
 // XDG_RUNTIME_DIR (an SSH session has the latter and not the former), else none.
@@ -60,8 +62,11 @@ function restrictsUserns(osRelease) {
 }
 
 // -> [display, accessibility.bus, sandbox.userns]. `exec`, `findTool` and `osRelease` are test seams.
-export async function linuxDesktopChecks({env = process.env, exec = defaultExec, findTool = name => findOnPath(name, env.PATH), osRelease = defaultOsRelease}) {
-  return [await displayCheck(env, exec, findTool), await busCheck(env, exec, findTool), await usernsCheck(exec, findTool, osRelease)];
+// bubblewrap is looked up where the launch-time check (bwrapUserns) and the runtime find it, on the system path, never
+// on the caller's PATH; `findSystemTool` is that lookup's test seam.
+export async function linuxDesktopChecks({env = process.env, exec = defaultExec, findTool = name => findOnPath(name, env.PATH),
+  findSystemTool = findOnSystemPath, osRelease = defaultOsRelease}) {
+  return [await displayCheck(env, exec, findTool), await busCheck(env, exec, findTool), await usernsCheck(exec, findSystemTool, osRelease)];
 }
 
 async function displayCheck(env, exec, findTool) {
@@ -100,7 +105,7 @@ export const USERNS_REMEDY = 'set kernel.apparmor_restrict_unprivileged_userns=0
 // Whether bubblewrap can create an unprivileged user namespace: `bwrap --ro-bind / / true`, found on the runtime's
 // fixed PATH. -> {status: 'pass'} | {status: 'refused', detail: its last stderr line} | {status: 'missing'}. Doctor's
 // sandbox.userns row and the launch-time refusal (src/runtime/sandbox.mjs assertSandboxConfines) both use it.
-export async function bwrapUserns({exec = defaultExec, findTool = name => findOnPath(name, '/usr/bin:/bin')} = {}) {
+export async function bwrapUserns({exec = defaultExec, findTool = findOnSystemPath} = {}) {
   const bwrap = findTool('bwrap');
   if (!bwrap) return {status: 'missing'};
   const run = await exec(bwrap, ['--ro-bind', '/', '/', 'true'], {env: {PATH: '/usr/bin:/bin'}});

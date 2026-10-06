@@ -354,6 +354,57 @@ test('a server-initiated request goes to the oldest open POST stream, else the G
   assert.deepEqual(next.res.messages().map(m => m.id ?? m.method), ['e3', 'notifications/message']);
 });
 
+test('the agent log records each server request sent to the client and how it was answered, never its content', async t => {
+  const {send, initialize, upstreamOf, diagnostics} = setup(t);
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'one'})});
+  await upstream.nextCall('js');
+  const secretish = 'Allow Computer Use to use "Calculator"?';
+  const elicit = (id, extra = {}) => ({jsonrpc: '2.0', id, method: 'elicitation/create', params: {message: secretish, requestedSchema: {type: 'object', properties: {}}}, ...extra});
+  upstream.emit(elicit('e1'));
+  await until(() => post.res.messages().length === 1, 'the elicitation on the POST stream');
+  upstream.emit(elicit(7));
+  upstream.emit({jsonrpc: '2.0', id: 'r1', method: 'roots/list'});
+  await until(() => post.res.messages().length === 3, 'all three requests');
+  const sent = diagnostics.filter(l => / sent to the client$/.test(l));
+  assert.deepEqual(sent, [
+    `session ${session}: elicitation/create "e1" sent to the client`,
+    `session ${session}: elicitation/create 7 sent to the client`,
+    `session ${session}: roots/list "r1" sent to the client`,
+  ]);
+  const answer = send({session, body: [
+    {jsonrpc: '2.0', id: 'e1', result: {action: 'accept', content: {secret: 'hunter2'}}},
+    {jsonrpc: '2.0', id: 7, result: {action: 'decline'}},
+    {jsonrpc: '2.0', id: 'r1', error: {code: -32601, message: 'no roots here'}},
+  ]});
+  await answer.done;
+  const answered = diagnostics.filter(l => / answered /.test(l));
+  assert.equal(answered.length, 3, diagnostics.join('\n'));
+  assert.match(answered[0], new RegExp(`^session ${session}: elicitation/create "e1" answered accept after \\d+ ms$`));
+  assert.match(answered[1], new RegExp(`^session ${session}: elicitation/create 7 answered decline after \\d+ ms$`));
+  assert.match(answered[2], new RegExp(`^session ${session}: roots/list "r1" answered error after \\d+ ms$`));
+  // An answer to a request the session never sent is not logged; a strange action is not echoed.
+  upstream.emit(elicit('e2'));
+  await until(() => post.res.messages().length === 4, 'e2');
+  const odd = send({session, body: [{jsonrpc: '2.0', id: 'e2', result: {action: 'sure, my password is x'}}, {jsonrpc: '2.0', id: 'nobody', result: {}}]});
+  await odd.done;
+  assert.match(diagnostics.at(-1), /elicitation\/create "e2" answered result after \d+ ms$/);
+  assert.equal(diagnostics.filter(l => /nobody/.test(l)).length, 0);
+  for (const line of diagnostics) assert.ok(!line.includes('Calculator') && !line.includes('hunter2') && !line.includes('password'), line);
+});
+
+test('a server request held in the buffer is logged as sent when it reaches a stream', async t => {
+  const {send, initialize, upstreamOf, diagnostics} = setup(t);
+  const session = await initialize();
+  upstreamOf(0).emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'm', requestedSchema: {type: 'object', properties: {}}}});
+  await tick(10);
+  assert.equal(diagnostics.some(l => / sent to the client$/.test(l)), false, 'buffered, not yet sent');
+  const get = send({method: 'GET', session});
+  await until(() => get.res.messages().length === 1, 'the drained elicitation');
+  assert.ok(diagnostics.includes(`session ${session}: elicitation/create "e1" sent to the client`), diagnostics.join('\n'));
+});
+
 test('the buffer of undeliverable server messages is capped: a session that would exceed it is closed', async t => {
   const {http, send, initialize, upstreamOf, diagnostics} = setup(t, {bufferLimit: 1024});
   const session = await initialize();

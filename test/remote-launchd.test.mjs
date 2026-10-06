@@ -41,8 +41,9 @@ test('install writes the GUI-session job (node, cli, agent run --http, KeepAlive
     programArguments: [NODE, CLI, 'agent', 'run', '--http', '192.168.1.20:7801'],
     node: NODE, cli: CLI, args: ['--http', '192.168.1.20:7801'],
     environment: {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'},
-    keepAlive: true, runAtLoad: true, standardOutPath: log, standardErrorPath: log,
+    keepAlive: {SuccessfulExit: false}, runAtLoad: true, standardOutPath: log, standardErrorPath: log,
   });
+  assert.match(text, /<key>KeepAlive<\/key>\n\t<dict>\n\t\t<key>SuccessfulExit<\/key>\n\t\t<false\/>\n\t<\/dict>/, 'launchd restarts a failure, never a deliberate stop');
   assert.equal(statSync(join(home, 'state')).isDirectory(), true, 'the log\'s directory exists before launchd opens the log');
   assert.deepEqual(launchctl.calls.filter(c => c[0] !== 'print'), [['bootstrap', `gui/${UID}`, plist]]);
   assert.deepEqual(launchctl.plists, [text]);
@@ -159,10 +160,13 @@ test('readPlist accepts the job cua writes with keys added by hand, and refuses 
     label: AGENT_LABEL, programArguments: ['/n', '/c', 'agent', 'run', '--relay'], node: '/n', cli: '/c', args: ['--relay'],
     environment: {}, keepAlive: false, runAtLoad: false, standardOutPath: undefined, standardErrorPath: undefined,
   });
+  assert.equal(readPlist(base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key><string>Interactive</string>', '<key>KeepAlive</key><true/>')).keepAlive, true);
   for (const text of ['not a plist', '<plist><array/></plist>', base(['/n', '/c', 'serve']), base(['/n']),
     base(['/n', '/c', 'agent', 'run']).replace(AGENT_LABEL, 'other.label'),
     `<plist><dict><key>Label</key><string>${AGENT_LABEL}</string><key>ProgramArguments</key><array><integer>1</integer></array></dict></plist>`,
-    base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key>', '<key>EnvironmentVariables</key><dict><key>A</key><true/></dict><key>X</key>')])
+    base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key>', '<key>EnvironmentVariables</key><dict><key>A</key><true/></dict><key>X</key>'),
+    base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key><string>Interactive</string>', '<key>KeepAlive</key><string>yes</string>'),
+    base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key><string>Interactive</string>', '<key>KeepAlive</key><dict><key>SuccessfulExit</key><string>no</string></dict>')])
     assert.throws(() => readPlist(text), {code: 'agent_plist_invalid'}, text);
 });
 

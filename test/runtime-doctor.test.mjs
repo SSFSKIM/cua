@@ -306,17 +306,17 @@ async function agentSetup(t, {enrol = true, relayUrl, install = null, consoleSta
   return {home, userHome, cli, launchctl, launchd, rows};
 }
 
-test('on a Mac never enrolled the launchd rows read skip with the way in, launchd is not asked, and the console is still reported', async t => {
+test('on a Mac never enrolled, with no job, every agent row reads skip with the way in; neither launchd nor the console is read', async t => {
+  let consoleRead = false;
   const {launchctl, rows} = await agentSetup(t, {enrol: false});
-  const r = await rows();
+  const r = await rows({checkConsole: async () => { consoleRead = true; return {onConsole: true, locked: true}; }});
   assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console']);
-  for (const name of ['agent.installed', 'agent.running', 'agent.enrolled']) {
+  for (const name of Object.keys(r)) {
     assert.equal(r[name].status, 'skip', name);
     assert.match(r[name].detail, /cua remote enroll.*cua agent install/, name);
   }
-  assert.equal(r['agent.console'].status, 'pass');
-  assert.match(r['agent.console'].detail, /on the console and the screen is unlocked/);
   assert.deepEqual(launchctl.calls, []);
+  assert.equal(consoleRead, false, 'a locked Mac that does no remote control is healthy');
 });
 
 test('an enrolled Mac with its agent installed and running passes, naming the plist, program, node, pid and device', async t => {

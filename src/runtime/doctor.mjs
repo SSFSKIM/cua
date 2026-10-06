@@ -30,7 +30,7 @@
 // device enrolment (`agent.enrolled`) and whether this user's session is on the console and unlocked (`agent.console`,
 // the state in which remote js does nothing and is refused as console_locked). A fourth status, `skip`, means "not
 // applicable here": it never changes `ok` and is not listed as blocked. On a Mac never enrolled, with no job installed,
-// the first three are `skip`; the console is reported whatever the enrolment (local use needs it as much).
+// all four are `skip` (a locked Mac that does no remote control is healthy).
 import {existsSync, readFileSync, statSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -175,15 +175,12 @@ export async function agentChecks({home, env = process.env, host, launchd = {}, 
     deviceError = error;
   }
   const status = await agentStatus(launchd);
-  const rows = [];
   if (!device && !deviceError && !status.installed) {
     const notSetUp = 'this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install';
-    rows.push(...AGENT_ROWS.slice(0, 3).map(name => result(name, 'skip', notSetUp)));
-  } else {
-    rows.push(installedRow(status, device), runningRow(status, home, launchd.uid ?? process.getuid()), enrolledRow(home, device, deviceError));
+    return AGENT_ROWS.map(name => result(name, 'skip', notSetUp));
   }
-  rows.push(await consoleRow(env, readConsole));
-  return rows;
+  return [installedRow(status, device), runningRow(status, home, launchd.uid ?? process.getuid()), enrolledRow(home, device, deviceError),
+    await consoleRow(env, readConsole)];
 }
 
 function installedRow(status, device) {

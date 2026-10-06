@@ -15,7 +15,7 @@ const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&
 export const escapeXml = text => text.replace(/[&<>"']/g, c => ESCAPES[c]);
 
 function unescape(text) {
-  return text.replace(/&(#x[0-9A-Fa-f]+|#\d+|[a-z]+);|&/g, (whole, name) => {
+  return text.replace(/&(#x[0-9A-Fa-f]+|#\d+|[a-z]+);|&/g, (_, name) => {
     if (name === undefined) invalid('a bare & in text');
     if (name.startsWith('#x')) return String.fromCodePoint(parseInt(name.slice(2), 16));
     if (name.startsWith('#')) return String.fromCodePoint(Number(name.slice(1)));

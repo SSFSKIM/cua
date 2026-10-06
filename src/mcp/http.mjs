@@ -57,6 +57,8 @@ const idKey = id => JSON.stringify(id);
 const isMessage = m => m !== null && typeof m === 'object' && !Array.isArray(m) && (typeof m.method === 'string' || m.id !== undefined);
 const isRequest = m => m.method !== undefined && m.id !== undefined;
 const pathOf = url => url.split('?')[0];
+// The elicitation actions the log names (MCP: accept, decline, cancel); any other answer is logged as `result`.
+const ANSWER_ACTIONS = new Set(['accept', 'decline', 'cancel']);
 const needsConsole = m => isRequest(m) && m.method === 'tools/call' && WORK_TOOLS.has(m.params?.name);
 const CONSOLE_LOCKED = statusResult({status: 'error', code: 'console_locked'},
   {isError: true, message: 'cua: the Mac\'s screen is locked or the session is not on the console; unlock it and retry'});
@@ -154,8 +156,26 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   };
   const toGet = (session, msg) => session.get.res.write(`data: ${JSON.stringify(msg)}\n\n`);
 
+  // The agent log's record of a request the runtime makes of the client (an app approval, typically) and of its
+  // answer: method, id, the elicitation's action and the wait. Never a message's text or fields.
+  function sentToClient(session, msg) {
+    if (msg.id !== undefined) diagnostics(`session ${session.id}: ${msg.method} ${idKey(msg.id)} sent to the client`);
+  }
+
+  function answeredByClient(session, msg) {
+    const key = idKey(msg.id);
+    const pending = session.serverPending.get(key);
+    if (!pending) return;
+    session.serverPending.delete(key);
+    const action = msg.error !== undefined ? 'error' : ANSWER_ACTIONS.has(msg.result?.action) ? msg.result.action : 'result';
+    diagnostics(`session ${session.id}: ${pending.method} ${key} answered ${action} after ${Date.now() - pending.at} ms`);
+  }
+
   function drain(session, write) {
-    for (const msg of session.buffer.splice(0)) write(msg);
+    for (const msg of session.buffer.splice(0)) {
+      write(msg);
+      sentToClient(session, msg);
+    }
     session.bufferBytes = 0;
   }
 
@@ -188,11 +208,14 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   }
 
   function deliverServerMessage(session, msg) {
-    if (msg.id !== undefined) session.serverPending.add(idKey(msg.id));
+    if (msg.id !== undefined) session.serverPending.set(idKey(msg.id), {method: msg.method, at: Date.now()});
     if (session.gone) return;
     const stream = [...session.streams.values()].find(s => s.res);
-    if (stream) return sseEvent(stream, msg);
-    if (session.get) return toGet(session, msg);
+    if (stream || session.get) {
+      if (stream) sseEvent(stream, msg);
+      else toGet(session, msg);
+      return sentToClient(session, msg);
+    }
     const size = Buffer.byteLength(JSON.stringify(msg));
     if (session.bufferBytes + size > bufferLimit) {
       diagnostics(`session ${session.id}: its undelivered server messages would pass the ${bufferLimit}-byte buffer with no stream open to take them; closing it`);
@@ -205,7 +228,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   function createSession(id, connection, input, output) {
     const session = {id, connection, input, streams: new Map(), nextStream: 1, routes: new Map(), get: null,
-      buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null, closed: null,
+      buffer: [], bufferBytes: 0, serverPending: new Map(), timer: null, gone: false, closing: null, closed: null,
       protocolVersion: null, inbound: Promise.resolve()};
     input.on('error', () => {});
     // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
@@ -359,7 +382,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     const keys = requests.map(m => idKey(m.id));
     if (new Set(keys).size !== keys.length || keys.some(k => session.routes.has(k)))
       return rpcError(res, 400, -32600, 'cua: a request id is already in use on this session');
-    for (const m of messages) if (m.method === undefined) session.serverPending.delete(idKey(m.id));
+    for (const m of messages) if (m.method === undefined) answeredByClient(session, m);
     if (!requests.length) {
       inOrder(session, () => send(session, messages));
       res.writeHead(202, {});

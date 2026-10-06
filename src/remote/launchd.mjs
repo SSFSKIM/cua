@@ -6,7 +6,9 @@
 // The job runs the node that ran `install` (process.execPath, recorded and shown, because a Homebrew or nvm upgrade
 // that moves it breaks the job until `install` runs again; it is also the binary macOS's firewall judges for an --http
 // listener) with this checkout's bin/cua.mjs `agent run`, plus `--relay` when the device has a relay URL and
-// `--http <host:port>` when given. KeepAlive and RunAtLoad are on; launchd appends stdout and stderr to
+// `--http <host:port>` when given. RunAtLoad is on and KeepAlive is {SuccessfulExit: false}: launchd restarts a crash
+// or a refusal (agent_already_running: the job takes over once a terminal agent stops), never the agent's deliberate
+// stops (a signal shutdown, relay close codes 4001/4003), which exit 0. launchd appends stdout and stderr to
 // $CUA_HOME/state/agent.log (the agent writes its diagnostics to stderr). The environment carries CUA_HOME when it is
 // set and CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser as much as the desktop).
 //
@@ -62,7 +64,10 @@ ${programArguments.map(arg => `\t\t${string(arg)}\n`).join('')}\t</array>
 \t<dict>
 ${env}\t</dict>
 \t<key>KeepAlive</key>
-\t<true/>
+\t<dict>
+\t\t<key>SuccessfulExit</key>
+\t\t<false/>
+\t</dict>
 \t<key>RunAtLoad</key>
 \t<true/>
 \t<key>StandardOutPath</key>
@@ -92,6 +97,10 @@ export function readPlist(text) {
   if (!Array.isArray(args) || !args.every(a => typeof a === 'string') || args.length < 4 || args[2] !== 'agent' || args[3] !== 'run')
     invalidJob('its ProgramArguments are not <node> <cua> agent run …');
   if (job.EnvironmentVariables !== undefined && !isStringMap(job.EnvironmentVariables)) invalidJob('its EnvironmentVariables are not all strings');
+  const keepAlive = job.KeepAlive ?? false;
+  const conditions = keepAlive !== null && typeof keepAlive === 'object' && !Array.isArray(keepAlive) && !Buffer.isBuffer(keepAlive);
+  if (typeof keepAlive !== 'boolean' && !(conditions && Object.values(keepAlive).every(v => typeof v === 'boolean')))
+    invalidJob('its KeepAlive is neither true/false nor a dictionary of conditions');
   for (const key of ['StandardOutPath', 'StandardErrorPath'])
     if (job[key] !== undefined && typeof job[key] !== 'string') invalidJob(`its ${key} is not a path`);
   return {
@@ -101,7 +110,7 @@ export function readPlist(text) {
     cli: args[1],
     args: args.slice(4),
     environment: {...job.EnvironmentVariables},
-    keepAlive: job.KeepAlive === true,
+    keepAlive,
     runAtLoad: job.RunAtLoad === true,
     standardOutPath: job.StandardOutPath,
     standardErrorPath: job.StandardErrorPath,

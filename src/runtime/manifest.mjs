@@ -43,9 +43,9 @@ export function assertHostSupports(pin, host = hostTarget()) {
 const invalid = (where, why) => fail('invalid_pin', `release pin ${where}: ${why}`);
 const isObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-function exactKeys(value, keys, where) {
+function exactKeys(value, keys, where, optional = []) {
   if (!isObject(value)) invalid(where, 'must be an object');
-  for (const key of Object.keys(value)) if (!keys.includes(key)) invalid(where, `unknown field "${key}"`);
+  for (const key of Object.keys(value)) if (!keys.includes(key) && !optional.includes(key)) invalid(where, `unknown field "${key}"`);
   for (const key of keys) if (!(key in value)) invalid(where, `missing field "${key}"`);
 }
 
@@ -71,8 +71,7 @@ export function parsePin(json, {file} = {}) {
   const where = file ?? 'pin';
   const linux = isObject(json) && json.platform === 'linux';
   const keys = ['schema', 'release', 'appVersion', 'platform', 'arch', 'archive', 'components', 'runtime', 'layout', ...(linux ? [] : ['signing']), 'chromePlugin'];
-  if (linux) exactKeys(Object.fromEntries(Object.entries(json).filter(([key]) => key !== 'notes')), keys, where);
-  else exactKeys(json, keys, where);
+  exactKeys(json, keys, where, linux ? ['notes'] : []);
   if (json.schema !== 1) invalid(where, `unsupported schema ${JSON.stringify(json.schema)}`);
   const appVersion = text(json.appVersion, `${where}.appVersion`, /^\d+(\.\d+)+$/);
   const platform = text(json.platform, `${where}.platform`, /^[a-z0-9]+$/);

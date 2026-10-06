@@ -74,9 +74,10 @@ export function browsersFor({host = {platform: process.platform}, env = process.
 function searched(browsers) {
   const names = browsers.map(b => b.name.replace(/^(Google|Microsoft) /, ''));
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names.join('');
-  const split = browsers.map(b => b.dataDir.split('/'));
-  const common = split[0]?.slice(0, -1).filter((part, i) => split.every(parts => i < parts.length - 1 && parts[i] === part)) ?? [];
-  return `${list} user-data directory under ${common.join('/') || '/'}`;
+  const split = browsers.map(b => dirname(b.dataDir).split('/'));
+  let shared = 0;
+  while (shared < split[0].length && split.every(parts => parts[shared] === split[0][shared])) shared++;
+  return `${list} user-data directory under ${split[0].slice(0, shared).join('/') || '/'}`;
 }
 
 export const REPLACE_CONSEQUENCES = [

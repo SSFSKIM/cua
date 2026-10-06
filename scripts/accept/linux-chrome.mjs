@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
+import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/original/elicitation.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const key = process.argv[2] ?? 'me';
@@ -20,7 +21,12 @@ const home = process.env.CUA_HOME ?? defaultHome();
 const runEntries = () => (existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')).sort() : []);
 const steps = [];
 const step = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', ...(detail === undefined ? {} : {detail})}); return ok; };
-const report = {home, key, steps};
+// The vendor asks for access to each new website origin; the fixture accepts that request for its one origin only
+// (session scope), as the macOS live acceptance does for its page, and declines anything else.
+const ORIGIN = 'https://example.com';
+const elicitations = [];
+const report = {home, key, steps, elicitations};
+const answer = msg => { const decision = decideElicitation(msg, {origin: ORIGIN}); elicitations.push(inventoryEntry(msg, decision)); return answerFor(decision); };
 
 const hosts = spawnSync('ps', ['-eo', 'pid=,args='], {encoding: 'utf8'}).stdout.split('\n')
   .filter(line => /extension-host\/linux\/[^/]+\/extension-host/.test(line)).map(line => line.trim());
@@ -29,7 +35,7 @@ step('a live Chrome host runs from $CUA_HOME/runtimes', hosts.length > 0 && host
 let session = null;
 try {
   const runBefore = runEntries();
-  session = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'computer,browser'}, clientName: 'cua-linux-chrome'});
+  session = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'computer,browser'}, clientName: 'cua-linux-chrome', onServerRequest: answer});
   await session.initialize();
   const listed = (await session.call('profiles_list', {}, 150_000)).result?.structuredContent;
   const profile = listed?.profiles?.find(p => p.key === key);

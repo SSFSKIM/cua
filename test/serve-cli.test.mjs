@@ -739,3 +739,23 @@ test('a client that closes all its pipes mid-task gets an orderly close: exit 0,
   assert.throws(() => process.kill(start.pid, 0), {code: 'ESRCH'});
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
+
+// openConnection's release is best effort step by step: a step that fails (here the approval file's directory is a
+// regular file, so removing the file under it fails with ENOTDIR) is reported, the rest still runs, and `closed`
+// settles instead of rejecting (in the HTTP agent a rejection there would end every session).
+test('a release step that fails is reported and the rest of the release still runs', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  mkdirSync(join(home, 'state', 'codex', 'computer-use'), {recursive: true});
+  writeFileSync(join(home, 'state', 'codex', 'computer-use', 'sessions'), 'not a directory');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  output.resume();
+  const diagnostics = [];
+  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off'}, input, output, diagnostics: line => diagnostics.push(line)});
+  input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
+  await new Promise(r => setTimeout(r, 300));
+  input.end();
+  assert.equal(await served, 1, 'an incomplete release fails the exit code');
+  assert.ok(diagnostics.some(line => /approval file/.test(line) && /ENOTDIR/.test(line)), diagnostics.join('\n'));
+  assert.deepEqual(readdirSync(join(home, 'run')), [], 'the run entries were still released');
+});

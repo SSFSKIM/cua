@@ -59,7 +59,7 @@ export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
   persist = 'session', hostNotes = hostNotesFor(surfaces), model, sandboxState = null,
   completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {},
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -229,7 +229,7 @@ export function createServer({
     if (lifecycle.state === 'failed') return;
     if (msg.method === 'notifications/cancelled') {
       const key = idKey(msg.params?.requestId);
-      if (queuedWork.get(key)?.cancel()) return;            // withdrawn before it reached the runtime
+      if (queuedWork.get(key)?.cancel()) return onWithdrawn(msg.params.requestId);   // withdrawn before it reached the runtime: never answered
       const upstreamId = upstreamIdOf.get(key);
       if (upstreamId !== undefined) upstream.send({...msg, params: {...msg.params, requestId: upstreamId}});
       return;                                                 // end_task and local tools are not cancellable

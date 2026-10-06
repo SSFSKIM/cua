@@ -12,14 +12,17 @@
 // listing launch (inventory.mjs, no tab counts); the connection's close waits for such a listing.
 //
 // Before `closed` settles, everything the connection created is released: the broker, the session's app-approval file
-// the runtime wrote, and its run entries. `closed` resolves {code, reason, completion, teardown, secrets,
-// listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed), and `listingLeftover`
+// the runtime wrote, and its run entries. `closed` resolves (never rejects) {code, reason, completion, teardown, secrets,
+// listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed or a release step
+// failed), and `listingLeftover`
 // says a readiness listing's runtime could not be confirmed stopped. An open that fails rejects with the error (its
 // `code` classified) after releasing whatever it had taken.
 //
 // `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the
 // opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not
 // reachable from the CLI. `chrome` (the Chrome facts) and `listBackends` (the readiness listing) exist for tests only.
+// `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one case
+// in which a request is never answered (the HTTP layer ends the stream that waits for it).
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
@@ -39,7 +42,7 @@ const NO_BROKER = {close: async () => ({confirmed: true, steps: []})};
 
 export async function openConnection({home, env = process.env, sessionId, input, output, settings = settingsFrom(env),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), keychainHelper = locateHelper({home}),
-  prepareLaunch = launch => launch, chrome = chromeFacts(), listBackends}) {
+  prepareLaunch = launch => launch, chrome = chromeFacts(), listBackends, onWithdrawn}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home});
   listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false});
@@ -50,12 +53,24 @@ export async function openConnection({home, env = process.env, sessionId, input,
 
   // Everything the connection took, in the order serve has always released it. The approval file: the runtime records
   // a "session" app approval under this connection's random session ID, which no later connection can use; it goes
-  // with the connection. Other sessions' files are never touched.
+  // with the connection. Other sessions' files are never touched. Each step runs whatever the one before it did; a
+  // step that fails is reported and makes the release incomplete (false), never an exception: in the HTTP agent a
+  // throw here would end every other session with the process.
   const release = async () => {
-    await secrets.close();
-    if (launch) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
-    const leftovers = claim.release();
-    if (leftovers.length) diagnostics(`this connection's run entries could not all be removed (${leftovers.join(', ')}); the next cua serve or cua doctor sweeps them`);
+    let complete = true;
+    const step = async (what, fn) => {
+      try { await fn(); } catch (error) {
+        complete = false;
+        diagnostics(`${what} failed at close (${error.code ?? error.message}); left in place`);
+      }
+    };
+    await step('stopping the secrets broker', () => secrets.close());
+    if (launch) await step('removing the session\'s approval file', () => rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true}));
+    await step('removing the run entries', () => {
+      const leftovers = claim.release();
+      if (leftovers.length) diagnostics(`this connection's run entries could not all be removed (${leftovers.join(', ')}); the next cua serve or cua doctor sweeps them`);
+    });
+    return complete;
   };
 
   let server;
@@ -77,15 +92,15 @@ export async function openConnection({home, env = process.env, sessionId, input,
       return list;
     }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, launch.cwd), ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, launch.cwd), onWithdrawn, ...serverSettings});
   } catch (error) {
     await release();
     throw error;
   }
 
   const closed = server.closed.then(async result => {
-    await release();
-    return {...result, listingLeftover};
+    const released = await release();
+    return {...result, code: released ? result.code : 1, listingLeftover};
   });
   return {
     sessionId,

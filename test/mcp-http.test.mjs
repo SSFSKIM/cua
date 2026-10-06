@@ -21,7 +21,7 @@ const call = (id, name, args = {}) => ({jsonrpc: '2.0', id, method: 'tools/call'
 // everything else waits for the test (`opened[i].upstream`).
 function inProcess() {
   const opened = [];
-  const open = async ({sessionId, input, output}) => {
+  const open = async ({sessionId, input, output, onWithdrawn}) => {
     if (open.failWith) throw Object.assign(new Error('open failed'), {code: open.failWith});
     const upstream = fakeUpstream();
     const send = upstream.send;
@@ -29,7 +29,7 @@ function inProcess() {
       send(msg);
       if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, UPSTREAM_INIT));
     };
-    const server = createServer({input, output, upstream, sessionId, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
+    const server = createServer({input, output, upstream, sessionId, onWithdrawn, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
     const closed = server.closed.then(result => ({...result, listingLeftover: false}));
     const connection = {sessionId, closed, upstream, close: reason => { server.close(reason); return closed; }, get state() { return server.state; }};
     opened.push(connection);
@@ -51,18 +51,20 @@ function recorder() {
     write(chunk) { assert.ok(!res.ended, 'no write after end'); res.body += chunk; },
     end(chunk) { assert.ok(!res.ended, 'end once'); if (chunk !== undefined) res.body += chunk; res.ended = true; },
     // Every SSE event in order; a priming event (an id and empty data) has `message: null`.
+    // Comment blocks (`: keepalive`) are not events and are left out.
     allEvents() {
-      return res.body.split('\n\n').filter(Boolean).map(block => {
+      return res.body.split('\n\n').filter(block => block && !block.startsWith(':')).map(block => {
         const event = {};
         for (const line of block.split('\n')) {
           const at = line.indexOf(': ');
           event[line.slice(0, at)] = line.slice(at + 2);
         }
-        return {id: event.id, message: event.data === '' ? null : JSON.parse(event.data)};
+        return {id: event.id, retry: event.retry, message: event.data === '' ? null : JSON.parse(event.data)};
       });
     },
     events: () => res.allEvents().filter(e => e.message !== null),
     primings: () => res.allEvents().filter(e => e.message === null).map(e => e.id),
+    comments: () => res.body.split('\n\n').filter(block => block.startsWith(':')),
     messages: () => res.events().map(e => e.message),
     json: () => JSON.parse(res.body),
   };
@@ -256,6 +258,8 @@ test('a request\'s response goes on the POST stream that carried it, with two co
     const [first, ...rest] = stream.res.allEvents();
     assert.equal(first.message, null, 'every POST stream opens with a priming event');
     assert.match(first.id, /^\d+-0$/);
+    assert.equal(first.retry, '15000', 'carrying the reconnection delay');
+    assert.ok(stream.res.body.startsWith(`retry: 15000\nid: ${first.id}\ndata: \n\n`), stream.res.body);
     assert.equal(rest.length, 1);
     assert.equal(rest[0].id, first.id.replace(/-0$/, '-1'));
   }
@@ -422,7 +426,7 @@ test('a second GET stream is 409 while one is open', async t => {
   await until(() => third.res.status === 200, 'a GET after the first went away');
 });
 
-test('notifications/cancelled for a request ends its stream, since the cancelled request is never answered', async t => {
+test('notifications/cancelled for a request withdrawn before dispatch ends its stream, since it is never answered', async t => {
   const {send, initialize, upstreamOf} = setup(t);
   const session = await initialize();
   const upstream = upstreamOf(0);
@@ -437,6 +441,22 @@ test('notifications/cancelled for a request ends its stream, since the cancelled
   assert.deepEqual(queued.res.messages(), []);
   assert.equal(queued.res.primings().length, 1, 'only its priming event');
   assert.equal(running.res.ended, false);
+});
+
+test('notifications/cancelled for a request already dispatched keeps its stream, which the runtime\'s late answer ends', async t => {
+  const {send, initialize, upstreamOf} = setup(t);
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const running = send({session, body: call(1, 'js', {code: 'running'})});
+  const js = await upstream.nextCall('js');
+  const cancel = send({session, body: {jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 1}}});
+  await cancel.done;
+  await upstream.next(m => m.method === 'notifications/cancelled', {label: 'the cancellation upstream'});
+  await tick(10);
+  assert.equal(running.res.ended, false, 'the dispatched request keeps its stream');
+  upstream.text(js, 'interrupted');
+  await until(() => running.res.ended, 'the late answer to end the stream');
+  assert.deepEqual(running.res.messages().map(m => m.id), [1]);
 });
 
 test('DELETE ends the session: the id is 404 from then on, and the answer comes once the connection has closed', async t => {
@@ -478,6 +498,8 @@ test('an idle session closes; an open POST stream or a pending elicitation keeps
   const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
   const session = await initialize();
   const upstream = upstreamOf(0);
+  const get = send({method: 'GET', session});
+  await until(() => get.res.status === 200, 'GET stream');
   const post = send({session, body: call(1, 'js', {code: 'long'})});
   const js = await upstream.nextCall('js');
   await tick(150);
@@ -487,7 +509,7 @@ test('an idle session closes; an open POST stream or a pending elicitation keeps
   upstream.text(js, 'done');
   await until(() => post.res.ended, 'the js call to end');
   await tick(150);
-  assert.ok(http.sessions.has(session), 'a pending elicitation is not idle');
+  assert.ok(http.sessions.has(session), 'a pending elicitation is not idle while a stream of the session is open');
 
   const answer = send({session, body: {jsonrpc: '2.0', id: 'e1', result: {action: 'accept', content: {}}}});
   await answer.done;
@@ -495,6 +517,43 @@ test('an idle session closes; an open POST stream or a pending elicitation keeps
   await tick(20);
   assert.ok(http.sessions.has(session), 'the quiet time starts when the session stops being busy');
   await until(() => !http.sessions.has(session), 'the idle close', 1000);
+});
+
+test('a pending elicitation with no stream of the session open does not hold the session: the client went away', async t => {
+  const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
+  const session = await initialize();
+  const get = send({method: 'GET', session});
+  await until(() => get.res.status === 200, 'GET stream');
+  upstreamOf(0).emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
+  await until(() => get.res.messages().length === 1, 'the elicitation on the GET stream');
+  await tick(150);
+  assert.ok(http.sessions.has(session), 'pending with the GET stream open');
+  get.abort();
+  await until(() => !http.sessions.has(session), 'the idle close once no stream is open', 1000);
+});
+
+test('silent SSE streams carry a keepalive comment, never an event, and stop when the stream ends', async t => {
+  const {send, initialize, upstreamOf} = setup(t, {keepaliveMs: 25});
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const get = send({method: 'GET', session});
+  const post = send({session, body: call(1, 'js', {code: 'long'})});
+  const js = await upstream.nextCall('js');
+  await until(() => post.res.comments().length >= 2 && get.res.comments().length >= 2, 'keepalive comments on both streams');
+  assert.deepEqual(post.res.comments().slice(0, 2), [': keepalive', ': keepalive']);
+  assert.deepEqual(post.res.events(), []);
+  assert.equal(post.res.primings().length, 1);
+  const [priming] = post.res.primings();
+  post.abort();
+  const written = post.res.body.length;
+  upstream.text(js, 'done');
+  await tick(80);
+  assert.equal(post.res.body.length, written, 'nothing after the stream ended');
+  const resumed = send({method: 'GET', session, headers: {'last-event-id': priming}});
+  await until(() => resumed.res.ended, 'the replay');
+  assert.deepEqual(resumed.res.comments(), [], 'comments are never replayed');
+  assert.deepEqual(resumed.res.events().map(e => e.message.id), [1]);
+  get.abort();
 });
 
 test('a dropped POST stream whose request is still running keeps the session from idling', async t => {
@@ -537,6 +596,23 @@ test('at the cap an Idle session is evicted for a new initialize; a session with
   await until(() => end.res.ended, 'end_task');
   assert.ok(await initialize(), 'once the task ended the session is Idle and evicted');
   assert.equal(http.sessions.has(second), false);
+});
+
+test('a connection whose release fails is logged, not an unhandled rejection: DELETE still answers and the session is gone', async t => {
+  const failing = async options => {
+    const connection = await inProcess()(options);
+    const closed = connection.closed.then(() => { throw Object.assign(new Error('rm failed'), {code: 'EACCES'}); });
+    return {...connection, closed, close: reason => { connection.close(reason); return closed; }, get state() { return connection.state; }};
+  };
+  const {http, send, initialize, diagnostics} = setup(t, {open: failing});
+  const session = await initialize();
+  const del = send({method: 'DELETE', session});
+  await del.done;
+  assert.equal(del.res.status, 200);
+  assert.equal(http.sessions.has(session), false);
+  await tick(10);
+  assert.ok(diagnostics.some(line => line.includes(session) && /rm failed/.test(line)), diagnostics.join('\n'));
+  assert.ok(await initialize(), 'the agent serves the next session');
 });
 
 test('with a cap of 2 two sessions live side by side, and close(signal) closes both', async t => {

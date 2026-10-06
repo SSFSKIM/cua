@@ -18,12 +18,15 @@
 // elicitation, a progress or log notification) goes on the oldest open POST stream, else the GET stream, else into a
 // per-session buffer drained into the next stream that opens; a session whose buffer would pass `bufferLimit` closes.
 // Small resumability: every event of a POST stream has an id `<stream>-<n>`, the stream opens with a priming event
-// (`<stream>-0`, empty data) so that a client whose stream drops before the first response still holds an id to resume
-// from (Claude Code's client resumes only streams that carried one), and the stream keeps its events while it lives; when the client drops it before all its requests are answered, the later responses are kept, and a GET whose
+// (`retry: 15000`, `<stream>-0`, empty data) so that a client whose stream drops before the first response still holds
+// an id to resume from (Claude Code's client resumes only streams that carried one, and only twice; the retry spaces
+// those attempts across a relay restart), and the stream keeps its events while it lives; when the client drops it before all its requests are answered, the later responses are kept, and a GET whose
 // Last-Event-ID names that stream replays every event after the named one and then carries the rest. A GET naming no
-// such stream is an ordinary GET.
+// such stream is an ordinary GET. Every open stream (POST or GET) that has been silent for `keepaliveMs` gets an SSE
+// comment (`: keepalive`), so proxies and NATs do not cut a long js call; comments are never events.
 // Idle: a session with no request for `idleMs`, nothing it was asked still unanswered (an open or dropped POST stream's
-// requests) and no request of its own awaiting the client's answer (a pending elicitation) closes; the quiet time is
+// requests) and no request of its own awaiting the client's answer (a pending elicitation, counted only while some
+// stream of the session is open: a client that went away mid-approval holds none) closes; the quiet time is
 // counted from the last request or from the moment the session stopped being busy, whichever is later. For eviction a
 // session is Idle when it is not busy in that sense and has no task open (no js work since its last end_task), at any
 // age.
@@ -37,6 +40,7 @@ import {credentialMatches} from '../remote/device.mjs';
 
 const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18']);
 const SSE_HEADERS = {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache'};
+const RETRY_MS = 15_000;
 const idKey = id => JSON.stringify(id);
 const isMessage = m => m !== null && typeof m === 'object' && !Array.isArray(m) && (typeof m.method === 'string' || m.id !== undefined);
 const isRequest = m => m.method !== undefined && m.id !== undefined;
@@ -65,13 +69,27 @@ async function readBody(body) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+// An open SSE response: a `: keepalive` comment goes out whenever a whole interval passed without a write.
+function sse(res, keepaliveMs) {
+  let wrote = false;
+  const timer = setInterval(() => {
+    if (!wrote) res.write(': keepalive\n\n');
+    wrote = false;
+  }, keepaliveMs);
+  timer.unref?.();
+  return {
+    write(chunk) { wrote = true; res.write(chunk); },
+    end() { clearInterval(timer); res.end(); },
+  };
+}
+
 const onAbort = (signal, fn) => {
   if (signal.aborted) fn();
   else signal.addEventListener('abort', fn, {once: true});
 };
 
 export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1, idleMs = 15 * 60_000,
-  bufferLimit = 16 * 1024 * 1024, console: consoleState = () => ({onConsole: true, locked: false}),
+  bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, console: consoleState = () => ({onConsole: true, locked: false}),
   diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection}) {
   const sessions = new Map();
   const ending = new Set();        // close promises of sessions on their way out
@@ -80,7 +98,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   // ---- one session ----
 
-  const busy = session => session.routes.size > 0 || session.serverPending.size > 0;
+  const streamOpen = session => session.get !== null || [...session.streams.values()].some(s => s.res);
+  const busy = session => session.routes.size > 0 || (session.serverPending.size > 0 && streamOpen(session));
   const evictable = session => !busy(session) && session.connection.state === 'idle';
 
   function touch(session) {
@@ -101,9 +120,10 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       clearTimeout(session.timer);
     }
     if (!session.closing) {
-      session.closing = session.connection.close(reason);
+      session.connection.close(reason);
+      session.closing = session.closed;
       ending.add(session.closing);
-      session.closing.finally(() => ending.delete(session.closing));
+      session.closing.then(() => ending.delete(session.closing));
     }
     return session.closing;
   }
@@ -166,7 +186,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   function createSession(id, connection, input, output) {
     const session = {id, connection, input, streams: new Map(), nextStream: 1, routes: new Map(), get: null,
-      buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null};
+      buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null, closed: null};
     input.on('error', () => {});
     // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
     createInterface({input: output}).on('line', line => {
@@ -176,7 +196,12 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       else deliverServerMessage(session, msg);
       touch(session);
     });
-    connection.closed.then(result => {
+    // `closed` should never reject; if a connection's does, that is logged here rather than ending the agent.
+    session.closed = connection.closed.catch(error => {
+      diagnostics(`session ${id}: its close failed: ${error.message}${error.code ? ` [${error.code}]` : ''}`);
+      return {reason: 'close_failed', code: 1, listingLeftover: false};
+    });
+    session.closed.then(result => {
       if (!session.gone) {
         session.gone = true;
         sessions.delete(id);
@@ -207,6 +232,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       if (!evict) return rpcError(res, 503, -32000, `cua: session limit reached (${maxSessions})`, message.id);
     }
     const sessionId = randomUUID();
+    let session;
     const input = new PassThrough();
     const output = new PassThrough();
     const opened = (async () => {
@@ -214,7 +240,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
         diagnostics(`session ${evict.id}: evicted, being Idle, for a new session at the cap of ${maxSessions}`);
         await endSession(evict, 'eof');
       }
-      return open({home, env, sessionId, input, output, diagnostics: line => diagnostics(`session ${sessionId}: ${line}`)});
+      return open({home, env, sessionId, input, output, diagnostics: line => diagnostics(`session ${sessionId}: ${line}`),
+        onWithdrawn: requestId => { if (session) withdraw(session, requestId); }});
     })();
     opening.add(opened);
     let connection;
@@ -222,7 +249,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       diagnostics(`session ${sessionId}: could not open: ${error.message}${error.code ? ` [${error.code}]` : ''}`);
       return rpcError(res, 500, -32000, `cua: ${error.code ?? 'open_failed'}`, message.id);
     } finally { opening.delete(opened); }
-    const session = createSession(sessionId, connection, input, output);
+    session = createSession(sessionId, connection, input, output);
     if (shutdown) {
       endSession(session, shutdown);
       return rpcError(res, 503, -32000, 'cua: the agent is shutting down', message.id);
@@ -238,7 +265,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     await done;
   }
 
-  // A request whose stream is gone or never existed loses nothing: cancelling it is the client's own act.
+  // A request the connection withdrew before dispatch (a cancellation) is never answered, so its stream stops waiting
+  // for it. A cancelled request that had reached the runtime keeps its route: the runtime's late answer ends the stream.
   function withdraw(session, requestId) {
     const key = idKey(requestId);
     const stream = session.routes.get(key);
@@ -249,13 +277,15 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   }
 
   function attach(session, stream, res, signal) {
-    stream.res = res;
+    const out = sse(res, keepaliveMs);
+    stream.res = out;
     onAbort(signal, () => {
-      if (stream.res !== res) return;
+      if (stream.res !== out) return;
       stream.res = null;
-      res.end();
+      out.end();
       touch(session);
     });
+    return out;
   }
 
   async function post(req, res, sessionId) {
@@ -279,10 +309,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     const keys = requests.map(m => idKey(m.id));
     if (new Set(keys).size !== keys.length || keys.some(k => session.routes.has(k)))
       return rpcError(res, 400, -32600, 'cua: a request id is already in use on this session');
-    for (const m of messages) {
-      if (m.method === undefined) session.serverPending.delete(idKey(m.id));
-      else if (m.method === 'notifications/cancelled' && m.id === undefined) withdraw(session, m.params?.requestId);
-    }
+    for (const m of messages) if (m.method === undefined) session.serverPending.delete(idKey(m.id));
     if (!requests.length) {
       send(session, messages);
       res.writeHead(202, {});
@@ -293,8 +320,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     session.streams.set(stream.id, stream);
     for (const key of keys) session.routes.set(key, stream);
     res.writeHead(200, SSE_HEADERS);
-    attach(session, stream, res, req.signal);
-    res.write(`id: ${stream.id}-0\ndata: \n\n`);   // the priming event: never kept, replayed, buffered or routed
+    // The priming event: never kept, replayed, buffered or routed.
+    attach(session, stream, res, req.signal).write(`retry: ${RETRY_MS}\nid: ${stream.id}-0\ndata: \n\n`);
     drain(session, msg => sseEvent(stream, msg));
     touch(session);
     send(session, messages);
@@ -311,21 +338,24 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
         old.end();
       }
       res.writeHead(200, SSE_HEADERS);
-      attach(session, stream, res, req.signal);
-      for (const {n, event} of stream.events) if (n > Number(named[2])) res.write(event);
+      const out = attach(session, stream, res, req.signal);
+      for (const {n, event} of stream.events) if (n > Number(named[2])) out.write(event);
       drain(session, msg => sseEvent(stream, msg));
-      return settle(session, stream);
+      settle(session, stream);
+      return touch(session);
     }
     if (session.get) return rpcError(res, 409, -32000, 'cua: this session already has its GET stream open');
     res.writeHead(200, SSE_HEADERS);
-    const standing = {res};
+    const standing = {res: sse(res, keepaliveMs)};
     session.get = standing;
     onAbort(req.signal, () => {
       if (session.get !== standing) return;
       session.get = null;
-      res.end();
+      standing.res.end();
+      touch(session);
     });
     drain(session, msg => toGet(session, msg));
+    touch(session);   // with a stream open again, a pending elicitation keeps the session
   }
 
   async function remove(res, session) {

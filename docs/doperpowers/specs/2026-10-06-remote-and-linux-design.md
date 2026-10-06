@@ -14,7 +14,7 @@ Both phases keep every rule of the parent: unmodified, pinned vendor runtime; on
 
 ## Progress
 
-- [ ] E1 — HTTP server mode: connection extracted from `serve`, Streamable HTTP endpoint with per-request response routing and small resumability, bearer and Origin checks, `remote enroll|show`, `agent run --http`, LAN proof MacBook → mini from the mini's console Terminal.
+- [x] (2026-10-06 03:45 PDT, code and Node tests reviewed clean at ee6362c; LAN proof pending) E1 — HTTP server mode: connection extracted from `serve`, Streamable HTTP endpoint with per-request response routing and small resumability, bearer and Origin checks, `remote enroll|show`, `agent run --http`, LAN proof MacBook → mini from the mini's console Terminal.
 - [ ] E2 — `cua agent install|uninstall|status` launchd agent in the GUI session; doctor `agent.*` rows including `agent.console`; `console_locked`; launchd-started native action and Chrome bind proven on the mini.
 - [ ] E3 — `cua-relay` and `cua agent run --relay`: derived leg credentials, outbound WebSocket with ping/pong, HTTP tunnel over channels, reconnect and session survival, agent lock.
 - [ ] E4 — Phase E acceptance from a machine that is not the mini through the relay (acceptance items 1–7), README, retrospective entry.

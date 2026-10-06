@@ -321,8 +321,8 @@ that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chro
 `cua profiles bind <key>` again: it names the stale id beside the live backends, and the pick stays yours, even when
 exactly one new unlabelled backend appeared.
 
-A binding also needs its extension host to be running. Chrome starts the OpenAI host when the extension connects, and
-on some Macs the host exits about a minute after the extension goes idle; with Chrome closed there is none. When no
+A binding also needs its extension host to be running. Chrome starts the OpenAI host when the extension connects and
+ends it when that connection closes; with Chrome closed there is none. When no
 Chrome backend is live at all, `list` and `profiles_list` report the profile `host_not_live` and name the step, with
 the profile's Chrome directory: open that Chrome profile and click the OpenAI (ChatGPT) extension's icon to wake it,
 then retry. Turning the extension off and on at `chrome://extensions` wakes it too, but can mint a new instance id,

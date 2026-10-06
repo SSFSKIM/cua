@@ -135,13 +135,12 @@ export const awaitsLiveEvidence = p => p.reason === 'chrome_data_unreadable' && 
 
 // A bound, otherwise ready profile against the live Google Chrome backends' instance ids at this request (another
 // browser's backends are no evidence; `liveIds` is null when the listing failed): ready only when its id is among them;
-// host_not_live when the listing worked and no Chrome backend is live at all (Chrome closed, or its host exited, which
-// on some Macs happens about a minute after the extension wakes), since then no host serves this profile whatever its
-// binding; binding_stale when other backends are live but not its id, which is either a new instance id or this
-// profile's host alone not running (backends are usually unlabelled, so the two cannot be told apart);
-// backends_unlistable when the listing failed. A bound profile whose Chrome data this process may not read is ready
-// when its id is live (the live backend is the evidence) and stays chrome_data_unreadable otherwise: without the files,
-// a stale binding cannot be told from a removed extension.
+// host_not_live when the listing worked and no Chrome backend is live at all (Chrome closed, or its host exited), since
+// then no host serves this profile whatever its binding; binding_stale when other backends are live but not its id,
+// which is either a new instance id or this profile's host alone not running (backends are usually unlabelled, so the
+// two cannot be told apart); backends_unlistable when the listing failed. A bound profile whose Chrome data this
+// process may not read is ready when its id is live (the live backend is the evidence) and stays chrome_data_unreadable
+// otherwise: without the files, a stale binding cannot be told from a removed extension.
 export function withLiveness(statuses, liveIds) {
   return statuses.map(p => {
     if (awaitsLiveEvidence(p)) {

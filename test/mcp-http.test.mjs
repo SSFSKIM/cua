@@ -7,38 +7,13 @@ import assert from 'node:assert/strict';
 import {existsSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createMcpHttp} from '../src/mcp/http.mjs';
-import {createServer} from '../src/mcp/server.mjs';
-import {fakeUpstream, tick} from './fixtures/mcp-harness.mjs';
+import {inProcessConnections as inProcess, tick} from './fixtures/mcp-harness.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const CREDENTIAL = 'c'.repeat(64);
 const INITIALIZE = {jsonrpc: '2.0', id: 0, method: 'initialize', params: {protocolVersion: '2025-03-26', capabilities: {elicitation: {}}, clientInfo: {name: 'test', version: '0'}}};
-const UPSTREAM_INIT = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'rmcp', version: '1.5.0'}, instructions: 'Upstream.'};
 const call = (id, name, args = {}) => ({jsonrpc: '2.0', id, method: 'tools/call', params: {name, arguments: args}});
-
-// In-process connections: each session's createServer runs over a fake upstream that answers initialize by itself;
-// everything else waits for the test (`opened[i].upstream`).
-function inProcess() {
-  const opened = [];
-  const open = async ({sessionId, input, output, onWithdrawn}) => {
-    if (open.failWith) throw Object.assign(new Error('open failed'), {code: open.failWith});
-    const upstream = fakeUpstream();
-    const send = upstream.send;
-    upstream.send = msg => {
-      send(msg);
-      // `open.negotiate` (when set) is the protocol version this runtime answers initialize with.
-      if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, {...UPSTREAM_INIT, ...(open.negotiate ? {protocolVersion: open.negotiate} : {})}));
-    };
-    const server = createServer({input, output, upstream, sessionId, onWithdrawn, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
-    const closed = server.closed.then(result => ({...result, listingLeftover: false}));
-    const connection = {sessionId, closed, upstream, close: reason => { server.close(reason); return closed; }, get state() { return server.state; }};
-    opened.push(connection);
-    return connection;
-  };
-  open.opened = opened;
-  return open;
-}
 
 // A response recorder satisfying {writeHead, write, end}, with its SSE events parsed.
 function recorder() {

@@ -45,7 +45,8 @@ const USAGE = `usage: cua <command>
   remote enroll [--relay <wss url>] [--rotate] [--json]        enrol this Mac for remote control; shows the client credential once
   remote show [--json]                                         the device id, relay URL and the relay's devices.json line
   agent run [--http <host:port>] [--relay]                     serve MCP to remote clients until a signal; --http 127.0.0.1:7801
-                                                               serves this Mac only, its LAN address serves the LAN
+                                                               serves this Mac only, its LAN address serves the LAN; --relay
+                                                               dials the relay enrolled with remote enroll --relay (both: both)
   agent install [--http <host:port>] [--surfaces <list>] [--json]  run the agent as a launchd job in this login session
                                                                (--relay when enrolled with one; surfaces default computer,browser)
   agent uninstall [--json]                                     stop the launchd job and remove it

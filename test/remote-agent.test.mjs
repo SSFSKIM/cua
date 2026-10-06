@@ -1,15 +1,28 @@
-// `cua remote` and `cua agent run --http` as real processes against scratch homes; the served runtime is the fake
-// upstream process (installed-home.mjs). The listener binds 127.0.0.1 on a port the system picks, so nothing leaves
-// the loopback interface.
+// `cua remote` and `cua agent run` as real processes against scratch homes; the served runtime is the fake upstream
+// process (installed-home.mjs). Listeners bind 127.0.0.1 on ports the system picks, so nothing leaves the loopback
+// interface. The relay path (connectRelay, `agent run --relay`) runs against fake relays (bare WebSocket servers) and
+// the real relay (relay/server.mjs) in this process, over real WebSockets; those tests need the `ws` package and skip,
+// saying so, in a checkout where `npm ci` was not run.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
+import {once} from 'node:events';
+import {createHash} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
+import {createServer as createNetServer} from 'node:net';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
-import {runAgent} from '../src/remote/agent.mjs';
+import {inProcessConnections, tick} from './fixtures/mcp-harness.mjs';
+import {connectRelay, runAgent} from '../src/remote/agent.mjs';
 import {checkConsole} from '../src/remote/console.mjs';
+import {credentialsOf, readDevice} from '../src/remote/device.mjs';
+import {createMcpHttp} from '../src/mcp/http.mjs';
+
+const ws = await import('ws').catch(() => null);
+const relayServer = ws ? await import('../relay/server.mjs') : null;
+const NEEDS_WS = ws ? false : 'needs the ws package: run npm ci';
+const WITHOUT_WS = join(REPO, 'test', 'fixtures', 'without-ws.mjs');
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
 // The agents here never read the real console (CUA_AGENT_CONSOLE_CHECK=off): js must run whatever the test Mac's screen
@@ -31,8 +44,10 @@ function enroll(home) {
 }
 
 // Starts `cua <args>` and resolves once it is listening, with the endpoint it printed.
-async function startAgent(t, home, args = ['agent', 'run', '--http', '127.0.0.1:0'], env = {}) {
-  const child = spawn(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV, ...env}, stdio: ['ignore', 'pipe', 'pipe']});
+// `ready` is what the agent prints once it serves: its listener by default, or the relay's hello (then `endpoint` is
+// null unless it also listens).
+async function startAgent(t, home, args = ['agent', 'run', '--http', '127.0.0.1:0'], env = {}, {node = [], ready = /listening on (http:\/\/\S+\/mcp)/} = {}) {
+  const child = spawn(process.execPath, [...node, CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV, ...env}, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';
   const exit = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal, stderr})));
   t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
@@ -40,8 +55,8 @@ async function startAgent(t, home, args = ['agent', 'run', '--http', '127.0.0.1:
     const timer = setTimeout(() => reject(new Error(`the agent did not start listening; stderr: ${stderr}`)), 10_000);
     child.stderr.on('data', chunk => {
       stderr += chunk;
-      const found = /listening on (http:\/\/\S+\/mcp)/.exec(stderr);
-      if (found) { clearTimeout(timer); resolve(found[1]); }
+      const found = ready.exec(stderr);
+      if (found) { clearTimeout(timer); resolve(/listening on (http:\/\/\S+\/mcp)/.exec(stderr)?.[1] ?? null); }
     });
     exit.then(() => { clearTimeout(timer); reject(new Error(`the agent exited; stderr: ${stderr}`)); });
   });
@@ -98,7 +113,7 @@ test('remote show before enrolment and agent run usage errors', t => {
   }
 });
 
-test('agent run refuses without an enrolment, with --relay before the relay exists, and with a bad address or limit', t => {
+test('agent run refuses without an enrolment, with --relay on a device enrolled without a relay, and with a bad address or limit', t => {
   const home = emptyHome(t);
   let r = cua(['agent', 'run', '--http', '127.0.0.1:0'], home);
   assert.equal(r.status, 1);
@@ -199,4 +214,349 @@ test('a lock left by an agent that is gone is broken; a session id answers 404 a
   assert.equal(after.status, 404);
   agent.child.kill('SIGINT');
   assert.equal((await agent.exit).code, 0);
+});
+
+// ---- the relay path ----
+
+const DEVICE_CREDENTIAL = 'd'.repeat(64);
+const sha256 = text => createHash('sha256').update(text).digest('hex');
+const ACCEPT = 'application/json, text/event-stream';
+const b64 = text => Buffer.from(text).toString('base64');
+const unb64 = frames => Buffer.concat(frames.filter(f => f.t === 'data').map(f => Buffer.from(f.data, 'base64'))).toString('utf8');
+// The reconnect delays the link logged, in ms.
+const delaysIn = diagnostics => diagnostics.map(line => /retrying in ([\d.]+) s/.exec(line)?.[1]).filter(Boolean).map(s => Math.round(Number(s) * 1000));
+
+async function until(predicate, label = 'condition', ms = 5000) {
+  const deadline = Date.now() + ms;
+  while (!(await predicate())) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`);
+    await tick(5);
+  }
+}
+
+// A fake relay: a bare WebSocket server on a loopback port the system picks. It records each connection (its upgrade
+// request, its frames) and pings only when given `pingMs`; `onConnection` runs for each new socket.
+async function fakeRelay(t, {pingMs, onConnection} = {}) {
+  const server = new ws.WebSocketServer({host: '127.0.0.1', port: 0});
+  await once(server, 'listening');
+  const relay = {url: `ws://127.0.0.1:${server.address().port}/ws`, connections: []};
+  server.on('connection', (socket, req) => {
+    const c = {socket, req, frames: [], send: frame => socket.send(JSON.stringify(frame))};
+    c.closed = new Promise(resolve => socket.on('close', code => resolve(code)));
+    socket.on('message', data => c.frames.push(JSON.parse(data.toString())));
+    if (pingMs) {
+      const timer = setInterval(() => socket.ping(), pingMs);
+      socket.on('close', () => clearInterval(timer));
+    }
+    relay.connections.push(c);
+    onConnection?.(c);
+  });
+  t.after(() => new Promise(resolve => {
+    for (const c of relay.connections) c.socket.terminate();
+    server.close(() => resolve());
+  }));
+  return relay;
+}
+
+async function dial(t, url, options = {}) {
+  const diagnostics = [];
+  const link = await connectRelay({url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev', handle: () => {},
+    diagnostics: line => diagnostics.push(line), minBackoffMs: 10, maxBackoffMs: 40, ...options});
+  t.after(() => link.close());
+  return {link, diagnostics};
+}
+
+test('connectRelay dials with the device credential, says hello first, and serves each whole request through the handler, streaming the answer', {skip: NEEDS_WS}, async t => {
+  const relay = await fakeRelay(t);
+  const seen = [];
+  const handle = async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req.body) chunks.push(chunk);
+    const entry = {req, body: Buffer.concat(chunks).toString('utf8'), res, aborted: false};
+    req.signal.addEventListener('abort', () => { entry.aborted = true; });
+    seen.push(entry);
+    if (entry.body === 'throw') throw new Error('handler failed');
+    if (entry.body !== 'answer') return;   // 'hold': answered by the test
+    res.writeHead(200, {'Content-Type': 'text/event-stream', 'Mcp-Session-Id': 's'});
+    res.write('id: 1-0\ndata: \n\n');
+    res.write(Buffer.from('id: 1-1\ndata: "é"\n\n'));
+    res.end();
+  };
+  const {diagnostics} = await dial(t, relay.url, {handle});
+  await until(() => relay.connections[0]?.frames.length >= 1, 'hello');
+  const c = relay.connections[0];
+  assert.equal(c.req.headers.authorization, `Bearer ${DEVICE_CREDENTIAL}`);
+  assert.deepEqual(c.frames[0], {t: 'hello', deviceId: 'dev'});
+  const request = (ch, body, extra = {}) => {
+    c.send({ch, t: 'open', method: 'POST', path: '/mcp', headers: {authorization: 'Bearer client', 'content-type': 'application/json', ...extra}});
+    for (const part of body.match(/.{1,3}/g)) c.send({ch, t: 'body', data: b64(part)});
+  };
+
+  request(1, 'answer', {'mcp-session-id': 's'});
+  await tick(30);
+  assert.equal(seen.length, 0, 'the handler sees a request only once its body is whole');
+  c.send({ch: 1, t: 'end'});
+  await until(() => c.frames.some(f => f.ch === 1 && f.t === 'end'), 'channel 1 answered');
+  assert.equal(seen[0].req.method, 'POST');
+  assert.equal(seen[0].req.url, '/mcp');
+  assert.deepEqual(seen[0].req.headers, {authorization: 'Bearer client', 'content-type': 'application/json', 'mcp-session-id': 's'});
+  const answer = c.frames.filter(f => f.ch === 1);
+  assert.deepEqual(answer[0], {ch: 1, t: 'head', status: 200, headers: {'Content-Type': 'text/event-stream', 'Mcp-Session-Id': 's'}});
+  assert.deepEqual(answer.slice(1).map(f => f.t), ['data', 'data', 'end'], 'each write is its own data frame');
+  assert.equal(unb64(answer), 'id: 1-0\ndata: \n\nid: 1-1\ndata: "é"\n\n');
+
+  request(2, 'hold');
+  c.send({ch: 2, t: 'end'});
+  await until(() => seen.length === 2, 'the held request');
+  c.send({ch: 2, t: 'abort'});
+  await until(() => seen[1].aborted, 'the abort to fire the handler\'s signal');
+  seen[1].res.writeHead(200, {});
+  seen[1].res.end();
+  request(3, 'throw');
+  c.send({ch: 3, t: 'end'});
+  await until(() => c.frames.some(f => f.ch === 3), 'channel 3');
+  assert.deepEqual(c.frames.filter(f => f.ch === 3), [{ch: 3, t: 'abort'}], 'a handler that fails aborts its channel');
+  assert.deepEqual(c.frames.filter(f => f.ch === 2), [], 'nothing is sent for an aborted channel');
+
+  c.send({ch: 77, t: 'body', data: 'AA=='});
+  c.send({ch: 78, t: 'end'});
+  c.socket.send('not json');
+  await until(() => diagnostics.filter(line => /unknown channel|not a frame/.test(line)).length >= 3, 'the dropped frames logged');
+  request(4, 'answer');
+  c.send({ch: 4, t: 'end'});
+  await until(() => c.frames.some(f => f.ch === 4 && f.t === 'end'), 'channel 4 answered after the dropped frames');
+  for (const line of diagnostics) assert.ok(!line.includes(DEVICE_CREDENTIAL), 'the device credential never reaches the log');
+});
+
+for (const [code, reason] of [[4001, 'replaced'], [4003, 'wrong device']]) {
+  test(`a lost link aborts its open channels and reconnects; close code ${code} stops it for good`, {skip: NEEDS_WS}, async t => {
+    const relay = await fakeRelay(t);
+    let held = null;
+    const {link, diagnostics} = await dial(t, relay.url, {handle: req => { held = req; }});
+    await until(() => relay.connections[0]?.frames.length, 'hello');
+    relay.connections[0].send({ch: 1, t: 'open', method: 'GET', path: '/mcp', headers: {}});
+    relay.connections[0].send({ch: 1, t: 'end'});
+    await until(() => held, 'the request');
+    relay.connections[0].socket.terminate();
+    await until(() => held.signal.aborted, 'the open channel aborted with the link');
+    await until(() => relay.connections[1]?.frames.length, 'a second connection');
+    assert.deepEqual(relay.connections[1].frames[0], {t: 'hello', deviceId: 'dev'});
+    await until(() => diagnostics.some(line => /reconnected/.test(line)), 'the reconnect line');
+
+    relay.connections[1].socket.close(code, reason);
+    assert.deepEqual(await link.stopped, {code, reason});
+    await tick(150);
+    assert.equal(relay.connections.length, 2, `no reconnect after ${code}`);
+    assert.ok(diagnostics.some(line => line.includes(String(code)) && /not reconnecting|stopping/.test(line)), diagnostics.join('\n'));
+  });
+}
+
+test('reconnect delays double from the first to the ceiling, and start over after each connection', {skip: NEEDS_WS}, async t => {
+  const probe = createNetServer();
+  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const {port} = probe.address();
+  await new Promise(resolve => probe.close(resolve));
+  const refused = await dial(t, `ws://127.0.0.1:${port}/ws`);
+  await until(() => delaysIn(refused.diagnostics).length >= 5, 'five retries');
+  assert.deepEqual(delaysIn(refused.diagnostics).slice(0, 5), [10, 20, 40, 40, 40]);
+  await refused.link.close();
+
+  const flapping = await fakeRelay(t, {onConnection: c => c.socket.close(1011, 'flap')});
+  const reset = await dial(t, flapping.url);
+  await until(() => flapping.connections.length >= 4, 'four connections');
+  assert.deepEqual([...new Set(delaysIn(reset.diagnostics))], [10], 'each connection resets the delay');
+});
+
+test('the watchdog closes a link that hears no ping for watchdogMs and reconnects; a pinged link stays', {skip: NEEDS_WS}, async t => {
+  const silent = await fakeRelay(t);
+  const {diagnostics} = await dial(t, silent.url, {watchdogMs: 60});
+  await until(() => silent.connections.length >= 2, 'a reconnect after the watchdog');
+  assert.ok(diagnostics.some(line => /no ping/.test(line)), diagnostics.join('\n'));
+  const pinging = await fakeRelay(t, {pingMs: 15});
+  await dial(t, pinging.url, {watchdogMs: 60});
+  await tick(300);
+  assert.equal(pinging.connections.length, 1);
+});
+
+// The real relay in this process, in front of the real HTTP handler over in-process connections.
+async function relayed(t, {client = 'c'.repeat(64), handlerCredential = client} = {}) {
+  const s = scratch();
+  t.after(s.cleanup);
+  const devicesFile = join(s.dir, 'devices.json');
+  writeFileSync(devicesFile, JSON.stringify({dev: {deviceCredentialSha256: sha256(DEVICE_CREDENTIAL), clientCredentialSha256: sha256(client)}}));
+  const relayLog = [];
+  const start = port => relayServer.startRelay({port, devicesFile, diagnostics: line => relayLog.push(line)});
+  const env = {relay: await start(0), relayLog};
+  t.after(() => env.relay.close());
+  const port = env.relay.port;
+  env.restart = async () => {
+    await env.relay.close();
+    env.relay = await start(port);
+  };
+  env.online = (n = 1) => until(() => relayLog.filter(line => line === 'device dev online').length >= n, 'the device online');
+  const open = inProcessConnections();
+  const http = createMcpHttp({home: '/nowhere', env: {}, clientCredential: handlerCredential, open, diagnostics: () => {}});
+  t.after(() => http.close('eof'));
+  const {link, diagnostics} = await dial(t, `ws://127.0.0.1:${port}/ws`, {handle: http.handle, minBackoffMs: 20});
+  await env.online();
+  const endpoint = `http://127.0.0.1:${port}/d/dev/mcp`;
+  env.request = (body, {session, method = 'POST', headers = {}, signal} = {}) => fetch(endpoint, {method, signal, ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+    headers: {authorization: `Bearer ${client}`, 'content-type': 'application/json', accept: ACCEPT, ...(session ? {'mcp-session-id': session} : {}), ...headers}});
+  return Object.assign(env, {open, http, link, diagnostics, endpoint});
+}
+
+const sseOf = text => text.split('\n\n').filter(block => block && !block.startsWith(':')).map(block => {
+  const event = {};
+  for (const line of block.split('\n')) event[line.slice(0, line.indexOf(': '))] = line.slice(line.indexOf(': ') + 2);
+  return {id: event.id, message: event.data ? JSON.parse(event.data) : null};
+});
+const INIT = {jsonrpc: '2.0', id: 0, method: 'initialize', params: {protocolVersion: '2025-03-26', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
+const js = (id, code) => ({jsonrpc: '2.0', id, method: 'tools/call', params: {name: 'js', arguments: {code}}});
+
+test('the relay forwards the client\'s authorization unchanged and the handler checks it again', {skip: NEEDS_WS}, async t => {
+  const env = await relayed(t, {client: 'a'.repeat(64), handlerCredential: 'b'.repeat(64)});
+  const res = await env.request(INIT);
+  assert.equal(res.status, 401, 'the relay let the bearer through; the agent\'s handler refused it');
+  assert.match((await res.json()).error.message, /^cua: unauthorized/);
+  assert.equal(env.http.sessions.size, 0);
+});
+
+test('through the relay: concurrent calls on their own streams; across a relay restart the session survives, an in-flight js answer is replayed on Last-Event-ID and a server message queued meanwhile arrives on that stream', {skip: NEEDS_WS}, async t => {
+  const env = await relayed(t);
+  const init = await env.request(INIT);
+  assert.equal(init.status, 200);
+  const session = init.headers.get('mcp-session-id');
+  assert.equal((await init.json()).result.serverInfo.name, 'rmcp');
+  assert.equal((await env.request({jsonrpc: '2.0', method: 'notifications/initialized'}, {session})).status, 202);
+  const upstream = env.open.opened[0].upstream;
+  const callOf = code => upstream.next(m => m.method === 'tools/call' && m.params?.arguments?.code === code, {label: `js ${code}`, timeoutMs: 5000});
+
+  // A js call and a tools/list at once, answered in the opposite order: each answer lands on its own request.
+  const [a, b] = [env.request(js(1, 'a'), {session}), env.request({jsonrpc: '2.0', id: 2, method: 'tools/list'}, {session})];
+  const callA = await callOf('a');
+  upstream.reply(await upstream.nextRequest('tools/list', {timeoutMs: 5000}), {tools: []});
+  const listed = sseOf(await (await b).text()).filter(e => e.message);
+  assert.deepEqual(listed.map(e => [e.message.id, Array.isArray(e.message.result.tools)]), [[2, true]]);
+  upstream.text(callA, 'answer a');
+  const answered = sseOf(await (await a).text()).filter(e => e.message);
+  assert.deepEqual(answered.map(e => e.message.id), [1]);
+  assert.match(answered[0].message.result.content[0].text, /answer a/);
+
+  const inFlight = await env.request(js(3, 'long'), {session});
+  assert.equal(inFlight.headers.get('content-type'), 'text/event-stream');
+  const reader = inFlight.body.getReader();
+  let seen = '';
+  while (!/id: \d+-0\n/.test(seen)) seen += Buffer.from((await reader.read()).value).toString('utf8');
+  const priming = /id: (\d+-0)\n/.exec(seen)[1];
+  const call = await callOf('long');
+  await env.restart();
+  let cut = null;
+  try { while (!(await reader.read()).done); } catch (error) { cut = error; }
+  assert.ok(cut, 'the client saw its stream cut, not ended');
+  await env.online();
+  await until(() => env.diagnostics.some(line => /reconnected/.test(line)), 'the agent\'s reconnect line');
+  assert.ok(env.http.sessions.has(session), 'the session lives in the agent, not in the relay');
+
+  upstream.emit({jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data: 'queued'}});
+  upstream.text(call, 'cell finished');
+  await tick(20);
+  const resumed = await env.request(undefined, {session, method: 'GET', headers: {'last-event-id': priming}});
+  assert.equal(resumed.status, 200);
+  const events = sseOf(await resumed.text()).filter(e => e.message);
+  assert.deepEqual(events.map(e => e.message.id ?? e.message.method), [3, 'notifications/message'], 'the replayed answer, then the queued message');
+  assert.match(events[0].message.result.content[0].text, /cell finished/);
+
+  const next = env.request(js(4, 'next'), {session});
+  upstream.text(await callOf('next'), 'same session');
+  const after = sseOf(await (await next).text()).filter(e => e.message);
+  assert.match(after[0].message.result.content[0].text, /same session/);
+});
+
+// ---- runAgent with the relay ----
+
+// Enrols `home`, starts the real relay with its devices.json line, and points the enrolment at it.
+async function enrolledAgainstRelay(t, home) {
+  const {clientCredential, devicesEntry, deviceId} = enroll(home);
+  const s = scratch();
+  t.after(s.cleanup);
+  const devicesFile = join(s.dir, 'devices.json');
+  writeFileSync(devicesFile, `{${devicesEntry}}`);
+  const relayLog = [];
+  const relay = await relayServer.startRelay({port: 0, devicesFile, diagnostics: line => relayLog.push(line)});
+  t.after(() => relay.close());
+  const update = cua(['remote', 'enroll', '--relay', `ws://127.0.0.1:${relay.port}/ws`], home);
+  assert.equal(update.status, 0, update.stderr);
+  return {clientCredential, deviceId, relay, relayLog, endpoint: `http://127.0.0.1:${relay.port}/d/${deviceId}/mcp`};
+}
+
+test('agent run --http --relay serves both; a newer connection for the device (4001) makes it close every session and exit 0', {skip: !installedHomeSupported ? 'needs the fake installed home (macOS arm64)' : NEEDS_WS}, async t => {
+  const home = fakeInstalledHome(t);
+  const {clientCredential, deviceId, endpoint, relayLog} = await enrolledAgainstRelay(t, home);
+  const agent = await startAgent(t, home, ['agent', 'run', '--http', '127.0.0.1:0', '--relay'], {}, {ready: /relay: connected/});
+  assert.match(agent.endpoint, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/, 'it also listens');
+  await until(() => relayLog.includes(`device ${deviceId} online`), 'the device online');
+
+  const viaRelay = await post(endpoint, clientCredential, INITIALIZE);
+  assert.equal(viaRelay.status, 200);
+  const session = viaRelay.headers.get('mcp-session-id');
+  const listed = await post(endpoint, clientCredential, {jsonrpc: '2.0', id: 1, method: 'tools/list'}, session);
+  assert.ok(sseMessages(await listed.text())[0].result.tools.some(tool => tool.name === 'js'), 'tools/list answered through the relay');
+  const del = await fetch(endpoint, {method: 'DELETE', headers: {authorization: `Bearer ${clientCredential}`, 'mcp-session-id': session}});
+  assert.equal(del.status, 200);
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+  const viaListener = await post(agent.endpoint, clientCredential, INITIALIZE);
+  assert.equal(viaListener.status, 200, 'the LAN listener serves too');
+  const open = viaListener.headers.get('mcp-session-id');
+  await viaListener.text();
+
+  // Another holder of this device's credential connects: the relay keeps the newer, the agent stops for good.
+  const {deviceCredential} = credentialsOf(readDevice(home));
+  const usurper = new ws.WebSocket(endpoint.replace(/^http/, 'ws').replace(/\/d\/.*$/, '/ws'), {headers: {authorization: `Bearer ${deviceCredential}`}});
+  t.after(() => usurper.terminate());
+  await once(usurper, 'open');
+  usurper.send(JSON.stringify({t: 'hello', deviceId}));
+  const {code, signal, stderr} = await agent.exit;
+  assert.deepEqual({code, signal}, {code: 0, signal: null}, stderr);
+  assert.match(stderr, /4001/);
+  assert.match(stderr, new RegExp(`session ${open}: closed`));
+  assert.equal((stderr.match(/relay: connected/g) ?? []).length, 1, 'it never reconnected');
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+  assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
+  for (const secret of [clientCredential, deviceCredential]) assert.ok(!stderr.includes(secret), 'no credential in the agent log');
+});
+
+test('a refusal on one path leaves nothing of the other started: a taken --http address never dials the relay', {skip: NEEDS_WS}, async t => {
+  const home = emptyHome(t);
+  enroll(home);
+  const relay = await fakeRelay(t);
+  assert.equal(cua(['remote', 'enroll', '--relay', relay.url], home).status, 0);
+  const taken = createNetServer();
+  await new Promise(resolve => taken.listen(0, '127.0.0.1', resolve));
+  t.after(() => taken.close());
+  const r = cua(['agent', 'run', '--relay', '--http', `127.0.0.1:${taken.address().port}`], home);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /http_listen_failed/);
+  await tick(100);
+  assert.equal(relay.connections.length, 0, 'the relay was never dialled');
+  assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
+});
+
+test('without the ws package: --relay refuses before anything starts, while --http and every other command never load it', async t => {
+  const home = emptyHome(t);
+  enroll(home);
+  assert.equal(cua(['remote', 'enroll', '--relay', 'ws://127.0.0.1:9/ws'], home).status, 0);
+  const node = ['--import', WITHOUT_WS];
+  for (const args of [['agent', 'run', '--relay'], ['agent', 'run', '--http', '127.0.0.1:0', '--relay']]) {
+    const r = spawnSync(process.execPath, [...node, CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV}, encoding: 'utf8', timeout: 30_000});
+    assert.equal(r.status, 1, `${args.join(' ')}: ${r.stderr}`);
+    assert.match(r.stderr, /relay_unavailable/);
+    assert.match(r.stderr, /npm ci/);
+    assert.doesNotMatch(r.stderr, /listening on/, 'the listener never started');
+  }
+  for (const args of [['agent', 'run', '--http', '127.0.0.1:0'], ['serve', '--http', '127.0.0.1:0']]) {
+    const agent = await startAgent(t, home, args, {}, {node});
+    agent.child.kill('SIGTERM');
+    assert.equal((await agent.exit).code, 0, args.join(' '));
+  }
+  assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });

@@ -197,12 +197,18 @@ test('a client that goes away aborts its channel; an agent abort is 502 before t
   agent.send({ch: cut.ch, t: 'abort'});
   await assert.rejects(reading, 'the client sees the stream cut, not ended');
 
+  const impossible = post(endpoint, {jsonrpc: '2.0', id: 5, method: 'tools/call'});
+  const bad = await agent.opening(3);
+  agent.send({ch: bad.ch, t: 'head', status: 'not a status', headers: {}});
+  assert.equal((await impossible).status, 502, 'a head the relay cannot write fails its request, not the relay');
+  await until(() => agent.of(bad.ch).some(f => f.t === 'abort'), 'the agent told to drop the channel');
+
   agent.send({ch: 9999, t: 'data', data: 'AAAA'});
   agent.send({ch: 9998, t: 'end'});
   agent.socket.send('not json');
   await until(() => diagnostics.filter(line => /unknown channel|not a frame/.test(line)).length >= 3, 'dropped frames logged');
   const still = post(endpoint, {jsonrpc: '2.0', id: 4, method: 'tools/call'});
-  const alive = await agent.opening(3);
+  const alive = await agent.opening(4);
   agent.respond(alive.ch, 202, {});
   assert.equal((await still).status, 202, 'the socket survives frames it cannot place');
 });

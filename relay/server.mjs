@@ -110,7 +110,20 @@ export async function startRelay({port, host = '127.0.0.1', devicesFile, pingMs 
     }, pingMs);
     ws.on('pong', () => { link.alive = true; });
     ws.on('error', error => diagnostics(`device ${deviceId}: WebSocket error (${error.code ?? error.message})`));
-    ws.on('message', (data, isBinary) => onFrame(link, data, isBinary));
+    // A frame the relay cannot apply (a head with an impossible status, say) is logged and its channel cut; never fatal.
+    ws.on('message', (data, isBinary) => {
+      try { onFrame(link, data, isBinary); } catch (error) {
+        diagnostics(`device ${deviceId}: a frame could not be applied (${error.message})`);
+        let ch;
+        try { ({ch} = JSON.parse(data.toString('utf8'))); } catch {}
+        const channel = link.channels.get(ch);
+        if (channel) {
+          link.channels.delete(ch);
+          failChannel(channel, 'the device sent an answer the relay could not pass on');
+          send(link, {ch, t: 'abort'});
+        }
+      }
+    });
     ws.on('close', code => {
       clearInterval(link.pinger);
       links.delete(link);

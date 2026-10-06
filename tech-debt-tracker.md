@@ -14,14 +14,6 @@
   small and private to CUA_HOME. Revisit if a vendor component turns out to act on them (they name pids). Evidence:
   `docs/evidence/m3-mcp-lifecycle.md`.
 
-- **2026-10-02 — Wall-clock bounds in lifecycle/broker tests flake under heavy load (minor, M3/M4; seen in M6).**
-  With three `npm test` runs at once, `a stalled group enumeration is bounded…` (teardown < 1500 ms), `a helper that
-  refuses, never answers…` (< 3000 ms) and `close is bounded against a helper that ignores EOF and SIGTERM…` (< 2000
-  ms) failed on their elapsed-time assertions; six sequential runs passed, and one sequential acceptance run saw a
-  single failure (name not captured; the runner now records failing test names). The bounds assert boundedness with
-  little headroom. Widen them (e.g. budget × 3) or measure against the injected budget rather than absolute times.
-  Evidence: `docs/evidence/m6-acceptance.md`.
-
 - **2026-10-02 — Acceptance session teardown has no final reap deadline after SIGKILL (minor, M6 review).**
   `scripts/accept/mcp-session.mjs:57-58` awaits the child's exit after SIGKILL without a final deadline; describe the
   timeout as an escalation budget and report unconfirmed if exit is never observed. Test-harness only; normal local
@@ -48,12 +40,31 @@
   `--all` records each supplied file's length and sha256 and trusts its contents. Have `--live` record `git rev-parse
   HEAD` and the release, and have `--all` report (or refuse) a report from another commit.
 
-- **2026-10-04 — `verify.mjs`'s leftover check sees other connections in the same home (minor, M13).** It compares
-  `$CUA_HOME/run/` before and after its own connection, so a concurrent `cua serve` in that home (another client, or a
-  live acceptance run) appears as a leftover and fails verify, and with it `accept-chrome --all` C1. Compare against
-  the connection's own session id instead.
-
 ## Resolved
+
+- **2026-10-04 — `verify.mjs`'s leftover check saw other connections in the same home (minor, M13; resolved
+  2026-10-05).** Resolved: verify identifies its connection as the session whose `run/<session>.pid` record names the
+  `cua serve` pid it spawned (read once initialize is answered; no new server surface) and fails only if that session's
+  record, directory or socket, or any record naming that pid, remains after the orderly EOF; other entries that appear
+  meanwhile go to an informational `runNote`.
+
+- **2026-10-02 — Wall-clock bounds in lifecycle/broker tests flaked under heavy load (minor, M3/M4; resolved
+  2026-10-05).** Resolved: the three named bounds (`a stalled group enumeration…`, `a helper that refuses…`, `close is
+  bounded against a helper that ignores EOF and SIGTERM…`) and `a runtime that ignores EOF and SIGTERM…` now assert
+  against their injected budget × 3 instead of absolute times.
+
+- **2026-10-05 — Flaky `npm test` beside another node/cua process (resolved 2026-10-05).** Concurrent `npm test` triples
+  captured these failures. Tight timing: `redaction stays linear on long runs of adjacent token-bearing links` (now
+  best of three runs against 200 ms × 3; the quadratic case it guards cost 5.2 s), and `an unexpected runtime exit is
+  reported once…` and `the anchor leads the group…` (confirmed teardown inside 500/800 ms; now 1500 ms). A real bug the
+  `mcp-upstream` tests caught: `once the group's identity cannot be established…` and `a runtime surviving teardown
+  (its anchor was killed from outside)…` read a teardown as confirmed while the runtime survived, because Node's
+  `execFile` timeout discards the output of a `pgrep` that has already exited 0 and reports success with nothing
+  listed. `listGroup` in `src/mcp/upstream.mjs` now keeps its own deadline and treats an exit-0 listing with no pids as
+  failed; a deterministic test covers it. And `relays JSON-RPC both ways…` awaited the runtime's exit report after an
+  orderly teardown, which the anchor's release can cut off (the server ignores it then), so the file's event loop
+  drained and all 18 tests were cancelled; that wait is now bounded. No test reaped another run's processes: every
+  enumeration is `pgrep -g <own pgid>`.
 
 - **2026-10-03 — The bind listing called a backend "other-profile" when the comparison was unknown (minor, M11
   review; resolved in M13).** `src/profiles/commands.mjs` labelled every labelled backend that did not match as
@@ -71,5 +82,3 @@
   covers it and the live fixture records written-while-open / removed-after-close per connection. Evidence:
   `docs/evidence/m6-acceptance.md`.
 - **2026-10-02 — Explicit native surfaces setting in the launch contract (minor).** The standalone spec's environment enumeration did not explicitly list `CUA_REPL_ENABLED_SURFACES=computer`, although the pinned launcher requires the variable. Resolved in M2: `src/runtime/launch.mjs` sets it in the allowlisted launch environment, documents it in the module's environment contract alongside the other variables, and `test/runtime-launch.test.mjs` asserts it (and that no browser variable or `NODE_REPL_TRUSTED_SERVICES` default is configured for native-only launches). Source: pinned `@oai/cua-repl` `launch.js:16–29`; governing spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`.
-
-- Flaky test (seen 2026-10-05 three times, each passing on rerun): one failure in `npm test` when another node/cua process runs concurrently (the clean-machine run: owner's accept-native beside `--all`; the #36 worker's fix agent named `mcp-upstream` process-group reaping). Capture the failing test name next time (`npm test 2>&1 | grep -B2 -A20 "not ok"`) and make the reaping test independent of other process groups.

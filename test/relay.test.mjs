@@ -106,13 +106,13 @@ test('a request to /d/<device>/mcp is a channel: the path rewritten to /mcp, onl
   assert.deepEqual(JSON.parse(agent.requestBody(open.ch)), body);
 
   agent.respond(open.ch, 200, {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Mcp-Session-Id': 's-1'},
-    ['retry: 15000\nid: 1-0\ndata: \n\n', 'id: 1-1\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n']);
+    ['retry: 15000\nid: 1-0\nevent: priming\ndata: {}\n\n', 'id: 1-1\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n']);
   const res = await pending;
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'text/event-stream');
   assert.equal(res.headers.get('mcp-session-id'), 's-1');
   assert.equal(res.headers.get('x-accel-buffering'), 'no', 'SSE responses tell a proxy not to buffer');
-  assert.equal(await res.text(), 'retry: 15000\nid: 1-0\ndata: \n\nid: 1-1\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n');
+  assert.equal(await res.text(), 'retry: 15000\nid: 1-0\nevent: priming\ndata: {}\n\nid: 1-1\ndata: {"jsonrpc":"2.0","id":1,"result":{}}\n\n');
 
   const json = post(endpoint, {jsonrpc: '2.0', id: 0, method: 'initialize'});
   const second = await agent.opening(1);
@@ -201,7 +201,7 @@ test('a client that goes away aborts its channel; an agent abort is 502 before t
   const late = post(endpoint, {jsonrpc: '2.0', id: 3, method: 'tools/call'});
   const cut = await agent.opening(2);
   agent.send({ch: cut.ch, t: 'head', status: 200, headers: {'Content-Type': 'text/event-stream'}});
-  agent.send({ch: cut.ch, t: 'data', data: Buffer.from('id: 1-0\ndata: \n\n').toString('base64')});
+  agent.send({ch: cut.ch, t: 'data', data: Buffer.from('id: 1-0\nevent: priming\ndata: {}\n\n').toString('base64')});
   const streaming = await late;
   const reading = streaming.text();
   agent.send({ch: cut.ch, t: 'abort'});

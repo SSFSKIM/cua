@@ -67,8 +67,9 @@ const post = (endpoint, credential, body, session) => fetch(endpoint, {method: '
   authorization: `Bearer ${credential}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream',
   ...(session ? {'mcp-session-id': session} : {}),
 }});
-const sseData = text => text.split('\n\n').filter(Boolean).map(block => block.split('\n').find(l => l.startsWith('data: ')).slice(6));
-const sseMessages = text => sseData(text).filter(Boolean).map(data => JSON.parse(data));
+// The JSON-RPC messages of an SSE body: unnamed events only (the priming event is named), comments left out.
+const sseMessages = text => text.split('\n\n').filter(block => block && !block.startsWith(':') && !/^event: /m.test(block))
+  .map(block => JSON.parse(block.split('\n').find(l => l.startsWith('data: ')).slice(6)));
 
 test('remote enroll prints the client credential once; show, a refused re-enrol and a relay update never print it', t => {
   const home = emptyHome(t);
@@ -173,7 +174,7 @@ test('agent run --http serves sessions over HTTP; two sessions (cap 2) have thei
     assert.equal(js.status, 200);
     assert.equal(js.headers.get('content-type'), 'text/event-stream');
     const body = await js.text();
-    assert.match(body, /^retry: 15000\nid: \d+-0\ndata: \n\n/, 'the stream opens with its priming event');
+    assert.match(body, /^retry: 15000\nid: \d+-0\nevent: priming\ndata: \{\}\n\n/, 'the stream opens with its priming event');
     const [reply] = sseMessages(body);
     assert.equal(JSON.parse(reply.result.content[0].text).turn.session_id, session, 'Mcp-Session-Id is the connection\'s session id');
   }
@@ -278,7 +279,7 @@ test('connectRelay dials with the device credential, says hello first, and serve
     if (entry.body === 'throw') throw new Error('handler failed');
     if (entry.body !== 'answer') return;   // 'hold': answered by the test
     res.writeHead(200, {'Content-Type': 'text/event-stream', 'Mcp-Session-Id': 's'});
-    res.write('id: 1-0\ndata: \n\n');
+    res.write('id: 1-0\nevent: priming\ndata: {}\n\n');
     res.write(Buffer.from('id: 1-1\ndata: "é"\n\n'));
     res.end();
   };
@@ -303,7 +304,7 @@ test('connectRelay dials with the device credential, says hello first, and serve
   const answer = c.frames.filter(f => f.ch === 1);
   assert.deepEqual(answer[0], {ch: 1, t: 'head', status: 200, headers: {'Content-Type': 'text/event-stream', 'Mcp-Session-Id': 's'}});
   assert.deepEqual(answer.slice(1).map(f => f.t), ['data', 'data', 'end'], 'each write is its own data frame');
-  assert.equal(unb64(answer), 'id: 1-0\ndata: \n\nid: 1-1\ndata: "é"\n\n');
+  assert.equal(unb64(answer), 'id: 1-0\nevent: priming\ndata: {}\n\nid: 1-1\ndata: "é"\n\n');
 
   request(2, 'hold');
   c.send({ch: 2, t: 'end'});
@@ -379,7 +380,7 @@ test('the watchdog closes a link that hears no ping for watchdogMs and reconnect
 });
 
 // The real relay in this process, in front of the real HTTP handler over in-process connections.
-async function relayed(t, {client = 'c'.repeat(64), handlerCredential = client} = {}) {
+async function relayed(t, {client = 'c'.repeat(64), handlerCredential = client, streamGraceMs} = {}) {
   const s = scratch();
   t.after(s.cleanup);
   const devicesFile = join(s.dir, 'devices.json');
@@ -395,7 +396,8 @@ async function relayed(t, {client = 'c'.repeat(64), handlerCredential = client} 
   };
   env.online = (n = 1) => until(() => relayLog.filter(line => line === 'device dev online').length >= n, 'the device online');
   const open = inProcessConnections();
-  const http = createMcpHttp({home: '/nowhere', env: {}, clientCredential: handlerCredential, open, diagnostics: () => {}});
+  const http = createMcpHttp({home: '/nowhere', env: {}, clientCredential: handlerCredential, open, diagnostics: () => {},
+    ...(streamGraceMs === undefined ? {} : {streamGraceMs})});
   t.after(() => http.close('eof'));
   const {link, diagnostics} = await dial(t, `ws://127.0.0.1:${port}/ws`, {handle: http.handle, minBackoffMs: 20});
   await env.online();
@@ -408,7 +410,7 @@ async function relayed(t, {client = 'c'.repeat(64), handlerCredential = client} 
 const sseOf = text => text.split('\n\n').filter(block => block && !block.startsWith(':')).map(block => {
   const event = {};
   for (const line of block.split('\n')) event[line.slice(0, line.indexOf(': '))] = line.slice(line.indexOf(': ') + 2);
-  return {id: event.id, message: event.data ? JSON.parse(event.data) : null};
+  return {id: event.id, message: event.data && event.event !== 'priming' ? JSON.parse(event.data) : null};
 });
 const INIT = {jsonrpc: '2.0', id: 0, method: 'initialize', params: {protocolVersion: '2025-03-26', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
 const js = (id, code) => ({jsonrpc: '2.0', id, method: 'tools/call', params: {name: 'js', arguments: {code}}});
@@ -422,7 +424,9 @@ test('the relay forwards the client\'s authorization unchanged and the handler c
 });
 
 test('a client that goes away mid-stream through the relay gets the answer on a Last-Event-ID resume', {skip: NEEDS_WS}, async t => {
-  const env = await relayed(t);
+  // A 1 ms grace: an answer that went onto a stream the handler still thought attached would be gone by the resume, so
+  // only the relay's abort reaching the handler (the stream dropped with the call pending) keeps it.
+  const env = await relayed(t, {streamGraceMs: 1});
   const init = await env.request(INIT);
   const session = init.headers.get('mcp-session-id');
   await init.text();
@@ -437,7 +441,8 @@ test('a client that goes away mid-stream through the relay gets the answer on a 
   controller.abort();
   await tick(50);
   upstream.text(call, 'kept');
-  const resumed = await env.request(undefined, {session, method: 'GET', headers: {'last-event-id': priming}});
+  await tick(20);
+  const resumed = await env.request(undefined, {session, method: 'GET', headers: {'last-event-id': priming}, signal: AbortSignal.timeout(3000)});
   assert.equal(resumed.status, 200);
   const events = sseOf(await resumed.text()).filter(e => e.message);
   assert.deepEqual(events.map(e => [e.id, e.message.id]), [[priming.replace(/-0$/, '-1'), 1]]);

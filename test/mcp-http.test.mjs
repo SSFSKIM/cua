@@ -26,7 +26,7 @@ function recorder() {
     },
     write(chunk) { assert.ok(!res.ended, 'no write after end'); res.body += chunk; },
     end(chunk) { assert.ok(!res.ended, 'end once'); if (chunk !== undefined) res.body += chunk; res.ended = true; },
-    // Every SSE event in order; a priming event (an id and empty data) has `message: null`.
+    // Every SSE event in order; a priming event (named `priming`) has `message: null`.
     // Comment blocks (`: keepalive`) are not events and are left out.
     allEvents() {
       return res.body.split('\n\n').filter(block => block && !block.startsWith(':')).map(block => {
@@ -35,7 +35,7 @@ function recorder() {
           const at = line.indexOf(': ');
           event[line.slice(0, at)] = line.slice(at + 2);
         }
-        return {id: event.id, retry: event.retry, message: event.data === '' ? null : JSON.parse(event.data)};
+        return {id: event.id, retry: event.retry, event: event.event, message: event.event === 'priming' ? null : JSON.parse(event.data)};
       });
     },
     events: () => res.allEvents().filter(e => e.message !== null),
@@ -267,7 +267,7 @@ test('a request\'s response goes on the POST stream that carried it, with two co
     assert.equal(first.message, null, 'every POST stream opens with a priming event');
     assert.match(first.id, /^\d+-0$/);
     assert.equal(first.retry, '15000', 'carrying the reconnection delay');
-    assert.ok(stream.res.body.startsWith(`retry: 15000\nid: ${first.id}\ndata: \n\n`), stream.res.body);
+    assert.ok(stream.res.body.startsWith(`retry: 15000\nid: ${first.id}\nevent: priming\ndata: {}\n\n`), stream.res.body);
     assert.equal(rest.length, 1);
     assert.equal(rest[0].id, first.id.replace(/-0$/, '-1'));
   }
@@ -461,6 +461,57 @@ test('a request body over the limit is 413 and reaches no session', async t => {
   const opening = send({body: {...INITIALIZE, params: {...INITIALIZE.params, pad: 'y'.repeat(2000)}}});
   await opening.done;
   assert.equal(opening.res.status, 413, 'initialize too');
+});
+
+// An SSE parser as WHATWG specifies dispatch (an event with an empty data buffer is never dispatched), reporting each
+// event's type, data and the last event id it carried.
+function parseSse(text) {
+  const events = [];
+  let data = '';
+  let type = '';
+  let lastEventId = '';
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    if (line === '') {
+      if (data !== '') events.push({type: type || 'message', data: data.slice(0, -1), lastEventId});
+      data = '';
+      type = '';
+      continue;
+    }
+    if (line.startsWith(':')) continue;
+    const colon = line.indexOf(':');
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let value = colon === -1 ? '' : line.slice(colon + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'event') type = value;
+    else if (field === 'data') data += `${value}\n`;
+    else if (field === 'id' && !value.includes('\0')) lastEventId = value;
+  }
+  return events;
+}
+
+// What an SSE-normalising proxy did to the stream (ngrok's edge, Surprises): every event re-serialised with its
+// empty-valued fields dropped and its fields in another order; comments dropped.
+const normalised = text => text.split('\n\n').filter(block => block && !block.startsWith(':'))
+  .map(block => `${block.split('\n').filter(line => !/^[a-z]+: ?$/.test(line)).reverse().join('\n')}\n\n`).join('');
+
+test('the priming event surfaces its id to an SSE client and is never taken for a message, also through a proxy that drops empty fields', async t => {
+  const {send, initialize, upstreamOf} = setup(t);
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'x'})});
+  upstream.text(await upstream.nextCall('js'), 'done');
+  await until(() => post.res.ended, 'the stream to end');
+  for (const [label, text] of [['as sent', post.res.body], ['through the proxy', normalised(post.res.body)]]) {
+    const events = parseSse(text);
+    const priming = events.find(e => e.lastEventId.endsWith('-0'));
+    assert.ok(priming, `${label}: the priming id reaches the client`);
+    assert.notEqual(priming.type, 'message', `${label}: and the client does not parse it as a message`);
+    // Claude Code's client parses only unnamed (`message`) events as JSON-RPC messages.
+    const messages = events.filter(e => e.type === 'message').map(e => JSON.parse(e.data));
+    assert.deepEqual(messages.map(m => m.id), [1], label);
+  }
+  // The form this replaced: through the proxy its id never reached the client.
+  assert.equal(parseSse(normalised('retry: 15000\nid: 3-0\ndata: \n\n')).length, 0);
 });
 
 test('a js call whose stream dropped after only its priming event is replayed whole on Last-Event-ID <stream>-0', async t => {

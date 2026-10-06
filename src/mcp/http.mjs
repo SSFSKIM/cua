@@ -20,14 +20,17 @@
 // elicitation, a progress or log notification) goes on the oldest open POST stream, else the GET stream, else into a
 // per-session buffer drained into the next stream that opens; a session whose buffer would pass `bufferLimit` closes.
 // Small resumability: every event of a POST stream has an id `<stream>-<n>`, the stream opens with a priming event
-// (`retry: 15000`, `<stream>-0`, empty data) so that a client whose stream drops before the first response still holds
-// an id to resume from (Claude Code's client resumes only streams that carried one, and only twice; the retry spaces
-// those attempts across a relay restart), and the stream keeps its events while it lives and for `streamGraceMs` (90 s)
-// after its last answer (which may have gone into a link already dead but not yet known to be); when the client drops
-// it before all its requests are answered, the later responses are kept, and a GET whose Last-Event-ID names that
-// stream replays every event after the named one and then carries the rest. A GET naming no such stream is an
-// ordinary GET. A request body over `bodyLimit` (4 MB) is 413. Every open stream (POST or GET) that has been silent for `keepaliveMs` gets an SSE
-// comment (`: keepalive`), so proxies and NATs do not cut a long js call; comments are never events.
+// (`retry: 15000`, `<stream>-0`, named `priming` with the body `{}`) so that a client whose stream drops before the
+// first response still holds an id to resume from (Claude Code's client resumes only streams that carried one, and
+// only twice; the retry spaces those attempts across a relay restart). The event is named, so the client records its
+// id and ignores it, and its body is not empty, because an SSE-normalising proxy (ngrok's edge) drops an empty data
+// line and an event without data is never dispatched. The stream keeps its events while it lives and for
+// `streamGraceMs` (90 s) after its last answer (which may have gone into a link already dead but not yet known to
+// be); when the client drops it before all its requests are answered, the later responses are kept, and a GET whose
+// Last-Event-ID names that stream replays every event after the named one and then carries the rest. A GET naming no
+// such stream is an ordinary GET. A request body over `bodyLimit` (4 MB) is 413. Every open stream (POST or GET) that
+// has been silent for `keepaliveMs` gets an SSE comment (`: keepalive`), so proxies and NATs do not cut a long js
+// call; comments are never events.
 // Idle: a session with no request for `idleMs`, nothing it was asked still unanswered (an open or dropped POST stream's
 // requests) and no request of its own awaiting the client's answer (a pending elicitation), closes; while such a
 // request is pending with no stream of the session open the client went away mid-approval, and then neither it nor the
@@ -116,8 +119,9 @@ const onAbort = (signal, fn) => {
   else signal.addEventListener('abort', fn, {once: true});
 };
 
-export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1, idleMs = 15 * 60_000,
-  bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, bodyLimit = 4 * 1024 * 1024, streamGraceMs = 90_000, console: consoleState = () => ({onConsole: true, locked: false}),
+export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1,
+  idleMs = 15 * 60_000, bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, bodyLimit = 4 * 1024 * 1024,
+  streamGraceMs = 90_000, console: consoleState = () => ({onConsole: true, locked: false}),
   diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection}) {
   const sessions = new Map();
   const ending = new Set();        // close promises of sessions on their way out
@@ -411,7 +415,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     for (const key of keys) session.routes.set(key, stream);
     res.writeHead(200, SSE_HEADERS);
     // The priming event: never kept, replayed, buffered or routed.
-    attach(session, stream, res, req.signal).write(`retry: ${RETRY_MS}\nid: ${stream.id}-0\ndata: \n\n`);
+    attach(session, stream, res, req.signal).write(`retry: ${RETRY_MS}\nid: ${stream.id}-0\nevent: priming\ndata: {}\n\n`);
     drain(session, msg => sseEvent(stream, msg));
     touch(session);
     inOrder(session, () => deliver(session, messages));

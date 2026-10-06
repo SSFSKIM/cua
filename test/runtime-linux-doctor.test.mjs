@@ -100,6 +100,10 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
   assert.equal(rows.sandbox.status, 'pass');
   assert.equal(rows['sandbox.userns'].status, 'blocked');
   assert.match(rows['sandbox.userns'].detail, /cua profiles list and bind launch under scoped and are refused \(sandbox_unavailable\)/);
+  // Fix wave 3: an explicitly scoped connection is itself refused, browser surface or not, so the probe's row stands.
+  rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'blocked');
+  assert.equal(rows['sandbox.userns'].status, 'blocked', 'scoped with the computer surface only is still a scoped launch');
+  assert.equal(rows['sandbox.userns'].detail, 'fixture');
   rows = await doctor({CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
   assert.equal(rows['sandbox.userns'].status, 'skip', 'an explicit disabled reaches the listing too');
 

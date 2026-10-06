@@ -339,7 +339,9 @@ node verify.mjs           # the stdio smoke the parent ships; the native-socket 
 
 ### Phase F
 
-(none yet)
+- 2026-10-06 (F1): the vendor's APT repository publishes no key file; the key `3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4` was taken from keyserver.ubuntu.com and is byte-identical to the key the debs' own `postinst` installs, and it verifies the repository's `InRelease`. Both debs' `_gpgorigin` verify (GOODSIG/VALIDSIG; a tampered input gives BADSIG); each pin's `notes` carries the command and the result.
+- 2026-10-06 (F1): macOS `ar` cannot write a deb-shaped archive (it adds `__.SYMDEF` and BSD `#1/` long names) though it reads the real debs; the test fixture writes the common-format ar bytes itself. The executor's shell had umask 077, so extracted trees came out 0700; tests assert owner-executable only.
+- 2026-10-06 (F1): much of the existing suite passes only because the process is darwin-arm64 (`forgeActiveRuntime` and `resolveRuntime` with the default host, registration tests writing `Library/…`, broker tests calling `openSecrets` without a host, `hostNotesFor` defaults). Acceptance 12's "and on the VM itself" therefore needs host injection or platform skips in those tests; F2 owns that.
 
 ## Decision Log
 
@@ -390,6 +392,12 @@ node verify.mjs           # the stdio smoke the parent ships; the native-socket 
 
 - Decision (2026-10-06, Phase F execution pre-flight, executor session): (1) `feat/phase-f` branches from E1's head `4595f84`, not from `main`, because F1 consumes `openConnection` and edits `cli.mjs` `USAGE` after E1; it rebases onto `main` once Phase E merges, and its PR opens then. (2) The doctor status `skip` (Phase E design, "launchd": not applicable here, neither a failure for `ok` nor counted as blocked by `summarize`, printed like the others) is introduced by F1, because F1's `secrets.*` rows need it and E2 is not on F1's base; E2 finds it present and adds only its `agent.*` rows. (3) The owner's mirror of both debs is `~/cua-mirror/` on the MacBook (`chatgpt_26.928.40906_{amd64,arm64}.deb`, lengths and hashes as pinned); F1's `_gpgorigin` check runs on those files and F2 copies the arm64 one into the VM for `cua install --archive`. (4) Phase F's Progress ticks, Surprises and Decision Log entries sit under these `### Phase F` headings so Phase E's edits to the same sections merge cleanly.
   Rationale: the spec's merge order (E1 before F1) and the shared doctor status; nothing here changes a design choice.
+  Date/Author: 2026-10-06, the Phase F executor session.
+- Decision (2026-10-06, Phase F execution, F1 fold-back, F1's executor): gaps the design left, settled in F1. `notes` is a Linux-only optional pin key and a Linux `chromePlugin.signing` must be `[]`. `CHROME_CONFIG_HOME` relocates the whole Chrome family (chrome, beta, unstable, chromium), as the vendor's `installManifest.mjs` does. `hostPathClass` lists both platforms' desktop roots and needs no host. `install` unpacks the whole `data.tar.xz` into staging (about 1.7 GB, removed after) and copies a local deb with `copyFileSync` (`cp -c` means something else on Linux). `accessibility.bus` passes when `org.a11y.Bus` is running or activatable; `display` and `accessibility.bus` read `fail` when absent or unreachable, `sandbox.userns` `blocked` on refusal, and a missing probe tool is `blocked` with `missing_tool`. `verify.mjs` reads `/proc/<pid>/exe` on Linux because `ps` truncates names there. `secrets_unsupported_platform` is defined in `src/secrets/client.mjs` (the only import path the trusted worker accepts), checked before label and shape checks in both the sky and browser services, and applies to every non-darwin host. The usage's archive word follows the platform (`<ChatGPT deb>` on Linux). `profiles open` on Linux spawns `google-chrome` detached and returns once started (with no Chrome running it becomes the browser and never exits). The Linux host notes measure 2,011 characters for computer+browser with the vendor line (darwin unchanged at 2,045).
+  Rationale: each follows the Phase F design's intent where it named a probe or path but not the status or mechanism; details in the F1 task report.
+  Date/Author: 2026-10-06, F1's executor, folded by the Phase F executor session.
+- Decision (2026-10-06, Phase F execution, executor session): E1's reviewed head `ee6362c` is merged into `feat/phase-f` (merge `c74e19d`); `openConnection` keeps F1's `host` and gains E1's `onWithdrawn`. Suite 598/598.
+  Rationale: the coordinator's instruction; F1 builds on the reviewed E1.
   Date/Author: 2026-10-06, the Phase F executor session.
 
 ## Outcomes & Retrospective

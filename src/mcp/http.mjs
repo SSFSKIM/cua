@@ -25,8 +25,9 @@
 // such stream is an ordinary GET. Every open stream (POST or GET) that has been silent for `keepaliveMs` gets an SSE
 // comment (`: keepalive`), so proxies and NATs do not cut a long js call; comments are never events.
 // Idle: a session with no request for `idleMs`, nothing it was asked still unanswered (an open or dropped POST stream's
-// requests) and no request of its own awaiting the client's answer (a pending elicitation, counted only while some
-// stream of the session is open: a client that went away mid-approval holds none) closes; the quiet time is
+// requests) and no request of its own awaiting the client's answer (a pending elicitation), closes; while such a
+// request is pending with no stream of the session open the client went away mid-approval, and then neither it nor the
+// requests left on dropped streams keep the session; the quiet time is
 // counted from the last request or from the moment the session stopped being busy, whichever is later. For eviction a
 // session is Idle when it is not busy in that sense and has no task open (no js work since its last end_task), at any
 // age.
@@ -99,7 +100,10 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   // ---- one session ----
 
   const streamOpen = session => session.get !== null || [...session.streams.values()].some(s => s.res);
-  const busy = session => session.routes.size > 0 || (session.serverPending.size > 0 && streamOpen(session));
+  // A request of the session's own awaiting the client (an approval) with no stream open means the client went away:
+  // then neither it nor the call blocked on it (a route left on a dropped stream) keeps the session. Otherwise any
+  // unanswered request does, a dropped long js call included.
+  const busy = session => session.serverPending.size > 0 ? streamOpen(session) : session.routes.size > 0;
   const evictable = session => !busy(session) && session.connection.state === 'idle';
 
   function touch(session) {

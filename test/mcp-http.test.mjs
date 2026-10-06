@@ -532,6 +532,20 @@ test('a pending elicitation with no stream of the session open does not hold the
   await until(() => !http.sessions.has(session), 'the idle close once no stream is open', 1000);
 });
 
+test('an elicitation pending behind a js call whose stream dropped, with no stream open, does not hold the session: the client vanished mid-approval', async t => {
+  const {http, send, initialize, upstreamOf} = setup(t, {idleMs: 60});
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'needs approval'})});
+  await upstream.nextCall('js');
+  upstream.emit({jsonrpc: '2.0', id: 'e1', method: 'elicitation/create', params: {message: 'approve', requestedSchema: {type: 'object', properties: {}}}});
+  await until(() => post.res.messages().length === 1, 'the elicitation on the js call\'s stream');
+  await tick(150);
+  assert.ok(http.sessions.has(session), 'busy while the stream is open');
+  post.abort();
+  await until(() => !http.sessions.has(session), 'the idle close although the js call is unanswered', 1000);
+});
+
 test('silent SSE streams carry a keepalive comment, never an event, and stop when the stream ends', async t => {
   const {send, initialize, upstreamOf} = setup(t, {keepaliveMs: 25});
   const session = await initialize();

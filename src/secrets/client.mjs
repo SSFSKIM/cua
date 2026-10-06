@@ -17,6 +17,8 @@ import {isLabel} from './label.mjs';
 // Launch variables for the trusted worker: the broker's endpoint and token, or (without a broker) the reason secrets
 // are unavailable on the connection, so a {{secret:…}} reference can fail with it.
 export const BROKER_ENV = {endpoint: 'CUA_SECRETS_BROKER_ENDPOINT', token: 'CUA_SECRETS_BROKER_TOKEN', unavailable: 'CUA_SECRETS_UNAVAILABLE'};
+// Why a platform without a secrets backend (Linux) has no broker; the services refuse every reference with it.
+export const UNSUPPORTED_PLATFORM = 'secrets_unsupported_platform';
 export const BROKER_PROTOCOL = 1;
 export const MAX_REQUEST_BYTES = 1024;
 export const MAX_RESPONSE_BYTES = 262_144;

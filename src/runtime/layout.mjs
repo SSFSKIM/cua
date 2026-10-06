@@ -11,8 +11,11 @@ import {join, resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {fail} from './errors.mjs';
 
-export function defaultHome(env = process.env) {
+// $CUA_HOME, else the platform's per-user data directory: ~/Library/Application Support/cua on macOS,
+// ${XDG_DATA_HOME:-~/.local/share}/cua on Linux.
+export function defaultHome(env = process.env, host = {platform: process.platform}) {
   if (env.CUA_HOME) return env.CUA_HOME;
+  if (host.platform === 'linux') return join(env.XDG_DATA_HOME || join(env.HOME || homedir(), '.local', 'share'), 'cua');
   return join(env.HOME || homedir(), 'Library', 'Application Support', 'cua');
 }
 

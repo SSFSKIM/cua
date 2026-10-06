@@ -7,18 +7,20 @@ import {spawnSync} from 'node:child_process';
 import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
-  binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
+  binaryKind, C2_LIVE_STEPS, C2_MATRIX, C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
   desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
   PHASE_C_MODULES, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck,
   scratchListCheck, slotStates, tapTestStatus, matrixChecks, verifyCheck, writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
-import {BROWSERS, hostSuffixes, registerHost, unregisterHost} from '../src/chrome/registration.mjs';
+import {hostSuffixes, registerHost, unregisterHost} from '../src/chrome/registration.mjs';
 import {loadPins, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {runAll} from '../scripts/accept/chrome-all.mjs';
 import {rollup} from '../scripts/accept/lib.mjs';
 import {chromeFacts} from '../src/profiles/chrome.mjs';
 import {REASONS} from '../src/profiles/registry.mjs';
 import {acceptSignatures, forgeActiveRuntime, forgeChromeComponent, REPO, scratch} from './fixtures/runtime-fixture.mjs';
+
+const BROWSERS = C6_BROWSERS();
 
 const statuses = checks => checks.map(c => c.status);
 

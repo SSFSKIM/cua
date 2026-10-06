@@ -4,6 +4,8 @@
 // under $TMPDIR is the misconfiguration `inTmpdir` sets up). `mode` selects the fake upstream's teardown behavior;
 // `helper` installs the stand-in Keychain helper as $CUA_HOME/bin/cua-keychain in that FAKE_HELPER_MODE, for runs with
 // CUA_SHIM_SECRETS=on (otherwise served processes run with secrets off and no Keychain helper is ever started).
+// `host` installs the checked-in pin of another host instead (a Linux one, say), for code that takes the host injected;
+// the fake upstream runs under this Node either way.
 import {mkdirSync, writeFileSync, symlinkSync, realpathSync, chmodSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -13,11 +15,11 @@ import {REPO, scratch, shortScratch} from './runtime-fixture.mjs';
 export const FAKE_UPSTREAM = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
 export const installedHomeSupported = process.platform === 'darwin' && process.arch === 'arm64';
 
-export function fakeInstalledHome(t, {inTmpdir = false, mode, helper} = {}) {
+export function fakeInstalledHome(t, {inTmpdir = false, mode, helper, host} = {}) {
   const s = inTmpdir ? scratch() : shortScratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
-  const pin = selectPin(loadPins());
+  const pin = selectPin(loadPins(), host);
   const root = join(home, 'runtimes', pin.release);
   for (const [key, rel] of Object.entries(pin.layout)) {
     const path = join(root, rel);

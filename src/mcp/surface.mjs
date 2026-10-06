@@ -94,11 +94,27 @@ const BROWSER_NOTES = [
   '- createBrowserTab can take 60 s: give that js call timeout_ms of at least 60000; after a timeout a tab may still have opened: tell the user, do not retry. If the profile had no other window, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
 ];
 
-export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
+// The computer surface on Linux (Phase F) differs where the vendor's Linux target does: apps are bound by X11 window,
+// the macOS-only element setters do not exist and paste types, key names are X keysyms, and nothing asks the user per
+// app (the owner's allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime, so a model cell
+// can talk to X directly: the trusted wrapper is not a boundary there.
+const LINUX_COMPUTER_HEAD = '- Use this when a Linux desktop app\'s GUI is the only way; the first js call returns the API document.';
+const LINUX_COMPUTER_NOTES = [
+  '- Bind apps by window: cua.getApp({windowId}) with an id from listWindows(). setValue and selectText do not exist; paste types.',
+  '- Key names are X keysyms. Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier).',
+  '- No app asks for approval: this connection can drive every window of the session, and the trusted wrapper is not a boundary on Linux.',
+  '- After a window closes, drop its handle and bind again from listWindows().',
+  '- If REPL state is confused, js_reset and rebind the window.',
+];
 
-export function hostNotesFor(surfaces) {
-  if (!surfaces.includes('browser')) return DEFAULT_HOST_NOTES;
-  if (surfaces.includes('computer')) return [DEFAULT_HOST_NOTES, ...BROWSER_NOTES].join('\n');
+export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
+export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, ...LINUX_COMPUTER_NOTES].join('\n');
+
+// The notes for the enabled surfaces on `platform` (the host's by default). The Chrome notes are the same everywhere.
+export function hostNotesFor(surfaces, {platform = process.platform} = {}) {
+  const computer = platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
+  if (!surfaces.includes('browser')) return computer;
+  if (surfaces.includes('computer')) return [computer, ...BROWSER_NOTES].join('\n');
   return [TITLE, BROWSER_HEAD, ...GENERAL_NOTES, ...BROWSER_NOTES].join('\n');
 }
 

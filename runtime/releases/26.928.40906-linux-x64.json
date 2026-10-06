@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "release": "26.928.40906-linux-x64",
+  "appVersion": "26.928.40906",
+  "platform": "linux",
+  "arch": "x64",
+  "archive": {
+    "format": "deb",
+    "url": "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb",
+    "length": 474898954,
+    "sha256": "8094004f1cbccf35deefded15961aa42b4db889121a5d952c5f30cf82bd8ad30"
+  },
+  "notes": "Provenance of the archive hash, checked once at authoring (2026-10-06, gpg 2.5.21, the owner's mirror copy whose length and sha256 match this pin): the deb's _gpgorigin member is an OpenPGP binary-document signature (class 0x00, SHA-512) made 2026-10-01T17:47:09Z by the vendor key 3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4 (\"Codex Linux Repository\") over the other ar members concatenated in archive order. Command: ar x chatgpt_26.928.40906_amd64.deb _gpgorigin; { ar p chatgpt_26.928.40906_amd64.deb debian-binary; ar p chatgpt_26.928.40906_amd64.deb control.tar.xz; ar p chatgpt_26.928.40906_amd64.deb data.tar.xz; } | gpg --verify _gpgorigin - in a throwaway GNUPGHOME holding only that key (from keyserver.ubuntu.com; the same fingerprint as the key the deb's postinst installs for apt and the key that signs the repository's dists/stable/InRelease). Result: GOODSIG 4A3B4A566C4660E4 Codex Linux Repository, VALIDSIG 3BFA0E4AE8B8CC16A2D9BA684A3B4A566C4660E4 (gpgv --keyring <the postinst key> agrees). Negative control: the same check without debian-binary is BADSIG.",
+  "components": {
+    "cua_node": "usr/lib/chatgpt/resources/cua_node",
+    "codex": "usr/lib/chatgpt/resources/codex"
+  },
+  "runtime": {
+    "version": "0.0.27/20260927214556-b77d38801cca",
+    "node": "24.21.0-cua.1"
+  },
+  "layout": {
+    "node": "cua_node/bin/node",
+    "nodeRepl": "cua_node/bin/node_repl",
+    "moduleDir": "cua_node/lib/node_modules",
+    "cuaRepl": "cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
+    "codexCli": "codex",
+    "skyLinuxBin": "cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+    "skyVendorService": "cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js",
+    "browserVendorService": "cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs",
+    "vendorManifest": "cua_node/manifest.json"
+  },
+  "chromePlugin": {
+    "from": "usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/chrome",
+    "dir": "chrome-plugin",
+    "layout": {
+      "host": "extension-host/linux/x64/extension-host",
+      "browserClient": "scripts/browser-client.mjs",
+      "browserService": "scripts/browser-service.mjs",
+      "installManifest": "scripts/installManifest.mjs"
+    },
+    "signing": [],
+    "nativeHost": {
+      "name": "com.openai.codexextension",
+      "description": "ChatGPT browser native messaging host",
+      "extensionIds": [
+        "hehggadaopoacecdllhhajmbjkdcmajg",
+        "odlomjlbamekndcpllcnffbgeohgkmjh"
+      ]
+    }
+  }
+}

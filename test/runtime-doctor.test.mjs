@@ -45,10 +45,10 @@ test('an unsupported platform is an explicit failure and nothing else is inspect
   const s = scratch();
   try {
     let helperInspected = false;
-    const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'x64'}, inspectHelper: async () => { helperInspected = true; }});
+    const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'riscv64'}, inspectHelper: async () => { helperInspected = true; }});
     assert.equal(report.ok, false);
     assert.deepEqual(report.checks.map(c => [c.name, c.status]), [['platform', 'fail']]);
-    assert.match(report.checks[0].detail, /linux-x64/);
+    assert.match(report.checks[0].detail, /linux-riscv64/);
     assert.equal(helperInspected, false);
   } finally { s.cleanup(); }
 });

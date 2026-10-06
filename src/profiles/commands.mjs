@@ -117,13 +117,22 @@ export async function bindCommand({home, key, chrome, listBackends, mapDirectori
 // extension and its host (a profile with no window is unloaded; Surprises, 2026-10-06), then report the key's readiness.
 // CLI only, on the user's request: nothing calls it for them. `open -n` because `--args` reaches only a newly launched
 // process: with Chrome already running, `-n` starts one that hands its command line to the running Chrome (which opens
-// the window in that profile) and exits, where a plain `open -a` would only bring Chrome forward. The runner and the
+// the window in that profile) and exits, where a plain `open -a` would only bring Chrome forward. On Linux the deb's
+// `google-chrome --profile-directory=<dir>` does the same, started detached (`detached` in the invocation): when no Chrome
+// runs it becomes the browser itself, and nothing waits for it to exit. The runner and the
 // live listing are injected; each readiness check is one bounded runtime launch, so there are at most `pollAt.length`
 // (at those many milliseconds after the open), and the wait stops early once the profile is ready or its state is one a
 // window cannot change (not bound, extension missing, a listing that failed).
 export const CHROME_APP = 'Google Chrome';
 export const OPEN_POLL_MS = [5_000, 10_000, 20_000];
-export const openInvocation = directory => ({command: 'open', args: ['-n', '-a', CHROME_APP, '--args', `--profile-directory=${directory}`]});
+export const LINUX_CHROME_COMMAND = 'google-chrome';
+export const openInvocation = (directory, {host = {platform: process.platform}} = {}) => host.platform === 'linux'
+  ? {command: LINUX_CHROME_COMMAND, args: [`--profile-directory=${directory}`], detached: true}
+  : {command: 'open', args: ['-n', '-a', CHROME_APP, '--args', `--profile-directory=${directory}`]};
+const OPEN_HINT = {
+  darwin: `is ${CHROME_APP} installed in /Applications?`,
+  linux: `is Google Chrome's deb (google-chrome-stable, which provides ${LINUX_CHROME_COMMAND}) installed, and DISPLAY set? Flatpak and snap Chrome are not supported`,
+};
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Only these can turn ready through a window: no host live, a host this binding is not among, or a bound profile whose
 // Chrome data this process may not read (the live backend decides).
@@ -132,14 +141,14 @@ const awaitsWindow = p => p.reason === 'host_not_live' || p.reason === 'binding_
 // -> {ok, key, directory, opened: true, command: [command, ...args], readiness: {ready, reason?, extensionInstanceId?, checks, listingError?}}
 // Throws unknown_profile, profile_not_ready (the directory is gone) and chrome_open_failed (open exited non-zero);
 // nothing is opened for a refused key.
-export async function openCommand({home, key, chrome, run, listBackends, pollAt = OPEN_POLL_MS, wait = sleep, now = Date.now, onCheck}) {
+export async function openCommand({home, key, chrome, run, listBackends, pollAt = OPEN_POLL_MS, wait = sleep, now = Date.now, onCheck, host = {platform: process.platform}}) {
   const entry = readRegistry(home).profiles[key];
   if (!entry) fail('unknown_profile', `no registered profile "${key}"`, {hint: 'cua profiles list shows the registered keys'});
   const directory = entry.chromeProfileDirectory;
   if (chrome.profileDirectoryExists(directory) === 'missing') fail('profile_not_ready', `profile "${key}": ${REASONS.profile_directory_missing}`, {hint: `cua profiles remove ${key}, then add the profile again under its current directory`});
-  const {command, args} = openInvocation(directory);
-  const result = await run(command, args);
-  if (result.code !== 0) fail('chrome_open_failed', `${command} exited ${result.code} opening Chrome profile ${JSON.stringify(directory)}${result.stderr?.trim() ? `: ${result.stderr.trim()}` : ''}`, {hint: `is ${CHROME_APP} installed in /Applications?`});
+  const {command, args, detached} = openInvocation(directory, {host});
+  const result = detached ? await run(command, args, {detached}) : await run(command, args);
+  if (result.code !== 0) fail('chrome_open_failed', `${command} exited ${result.code} opening Chrome profile ${JSON.stringify(directory)}${result.stderr?.trim() ? `: ${result.stderr.trim()}` : ''}`, {hint: OPEN_HINT[host.platform] ?? OPEN_HINT.darwin});
   let status;
   let listingError;
   let checks = 0;

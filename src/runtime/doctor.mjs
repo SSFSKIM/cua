@@ -1,7 +1,8 @@
 // Passive diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
 // observe from outside: it never opens an app, starts or signals the helper, connects to its socket or requests a
-// grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively.
+// grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively;
+// `skip` marks a check that does not apply on this host (neither a failure nor blocked evidence).
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
 // The Keychain helper (secrets) cua would run for this home ($CUA_HOME/bin/cua-keychain, else the checkout's build
@@ -23,6 +24,10 @@
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
 // Another mode is the user's choice and only described.
+// On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
+// not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
+// sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted), and secrets.helper
+// reads `skip`: there is no Linux secrets backend (secrets_unsupported_platform).
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
@@ -42,13 +47,14 @@ import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
+import {linuxDesktopChecks} from './linux-desktop.mjs';
 
 export const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
 const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, sweep = sweepRun}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, sweep = sweepRun}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -81,12 +87,17 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);
     checks.push(result('runtime.ipc', ipc.ok ? 'pass' : 'fail', ipc.detail));
-    const signatures = await verifySignatures(root, manifest);
-    const bad = signatures.filter(s => !s.valid);
-    const signed = !bad.length && signatures.length === manifest.signing.components.length;
-    checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
-      ? `${signatures.length} components signed by team ${manifest.signing.team}`
-      : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
+    let signed = true;
+    if (manifest.signing) {
+      const signatures = await verifySignatures(root, manifest);
+      const bad = signatures.filter(s => !s.valid);
+      signed = !bad.length && signatures.length === manifest.signing.components.length;
+      checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
+        ? `${signatures.length} components signed by team ${manifest.signing.team}`
+        : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
+    } else {
+      checks.push(result('runtime.signatures', 'pass', `archive hash is the trust root on ${manifest.platform}: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed`));
+    }
     if (layout.ok && signed) untrusted = null;
     else if (layout.ok) untrusted = 'not asked: runtime.signatures failed in this run, and doctor never executes a release binary it found untrusted; fix the release first (see runtime.signatures), then run cua login';
     checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
@@ -96,15 +107,20 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(sandboxCheck({home, env, runtime}));
   checks.push(runSweepCheck(home, sweep));
 
-  const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
-  const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
-  checks.push(result('helper.live', helper.status, helper.detail));
-  checks.push(result('helper.permissions', 'blocked',
-    'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
-    + `Confirm with a live probe (${LIVE_PROBE}).`));
-  checks.push(...classifyKeychainHelper(await inspectSecrets({home})));
+  if (host.platform === 'linux') {
+    checks.push(...await inspectLinux({env}));
+    checks.push(result('secrets.helper', 'skip', 'secrets_unsupported_platform: cua has no secrets backend on linux, so secrets_list reports it and a {{secret:…}} reference is refused before anything is entered'));
+  } else {
+    const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
+    const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
+    checks.push(result('helper.live', helper.status, helper.detail));
+    checks.push(result('helper.permissions', 'blocked',
+      'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
+      + `Confirm with a live probe (${LIVE_PROBE}).`));
+    checks.push(...classifyKeychainHelper(await inspectSecrets({home})));
+  }
   checks.push(await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
-  checks.push(...await inspectChrome({home}));
+  checks.push(...await inspectChrome({home, host, env}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
@@ -138,7 +154,7 @@ function runSweepCheck(home, sweep) {
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
-const defaultInspectChrome = async ({home}) => chromeChecks({home, chrome: chromeFacts(), psText: processTable()});
+const defaultInspectChrome = async ({home, host, env}) => chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})});
 
 async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
   if (!runtime) return result('codex.login', 'blocked', untrusted);

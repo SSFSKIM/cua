@@ -1,7 +1,7 @@
 // Pinned runtime installation and activation.
 //
 // install: acquire the pinned archive (a local file or the official URL), verify its length and SHA-256 before
-// anything reads it as a zip, extract it in a staging directory owned by this operation, keep only the pinned
+// anything reads it as an archive, extract it in a staging directory owned by this operation, keep only the pinned
 // components, verify the tree (layout, vendor manifest, IPC version, vendor code signatures), record it, move it into
 // runtimes/<release> with one rename and only then rewrite the pointer. Any failure before the pointer write leaves
 // the previous pointer and every existing release untouched, and the staging directory is always removed.
@@ -13,14 +13,19 @@
 // bytes are never modified: extraction uses `ditto`, which keeps modes, symlinks, extended attributes and quarantine,
 // and components move by rename on the same volume.
 //
+// A linux pin names the vendor's deb (`archive.format: "deb"`): the system `ar` takes its data.tar.xz member out and
+// `tar` unpacks that, both checked for (with `xz`, which tar runs) before anything is downloaded, so a machine without
+// them is refused with missing_tool and the package to install. A component may be a file (the `codex` sandbox CLI).
+// A linux pin lists nothing to signature-check; the archive hash is its trust root.
+//
 // The archive's Chrome plugin is a separately recorded component inside the release tree (chrome-component.mjs). A fresh
 // install places it in the staged tree before the one activation rename. An installed release that lacks it gains it
 // on the next install, staged and verified on its own and moved in with one rename, so no existing file changes; this
 // needs the archive again (or a download). A release whose component is already placed and verifies is a no-op.
 //
-// The signature checker and fetch are injectable for tests through this module API only; the CLI always uses the
-// production codesign check and the global fetch.
-import {mkdirSync, mkdtempSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, createReadStream, createWriteStream} from 'node:fs';
+// The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
+// always uses the production codesign check, the global fetch and the PATH.
+import {mkdirSync, mkdtempSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, constants as fsConstants, createReadStream, createWriteStream} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {pipeline} from 'node:stream/promises';
@@ -31,23 +36,27 @@ import {homeLayout, readPointer, writePointer, realHome} from './layout.mjs';
 import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint, isRealDirectory, runtimeFor, RECORD_FILE} from './manifest.mjs';
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {componentState, componentRecoveryHint, stageChromeComponent, verifyPlacedChromeComponent} from './chrome-component.mjs';
+import {findTool, requireTools} from './tools.mjs';
 
+// What unpacking a deb runs, and the package each comes from.
+const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
+const DEB_PAYLOAD = 'data.tar.xz';
 
-function run(command, args) {
+function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    execFile(command, args, {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024}, (error, stdout, stderr) =>
+    execFile(command, args, {encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, ...options}, (error, stdout, stderr) =>
       error ? reject(Object.assign(error, {stderr})) : resolve(stdout));
   });
 }
 
-export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress}) {
+export async function installRuntime({home, manifest, archivePath, fetch = globalThis.fetch, verifySignatures = verifyCodeSignatures, host, onProgress, tools = name => findTool(name)}) {
   assertHostSupports(manifest, host);
   const real = realHome(home, {create: true});
   const layout = homeLayout(real);
   mkdirSync(layout.runtimes, {recursive: true, mode: 0o700});
   mkdirSync(layout.staging, {recursive: true, mode: 0o700});
   const target = join(layout.runtimes, manifest.release);
-  const acquisition = {manifest, archivePath, fetch, onProgress, staging: layout.staging};
+  const acquisition = {manifest, archivePath, fetch, onProgress, tools, staging: layout.staging};
 
   // Idempotent path: a release this tool installed that still verifies is kept byte-for-byte and (re)activated, after
   // gaining the Chrome plugin component if it lacks it.
@@ -72,7 +81,7 @@ export async function installRuntime({home, manifest, archivePath, fetch = globa
       const component = join(extracted, from);
       let stat;
       try { stat = lstatSync(component); } catch { stat = null; }
-      if (!stat?.isDirectory()) fail('layout_invalid', `archive for ${manifest.release} has no component directory ${from}`);
+      if (!stat?.isDirectory() && !stat?.isFile()) fail('layout_invalid', `archive for ${manifest.release} has no component ${from}`);
       renameSync(component, join(tree, name));
     }
     await verifyRuntimeTree(tree, manifest, {verifySignatures});
@@ -120,19 +129,23 @@ async function assertPlacedComponent(runtime, verifySignatures) {
 }
 
 // Acquires and verifies the pinned archive in a staging directory owned by this operation, extracts it there, runs
-// `use` with the extracted tree, and always removes the staging directory.
-async function withStage({manifest, archivePath, fetch, onProgress, staging}, use) {
+// `use` with the extracted tree, and always removes the staging directory. A deb's tools are checked first, before
+// anything is downloaded or created.
+async function withStage({manifest, archivePath, fetch, onProgress, tools, staging}, use) {
+  const deb = manifest.archive.format === 'deb';
+  const unpackers = deb ? requireTools(DEB_TOOLS, tools, `cua install needs them to unpack the ${manifest.release} deb`) : null;
   const stage = mkdtempSync(join(staging, `${manifest.release}-`));
   try {
-    const archive = join(stage, 'archive.zip');
+    const archive = join(stage, deb ? 'archive.deb' : 'archive.zip');
     const source = archivePath ? 'archive' : 'download';
-    if (archivePath) await snapshotArchive(archivePath, archive, manifest.archive);
+    if (archivePath) await snapshotArchive(archivePath, archive, manifest.archive, {deb});
     else await download(manifest.archive, archive, fetch, onProgress);
     await verifyArchive(archive, manifest.archive);
 
     const extracted = join(stage, 'extract');
     try {
-      await run('/usr/bin/ditto', ['-x', '-k', archive, extracted]);
+      if (deb) await extractDeb(archive, {stage, extracted, unpackers});
+      else await run('/usr/bin/ditto', ['-x', '-k', archive, extracted]);
     } catch (error) {
       fail('extract_failed', `could not extract ${manifest.release}: ${(error.stderr || error.message).trim().split('\n').at(-1)}`);
     }
@@ -141,6 +154,16 @@ async function withStage({manifest, archivePath, fetch, onProgress, staging}, us
   } finally {
     rmSync(stage, {recursive: true, force: true});
   }
+}
+
+// The deb's payload, unpacked whole into `extracted` (the pin names the components inside it). `ar x` writes the member
+// into its working directory, the stage; tar runs xz for the .xz payload.
+async function extractDeb(archive, {stage, extracted, unpackers}) {
+  await run(unpackers.ar, ['x', archive, DEB_PAYLOAD], {cwd: stage});
+  const payload = join(stage, DEB_PAYLOAD);
+  mkdirSync(extracted);
+  await run(unpackers.tar, ['-xJf', payload, '-C', extracted]);
+  rmSync(payload, {force: true});
 }
 
 // The host configuration names <home>/state/codex as CODEX_HOME; it exists (private) once the host is placed.
@@ -214,12 +237,14 @@ function moveIntoPlace(tree, target) {
 }
 
 // A local archive is cloned into staging first (APFS clone; extended attributes and quarantine kept), so the bytes
-// that are hashed are exactly the bytes that are extracted.
-async function snapshotArchive(path, dest, {length}) {
+// that are hashed are exactly the bytes that are extracted. A deb is copied with Node (a reflink where the filesystem
+// has them): Linux has no `cp -c`, and a deb carries no extended attributes cua keeps.
+async function snapshotArchive(path, dest, {length}, {deb}) {
   let stat;
   try { stat = statSync(path); } catch (error) { fail('archive_missing', `archive ${path} is not readable: ${error.code ?? error.message}`); }
   if (!stat.isFile()) fail('archive_missing', `archive ${path} is not a file`);
   if (stat.size !== length) fail('archive_length_mismatch', `archive ${path} is ${stat.size} bytes; the pin expects ${length}`, {hint: 'pass the pinned ChatGPT archive, or omit --archive to download it'});
+  if (deb) { copyFileSync(path, dest, fsConstants.COPYFILE_FICLONE); return; }
   try {
     await run('/bin/cp', ['-c', path, dest]);
   } catch {

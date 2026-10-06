@@ -12,12 +12,27 @@
 // allowed to make (or any other failure) is `unreadable` with its error code, never absence. macOS 26+ can put
 // Chrome's user-data directory behind privacy protection: a process without Full Disk Access (Terminal by default, and
 // everything started from it) gets EPERM there while processes that have it read the same files.
+// Chrome's user-data directory is ~/Library/Application Support/Google/Chrome on macOS and, on Linux,
+// ${CHROME_CONFIG_HOME:-${XDG_CONFIG_HOME:-~/.config}}/google-chrome (the deb Chrome; Flatpak and snap are not supported).
 import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 
-export const CHROME_USER_DATA = join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome');
+const hostTarget = () => ({platform: process.platform, arch: process.arch});
+
+// The base of the Linux browsers' configuration directories, as the vendor's installManifest.mjs resolves it: the
+// Chrome family (Chrome and its channels, Chromium) honours CHROME_CONFIG_HOME, then XDG_CONFIG_HOME, then ~/.config;
+// the other browsers XDG_CONFIG_HOME, then ~/.config. Empty values count as unset.
+export function linuxConfigHome({env, userHome, chromeFamily}) {
+  if (chromeFamily && env.CHROME_CONFIG_HOME) return env.CHROME_CONFIG_HOME;
+  return env.XDG_CONFIG_HOME || join(userHome, '.config');
+}
+
+export function chromeUserData({host = hostTarget(), env = process.env, userHome = homedir()} = {}) {
+  if (host.platform === 'linux') return join(linuxConfigHome({env, userHome, chromeFamily: true}), 'google-chrome');
+  return join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
+}
 export const OPENAI_EXTENSION_ID = 'hehggadaopoacecdllhhajmbjkdcmajg';
 export const NATIVE_HOST_NAME = 'com.openai.codexextension';
 export const HOST_BASENAME = 'ChatGPT for Chrome';
@@ -57,23 +72,30 @@ function extensionState(profile) {
 const stateName = state => typeof state === 'string' ? state : 'unreadable';
 const within = (path, root) => root && (path === root || path.startsWith(root.replace(/\/+$/, '') + '/'));
 
-// Which installation a native host path belongs to: cua's own home, the desktop app's installs (its bundle or the
-// plugin cache it writes under ~/.codex), or something else.
+// Which installation a native host path belongs to: cua's own home, the desktop app's installs (its macOS bundles, its
+// Linux deb under /usr/lib/chatgpt, or the plugin cache it writes under ~/.codex), or something else. The roots of
+// both platforms are listed together: each names a place only that platform's desktop app writes.
 export function hostPathClass(path, {cuaHome, userHome = homedir()}) {
   if (within(path, cuaHome)) return 'cua';
-  const desktop = ['/Applications/ChatGPT.app', '/Applications/Codex.app', join(userHome, '.codex'), join(userHome, 'Library', 'Application Support', 'OpenAI')];
+  const desktop = ['/Applications/ChatGPT.app', '/Applications/Codex.app', '/usr/lib/chatgpt', join(userHome, '.codex'), join(userHome, 'Library', 'Application Support', 'OpenAI')];
   return desktop.some(root => within(path, root)) ? 'desktop' : 'other';
 }
 
-// `ps -axo pid=,ppid=,comm=` -> running OpenAI hosts whose parent is Google Chrome.
-export function countLiveHosts(psText) {
+// The running OpenAI hosts. macOS: `ps -axo pid=,ppid=,comm=` (comm is the full path), counting hosts whose parent is
+// Google Chrome. Linux: `ps -eo pid=,args=` (comm is truncated there), counting processes whose executable is a Linux
+// host for this arch, the argument the browser passes after it.
+export function countLiveHosts(psText, {host = hostTarget()} = {}) {
+  if (host.platform === 'linux') {
+    const executable = new RegExp(`^\\s*\\d+\\s+(/.*?/extension-host/linux/${host.arch}/extension-host)(?:\\s|$)`);
+    return psText.split('\n').filter(line => executable.test(line)).length;
+  }
   const rows = psText.split('\n').map(line => line.match(/^\s*(\d+)\s+(\d+)\s+(.*?)\s*$/)).filter(Boolean)
     .map(([, pid, ppid, executable]) => ({pid: Number(pid), ppid: Number(ppid), executable}));
   const byPid = new Map(rows.map(row => [row.pid, row]));
   return rows.filter(row => row.executable.endsWith(`/${HOST_BASENAME}`) && CHROME_EXECUTABLE.test(byPid.get(row.ppid)?.executable ?? '')).length;
 }
 
-export function chromeFacts({userData = CHROME_USER_DATA} = {}) {
+export function chromeFacts({host = hostTarget(), env = process.env, userHome = homedir(), userData = chromeUserData({host, env, userHome})} = {}) {
   return {
     userData,
     isDirectoryName,

@@ -7,7 +7,7 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {registerHost, unregisterHost, BROWSERS, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
+import {registerHost, unregisterHost, browsersFor, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
 import {resolveRuntime, parsePin} from '../src/runtime/manifest.mjs';
 import {chromeFacts} from '../src/profiles/chrome.mjs';
 import {chromeChecks} from '../src/profiles/checks.mjs';
@@ -51,12 +51,12 @@ function ourManifest(host) { return `${JSON.stringify({allowed_origins: ['chrome
 const record = m => JSON.parse(readFileSync(join(m.runtime.home, 'chrome', 'registration.json'), 'utf8'));
 
 test('the browsers are Chrome, Edge, Brave, Opera and Vivaldi, each with its macOS manifest directory', () => {
-  assert.deepEqual(Object.fromEntries(BROWSERS.map(b => [b.browser, b.dataDir])), {
-    chrome: 'Library/Application Support/Google/Chrome',
-    edge: 'Library/Application Support/Microsoft Edge',
-    brave: 'Library/Application Support/BraveSoftware/Brave-Browser',
-    opera: 'Library/Application Support/com.operasoftware.Opera',
-    vivaldi: 'Library/Application Support/Vivaldi',
+  assert.deepEqual(Object.fromEntries(browsersFor({host: {platform: 'darwin'}, userHome: '/Users/x'}).map(b => [b.browser, b.dataDir])), {
+    chrome: '/Users/x/Library/Application Support/Google/Chrome',
+    edge: '/Users/x/Library/Application Support/Microsoft Edge',
+    brave: '/Users/x/Library/Application Support/BraveSoftware/Brave-Browser',
+    opera: '/Users/x/Library/Application Support/com.operasoftware.Opera',
+    vivaldi: '/Users/x/Library/Application Support/Vivaldi',
   });
 });
 

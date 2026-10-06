@@ -3,8 +3,9 @@
 //     component.json                               our record, like the release's install.json
 //     extension-host/macos/arm64/ChatGPT for Chrome  the signed host Chrome launches over native messaging
 //     extension-host/macos/arm64/extension-host-config.json  written by us: the host reads it from its own directory
-// The component is staged, signature-checked against the pinned team and written (config and record included) before
-// one rename puts it in place, so an installed release gains it without any existing file changing. Like the base
+// The component is staged, signature-checked against the pinned team (a linux pin lists nothing to check: the archive
+// hash is its trust root) and written (config and record included) before one rename puts it in place, so an installed
+// release gains it without any existing file changing. Like the base
 // release it is never repaired in place. The whole plugin directory is kept because its scripts import
 // ../node_modules (classic-level) and load their wasm files beside them.
 //
@@ -53,7 +54,9 @@ export function hostConfigFor(runtime) {
 }
 
 // The pin-shaped argument the shared signature checker takes, for the component's own signed files.
-const componentSigning = pin => ({release: pin.release, signing: {team: pin.signing.team, components: pin.chromePlugin.signing}});
+const componentSigning = pin => ({release: pin.release, signing: {team: pin.signing?.team, components: pin.chromePlugin.signing}});
+// How the doctor line names the host's trust: its signing team, or the archive hash where nothing is signed.
+const hostTrust = pin => pin.chromePlugin.signing.length ? `signed by team ${pin.signing.team}` : `trusted by the archive hash (${pin.platform})`;
 
 export const componentRecoveryHint = root => `if cua's host is registered run \`cua chrome unregister\` first; stop any \`cua serve\`, remove ${root}, then run \`cua install\``;
 
@@ -73,12 +76,13 @@ function readRecord(root, pin) {
   return valid ? record : null;
 }
 
-// Files present and the host signed by the pinned team. This is all a staged component can show: install writes the
+// Files present and the host signed by the pinned team (where the pin lists it). This is all a staged component can show: install writes the
 // host configuration after it passes. Anything that keeps, activates or registers a placed component uses
 // verifyPlacedChromeComponent, which also checks that configuration.
 async function verifyChromeComponent(root, pin, {verifySignatures}) {
   const missing = Object.entries(pin.chromePlugin.layout).filter(([, rel]) => !exists(join(root, rel))).map(([key, rel]) => `${key} (${rel})`);
   if (missing.length) fail('layout_invalid', `Chrome plugin component of ${pin.release} is missing ${missing.join(', ')}`);
+  if (!pin.chromePlugin.signing.length) return;
   const signatures = await verifySignatures(root, componentSigning(pin));
   const bad = signatures.filter(s => !s.valid);
   if (bad.length || signatures.length !== pin.chromePlugin.signing.length)
@@ -155,7 +159,7 @@ export async function inspectChromeHostConfig({runtime, verifySignatures}) {
   }
   const codexHome = homeLayout(runtime.home).codexHome;
   if (!writableDirectory(codexHome)) return broken(`${paths.config}: codexHome ${codexHome} is not a writable directory`);
-  return result('pass', `host ${paths.host} signed by team ${runtime.manifest.signing.team}; ${HOST_CONFIG_FILE} names node, node_repl, the codex CLI and the browser scripts inside the active release, codexHome ${codexHome} (owned, writable)`);
+  return result('pass', `host ${paths.host} ${hostTrust(runtime.manifest)}; ${HOST_CONFIG_FILE} names node, node_repl, the codex CLI and the browser scripts inside the active release, codexHome ${codexHome} (owned, writable)`);
 }
 
 function exists(path) {

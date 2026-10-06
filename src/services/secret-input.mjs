@@ -3,7 +3,7 @@
 // Every error here is built fresh from a fixed sentence, a code and at most a label (labels are not secret); none
 // carries a cause, a vendor payload or anything derived from a value. The trusted worker returns a rejection's message
 // to model code, so nothing here logs either.
-import {BROKER_ENV, BrokerError, brokerClientFromEnv} from '../secrets/client.mjs';
+import {BROKER_ENV, BrokerError, brokerClientFromEnv, UNSUPPORTED_PLATFORM} from '../secrets/client.mjs';
 
 export const NOTHING_ENTERED = 'nothing was entered';
 const LAUNCH_CODE = /^[a-z][a-z_]{0,63}$/;
@@ -46,8 +46,14 @@ export function matchesShape(object, fields, optional = []) {
 
 export const invalidLabel = () => new SecretInputError('invalid_secret_label', `a {{secret:…}} reference must name a label of 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit; ${NOTHING_ENTERED}`);
 
+// The launch reason a platform without a secrets backend gives (src/secrets/broker.mjs). It outranks every other check
+// of a reference: no label, shape or value matters where nothing could ever be substituted (the Linux sky client's
+// type_text shape, {window, text}, is refused with it rather than as an unknown shape).
+export const refusedOnThisPlatform = secretsUnavailable => secretsUnavailable === UNSUPPORTED_PLATFORM;
+
 export function unavailable(reason) {
   if (reason === 'secrets_disabled') return new SecretInputError('secrets_disabled', `secrets are turned off for this server (CUA_SHIM_SECRETS=off); ${NOTHING_ENTERED}`);
+  if (reason === UNSUPPORTED_PLATFORM) return new SecretInputError(UNSUPPORTED_PLATFORM, `cua has no secrets backend on this platform, so a {{secret:…}} reference cannot be entered; ${NOTHING_ENTERED}`);
   return new SecretInputError('secrets_unavailable', `secrets are unavailable on this connection (${reason}); ${NOTHING_ENTERED}`);
 }
 

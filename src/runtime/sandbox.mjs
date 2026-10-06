@@ -17,6 +17,7 @@ import {lstatSync, readlinkSync, realpathSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
+import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['scoped', 'disabled', 'default'];
@@ -143,4 +144,19 @@ export function assertSandboxFits(mode, launch) {
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
+}
+
+// Linux: the vendor's sandbox fails open where bubblewrap cannot create an unprivileged user namespace (measured on
+// Ubuntu 24.04, F2: the runtime then starts its kernel and trusted worker with no sandbox, and cells write anywhere and
+// reach the network). A scoped launch there is refused with sandbox_unavailable before anything starts, rather than run
+// unconfined while cua claims scoped. `probe` is bwrapUserns (doctor's sandbox.userns probe), injectable for tests; it
+// runs once per launch, and only for scoped on Linux.
+export const SANDBOX_UNAVAILABLE_HINT = `${USERNS_REMEDY}; install bubblewrap if it is missing; or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`;
+export async function assertSandboxConfines(mode, {platform, probe = bwrapUserns}) {
+  if (mode !== 'scoped' || platform !== 'linux') return;
+  const found = await probe();
+  if (found.status === 'pass') return;
+  const why = found.status === 'missing' ? 'bubblewrap (bwrap) is not installed'
+    : `bubblewrap cannot create an unprivileged user namespace here (bwrap --ro-bind / / true: ${found.detail})`;
+  fail('sandbox_unavailable', `CUA_SHIM_SANDBOX=scoped, but ${why}, and the runtime would then run JavaScript cells with no sandbox at all; nothing was started`, {hint: SANDBOX_UNAVAILABLE_HINT});
 }

@@ -19,7 +19,7 @@ import {CuaError, fail} from '../runtime/errors.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
-import {assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
+import {assertSandboxConfines, assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
 
 export const MARKER = 'CUABACKENDS';
 export const LIMITS = {initializeMs: 60_000, cellMs: 45_000, callMs: 60_000, teardownMs: 5000};
@@ -115,15 +115,20 @@ export function teardownUnconfirmed(teardown, failure) {
 
 // One bounded launch of the installed runtime in this home, as `cua serve` would make it with the browser surface
 // only and secrets off, in its own session directory (removed afterwards with the session's approval file), with the
-// sandbox state CUA_SHIM_SANDBOX in `ambient` picks for that directory.
-export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true}) {
-  const sandbox = sandboxModeFrom(ambient, {platform: runtime.manifest.platform, surfaces: ['browser']});
+// sandbox state CUA_SHIM_SANDBOX in `ambient` picks for that directory: scoped unless set otherwise, on Linux too (the
+// browser surface works under it), so on Linux it is refused like a scoped connection where user namespaces are
+// (`probeUserns`, injectable for tests).
+export const listingSandboxMode = (ambient, platform) => sandboxModeFrom(ambient, {platform, surfaces: ['browser']});
+
+export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, probeUserns}) {
+  const sandbox = listingSandboxMode(ambient, runtime.manifest.platform);
   const sessionId = randomUUID();
   const claim = claimRunSession(home, sessionId);
   let launch;
   try {
     launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
     assertSandboxFits(sandbox, launch);
+    await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);

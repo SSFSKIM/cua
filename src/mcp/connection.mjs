@@ -21,7 +21,8 @@
 // `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the
 // opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not
 // reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
-// arch}, the process's by default: which pin resolves, the host notes, and on Linux no secrets backend) exist for tests
+// arch}, the process's by default: which pin resolves, the host notes, and on Linux no secrets backend) and
+// `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
 // only. `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it).
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
@@ -36,17 +37,17 @@ import {openSecrets} from '../secrets/broker.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
-import {assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
+import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
 
 const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
 const NO_BROKER = {close: async () => ({confirmed: true, steps: []})};
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   settings = settingsFrom(env, {platform: host.platform}), diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
-  keychainHelper = locateHelper({home}), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}), listBackends, onWithdrawn}) {
+  keychainHelper = locateHelper({home}), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}), listBackends, onWithdrawn, probeUserns}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
-  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false});
+  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, probeUserns});
   const claim = claimRunSession(home, sessionId);
   let secrets = NO_BROKER;
   let launch;
@@ -83,6 +84,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       broker: secrets.broker, secretsUnavailable: secrets.unavailable?.code,
     }));
     assertSandboxFits(sandbox, launch);
+    await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);

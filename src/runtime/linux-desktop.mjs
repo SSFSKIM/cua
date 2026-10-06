@@ -91,13 +91,26 @@ async function busCheck(env, exec, findTool) {
   return result('accessibility.bus', 'fail', `the session bus at ${address} has no AT-SPI (${A11Y_BUS}), running or activatable; install at-spi2-core, or accessibility trees fall back to X11 window-level only`);
 }
 
-async function usernsCheck(exec, findTool, osRelease) {
+// The remedy where the kernel refuses unprivileged user namespaces: lift Ubuntu's AppArmor restriction, or let
+// bubblewrap alone create them. A profile for the release's `codex` would sandbox the runtime too (measured), but not
+// this probe, which runs bubblewrap outside it; one for /usr/bin/bwrap serves both (measured, F2).
+export const USERNS_REMEDY = 'set kernel.apparmor_restrict_unprivileged_userns=0 (persist it in /etc/sysctl.d, then sudo sysctl --system), '
+  + 'or load an AppArmor profile granting userns to /usr/bin/bwrap';
+
+// Whether bubblewrap can create an unprivileged user namespace: `bwrap --ro-bind / / true`, found on the runtime's
+// fixed PATH. -> {status: 'pass'} | {status: 'refused', detail: its last stderr line} | {status: 'missing'}. Doctor's
+// sandbox.userns row and the launch-time refusal (src/runtime/sandbox.mjs assertSandboxConfines) both use it.
+export async function bwrapUserns({exec = defaultExec, findTool = name => findOnPath(name, '/usr/bin:/bin')} = {}) {
   const bwrap = findTool('bwrap');
-  if (!bwrap) return missing('sandbox.userns', 'bwrap', 'bubblewrap', 'whether bubblewrap can create a user namespace');
+  if (!bwrap) return {status: 'missing'};
   const run = await exec(bwrap, ['--ro-bind', '/', '/', 'true'], {env: {PATH: '/usr/bin:/bin'}});
-  if (run.code === 0) return result('sandbox.userns', 'pass', 'bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), which the runtime\'s sandbox uses');
-  const ubuntu = restrictsUserns(osRelease())
-    ? '; Ubuntu restricts unprivileged user namespaces: set kernel.apparmor_restrict_unprivileged_userns=0 (sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0) or install an AppArmor profile allowing userns for the release\'s codex'
-    : '';
-  return result('sandbox.userns', 'blocked', `bubblewrap could not create an unprivileged user namespace: bwrap --ro-bind / / true failed (${lastLine(run.stderr)})${ubuntu}; or choose CUA_SHIM_SANDBOX=disabled`);
+  return run.code === 0 ? {status: 'pass'} : {status: 'refused', detail: lastLine(run.stderr)};
+}
+
+async function usernsCheck(exec, findTool, osRelease) {
+  const probe = await bwrapUserns({exec, findTool});
+  if (probe.status === 'missing') return missing('sandbox.userns', 'bwrap', 'bubblewrap', 'whether bubblewrap can create a user namespace');
+  if (probe.status === 'pass') return result('sandbox.userns', 'pass', 'bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), which the runtime\'s sandbox uses');
+  const ubuntu = restrictsUserns(osRelease()) ? `; Ubuntu restricts unprivileged user namespaces: ${USERNS_REMEDY}` : '';
+  return result('sandbox.userns', 'blocked', `bubblewrap could not create an unprivileged user namespace: bwrap --ro-bind / / true failed (${probe.detail})${ubuntu}; or choose CUA_SHIM_SANDBOX=disabled`);
 }

@@ -284,7 +284,7 @@ E1, LAN proof (mini console Terminal, then MacBook):
 
 ```
 # on the mini, in Terminal at the console (Screen Sharing is fine; not an SSH session)
-cd ~/cua && git fetch -q && git checkout -q <E1 branch> && npm ci
+cd /Users/new/Developer/GitHub/cua && git fetch -q && git worktree add ../cua-wt-phase-e origin/feat/phase-e && cd ../cua-wt-phase-e && npm ci   # the main checkout stays on main
 node bin/cua.mjs remote enroll --json                 # prints {deviceId, clientCredential, devicesEntry, …} once; copy clientCredential into $T on the MacBook
 node bin/cua.mjs profiles list                        # school ready; else: node bin/cua.mjs profiles open school
 CUA_SHIM_SURFACES=computer,browser node bin/cua.mjs agent run --http <mini LAN address>:7801     # keep running
@@ -338,6 +338,9 @@ node verify.mjs           # the stdio smoke the parent ships; the native-socket 
 
 ## Decision Log
 
+- Decision (2026-10-06, Phase E execution pre-flight, executor session): three facts of the live setup the acceptance text did not have. (1) Both Macs' main checkouts at `/Users/new/Developer/GitHub/cua` stay on `main` (a live MCP registration runs `cua serve` from them); milestone code runs from a worktree of the branch beside them (`/Users/new/Developer/GitHub/cua-wt-phase-e`), with the Mac's real `$CUA_HOME` (the installed runtime and the `school` profile live there; enrolment writes `remote/device.json` into it). Concrete Steps corrected from `~/cua`. (2) The MacBook's user-scope `cua_repl` is the owner's live stdio registration, so `claude mcp add … cua_repl` would replace it: the acceptance client is `claude -p --strict-mcp-config --mcp-config <file>` whose file names the HTTP server `cua_repl` (the name the owner's hooks match), leaving the owner's registration untouched; `claude mcp add` stays the README's instruction for a real client. (3) Nobody sits at the mini's console during execution; a process started by a one-shot `launchctl bootstrap gui/$UID` job is in the GUI login session (what "console Terminal" stands for: Keychain and TCC reachable), so the E1 LAN proof starts `agent run --http` that way; a step that truly needs a human at the screen or a dialog answered is reported, not worked around.
+  Rationale: the acceptance's purpose is a GUI-session agent on the mini driven from the MacBook; the vehicle that reaches the GUI session without a person is the one E2 itself ships. Rejected: SSH-started agents (no Keychain or TCC), switching the mini's main checkout to the branch (breaks its live registration).
+  Date/Author: 2026-10-06, the Phase E executor session.
 - Decision (2026-10-06, review fold-back, session): the agent lock, the exit on close codes 4001/4003, WebSocket ping/pong every 25 s with close after two misses, the relay's `X-Accel-Buffering: no` and the proxy requirements in `relay/README.md`, `ws` imported lazily in the relay path only, and lockfiles at the root and in `relay/`.
   Rationale: buildability review findings 13, 14, 17 and design review 6, 17, 18; without liveness a half-open socket makes the relay report a device online while requests hang, and a static `import 'ws'` would break the plugin copy of `cua serve`, which runs without `node_modules`. Rejected: reconnecting after `replaced` (two agents flap forever).
   Date/Author: 2026-10-06, the session.

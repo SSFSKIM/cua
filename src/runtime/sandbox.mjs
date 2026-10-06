@@ -2,7 +2,7 @@
 // (issues #20, #33, #36). Without it node_repl applies its restrictive default to cells and trusted services: reads
 // allowed, every write denied, temp directories included. CUA_SHIM_SANDBOX picks what cua sends on every call it makes
 // to the runtime:
-//   scoped    (default) a managed profile: reads everywhere, writes only to the launch's working directory (the run
+//   scoped    (default; on Linux only without the computer surface, see defaultSandboxMode) a managed profile: reads everywhere, writes only to the launch's working directory (the run
 //             directory, node_repl's `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`), no network.
 //             node_repl denies every kernel connection under any managed profile, so `network` says `restricted`.
 //             `slash_tmp` stays out: it would make any checkout or runtime under /tmp writable.
@@ -20,8 +20,15 @@ import {fail} from './errors.mjs';
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['scoped', 'disabled', 'default'];
 
-export function sandboxModeFrom(env) {
-  const mode = env.CUA_SHIM_SANDBOX ?? 'scoped';
+// The mode when CUA_SHIM_SANDBOX is unset: scoped, except on Linux with the computer surface, where it is disabled.
+// Under any managed profile node_repl lets no runtime process connect to a socket (measured on Ubuntu 24.04, F2: its
+// NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS and a profile's `network: enabled` are not honoured there), so the scoped
+// sandbox would keep the computer-use helper (sky_linux, a child of the trusted worker) off the X display and the
+// session bus. The browser surface reaches its backends through node_repl and works under scoped.
+export const defaultSandboxMode = ({platform, surfaces}) => (platform === 'linux' && surfaces.includes('computer') ? 'disabled' : 'scoped');
+
+export function sandboxModeFrom(env, {platform = process.platform, surfaces = ['computer']} = {}) {
+  const mode = env.CUA_SHIM_SANDBOX ?? defaultSandboxMode({platform, surfaces});
   if (!MODES.includes(mode)) fail('invalid_setting', 'CUA_SHIM_SANDBOX must be scoped, disabled or default');
   return mode;
 }

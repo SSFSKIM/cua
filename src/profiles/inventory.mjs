@@ -117,7 +117,7 @@ export function teardownUnconfirmed(teardown, failure) {
 // only and secrets off, in its own session directory (removed afterwards with the session's approval file), with the
 // sandbox state CUA_SHIM_SANDBOX in `ambient` picks for that directory.
 export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true}) {
-  const sandbox = sandboxModeFrom(ambient);
+  const sandbox = sandboxModeFrom(ambient, {platform: runtime.manifest.platform, surfaces: ['browser']});
   const sessionId = randomUUID();
   const claim = claimRunSession(home, sessionId);
   let launch;

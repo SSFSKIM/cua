@@ -339,7 +339,7 @@ export function settingsFrom(env, {platform = process.platform} = {}) {
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform}));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env), platform};
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform};
 }
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];

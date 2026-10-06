@@ -47,11 +47,45 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   assert.match(rows['chrome.host.config'].detail, /extension-host\/linux\/x64\/extension-host trusted by the archive hash/);
   assert.equal(rows['helper.live'], undefined);
   assert.equal(rows['helper.permissions'], undefined);
-  assert.deepEqual(['display', 'accessibility.bus', 'sandbox.userns'].map(n => rows[n].status), ['pass', 'pass', 'blocked']);
+  assert.deepEqual(['display', 'accessibility.bus'].map(n => rows[n].status), ['pass', 'pass']);
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled/);
+  assert.equal(rows['sandbox.userns'].status, 'skip', 'no sandbox runs under the Linux default, so a refusing bubblewrap blocks nothing');
   assert.equal(rows['secrets.helper'].status, 'skip');
   assert.match(rows['secrets.helper'].detail, /secrets_unsupported_platform/);
   assert.equal(asked, 1, 'the bundled CLI is asked about the login: the release is trusted by its hash');
-  assert.equal(summarize(report), 'passive runtime checks pass; live capability remains unverified (blocked: sandbox.userns)');
+  assert.equal(summarize(report), 'passive runtime checks pass');
+});
+
+// What F2 measured on Ubuntu 24.04 (docs/evidence/2026-10-06-linux-acceptance.md): under any managed profile node_repl
+// lets no runtime process connect to a socket, so the scoped sandbox keeps the computer-use helper off the X display
+// and the session bus; and where bubblewrap cannot create a user namespace the runtime runs cells with no sandbox.
+test('the sandbox row on Linux says what the mode does there: scoped breaks the computer surface, and confines nothing without user namespaces', async t => {
+  const {home, pin} = await linuxHome(t);
+  const doctor = (env, userns) => inspectRuntime({home, env, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
+    inspectHelper: never('the native socket helper inspection'), inspectSecrets: never('the Keychain helper inspection'),
+    inspectLinux: async () => [DESKTOP_ROWS[0], DESKTOP_ROWS[1], {name: 'sandbox.userns', status: userns, detail: 'fixture'}],
+    inspectLogin: async () => ({state: 'logged-in'}), inspectChrome: async () => []}).then(byName);
+
+  let rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'pass');
+  assert.equal(rows.sandbox.status, 'fail');
+  assert.match(rows.sandbox.detail, /computer-use helper \(sky_linux\) cannot reach the X display or the session bus/);
+  assert.match(rows.sandbox.detail, /CUA_SHIM_SURFACES=browser/);
+  assert.equal(rows['sandbox.userns'].status, 'pass');
+
+  rows = await doctor({CUA_SHIM_SURFACES: 'browser'}, 'pass');
+  assert.equal(rows.sandbox.status, 'pass', 'the browser surface alone keeps scoped, and it works there');
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=scoped/);
+
+  rows = await doctor({CUA_SHIM_SURFACES: 'browser'}, 'blocked');
+  assert.equal(rows.sandbox.status, 'fail');
+  assert.match(rows.sandbox.detail, /runs JavaScript cells with no sandbox at all/);
+  assert.equal(rows['sandbox.userns'].status, 'blocked', 'the probe row keeps its own verdict and remedy');
+
+  rows = await doctor({CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
+  assert.equal(rows.sandbox.status, 'pass');
+  assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX=disabled/);
+  assert.equal(rows['sandbox.userns'].status, 'skip');
+  assert.match(rows['sandbox.userns'].detail, /not needed while CUA_SHIM_SANDBOX is disabled/);
 });
 
 test('skip is neither a failure nor blocked: ok stays true and the verdict does not list it', () => {

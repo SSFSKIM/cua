@@ -63,7 +63,8 @@
   listed. `listGroup` in `src/mcp/upstream.mjs` now keeps its own deadline and treats an exit-0 listing with no pids as
   failed; a deterministic test covers it. And `relays JSON-RPC both ways…` awaited the runtime's exit report after an
   orderly teardown, which the anchor's release can cut off (the server ignores it then), so the file's event loop
-  drained and all 18 tests were cancelled; that wait is now bounded. No test reaped another run's processes: every
+  drained and all 18 tests were cancelled; that wait is now bounded. `a stalled group enumeration…` required the stalled
+  listing to have recorded its pid, which a listing killed at its deadline first cannot. No test reaped another run's processes: every
   enumeration is `pgrep -g <own pgid>`.
 
 - **2026-10-03 — The bind listing called a backend "other-profile" when the comparison was unknown (minor, M11

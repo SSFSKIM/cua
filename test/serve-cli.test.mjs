@@ -335,7 +335,8 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
   let denied;
   try { denied = cua(['--dry-run']); } finally { chmodSync(join(userData, 'Local State'), 0o644); }
   assert.equal(denied.status, 1, 'unplaced and with names unknown: the pick is the user\'s');
-  assert.match(denied.stderr, /note: this process cannot read Chrome's Local State \(EACCES\), so the candidates' profile directories are unknown; grant Full Disk Access/);
+  assert.match(denied.stderr, /note: this process cannot read Chrome's Local State \(EACCES\): backend labels cannot be compared with this profile's name and the candidates' profile directories are unknown; grant Full Disk Access/);
+  assert.equal(denied.stderr.match(/Local State/g).length, 1, 'one refused read, one note');
   assert.equal(rowsOf(denied.stdout).filter(row => /profile directory unknown/.test(row)).length, 3);
 });
 

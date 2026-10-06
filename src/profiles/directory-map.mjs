@@ -100,7 +100,9 @@ export async function mapExtensionDirectories({home, chrome, moduleDir, extensio
         let id;
         try {
           // fs/promises cp, not cpSync: Node's native cpSync aborts the whole process on an unreadable source directory.
-          await cp(store, copy, {recursive: true});
+          // dereference: a store that is itself a symlink would otherwise be "copied" as a link to the live store, which
+          // the LOCK removal and the open below would then act on in place.
+          await cp(store, copy, {recursive: true, dereference: true});
           id = await readInstanceId(ClassicLevel, copy);
         } catch (error) {
           unreadable(error?.code && /^E[A-Z]+$/.test(error.code) ? error.code : 'store_unreadable');

@@ -4,7 +4,7 @@
 // copies, leave Chrome's directory exactly as it was, and remove its copies whatever happens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chmodSync, mkdirSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {join, relative} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
@@ -71,6 +71,26 @@ test('each profile\'s store is read from a copy: directories by instance id, col
   assert.deepEqual(Object.fromEntries(result.names), {Default: 'Same', 'Profile 12': 'Same', 'Profile 3': 'Other', 'Profile 4': 'Keyless'});
   assert.deepEqual(snapshot(userData), before, 'nothing in Chrome\'s directory changed, the live LOCK included');
   assert.deepEqual(leftovers(staging), [], 'the copies are gone');
+});
+
+// Review fix (PR #45): a store directory that is itself a symlink was copied as a link, so the LOCK removal and the
+// open acted on the live store through it. The copy follows the link; the live store stays exactly as it was.
+test('a store that is a symlink is copied through the link: the live store it points at is never touched', {skip}, async t => {
+  const {map, userData, staging} = await setup(t, {Default: {name: 'A'}});
+  const outside = join(userData, '..', 'elsewhere', 'store');
+  mkdirSync(join(outside, '..'), {recursive: true});
+  const db = await writeStore(outside, 'inst-linked', {keepOpen: true});
+  t.after(() => db.close());
+  const link = join(userData, 'Default', 'Local Extension Settings', OPENAI_EXTENSION_ID);
+  mkdirSync(join(link, '..'), {recursive: true});
+  symlinkSync(outside, link);
+  assert.ok(lstatSync(link).isSymbolicLink());
+  const before = snapshot(outside);
+  const result = await map();
+  assert.deepEqual({status: result.status, stores: Object.fromEntries(result.stores)}, {status: 'complete', stores: {Default: ['inst-linked']}});
+  assert.deepEqual(snapshot(outside), before, 'the live store, LOCK included, is unchanged');
+  assert.ok(lstatSync(link).isSymbolicLink());
+  assert.deepEqual(leftovers(staging), []);
 });
 
 test('a store this process may not read leaves the mapping partial with the code; the readable stores still count', {skip: skip || asRoot}, async t => {

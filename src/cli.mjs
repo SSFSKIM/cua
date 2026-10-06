@@ -199,11 +199,16 @@ const MAP_UNAVAILABLE = {
 const describeMap = map => !map || map.status === 'complete' ? []
   : map.status === 'unavailable' ? [MAP_UNAVAILABLE[map.reason]?.(map) ?? MAP_UNAVAILABLE.error()]
   : [`${map.unreadableStores} Chrome extension store(s) could not be read (${map.readError}), so some candidates may have no profile directory${isPermissionError(map.readError) ? `; ${PERMISSION_FIX}` : ''}`];
-const describeUnreadable = result => [
-  ...(result.chromeDataUnreadable ? [`this process cannot read Chrome's data directory (${result.chromeDataUnreadable}): the extension's presence was not checked, the live listing decides`] : []),
-  ...(result.localStateUnreadable ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name`] : []),
-  ...describeMap(result.directoryMap),
-].map(line => `note: ${line}\n`).join('');
+// One refused Local State read is one note, covering both what it costs the labels and the directories.
+const describeUnreadable = result => {
+  const both = result.localStateUnreadable && result.directoryMap?.reason === 'chrome_data_unreadable';
+  return [
+    ...(result.chromeDataUnreadable ? [`this process cannot read Chrome's data directory (${result.chromeDataUnreadable}): the extension's presence was not checked, the live listing decides`] : []),
+    ...(both ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name and the candidates' profile directories are unknown; ${PERMISSION_FIX}`]
+      : [...(result.localStateUnreadable ? [`this process cannot read Chrome's Local State (${result.localStateUnreadable}): backend labels cannot be compared with this profile's name`] : []),
+        ...describeMap(result.directoryMap)]),
+  ].map(line => `note: ${line}\n`).join('');
+};
 // Each candidate with the vendor's profile label, how it compares with this profile's name, and the likely-match mark
 // (on the backend an automatic bind chose, so the user sees which label decided it).
 // The label is JSON-quoted with C1 controls and bidirectional overrides escaped too (JSON leaves them raw), so a name

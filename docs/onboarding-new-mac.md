@@ -90,7 +90,8 @@ decision without recording it. The profile is `ready` when its bound instance is
 
 The binding lasts as long as the extension instance: toggling or reinstalling the extension can mint a new id, after
 which `list` says `binding_stale` and `bind` again repairs it. `host_not_live` means no backend is live at all: open
-the profile and click the extension icon.
+a window in the profile (`cua profiles open <key>` does it from the terminal) and click the extension icon if it still
+has no backend.
 
 ### 7. macOS permissions for the native surface
 

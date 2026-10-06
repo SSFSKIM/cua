@@ -154,10 +154,10 @@ export function withLiveness(statuses, liveIds) {
   });
 }
 
-// The one step that brings a profile's host back without changing its binding. Toggling the extension wakes it too,
-// but can mint a new instance id (Surprises, 2026-10-04; not always, second-mac-acceptance.md), so it is offered only
-// with the rebind it may then need.
-const WAKE = 'open a window in Chrome profile "<dir>" (Chrome unloads a profile and its extension host when the profile\'s last window closes, including a window a cua task opened and then closed) and click the OpenAI (ChatGPT) extension\'s icon if it still has no backend, then retry';
+// The one step that brings a profile's host back without changing its binding (`cua profiles open <key>` takes it for
+// the user who asks; nothing takes it for them). Toggling the extension wakes it too, but can mint a new instance id
+// (Surprises, 2026-10-04; not always, second-mac-acceptance.md), so it is offered only with the rebind it may then need.
+const WAKE = 'open a window in Chrome profile "<dir>" (one line: cua profiles open <key>; Chrome unloads a profile and its extension host when the profile\'s last window closes, including a window a cua task opened and then closed) and click the OpenAI (ChatGPT) extension\'s icon if it still has no backend, then retry';
 
 export const REASONS = {
   profile_directory_missing: 'the Chrome profile directory no longer exists',

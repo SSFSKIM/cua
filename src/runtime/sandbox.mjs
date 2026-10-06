@@ -2,8 +2,9 @@
 // (issues #20, #33, #36). Without it node_repl applies its restrictive default to cells and trusted services: reads
 // allowed, every write denied, temp directories included. CUA_SHIM_SANDBOX picks what cua sends on every call it makes
 // to the runtime:
-//   scoped    (default; on Linux only without the computer surface, see defaultSandboxMode) a managed profile: reads everywhere, writes only to the launch's working directory (the run
-//             directory, node_repl's `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`), no network.
+//   scoped    (default; on Linux only without the computer surface, see defaultSandboxMode) a managed profile: reads
+//             everywhere, writes only to the launch's working directory (the run directory, node_repl's
+//             `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`), no network.
 //             node_repl denies every kernel connection under any managed profile, so `network` says `restricted`.
 //             `slash_tmp` stays out: it would make any checkout or runtime under /tmp writable.
 //   disabled  the disabled permission profile: cells may write wherever the user can, and reach the network

@@ -74,10 +74,11 @@ const sseMessages = text => text.split('\n\n').filter(block => block && !block.s
 test('remote enroll prints the client credential once; show, a refused re-enrol and a relay update never print it', t => {
   const home = emptyHome(t);
   const enrolled = enroll(home);
-  assert.deepEqual(Object.keys(enrolled).sort(), ['clientCredential', 'deviceId', 'devicesEntry', 'ok', 'relayUrl']);
+  assert.deepEqual(Object.keys(enrolled).sort(), ['clientCredential', 'deviceId', 'devicesEntry', 'ok', 'relayEndpoint', 'relayUrl']);
   assert.equal(enrolled.ok, true);
   assert.match(enrolled.clientCredential, /^[0-9a-f]{64}$/);
   assert.equal(enrolled.relayUrl, null);
+  assert.equal(enrolled.relayEndpoint, null);
   const secret = JSON.parse(readFileSync(join(home, 'remote', 'device.json'), 'utf8')).secret;
 
   const outputs = [];
@@ -86,13 +87,13 @@ test('remote enroll prints the client credential once; show, a refused re-enrol 
   assert.match(again.stderr, /remote_already_enrolled/);
   outputs.push(again);
   for (const args of [['remote', 'show'], ['remote', 'show', '--json'], ['remote', 'enroll', '--relay', 'wss://relay.example/ws', '--json']]) {
-    const r = cua(args, home);
+    const r = cua(args, home, {HOME: home});
     assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
     assert.ok(r.stdout.includes(enrolled.devicesEntry) || r.stdout.includes(JSON.stringify(enrolled.devicesEntry).slice(1, -1)), args.join(' '));
     outputs.push(r);
   }
   const shown = JSON.parse(cua(['remote', 'show', '--json'], home).stdout);
-  assert.deepEqual({...shown, enrolledAt: undefined}, {ok: true, deviceId: enrolled.deviceId, relayUrl: 'wss://relay.example/ws', enrolledAt: undefined, devicesEntry: enrolled.devicesEntry});
+  assert.deepEqual({...shown, enrolledAt: undefined}, {ok: true, deviceId: enrolled.deviceId, relayUrl: 'wss://relay.example/ws', relayEndpoint: `https://relay.example/d/${enrolled.deviceId}/mcp`, enrolledAt: undefined, devicesEntry: enrolled.devicesEntry});
   for (const r of outputs) for (const value of [enrolled.clientCredential, secret]) assert.ok(!(r.stdout + r.stderr).includes(value), 'no credential after the enrolment');
 
   const text = cua(['remote', 'enroll', '--rotate'], home);
@@ -100,6 +101,54 @@ test('remote enroll prints the client credential once; show, a refused re-enrol 
   const rotated = JSON.parse(readFileSync(join(home, 'remote', 'device.json'), 'utf8'));
   assert.notEqual(rotated.secret, secret);
   assert.match(text.stdout, /[0-9a-f]{64}/, 'a rotation shows the new client credential, once');
+});
+
+test('enroll and show suggest the client registration: on the relay\'s endpoint when one is enrolled, else on this Mac\'s address', t => {
+  const home = emptyHome(t);
+  const env = {HOME: emptyHome(t)};   // no launchd job here, so no install hint
+  const lan = cua(['remote', 'enroll'], home, env);
+  assert.equal(lan.status, 0, lan.stderr);
+  const deviceId = readDevice(home).deviceId;
+  assert.match(lan.stdout, /claude mcp add --transport http cua_repl http:\/\/<this Mac's address>:7801\/mcp --header "Authorization: Bearer [0-9a-f]{64}"/);
+  assert.doesNotMatch(cua(['remote', 'show'], home, env).stdout, /claude mcp add/, 'show has no credential to suggest a LAN registration with');
+
+  const endpoint = `https://relay.example:8443/d/${deviceId}/mcp`;
+  const moved = cua(['remote', 'enroll', '--relay', 'wss://relay.example:8443/ws'], home, env);
+  assert.equal(moved.status, 0, moved.stderr);
+  assert.ok(moved.stdout.includes(`claude mcp add --transport http cua_repl ${endpoint} --header "Authorization: Bearer <client credential>"`), moved.stdout);
+  assert.doesNotMatch(moved.stdout, /cua agent install/);
+  const shown = cua(['remote', 'show'], home, env).stdout;
+  assert.ok(shown.includes(`claude mcp add --transport http cua_repl ${endpoint} --header "Authorization: Bearer <client credential>"`), shown);
+  const rotated = cua(['remote', 'enroll', '--rotate', '--json'], home, env);
+  const {clientCredential, relayEndpoint} = JSON.parse(rotated.stdout);
+  assert.equal(relayEndpoint, endpoint);
+  const text = cua(['remote', 'enroll', '--rotate'], home, env).stdout;
+  assert.match(text, new RegExp(`claude mcp add --transport http cua_repl ${endpoint.replace(/[.]/g, '\\.')} --header "Authorization: Bearer [0-9a-f]{64}"`));
+  assert.doesNotMatch(text, /<this Mac's address>/);
+  assert.ok(!text.includes(clientCredential), 'the earlier rotation\'s credential is not shown again');
+});
+
+test('enroll --relay says to run cua agent install when the installed job does not dial the relay; never otherwise', t => {
+  const home = emptyHome(t);
+  const userHome = emptyHome(t);
+  const env = {HOME: userHome};
+  enroll(home);
+  const plist = join(userHome, 'Library', 'LaunchAgents', 'com.ssfskim.cua.agent.plist');
+  mkdirSync(join(userHome, 'Library', 'LaunchAgents'), {recursive: true});
+  const job = (...args) => writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>Label</key><string>com.ssfskim.cua.agent</string>
+<key>ProgramArguments</key><array>${['/n', '/c', 'agent', 'run', ...args].map(a => `<string>${a}</string>`).join('')}</array></dict></plist>
+`);
+  job('--http', '127.0.0.1:7801');
+  let r = cua(['remote', 'enroll', '--relay', 'wss://relay.example/ws'], home, env);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /the installed agent job does not dial the relay.*cua agent install/s);
+  r = cua(['remote', 'enroll', '--relay', 'wss://other.example/ws', '--json'], home, env);
+  assert.equal(JSON.parse(r.stdout).agentJobLacksRelay, true);
+  job('--relay', '--http', '127.0.0.1:7801');
+  r = cua(['remote', 'enroll', '--relay', 'wss://relay.example/ws', '--json'], home, env);
+  assert.equal(JSON.parse(r.stdout).agentJobLacksRelay, undefined, 'a job that dials the relay follows the new URL by itself');
+  assert.doesNotMatch(cua(['remote', 'enroll', '--relay', 'wss://relay.example/ws'], home, env).stdout, /cua agent install/);
 });
 
 test('remote show before enrolment and agent run usage errors', t => {

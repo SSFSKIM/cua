@@ -47,7 +47,7 @@ import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
-import {readDevice} from '../remote/device.mjs';
+import {checkRelayUrl, readDevice} from '../remote/device.mjs';
 import {agentLogPath, agentStatus} from '../remote/launchd.mjs';
 import {checkConsole, consoleCheckFrom} from '../remote/console.mjs';
 
@@ -216,6 +216,9 @@ function enrolledRow(home, device, deviceError) {
   const path = join(home, 'remote', 'device.json');
   const mode = statSync(path).mode & 0o777;
   if (mode !== 0o600) return result('agent.enrolled', 'fail', `${path} is mode 0${mode.toString(8)} but holds the device secret; chmod 600 "${path}"`);
+  if (device.relayUrl) try { checkRelayUrl(device.relayUrl); } catch (error) {
+    return result('agent.enrolled', 'fail', `${error.message}, so the agent refuses to dial it; ${error.hint}`);
+  }
   return result('agent.enrolled', 'pass', `device ${device.deviceId}, ${device.relayUrl ? `relay ${device.relayUrl}` : 'local only (no relay)'}`);
 }
 

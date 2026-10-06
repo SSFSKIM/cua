@@ -381,6 +381,13 @@ test('agent.enrolled fails for a device record others can read, an unreadable on
   assert.equal(r['agent.enrolled'].status, 'fail');
   assert.match(r['agent.enrolled'].detail, /--rotate/);
 
+  enrollDevice({home, rotate: true});
+  const file = join(home, 'remote', 'device.json');
+  writeFileSync(file, JSON.stringify({...JSON.parse(readFileSync(file, 'utf8')), relayUrl: 'ws://relay.example/ws'}), {mode: 0o600});
+  r = await rows();
+  assert.equal(r['agent.enrolled'].status, 'fail', 'a relay URL the agent would refuse');
+  assert.match(r['agent.enrolled'].detail, /wss:\/\/.*cua remote enroll --relay/);
+
   const orphan = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
   rmSync(join(orphan.home, 'remote'), {recursive: true});
   r = await orphan.rows();

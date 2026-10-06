@@ -11,9 +11,9 @@ import {resolveRuntime} from './runtime/manifest.mjs';
 import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
 import {CuaError, fail} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
-import {devicesEntry, enrollDevice, readDevice} from './remote/device.mjs';
+import {devicesEntry, enrollDevice, readDevice, relayEndpoint} from './remote/device.mjs';
 import {runAgent} from './remote/agent.mjs';
-import {agentStatus, installAgent, uninstallAgent} from './remote/launchd.mjs';
+import {agentStatus, installAgent, installedJob, uninstallAgent} from './remote/launchd.mjs';
 import {runSecrets} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
@@ -51,9 +51,10 @@ const USAGE = `usage: cua <command>
                                                                (--relay when enrolled with one; surfaces default computer,browser)
   agent uninstall [--json]                                     stop the launchd job and remove it
   agent status [--json]                                        the launchd job: installed, its node, running (pid)
-environment: CUA_HOME (default ~/Library/Application Support/cua); for agent run: CUA_AGENT_MAX_SESSIONS (default 1),
-  CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call; none by default),
-  CUA_AGENT_CONSOLE_CHECK (on: js answers console_locked while the screen is locked; off)`;
+environment: CUA_HOME (default ~/Library/Application Support/cua); for agent run (agent install carries those set into
+  the job): CUA_AGENT_MAX_SESSIONS (default 1), CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser
+  origins allowed to call; none by default), CUA_AGENT_CONSOLE_CHECK (on: js answers console_locked while the screen is
+  locked; off)`;
 
 class UsageError extends Error {}
 
@@ -128,7 +129,7 @@ async function serve(args) {
 
 // Remote control (src/remote). enroll mints the device record and shows the client credential this once; nothing
 // else ever prints it (or the secret): a relay-only update and show print the device id and the relay's line, hashes
-// only.
+// only. Both suggest the client's registration: on the relay's endpoint when one is enrolled, else on this Mac's address.
 const REMOTE_USAGE = {enroll: 'remote enroll takes only --relay <wss url>, --rotate and --json', show: 'remote show takes only --json'};
 
 function remote(args) {
@@ -140,24 +141,40 @@ function remote(args) {
     throw error;
   }
   const home = defaultHome();
+  const register = (endpoint, credential) => `  claude mcp add --transport http cua_repl ${endpoint ?? 'http://<this Mac\'s address>:7801/mcp'} --header "Authorization: Bearer ${credential}"`;
   if (command === 'show') {
     const record = readDevice(home);
     if (!record) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll'});
-    const shown = {deviceId: record.deviceId, relayUrl: record.relayUrl ?? null, enrolledAt: record.enrolledAt, devicesEntry: devicesEntry(record)};
+    const shown = {deviceId: record.deviceId, relayUrl: record.relayUrl ?? null, relayEndpoint: relayEndpoint(record), enrolledAt: record.enrolledAt, devicesEntry: devicesEntry(record)};
     if (values.json) return done({ok: true, ...shown});
-    return done(`device    ${shown.deviceId}\nrelay     ${shown.relayUrl ?? 'none (local only)'}\nenrolled  ${shown.enrolledAt}\nthe relay's devices.json line:\n  ${shown.devicesEntry}`);
+    return done([
+      `device    ${shown.deviceId}\nrelay     ${shown.relayUrl ?? 'none (local only)'}\nenrolled  ${shown.enrolledAt}\nthe relay's devices.json line:\n  ${shown.devicesEntry}`,
+      ...(shown.relayEndpoint ? ['a client registers on the relay under the name cua_repl, with the credential enroll showed:', register(shown.relayEndpoint, '<client credential>')] : []),
+    ].join('\n'));
   }
   const result = enrollDevice({home, relayUrl: values.relay, rotate: values.rotate});
-  if (values.json) return done({ok: true, ...result});
+  const endpoint = relayEndpoint(result);
+  // A job installed before the relay was enrolled serves only its --http address until install rewrites it.
+  const job = values.relay === undefined ? null : installedJob().job;
+  const lacksRelay = Boolean(job && !job.args.includes('--relay'));
+  if (values.json) return done({ok: true, ...result, relayEndpoint: endpoint, ...(lacksRelay ? {agentJobLacksRelay: true} : {})});
   const relayLine = `the relay's devices.json line:\n  ${result.devicesEntry}`;
-  if (result.updated) return done(`device ${result.deviceId} now uses the relay ${result.relayUrl}; its secret and credentials are unchanged\n${relayLine}`);
+  const installHint = lacksRelay ? ['the installed agent job does not dial the relay: run cua agent install to add --relay'] : [];
+  if (result.updated) return done([
+    `device ${result.deviceId} now uses the relay ${result.relayUrl}; its secret and credentials are unchanged`,
+    relayLine,
+    'a client registers on the relay under the name cua_repl, with the credential enroll showed:',
+    register(endpoint, '<client credential>'),
+    ...installHint,
+  ].join('\n'));
   return done([
     `${values.rotate ? 'rotated the secret of' : 'enrolled this Mac as'} device ${result.deviceId} (relay: ${result.relayUrl ?? 'none, local only'})`,
     'client credential, shown this once (cua never prints it again; --rotate replaces it):',
     `  ${result.clientCredential}`,
-    'register it on the client under the name cua_repl, for example:',
-    `  claude mcp add --transport http cua_repl http://<this Mac's address>:7801/mcp --header "Authorization: Bearer ${result.clientCredential}"`,
+    `register it on the client under the name cua_repl, ${endpoint ? 'on the relay' : 'on this Mac\'s address'}, for example:`,
+    register(endpoint, result.clientCredential),
     relayLine,
+    ...installHint,
   ].join('\n'));
 }
 
@@ -191,6 +208,7 @@ async function agent(args) {
       `  runs    ${result.programArguments.join(' ')}`,
       `  node    ${result.node}; after upgrading or moving node, run cua agent install again${values.http ? ' (macOS\'s firewall judges this node binary for incoming connections: allow it if asked)' : ''}`,
       `  log     ${result.log}`,
+      `  env     ${Object.entries(result.environment).map(([key, value]) => `${key}=${value}`).join(' ')}`,
       `  status  ${describeRunning(result.status)}`,
     ].join('\n'));
   }

@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {dirname, join, relative} from 'node:path';
-import {AGENT_LABEL, agentPlistPath, agentStatus, installAgent, parseLaunchdPrint, readPlist, uninstallAgent} from '../src/remote/launchd.mjs';
+import {AGENT_LABEL, agentPlistPath, agentStatus, installAgent, installedJob, parseLaunchdPrint, readPlist, uninstallAgent} from '../src/remote/launchd.mjs';
 import {enrollDevice} from '../src/remote/device.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {UID, fakeLaunchctl, printed} from './fixtures/fake-launchctl.mjs';
@@ -65,6 +65,46 @@ test('install adds --relay when the device has a relay URL, takes --surfaces, an
   job = readPlist(readFileSync(plist, 'utf8'));
   assert.deepEqual(job.args, ['--relay', '--http', '127.0.0.1:7801']);
   assert.deepEqual(job.environment, {CUA_SHIM_SURFACES: 'computer,browser'}, 'surfaces in canonical order; no CUA_HOME when unset');
+});
+
+test('install carries the agent\'s settings from its environment into the job when they are set, validated as agent run validates them', async t => {
+  const {home, install, plist, launchctl} = setup(t);
+  const settings = {CUA_AGENT_MAX_SESSIONS: '2', CUA_AGENT_IDLE_MINUTES: '5', CUA_AGENT_ALLOWED_ORIGINS: 'https://a.example', CUA_AGENT_CONSOLE_CHECK: 'off'};
+  const result = await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...settings, CUA_AGENT_OTHER: 'x', PATH: '/bin'}});
+  const job = readPlist(readFileSync(plist, 'utf8'));
+  assert.deepEqual(job.environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', ...settings});
+  assert.deepEqual(result.environment, job.environment);
+  await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_AGENT_IDLE_MINUTES: '30'}});
+  assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', CUA_AGENT_IDLE_MINUTES: '30'}, 'only what is set now');
+
+  const calls = launchctl.calls.length;
+  const before = readFileSync(plist, 'utf8');
+  for (const bad of [{CUA_AGENT_MAX_SESSIONS: '0'}, {CUA_AGENT_IDLE_MINUTES: 'soon'}, {CUA_AGENT_CONSOLE_CHECK: 'sometimes'}])
+    await assert.rejects(install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...bad}}), {code: 'invalid_setting'}, JSON.stringify(bad));
+  assert.equal(readFileSync(plist, 'utf8'), before, 'a refused setting changes nothing');
+  assert.equal(launchctl.calls.length, calls);
+});
+
+test('install refuses a relay URL that is not wss: or loopback ws: before writing anything', async t => {
+  const {home, install, plist, launchctl} = setup(t);
+  const file = join(home, 'remote', 'device.json');
+  writeFileSync(file, JSON.stringify({...JSON.parse(readFileSync(file, 'utf8')), relayUrl: 'ws://relay.example/ws'}), {mode: 0o600});
+  await assert.rejects(install({}), {code: 'invalid_relay_url'});
+  assert.equal(existsSync(plist), false);
+  assert.deepEqual(launchctl.calls, []);
+});
+
+test('installedJob reads the job from its plist alone, never asking launchd', async t => {
+  const {install, common, plist, launchctl, userHome} = setup(t);
+  assert.deepEqual(installedJob({userHome}), {label: AGENT_LABEL, plist, installed: false});
+  await install({http: '127.0.0.1:7801'});
+  launchctl.calls.length = 0;
+  const found = installedJob({userHome});
+  assert.deepEqual(found.job.args, ['--http', '127.0.0.1:7801']);
+  writeFileSync(plist, 'not a plist');
+  assert.match(installedJob({userHome}).invalid, /not a property list/);
+  assert.deepEqual(launchctl.calls, []);
+  assert.equal((await agentStatus(common)).invalid, installedJob({userHome}).invalid, 'agentStatus reads it the same way');
 });
 
 test('install on an installed job replaces the plist, boots the old job out and bootstraps once launchd has let it go', async t => {

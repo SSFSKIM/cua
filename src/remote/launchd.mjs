@@ -11,7 +11,9 @@
 // stops (a signal shutdown, relay close codes 4001/4003), which exit 0. `--relay` is refused (relay_unavailable) when
 // this checkout cannot load the ws package the relay path needs. launchd appends stdout and stderr to
 // $CUA_HOME/state/agent.log (the agent writes its diagnostics to stderr). The environment carries CUA_HOME when it is
-// set and CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser as much as the desktop).
+// set, CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser as much as the desktop) and each of
+// the agent's own settings (CUA_AGENT_MAX_SESSIONS, _IDLE_MINUTES, _ALLOWED_ORIGINS, _CONSOLE_CHECK) set in the
+// environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it.
 //
 // The plist is written by templating with XML escaping and checked by reading it back with cua's own reader before it
 // replaces anything; `install` on an installed job replaces the plist, boots the old job out, waits until launchd has
@@ -24,7 +26,9 @@ import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {escapeXml, isDict, parsePlist, representable} from './plist.mjs';
-import {readDevice} from './device.mjs';
+import {checkRelayUrl, readDevice} from './device.mjs';
+import {AGENT_SETTINGS, limitsFrom} from './limits.mjs';
+import {consoleCheckFrom} from './console.mjs';
 import {parseFixedAddress} from './address.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 import {loadWebSocket} from './relay-link.mjs';
@@ -169,15 +173,19 @@ export async function installAgent({home, env = process.env, http, surfaces = DE
   userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl, settleMs = 250, loadRelay = loadWebSocket}) {
   if (http !== undefined && http !== null) parseFixedAddress(http);
   const named = surfacesFrom(surfaces).join(',');
+  limitsFrom(env);
+  consoleCheckFrom(env);
   const device = readDevice(home);
   if (!device) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll first'});
+  if (device.relayUrl) checkRelayUrl(device.relayUrl);
   // A --relay job whose checkout cannot load ws would refuse at every start and be restarted every 10 s.
   if (device.relayUrl) await loadRelay();
   const args = [...(device.relayUrl ? ['--relay'] : []), ...(http ? ['--http', http] : [])];
   if (!args.length)
     fail('agent_nothing_to_serve', 'the agent would have nothing to serve: no relay is enrolled and no --http address was given', {hint: 'give --http <this Mac\'s LAN address>:7801, or enrol a relay with cua remote enroll --relay <wss url>'});
   const log = agentLogPath(home);
-  const environment = {...(env.CUA_HOME ? {CUA_HOME: resolve(env.CUA_HOME)} : {}), CUA_SHIM_SURFACES: named};
+  const settings = Object.fromEntries(AGENT_SETTINGS.filter(key => env[key] !== undefined).map(key => [key, env[key]]));
+  const environment = {...(env.CUA_HOME ? {CUA_HOME: resolve(env.CUA_HOME)} : {}), CUA_SHIM_SURFACES: named, ...settings};
   const programArguments = [node, cli, 'agent', 'run', ...args];
   const unrepresentable = [...programArguments, log, ...Object.values(environment)].find(text => !representable(text));
   if (unrepresentable !== undefined)
@@ -207,21 +215,28 @@ export async function uninstallAgent({userHome = homedir(), uid = process.getuid
   return {label: AGENT_LABEL, plist, bootedOut, removed};
 }
 
+// The job as installed, from its plist alone (launchd is not asked): {label, plist, installed, job?, invalid?}. Whatever
+// is at the path, damage reads as `invalid`, never a throw: doctor, status and enroll's hint report it.
+export function installedJob({userHome = homedir()} = {}) {
+  const plist = agentPlistPath(userHome);
+  let text;
+  const found = {label: AGENT_LABEL, plist, installed: true};
+  try { text = readFileSync(plist, 'utf8'); } catch (error) {
+    if (error.code === 'ENOENT') return {label: AGENT_LABEL, plist, installed: false};
+    found.invalid = `the plist could not be read (${error.code ?? error.message})`;
+  }
+  if (text !== undefined) try { found.job = readPlist(text); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    found.invalid = error.message;
+  }
+  return found;
+}
+
 // The job as installed and as launchd runs it. launchd is asked only when the plist exists: without it there is no job
 // of cua's to describe.
 export async function agentStatus({userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl} = {}) {
-  const plist = agentPlistPath(userHome);
-  let text;
-  // Whatever is at the path, damage reads as `invalid`, never a throw: doctor and status report it.
-  const status = {label: AGENT_LABEL, plist, installed: true};
-  try { text = readFileSync(plist, 'utf8'); } catch (error) {
-    if (error.code === 'ENOENT') return {label: AGENT_LABEL, plist, installed: false, loaded: false, running: false};
-    status.invalid = `the plist could not be read (${error.code ?? error.message})`;
-  }
-  if (text !== undefined) try { status.job = readPlist(text); } catch (error) {
-    if (!(error instanceof CuaError)) throw error;
-    status.invalid = error.message;
-  }
+  const status = installedJob({userHome});
+  if (!status.installed) return {...status, loaded: false, running: false};
   let loaded;
   try { loaded = await loadedJob(launchctl, uid); } catch (error) {
     if (error.code !== 'agent_launchd_unreadable') throw error;

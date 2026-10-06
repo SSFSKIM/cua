@@ -13,9 +13,9 @@
 // once, and `remote enroll --relay <url>` moves the link to the new relay (checked at each request and each relay
 // ping), with no restart. A device.json that is gone or unreadable refuses every client until it is back.
 //
-// Limits, from the environment: CUA_AGENT_MAX_SESSIONS (default 1: every session drives the same mouse, keyboard and
-// Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call,
-// comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js and js_reset
+// Limits, from the environment (src/remote/limits.mjs): CUA_AGENT_MAX_SESSIONS (default 1: every session drives the
+// same mouse, keyboard and Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins
+// allowed to call, comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js and js_reset
 // answer console_locked while this user's session is off the console or its screen is locked (src/remote/console.mjs).
 // Diagnostics go to stderr (under launchd, $CUA_HOME/state/agent.log); no credential ever appears in them.
 import {createServer as createHttpServer} from 'node:http';
@@ -26,6 +26,7 @@ import {createMcpHttp} from '../mcp/http.mjs';
 import {settingsFrom} from '../mcp/server.mjs';
 import {checkRelayUrl, followDevice, readDevice} from './device.mjs';
 import {parseAddress} from './address.mjs';
+import {limitsFrom} from './limits.mjs';
 import {checkConsole, consoleCheckFrom} from './console.mjs';
 import {connectRelay, loadWebSocket} from './relay-link.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -96,17 +97,6 @@ export function acquireAgentLock(home) {
     fail('agent_lock_failed', `could not take the agent lock ${path} (${error.code ?? error.message})`, {cause: error});
   }
   fail('agent_lock_failed', `could not take the agent lock ${path}: it kept changing hands`);
-}
-
-// ---- settings ----
-
-function limitsFrom(env) {
-  const max = env.CUA_AGENT_MAX_SESSIONS ?? '1';
-  if (!/^[1-9]\d{0,3}$/.test(max)) fail('invalid_setting', 'CUA_AGENT_MAX_SESSIONS must be a whole number of sessions, at least 1');
-  const idle = env.CUA_AGENT_IDLE_MINUTES ?? '15';
-  if (!/^\d+(\.\d+)?$/.test(idle) || !(Number(idle) > 0)) fail('invalid_setting', 'CUA_AGENT_IDLE_MINUTES must be a positive number of minutes');
-  const allowedOrigins = (env.CUA_AGENT_ALLOWED_ORIGINS ?? '').split(',').map(o => o.trim()).filter(Boolean);
-  return {maxSessions: Number(max), idleMs: Math.round(Number(idle) * 60_000), allowedOrigins};
 }
 
 // ---- node:http to the handler's abstract request and response ----

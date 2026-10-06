@@ -17,8 +17,9 @@
 // Routing: a response goes on the POST stream that carried its request id. A message the connection starts (an
 // elicitation, a progress or log notification) goes on the oldest open POST stream, else the GET stream, else into a
 // per-session buffer drained into the next stream that opens; a session whose buffer would pass `bufferLimit` closes.
-// Small resumability: every event of a POST stream has an id `<stream>-<n>` and the stream keeps its events while it
-// lives; when the client drops it before all its requests are answered, the later responses are kept, and a GET whose
+// Small resumability: every event of a POST stream has an id `<stream>-<n>`, the stream opens with a priming event
+// (`<stream>-0`, empty data) so that a client whose stream drops before the first response still holds an id to resume
+// from (Claude Code's client resumes only streams that carried one), and the stream keeps its events while it lives; when the client drops it before all its requests are answered, the later responses are kept, and a GET whose
 // Last-Event-ID names that stream replays every event after the named one and then carries the rest. A GET naming no
 // such stream is an ordinary GET.
 // Idle: a session with no request for `idleMs`, nothing it was asked still unanswered (an open or dropped POST stream's
@@ -293,6 +294,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     for (const key of keys) session.routes.set(key, stream);
     res.writeHead(200, SSE_HEADERS);
     attach(session, stream, res, req.signal);
+    res.write(`id: ${stream.id}-0\ndata: \n\n`);   // the priming event: never kept, replayed, buffered or routed
     drain(session, msg => sseEvent(stream, msg));
     touch(session);
     send(session, messages);

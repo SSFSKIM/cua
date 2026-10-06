@@ -47,7 +47,8 @@ const post = (endpoint, credential, body, session) => fetch(endpoint, {method: '
   authorization: `Bearer ${credential}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream',
   ...(session ? {'mcp-session-id': session} : {}),
 }});
-const sseMessages = text => text.split('\n\n').filter(Boolean).map(block => JSON.parse(block.split('\n').find(l => l.startsWith('data: ')).slice(6)));
+const sseData = text => text.split('\n\n').filter(Boolean).map(block => block.split('\n').find(l => l.startsWith('data: ')).slice(6));
+const sseMessages = text => sseData(text).filter(Boolean).map(data => JSON.parse(data));
 
 test('remote enroll prints the client credential once; show, a refused re-enrol and a relay update never print it', t => {
   const home = emptyHome(t);
@@ -137,7 +138,9 @@ test('agent run --http serves sessions over HTTP; two sessions (cap 2) have thei
     const js = await post(agent.endpoint, clientCredential, {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'js', arguments: {code: 'hello'}}}, session);
     assert.equal(js.status, 200);
     assert.equal(js.headers.get('content-type'), 'text/event-stream');
-    const [reply] = sseMessages(await js.text());
+    const body = await js.text();
+    assert.match(body, /^id: \d+-0\ndata: \n\n/, 'the stream opens with its priming event');
+    const [reply] = sseMessages(body);
     assert.equal(JSON.parse(reply.result.content[0].text).turn.session_id, session, 'Mcp-Session-Id is the connection\'s session id');
   }
   const entries = readdirSync(join(home, 'run')).sort();

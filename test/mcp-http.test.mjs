@@ -50,16 +50,19 @@ function recorder() {
     },
     write(chunk) { assert.ok(!res.ended, 'no write after end'); res.body += chunk; },
     end(chunk) { assert.ok(!res.ended, 'end once'); if (chunk !== undefined) res.body += chunk; res.ended = true; },
-    events() {
+    // Every SSE event in order; a priming event (an id and empty data) has `message: null`.
+    allEvents() {
       return res.body.split('\n\n').filter(Boolean).map(block => {
         const event = {};
         for (const line of block.split('\n')) {
           const at = line.indexOf(': ');
           event[line.slice(0, at)] = line.slice(at + 2);
         }
-        return {id: event.id, message: JSON.parse(event.data)};
+        return {id: event.id, message: event.data === '' ? null : JSON.parse(event.data)};
       });
     },
+    events: () => res.allEvents().filter(e => e.message !== null),
+    primings: () => res.allEvents().filter(e => e.message === null).map(e => e.id),
     messages: () => res.events().map(e => e.message),
     json: () => JSON.parse(res.body),
   };
@@ -245,10 +248,17 @@ test('a request\'s response goes on the POST stream that carried it, with two co
   assert.equal(b.res.headers['cache-control'], 'no-cache');
   assert.deepEqual(b.res.messages(), [{jsonrpc: '2.0', id: 'b', result: {}}]);
   assert.equal(a.res.ended, false);
-  assert.equal(a.res.body, '');
+  assert.deepEqual(a.res.events(), []);
   upstream.text(js, 'slow done');
   await until(() => a.res.ended, 'stream a to end');
   assert.deepEqual(a.res.messages().map(m => m.id), ['a']);
+  for (const stream of [a, b]) {
+    const [first, ...rest] = stream.res.allEvents();
+    assert.equal(first.message, null, 'every POST stream opens with a priming event');
+    assert.match(first.id, /^\d+-0$/);
+    assert.equal(rest.length, 1);
+    assert.equal(rest[0].id, first.id.replace(/-0$/, '-1'));
+  }
   const [ea] = a.res.events();
   const [eb] = b.res.events();
   assert.match(ea.id, /^\d+-1$/);
@@ -288,7 +298,7 @@ test('a server-initiated request goes to the oldest open POST stream, else the G
   upstream.emit(elicit(1));
   await until(() => older.res.messages().length === 1, 'elicitation on the oldest POST stream');
   assert.equal(older.res.messages()[0].method, 'elicitation/create');
-  assert.deepEqual([newer.res.body, get.res.body], ['', '']);
+  assert.deepEqual([newer.res.events(), get.res.body], [[], '']);
 
   older.abort();
   newer.abort();
@@ -296,6 +306,7 @@ test('a server-initiated request goes to the oldest open POST stream, else the G
   await until(() => get.res.messages().length === 1, 'elicitation on the GET stream');
   assert.equal(get.res.messages()[0].id, 'e2');
   assert.equal(get.res.events()[0].id, undefined, 'GET stream events carry no id');
+  assert.deepEqual(get.res.primings(), [], 'and the GET stream has no priming event');
 
   get.abort();
   upstream.emit(elicit(3));
@@ -352,6 +363,31 @@ test('a response whose POST stream dropped is kept and replayed on a GET naming 
   assert.equal(again.res.body, '');
 });
 
+test('a js call whose stream dropped after only its priming event is replayed whole on Last-Event-ID <stream>-0', async t => {
+  const {http, send, initialize, upstreamOf} = setup(t, {bufferLimit: 64});
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'long'})});
+  const js = await upstream.nextCall('js');
+  const [priming] = post.res.primings();
+  assert.match(priming, /^\d+-0$/);
+  assert.deepEqual(post.res.events(), [], 'nothing but the priming event yet');
+  post.abort();
+  await tick(5);
+  assert.ok(http.sessions.get(session).routes.size === 1, 'the call is still awaited');
+  upstream.text(js, 'cell finished');
+  await tick(10);
+
+  const resumed = send({method: 'GET', session, headers: {'last-event-id': priming}});
+  await until(() => resumed.res.ended, 'the replay to end');
+  assert.deepEqual(resumed.res.primings(), [], 'a resume replays responses, not the priming event');
+  const events = resumed.res.events();
+  assert.deepEqual(events.map(e => e.id), [priming.replace(/-0$/, '-1')]);
+  assert.equal(events[0].message.id, 1);
+  assert.match(events[0].message.result.content[0].text, /cell finished/);
+  assert.ok(http.sessions.has(session), 'priming events never count toward the 64-byte buffer');
+});
+
 test('a resumed stream that is still waiting stays open for the rest of its responses', async t => {
   const {send, initialize, upstreamOf} = setup(t);
   const session = await initialize();
@@ -399,6 +435,7 @@ test('notifications/cancelled for a request ends its stream, since the cancelled
   assert.equal(cancel.res.status, 202);
   await until(() => queued.res.ended, 'the cancelled request\'s stream to end');
   assert.deepEqual(queued.res.messages(), []);
+  assert.equal(queued.res.primings().length, 1, 'only its priming event');
   assert.equal(running.res.ended, false);
 });
 

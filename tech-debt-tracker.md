@@ -17,6 +17,10 @@
   `scripts/probe/lib.mjs` drops a process that exits between the `ps` snapshot and its `/proc` read, but the snapshot's
   children still name it as parent, so that subtree drops out of verify's walk for that read; the window is
   milliseconds, and a `<gone>` row would trade it for false failures.
+  (d) `CUA_SHIM_SANDBOX=default` on Linux is unmeasured: if node_repl's own default sandbox also runs through `codex`
+  and bwrap there, it fails open under Ubuntu's userns restriction like `scoped` did, while doctor's `sandbox` row
+  claims node_repl denies every write and connection and the launch refusal covers `scoped` only. A rarely used
+  diagnostic mode; measure it on the VM before extending the refusal to it.
 
 - **2026-10-06 — Phase E relay leftovers (minor, issue #11).** (a) The agent's relay adapter logs one "unknown
   channel" line per later `body` frame after it refuses an oversized body (the shipped relay stops at the same 4 MB

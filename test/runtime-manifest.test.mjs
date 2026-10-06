@@ -144,8 +144,8 @@ test('a Linux runtime record carries its own layout paths, and the IPC check doe
 });
 
 test('CUA_HOME overrides the default home, which is under Application Support', () => {
-  assert.equal(defaultHome({CUA_HOME: '/tmp/x'}), '/tmp/x');
-  assert.match(defaultHome({HOME: '/Users/someone'}), /\/Library\/Application Support\/cua$/);
+  assert.equal(defaultHome({CUA_HOME: '/tmp/x'}, {platform: 'darwin'}), '/tmp/x');
+  assert.match(defaultHome({HOME: '/Users/someone'}, {platform: 'darwin'}), /\/Library\/Application Support\/cua$/);
   assert.equal(defaultHome({HOME: '/Users/someone'}, {platform: 'darwin'}), '/Users/someone/Library/Application Support/cua');
 });
 

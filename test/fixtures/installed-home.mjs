@@ -13,7 +13,9 @@ import {loadPins, selectPin} from '../../src/runtime/manifest.mjs';
 import {REPO, scratch, shortScratch} from './runtime-fixture.mjs';
 
 export const FAKE_UPSTREAM = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
-export const installedHomeSupported = process.platform === 'darwin' && process.arch === 'arm64';
+// A checked-in pin exists for this process's host (darwin-arm64, linux-x64, linux-arm64): the CLI and serve can resolve
+// a forged install here.
+export const installedHomeSupported = (() => { try { selectPin(loadPins()); return true; } catch { return false; } })();
 
 export function fakeInstalledHome(t, {inTmpdir = false, mode, helper, host} = {}) {
   const s = inTmpdir ? scratch() : shortScratch();

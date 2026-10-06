@@ -7,12 +7,20 @@ import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {registerHost, unregisterHost, browsersFor, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
+import {registerHost as registerHostOn, unregisterHost as unregisterHostOn, browsersFor, isOwnHostPath, hostSuffixes} from '../src/chrome/registration.mjs';
 import {resolveRuntime, parsePin} from '../src/runtime/manifest.mjs';
-import {chromeFacts} from '../src/profiles/chrome.mjs';
+import {chromeFacts, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {chromeChecks} from '../src/profiles/checks.mjs';
 import {REPO, scratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures, realPinJson} from './fixtures/runtime-fixture.mjs';
 
+// These tests drive the macOS registration (the darwin pin, its browser table under ~/Library/Application Support),
+// injected so they run the same on a Linux process; test/chrome-linux.test.mjs covers the Linux table.
+const DARWIN = {platform: 'darwin', arch: 'arm64'};
+const darwinBrowsers = userHome => browsersFor({host: DARWIN, userHome});
+const registerHost = options => registerHostOn({browsers: darwinBrowsers(options.userHome), ...options});
+const unregisterHost = options => unregisterHostOn({browsers: darwinBrowsers(options.userHome), ...options});
+// The access fix this OS gives (Full Disk Access on macOS), as a pattern.
+const FIX = PERMISSION_FIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
 const MANIFEST = 'com.openai.codexextension.json';
 // The desktop's manifest exactly as its installManifest writes it (bytes matter for the restore check), naming the
@@ -28,8 +36,8 @@ function machine(t, {chromeManifest} = {}) {
   t.after(s.cleanup);
   const home = join(s.dir, 'cua');
   mkdirSync(home);
-  forgeActiveRuntime(home);
-  const component = forgeChromeComponent(home);
+  forgeActiveRuntime(home, {}, {host: DARWIN});
+  const component = forgeChromeComponent(home, {host: DARWIN});
   const userHome = join(s.dir, 'user');
   const support = join(userHome, 'Library', 'Application Support');
   const chromeDir = join(support, 'Google', 'Chrome', 'NativeMessagingHosts');
@@ -37,7 +45,7 @@ function machine(t, {chromeManifest} = {}) {
   mkdirSync(join(support, 'BraveSoftware', 'Brave-Browser'), {recursive: true});
   const original = chromeManifest === DESKTOP ? desktopBytes(userHome) : chromeManifest;
   if (original !== undefined) writeFileSync(join(chromeDir, MANIFEST), original);
-  const runtime = resolveRuntime({home});
+  const runtime = resolveRuntime({home, host: DARWIN});
   const manifests = {
     chrome: join(chromeDir, MANIFEST),
     brave: join(support, 'BraveSoftware', 'Brave-Browser', 'NativeMessagingHosts', MANIFEST),
@@ -273,7 +281,7 @@ test('register refuses before writing when the host configuration is missing or 
 
   for (const config of [{browserServicePath: '/Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/scripts/browser-service.mjs'}, {codexHome: '/Users/x/.codex'}, {schemaVersion: 2}]) {
     const m = machine(t);
-    forgeChromeComponent(m.home, {config});
+    forgeChromeComponent(m.home, {config, host: DARWIN});
     await assert.rejects(register(m), expectCode('host_config_invalid'), JSON.stringify(config));
     assert.equal(existsSync(m.manifests.chrome), false, JSON.stringify(config));
     assert.equal(existsSync(m.manifests.brave), false, JSON.stringify(config));
@@ -673,15 +681,17 @@ const moduleUrl = rel => JSON.stringify(pathToFileURL(join(REPO, rel)).href);
 // Runs register or unregister in a separate real process on the same homes, returning its outcome.
 function otherProcess(m, command) {
   const script = `
-    import {registerHost, unregisterHost} from ${moduleUrl('src/chrome/registration.mjs')};
+    import {registerHost, unregisterHost, browsersFor} from ${moduleUrl('src/chrome/registration.mjs')};
     import {resolveRuntime} from ${moduleUrl('src/runtime/manifest.mjs')};
     import {acceptSignatures} from ${moduleUrl('test/fixtures/runtime-fixture.mjs')};
     const {CUA_TEST_HOME: home, CUA_TEST_USER_HOME: userHome, CUA_TEST_COMMAND: command} = process.env;
     const lockTiming = {waitMs: 200, pollMs: 10};
+    const host = {platform: 'darwin', arch: 'arm64'};
+    const browsers = browsersFor({host, userHome});
     try {
       const result = command === 'register'
-        ? await registerHost({home, runtime: resolveRuntime({home}), userHome, verifySignatures: acceptSignatures, lockTiming})
-        : unregisterHost({home, userHome, lockTiming});
+        ? await registerHost({home, runtime: resolveRuntime({home, host}), userHome, browsers, verifySignatures: acceptSignatures, lockTiming})
+        : unregisterHost({home, userHome, browsers, lockTiming});
       console.log(JSON.stringify({ok: true, result}));
     } catch (error) { console.log(JSON.stringify({ok: false, code: error.code, message: error.message})); }`;
   const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], {env: {...process.env, CUA_TEST_HOME: m.home, CUA_TEST_USER_HOME: m.userHome, CUA_TEST_COMMAND: command}, encoding: 'utf8', timeout: 30_000});
@@ -808,7 +818,7 @@ const DENIED = ['Google/Chrome', 'Google', 'Google/Chrome/NativeMessagingHosts']
 const unreadableRefusal = command => err => {
   assert.equal(err.code, 'chrome_data_unreadable', err.message);
   assert.match(err.message, /cannot read the native-messaging directory of Google Chrome \(.*NativeMessagingHosts: EACCES\), so whether com\.openai\.codexextension is registered there is unknown\. Nothing was changed\.$/);
-  assert.match(err.hint, new RegExp(`Full Disk Access.*then run \`cua chrome ${command}\` again`));
+  assert.match(err.hint, new RegExp(`${FIX}.*then run \`cua chrome ${command}\` again`));
   return true;
 };
 
@@ -851,7 +861,7 @@ test('doctor\'s chrome.host.registered row says the manifest is unknown, not mis
   for (const relative of DENIED) {
     const check = denied(join(m.support, relative), row);
     assert.equal(check.status, 'blocked', relative);
-    assert.match(check.detail, /whether a native-messaging manifest for com\.openai\.codexextension exists is unknown: this process may not read it .*\(EACCES\); grant Full Disk Access/, relative);
+    assert.match(check.detail, new RegExp(`whether a native-messaging manifest for com\\.openai\\.codexextension exists is unknown: this process may not read it .*\\(EACCES\\); ${FIX}`), relative);
   }
 });
 
@@ -879,7 +889,7 @@ test('a directory that becomes unreadable mid-run: register undoes its earlier w
   const chrome = result.browsers.find(b => b.browser === 'chrome');
   assert.deepEqual([chrome.action, chrome.restoration], ['unknown', 'blocked']);
   assert.match(chrome.reason, /whether cua's registration is still there is unknown \(this process cannot read it: EACCES\)/);
-  assert.match(chrome.userAction, /Full Disk Access.*`cua chrome unregister` again/);
+  assert.match(chrome.userAction, new RegExp(`${FIX}.*\`cua chrome unregister\` again`));
   assert.ok(readFileSync(m.manifests.chrome).equals(ours), 'it was in fact still there');
   assert.equal(result.blocked, true);
 });
@@ -895,7 +905,7 @@ test('a register run stopped by an unreadable directory whose undo also fails ke
     }}), err => {
       assert.equal(err.code, 'registration_partial', err.message);
       assert.match(err.message, /native-messaging directory of Brave .*EACCES.*\(chrome_data_unreadable\)\. cua had already registered chrome in this run, but could not finish chrome/);
-      assert.match(err.hint, /^grant Full Disk Access.*; then run `cua chrome unregister`/);
+      assert.match(err.hint, new RegExp(`^${FIX}; then run \`cua chrome unregister\``));
       return true;
     });
   } finally { chmodSync(braveData, 0o755); chmodSync(nmh, 0o755); }
@@ -913,6 +923,6 @@ test('a restore whose rollback fails in a slot that turned unreadable puts the a
   const chrome = result.browsers.find(b => b.browser === 'chrome');
   assert.deepEqual([chrome.action, chrome.restoration], ['unknown', 'blocked']);
   assert.match(chrome.reason, /putting the manifest that was there back failed \(EACCES\)/);
-  assert.match(chrome.userAction, /^grant Full Disk Access.*; then restore it yourself: mv ".*\.taken" ".*com\.openai\.codexextension\.json"; then run `cua chrome unregister` again$/);
+  assert.match(chrome.userAction, new RegExp(`^${FIX}; then restore it yourself: mv ".*\\.taken" ".*com\\.openai\\.codexextension\\.json"; then run \`cua chrome unregister\` again$`));
   assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original, 'backup kept');
 });

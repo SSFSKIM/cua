@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {loadPins, selectPin} from '../../src/runtime/manifest.mjs';
 
 export const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const REAL_PIN_FILE = join(REPO, 'runtime', 'releases', '26.928.40906-darwin-arm64.json');
@@ -93,11 +94,15 @@ export function fixturePin({release = '0.0.1-darwin-arm64', appVersion = release
 // this accepting double, and one test proves the production checker does reject the fixture.
 export const acceptSignatures = async (root, pin) => pin.signing.components.map(component => ({component, valid: true, detail: 'fixture'}));
 
-// A home whose active release is the checked-in pin, laid out with placeholder files (no vendor code), so the CLI's
-// real pin resolution finds it. Signatures are never checked on this path (resolveRuntime checks structure only).
-// `files` maps layout keys to file contents; executables start with "#!".
-export function forgeActiveRuntime(home, files = {}) {
-  const pin = realPinJson();
+// The checked-in pin for `host` ({platform, arch}; this process's by default), so a forged home is the one the CLI's
+// own pin resolution expects on whatever host runs the suite. Tests of the macOS layout pass the darwin host.
+const pinFor = host => selectPin(loadPins(), host ?? {platform: process.platform, arch: process.arch});
+
+// A home whose active release is the checked-in pin of `host`, laid out with placeholder files (no vendor code), so
+// the CLI's real pin resolution finds it. Signatures are never checked on this path (resolveRuntime checks structure
+// only). `files` maps layout keys to file contents; executables start with "#!".
+export function forgeActiveRuntime(home, files = {}, {host} = {}) {
+  const pin = pinFor(host);
   const root = join(home, 'runtimes', pin.release);
   const dirs = new Set(['moduleDir', 'skyServiceApp']);
   for (const [key, rel] of Object.entries(pin.layout)) {
@@ -131,14 +136,14 @@ exit ${exit}
 
 // The Chrome plugin component of a forged active runtime (forgeActiveRuntime), with its record and the host
 // configuration install would write; `config` replaces fields of that configuration. Nothing here is vendor code.
-export function forgeChromeComponent(home, {config = {}} = {}) {
-  const pin = realPinJson();
+export function forgeChromeComponent(home, {config = {}, host: target} = {}) {
+  const pin = pinFor(target);
   const real = realpathSync(home);
   const releaseRoot = join(real, 'runtimes', pin.release);
   const root = join(releaseRoot, pin.chromePlugin.dir);
   for (const rel of Object.values(pin.chromePlugin.layout)) {
     mkdirSync(dirname(join(root, rel)), {recursive: true});
-    writeFileSync(join(root, rel), rel.endsWith('ChatGPT for Chrome') ? '#!/bin/sh\necho fixture host, never run\n' : 'export {};\n');
+    writeFileSync(join(root, rel), rel === pin.chromePlugin.layout.host ? '#!/bin/sh\necho fixture host, never run\n' : 'export {};\n');
   }
   const host = join(root, pin.chromePlugin.layout.host);
   chmodSync(host, 0o755);

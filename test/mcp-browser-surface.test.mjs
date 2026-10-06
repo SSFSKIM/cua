@@ -9,6 +9,7 @@ import {settingsFrom} from '../src/mcp/server.mjs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
+import {ACCESS_NOTE} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile} from '../src/profiles/registry.mjs';
 import {profileReadiness} from '../src/profiles/commands.mjs';
 
@@ -31,7 +32,7 @@ test('by default the surface is unchanged: four tools, the native host notes, no
   const tools = await toolsOf(h);
   assert.deepEqual(tools.map(t => t.name), ['js', 'js_reset', 'end_task', 'secrets_list']);
   assert.equal(tools.find(t => t.name === 'secrets_list').description, SECRETS_LIST_TOOL.description);
-  assert.equal(hostNotesFor(['computer']), DEFAULT_HOST_NOTES);
+  assert.equal(hostNotesFor(['computer'], {platform: 'darwin'}), DEFAULT_HOST_NOTES);
   const call = await h.client.call('profiles_list').response;
   assert.equal(call.error.code, -32602);
 });
@@ -189,7 +190,8 @@ test('profiles_list with unreadable Chrome data: a bound live profile is ready, 
     {key: 'work', ready: false, reason: 'chrome_data_unreadable'},
   ]});
   const text = response.result.content[0].text;
-  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*Full Disk Access.*not confirmed live/);
+  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*not confirmed live/);
+  assert.ok(text.includes(ACCESS_NOTE), 'the OS\'s access fix is named');
   assert.match(text, /work is not ready \(chrome_data_unreadable\): .*not bound yet/);
   assert.match(text, /Tell the user/);
   assert.ok(!/EPERM|Default|Profile 8/.test(JSON.stringify(structured(response))), 'no error codes or directory names in the model-visible list');

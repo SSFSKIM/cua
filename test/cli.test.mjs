@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {writeFileSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
+import {installedHomeSupported} from './fixtures/installed-home.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
@@ -12,7 +13,7 @@ function cua(args, home) {
   return spawnSync(process.execPath, [CLI, ...args], {env, encoding: 'utf8', timeout: 60_000});
 }
 
-test('doctor --json on an empty home exits nonzero with structured checks and install guidance', {skip: process.platform !== 'darwin' || process.arch !== 'arm64'}, () => {
+test('doctor --json on an empty home exits nonzero with structured checks and install guidance', {skip: !installedHomeSupported}, () => {
   const s = scratch();
   try {
     const r = cua(['doctor', '--json'], s.dir);
@@ -22,11 +23,11 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
     const installed = report.checks.find(c => c.name === 'runtime.installed');
     assert.equal(installed.status, 'fail');
     assert.match(installed.detail, /cua install/);
-    for (const c of report.checks) assert.ok(['pass', 'fail', 'blocked'].includes(c.status), c.name);
+    for (const c of report.checks) assert.ok(['pass', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
   } finally { s.cleanup(); }
 });
 
-test('install --archive with a file that is not the pinned archive fails classified and activates nothing', {skip: process.platform !== 'darwin' || process.arch !== 'arm64'}, () => {
+test('install --archive with a file that is not the pinned archive fails classified and activates nothing', {skip: !installedHomeSupported}, () => {
   const s = scratch();
   try {
     const archive = join(s.dir, 'not-the-pin.zip');

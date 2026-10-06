@@ -6,10 +6,12 @@ import {spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync, chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {loginInvocation, runLogin, loginStatus, LOGIN_STATES} from '../src/runtime/login.mjs';
+import {installedHomeSupported} from './fixtures/installed-home.mjs';
 import {REPO, scratch, forgeActiveRuntime, fakeCodexScript, FAKE_CODEX_SENTINEL} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
-const darwinArm = process.platform === 'darwin' && process.arch === 'arm64';
+// The CLI routes need a checked-in pin for this host (they forge it: forgeActiveRuntime).
+const hostPinned = installedHomeSupported;
 
 function fakeRuntime(dir, options) {
   const codexCli = join(dir, 'codex');
@@ -129,7 +131,7 @@ test('cua login accepts only --device-auth or --status; anything else is a usage
   assert.equal(fakeLog(join(home, 'state', 'codex')), null);
 });
 
-test('cua login without a terminal refuses clearly and runs nothing', {skip: !darwinArm}, t => {
+test('cua login without a terminal refuses clearly and runs nothing', {skip: !hostPinned}, t => {
   const s = scratch();
   t.after(s.cleanup);
   const home = join(s.dir, 'home');
@@ -141,7 +143,7 @@ test('cua login without a terminal refuses clearly and runs nothing', {skip: !da
   assert.equal(existsSync(join(home, 'state', 'codex', 'fake-codex.log')), false);
 });
 
-test('cua login --status prints a value-free result and maps the exit code', {skip: !darwinArm}, t => {
+test('cua login --status prints a value-free result and maps the exit code', {skip: !hostPinned}, t => {
   const s = scratch();
   t.after(s.cleanup);
   for (const [exit, status, message] of [[0, 0, /has a Codex login/], [1, 1, /no Codex login.*cua login/]]) {
@@ -155,7 +157,7 @@ test('cua login --status prints a value-free result and maps the exit code', {sk
   }
 });
 
-test('cua login with no installed runtime gives the existing install guidance', {skip: !darwinArm}, t => {
+test('cua login with no installed runtime gives the existing install guidance', {skip: !hostPinned}, t => {
   const s = scratch();
   t.after(s.cleanup);
   const r = cua(['login', '--status'], join(s.dir, 'empty'));

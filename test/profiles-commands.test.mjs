@@ -8,18 +8,21 @@ import {spawnSync} from 'node:child_process';
 import {chmodSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
-import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile, readRegistry, reasonText, removeProfile} from '../src/profiles/registry.mjs';
-import {bindCommand, openCommand, profileReadiness} from '../src/profiles/commands.mjs';
+import {bindCommand, openCommand, openInvocation, profileReadiness} from '../src/profiles/commands.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 import {mapExtensionDirectories} from '../src/profiles/directory-map.mjs';
+
+const DARWIN = {platform: 'darwin', arch: 'arm64'};
 
 function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work'}, 'Profile 6': {name: 'School'}}) {
   const s = scratch();
   t.after(s.cleanup);
   const userHome = join(s.dir, 'user');
-  const userData = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
+  // Where the CLI (this host's chromeUserData, run with HOME=userHome and no XDG overrides) looks for Chrome.
+  const userData = chromeUserData({userHome, env: {}});
   const infoCache = {};
   for (const [dir, {name, extension}] of Object.entries(profiles)) {
     mkdirSync(join(userData, dir), {recursive: true});
@@ -295,7 +298,7 @@ test('profiles open runs open -n -a "Google Chrome" for the registered directory
   const {runs, run} = opener();
   const live = listings([], [{instanceId: 'inst-w'}]);
   const timer = waits();
-  const result = await openCommand({home, key: 'work', chrome, run, listBackends: live.listBackends, wait: timer.wait, now: timer.now});
+  const result = await openCommand({host: DARWIN, home, key: 'work', chrome, run, listBackends: live.listBackends, wait: timer.wait, now: timer.now});
   assert.deepEqual(runs, [['open', '-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8']], 'one argument, no shell: the space stays inside it');
   assert.deepEqual(result, {ok: true, key: 'work', directory: 'Profile 8', opened: true, command: runs[0],
     readiness: {ready: true, extensionInstanceId: 'inst-w', boundAt: '2026-10-06T00:00:00.000Z', checks: 2}});
@@ -310,7 +313,7 @@ test('profiles open checks at most three times (5, 10, 20 s) and reports the las
   for (const [backends, reason] of [[[], 'host_not_live'], [[{instanceId: 'inst-new'}], 'binding_stale']]) {
     const live = listings(backends);
     const timer = waits();
-    const result = await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: live.listBackends, wait: timer.wait, now: timer.now});
+    const result = await openCommand({host: DARWIN, home, key: 'personal', chrome, run: opener().run, listBackends: live.listBackends, wait: timer.wait, now: timer.now});
     assert.deepEqual({ok: result.ok, ready: result.readiness.ready, reason: result.readiness.reason, checks: result.readiness.checks}, {ok: false, ready: false, reason, checks: 3});
     assert.deepEqual(timer.at, [5_000, 5_000, 10_000]);
     assert.equal(live.calls(), 3, 'one bounded launch per check, three at most');
@@ -320,7 +323,7 @@ test('profiles open checks at most three times (5, 10, 20 s) and reports the las
   const timer = waits();
   const started = [];
   const slow = async () => { started.push(timer.now()); timer.advance(7_000); return listing([])(); };
-  await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: slow, wait: timer.wait, now: timer.now});
+  await openCommand({host: DARWIN, home, key: 'personal', chrome, run: opener().run, listBackends: slow, wait: timer.wait, now: timer.now});
   assert.deepEqual(started, [5_000, 12_000, 20_000]);
   assert.deepEqual(timer.at, [5_000, 1_000]);
 });
@@ -334,7 +337,7 @@ test('profiles open never reports the readiness of a registration that replaced 
     addProfile({home, key: 'work', directory: 'Default', chrome});
     bindProfile({home, key: 'work', extensionInstanceId: 'inst-d'});
   };
-  await assert.rejects(openCommand({home, key: 'work', chrome, run: opener().run, listBackends: listing([{instanceId: 'inst-d'}]), wait: swap}),
+  await assert.rejects(openCommand({host: DARWIN, home, key: 'work', chrome, run: opener().run, listBackends: listing([{instanceId: 'inst-d'}]), wait: swap}),
     e => e.code === 'profile_changed' && /"Profile 8" was opened/.test(e.message));
 });
 
@@ -342,11 +345,11 @@ test('profiles open stops after one check when a window cannot change the answer
   const {home, chrome} = setup(t);
   addProfile({home, key: 'personal', directory: 'Default', chrome});
   const unbound = listings([]);
-  const first = await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: unbound.listBackends, wait: waits().wait});
+  const first = await openCommand({host: DARWIN, home, key: 'personal', chrome, run: opener().run, listBackends: unbound.listBackends, wait: waits().wait});
   assert.deepEqual(first.readiness, {ready: false, reason: 'not_bound', checks: 1});
   assert.equal(unbound.calls(), 0, 'nothing is bound, so nothing is launched');
   bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a'});
-  const failed = await openCommand({home, key: 'personal', chrome, run: opener().run, wait: waits().wait,
+  const failed = await openCommand({host: DARWIN, home, key: 'personal', chrome, run: opener().run, wait: waits().wait,
     listBackends: failing(Object.assign(new Error('no runtime is installed'), {code: 'runtime_not_installed'}))});
   assert.deepEqual(failed.readiness, {ready: false, reason: 'backends_unlistable', extensionInstanceId: 'inst-a', boundAt: failed.readiness.boundAt, checks: 1,
     listingError: 'runtime_not_installed', listingMessage: 'no runtime is installed'});
@@ -357,23 +360,31 @@ test('profiles open refuses an unknown key and a vanished directory without open
   const {home, chrome} = setup(t);
   const {runs, run} = opener();
   const never = async () => assert.fail('no readiness check for a refusal');
-  await assert.rejects(openCommand({home, key: 'nope', chrome, run, listBackends: never, wait: never}), e => e.code === 'unknown_profile');
+  await assert.rejects(openCommand({host: DARWIN, home, key: 'nope', chrome, run, listBackends: never, wait: never}), e => e.code === 'unknown_profile');
   addProfile({home, key: 'school', directory: 'Profile 6', chrome});
   const gone = fakeChromeFacts({});
-  await assert.rejects(openCommand({home, key: 'school', chrome: gone, run, listBackends: never, wait: never}),
+  await assert.rejects(openCommand({host: DARWIN, home, key: 'school', chrome: gone, run, listBackends: never, wait: never}),
     e => e.code === 'profile_not_ready' && /directory no longer exists/.test(e.message));
   assert.deepEqual(runs, []);
   // A directory this process may not read is not refused: opening it does not need that access.
   const unreadable = fakeChromeFacts({'Profile 6': {directory: 'unreadable'}});
-  assert.equal((await openCommand({home, key: 'school', chrome: unreadable, run, listBackends: never, wait: waits().wait})).opened, true);
-  await assert.rejects(openCommand({home, key: 'school', chrome, run: opener({code: 1, stderr: 'Unable to find application named \'Google Chrome\'\n'}).run, listBackends: never, wait: never}),
+  assert.equal((await openCommand({host: DARWIN, home, key: 'school', chrome: unreadable, run, listBackends: never, wait: waits().wait})).opened, true);
+  await assert.rejects(openCommand({host: DARWIN, home, key: 'school', chrome, run: opener({code: 1, stderr: 'Unable to find application named \'Google Chrome\'\n'}).run, listBackends: never, wait: never}),
     e => e.code === 'chrome_open_failed' && /exited 1 opening Chrome profile "Profile 6": Unable to find application/.test(e.message));
 });
 
 // ---- the CLI routes ----------------------------------------------------------------------------------------------
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
-const cua = (args, {home, userHome}) => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: userHome}, encoding: 'utf8', timeout: 30_000});
+// The CLI with the scratch homes; XDG_CONFIG_HOME and CHROME_CONFIG_HOME are dropped so that on Linux it, like setup,
+// looks under $HOME/.config and never in the caller's own configuration.
+const scratchEnv = ({home, userHome}, extra = {}) => {
+  const env = {...process.env, CUA_HOME: home, HOME: userHome, ...extra};
+  delete env.XDG_CONFIG_HOME;
+  delete env.CHROME_CONFIG_HOME;
+  return env;
+};
+const cua = (args, {home, userHome}) => spawnSync(process.execPath, [CLI, ...args], {env: scratchEnv({home, userHome}), encoding: 'utf8', timeout: 30_000});
 
 test('cua profiles add/list/remove against the user\'s Chrome directory, with readiness reasons', t => {
   const env = setup(t);
@@ -472,7 +483,8 @@ test('cua profiles add and list name an unreadable Chrome data directory, never 
   try {
     const add = cua(['profiles', 'add', 'personal', '--chrome-profile', 'Default'], env);
     assert.equal(add.status, 0, add.stderr);
-    assert.match(add.stdout, /cannot read Chrome's data directory \(EACCES\).*registered anyway \(next: cua profiles bind personal.*Full Disk Access/);
+    assert.ok(add.stdout.includes(PERMISSION_FIX), add.stdout);
+    assert.match(add.stdout, /cannot read Chrome's data directory \(EACCES\).*registered anyway \(next: cua profiles bind personal/);
     const list = JSON.parse(cua(['profiles', 'list', '--json'], env).stdout);
     assert.deepEqual(list.profiles.map(p => [p.key, p.ready, p.reason, p.chromeDataError]), [['personal', false, 'chrome_data_unreadable', 'EACCES']]);
     const human = cua(['profiles', 'list'], env);
@@ -539,33 +551,36 @@ test('an unreadable Local State leaves the candidates unplaced and the name rule
   assert.deepEqual({ok: failing.ok, by: failing.by, map: failing.directoryMap}, {ok: true, by: 'name', map: {status: 'unavailable', reason: 'error'}});
 });
 
-// The real runner through a stand-in `open` that only records its arguments: PATH holds nothing else, so no real
-// window can open. No runtime is installed, so the one check after 5 s reports why the backends could not be listed.
+// The real runner through a stand-in for this host's opener (`open` on macOS, `google-chrome` on Linux) that only
+// records its arguments: PATH holds nothing else, so no real window can open. No runtime is installed, so the one check
+// after 5 s reports why the backends could not be listed.
 test('cua profiles open prints the command it ran and the readiness line; --json mirrors it; an unknown key is refused', t => {
   const env = setup(t, {'Profile 8': {name: 'Work', extension: true}});
   assert.equal(cua(['profiles', 'add', 'work', '--chrome-profile', 'Profile 8'], env).status, 0);
   bindProfile({home: env.home, key: 'work', extensionInstanceId: 'inst-w'});
+  const {command, args} = openInvocation('Profile 8');
+  const shown = [command, ...args].map(word => /^[A-Za-z0-9_./=:-]+$/.test(word) ? word : `'${word}'`).join(' ');
   const bin = join(env.userHome, 'bin');
   mkdirSync(bin);
   const log = join(env.userHome, 'open.log');
-  writeFileSync(join(bin, 'open'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`);
-  chmodSync(join(bin, 'open'), 0o755);
-  const run = args => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: env.home, HOME: env.userHome, PATH: bin}, encoding: 'utf8', timeout: 30_000});
+  writeFileSync(join(bin, command), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${log}'\n`);
+  chmodSync(join(bin, command), 0o755);
+  const run = argv => spawnSync(process.execPath, [CLI, ...argv], {env: scratchEnv(env, {PATH: bin}), encoding: 'utf8', timeout: 30_000});
   const human = run(['profiles', 'open', 'work']);
   assert.equal(human.status, 1, human.stderr);
-  assert.match(human.stdout, /^ran: open -n -a 'Google Chrome' --args '--profile-directory=Profile 8'$/m);
+  assert.ok(human.stdout.split('\n').includes(`ran: ${shown}`), human.stdout);
   assert.match(human.stdout, /^work\s+not ready\s+Profile 8\s+the live OpenAI extension backends could not be listed/m);
   assert.match(human.stderr, /checking its readiness 5 s after opening \(1 of at most 3/);
   assert.match(human.stderr, /could not be listed \(runtime_not_installed: /);
-  assert.deepEqual(readFileSync(log, 'utf8').split('\n').slice(0, 5), ['-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8']);
+  assert.deepEqual(readFileSync(log, 'utf8').split('\n').slice(0, args.length), args);
   const json = run(['profiles', 'open', 'work', '--json']);
   assert.equal(json.status, 1, json.stderr);
   const result = JSON.parse(json.stdout);
   assert.deepEqual({...result, readiness: {...result.readiness, boundAt: undefined, listingMessage: undefined}}, {ok: false, key: 'work', directory: 'Profile 8', opened: true,
-    command: ['open', '-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8'],
+    command: [command, ...args],
     readiness: {ready: false, reason: 'backends_unlistable', extensionInstanceId: 'inst-w', boundAt: undefined, checks: 1, listingError: 'runtime_not_installed', listingMessage: undefined}});
   const unknown = run(['profiles', 'open', 'nope', '--json']);
   assert.equal(unknown.status, 1);
   assert.equal(JSON.parse(unknown.stdout).error.code, 'unknown_profile');
-  assert.equal(readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 10, 'two opens, none for the unknown key');
+  assert.equal(readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 2 * args.length, 'two opens, none for the unknown key');
 });

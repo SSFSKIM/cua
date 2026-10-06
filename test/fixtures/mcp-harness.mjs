@@ -81,6 +81,8 @@ export function harness(options = {}) {
     completionDeadlineMs: 150,
     teardownBudgetMs: 150,
     diagnostics: line => diagnostics.push(line),
+    // The macOS surface (host notes, search hints) unless a test names another platform: the same on any host.
+    platform: 'darwin',
     ...options.server,
   });
   const frames = watchList();

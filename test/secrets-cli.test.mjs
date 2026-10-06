@@ -9,6 +9,8 @@ import {runSecrets} from '../src/secrets/commands.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
+// The macOS secrets backend these routes drive through test doubles, on any host.
+const DARWIN = {platform: 'darwin', arch: 'arm64'};
 
 test('anything but a single valid label is refused as usage, never echoing what was passed', () => {
   const s = scratch();
@@ -46,44 +48,45 @@ function doubles({built = true, captured = {code: 0, stdout: '{"labels":["a","b"
 
 test('set and remove hand the terminal to the helper with only the label (and --yes)', async () => {
   const d = doubles();
-  assert.equal(await runSecrets({command: 'set', label: 'work-password'}, d.deps), 0);
-  assert.equal(await runSecrets({command: 'remove', label: 'work-password'}, d.deps), 0);
-  assert.equal(await runSecrets({command: 'remove', label: 'work-password', yes: true}, d.deps), 0);
+  assert.equal(await runSecrets({host: DARWIN, command: 'set', label: 'work-password'}, d.deps), 0);
+  assert.equal(await runSecrets({host: DARWIN, command: 'remove', label: 'work-password'}, d.deps), 0);
+  assert.equal(await runSecrets({host: DARWIN, command: 'remove', label: 'work-password', yes: true}, d.deps), 0);
   assert.deepEqual(d.calls, [
     {kind: 'interactive', path: '/built/cua-keychain', args: ['set', 'work-password']},
     {kind: 'interactive', path: '/built/cua-keychain', args: ['remove', 'work-password']},
     {kind: 'interactive', path: '/built/cua-keychain', args: ['remove', 'work-password', '--yes']},
   ]);
   const failing = doubles({interactiveCode: 1});
-  assert.equal(await runSecrets({command: 'set', label: 'k'}, failing.deps), 1);
+  assert.equal(await runSecrets({host: DARWIN, command: 'set', label: 'k'}, failing.deps), 1);
 });
 
 test('list prints labels, or JSON with --json', async () => {
   const d = doubles();
-  assert.equal(await runSecrets({command: 'list'}, d.deps), 0);
+  assert.equal(await runSecrets({host: DARWIN, command: 'list'}, d.deps), 0);
   assert.deepEqual(d.printed, ['a\nb']);
   const j = doubles();
-  assert.equal(await runSecrets({command: 'list', json: true}, j.deps), 0);
+  assert.equal(await runSecrets({host: DARWIN, command: 'list', json: true}, j.deps), 0);
   assert.deepEqual(j.printed, [{ok: true, labels: ['a', 'b']}]);
   assert.deepEqual(j.calls, [{kind: 'captured', path: '/built/cua-keychain', args: ['list']}]);
 });
 
 test('a failed listing becomes a classified error carrying the helper\'s code; malformed output is a helper failure', async () => {
   const locked = doubles({captured: {code: 1, stdout: '', stderr: 'cua-keychain: the Keychain is locked [locked]\n'}});
-  await assert.rejects(runSecrets({command: 'list'}, locked.deps), {code: 'locked', message: 'the Keychain is locked'});
+  await assert.rejects(runSecrets({host: DARWIN, command: 'list'}, locked.deps), {code: 'locked', message: 'the Keychain is locked'});
   const garbled = doubles({captured: {code: 0, stdout: 'not json', stderr: ''}});
-  await assert.rejects(runSecrets({command: 'list'}, garbled.deps), {code: 'helper_failed'});
+  await assert.rejects(runSecrets({host: DARWIN, command: 'list'}, garbled.deps), {code: 'helper_failed'});
 });
 
 test('without a built helper every route fails with build guidance and nothing runs', async () => {
-  for (const request of [{command: 'set', label: 'k'}, {command: 'list'}, {command: 'remove', label: 'k'}]) {
+  for (const request of [{host: DARWIN, command: 'set', label: 'k'}, {host: DARWIN, command: 'list'}, {host: DARWIN, command: 'remove', label: 'k'}]) {
     const d = doubles({built: false});
     await assert.rejects(runSecrets(request, d.deps), error => error.code === 'helper_not_built' && /npm run build:helper/.test(error.hint));
     assert.deepEqual(d.calls, []);
   }
 });
 
-test('the CLI runs the helper installed in $CUA_HOME/bin, so a copy of cua without its own build finds it', () => {
+// The real CLI routes to the Keychain helper only on macOS (elsewhere it refuses: test/linux-secrets.test.mjs).
+test('the CLI runs the helper installed in $CUA_HOME/bin, so a copy of cua without its own build finds it', {skip: process.platform !== 'darwin' && 'the Keychain helper route is macOS only'}, () => {
   const s = scratch();
   try {
     mkdirSync(join(s.dir, 'bin'));

@@ -8,6 +8,9 @@ import {join} from 'node:path';
 import net from 'node:net';
 import {rmSync} from 'node:fs';
 import {startBroker, endpointFor, openSecrets} from '../src/secrets/broker.mjs';
+
+// The Keychain helper's broker is the macOS secrets backend; these drive it through a fake helper, on any host.
+const DARWIN = {platform: 'darwin', arch: 'arm64'};
 import {CuaError} from '../src/runtime/errors.mjs';
 import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
 
@@ -121,13 +124,13 @@ test('openSecrets reports why secrets are unavailable instead of failing the con
   const diagnostics = [];
   const note = line => diagnostics.push(line);
 
-  const off = await openSecrets({enabled: false, home, sessionId: session, diagnostics: note});
+  const off = await openSecrets({host: DARWIN, enabled: false, home, sessionId: session, diagnostics: note});
   assert.deepEqual(off.unavailable.code, 'secrets_disabled');
-  const unbuilt = await openSecrets({enabled: true, helper: {built: false, path: '/nowhere/cua-keychain'}, home, sessionId: session, diagnostics: note});
+  const unbuilt = await openSecrets({host: DARWIN, enabled: true, helper: {built: false, path: '/nowhere/cua-keychain'}, home, sessionId: session, diagnostics: note});
   assert.equal(unbuilt.unavailable.code, 'helper_not_built');
   assert.match(unbuilt.unavailable.message, /npm run build:helper/);
   const f = setup(t, 'refuse');
-  const refused = await openSecrets({enabled: true, helper: {built: true, ...f.helper}, home, sessionId: session, diagnostics: note});
+  const refused = await openSecrets({host: DARWIN, enabled: true, helper: {built: true, ...f.helper}, home, sessionId: session, diagnostics: note});
   assert.equal(refused.unavailable.code, 'broker_failed');
   assert.ok(diagnostics.some(line => /secrets are unavailable on this connection/.test(line)));
   for (const unavailable of [off, unbuilt, refused]) {
@@ -136,7 +139,7 @@ test('openSecrets reports why secrets are unavailable instead of failing the con
   }
 
   const g = setup(t, 'serve', {k: 'v'});
-  const open = await openSecrets({enabled: true, helper: {built: true, ...g.helper}, home, sessionId: session, diagnostics: note});
+  const open = await openSecrets({host: DARWIN, enabled: true, helper: {built: true, ...g.helper}, home, sessionId: session, diagnostics: note});
   assert.equal(open.broker.endpoint, join(home, 'run', `${session}.sock`));
   assert.deepEqual(await open.list(), ['k']);
   assert.equal((await open.close()).confirmed, true);

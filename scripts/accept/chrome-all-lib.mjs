@@ -7,7 +7,7 @@ import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {profileView} from '../../src/mcp/surface.mjs';
-import {hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
+import {chromeUserData, hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
 import {awaitsLiveEvidence, REASONS} from '../../src/profiles/registry.mjs';
 import {browsersFor, isOwnHostPath} from '../../src/chrome/registration.mjs';
 import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
@@ -310,7 +310,8 @@ export const SCRATCH_PROFILES = [
   {key: 'school', directory: 'Profile 6', extension: 'absent'},
 ];
 export function writeScratchChrome(userHome) {
-  const userData = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
+  // Where the CLI run with HOME=userHome (and no XDG overrides) looks for this host's Chrome.
+  const userData = chromeUserData({userHome, env: {}});
   const infoCache = {};
   for (const {key, directory, extension} of SCRATCH_PROFILES) {
     mkdirSync(join(userData, directory), {recursive: true});

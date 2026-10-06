@@ -43,6 +43,9 @@ export const permissionFix = platform => platform === 'darwin'
   ? 'grant Full Disk Access to your terminal (System Settings → Privacy & Security → Full Disk Access), or run from a process that has it'
   : 'make the browser\'s data directory readable by the user cua runs as (check its owner and mode), or run cua as the user whose browser it is';
 export const PERMISSION_FIX = permissionFix(process.platform);
+// The same fix as the short parenthetical the readiness and pick reasons carry (profiles/registry.mjs, bind.mjs).
+export const ACCESS_NOTE = process.platform === 'darwin' ? 'macOS Privacy & Security → Full Disk Access for your terminal'
+  : 'file permissions: the user cua runs as must be able to read it';
 export const PERMISSION_HINT = `${PERMISSION_FIX}; the live check still works without it`;
 const CHROME_EXECUTABLE = /\/Google Chrome\.app\/Contents\/MacOS\/Google Chrome$/;
 

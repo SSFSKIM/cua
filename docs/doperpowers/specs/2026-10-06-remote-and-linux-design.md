@@ -229,7 +229,8 @@ export async function openConnection({home, env, sessionId, input, output, setti
 In `src/mcp/http.mjs` (E1), the handler over an abstract request so E3 can drive it from a WebSocket frame as well as `node:http`:
 
 ```js
-export function createMcpHttp({home, env, clientCredential, allowedOrigins = [], maxSessions = 1, idleMs = 15 * 60_000,
+export function createMcpHttp({home, env, clientCredential /* string, or a function read at each request */, allowedOrigins = [],
+  maxSessions = 1, idleMs = 15 * 60_000, abandonedMs = 60_000, streamGraceMs = 90_000, keepaliveMs = 20_000,
   bufferLimit = 16 * 1024 * 1024, console = () => ({onConsole: true, locked: false}), diagnostics})   // E2 wires checkConsole
   // → {handle(req, res), sessions: Map<sessionId, Session>, close(reason): Promise<void>}
   // req: {method, url, headers, body: AsyncIterable<Buffer>, signal: AbortSignal}
@@ -240,7 +241,7 @@ export function createMcpHttp({home, env, clientCredential, allowedOrigins = [],
 
 In `src/remote/device.mjs` (E1): `enrollDevice({home, relayUrl, rotate}) → {deviceId, clientCredential, devicesEntry, relayUrl}`, `readDevice(home) → record | null`, `credentialsOf(record) → {deviceCredential, clientCredential}`, `credentialMatches(expected, presented) → boolean` (constant-time), `devicesEntry(record) → string`.
 
-In `src/remote/agent.mjs`: `runAgent({home, env, http: 'host:port' | null, relay: boolean, diagnostics}) → Promise<exitCode>` (E1 with `relay: false`; E3 adds the relay path), taking the agent lock first; `connectRelay({url, deviceCredential, deviceId, handle, diagnostics}) → {close()}` (E3) with the frame grammar above. In `src/remote/launchd.mjs` (E2): `installAgent({home, env, http, surfaces})`, `uninstallAgent`, `agentStatus`, and `readPlist(text)` (cua's own parser for the fixed shape it writes; no `plutil`). In `src/remote/console.mjs` (E2): `checkConsole() → {onConsole, locked}`.
+In `src/remote/agent.mjs`: `runAgent({home, env, http: 'host:port' | null, relay: boolean, diagnostics}) → Promise<exitCode>` (E1 with `relay: false`; E3 adds the relay path), taking the agent lock first; `connectRelay({target, handle, diagnostics}) → Promise<{stopped, refresh(), close()}>` (in `src/remote/relay-link.mjs`, re-exported; `target()` returns `{url, deviceId, deviceCredential}` from the current `device.json` and is read at every dial and every relay ping, built at the branch review; first built as `{url, deviceCredential, deviceId, …}`) (E3) with the frame grammar above. In `src/remote/launchd.mjs` (E2): `installAgent({home, env, http, surfaces})`, `uninstallAgent`, `agentStatus`, and `readPlist(text)` (cua's own parser for the fixed shape it writes; no `plutil`). In `src/remote/console.mjs` (E2): `checkConsole() → {onConsole, locked}`.
 
 `relay/`: `relay/server.mjs` (`startRelay({port, devicesFile}) → {close()}`; argv `--port <n> --devices <file>`), `relay/package.json` (`"start": "node server.mjs"`), `relay/package-lock.json`, `relay/README.md` (one page: run it behind a TLS proxy, the proxy requirements above, how to add a device line, the 503/4001/4003 meanings).
 

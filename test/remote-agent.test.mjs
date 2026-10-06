@@ -139,7 +139,7 @@ test('agent run --http serves sessions over HTTP; two sessions (cap 2) have thei
     assert.equal(js.status, 200);
     assert.equal(js.headers.get('content-type'), 'text/event-stream');
     const body = await js.text();
-    assert.match(body, /^id: \d+-0\ndata: \n\n/, 'the stream opens with its priming event');
+    assert.match(body, /^retry: 15000\nid: \d+-0\ndata: \n\n/, 'the stream opens with its priming event');
     const [reply] = sseMessages(body);
     assert.equal(JSON.parse(reply.result.content[0].text).turn.session_id, session, 'Mcp-Session-Id is the connection\'s session id');
   }

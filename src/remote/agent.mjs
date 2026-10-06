@@ -150,6 +150,8 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     try { address = await listen(server, host, port); } catch (error) {
       fail('http_listen_failed', `could not listen on ${http} (${error.code ?? error.message})`, {cause: error});
     }
+    // A failure accepting a connection (EMFILE and the like) is reported; the sessions already open keep running.
+    server.on('error', error => diagnostics(`the listener reported an error (${error.code ?? error.message}); still listening`));
     const shown = address.family === 'IPv6' ? `[${address.address}]` : address.address;
     diagnostics(`listening on http://${shown}:${address.port}/mcp (device ${device.deviceId}; at most ${limits.maxSessions} session${limits.maxSessions === 1 ? '' : 's'}, idle after ${limits.idleMs / 60_000} min)`);
 

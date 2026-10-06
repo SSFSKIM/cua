@@ -88,8 +88,8 @@ const COMPUTER_NOTES = [
 // kernel, losing the tab handle.
 const BROWSER_NOTES = [
   '- Chrome: give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user: ask.',
-  '- Chrome tabs are DOM-only: act through tab.playwright locators, not native typeText/click.',
-  '- Browser locator actions, waits and playwright.evaluate stop at 3 s whatever timeoutMs or the js timeout_ms say (timeoutMs can only shorten it); to wait longer, loop short waits in the cell up to your own deadline and give the js call a timeout_ms above it.',
+  '- Chrome tabs are DOM-only: act through tab.playwright locators, not native typeText/click. Press keys on a focusable element, never a frame body; tab.cua.type pastes, sending no keys.',
+  '- Browser locator actions, waits and evaluate stop at 3 s (timeoutMs can only shorten it); to wait longer, loop short waits to your own deadline under a larger js timeout_ms.',
   '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
   '- createBrowserTab can take over 30 s: give that js call timeout_ms of at least 60000. After a timeout a tab may still have opened: tell the user; do not retry.',
 ];

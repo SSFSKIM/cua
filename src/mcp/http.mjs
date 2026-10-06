@@ -34,12 +34,20 @@
 // session is Idle when it is not busy in that sense and has no task open (no js work since its last end_task), at any
 // age.
 //
-// `open` is the connection opener, a seam for tests; `console` is the console state E2 wires into the js refusal.
+// The console: js and js_reset drive the Mac's screen, which a locked session or one not on the console cannot, so each
+// such call reads `console()` ({onConsole, locked}, possibly a promise; the agent passes src/remote/console.mjs) and,
+// unless the session is on the console and unlocked, is answered with the tool error `console_locked` instead of
+// reaching the runtime. A console that cannot be read lets the call through (logged): the check names a known state,
+// it never blocks on its own failure. Messages reach a session's connection in the order their POSTs arrived, also
+// when one waits for this check.
+//
+// `open` is the connection opener, a seam for tests.
 import {randomUUID} from 'node:crypto';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {openConnection} from './connection.mjs';
 import {credentialMatches} from '../remote/device.mjs';
+import {WORK_TOOLS, statusResult} from './surface.mjs';
 
 // MCP-Protocol-Version values accepted on any request; a session also accepts the version its runtime negotiated.
 const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18', '2025-11-25']);
@@ -49,6 +57,9 @@ const idKey = id => JSON.stringify(id);
 const isMessage = m => m !== null && typeof m === 'object' && !Array.isArray(m) && (typeof m.method === 'string' || m.id !== undefined);
 const isRequest = m => m.method !== undefined && m.id !== undefined;
 const pathOf = url => url.split('?')[0];
+const needsConsole = m => isRequest(m) && m.method === 'tools/call' && WORK_TOOLS.has(m.params?.name);
+const CONSOLE_LOCKED = statusResult({status: 'error', code: 'console_locked'},
+  {isError: true, message: 'cua: the Mac\'s screen is locked or the session is not on the console; unlock it and retry'});
 
 function rpcError(res, status, code, message, id = null) {
   res.writeHead(status, {'Content-Type': 'application/json'});
@@ -195,7 +206,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   function createSession(id, connection, input, output) {
     const session = {id, connection, input, streams: new Map(), nextStream: 1, routes: new Map(), get: null,
       buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null, closed: null,
-      protocolVersion: null};
+      protocolVersion: null, inbound: Promise.resolve()};
     input.on('error', () => {});
     // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
     createInterface({input: output}).on('line', line => {
@@ -229,6 +240,36 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   }
 
   const send = (session, messages) => session.input.write(messages.map(m => `${JSON.stringify(m)}\n`).join(''));
+
+  // Runs `step` once every message POSTed before it has reached the connection, so arrival order holds while a js call
+  // waits for the console check.
+  const inOrder = (session, step) => {
+    session.inbound = session.inbound.then(step).catch(error => diagnostics(`session ${session.id}: a message could not be delivered: ${error.stack ?? error}`));
+  };
+
+  // Whether the console refuses js now: off the console or locked. Unreadable is not a refusal.
+  async function consoleRefusal(session) {
+    let state;
+    try { state = await consoleState(); } catch (error) {
+      diagnostics(`session ${session.id}: the console state could not be read (${error.code ?? error.message}); the call goes through`);
+      return null;
+    }
+    if (!state.onConsole) return 'this user\'s session is not on the console';
+    if (state.locked) return 'the screen is locked';
+    return null;
+  }
+
+  // The POSTed messages, less any js or js_reset the console refuses, which are answered here.
+  async function deliver(session, messages) {
+    const consoleBound = messages.filter(needsConsole);
+    const refusal = consoleBound.length ? await consoleRefusal(session) : null;
+    const forwarded = refusal ? messages.filter(m => !consoleBound.includes(m)) : messages;
+    if (forwarded.length) send(session, forwarded);
+    if (!refusal) return;
+    diagnostics(`session ${session.id}: ${consoleBound.map(m => m.params.name).join(', ')} refused: ${refusal} (console_locked)`);
+    for (const m of consoleBound) deliverResponse(session, {jsonrpc: '2.0', id: m.id, result: CONSOLE_LOCKED});
+    touch(session);
+  }
 
   // ---- requests ----
 
@@ -320,7 +361,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       return rpcError(res, 400, -32600, 'cua: a request id is already in use on this session');
     for (const m of messages) if (m.method === undefined) session.serverPending.delete(idKey(m.id));
     if (!requests.length) {
-      send(session, messages);
+      inOrder(session, () => send(session, messages));
       res.writeHead(202, {});
       res.end();
       return touch(session);
@@ -333,7 +374,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     attach(session, stream, res, req.signal).write(`retry: ${RETRY_MS}\nid: ${stream.id}-0\ndata: \n\n`);
     drain(session, msg => sseEvent(stream, msg));
     touch(session);
-    send(session, messages);
+    inOrder(session, () => deliver(session, messages));
   }
 
   function get(req, res, session) {

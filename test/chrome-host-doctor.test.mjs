@@ -13,7 +13,7 @@ import {scratch, shortScratch, zipFixture, fixturePin, acceptSignatures, forgeAc
 const darwin = process.platform === 'darwin';
 const HOST = {platform: 'darwin', arch: 'arm64'};
 const passive = {host: HOST, verifySignatures: acceptSignatures, inspectHelper: async () => ({socket: '/x', holders: []}),
-  inspectSecrets: async () => ({path: '/x', built: false}), inspectLogin: async () => ({state: 'not_logged_in'}), inspectChrome: async () => []};
+  inspectSecrets: async () => ({path: '/x', built: false}), inspectLogin: async () => ({state: 'not_logged_in'}), inspectChrome: async () => [], inspectAgent: async () => []};
 const configCheck = report => report.checks.find(c => c.name === 'chrome.host.config');
 
 function forged(t, options) {

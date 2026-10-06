@@ -673,6 +673,93 @@ test('with a cap of 2 two sessions live side by side, and close(signal) closes b
   assert.deepEqual(results.map(r => r.reason), ['signal', 'signal']);
 });
 
+// The console refusal (E2): js and js_reset need the Mac's screen, which a locked or background session cannot drive.
+const CONSOLE_LOCKED = {status: 'error', code: 'console_locked'};
+const consoleAs = state => {
+  const read = async () => { read.reads++; if (state instanceof Error) throw state; return state; };
+  read.reads = 0;
+  return read;
+};
+
+test('js and js_reset over HTTP are answered console_locked while the screen is locked or the session is off the console, and never reach the runtime', async t => {
+  for (const state of [{onConsole: true, locked: true}, {onConsole: false, locked: false}]) {
+    const read = consoleAs(state);
+    const {send, initialize, upstreamOf, diagnostics} = setup(t, {console: read});
+    const session = await initialize();
+    const upstream = upstreamOf(0);
+    for (const [id, name] of [[1, 'js'], [2, 'js_reset']]) {
+      const {res} = send({session, body: call(id, name, name === 'js' ? {code: '1'} : {})});
+      await until(() => res.ended, `${name} to be answered`);
+      assert.equal(res.status, 200);
+      const [reply] = res.messages();
+      assert.equal(reply.id, id);
+      assert.equal(reply.result.isError, true);
+      assert.deepEqual(reply.result.structuredContent, CONSOLE_LOCKED);
+      assert.match(reply.result.content[0].text, /^cua: the Mac's screen is locked or the session is not on the console; unlock it and retry/);
+    }
+    assert.equal(read.reads, 2, 'the console is read for each call');
+    assert.deepEqual([...upstream.calls('js'), ...upstream.calls('js_reset')], []);
+    assert.ok(diagnostics.some(line => line.includes(session) && /js refused: (the screen is locked|this user's session is not on the console)/.test(line)), diagnostics.join('\n'));
+    // Everything else still reaches the runtime; tools/list is not a console action.
+    const list = send({session, body: {jsonrpc: '2.0', id: 3, method: 'tools/list'}});
+    upstream.reply(await upstream.nextRequest('tools/list'), {tools: []});
+    await until(() => list.res.ended, 'tools/list');
+    assert.equal(read.reads, 2, 'only js and js_reset read the console');
+  }
+});
+
+test('in a batch only the console actions are refused; with the console unlocked, or unreadable, js goes through', async t => {
+  const locked = consoleAs({onConsole: true, locked: true});
+  const {send, initialize, upstreamOf} = setup(t, {console: locked, maxSessions: 3});
+  let session = await initialize();
+  let upstream = upstreamOf(0);
+  const batch = send({session, body: [call(1, 'js', {code: '1'}), {jsonrpc: '2.0', id: 2, method: 'ping'}]});
+  upstream.reply(await upstream.nextRequest('ping'), {});
+  await until(() => batch.res.ended, 'the batch');
+  assert.deepEqual(batch.res.messages().map(m => [m.id, m.result.structuredContent ?? m.result]).sort(), [[1, CONSOLE_LOCKED], [2, {}]]);
+  assert.deepEqual(upstream.calls('js'), []);
+
+  for (const [read, logged] of [
+    [consoleAs({onConsole: true, locked: false}), null],
+    [consoleAs(Object.assign(new Error('ioreg failed'), {code: 'console_unreadable'})), /the console state could not be read \(console_unreadable\); the call goes through/],
+  ]) {
+    const {send: post, initialize: open, upstreamOf: upstreamAt, diagnostics} = setup(t, {console: read});
+    session = await open();
+    upstream = upstreamAt(0);
+    const js = post({session, body: call(1, 'js', {code: 'through'})});
+    upstream.text(await upstream.nextCall('js'), 'ran');
+    await until(() => js.res.ended, 'js');
+    assert.equal(js.res.messages()[0].result.isError, false);
+    assert.equal(read.reads, 1);
+    if (logged) assert.match(diagnostics.join('\n'), logged);
+  }
+});
+
+test('a message POSTed while a js call waits for the console check reaches the connection after that call', async t => {
+  let release;
+  const read = () => new Promise(resolve => { release = () => resolve({onConsole: true, locked: false}); });
+  // What the connection reads, in order.
+  const received = [];
+  const base = inProcess();
+  const open = async options => {
+    options.input.on('data', chunk => received.push(...chunk.toString().split('\n').filter(Boolean).map(line => JSON.parse(line).method)));
+    return base(options);
+  };
+  open.opened = base.opened;
+  const {send, initialize} = setup(t, {console: read, open});
+  const session = await initialize();
+  send({session, body: call(1, 'js', {code: 'first'})});
+  await until(() => release, 'the console check to start');
+  const cancel = send({session, body: {jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 1}}});
+  await cancel.done;
+  assert.equal(cancel.res.status, 202, 'the notification is accepted at once');
+  await tick(10);
+  assert.deepEqual(received, ['initialize'], 'it waits behind the js call');
+  release();
+  await until(() => received.length === 3, 'both messages to reach the connection');
+  assert.deepEqual(received, ['initialize', 'tools/call', 'notifications/cancelled']);
+});
+
 // Real connections: openConnection on a scratch home whose runtime is the fake upstream process.
 test('over real connections, DELETE answers only after the session\'s run entries are released', {skip: !installedHomeSupported}, async t => {
   const home = fakeInstalledHome(t);

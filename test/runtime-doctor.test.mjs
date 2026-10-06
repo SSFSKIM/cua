@@ -1,8 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {mkdirSync, readdirSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
-import {inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
+import {chmodSync, mkdirSync, readdirSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
+import {agentChecks, inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
+import {agentPlistPath, installAgent} from '../src/remote/launchd.mjs';
+import {enrollDevice} from '../src/remote/device.mjs';
+import {UID, fakeLaunchctl} from './fixtures/fake-launchctl.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {sweepRun} from '../src/runtime/run-dir.mjs';
 import {parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
@@ -13,6 +16,7 @@ const HOST = {platform: 'darwin', arch: 'arm64'};
 const check = (report, name) => report.checks.find(c => c.name === name);
 const noHelper = async () => ({socket: '/x/computeruse.sock', holders: []});
 const noSecrets = async () => ({path: '/x/cua-keychain', built: false});
+const noAgent = async () => [];
 
 // Under /tmp, outside $TMPDIR, where the scoped sandbox allows a home (the `sandbox` check).
 async function installedHome(t) {
@@ -28,7 +32,7 @@ async function installedHome(t) {
 test('a missing runtime fails with install guidance and still reports helper and permission evidence separately', async () => {
   const s = scratch();
   try {
-    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets});
+    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
     assert.equal(report.ok, false);
     assert.equal(report.runtime, undefined);
     assert.equal(check(report, 'platform').status, 'pass');
@@ -55,7 +59,7 @@ test('an unsupported platform is an explicit failure and nothing else is inspect
 
 test('a healthy installed runtime names its release and passes every installed-runtime check', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(report.ok, true);
   assert.equal(report.runtime.release, pin.release);
   assert.equal(report.runtime.root, join(realpathSync(home), 'runtimes', pin.release));
@@ -70,7 +74,7 @@ test('a healthy installed runtime names its release and passes every installed-r
 // doctor says so plainly, while disabled and default are choices it only describes.
 test('the sandbox check describes the mode and fails a scoped home whose runtime lies below $TMPDIR, naming the remedy', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   const scoped = check(await inspect({TMPDIR: '/private/var/folders/xx/T/'}), 'sandbox');
   assert.equal(scoped.status, 'pass');
   assert.match(scoped.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*run directory and \$TMPDIR.*no network/);
@@ -94,12 +98,12 @@ test('the sandbox check describes the mode and fails a scoped home whose runtime
 test('signature and layout damage in the installed tree fail the doctor with the component named', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const rejectNode = async (root, p) => p.signing.components.map(c => ({component: c, valid: c !== 'cua_node/bin/node', detail: c === 'cua_node/bin/node' ? 'invalid signature' : 'ok'}));
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: rejectNode, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: rejectNode, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.signatures').status, 'fail');
   assert.match(check(report, 'runtime.signatures').detail, /cua_node\/bin\/node/);
   rmSync(join(realpathSync(home), 'runtimes', pin.release, 'CodexCLI.app/Contents/MacOS/codex'));
-  const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(damaged.ok, false);
   assert.equal(check(damaged, 'runtime.files').status, 'fail');
   assert.match(check(damaged, 'runtime.files').detail, /codexCli/);
@@ -112,7 +116,7 @@ test('signature and layout damage in the installed tree fail the doctor with the
 test('an incompatible running helper is a diagnosed conflict that fails the doctor', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const incompatible = async () => ({socket: '/x/computeruse.sock', holders: [{pid: 42, executable: '/Old/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService', ipc: ['CodexComputerUseIPC-4']}]});
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: incompatible, inspectSecrets: noSecrets});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: incompatible, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(report.ok, false);
   const helper = check(report, 'helper.live');
   assert.equal(helper.status, 'fail');
@@ -155,7 +159,7 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
   const {home, pin} = await installedHome(t);
   const {writeFileSync} = await import('node:fs');
   writeFileSync(join(realpathSync(home), 'runtimes', pin.release, pin.layout.vendorManifest), 'null');
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.vendor-manifest').status, 'fail');
   assert.match(check(report, 'runtime.vendor-manifest').detail, /not a JSON object/);
@@ -163,7 +167,7 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
 
 test('Keychain helper checks are reported beside runtime health: blocked leaves ok alone, a broken helper fails', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper};
+  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectAgent: noAgent};
   let asked;
   const unbuilt = await inspectRuntime({...common, inspectSecrets: async args => { asked = args; return noSecrets(); }});
   assert.equal(asked.home, home, 'the helper is looked up for the inspected home');
@@ -185,7 +189,7 @@ test('Keychain helper checks are reported beside runtime health: blocked leaves 
 test('codex.login is capability evidence: pass when logged in, blocked with "run cua login" otherwise, ok unchanged', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const seen = [];
-  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets};
+  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent};
   const as = state => async args => { seen.push(args); return {state, ...(state === 'logged-in' ? {} : {reason: 'codex login status reports no login'})}; };
   const loggedIn = await inspectRuntime({...common, inspectLogin: as('logged-in')});
   assert.equal(check(loggedIn, 'codex.login').status, 'pass');
@@ -204,7 +208,7 @@ test('codex.login without a usable runtime is blocked and asks nothing', async (
   const s = scratch();
   try {
     let asked = false;
-    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectLogin: async () => { asked = true; }});
+    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectLogin: async () => { asked = true; }});
     assert.equal(asked, false);
     assert.equal(check(report, 'codex.login').status, 'blocked');
     assert.match(check(report, 'codex.login').detail, /cua install/);
@@ -221,7 +225,7 @@ test('the default codex.login check runs codex login status with the owned CODEX
   chmod(cli, 0o755);
   const codexHome = join(real, 'state', 'codex');
   mkdir(codexHome, {recursive: true});
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(check(report, 'codex.login').status, 'blocked');
   assert.doesNotMatch(JSON.stringify(report), new RegExp(FAKE_CODEX_SENTINEL));
   const log = read(join(codexHome, 'fake-codex.log'), 'utf8');
@@ -244,7 +248,7 @@ test('codex.login never executes a release binary the same run found untrusted: 
   const unchecked = async () => [];
   for (const [name, verifySignatures] of [['codex CLI rejected', rejectCli], ['no component checked', unchecked]]) {
     // The production login probe: had it run, the fake CLI would have written its marker and reported a login.
-    const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+    const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
     assert.equal(check(report, 'runtime.signatures').status, 'fail', name);
     const login = check(report, 'codex.login');
     assert.equal(login.status, 'blocked', name);
@@ -252,7 +256,7 @@ test('codex.login never executes a release binary the same run found untrusted: 
     assert.equal(exists(marker), false, `${name}: the rejected CLI was executed`);
   }
   // With the signatures valid, the same CLI is asked.
-  const trusted = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets});
+  const trusted = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
   assert.equal(check(trusted, 'codex.login').status, 'pass');
   assert.equal(exists(marker), true);
 });
@@ -267,7 +271,7 @@ test('the run.stale check removes the sessions of gone owners and says so', asyn
   mkdirSync(join(run, stale), {recursive: true});
   writeFileSync(join(run, `${stale}.pid`), '999999\n');
   writeFileSync(join(run, `${process.pid}-live.pid`), `${process.pid}\n`);
-  const inspect = extra => inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, ...extra});
+  const inspect = extra => inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, ...extra});
   const row = check(await inspect({sweep: home => sweepRun(home, {alive: pid => pid === process.pid})}), 'run.stale');
   assert.equal(row.status, 'pass');
   assert.match(row.detail, new RegExp(`removed the leftovers of 1 connection whose cua process is gone \\(${stale}, pid 999999\\); 1 live session left alone$`));
@@ -280,4 +284,145 @@ test('the run.stale check removes the sessions of gone owners and says so', asyn
   const unreadable = await inspect({sweep: () => { throw Object.assign(new Error('scandir'), {code: 'EACCES'}); }});
   assert.deepEqual([check(unreadable, 'run.stale').status, check(unreadable, 'helper.live').status], ['fail', 'blocked'], 'the rest of the report still runs');
   assert.match(check(unreadable, 'run.stale').detail, /could not be swept \(EACCES\)/);
+});
+
+// E2: the launchd agent rows. A scratch user home holds the LaunchAgents plist, `launchctl` is the fake domain and the
+// console reader is injected, so nothing here reads the real launchd domain or the real console.
+async function agentSetup(t, {enrol = true, relayUrl, install = null, consoleState = {onConsole: true, locked: false}, env = {}} = {}) {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'home');
+  const userHome = join(s.dir, 'user');
+  mkdirSync(userHome);
+  const cli = join(s.dir, 'cua.mjs');
+  writeFileSync(cli, '');
+  if (enrol) enrollDevice({home, ...(relayUrl ? {relayUrl} : {})});
+  const launchctl = fakeLaunchctl();
+  const launchd = {userHome, uid: UID, launchctl: launchctl.run, settleMs: 1};
+  if (install) await installAgent({home, env: {}, node: process.execPath, cli, ...launchd, ...install});
+  launchctl.calls.length = 0;
+  const readConsole = async () => { if (consoleState instanceof Error) throw consoleState; return consoleState; };
+  const rows = async (extra = {}) => Object.fromEntries((await agentChecks({home, env, host: HOST, launchd, checkConsole: readConsole, ...extra})).map(c => [c.name, c]));
+  return {home, userHome, cli, launchctl, launchd, rows};
+}
+
+test('on a Mac never enrolled the launchd rows read skip with the way in, launchd is not asked, and the console is still reported', async t => {
+  const {launchctl, rows} = await agentSetup(t, {enrol: false});
+  const r = await rows();
+  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console']);
+  for (const name of ['agent.installed', 'agent.running', 'agent.enrolled']) {
+    assert.equal(r[name].status, 'skip', name);
+    assert.match(r[name].detail, /cua remote enroll.*cua agent install/, name);
+  }
+  assert.equal(r['agent.console'].status, 'pass');
+  assert.match(r['agent.console'].detail, /on the console and the screen is unlocked/);
+  assert.deepEqual(launchctl.calls, []);
+});
+
+test('an enrolled Mac with its agent installed and running passes, naming the plist, program, node, pid and device', async t => {
+  const {cli, rows} = await agentSetup(t, {install: {http: '192.168.1.20:7801'}});
+  const r = await rows();
+  for (const name of ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console']) assert.equal(r[name].status, 'pass', `${name}: ${r[name].detail}`);
+  assert.ok(r['agent.installed'].detail.includes(`node ${process.execPath}`), r['agent.installed'].detail);
+  assert.ok(r['agent.installed'].detail.includes(`${cli} agent run --http 192.168.1.20:7801`), r['agent.installed'].detail);
+  assert.match(r['agent.running'].detail, /pid 4242/);
+  assert.match(r['agent.enrolled'].detail, /^device \S+, local only \(no relay\)$/);
+});
+
+test('enrolled but not installed is blocked with the install step; installed but stopped or unloaded fails naming the log', async t => {
+  let {rows} = await agentSetup(t);
+  let r = await rows();
+  assert.deepEqual([r['agent.installed'].status, r['agent.running'].status, r['agent.enrolled'].status], ['blocked', 'blocked', 'pass']);
+  assert.match(r['agent.installed'].detail, /cua agent install/);
+
+  const stopped = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  stopped.launchctl.running = false;
+  stopped.launchctl.lastExit = '1';
+  r = await stopped.rows();
+  assert.equal(r['agent.running'].status, 'fail');
+  assert.match(r['agent.running'].detail, /not running.*last exit code 1/);
+  assert.ok(r['agent.running'].detail.includes(join(stopped.home, 'state', 'agent.log')), r['agent.running'].detail);
+  stopped.launchctl.loaded = false;
+  r = await stopped.rows();
+  assert.equal(r['agent.running'].status, 'fail');
+  assert.match(r['agent.running'].detail, /not loaded.*cua agent install/);
+});
+
+test('agent.installed fails for a plist cua cannot read, a node or program that is gone, or a job that disagrees with the relay enrolment', async t => {
+  const broken = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  writeFileSync(agentPlistPath(broken.userHome), 'not a plist');
+  let r = await broken.rows();
+  assert.equal(r['agent.installed'].status, 'fail');
+  assert.match(r['agent.installed'].detail, /cua agent install/);
+  assert.equal(r['agent.running'].status, 'blocked');
+
+  const moved = await agentSetup(t, {install: {http: '127.0.0.1:7801', node: '/nonexistent/bin/node'}});
+  r = await moved.rows();
+  assert.equal(r['agent.installed'].status, 'fail');
+  assert.match(r['agent.installed'].detail, /\/nonexistent\/bin\/node, is gone.*cua agent install/);
+
+  const relayLater = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  enrollDevice({home: relayLater.home, relayUrl: 'wss://relay.example/ws'});
+  r = await relayLater.rows();
+  assert.equal(r['agent.installed'].status, 'fail');
+  assert.match(r['agent.installed'].detail, /relay.*cua agent install/);
+  assert.match((await relayLater.rows())['agent.enrolled'].detail, /relay wss:\/\/relay\.example\/ws/);
+});
+
+test('agent.enrolled fails for a device record others can read, an unreadable one, or an agent installed on a Mac no longer enrolled', async t => {
+  const {home, rows} = await agentSetup(t);
+  chmodSync(join(home, 'remote', 'device.json'), 0o644);
+  let r = await rows();
+  assert.equal(r['agent.enrolled'].status, 'fail');
+  assert.match(r['agent.enrolled'].detail, /mode 0644.*chmod 600/);
+  writeFileSync(join(home, 'remote', 'device.json'), '{}', {mode: 0o600});
+  chmodSync(join(home, 'remote', 'device.json'), 0o600);
+  r = await rows();
+  assert.equal(r['agent.enrolled'].status, 'fail');
+  assert.match(r['agent.enrolled'].detail, /--rotate/);
+
+  const orphan = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  rmSync(join(orphan.home, 'remote'), {recursive: true});
+  r = await orphan.rows();
+  assert.equal(r['agent.enrolled'].status, 'fail');
+  assert.match(r['agent.enrolled'].detail, /not enrolled.*cua remote enroll/);
+  assert.equal(r['agent.installed'].status, 'pass', 'the job itself is still the one cua wrote');
+});
+
+test('agent.console fails while locked or off the console, is blocked when unreadable, and reads skip with the check turned off', async t => {
+  const as = async (consoleState, env) => (await (await agentSetup(t, {consoleState, env})).rows())['agent.console'];
+  let row = await as({onConsole: true, locked: true});
+  assert.equal(row.status, 'fail');
+  assert.match(row.detail, /screen is locked/);
+  row = await as({onConsole: false, locked: false});
+  assert.equal(row.status, 'fail');
+  assert.match(row.detail, /not on the console/);
+  row = await as(Object.assign(new Error('ioreg exited 1'), {code: 'console_unreadable'}));
+  assert.equal(row.status, 'blocked');
+  assert.match(row.detail, /console_unreadable/);
+  row = await as({onConsole: true, locked: true}, {CUA_AGENT_CONSOLE_CHECK: 'off'});
+  assert.equal(row.status, 'skip');
+  assert.match(row.detail, /CUA_AGENT_CONSOLE_CHECK=off/);
+  row = await as({onConsole: true, locked: false}, {CUA_AGENT_CONSOLE_CHECK: 'maybe'});
+  assert.equal(row.status, 'fail');
+  assert.match(row.detail, /CUA_AGENT_CONSOLE_CHECK must be on or off/);
+});
+
+test('off macOS every agent row reads skip: the launchd agent is macOS-only', async t => {
+  const {rows} = await agentSetup(t);
+  const r = await rows({host: {platform: 'linux', arch: 'x64'}});
+  for (const c of Object.values(r)) assert.equal(c.status, 'skip', c.name);
+});
+
+test('doctor reports the agent rows, and skip neither fails ok nor counts as blocked in the verdict', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const injected = [{name: 'agent.installed', status: 'skip', detail: 'not enrolled'}, {name: 'agent.console', status: 'pass', detail: 'ok'}];
+  const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets,
+    inspectAgent: async ({home, env, host}) => { assert.equal(home, s.dir); assert.ok(env); assert.deepEqual(host, HOST); return injected; }});
+  for (const row of injected) assert.deepEqual(check(report, row.name), row);
+  const rows = [['runtime.files', 'pass'], ['agent.installed', 'skip'], ['helper.live', 'blocked']];
+  const summary = summarize({ok: true, checks: rows.map(([name, status]) => ({name, status, detail: ''}))});
+  assert.match(summary, /blocked: helper\.live\)$/);
+  assert.equal(summarize({ok: true, checks: [{name: 'agent.installed', status: 'skip', detail: ''}]}), 'passive runtime checks pass');
 });

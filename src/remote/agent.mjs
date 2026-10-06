@@ -5,7 +5,9 @@
 //
 // Limits, from the environment: CUA_AGENT_MAX_SESSIONS (default 1: every session drives the same mouse, keyboard and
 // Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call,
-// comma-separated, none by default). Diagnostics go to stderr; the client credential never appears in them.
+// comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js and js_reset
+// answer console_locked while this user's session is off the console or its screen is locked (src/remote/console.mjs).
+// Diagnostics go to stderr (under launchd, $CUA_HOME/state/agent.log); the client credential never appears in them.
 import {createServer as createHttpServer} from 'node:http';
 import {linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -13,6 +15,7 @@ import {randomUUID} from 'node:crypto';
 import {createMcpHttp} from '../mcp/http.mjs';
 import {settingsFrom} from '../mcp/server.mjs';
 import {credentialsOf, readDevice} from './device.mjs';
+import {checkConsole, consoleCheckFrom} from './console.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {fail} from '../runtime/errors.mjs';
 
@@ -133,6 +136,7 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     if (!device) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll'});
     settingsFrom(env);
     const limits = limitsFrom(env);
+    const consoleChecked = consoleCheckFrom(env);
     const {host, port} = parseAddress(http);
     try {
       const swept = describeSweep(sweepRun(home));
@@ -144,7 +148,8 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     // The handlers are in place before the listener, so no session can open without a signal closing it.
     const stopped = new Promise(resolve => { onSignal = resolve; });
     for (const signal of SIGNALS) process.on(signal, onSignal);
-    const mcp = createMcpHttp({home, env, clientCredential: credentialsOf(device).clientCredential, ...limits, diagnostics});
+    const mcp = createMcpHttp({home, env, clientCredential: credentialsOf(device).clientCredential, ...limits,
+      ...(consoleChecked ? {console: checkConsole} : {}), diagnostics});
     const server = createHttpServer(nodeAdapter(mcp.handle));
     let address;
     try { address = await listen(server, host, port); } catch (error) {

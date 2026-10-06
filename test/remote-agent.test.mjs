@@ -10,7 +10,10 @@ import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
-const cua = (args, home, env = {}) => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', ...env}, encoding: 'utf8', timeout: 30_000});
+// The agents here never read the real console (CUA_AGENT_CONSOLE_CHECK=off): js must run whatever the test Mac's screen
+// shows. The console refusal itself is tested in mcp-http.test.mjs and remote-console.test.mjs.
+const AGENT_ENV = {CUA_SHIM_SECRETS: 'off', CUA_AGENT_CONSOLE_CHECK: 'off'};
+const cua = (args, home, env = {}) => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV, ...env}, encoding: 'utf8', timeout: 30_000});
 const INITIALIZE = {jsonrpc: '2.0', id: 0, method: 'initialize', params: {protocolVersion: '2025-03-26', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
 
 function emptyHome(t) {
@@ -27,7 +30,7 @@ function enroll(home) {
 
 // Starts `cua <args>` and resolves once it is listening, with the endpoint it printed.
 async function startAgent(t, home, args = ['agent', 'run', '--http', '127.0.0.1:0'], env = {}) {
-  const child = spawn(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, CUA_SHIM_SECRETS: 'off', ...env}, stdio: ['ignore', 'pipe', 'pipe']});
+  const child = spawn(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV, ...env}, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';
   const exit = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal, stderr})));
   t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
@@ -86,7 +89,7 @@ test('remote show before enrolment and agent run usage errors', t => {
   const show = cua(['remote', 'show'], home);
   assert.equal(show.status, 1);
   assert.match(show.stderr, /remote_not_enrolled/);
-  for (const args of [['remote'], ['remote', 'forget'], ['agent'], ['agent', 'install'], ['agent', 'run'], ['agent', 'run', '--json', '--http', '127.0.0.1:0'], ['agent', 'run', '--http']]) {
+  for (const args of [['remote'], ['remote', 'forget'], ['agent'], ['agent', 'start'], ['agent', 'install', '--relay'], ['agent', 'install', 'extra'], ['agent', 'uninstall', '--http', '127.0.0.1:7801'], ['agent', 'status', '--force'], ['agent', 'run'], ['agent', 'run', '--json', '--http', '127.0.0.1:0'], ['agent', 'run', '--http']]) {
     const r = cua(args, home);
     assert.equal(r.status, 2, `${args.join(' ')}: ${r.stderr}`);
     assert.match(r.stderr, /usage: cua/);
@@ -108,6 +111,7 @@ test('agent run refuses without an enrolment, with --relay before the relay exis
     [['agent', 'run', '--http', '127.0.0.1:0'], {CUA_AGENT_MAX_SESSIONS: '0'}, 'invalid_setting'],
     [['agent', 'run', '--http', '127.0.0.1:0'], {CUA_AGENT_IDLE_MINUTES: 'soon'}, 'invalid_setting'],
     [['agent', 'run', '--http', '127.0.0.1:0'], {CUA_SHIM_SURFACES: 'iab'}, 'invalid_setting'],
+    [['agent', 'run', '--http', '127.0.0.1:0'], {CUA_AGENT_CONSOLE_CHECK: 'sometimes'}, 'invalid_setting'],
   ]) {
     r = cua(args, home, env);
     assert.equal(r.status, 1, `${args.join(' ')} ${JSON.stringify(env)}: ${r.stderr}`);

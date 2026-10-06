@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-10-06 — Two E1 review leftovers in the Streamable HTTP handler (minor, Phase E, issue #11).** (a) A POST
+  stream that drops and is never resumed keeps every event it carried (including `js` results with screenshots) until
+  its session ends; these retained events sit outside the 16 MB server-message buffer cap. The idle close bounds them;
+  a byte cap on retained events (dropping the oldest stream's) would close it. (b) `src/mcp/server.mjs` and
+  `src/mcp/connection.mjs` import each other (documented in both headers, safe because no top-level code crosses the
+  cycle); moving `createServer` into its own module would remove it. Revisit if memory growth or an evaluation-order
+  bug is seen.
+
 - **2026-10-05 — What the concurrency-flake fixes gave up (minor, review P3s).** (a) `a stalled group enumeration…`
   checks that no enumerator is left running only for listings that recorded their pid; one killed earlier is not
   checked (process-name matching was ruled out). (b) The clean-EOF upstream test checks the runtime's exit code only

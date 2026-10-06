@@ -421,6 +421,26 @@ test('the relay forwards the client\'s authorization unchanged and the handler c
   assert.equal(env.http.sessions.size, 0);
 });
 
+test('a client that goes away mid-stream fires the handler\'s abort through the relay; its answer is kept for a resume', {skip: NEEDS_WS}, async t => {
+  const env = await relayed(t);
+  const init = await env.request(INIT);
+  const session = init.headers.get('mcp-session-id');
+  await init.text();
+  const controller = new AbortController();
+  const res = await env.request(js(1, 'long'), {session, signal: controller.signal});
+  const reader = res.body.getReader();
+  await reader.read();
+  const upstream = env.open.opened[0].upstream;
+  const call = await upstream.next(m => m.method === 'tools/call' && m.params?.arguments?.code === 'long', {timeoutMs: 5000});
+  const [stream] = env.http.sessions.get(session).streams.values();
+  assert.ok(stream.res, 'the POST stream is attached');
+  controller.abort();
+  await until(() => stream.res === null, 'the handler to see its client go');
+  upstream.text(call, 'kept');
+  await tick(20);
+  assert.match(stream.events.at(-1).event, /kept/, 'the answer waits for a Last-Event-ID resume');
+});
+
 test('through the relay: concurrent calls on their own streams; across a relay restart the session survives, an in-flight js answer is replayed on Last-Event-ID and a server message queued meanwhile arrives on that stream', {skip: NEEDS_WS}, async t => {
   const env = await relayed(t);
   const init = await env.request(INIT);

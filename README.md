@@ -687,18 +687,25 @@ JavaScript cells can write wherever your account can and reach the network. Doct
 
 The browser surface alone (`CUA_SHIM_SURFACES=browser`) keeps `scoped`, which works there. It needs bubblewrap to
 create unprivileged user namespaces, and Ubuntu 23.10 and later restrict those through AppArmor. Where they are
-refused, the runtime silently runs cells with no sandbox. Doctor then fails `sandbox` and reads `sandbox.userns`
-`blocked`. To lift the restriction:
+refused, the vendor's sandbox fails open: the runtime would run cells with no sandbox at all. So `cua serve` and the
+profile listing refuse a scoped launch there with `sandbox_unavailable`, before anything starts. Doctor fails
+`sandbox` and reads `sandbox.userns` `blocked`. To lift the restriction:
 
 ```sh
 echo 'kernel.apparmor_restrict_unprivileged_userns = 0' | sudo tee /etc/sysctl.d/60-cua-userns.conf
 sudo sysctl --system
 ```
 
-The other way is an AppArmor profile that grants `userns` to the release's `codex` (a `flags=(unconfined)` profile
-attached to `$CUA_HOME/runtimes/<release>/codex`). It keeps Ubuntu's restriction for everything else, but it has to
-follow each release, and doctor's own probe runs bubblewrap outside that profile, so `sandbox.userns` still reads
-`blocked` while the runtime is in fact sandboxed.
+The other way is an AppArmor profile that grants `userns` to bubblewrap alone, which keeps Ubuntu's restriction for
+everything else:
+
+```sh
+printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n}\n' \
+  | sudo tee /etc/apparmor.d/bwrap && sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+A profile on the release's `codex` instead also sandboxes the runtime, but cua's own check runs bubblewrap outside
+it, so cua still refuses.
 
 **What differs from macOS:**
 
@@ -897,7 +904,8 @@ cua sends node_repl a sandbox state, in the field Codex uses for it (`_meta["cod
 it makes, including the bounded launch behind `cua profiles list`/`bind` and `profiles_list`. Any sandbox state a client
 puts in its own `_meta` is replaced by cua's.
 
-With the `scoped` default, JavaScript cells and the vendor's trusted services can read everywhere your account can,
+With the `scoped` default (on Linux the default only for the browser surface alone; see Linux), JavaScript cells and
+the vendor's trusted services can read everywhere your account can,
 but write only to the connection's own run directory (`$CUA_HOME/run/<session>`, removed when the connection closes)
 and `$TMPDIR`, which is where the vendor features that need scratch space write, such as the profile labels behind
 `cua profiles bind`. Everything else refuses the write with `EPERM`: your home folder, `~/Downloads`, `/tmp`, the

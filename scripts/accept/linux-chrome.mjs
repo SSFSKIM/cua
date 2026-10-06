@@ -38,7 +38,7 @@ try {
   const opened = await session.js(`const browser = await cua.getBrowser({extensionInstanceId: ${JSON.stringify(profile.extensionInstanceId)}});
     globalThis.fixtureTab = await cua.createBrowserTab(browser.browserId, 'https://example.com/');
     let title = ''; const deadline = Date.now() + 30000;
-    while (!/Example Domain/.test(title) && Date.now() < deadline) { title = await fixtureTab.playwright.evaluate(() => document.title).catch(() => ''); if (!title) await new Promise(r => setTimeout(r, 500)); }
+    for (;;) { title = await fixtureTab.playwright.evaluate(() => document.title).catch(() => ''); if (/Example Domain/.test(title) || Date.now() >= deadline) break; await new Promise(r => setTimeout(r, 500)); }
     nodeRepl.write(JSON.stringify({title}));`, 150_000);
   const seen = /\{"title".*\}$/m.exec(resultText(opened))?.[0];
   step('open a tab and read its title', !opened.result?.isError && seen && JSON.parse(seen).title === 'Example Domain', seen ? JSON.parse(seen) : resultText(opened).split('\n')[0]);

@@ -230,6 +230,24 @@ naming the relay.
 6. **No TCC prompt for the launchd agent.** A `gui/501` job reached Accessibility, Screen Recording, the browser route
    and the app-approval path with no dialog (the grants already existed on the mini for the helper).
 
+## After the whole-branch review (05:55–06:05 PDT, branch de3f5a3)
+
+The branch review's fixes changed the agent (it follows `device.json`; a newer GET replaces the standing stream;
+pending approvals are bounded by their call; a session abandoned mid-task is evictable after 60 s), so the relay path
+was re-run on the final code, with the mini's job reinstalled from the worktree at de3f5a3:
+
+- **Rotation without a restart.** `remote enroll --rotate --json` on the mini (its output, which carries the new client
+  credential once, went to a 0600 file and was copied to the MacBook without being displayed); the new `devices.json`
+  line went to the relay, which was restarted. The agent (pid 59683 before and after; no restart) logged `relay:
+  connection lost (code 1006)`, `device.json changed: credentials re-derived (device vI10bo5i…, relay wss://…/ws; …)`,
+  one `502`, then `relay: reconnected`. Through the public URL the old client credential's `initialize` was `401` and
+  the new one's `200` (session deleted, `200`).
+- **Items 2 and 3 again through the relay** (`claude -p`, hook enabled, the rotated credential): marker
+  `CUA-E4-FINAL-1791290904` typed and read back through the accessibility tree, the document closed with 삭제; `school`
+  bound, the repository page's title read, the tab closed; `end_task` twice. Agent log: `elicitation/create 0 …
+  answered accept after 369 ms`, `elicitation/create 1 … answered accept after 174 ms`. The credential occurs 0 times
+  in the transcript.
+
 ## What it did not prove
 
 - A reboot: item 5 used the `bootout`/`bootstrap` cycle the acceptance allows instead.
@@ -244,4 +262,4 @@ naming the relay.
 
 The mini keeps the job `com.ssfskim.cua.agent` (`agent run --relay` from the branch worktree); the relay and the ngrok
 tunnel on the MacBook were still running when this document was written, and are stopped at Phase E's close (Decision
-Log: they exist only for the proof). `npm test` at the head of this document's commit: 618/618.
+Log: they exist only for the proof). `npm test` at the head of this document's commit: 618/618; at the branch review's fix head (98cf4a8): 631/631.

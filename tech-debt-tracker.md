@@ -2,6 +2,17 @@
 
 ## Open
 
+- **2026-10-06 — The hosted relay's Caddy advertises HTTP/3 with UDP 443 closed (minor, issue #53).** Caddy's default
+  `Alt-Svc: h3` points browsers at UDP 443, which the `cua-relay` firewall does not admit; MCP clients and agents use
+  HTTP/1.1 or 2 and are unaffected. Either `servers { protocols h1 h2 }` in `relay/deploy/Caddyfile` or a UDP 443 rule
+  in `create-server.sh` would close it at the next rebuild or Caddyfile change.
+
+- **2026-10-06 — Claude Code 2.1.292 probes MCP `2026-07-28` before `initialize` (minor, issue #53).** Its first
+  request is `POST` with `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method: server/discover`; the agent's version gate
+  answers `400` and the client falls back to `initialize` at `2025-11-25`, so nothing breaks today. When the pinned
+  runtime negotiates the newer revision, the gate's fixed list (`PROTOCOL_VERSIONS` in `src/mcp/http.mjs`) and the agent's
+  handling of `server/discover` need revisiting. Evidence `docs/evidence/2026-10-06-hosted-relay-acceptance.md`.
+
 - **2026-10-06 — The vendor helper's text input crashes GTK3 text views on Linux (vendor, Phase F, issue #51).** On
   the pinned 26.928.40906 arm64 runtime, `typeText` and `paste` SIGSEGV gedit 46.2 and mousepad 0.6.1 (in
   `gtk_text_buffer_get_iter_at_offset`); in GTK4 they insert and then throw `SetCaretOffset NotSupported`. Nothing cua

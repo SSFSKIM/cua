@@ -1,0 +1,19 @@
+[Unit]
+Description=cua-relay (the meeting point between MCP clients and cua agents)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=cua-relay
+Group=cua-relay
+WorkingDirectory=/opt/cua/relay
+ExecStart=/usr/bin/node server.mjs --port 7800 --devices /etc/cua-relay/devices.json
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

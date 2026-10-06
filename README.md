@@ -565,6 +565,11 @@ terminates TLS: put it behind a proxy that does, which must pass WebSocket upgra
 meaning of every answer and close code. The acceptance ran the relay on loopback behind `ngrok http 127.0.0.1:7800`;
 a quick tunnel like that suits a test, not a standing setup.
 
+For a standing relay, `relay/deploy/` creates a Hetzner Cloud server with Caddy in front (TLS from Let's Encrypt on an
+`<ip-with-dashes>.sslip.io` name until a real domain replaces it) in one command, `relay/deploy/create-server.sh`, and
+`relay/deploy/update.sh --devices devices.json` installs the device lines; `relay/README.md` (Hosting) has the details
+and `docs/evidence/2026-10-06-hosted-relay-acceptance.md` the acceptance run through it.
+
 ### 4. Register the client
 
 On the client machine, under the name **`cua_repl`** (`enroll` prints the line with the URL filled in, and `remote

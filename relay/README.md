@@ -37,6 +37,43 @@ Without a server, a Cloudflare quick tunnel gives a public `https://<random>.try
 loopback listener: `cloudflared tunnel --url http://127.0.0.1:7800` (agents then use
 `wss://<random>.trycloudflare.com/ws`). The URL changes on every start, so it suits tests, not a standing setup.
 
+## Hosting
+
+`deploy/` stands the relay up on a Hetzner Cloud server behind Caddy, which terminates TLS with a Let's Encrypt
+certificate and meets the proxy requirements above (WebSocket upgrades pass through, `flush_interval -1` on `/d/*`,
+no compression, no read timeout). With the `hcloud` CLI configured (context `$HCLOUD_CONTEXT`, `cua` when unset) and
+an SSH key named `macbook` in the project:
+
+```
+relay/deploy/create-server.sh            # --ref <git ref>, --type cx23, --location nbg1, --ssh-key macbook
+#   creating cua-relay (cx23, nbg1) at 203.0.113.7, ref main
+#   relay up: agents enrol with  cua remote enroll --relay wss://203-0-113-7.sslip.io/ws
+```
+
+It creates a primary IPv4 `cua-relay` (kept when the server is deleted, so the host name survives a rebuild), a
+firewall `cua-relay` (TCP 22, 80, 443 in) and the server, whose cloud-init (`cloud-init.yaml`) installs Caddy and
+Node 22, clones this repository into `/opt/cua`, runs `cua-relay.service` (user `cua-relay`, `127.0.0.1:7800`,
+`/etc/cua-relay/devices.json`, empty at first) and serves `Caddyfile` at `<ip-with-dashes>.sslip.io`. It refuses if a
+server named `cua-relay` exists. Then:
+
+```
+relay/deploy/update.sh --devices devices.json   # install a devices.json and restart the relay
+relay/deploy/update.sh --ref main               # run another ref (git fetch, npm ci, restart)
+```
+
+`--devices` replaces the server's whole table, so keep every device's line in the file you send (the current one:
+`ssh root@<ip> cat /etc/cua-relay/devices.json`). To rebuild (or after a failed cloud-init), `hcloud server delete
+cua-relay` and run `create-server.sh` again: the address and firewall are reused, the stale SSH host key is dropped,
+and `devices.json` starts empty again, so send it with `update.sh --devices` (agents retry until their line is back).
+Each rebuild requests a new certificate for the same name, and Let's Encrypt allows five per name a week. Caddy and Node
+come from their own apt repositories, which unattended upgrades skip: upgrade them with
+`apt-get -o Dpkg::Options::=--force-confold upgrade`, which keeps the site's Caddyfile.
+
+A real domain later: point its DNS at the address, change the site line of `/etc/caddy/Caddyfile` on the server,
+`systemctl reload caddy`, and move each Mac with `cua remote enroll --relay wss://<domain>/ws` (the agent follows it
+without a restart; clients re-register on the new URL). Logs: `journalctl -u cua-relay` and `journalctl -u caddy`.
+The standing setup and its acceptance run: `docs/evidence/2026-10-06-hosted-relay-acceptance.md`.
+
 ## Add a device
 
 On the Mac: `cua remote enroll --relay wss://<relay>/ws` (or, already enrolled, the same command updates the relay URL

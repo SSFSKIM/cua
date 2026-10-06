@@ -122,3 +122,29 @@ export async function initialized(h, {clientInfo = {name: 'test-client', version
 export const textOf = response => (response.result?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('\n');
 export const structured = response => response.result?.structuredContent;
 export const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
+
+// A connection opener for the HTTP handler (createMcpHttp's `open`) serving in-process connections: each session's
+// createServer runs over a fake upstream that answers initialize by itself; everything else waits for the test
+// (`open.opened[i].upstream`). `open.failWith` (a code) makes the next opens fail; `open.negotiate` is the protocol
+// version the runtime answers initialize with.
+const UPSTREAM_INIT = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'rmcp', version: '1.5.0'}, instructions: 'Upstream.'};
+
+export function inProcessConnections() {
+  const opened = [];
+  const open = async ({sessionId, input, output, onWithdrawn}) => {
+    if (open.failWith) throw Object.assign(new Error('open failed'), {code: open.failWith});
+    const upstream = fakeUpstream();
+    const send = upstream.send;
+    upstream.send = msg => {
+      send(msg);
+      if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, {...UPSTREAM_INIT, ...(open.negotiate ? {protocolVersion: open.negotiate} : {})}));
+    };
+    const server = createServer({input, output, upstream, sessionId, onWithdrawn, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
+    const closed = server.closed.then(result => ({...result, listingLeftover: false}));
+    const connection = {sessionId, closed, upstream, close: reason => { server.close(reason); return closed; }, get state() { return server.state; }};
+    opened.push(connection);
+    return connection;
+  };
+  open.opened = opened;
+  return open;
+}

@@ -1,6 +1,11 @@
-// The standalone MCP server: one stdio connection, one owned runtime (one JavaScript heap), one random session ID.
+// The standalone MCP server: one connection, one owned runtime (one JavaScript heap), one random session ID.
 //
 //   client ──stdio──▶ server ──stdio──▶ relocated vendor node cua-repl ──▶ node_repl ──socket──▶ native helper
+//
+// `createServer` is the connection over any newline-delimited stream pair: stdio for `cua serve` below, a stream pair
+// fed from HTTP for the agent (src/mcp/http.mjs). What a connection takes and releases around it (runtime, run entries,
+// broker) is src/mcp/connection.mjs, which imports this module as this module imports it; every use either way is
+// inside a function body, so the cycle is evaluation-order safe.
 //
 // Routing rules:
 // - Every client request forwarded upstream gets a proxy-owned upstream ID, and the server's own requests (the
@@ -29,24 +34,15 @@
 // (completion uncertainty, runtime exit) does the same without the completion attempt.
 import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
-import {chmodSync, mkdirSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
 import {TaskLifecycle} from './task.mjs';
-import {spawnUpstream} from './upstream.mjs';
+import {openConnection} from './connection.mjs';
 import {
-  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, withHostNotes,
+  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
 } from './surface.mjs';
-import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {fail} from '../runtime/errors.mjs';
-import {claimRunSession, describeSweep, sweepRun} from '../runtime/run-dir.mjs';
-import {locateHelper} from '../secrets/helper.mjs';
-import {openSecrets} from '../secrets/broker.mjs';
-import {chromeFacts} from '../profiles/chrome.mjs';
+import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {reasonText} from '../profiles/registry.mjs';
-import {profileReadiness} from '../profiles/commands.mjs';
-import {listLiveBackends} from '../profiles/inventory.mjs';
-import {assertSandboxFits, sandboxModeFrom, sandboxState as sandboxStateFor, withSandbox} from '../runtime/sandbox.mjs';
+import {sandboxModeFrom, withSandbox} from '../runtime/sandbox.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
@@ -56,14 +52,13 @@ const NOT_CONFIGURED = {
   close: async () => ({confirmed: true, steps: []}),
 };
 const LIST_CODES = new Set(['not_configured', 'disconnected', 'timeout', 'protocol', 'unauthorized', 'denied', 'locked', 'unavailable']);
-const SURFACES = ['computer', 'browser'];
 const NO_PROFILES = {list: () => []};
 
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
   persist = 'session', hostNotes = hostNotesFor(surfaces), model, sandboxState = null,
   completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {},
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -233,7 +228,7 @@ export function createServer({
     if (lifecycle.state === 'failed') return;
     if (msg.method === 'notifications/cancelled') {
       const key = idKey(msg.params?.requestId);
-      if (queuedWork.get(key)?.cancel()) return;            // withdrawn before it reached the runtime
+      if (queuedWork.get(key)?.cancel()) return onWithdrawn(msg.params.requestId);   // withdrawn before it reached the runtime: never answered
       const upstreamId = upstreamIdOf.get(key);
       if (upstreamId !== undefined) upstream.send({...msg, params: {...msg.params, requestId: upstreamId}});
       return;                                                 // end_task and local tools are not cancellable
@@ -327,14 +322,6 @@ export function createServer({
   return {sessionId, closed, close, get state() { return lifecycle.state; }};
 }
 
-// CUA_SHIM_SURFACES: computer (the default), browser, or both (comma-separated, any order).
-function surfacesFrom(value = 'computer') {
-  const named = value.split(',').map(s => s.trim());
-  if (!named.length || !named.every(s => SURFACES.includes(s)) || new Set(named).size !== named.length)
-    fail('invalid_setting', 'CUA_SHIM_SURFACES must be computer, browser or computer,browser');
-  return SURFACES.filter(s => named.includes(s));
-}
-
 export function settingsFrom(env) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
@@ -347,27 +334,15 @@ export function settingsFrom(env) {
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
-// `cua serve`: resolve the installed runtime, sweep $CUA_HOME/run of sessions whose owning process is gone and claim
-// this connection's session there (src/runtime/run-dir.mjs), start this connection's secrets broker (unless secrets are off or the
-// Keychain helper is not built), launch the runtime for a fresh connection session in an owned working directory with
-// the enabled surfaces (CUA_SHIM_SURFACES) and their trusted services registered (src/services/sky.mjs for computer
-// use, src/services/browser.mjs for the browser) and the broker's endpoint and token (or the reason there is no
-// broker) in its environment, serve stdin/stdout until EOF or a signal, and remove what it created (including the
-// session's app-approval file the runtime wrote). With the browser surface, profiles_list reads $CUA_HOME's profile
-// registry and, when a profile is bound, checks it against the live backends with one bounded listing launch
-// (inventory.mjs, no tab counts); the connection's close waits for such a listing (so serve keeps its signal handlers
-// meanwhile), and serve exits 1 when a listing's runtime could not be confirmed stopped. Returns the exit code.
-// `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the
-// opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not
-// reachable from the CLI.
-// `chrome` (the Chrome facts) and `listBackends` (the readiness listing) exist for tests only.
-export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper = locateHelper({home}),
-  prepareLaunch = launch => launch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome = chromeFacts(),
-  listBackends}) {
-  const {secrets: secretsEnabled, sandbox, ...settings} = settingsFrom(env);
-  const services = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
-  const runtime = resolveRuntime({home});
-  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false});
+// `cua serve`: one connection (src/mcp/connection.mjs) on stdin/stdout. The settings are read first, so an invalid one
+// fails before anything else; then $CUA_HOME/run is swept of sessions whose owning process is gone, the signal handlers
+// go in, and the connection opens and serves until EOF or a signal. The connection's close waits for a readiness
+// listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime
+// teardown, or a listing's, could not be confirmed. Returns the exit code. `keychainHelper`, `prepareLaunch`, `chrome`
+// and `listBackends` are openConnection's seams, forwarded unchanged.
+export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper,
+  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends}) {
+  const settings = settingsFrom(env);
   try {
     const swept = describeSweep(sweepRun(home));
     if (swept) diagnostics(`$CUA_HOME/run: ${swept}`);
@@ -376,51 +351,20 @@ export async function serve({home, env = process.env, input = process.stdin, out
   }
   // A signal that arrives before the connection exists closes it as soon as it does. The handlers are in place before
   // the session is claimed, so no signal can end the process between the claim and the cleanup that releases it.
-  let server;
+  let connection;
   let signalled = false;
-  const onSignal = () => { if (server) server.close('signal'); else signalled = true; };
+  const onSignal = () => { if (connection) connection.close('signal'); else signalled = true; };
   for (const signal of SIGNALS) process.on(signal, onSignal);
-  const sessionId = randomUUID();
-  let claim;
-  try { claim = claimRunSession(home, sessionId); } catch (error) {
-    for (const signal of SIGNALS) process.off(signal, onSignal);
-    throw error;
-  }
-  let secrets = NOT_CONFIGURED;
-  let launch;
-  let listingLeftover = false;
-  let code;
+  let result;
   try {
-    secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics});
-    launch = prepareLaunch(buildLaunch({
-      runtime, home, sessionId, ambient: env, surfaces: settings.surfaces,
-      services: Object.assign({}, ...settings.surfaces.map(s => services[s])),
-      broker: secrets.broker, secretsUnavailable: secrets.unavailable?.code,
-    }));
-    assertSandboxFits(sandbox, launch);
-    mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-    mkdirSync(launch.cwd, {mode: 0o700});
-    chmodSync(launch.cwd, 0o700);
-    const profiles = {list: async () => {
-      const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
-      if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
-      if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
-      return list;
-    }};
-    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, launch.cwd), ...settings});
-    if (signalled) server.close('signal');
-    code = (await server.closed).code;
+    connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
+      keychainHelper, prepareLaunch, chrome, listBackends});
+    if (signalled) connection.close('signal');
+    result = await connection.closed;
   } finally {
     for (const signal of SIGNALS) process.off(signal, onSignal);
-    await secrets.close();
-    // The runtime records a "session" app approval under this connection's random session ID, which no later
-    // connection can use; it goes with the connection. Other sessions' files are never touched.
-    if (launch) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});
-    const leftovers = claim.release();
-    if (leftovers.length) diagnostics(`this connection's run entries could not all be removed (${leftovers.join(', ')}); the next cua serve or cua doctor sweeps them`);
   }
-  if (!listingLeftover) return code;
+  if (!result.listingLeftover) return result.code;
   diagnostics('a profiles_list readiness listing\'s runtime could not be confirmed stopped; owned processes may remain');
   return 1;
 }

@@ -4,14 +4,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
-import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, realpathSync, chmodSync, rmSync} from 'node:fs';
+import {mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync, chmodSync, rmSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {createInterface} from 'node:readline';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {PassThrough} from 'node:stream';
 import {once} from 'node:events';
-import {REPO, scratch, shortScratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
@@ -19,43 +20,8 @@ import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 
-const supported = process.platform === 'darwin' && process.arch === 'arm64';
-const FAKE = join(REPO, 'test', 'fixtures', 'fake-upstream-process.mjs');
+const supported = installedHomeSupported;
 const SCOPED = sandboxState('scoped', '/');
-
-// A home that looks like a verified install of the checked-in pin to the resolver (which checks structure only), but
-// whose vendor node is this Node and whose cua-repl entry is the fake upstream. Signatures are never involved here.
-// The served processes run with CUA_SHIM_SECRETS=off: the real Keychain helper (if built) is never started by this
-// Node-only suite; the in-process test at the end wires a stand-in helper instead. The home lives under /tmp, outside
-// $TMPDIR, as the scoped sandbox requires (a home under $TMPDIR is the misconfiguration `inTmpdir` sets up).
-// `mode` selects the fake upstream's teardown behavior (fake-upstream-process.mjs); `helper` installs the stand-in
-// Keychain helper as $CUA_HOME/bin/cua-keychain in that FAKE_HELPER_MODE, for runs with CUA_SHIM_SECRETS=on.
-function fakeInstalledHome(t, {inTmpdir = false, mode, helper} = {}) {
-  const s = inTmpdir ? scratch() : shortScratch();
-  t.after(s.cleanup);
-  const home = realpathSync(s.dir);
-  const pin = selectPin(loadPins());
-  const root = join(home, 'runtimes', pin.release);
-  for (const [key, rel] of Object.entries(pin.layout)) {
-    const path = join(root, rel);
-    if (key === 'moduleDir' || key === 'skyServiceApp') { mkdirSync(path, {recursive: true}); continue; }
-    mkdirSync(dirname(path), {recursive: true});
-    if (key === 'node') symlinkSync(process.execPath, path);
-    else if (key === 'cuaRepl') writeFileSync(path, mode
-      ? `process.argv[2] = ${JSON.stringify(mode)};\nawait import(${JSON.stringify(pathToFileURL(FAKE).href)});\n`
-      : `import ${JSON.stringify(pathToFileURL(FAKE).href)};\n`);
-    else writeFileSync(path, '');
-  }
-  writeFileSync(join(root, 'install.json'), JSON.stringify({schema: 1, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
-  writeFileSync(join(home, 'current.json'), JSON.stringify({schema: 1, release: pin.release}));
-  if (helper) {
-    mkdirSync(join(home, 'bin'));
-    const fake = join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs');
-    writeFileSync(join(home, 'bin', 'cua-keychain'), `#!/bin/sh\nFAKE_HELPER_MODE=${helper} exec ${JSON.stringify(process.execPath)} ${JSON.stringify(fake)} "$@"\n`);
-    chmodSync(join(home, 'bin', 'cua-keychain'), 0o755);
-  }
-  return home;
-}
 
 function launch(entry, home, args = [], extraEnv = {}) {
   const child = spawn(process.execPath, [entry, ...args], {
@@ -772,4 +738,24 @@ test('a client that closes all its pipes mid-task gets an orderly close: exit 0,
   assert.deepEqual({code, signal}, {code: 0, signal: null});
   assert.throws(() => process.kill(start.pid, 0), {code: 'ESRCH'});
   assert.deepEqual(readdirSync(join(home, 'run')), []);
+});
+
+// openConnection's release is best effort step by step: a step that fails (here the approval file's directory is a
+// regular file, so removing the file under it fails with ENOTDIR) is reported, the rest still runs, and `closed`
+// settles instead of rejecting (in the HTTP agent a rejection there would end every session).
+test('a release step that fails is reported and the rest of the release still runs', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  mkdirSync(join(home, 'state', 'codex', 'computer-use'), {recursive: true});
+  writeFileSync(join(home, 'state', 'codex', 'computer-use', 'sessions'), 'not a directory');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  output.resume();
+  const diagnostics = [];
+  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off'}, input, output, diagnostics: line => diagnostics.push(line)});
+  input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
+  await new Promise(r => setTimeout(r, 300));
+  input.end();
+  assert.equal(await served, 1, 'an incomplete release fails the exit code');
+  assert.ok(diagnostics.some(line => /approval file/.test(line) && /ENOTDIR/.test(line)), diagnostics.join('\n'));
+  assert.deepEqual(readdirSync(join(home, 'run')), [], 'the run entries were still released');
 });

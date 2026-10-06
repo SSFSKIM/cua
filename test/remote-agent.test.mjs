@@ -421,7 +421,7 @@ test('the relay forwards the client\'s authorization unchanged and the handler c
   assert.equal(env.http.sessions.size, 0);
 });
 
-test('a client that goes away mid-stream fires the handler\'s abort through the relay; its answer is kept for a resume', {skip: NEEDS_WS}, async t => {
+test('a client that goes away mid-stream through the relay gets the answer on a Last-Event-ID resume', {skip: NEEDS_WS}, async t => {
   const env = await relayed(t);
   const init = await env.request(INIT);
   const session = init.headers.get('mcp-session-id');
@@ -429,16 +429,36 @@ test('a client that goes away mid-stream fires the handler\'s abort through the 
   const controller = new AbortController();
   const res = await env.request(js(1, 'long'), {session, signal: controller.signal});
   const reader = res.body.getReader();
-  await reader.read();
+  let seen = '';
+  while (!/id: \d+-0\n/.test(seen)) seen += Buffer.from((await reader.read()).value).toString('utf8');
+  const priming = /id: (\d+-0)\n/.exec(seen)[1];
   const upstream = env.open.opened[0].upstream;
   const call = await upstream.next(m => m.method === 'tools/call' && m.params?.arguments?.code === 'long', {timeoutMs: 5000});
-  const [stream] = env.http.sessions.get(session).streams.values();
-  assert.ok(stream.res, 'the POST stream is attached');
   controller.abort();
-  await until(() => stream.res === null, 'the handler to see its client go');
+  await tick(50);
   upstream.text(call, 'kept');
-  await tick(20);
-  assert.match(stream.events.at(-1).event, /kept/, 'the answer waits for a Last-Event-ID resume');
+  const resumed = await env.request(undefined, {session, method: 'GET', headers: {'last-event-id': priming}});
+  assert.equal(resumed.status, 200);
+  const events = sseOf(await resumed.text()).filter(e => e.message);
+  assert.deepEqual(events.map(e => [e.id, e.message.id]), [[priming.replace(/-0$/, '-1'), 1]]);
+  assert.match(events[0].message.result.content[0].text, /kept/);
+});
+
+test('a request body over the limit is answered 413 by the agent\'s adapter without reaching the handler', {skip: NEEDS_WS}, async t => {
+  const relay = await fakeRelay(t);
+  let handled = 0;
+  await dial(t, relay.url, {handle: () => { handled++; }, bodyLimit: 10});
+  await until(() => relay.connections[0]?.frames.length, 'hello');
+  const c = relay.connections[0];
+  c.send({ch: 1, t: 'open', method: 'POST', path: '/mcp', headers: {}});
+  for (const part of ['0123456', '789ab', 'cdef']) c.send({ch: 1, t: 'body', data: b64(part)});
+  c.send({ch: 1, t: 'end'});
+  await until(() => c.frames.some(f => f.ch === 1 && f.t === 'end'), 'the refusal');
+  const answer = c.frames.filter(f => f.ch === 1);
+  assert.equal(answer[0].status, 413);
+  assert.equal(JSON.parse(unb64(answer)).error.code, -32000);
+  assert.deepEqual(answer.map(f => f.t), ['head', 'data', 'end'], 'answered once, the later body ignored');
+  assert.equal(handled, 0);
 });
 
 test('through the relay: concurrent calls on their own streams; across a relay restart the session survives, an in-flight js answer is replayed on Last-Event-ID and a server message queued meanwhile arrives on that stream', {skip: NEEDS_WS}, async t => {
@@ -558,6 +578,7 @@ test('a refusal on one path leaves nothing of the other started: a taken --http 
   assert.match(r.stderr, /http_listen_failed/);
   await tick(100);
   assert.equal(relay.connections.length, 0, 'the relay was never dialled');
+  assert.doesNotMatch(r.stderr, /relay: dialling/);
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });
 
@@ -578,5 +599,18 @@ test('without the ws package: --relay refuses before anything starts, while --ht
     agent.child.kill('SIGTERM');
     assert.equal((await agent.exit).code, 0, args.join(' '));
   }
+  assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
+});
+
+test('a failure while stopping after a refusal is logged and does not replace the refusal', async t => {
+  const home = emptyHome(t);
+  enroll(home);
+  const taken = createNetServer();
+  await new Promise(resolve => taken.listen(0, '127.0.0.1', resolve));
+  t.after(() => taken.close());
+  const diagnostics = [];
+  await assert.rejects(runAgent({home, env: AGENT_ENV, http: `127.0.0.1:${taken.address().port}`, diagnostics: line => diagnostics.push(line),
+    createHttp: () => ({handle: () => {}, close: async () => { throw new Error('close broke'); }})}), error => error.code === 'http_listen_failed');
+  assert.ok(diagnostics.some(line => /close broke/.test(line)), diagnostics.join('\n'));
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });

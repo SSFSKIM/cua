@@ -22,9 +22,11 @@
 // Small resumability: every event of a POST stream has an id `<stream>-<n>`, the stream opens with a priming event
 // (`retry: 15000`, `<stream>-0`, empty data) so that a client whose stream drops before the first response still holds
 // an id to resume from (Claude Code's client resumes only streams that carried one, and only twice; the retry spaces
-// those attempts across a relay restart), and the stream keeps its events while it lives; when the client drops it before all its requests are answered, the later responses are kept, and a GET whose
-// Last-Event-ID names that stream replays every event after the named one and then carries the rest. A GET naming no
-// such stream is an ordinary GET. Every open stream (POST or GET) that has been silent for `keepaliveMs` gets an SSE
+// those attempts across a relay restart), and the stream keeps its events while it lives and for `streamGraceMs` (90 s)
+// after its last answer (which may have gone into a link already dead but not yet known to be); when the client drops
+// it before all its requests are answered, the later responses are kept, and a GET whose Last-Event-ID names that
+// stream replays every event after the named one and then carries the rest. A GET naming no such stream is an
+// ordinary GET. A request body over `bodyLimit` (4 MB) is 413. Every open stream (POST or GET) that has been silent for `keepaliveMs` gets an SSE
 // comment (`: keepalive`), so proxies and NATs do not cut a long js call; comments are never events.
 // Idle: a session with no request for `idleMs`, nothing it was asked still unanswered (an open or dropped POST stream's
 // requests) and no request of its own awaiting the client's answer (a pending elicitation), closes; while such a
@@ -51,7 +53,8 @@ import {WORK_TOOLS, statusResult} from './surface.mjs';
 
 // MCP-Protocol-Version values accepted on any request; a session also accepts the version its runtime negotiated.
 const PROTOCOL_VERSIONS = new Set(['2025-03-26', '2025-06-18', '2025-11-25']);
-const SSE_HEADERS = {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache'};
+// no-transform: a CDN or tunnel in front (the relay's TLS proxy) neither buffers nor compresses the stream.
+const SSE_HEADERS = {'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform'};
 const RETRY_MS = 15_000;
 const idKey = id => JSON.stringify(id);
 const isMessage = m => m !== null && typeof m === 'object' && !Array.isArray(m) && (typeof m.method === 'string' || m.id !== undefined);
@@ -80,9 +83,17 @@ function guard(res) {
   };
 }
 
-async function readBody(body) {
+class BodyTooLarge extends Error {}
+
+async function readBody(body, limit) {
   const chunks = [];
-  for await (const chunk of body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of body) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += bytes.length;
+    if (size > limit) throw new BodyTooLarge();
+    chunks.push(bytes);
+  }
   return Buffer.concat(chunks).toString('utf8');
 }
 
@@ -106,7 +117,7 @@ const onAbort = (signal, fn) => {
 };
 
 export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1, idleMs = 15 * 60_000,
-  bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, console: consoleState = () => ({onConsole: true, locked: false}),
+  bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, bodyLimit = 4 * 1024 * 1024, streamGraceMs = 90_000, console: consoleState = () => ({onConsole: true, locked: false}),
   diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection}) {
   const sessions = new Map();
   const ending = new Set();        // close promises of sessions on their way out
@@ -179,13 +190,18 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     session.bufferBytes = 0;
   }
 
-  // All requests of a POST stream answered: an attached stream ends and is forgotten; a dropped one keeps its events
-  // for a Last-Event-ID replay.
+  // All requests of a POST stream answered: an attached stream ends, and its events stay replayable for
+  // `streamGraceMs` (the last answer may have gone into a link that was already dead but not yet known to be: a relay
+  // restart, a silent drop) before it is forgotten. A dropped stream keeps its events until a Last-Event-ID replay.
   function settle(session, stream) {
     if (stream.pending.size || !stream.res) return;
     stream.res.end();
     stream.res = null;
-    session.streams.delete(stream.id);
+    clearTimeout(stream.grace);
+    stream.grace = setTimeout(() => {
+      if (!stream.res && !stream.pending.size && session.streams.get(stream.id) === stream) session.streams.delete(stream.id);
+    }, streamGraceMs);
+    stream.grace.unref?.();
   }
 
   function deliverResponse(session, msg) {
@@ -363,7 +379,8 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
 
   async function post(req, res, sessionId) {
     let text;
-    try { text = await readBody(req.body); } catch {
+    try { text = await readBody(req.body, bodyLimit); } catch (error) {
+      if (error instanceof BodyTooLarge) return rpcError(res, 413, -32000, `cua: the request body is larger than ${bodyLimit} bytes`);
       return rpcError(res, 400, -32700, 'cua: the request body could not be read');   // the client went away mid-body
     }
     let parsed;

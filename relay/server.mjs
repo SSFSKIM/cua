@@ -29,6 +29,10 @@ const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'up
 const REPLACED = 4001;
 const WRONG_DEVICE = 4003;
 const HEX64 = /^[0-9a-f]{64}$/;
+// Bounds on what one authenticated client can make the relay hold: a request body (MCP POST bodies are small), and
+// the unsent part of a response to a client that stopped reading (it resumes by Last-Event-ID once it reads again).
+const BODY_LIMIT = 4 * 1024 * 1024;
+const RESPONSE_BUFFER_LIMIT = 32 * 1024 * 1024;
 
 const sha256 = text => createHash('sha256').update(text).digest();
 const bearerOf = header => /^Bearer +(\S+) *$/i.exec(header ?? '')?.[1];
@@ -56,8 +60,8 @@ export function loadDevices(devicesFile) {
   return devices;
 }
 
-export async function startRelay({port, host = '127.0.0.1', devicesFile, pingMs = 25_000,
-  diagnostics = line => process.stderr.write(`cua-relay: ${line}\n`)}) {
+export async function startRelay({port, host = '127.0.0.1', devicesFile, pingMs = 25_000, bodyLimit = BODY_LIMIT,
+  responseBufferLimit = RESPONSE_BUFFER_LIMIT, diagnostics = line => process.stderr.write(`cua-relay: ${line}\n`)}) {
   const devices = loadDevices(devicesFile);
   const online = new Map();        // device id → its link (the WebSocket that said hello)
   const links = new Set();         // every WebSocket, hello or not
@@ -74,7 +78,10 @@ export async function startRelay({port, host = '127.0.0.1', devicesFile, pingMs 
     return null;
   }
 
+  // The answer, then the socket destroyed (as ws's own abortHandshake does): a peer that keeps its side open must not
+  // hold a socket, or the relay's close, forever.
   function refuseUpgrade(socket, status, text) {
+    socket.once('finish', () => socket.destroy());
     socket.end(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
   }
 
@@ -160,6 +167,13 @@ export async function startRelay({port, host = '127.0.0.1', devicesFile, pingMs 
       case 'data':
         if (!res.headersSent) return diagnostics(`device ${link.deviceId}: dropped data before the head of channel ${frame.ch}`);
         res.write(Buffer.from(String(frame.data ?? ''), 'base64'));
+        if (res.writableLength > responseBufferLimit) {
+          diagnostics(`device ${link.deviceId}: channel ${frame.ch}: its client left more than ${responseBufferLimit} bytes unsent; dropping the response`);
+          link.channels.delete(frame.ch);
+          channel.closed = true;
+          res.destroy();
+          send(link, {ch: frame.ch, t: 'abort'});
+        }
         return;
       case 'end':
         link.channels.delete(frame.ch);
@@ -210,7 +224,19 @@ export async function startRelay({port, host = '127.0.0.1', devicesFile, pingMs 
     const headers = {};
     for (const name of FORWARDED) if (typeof req.headers[name] === 'string') headers[name] = req.headers[name];
     send(link, {ch, t: 'open', method: req.method, path: '/mcp', headers});
-    req.on('data', chunk => { if (!channel.closed) send(link, {ch, t: 'body', data: chunk.toString('base64')}); });
+    let received = 0;
+    req.on('data', chunk => {
+      if (channel.closed) return;
+      received += chunk.length;
+      if (received > bodyLimit) {
+        channel.closed = true;
+        if (link.channels.get(ch) === channel) link.channels.delete(ch);
+        send(link, {ch, t: 'abort'});
+        if (!res.headersSent) rpcError(res, 413, `the request body is larger than ${bodyLimit} bytes`);
+        return;
+      }
+      send(link, {ch, t: 'body', data: chunk.toString('base64')});
+    });
     req.on('end', () => { if (!channel.closed) send(link, {ch, t: 'end'}); });
     req.on('error', () => {});
     // The response's close before it ended is the client going away (the request's close fires once its body is read).

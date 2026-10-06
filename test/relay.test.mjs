@@ -5,6 +5,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash, randomBytes} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
+import {once} from 'node:events';
+import {connect} from 'node:net';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {tick} from './fixtures/mcp-harness.mjs';
@@ -40,37 +42,45 @@ async function startRelay(t, options = {}) {
   return {relay, base, diagnostics, endpoint: `${base}/d/${DEVICE.id}/mcp`};
 }
 
-// A fake agent: connects with `credential`, says hello as `hello` (the device id), records every frame it receives.
+// A fake agent: connects with `credential`, says hello as `hello` (the device id; none when null), records every frame
+// it receives.
 async function fakeAgent(t, base, {credential = DEVICE.device, hello = DEVICE.id, autoPong = true} = {}) {
   const socket = new ws.WebSocket(`${base.replace('http', 'ws')}/ws`, {headers: {authorization: `Bearer ${credential}`}, autoPong});
-  const agent = {socket, frames: [], pings: 0, closed: null};
-  socket.on('message', data => agent.frames.push(JSON.parse(data.toString())));
-  socket.on('ping', () => { agent.pings++; });
-  agent.closed = new Promise(resolve => socket.on('close', (code, reason) => resolve({code, reason: reason.toString()})));
+  const frames = [];
+  const counts = {pings: 0};
+  const closed = new Promise(resolve => socket.on('close', (code, reason) => resolve({code, reason: reason.toString()})));
+  socket.on('message', data => frames.push(JSON.parse(data.toString())));
+  socket.on('ping', () => { counts.pings++; });
   socket.on('error', () => {});
   t.after(() => socket.terminate());
-  agent.opened = await new Promise(resolve => {
+  const opened = await new Promise(resolve => {
     socket.once('open', () => resolve(true));
-    socket.once('unexpected-response', (req, res) => resolve(res.statusCode));
+    socket.once('unexpected-response', (_request, response) => resolve(response.statusCode));
     socket.once('error', () => resolve(false));
   });
-  if (agent.opened === true && hello) socket.send(JSON.stringify({t: 'hello', deviceId: hello}));
-  agent.send = frame => socket.send(JSON.stringify(frame));
+  const send = frame => socket.send(JSON.stringify(frame));
+  if (opened === true && hello) send({t: 'hello', deviceId: hello});
   // The frames of one channel, and the channel of the n-th `open`.
-  agent.of = ch => agent.frames.filter(f => f.ch === ch);
-  agent.opening = async n => {
-    await until(() => agent.frames.filter(f => f.t === 'open').length > n, `open frame ${n}`);
-    return agent.frames.filter(f => f.t === 'open')[n];
+  const of = ch => frames.filter(f => f.ch === ch);
+  return {
+    socket, frames, closed, opened, send, of,
+    get pings() { return counts.pings; },
+    async opening(n) {
+      await until(() => frames.filter(f => f.t === 'open').length > n, `open frame ${n}`);
+      return frames.filter(f => f.t === 'open')[n];
+    },
+    requestBody: ch => Buffer.concat(of(ch).filter(f => f.t === 'body').map(f => Buffer.from(f.data, 'base64'))).toString('utf8'),
+    ended: ch => until(() => of(ch).some(f => f.t === 'end'), `end of channel ${ch}`),
+    respond(ch, status, headers, chunks = []) {
+      send({ch, t: 'head', status, headers});
+      for (const chunk of chunks) send({ch, t: 'data', data: Buffer.from(chunk).toString('base64')});
+      send({ch, t: 'end'});
+    },
   };
-  agent.requestBody = ch => Buffer.concat(agent.of(ch).filter(f => f.t === 'body').map(f => Buffer.from(f.data, 'base64'))).toString('utf8');
-  agent.ended = ch => until(() => agent.of(ch).some(f => f.t === 'end'), `end of channel ${ch}`);
-  agent.respond = (ch, status, headers, chunks = []) => {
-    agent.send({ch, t: 'head', status, headers});
-    for (const chunk of chunks) agent.send({ch, t: 'data', data: Buffer.from(chunk).toString('base64')});
-    agent.send({ch, t: 'end'});
-  };
-  return agent;
 }
+
+// Resolves `promise`, or fails after `ms`.
+const within = (promise, ms, label) => Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), ms).unref())]);
 
 // Online once the relay has taken the hello (a request then reaches the agent instead of 503): the n-th time.
 const online = (diagnostics, id = DEVICE.id, n = 1) =>
@@ -250,13 +260,82 @@ test('the relay pings every WebSocket and closes one that misses two pongs', nee
   const silent = await fakeAgent(t, base, {credential: OTHER.device, hello: OTHER.id, autoPong: false});
   const answering = await fakeAgent(t, base);
   await online(diagnostics);
-  const closed = await silent.closed;
+  const closed = await within(silent.closed, 2000, 'the silent socket to be dropped');
   assert.equal(closed.code, 1006, 'terminated, not closed in order');
   assert.ok(silent.pings >= 2);
   assert.ok(diagnostics.some(line => /dev-two.*pong/.test(line)), diagnostics.join('\n'));
   await tick(200);
   assert.equal(answering.socket.readyState, ws.WebSocket.OPEN, 'a socket that answers its pings stays');
   assert.ok(answering.pings >= 4);
+});
+
+test('a refused upgrade\'s socket is destroyed, so a peer that stays open cannot hold the relay\'s close', needsWs, async t => {
+  const {relay, base} = await startRelay(t);
+  const {port} = new URL(base);
+  // allowHalfOpen: the peer reads the refusal and its end, and keeps its own side open.
+  const peer = connect({host: '127.0.0.1', port: Number(port), allowHalfOpen: true});
+  peer.on('error', () => {});
+  t.after(() => peer.destroy());
+  await once(peer, 'connect');
+  let answer = '';
+  peer.on('data', chunk => { answer += chunk; });
+  peer.write(['GET /ws HTTP/1.1', `Host: 127.0.0.1:${port}`, 'Upgrade: websocket', 'Connection: Upgrade',
+    'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', 'Sec-WebSocket-Version: 13', `Authorization: Bearer ${DEVICE.client}`, '', ''].join('\r\n'));
+  await within(once(peer, 'end'), 2000, 'the refusal');
+  assert.match(answer, /^HTTP\/1\.1 401 /);
+  // The peer never ends its side; the relay must not wait for it.
+  await within(relay.close(), 2000, 'the relay to close');
+});
+
+test('a channel frame sent before hello is dropped and the device stays offline until its hello', needsWs, async t => {
+  const {endpoint, base, diagnostics} = await startRelay(t);
+  const agent = await fakeAgent(t, base, {hello: null});
+  agent.send({ch: 1, t: 'head', status: 200, headers: {}});
+  await until(() => diagnostics.some(line => /before hello/.test(line)), 'the dropped frame logged');
+  const offline = await post(endpoint, {jsonrpc: '2.0', id: 1, method: 'ping'});
+  assert.equal(offline.status, 503);
+  await offline.text();
+  agent.send({t: 'hello', deviceId: DEVICE.id});
+  await online(diagnostics);
+  const answered = post(endpoint, {jsonrpc: '2.0', id: 2, method: 'ping'});
+  agent.respond((await agent.opening(0)).ch, 202, {});
+  assert.equal((await answered).status, 202);
+});
+
+test('a request body over the limit is 413 and its channel aborted', needsWs, async t => {
+  const {endpoint, base, diagnostics} = await startRelay(t, {bodyLimit: 1000});
+  const agent = await fakeAgent(t, base);
+  await online(diagnostics);
+  const res = await post(endpoint, {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {code: 'x'.repeat(5000)}});
+  assert.equal(res.status, 413);
+  assert.equal((await res.json()).error.code, -32000);
+  const open = await agent.opening(0);
+  await until(() => agent.of(open.ch).some(f => f.t === 'abort'), 'the agent told to drop the channel');
+  assert.ok(agent.requestBody(open.ch).length <= 1000 + 65536, 'forwarding stopped at the limit');
+});
+
+test('a client that stops reading loses its response once the relay holds more than the limit for it', needsWs, async t => {
+  const {endpoint, base, diagnostics} = await startRelay(t, {responseBufferLimit: 1 << 20});
+  const agent = await fakeAgent(t, base);
+  await online(diagnostics);
+  const {port} = new URL(base);
+  const peer = connect({host: '127.0.0.1', port: Number(port)});
+  peer.on('error', () => {});
+  t.after(() => peer.destroy());
+  await once(peer, 'connect');
+  const body = JSON.stringify({jsonrpc: '2.0', id: 1, method: 'tools/call'});
+  peer.write([`POST ${new URL(endpoint).pathname} HTTP/1.1`, `Host: 127.0.0.1:${port}`, `Authorization: Bearer ${DEVICE.client}`,
+    'Content-Type: application/json', `Content-Length: ${body.length}`, '', body].join('\r\n'));
+  const open = await agent.opening(0);
+  peer.pause();   // never reads again
+  agent.send({ch: open.ch, t: 'head', status: 200, headers: {'Content-Type': 'text/event-stream'}});
+  const chunk = Buffer.alloc(1 << 20, 'x').toString('base64');
+  for (let i = 0; i < 64 && !agent.of(open.ch).some(f => f.t === 'abort'); i++) {
+    agent.send({ch: open.ch, t: 'data', data: chunk});
+    await tick(5);
+  }
+  await until(() => agent.of(open.ch).some(f => f.t === 'abort'), 'the agent told to drop the channel');
+  assert.ok(diagnostics.some(line => /unsent/.test(line)), diagnostics.join('\n'));
 });
 
 test('a devices file that is not a device table refuses to start', needsWs, async t => {

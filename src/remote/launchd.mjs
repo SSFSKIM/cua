@@ -8,7 +8,8 @@
 // listener) with this checkout's bin/cua.mjs `agent run`, plus `--relay` when the device has a relay URL and
 // `--http <host:port>` when given. RunAtLoad is on and KeepAlive is {SuccessfulExit: false}: launchd restarts a crash
 // or a refusal (agent_already_running: the job takes over once a terminal agent stops), never the agent's deliberate
-// stops (a signal shutdown, relay close codes 4001/4003), which exit 0. launchd appends stdout and stderr to
+// stops (a signal shutdown, relay close codes 4001/4003), which exit 0. `--relay` is refused (relay_unavailable) when
+// this checkout cannot load the ws package the relay path needs. launchd appends stdout and stderr to
 // $CUA_HOME/state/agent.log (the agent writes its diagnostics to stderr). The environment carries CUA_HOME when it is
 // set and CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser as much as the desktop).
 //
@@ -26,6 +27,7 @@ import {escapeXml, isDict, parsePlist, representable} from './plist.mjs';
 import {readDevice} from './device.mjs';
 import {parseFixedAddress} from './address.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
+import {loadWebSocket} from './relay-link.mjs';
 import {CuaError, fail} from '../runtime/errors.mjs';
 
 export const AGENT_LABEL = 'com.ssfskim.cua.agent';
@@ -164,11 +166,13 @@ function writePlist(path, text) {
 }
 
 export async function installAgent({home, env = process.env, http, surfaces = DEFAULT_SURFACES, node = process.execPath, cli = CLI,
-  userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl, settleMs = 250}) {
+  userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl, settleMs = 250, loadRelay = loadWebSocket}) {
   if (http !== undefined && http !== null) parseFixedAddress(http);
   const named = surfacesFrom(surfaces).join(',');
   const device = readDevice(home);
   if (!device) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll first'});
+  // A --relay job whose checkout cannot load ws would refuse at every start and be restarted every 10 s.
+  if (device.relayUrl) await loadRelay();
   const args = [...(device.relayUrl ? ['--relay'] : []), ...(http ? ['--http', http] : [])];
   if (!args.length)
     fail('agent_nothing_to_serve', 'the agent would have nothing to serve: no relay is enrolled and no --http address was given', {hint: 'give --http <this Mac\'s LAN address>:7801, or enrol a relay with cua remote enroll --relay <wss url>'});

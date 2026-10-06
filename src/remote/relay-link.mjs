@@ -6,7 +6,8 @@
 // agent → relay {ch, t: "head", status, headers}, {ch, t: "data", data}, {ch, t: "end"}; either way {ch, t: "abort"};
 // data is base64. The first frame after the WebSocket opens is the agent's {t: "hello", deviceId}; the device
 // credential travels in the connect request's Authorization header. A request reaches the handler once its body is
-// whole (MCP POST bodies are small); the answer streams back a frame per write.
+// whole (MCP POST bodies are small; one over `bodyLimit`, 4 MB, is answered 413 here); the answer streams back a frame
+// per write.
 //
 // Liveness and loss: the relay pings every 25 s; a link that hears no ping for `watchdogMs` (60 s) is closed here.
 // A lost link aborts every channel open on it (each handler's signal fires; the sessions themselves live on in the
@@ -36,7 +37,7 @@ export function loadWebSocket() {
 const seconds = ms => `${ms / 1000} s`;
 
 export async function connectRelay({url, deviceCredential, deviceId, handle, diagnostics = () => {},
-  minBackoffMs = 1000, maxBackoffMs = 30_000, watchdogMs = 60_000}) {
+  minBackoffMs = 1000, maxBackoffMs = 30_000, watchdogMs = 60_000, bodyLimit = 4 * 1024 * 1024}) {
   const WebSocket = await loadWebSocket();
   let delay = minBackoffMs;
   let connections = 0;
@@ -88,7 +89,9 @@ export async function connectRelay({url, deviceCredential, deviceId, handle, dia
         return resolveStopped({code, reason});
       }
       const refused = !opened && /\b401\b/.test(failure ?? '') ? '; the relay does not know this device\'s credential: add the line cua remote show prints to its devices.json' : '';
-      const why = opened ? `connection lost (code ${code}${reason ? `, ${reason}` : ''})` : `could not connect (${failure ?? `code ${code}`}${refused})`;
+      const why = opened
+        ? `connection lost (code ${code}${reason ? `, ${reason}` : ''}${failure ? `, ${failure}` : ''})`
+        : `could not connect (${failure ?? `code ${code}`}${refused})`;
       diagnostics(`relay: ${why}; retrying in ${seconds(delay)}`);
       retry = setTimeout(dial, delay);
       delay = Math.min(delay * 2, maxBackoffMs);
@@ -105,19 +108,36 @@ export async function connectRelay({url, deviceCredential, deviceId, handle, dia
       if (frame === null || typeof frame !== 'object' || typeof frame.t !== 'string') return diagnostics('relay: dropped a message that is not a frame');
       if (frame.t === 'open') {
         if (channels.has(frame.ch)) return diagnostics(`relay: dropped an open for channel ${JSON.stringify(frame.ch)}, already open`);
-        channels.set(frame.ch, {ch: frame.ch, method: frame.method, path: frame.path, headers: frame.headers, chunks: [], controller: new AbortController(), done: false, started: false});
+        channels.set(frame.ch, {ch: frame.ch, method: frame.method, path: frame.path, headers: frame.headers, chunks: [], size: 0,
+          controller: new AbortController(), done: false, started: false});
         return;
       }
       const channel = channels.get(frame.ch);
       if (!channel) return diagnostics(`relay: dropped a ${frame.t} frame for unknown channel ${JSON.stringify(frame.ch)}`);
       if (frame.t === 'body') {
-        if (!channel.started) channel.chunks.push(Buffer.from(String(frame.data ?? ''), 'base64'));
+        if (channel.started) return;
+        const chunk = Buffer.from(String(frame.data ?? ''), 'base64');
+        channel.size += chunk.length;
+        if (channel.size > bodyLimit) return refuseTooLarge(channel);
+        channel.chunks.push(chunk);
       } else if (frame.t === 'end') {
         if (!channel.started) serve(channel);
       } else if (frame.t === 'abort') {
         channels.delete(frame.ch);
         abort(channel);
       } else diagnostics(`relay: dropped a frame of unknown type ${JSON.stringify(frame.t)}`);
+    }
+
+    // A body past the limit is answered here (413) and never buffered further; the rest of it is ignored.
+    function refuseTooLarge(channel) {
+      channel.started = true;
+      channel.chunks = null;
+      channel.done = true;
+      channels.delete(channel.ch);
+      const body = JSON.stringify({jsonrpc: '2.0', id: null, error: {code: -32000, message: `cua: the request body is larger than ${bodyLimit} bytes`}});
+      send({ch: channel.ch, t: 'head', status: 413, headers: {'Content-Type': 'application/json'}});
+      send({ch: channel.ch, t: 'data', data: Buffer.from(body).toString('base64')});
+      send({ch: channel.ch, t: 'end'});
     }
 
     // The handler's response for one channel: frames while the channel lives, nothing once it is aborted or ended.

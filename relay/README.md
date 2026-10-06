@@ -19,8 +19,8 @@ proxy must:
 
 - pass WebSocket upgrades on **`/ws`** (where agents connect) and forward everything under **`/d/`** (where clients
   connect), with the `Authorization` header intact;
-- not buffer responses: MCP answers arrive as server-sent events. The relay sets `X-Accel-Buffering: no` on them; with
-  nginx also set `proxy_buffering off` for `/d/`;
+- not buffer or compress responses: MCP answers arrive as server-sent events, sent with `Cache-Control: no-cache,
+  no-transform` and `X-Accel-Buffering: no`; with nginx also set `proxy_buffering off` for `/d/`;
 - allow a read timeout above the longest `js` call you expect; open streams carry a `: keepalive` comment after every
   20 s of silence, so 10 minutes is a safe floor.
 
@@ -60,10 +60,14 @@ A `cua remote enroll --rotate` changes both hashes: replace the line and re-regi
 | client | `401` | the bearer is not this device's client credential, or the device is not in `devices.json` (the two are not told apart) |
 | client | `404` | not a device endpoint: the path is `/d/<deviceId>/mcp` |
 | client | `503 device offline` | the device has no live WebSocket: the Mac is asleep, offline, or its agent is not running (`cua agent status` on the Mac) |
+| client | `413` | the request body is over 4 MB (MCP requests are far smaller); nothing reached the Mac's session |
 | client | `502` | the Mac's connection dropped (or its agent failed) before it answered; a stream already under way is cut instead, and an MCP client resumes it |
 | agent | upgrade refused `401` | the device credential matches no line in `devices.json`: add the line `cua remote show` prints |
 | agent | close `4001` (`replaced`) | a newer connection for the same device took over. The agent stops and exits 0 rather than fight for the slot, and launchd leaves it stopped; find the other holder of this enrolment |
 | agent | close `4003` | the agent's hello named another device than its credential belongs to; it exits 0 |
+
+A client that stops reading while the relay holds more than 32 MB of its response has that response cut; once it reads
+again it resumes by `Last-Event-ID`.
 
 Liveness: the relay pings every WebSocket every 25 s and drops one that misses two pongs; the agent drops a connection
 that heard no ping for 60 s and dials again, from 1 s doubling to 30 s.

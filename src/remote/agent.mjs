@@ -188,7 +188,8 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     await stopAll('signal');
     return 0;
   } catch (error) {
-    await stopAll('signal');
+    // The refusal or failure is what the caller must see; a failure while stopping is only logged.
+    try { await stopAll('signal'); } catch (stopError) { diagnostics(`stopping after a failure also failed: ${stopError.message}`); }
     throw error;
   } finally {
     if (onSignal) for (const signal of SIGNALS) process.off(signal, onSignal);

@@ -21,7 +21,8 @@ function setup(t, {enrol = true, relayUrl, ...fake} = {}) {
   if (enrol) enrollDevice({home, ...(relayUrl ? {relayUrl} : {})});
   const launchctl = fakeLaunchctl(fake);
   const common = {userHome, uid: UID, launchctl: launchctl.run, settleMs: 1};
-  const install = (options = {}) => installAgent({home, env: {CUA_HOME: home}, node: NODE, cli: CLI, ...common, ...options});
+  // The checkout's ws is taken as loadable (whether this checkout has node_modules is not what these tests are about).
+  const install = (options = {}) => installAgent({home, env: {CUA_HOME: home}, node: NODE, cli: CLI, loadRelay: async () => {}, ...common, ...options});
   return {home, userHome, launchctl, common, install, plist: agentPlistPath(userHome)};
 }
 
@@ -197,4 +198,20 @@ test('the launchd and doctor modules do not load the HTTP stack', () => {
 test('parseLaunchdPrint reads the job\'s own state, pid and last exit code, never a nested section\'s', () => {
   assert.deepEqual(parseLaunchdPrint(printed({pid: 77})), {state: 'running', pid: 77, lastExitCode: '(never exited)'});
   assert.deepEqual(parseLaunchdPrint(printed({state: 'not running', lastExit: '78: Function not implemented'})), {state: 'not running', pid: undefined, lastExitCode: '78: Function not implemented'});
+});
+
+test('install refuses to add --relay when this checkout cannot load the ws package, before writing or loading anything', async t => {
+  const {launchctl, install, plist} = setup(t, {relayUrl: 'wss://relay.example/ws'});
+  let checked = 0;
+  const missing = async () => {
+    checked++;
+    const {fail} = await import('../src/runtime/errors.mjs');
+    fail('relay_unavailable', 'the relay connection needs the ws package', {hint: 'run npm ci in the cua checkout'});
+  };
+  await assert.rejects(install({loadRelay: missing}), error => error.code === 'relay_unavailable' && /npm ci/.test(error.hint));
+  assert.equal(checked, 1);
+  assert.equal(existsSync(plist), false, 'no job that would restart every 10 s');
+  assert.deepEqual(launchctl.calls.filter(args => args[0] === 'bootstrap'), []);
+  const http = await install({http: '192.168.1.20:7801', loadRelay: missing}).catch(error => error);
+  assert.equal(http.code, 'relay_unavailable', 'a relay-enrolled device always gets --relay, so --http does not bypass the check');
 });

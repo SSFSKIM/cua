@@ -255,7 +255,7 @@ test('a request\'s response goes on the POST stream that carried it, with two co
   await until(() => b.res.ended, 'stream b to end');
   assert.equal(b.res.status, 200);
   assert.equal(b.res.headers['content-type'], 'text/event-stream');
-  assert.equal(b.res.headers['cache-control'], 'no-cache');
+  assert.equal(b.res.headers['cache-control'], 'no-cache, no-transform', 'no proxy or CDN buffers or compresses the stream');
   assert.deepEqual(b.res.messages(), [{jsonrpc: '2.0', id: 'b', result: {}}]);
   assert.equal(a.res.ended, false);
   assert.deepEqual(a.res.events(), []);
@@ -396,7 +396,7 @@ test('the buffer of undeliverable server messages is capped: a session that woul
 });
 
 test('a response whose POST stream dropped is kept and replayed on a GET naming that stream in Last-Event-ID', async t => {
-  const {send, initialize, upstreamOf} = setup(t);
+  const {send, initialize, upstreamOf} = setup(t, {streamGraceMs: 30});
   const session = await initialize();
   const upstream = upstreamOf(0);
   const post = send({session, body: call(1, 'js', {code: 'long'})});
@@ -419,11 +419,48 @@ test('a response whose POST stream dropped is kept and replayed on a GET naming 
   assert.match(events[0].message.result.content[0].text, /cell finished/);
   assert.equal(events[0].id, `${lastEventId.split('-')[0]}-2`, 'the stream\'s numbering continues');
 
-  // Replayed once: the same Last-Event-ID now names no stream and opens the ordinary GET stream.
+  // Once the completed stream's grace has passed, the same Last-Event-ID names no stream and opens the ordinary GET stream.
+  await tick(60);
   const again = send({method: 'GET', session, headers: {'last-event-id': lastEventId}});
   await until(() => again.res.status === 200, 'a plain GET stream');
   assert.equal(again.res.ended, false);
   assert.equal(again.res.body, '');
+});
+
+test('a stream that completed keeps its events for the grace period, so an answer sent into a dead link is replayed; then it is gone', async t => {
+  const {send, initialize, upstreamOf} = setup(t, {streamGraceMs: 50});
+  const session = await initialize();
+  const upstream = upstreamOf(0);
+  const post = send({session, body: call(1, 'js', {code: 'quick'})});
+  const js = await upstream.nextCall('js');
+  const [priming] = post.res.primings();
+  upstream.text(js, 'answered into the void');
+  await until(() => post.res.ended, 'the stream to complete');   // as far as the agent knows, delivered
+
+  const resumed = send({method: 'GET', session, headers: {'last-event-id': priming}});
+  await until(() => resumed.res.ended, 'the replay to end');
+  assert.deepEqual(resumed.res.events().map(e => [e.id, e.message.id]), [[priming.replace(/-0$/, '-1'), 1]]);
+  assert.match(resumed.res.events()[0].message.result.content[0].text, /answered into the void/);
+
+  await tick(80);
+  const late = send({method: 'GET', session, headers: {'last-event-id': priming}});
+  await until(() => late.res.status === 200, 'a plain GET stream');
+  assert.equal(late.res.ended, false, 'past the grace the id names no stream');
+  assert.equal(late.res.body, '');
+});
+
+test('a request body over the limit is 413 and reaches no session', async t => {
+  const {send, initialize, upstreamOf} = setup(t, {bodyLimit: 1000});
+  const session = await initialize();
+  const big = send({session, body: call(1, 'js', {code: 'x'.repeat(2000)})});
+  await big.done;
+  assert.equal(big.res.status, 413);
+  assert.equal(big.res.json().error.code, -32000);
+  await tick(10);
+  assert.deepEqual(upstreamOf(0).calls('js'), []);
+  const opening = send({body: {...INITIALIZE, params: {...INITIALIZE.params, pad: 'y'.repeat(2000)}}});
+  await opening.done;
+  assert.equal(opening.res.status, 413, 'initialize too');
 });
 
 test('a js call whose stream dropped after only its priming event is replayed whole on Last-Event-ID <stream>-0', async t => {

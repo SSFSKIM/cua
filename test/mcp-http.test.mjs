@@ -195,6 +195,10 @@ test('initialize with a session header is 400; an unknown session is 404; invali
     assert.equal(res.status, 400);
     assert.deepEqual(res.json(), {jsonrpc: '2.0', id: null, error: {code: -32700, message: 'Parse error'}});
   }
+  const broken = {async *[Symbol.asyncIterator]() { yield Buffer.from('{"jsonrpc"'); throw new Error('aborted'); }};
+  ({res, done} = send({session, read: broken}));
+  await done;
+  assert.equal(res.status, 400, 'a body the client stopped sending');
   for (const body of ['[]', '[1]', '"text"', 'null']) {
     ({res, done} = send({session, body}));
     await done;

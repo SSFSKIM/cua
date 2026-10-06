@@ -258,7 +258,10 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   }
 
   async function post(req, res, sessionId) {
-    const text = await readBody(req.body);
+    let text;
+    try { text = await readBody(req.body); } catch {
+      return rpcError(res, 400, -32700, 'cua: the request body could not be read');   // the client went away mid-body
+    }
     let parsed;
     try { parsed = JSON.parse(text); } catch { return rpcError(res, 400, -32700, 'Parse error'); }
     const messages = Array.isArray(parsed) ? parsed : [parsed];

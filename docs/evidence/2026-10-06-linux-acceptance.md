@@ -3,9 +3,9 @@
 Date: 2026-10-06. Spec: `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md` (acceptance 8–12). Spike
 #12's unverified items are answered at the end. Branch `feat/phase-f`. The code under test is the F1 head `d66a813`
 plus F2's fixes (`92322a4`, `2a0d1a2`, `5f2ffd9`, `1356921`, `2bdd240`, `fef5777`, `e9009aa`), then Phase E merged
-in (`91d70ec`), F2's fix wave (`3eea184`, `bb9f6ce`, `ece7420`, `1e24556`) and fix wave 2 (`8128b9f`, `5de5f4a`,
-`d9d0e3b`, `100cd3e`): the VM's `~/cua` is at the fix wave 2
-head. The F1 code's own results are recorded where they differ.
+in (`91d70ec`), F2's fix wave (`3eea184`, `bb9f6ce`, `ece7420`, `1e24556`), fix wave 2 (`8128b9f`, `5de5f4a`,
+`d9d0e3b`, `100cd3e`) and fix wave 3 (`ac1635d`, `9d54269`): the VM's `~/cua` is at the branch head that carries this
+document. The F1 code's own results are recorded where they differ.
 
 Summary:
 
@@ -15,7 +15,7 @@ Summary:
 | 9 Native action | **PASS**. A gedit window bound by X11 id; marker typed, read back through AT-SPI and visible in the screenshot; `run/` empty afterwards |
 | 10 Chrome | **Partial**. Done: `chrome register` writes the Linux manifest; the extension starts cua's host **without sign-in**; `countLiveHosts` counts it; `profiles add` and `bind` work. **Blocked**: the `js` tab cell stops at `Codex auth token is unavailable`, which needs the owner's `cua login` and, possibly, the extension's sign-in |
 | 11 Sandbox and bus from inside | **PASS** as revised: item 9 **fails under `scoped`** (X11 connect `EPERM`) and passes under `disabled`, the Linux default for the computer surface; with user namespaces refused, a scoped connection and the profile listing are **refused at launch** (`sandbox_unavailable`) instead of running unconfined |
-| 12 Tests | **PASS**. macOS 701 tests: 700 pass, 1 Linux-only skip. VM 701 tests: 658 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail; with user namespaces restricted, 651 pass and 50 skipped (the 7 scoped-launch CLI tests skip as `sandbox_unavailable`), 0 fail. `verify.mjs` passes on the VM and on the MacBook |
+| 12 Tests | **PASS**. macOS 702 tests: 701 pass, 1 Linux-only skip. VM 702 tests: 659 pass, 43 skipped (darwin-only: codesign, `ditto` zips, Keychain), 0 fail; with user namespaces restricted, 655 pass and 47 skipped (the 4 CLI tests that need a scoped launch skip as `sandbox_unavailable`), 0 fail. `verify.mjs` passes on the VM and on the MacBook |
 
 ## The machine
 
@@ -218,8 +218,8 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
 ## Item 12: tests
 
 - **macOS (the MacBook):**
-  - `npm test` at fix wave 2's head: 701 tests, 700 pass, 0 fail, 1 skipped (a Linux-only test). At the first fix
-    wave's head: 699 tests, 698 pass.
+  - `npm test` at fix wave 3's head: 702 tests, 701 pass, 0 fail, 1 skipped (a Linux-only test). At fix wave 2's
+    head: 701/700; at the first fix wave's head: 699/698.
     Before the merge, at `fef5777`: 614/614.
   - That includes `test/accept-linux-native.test.mjs`, `test/linux-sandbox-refusal.test.mjs` and the new
     `probe-lib`, `mcp-sandbox` and `runtime-linux-doctor` cases.
@@ -229,9 +229,10 @@ the sky service spawns `sky_linux`, runs under the same `codex sandbox` wrapper.
     `~/.codex/computer-use` one, reused and not started or stopped by cua.
 - **The VM**, with the runtime installed under the default home, so the classic-level tests that F1's simulated
   Linux run had to skip now ran:
-  - `npm test` at fix wave 2's head: 701 tests, 658 pass, 43 skipped, 0 fail; with
-    `kernel.apparmor_restrict_unprivileged_userns=1`, 651 pass and 50 skipped, 0 fail (the 7 `serve-cli` tests that
-    spawn the real CLI on a scoped path skip, naming `sandbox_unavailable`). 699/656/43 at the first fix wave's head,
+  - `npm test` at fix wave 3's head: 702 tests, 659 pass, 43 skipped, 0 fail; with
+    `kernel.apparmor_restrict_unprivileged_userns=1`, 655 pass and 47 skipped, 0 fail (the 4 `serve-cli` tests that
+    spawn the real CLI on a scoped path skip, naming `sandbox_unavailable`; the three listing-lifecycle tests serve
+    disabled and run everywhere). 701/658/43 at fix wave 2's head, 699/656/43 at the first fix wave's head,
     614/571/43 before the Phase E merge.
     The skips are the darwin-only codesign, `ditto` and Keychain tests named in the F1 report.
   - The first VM run, with the F1 code plus the sandbox default, found four failures that only a real Linux host with

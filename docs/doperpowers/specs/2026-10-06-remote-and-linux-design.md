@@ -334,7 +334,7 @@ node verify.mjs           # the stdio smoke the parent ships; the native-socket 
 
 ## Surprises & Discoveries
 
-(none yet)
+- 2026-10-06 (pre-flight, on the mini over SSH): a one-shot job loaded with `launchctl bootstrap gui/501 <plist>` from an SSH session runs in the `Aqua` session (`launchctl managername` inside the job prints `Aqua`; the SSH shell itself prints `Background`), so the GUI-session vehicle E2 ships is reachable without anyone at the console. The console state is scriptable without a compiled helper: `ioreg -n Root -d1 -a` lists `IOConsoleUsers`, each with `kCGSSessionOnConsoleKey` and `kCGSSessionUserIDKey`; on both Macs, unlocked, no `CGSSessionScreenIsLocked` key is present (it is expected to appear, `true`, while the screen is locked; E2 confirms on a locked screen).
 
 ## Decision Log
 

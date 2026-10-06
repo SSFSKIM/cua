@@ -15,7 +15,7 @@ import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {serve} from '../src/mcp/server.mjs';
 import {SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
@@ -112,7 +112,9 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(turnEnded.params.arguments.session_id, echoed.turn.session_id);
   const sent = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
   assert.deepEqual(sent.map(p => p.name), ['js', 'turn_ended']);
-  for (const p of sent) assert.deepEqual(p._meta['codex/sandbox-state-meta'], {...SCOPED, sandboxCwd: pathToFileURL(sessionDir).href}, `${p.name} carries the default (scoped) sandbox state`);
+  // The default mode for the computer surface: scoped, but disabled on Linux (src/runtime/sandbox.mjs defaultSandboxMode).
+  const expected = process.platform === 'linux' ? sandboxState('disabled', sessionDir) : {...SCOPED, sandboxCwd: pathToFileURL(sessionDir).href};
+  for (const p of sent) assert.deepEqual(p._meta['codex/sandbox-state-meta'], expected, `${p.name} carries the default sandbox state`);
   assert.equal(turnEnded.params.arguments.turn_id, echoed.turn.turn_id);
   assert.equal(dirname(sessionDir).endsWith('run'), true);
   assert.equal(sessionDir.endsWith(echoed.turn.session_id), true, 'the run directory is named by the connection session');
@@ -314,7 +316,7 @@ test('cua profiles bind shows each candidate\'s profile directory, binds by dire
   let denied;
   try { denied = cua(['--dry-run']); } finally { chmodSync(join(userData, 'Local State'), 0o644); }
   assert.equal(denied.status, 1, 'unplaced and with names unknown: the pick is the user\'s');
-  assert.match(denied.stderr, /note: this process cannot read Chrome's Local State \(EACCES\): backend labels cannot be compared with this profile's name and the candidates' profile directories are unknown; grant Full Disk Access/);
+  assert.ok(denied.stderr.includes(`note: this process cannot read Chrome's Local State (EACCES): backend labels cannot be compared with this profile's name and the candidates' profile directories are unknown; ${PERMISSION_FIX}`), denied.stderr);
   assert.equal(denied.stderr.match(/Local State/g).length, 1, 'one refused read, one note');
   assert.equal(rowsOf(denied.stdout).filter(row => /profile directory unknown/.test(row)).length, 3);
 });
@@ -381,7 +383,8 @@ test('under the scoped default a CUA_HOME below $TMPDIR fails serve and the list
   // The conflict is with $TMPDIR as the launch sees it, so it is set here: the home's own parent. A caller without a
   // TMPDIR (stock Ubuntu exports none) would otherwise give the launch no temp root and nothing to conflict with.
   const tmpdir = dirname(home);
-  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {TMPDIR: tmpdir});
+  // On Linux scoped is the default only without the computer surface (src/runtime/sandbox.mjs defaultSandboxMode).
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {TMPDIR: tmpdir, ...(process.platform === 'linux' ? {CUA_SHIM_SURFACES: 'browser'} : {})});
   server.child.stdin.end();
   const {code, stderr} = await server.exit;
   assert.equal(code, 1);

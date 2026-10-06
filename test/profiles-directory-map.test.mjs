@@ -138,9 +138,10 @@ test('a store that is not a LevelDB, or a reader that fails, counts as unreadabl
 
 test('copies a killed run left behind are swept once stale; a current run\'s are not', {skip}, async t => {
   const {map, staging} = await setup(t, {Default: {name: 'A', store: 'inst-a'}});
-  mkdirSync(join(staging, `${STAGING_PREFIX}old`, '0'), {recursive: true});
-  mkdirSync(join(staging, `${STAGING_PREFIX}fresh`), {recursive: true});
-  mkdirSync(join(staging, 'release-unrelated'), {recursive: true});
+  // cua creates its staging directory 0700 (the mapper and the installer); made here as cua would, whatever the umask.
+  mkdirSync(join(staging, `${STAGING_PREFIX}old`, '0'), {recursive: true, mode: 0o700});
+  mkdirSync(join(staging, `${STAGING_PREFIX}fresh`), {recursive: true, mode: 0o700});
+  mkdirSync(join(staging, 'release-unrelated'), {recursive: true, mode: 0o700});
   const old = new Date(Date.now() - 3_600_000);
   utimesSync(join(staging, `${STAGING_PREFIX}old`), old, old);
   utimesSync(join(staging, 'release-unrelated'), old, old);

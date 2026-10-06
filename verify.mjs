@@ -73,9 +73,10 @@ const sessionEntries = session => [`${session}.pid`, session, `${session}.sock`]
 
 const server = spawn(process.execPath, [CLI, 'serve'], {stdio: ['pipe', 'pipe', 'inherit'], env: {...process.env, CUA_HOME: home}});
 const exited = new Promise(resolve => server.on('exit', (code, signal) => resolve({code, signal})));
-// A server that exits (a refused open, say) answers nothing more: fail what waits instead of waiting out its timeout.
-exited.then(({code, signal}) => { for (const waiter of pending.values()) waiter.reject(new Error(`cua serve exited (${JSON.stringify({code, signal})}) before answering`)); pending.clear(); });
 const pending = new Map();
+// A server that has gone (a refused open, say) answers nothing more: fail what waits instead of waiting out its timeout.
+// 'close' comes after its stdout is drained, so an answer still in the pipe is read first.
+server.on('close', (code, signal) => { for (const waiter of pending.values()) waiter.reject(new Error(`cua serve exited (${JSON.stringify({code, signal})}) before answering`)); pending.clear(); });
 let nextId = 0;
 report.elicitationsDeclined = 0;
 const send = msg => server.stdin.write(JSON.stringify(msg) + '\n');

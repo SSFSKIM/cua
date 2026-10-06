@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {chmodSync, mkdirSync, readdirSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
 import {agentChecks, inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
 import {agentPlistPath, installAgent} from '../src/remote/launchd.mjs';
 import {enrollDevice} from '../src/remote/device.mjs';
@@ -425,4 +425,42 @@ test('doctor reports the agent rows, and skip neither fails ok nor counts as blo
   const summary = summarize({ok: true, checks: rows.map(([name, status]) => ({name, status, detail: ''}))});
   assert.match(summary, /blocked: helper\.live\)$/);
   assert.equal(summarize({ok: true, checks: [{name: 'agent.installed', status: 'skip', detail: ''}]}), 'passive runtime checks pass');
+});
+
+test('a plist path doctor cannot read is agent.installed fail with the error code, never a thrown doctor', async t => {
+  const {userHome, rows} = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  rmSync(agentPlistPath(userHome));
+  mkdirSync(agentPlistPath(userHome));
+  const r = await rows();
+  assert.equal(r['agent.installed'].status, 'fail');
+  assert.match(r['agent.installed'].detail, /EISDIR/);
+  assert.equal(r['agent.running'].status, 'blocked');
+});
+
+test('agent.console follows the installed job\'s CUA_AGENT_CONSOLE_CHECK, not doctor\'s own environment, when a job exists', async t => {
+  const locked = {onConsole: true, locked: true};
+  // The job turns the check off by hand; doctor's environment leaves it on.
+  const off = await agentSetup(t, {install: {http: '127.0.0.1:7801'}, consoleState: locked});
+  const plist = agentPlistPath(off.userHome);
+  writeFileSync(plist, readFileSync(plist, 'utf8').replace('<key>CUA_SHIM_SURFACES</key>', '<key>CUA_AGENT_CONSOLE_CHECK</key>\n\t\t<string>off</string>\n\t\t<key>CUA_SHIM_SURFACES</key>'));
+  let row = (await off.rows())['agent.console'];
+  assert.equal(row.status, 'skip');
+  assert.match(row.detail, /CUA_AGENT_CONSOLE_CHECK=off/);
+  // The job leaves it on; doctor's environment turning it off does not speak for the job.
+  const on = await agentSetup(t, {install: {http: '127.0.0.1:7801'}, consoleState: locked, env: {CUA_AGENT_CONSOLE_CHECK: 'off'}});
+  row = (await on.rows())['agent.console'];
+  assert.equal(row.status, 'fail');
+  assert.match(row.detail, /screen is locked/);
+  // Enrolled without a job: doctor's environment is all there is.
+  const noJob = await agentSetup(t, {consoleState: locked, env: {CUA_AGENT_CONSOLE_CHECK: 'off'}});
+  assert.equal((await noJob.rows())['agent.console'].status, 'skip');
+});
+
+test('the uid doctor names and reads the console for is the one launchd is asked about', async t => {
+  const {rows} = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  let asked;
+  const r = await rows({checkConsole: async options => { asked = options; return {onConsole: true, locked: false}; }});
+  assert.deepEqual(asked, {uid: UID});
+  assert.match(r['agent.console'].detail, new RegExp(`uid ${UID}\\)`));
+  assert.match(r['agent.running'].detail, new RegExp(`gui/${UID}/`));
 });

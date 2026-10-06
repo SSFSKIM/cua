@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {AGENT_LABEL} from '../../src/remote/launchd.mjs';
 
-export const UID = 501;
+export const UID = 777;   // not a real user, so a test tells it from process.getuid()
 const SERVICE = `gui/${UID}/${AGENT_LABEL}`;
 
 // What `launchctl print` shows for a loaded agent (abridged from macOS 26): nested sections are indented further.

@@ -179,8 +179,11 @@ export async function agentChecks({home, env = process.env, host, launchd = {}, 
     const notSetUp = 'this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install';
     return AGENT_ROWS.map(name => result(name, 'skip', notSetUp));
   }
-  return [installedRow(status, device), runningRow(status, home, launchd.uid ?? process.getuid()), enrolledRow(home, device, deviceError),
-    await consoleRow(env, readConsole)];
+  // One uid for launchd and the console, the one the seam names. The console check is the job's setting when there is
+  // a job (the agent sees only its plist's environment), else doctor's own.
+  const uid = launchd.uid ?? process.getuid();
+  return [installedRow(status, device), runningRow(status, home, uid), enrolledRow(home, device, deviceError),
+    await consoleRow(status.job ? status.job.environment : env, uid, readConsole, status.job ? 'the agent\'s job' : 'this environment')];
 }
 
 function installedRow(status, device) {
@@ -216,20 +219,20 @@ function enrolledRow(home, device, deviceError) {
   return result('agent.enrolled', 'pass', `device ${device.deviceId}, ${device.relayUrl ? `relay ${device.relayUrl}` : 'local only (no relay)'}`);
 }
 
-async function consoleRow(env, readConsole) {
+async function consoleRow(env, uid, readConsole, whose) {
   let on;
   try { on = consoleCheckFrom(env); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return result('agent.console', 'fail', error.message);
+    return result('agent.console', 'fail', `${error.message} (in ${whose})`);
   }
-  if (!on) return result('agent.console', 'skip', 'the console check is off (CUA_AGENT_CONSOLE_CHECK=off): remote js calls are not refused while the screen is locked');
+  if (!on) return result('agent.console', 'skip', `the console check is off (CUA_AGENT_CONSOLE_CHECK=off in ${whose}): remote js calls are not refused while the screen is locked`);
   let state;
-  try { state = await readConsole(); } catch (error) {
+  try { state = await readConsole({uid}); } catch (error) {
     return result('agent.console', 'blocked', `${error.message} [${error.code ?? 'error'}]`);
   }
   if (!state.onConsole) return result('agent.console', 'fail', 'this user\'s session is not on the console (nobody is logged in at the screen, or another user is): remote js calls are refused (console_locked) until this user is at the screen, unlocked');
   if (state.locked) return result('agent.console', 'fail', 'this user\'s session is on the console but the screen is locked: remote js calls are refused (console_locked) until it is unlocked');
-  return result('agent.console', 'pass', `this user's session (uid ${process.getuid()}) is on the console and the screen is unlocked`);
+  return result('agent.console', 'pass', `this user's session (uid ${uid}) is on the console and the screen is unlocked`);
 }
 
 // One-line human verdict that never overstates `ok`: blocked checks leave live capability unverified.

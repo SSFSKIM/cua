@@ -8,6 +8,8 @@ import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync} from 'n
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
+import {runAgent} from '../src/remote/agent.mjs';
+import {checkConsole} from '../src/remote/console.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
 // The agents here never read the real console (CUA_AGENT_CONSOLE_CHECK=off): js must run whatever the test Mac's screen
@@ -118,6 +120,19 @@ test('agent run refuses without an enrolment, with --relay before the relay exis
     assert.match(r.stderr, new RegExp(code), args.join(' '));
   }
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false, 'every refusal released the agent lock');
+});
+
+test('runAgent hands the HTTP handler the real console check unless CUA_AGENT_CONSOLE_CHECK=off', async t => {
+  const home = emptyHome(t);
+  enroll(home);
+  const stop = new Error('captured');
+  for (const [env, expected] of [[{}, checkConsole], [{CUA_AGENT_CONSOLE_CHECK: 'on'}, checkConsole], [{CUA_AGENT_CONSOLE_CHECK: 'off'}, undefined]]) {
+    let options;
+    await assert.rejects(runAgent({home, env, http: '127.0.0.1:0', diagnostics: () => {},
+      createHttp: given => { options = given; throw stop; }}), stop);
+    assert.equal(options.console, expected, JSON.stringify(env));
+  }
+  assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });
 
 test('agent run --http serves sessions over HTTP; two sessions (cap 2) have their own run entries and both close on SIGTERM', {skip: !installedHomeSupported}, async t => {

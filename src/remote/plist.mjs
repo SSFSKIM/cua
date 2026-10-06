@@ -11,26 +11,33 @@ const invalid = why => fail('plist_invalid', `not a property list: ${why}`);
 
 export const representable = text => !UNREPRESENTABLE.test(text);
 
+// A parsed <dict>: a plain object (an <array> is an Array, a <data> a Buffer).
+export const isDict = value => value !== null && typeof value === 'object' && !Array.isArray(value) && !Buffer.isBuffer(value);
+
 const ESCAPES = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&apos;'};
 export const escapeXml = text => text.replace(/[&<>"']/g, c => ESCAPES[c]);
 
 function unescape(text) {
   return text.replace(/&(#x[0-9A-Fa-f]+|#\d+|[a-z]+);|&/g, (_, name) => {
     if (name === undefined) invalid('a bare & in text');
-    if (name.startsWith('#x')) return String.fromCodePoint(parseInt(name.slice(2), 16));
-    if (name.startsWith('#')) return String.fromCodePoint(Number(name.slice(1)));
+    if (name.startsWith('#')) {
+      const code = name.startsWith('#x') ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+      if (!(code <= 0x10ffff)) invalid(`&${name}; is past the last Unicode character`);
+      return String.fromCodePoint(code);
+    }
     if (!Object.hasOwn(ENTITIES, name)) invalid(`unknown entity &${name};`);
     return ENTITIES[name];
   });
 }
 
-// Tokens: {open, close, empty} tags by name, and text. The prolog, the doctype and comments are dropped.
+// Tokens: {open, close, empty} tags by name, and text (`blank` when only whitespace). The prolog, the doctype and
+// comments are dropped.
 function tokenize(text) {
   const tokens = [];
   const pattern = /<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<!DOCTYPE[^>]*>|<(\/?)([A-Za-z]+)(?:\s[^>]*?)?(\/?)>|([^<]+)|(<)/g;
   for (const [, slash, name, selfClosing, chars, stray] of text.matchAll(pattern)) {
     if (stray) invalid('a stray <');
-    if (chars !== undefined) { if (chars.trim()) tokens.push({text: chars}); continue; }
+    if (chars !== undefined) { tokens.push({text: chars, blank: !chars.trim()}); continue; }
     if (name === undefined) continue;
     tokens.push({tag: name, kind: slash ? 'close' : selfClosing ? 'empty' : 'open'});
   }
@@ -44,8 +51,10 @@ export function parsePlist(text) {
   if (typeof text !== 'string') invalid('no text');
   const tokens = tokenize(text);
   let at = 0;
-  const peek = () => tokens[at];
-  const next = () => tokens[at++] ?? invalid('it ends early');
+  // Between elements whitespace means nothing; inside a <string> or <key> it is the value (`content`).
+  const skipBlank = () => { while (tokens[at]?.blank) at++; };
+  const peek = () => { skipBlank(); return tokens[at]; };
+  const next = () => { skipBlank(); return tokens[at++] ?? invalid('it ends early'); };
   const expectClose = tag => {
     const token = next();
     if (token.kind !== 'close' || token.tag !== tag) invalid(`<${tag}> is not closed`);
@@ -54,7 +63,7 @@ export function parsePlist(text) {
   const content = open => {
     if (open.kind === 'empty') return '';
     let chars = '';
-    if (peek()?.text !== undefined) chars = unescape(next().text);
+    if (tokens[at]?.text !== undefined) chars = unescape(tokens[at++].text);
     expectClose(open.tag);
     return chars;
   };
@@ -104,6 +113,7 @@ export function parsePlist(text) {
   if (root.tag !== 'plist' || root.kind !== 'open') invalid('no <plist> element');
   const result = value();
   expectClose('plist');
+  skipBlank();
   if (at !== tokens.length) invalid('something follows </plist>');
   return result;
 }

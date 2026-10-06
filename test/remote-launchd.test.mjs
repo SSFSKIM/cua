@@ -3,13 +3,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {dirname, join, relative} from 'node:path';
 import {AGENT_LABEL, agentPlistPath, agentStatus, installAgent, parseLaunchdPrint, readPlist, uninstallAgent} from '../src/remote/launchd.mjs';
 import {enrollDevice} from '../src/remote/device.mjs';
-import {scratch} from './fixtures/runtime-fixture.mjs';
-import {fakeLaunchctl, printed} from './fixtures/fake-launchctl.mjs';
+import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
+import {UID, fakeLaunchctl, printed} from './fixtures/fake-launchctl.mjs';
 
-const UID = 501;
 const NODE = '/opt/node & <co>/bin/node';
 const CLI = '/Users/me/"cua"/bin/cua\'s.mjs';
 
@@ -85,6 +84,7 @@ test('install refuses, before writing anything or calling launchctl, with nothin
     [{http: '127.0.0.1:7801'}, {enrol: false}, 'remote_not_enrolled'],
     [{}, {enrol: false}, 'remote_not_enrolled'],
     [{http: '0.0.0.0'}, {}, 'invalid_http_address'],
+    [{http: '127.0.0.1:0'}, {}, 'invalid_http_address'],
     [{http: '127.0.0.1:7801', surfaces: 'computer,keyboard'}, {}, 'invalid_setting'],
     [{http: '127.0.0.1:7801', surfaces: ''}, {}, 'invalid_setting'],
     [{http: '127.0.0.1:7801', node: '/bin/node\u0001'}, {}, 'agent_path_unsupported'],
@@ -134,6 +134,15 @@ test('status reads the plist and launchd: not installed (launchd not asked), run
   assert.equal(status.installed, true);
   assert.equal(status.job, undefined);
   assert.match(status.invalid, /Label/);
+
+  // Damage never throws: a character reference past Unicode, or a plist path that cannot be read as a file.
+  writeFileSync(plist, `<plist><dict><key>Label</key><string>&#x110000;</string></dict></plist>`);
+  assert.match((await agentStatus(common)).invalid, /not a property list/);
+  rmSync(plist);
+  mkdirSync(plist);
+  status = await agentStatus(common);
+  assert.equal(status.installed, true);
+  assert.match(status.invalid, /could not be read \(EISDIR\)/);
 });
 
 test('uninstall boots the job out and removes the plist; with nothing installed it changes nothing and says so', async t => {
@@ -168,6 +177,21 @@ test('readPlist accepts the job cua writes with keys added by hand, and refuses 
     base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key><string>Interactive</string>', '<key>KeepAlive</key><string>yes</string>'),
     base(['/n', '/c', 'agent', 'run']).replace('<key>ProcessType</key><string>Interactive</string>', '<key>KeepAlive</key><dict><key>SuccessfulExit</key><string>no</string></dict>')])
     assert.throws(() => readPlist(text), {code: 'agent_plist_invalid'}, text);
+});
+
+test('the launchd and doctor modules do not load the HTTP stack', () => {
+  // A static walk of the relative imports from each module: cua doctor and cua agent status stay light.
+  const graph = (file, seen = new Set()) => {
+    if (seen.has(file)) return seen;
+    seen.add(file);
+    for (const [, spec] of readFileSync(file, 'utf8').matchAll(/^import\s[^;]*?from\s+'(\.[^']+)';/gms)) graph(join(dirname(file), spec), seen);
+    return seen;
+  };
+  for (const entry of ['src/remote/launchd.mjs', 'src/runtime/doctor.mjs']) {
+    const reached = [...graph(join(REPO, entry))].map(f => relative(REPO, f));
+    for (const heavy of ['src/mcp/http.mjs', 'src/mcp/server.mjs', 'src/mcp/connection.mjs', 'src/remote/agent.mjs'])
+      assert.ok(!reached.includes(heavy), `${entry} reaches ${heavy}`);
+  }
 });
 
 test('parseLaunchdPrint reads the job\'s own state, pid and last exit code, never a nested section\'s', () => {

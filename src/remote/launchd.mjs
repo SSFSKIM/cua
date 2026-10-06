@@ -22,10 +22,10 @@ import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
-import {escapeXml, parsePlist, representable} from './plist.mjs';
+import {escapeXml, isDict, parsePlist, representable} from './plist.mjs';
 import {readDevice} from './device.mjs';
-import {parseAddress} from './agent.mjs';
-import {settingsFrom} from '../mcp/server.mjs';
+import {parseFixedAddress} from './address.mjs';
+import {surfacesFrom} from '../mcp/surface.mjs';
 import {CuaError, fail} from '../runtime/errors.mjs';
 
 export const AGENT_LABEL = 'com.ssfskim.cua.agent';
@@ -80,8 +80,7 @@ ${env}\t</dict>
 }
 
 const invalidJob = why => fail('agent_plist_invalid', `the launchd job is not one cua wrote: ${why}`, {hint: 'run cua agent install to replace it'});
-const isStringMap = value => value !== null && typeof value === 'object' && !Array.isArray(value) && !Buffer.isBuffer(value)
-  && Object.values(value).every(v => typeof v === 'string');
+const isStringMap = value => isDict(value) && Object.values(value).every(v => typeof v === 'string');
 
 // cua's reader for the job it writes: the label, `<node> <cli> agent run <args…>`, and the keys cua sets. Keys added by
 // hand (a ProcessType, an extra variable) are tolerated.
@@ -91,15 +90,14 @@ export function readPlist(text) {
     if (error.code === 'plist_invalid') invalidJob(error.message);
     throw error;
   }
-  if (job === null || typeof job !== 'object' || Array.isArray(job) || Buffer.isBuffer(job)) invalidJob('it is not a dictionary');
+  if (!isDict(job)) invalidJob('it is not a dictionary');
   if (job.Label !== AGENT_LABEL) invalidJob(`its Label is ${JSON.stringify(job.Label)}, not ${AGENT_LABEL}`);
   const args = job.ProgramArguments;
   if (!Array.isArray(args) || !args.every(a => typeof a === 'string') || args.length < 4 || args[2] !== 'agent' || args[3] !== 'run')
     invalidJob('its ProgramArguments are not <node> <cua> agent run …');
   if (job.EnvironmentVariables !== undefined && !isStringMap(job.EnvironmentVariables)) invalidJob('its EnvironmentVariables are not all strings');
   const keepAlive = job.KeepAlive ?? false;
-  const conditions = keepAlive !== null && typeof keepAlive === 'object' && !Array.isArray(keepAlive) && !Buffer.isBuffer(keepAlive);
-  if (typeof keepAlive !== 'boolean' && !(conditions && Object.values(keepAlive).every(v => typeof v === 'boolean')))
+  if (typeof keepAlive !== 'boolean' && !(isDict(keepAlive) && Object.values(keepAlive).every(v => typeof v === 'boolean')))
     invalidJob('its KeepAlive is neither true/false nor a dictionary of conditions');
   for (const key of ['StandardOutPath', 'StandardErrorPath'])
     if (job[key] !== undefined && typeof job[key] !== 'string') invalidJob(`its ${key} is not a path`);
@@ -167,8 +165,8 @@ function writePlist(path, text) {
 
 export async function installAgent({home, env = process.env, http, surfaces = DEFAULT_SURFACES, node = process.execPath, cli = CLI,
   userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl, settleMs = 250}) {
-  if (http !== undefined && http !== null) parseAddress(http);
-  const named = settingsFrom({CUA_SHIM_SURFACES: surfaces}).surfaces.join(',');
+  if (http !== undefined && http !== null) parseFixedAddress(http);
+  const named = surfacesFrom(surfaces).join(',');
   const device = readDevice(home);
   if (!device) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll first'});
   const args = [...(device.relayUrl ? ['--relay'] : []), ...(http ? ['--http', http] : [])];
@@ -210,12 +208,13 @@ export async function uninstallAgent({userHome = homedir(), uid = process.getuid
 export async function agentStatus({userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl} = {}) {
   const plist = agentPlistPath(userHome);
   let text;
+  // Whatever is at the path, damage reads as `invalid`, never a throw: doctor and status report it.
+  const status = {label: AGENT_LABEL, plist, installed: true};
   try { text = readFileSync(plist, 'utf8'); } catch (error) {
     if (error.code === 'ENOENT') return {label: AGENT_LABEL, plist, installed: false, loaded: false, running: false};
-    throw error;
+    status.invalid = `the plist could not be read (${error.code ?? error.message})`;
   }
-  const status = {label: AGENT_LABEL, plist, installed: true};
-  try { status.job = readPlist(text); } catch (error) {
+  if (text !== undefined) try { status.job = readPlist(text); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     status.invalid = error.message;
   }

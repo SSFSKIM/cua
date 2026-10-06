@@ -37,7 +37,7 @@ import {createInterface} from 'node:readline';
 import {TaskLifecycle} from './task.mjs';
 import {openConnection} from './connection.mjs';
 import {
-  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, withHostNotes,
+  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
 } from './surface.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -52,7 +52,6 @@ const NOT_CONFIGURED = {
   close: async () => ({confirmed: true, steps: []}),
 };
 const LIST_CODES = new Set(['not_configured', 'disconnected', 'timeout', 'protocol', 'unauthorized', 'denied', 'locked', 'unavailable']);
-const SURFACES = ['computer', 'browser'];
 const NO_PROFILES = {list: () => []};
 
 export function createServer({
@@ -321,14 +320,6 @@ export function createServer({
   }
 
   return {sessionId, closed, close, get state() { return lifecycle.state; }};
-}
-
-// CUA_SHIM_SURFACES: computer (the default), browser, or both (comma-separated, any order).
-function surfacesFrom(value = 'computer') {
-  const named = value.split(',').map(s => s.trim());
-  if (!named.length || !named.every(s => SURFACES.includes(s)) || new Set(named).size !== named.length)
-    fail('invalid_setting', 'CUA_SHIM_SURFACES must be computer, browser or computer,browser');
-  return SURFACES.filter(s => named.includes(s));
 }
 
 export function settingsFrom(env) {

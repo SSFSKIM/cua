@@ -84,8 +84,13 @@ test('parsePlist reads dicts, arrays, strings, numbers, booleans, data and entit
   for (const text of ['', 'not xml', '<plist version="1.0"><dict><key>a</key></dict></plist>', '<plist><string>x</plist>',
     '<plist><dict><string>no key</string><string>v</string></dict></plist>', '<plist><integer>1.5</integer></plist>',
     '<plist><string>a</string><string>b</string></plist>', '<plist><string>a</string></plist> trailing', '<plist><unknown/></plist>',
-    '<plist><string>&bogus;</string></plist>'])
+    '<plist><string>&bogus;</string></plist>', '<plist><string>&#x110000;</string></plist>', '<plist><string>&#99999999;</string></plist>'])
     assert.throws(() => parsePlist(text), {code: 'plist_invalid'}, JSON.stringify(text));
+});
+
+test('parsePlist keeps whitespace-only text inside a string or a key, and skips it between elements', () => {
+  assert.equal(parsePlist('<plist> <string> </string> </plist>'), ' ');
+  assert.deepEqual(parsePlist('<plist>\n<dict>\n\t<key> </key>\n\t<string>\n\t</string>\n</dict>\n</plist>\n'), {' ': '\n\t'});
 });
 
 test('the console state: on the console and unlocked, locked by the console or by the session, off the console, or no session', () => {

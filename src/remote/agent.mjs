@@ -15,6 +15,7 @@ import {randomUUID} from 'node:crypto';
 import {createMcpHttp} from '../mcp/http.mjs';
 import {settingsFrom} from '../mcp/server.mjs';
 import {credentialsOf, readDevice} from './device.mjs';
+import {parseAddress} from './address.mjs';
 import {checkConsole, consoleCheckFrom} from './console.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {fail} from '../runtime/errors.mjs';
@@ -86,14 +87,6 @@ export function acquireAgentLock(home) {
 
 // ---- settings ----
 
-export function parseAddress(text) {
-  const found = /^(?:\[([0-9A-Fa-f:.]+)\]|([^:\s[\]]+)):(\d{1,5})$/.exec(text ?? '');
-  const port = Number(found?.[3]);
-  if (!found || port > 65535)
-    fail('invalid_http_address', `--http takes <host>:<port>, such as 127.0.0.1:7801 or [::1]:7801 (got ${JSON.stringify(text)})`, {hint: 'name the address to listen on: 127.0.0.1 for this Mac only, the Mac\'s LAN address for other machines (never 0.0.0.0)'});
-  return {host: found[1] ?? found[2], port};
-}
-
 function limitsFrom(env) {
   const max = env.CUA_AGENT_MAX_SESSIONS ?? '1';
   if (!/^[1-9]\d{0,3}$/.test(max)) fail('invalid_setting', 'CUA_AGENT_MAX_SESSIONS must be a whole number of sessions, at least 1');
@@ -126,8 +119,9 @@ const listen = (server, host, port) => new Promise((resolve, reject) => {
   server.listen({host, port}, () => { server.off('error', reject); resolve(server.address()); });
 });
 
+// `createHttp` is the HTTP handler's factory, a seam for tests.
 export async function runAgent({home, env = process.env, http = null, relay = false,
-  diagnostics = line => process.stderr.write(`cua agent: ${line}\n`)}) {
+  diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), createHttp = createMcpHttp}) {
   const lock = acquireAgentLock(home);
   let onSignal;
   try {
@@ -148,7 +142,7 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     // The handlers are in place before the listener, so no session can open without a signal closing it.
     const stopped = new Promise(resolve => { onSignal = resolve; });
     for (const signal of SIGNALS) process.on(signal, onSignal);
-    const mcp = createMcpHttp({home, env, clientCredential: credentialsOf(device).clientCredential, ...limits,
+    const mcp = createHttp({home, env, clientCredential: credentialsOf(device).clientCredential, ...limits,
       ...(consoleChecked ? {console: checkConsole} : {}), diagnostics});
     const server = createHttpServer(nodeAdapter(mcp.handle));
     let address;

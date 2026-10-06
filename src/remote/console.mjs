@@ -8,7 +8,7 @@
 // `IOConsoleLocked` (true while the console is locked or nobody is logged in at it).
 // Either lock signal counts. `ioreg` needs no privilege and runs from a launchd job as from a terminal.
 import {execFile} from 'node:child_process';
-import {parsePlist} from './plist.mjs';
+import {isDict, parsePlist} from './plist.mjs';
 import {CuaError, fail} from '../runtime/errors.mjs';
 
 const IOREG = '/usr/sbin/ioreg';
@@ -36,7 +36,7 @@ export function consoleStateOf(registry, uid) {
     unreadable(error.message);
   }
   const users = root?.IOConsoleUsers ?? [];
-  if (root === null || typeof root !== 'object' || Array.isArray(root) || Buffer.isBuffer(root) || !Array.isArray(users))
+  if (!isDict(root) || !Array.isArray(users))
     unreadable('ioreg did not print the registry root');
   const session = users.find(user => user?.kCGSSessionUserIDKey === uid);
   return {

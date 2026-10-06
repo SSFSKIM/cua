@@ -21,6 +21,25 @@ export function rollup(statuses) {
   return 'PASS';
 }
 
+// Doctor's runtime health as an acceptance runner needs it. Doctor's own `ok` also counts the remote-control rows
+// (agent.*), which describe this Mac's launchd agent and console, not the runtime: an enrolled Mac whose screen is
+// locked fails agent.console with nothing native wrong (#56). Those rows are informational here: reported, never
+// gating. Every other failing row still fails, and the exit code and `ok` must agree with the rows (a report that
+// contradicts itself is not health). -> {healthy, detail}
+export const DOCTOR_INFORMATIONAL = row => row.name.startsWith('agent.');
+export function doctorHealth({code, doctor}) {
+  if (!doctor || !Array.isArray(doctor.checks)) return {healthy: false, detail: `exit ${code}; no report`};
+  const anyFail = doctor.checks.some(c => c.status === 'fail');
+  const gating = doctor.checks.filter(c => c.status === 'fail' && !DOCTOR_INFORMATIONAL(c)).map(c => c.name);
+  const info = doctor.checks.filter(c => DOCTOR_INFORMATIONAL(c) && c.status !== 'skip').map(c => `${c.name} ${c.status}`);
+  const consistent = doctor.ok === !anyFail && code === (anyFail ? 1 : 0);
+  return {
+    healthy: consistent && !gating.length,
+    detail: `exit ${code}; ok ${doctor.ok}${consistent ? '' : ' (disagrees with its rows)'}${gating.length ? `; failing: ${gating.join(', ')}` : ''}`
+      + (info.length ? `; informational, not gating: ${info.join(', ')}` : ''),
+  };
+}
+
 // What a required suite's run proves. Exit 0 with no failure is not enough: a suite that executed nothing, or skipped
 // or left TODO any test, has not shown its coverage, so it is BLOCKED (never PASS); a failure, cancellation, nonzero
 // exit or a missing, incomplete or conflicting summary (testSummary's `problem`) is FAIL.

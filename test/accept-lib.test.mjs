@@ -8,10 +8,13 @@ import {mkdirSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
-  approvalObservation, inventoryCheck, PROBE_SECRETS_PHASES, probePhasesFor, scenarioVerdict,
+  approvalObservation, doctorHealth, inventoryCheck, PROBE_SECRETS_PHASES, probePhasesFor, scenarioVerdict,
   diffSnapshots, forbiddenPaths, isTextEditApproval, missingFromPackage, PACKAGE_REQUIRED, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from '../scripts/accept/lib.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
+import {agentChecks} from '../src/runtime/doctor.mjs';
+import {enrollDevice} from '../src/remote/device.mjs';
+import {UID, fakeLaunchctl} from './fixtures/fake-launchctl.mjs';
 
 test('an item passes only when every check passed; nothing evaluated is blocked, never a pass', () => {
   assert.equal(rollup([]), 'BLOCKED');
@@ -274,4 +277,38 @@ test('per-connection approval is observed only with both connections bound, aske
   assert.equal(approvalObservation(both({sessionFileWhileOpen: false})).status, 'FAIL');
   assert.equal(approvalObservation(both({approvalRequests: 2, approvalsAccepted: 1})).status, 'FAIL');
   assert.equal(approvalObservation(undefined).status, 'BLOCKED');
+});
+
+test('doctor health for acceptance: the remote-control rows are reported but never gate it; every other failure does (#56)', async t => {
+  // The agent rows doctor really produces on an enrolled Mac with no launchd agent, whose screen is locked (temp homes,
+  // a fake launchd domain and an injected console: nothing real is read).
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'home');
+  const userHome = join(s.dir, 'user');
+  mkdirSync(userHome);
+  enrollDevice({home});
+  const agent = await agentChecks({home, env: {}, host: {platform: 'darwin', arch: 'arm64'}, launchd: {userHome, uid: UID, launchctl: fakeLaunchctl().run, settleMs: 1},
+    checkConsole: async () => ({onConsole: true, locked: true})});
+  assert.equal(agent.find(c => c.name === 'agent.console').status, 'fail', 'the fixture reproduces the locked console');
+  const runtime = ['platform', 'runtime.installed', 'runtime.files', 'sandbox', 'helper.live', 'secrets.helper'].map(name => ({name, status: name === 'helper.live' ? 'blocked' : 'pass', detail: ''}));
+  const report = (rows, ok = !rows.some(c => c.status === 'fail')) => ({ok, checks: rows});
+
+  const locked = doctorHealth({code: 1, doctor: report([...runtime, ...agent])});
+  assert.equal(locked.healthy, true, locked.detail);
+  assert.match(locked.detail, /^exit 1; ok false; informational, not gating: .*agent\.console fail/);
+  assert.doesNotMatch(locked.detail, /failing:/);
+
+  const plain = doctorHealth({code: 0, doctor: report(runtime)});
+  assert.deepEqual(plain, {healthy: true, detail: 'exit 0; ok true'}, 'nothing informational to print when no agent row applies');
+
+  const broken = runtime.map(c => (c.name === 'runtime.files' ? {...c, status: 'fail'} : c));
+  const both = doctorHealth({code: 1, doctor: report([...broken, ...agent])});
+  assert.equal(both.healthy, false);
+  assert.match(both.detail, /failing: runtime\.files;/);
+
+  assert.equal(doctorHealth({code: 0, doctor: report([...runtime, ...agent], true)}).healthy, false, 'ok that contradicts its rows');
+  assert.equal(doctorHealth({code: 0, doctor: report([...runtime, ...agent])}).healthy, false, 'an exit code that contradicts ok');
+  assert.equal(doctorHealth({code: 1, doctor: report(runtime)}).healthy, false, 'nonzero exit from a healthy report');
+  assert.deepEqual(doctorHealth({code: 1, doctor: null}), {healthy: false, detail: 'exit 1; no report'});
 });

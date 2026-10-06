@@ -10,7 +10,7 @@ import {profileView} from '../../src/mcp/surface.mjs';
 import {chromeUserData, hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
 import {awaitsLiveEvidence, REASONS} from '../../src/profiles/registry.mjs';
 import {browsersFor, isOwnHostPath} from '../../src/chrome/registration.mjs';
-import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
+import {doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
 
 const check = (name, status, detail) => ({name, status, detail});
 
@@ -463,7 +463,8 @@ export function profilesListCheck(structured, statuses) {
 export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow, record}) {
   if (!isObject(doctor) || !Array.isArray(doctor.checks)) return [check('doctor --json', 'FAIL', `exit ${code}; no report`)];
   const get = name => doctor.checks.find(c => c.name === name);
-  const out = [check('doctor --json: runtime health', code === 0 && doctor.ok === true ? 'PASS' : 'FAIL', `exit ${code}; ok ${doctor.ok}`)];
+  const health = doctorHealth({code, doctor});
+  const out = [check('doctor --json: runtime health', health.healthy ? 'PASS' : 'FAIL', health.detail)];
   const expect = (name, judge) => {
     const c = get(name);
     // Doctor has a per-profile check only for a registered profile.

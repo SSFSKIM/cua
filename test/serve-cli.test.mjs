@@ -624,7 +624,9 @@ function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
   const frames = [];
   const lines = createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
   const diagnostics = [];
-  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'browser'}, input, output,
+  // These tests are about the listing's lifecycle, not the sandbox: served disabled, the connection needs no user
+  // namespaces on Linux (a scoped one is refused where they are), so they run on every host.
+  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'off', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SANDBOX: 'disabled'}, input, output,
     chrome: chromeFacts({userData}), listBackends, diagnostics: line => diagnostics.push(line)});
   t.after(async () => { input.end(); await served; });
   const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');
@@ -633,7 +635,7 @@ function boundBrowserServe(t, listBackends, {highWaterMark} = {}) {
   return {input, output, lines, send, reply, served, diagnostics};
 }
 
-test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
+test('a readiness listing whose runtime teardown is unconfirmed makes profiles_list unlistable and serve exit 1', {skip: !supported}, async t => {
   const unconfirmed = async () => ({backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: false, steps: ['eof', 'sigterm', 'sigkill'], reason: 'a group member survived'}});
   const {input, send, reply, served, diagnostics} = boundBrowserServe(t, unconfirmed);
   await reply(1);
@@ -644,7 +646,7 @@ test('a readiness listing whose runtime teardown is unconfirmed makes profiles_l
   assert.ok(diagnostics.some(l => /readiness listing's runtime could not be confirmed stopped; owned processes may remain/.test(l)), diagnostics.join('\n'));
 });
 
-test('serve waits for a readiness listing still running at close, keeping its signal handlers until it settles', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
+test('serve waits for a readiness listing still running at close, keeping its signal handlers until it settles', {skip: !supported}, async t => {
   let started;
   const begun = new Promise(resolve => { started = resolve; });
   let release;
@@ -668,7 +670,7 @@ test('serve waits for a readiness listing still running at close, keeping its si
   assert.ok(!process.listeners('SIGTERM').includes(own[0]), 'the handler goes once the listing settled');
 });
 
-test('a readiness listing that settles during close is answered before the final bounded flush, which drops the reply with the stream when the client stopped reading', {skip: !supported || NO_SCOPED_LAUNCH}, async t => {
+test('a readiness listing that settles during close is answered before the final bounded flush, which drops the reply with the stream when the client stopped reading', {skip: !supported}, async t => {
   let started;
   const begun = new Promise(resolve => { started = resolve; });
   let release;

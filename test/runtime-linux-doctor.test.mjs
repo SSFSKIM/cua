@@ -78,8 +78,21 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
 
   rows = await doctor({CUA_SHIM_SURFACES: 'browser'}, 'blocked');
   assert.equal(rows.sandbox.status, 'fail');
-  assert.match(rows.sandbox.detail, /runs JavaScript cells with no sandbox at all/);
+  assert.match(rows.sandbox.detail, /fails open/);
+  assert.match(rows.sandbox.detail, /refuse scoped connections \(sandbox_unavailable\)/);
   assert.equal(rows['sandbox.userns'].status, 'blocked', 'the probe row keeps its own verdict and remedy');
+
+  rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'blocked');
+  assert.equal(rows.sandbox.status, 'fail');
+  assert.match(rows.sandbox.detail, /fails open/, 'refused user namespaces are named first: that is what happens in this state');
+  assert.match(rows.sandbox.detail, /refuse scoped connections \(sandbox_unavailable\)/);
+  assert.match(rows.sandbox.detail, /even with user namespaces.*X display/, 'the computer surface\'s own problem is still said');
+
+  for (const value of ['', 'computer,', 'mouse']) {
+    rows = await doctor({CUA_SHIM_SURFACES: value}, 'pass');
+    assert.equal(rows.sandbox.status, 'fail', JSON.stringify(value));
+    assert.match(rows.sandbox.detail, /CUA_SHIM_SURFACES must be computer, browser or computer,browser/);
+  }
 
   rows = await doctor({CUA_SHIM_SANDBOX: 'disabled'}, 'blocked');
   assert.equal(rows.sandbox.status, 'pass');

@@ -53,6 +53,7 @@ import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks} from './linux-desktop.mjs';
+import {surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
 import {agentLogPath, agentStatus} from '../remote/launchd.mjs';
 import {checkConsole, consoleCheckFrom} from '../remote/console.mjs';
@@ -144,9 +145,12 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
 // scoped sandbox keeps the computer-use helper off the X display and the session bus, and where bubblewrap cannot
 // create a user namespace (`userns`, the sandbox.userns row) the runtime runs cells with no sandbox at all.
 function sandboxCheck({home, env, runtime, platform, userns}) {
-  const surfaces = (env.CUA_SHIM_SURFACES ?? 'computer').split(',').map(s => s.trim());
+  let surfaces;
   let mode;
-  try { mode = sandboxModeFrom(env, {platform, surfaces}); } catch (error) {
+  try {
+    surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
+    mode = sandboxModeFrom(env, {platform, surfaces});
+  } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return {mode: null, row: result('sandbox', 'fail', error.message)};
   }
@@ -158,8 +162,10 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   if (mode === 'disabled' && linux && env.CUA_SHIM_SANDBOX === undefined) return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled, because under the scoped sandbox node_repl lets no runtime process connect to a socket and the computer-use helper could not reach the X display or the session bus. JavaScript cells may write wherever your account can and reach the network (on Linux they can reach the X display directly too); CUA_SHIM_SURFACES=browser keeps scoped');
   if (mode === 'disabled') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=disabled: JavaScript cells may write wherever your account can, cua\'s trusted code roots included (accepted under the trust model, #20), and reach the network');
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: cua sends no sandbox state; node_repl denies every write and network connection, so profile labels and other features that need scratch space fail');
-  if (linux && surfaces.includes('computer')) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
-  if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped, but bubblewrap cannot create a user namespace here (see sandbox.userns), and the runtime then runs JavaScript cells with no sandbox at all: they write anywhere your account can and reach the network. Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to choose that openly');
+  const computer = linux && surfaces.includes('computer');
+  if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped, but bubblewrap cannot create a user namespace here (see sandbox.userns): the runtime\'s sandbox fails open in that state, running JavaScript cells with no sandbox at all, so cua serve and the profile listing refuse scoped connections (sandbox_unavailable). Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to choose that openly'
+    + (computer ? '. And even with user namespaces, scoped would keep the computer-use helper (sky_linux) off the X display and the session bus; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser' : ''));
+  if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
   const owned = homeLayout(realHome(home));
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),

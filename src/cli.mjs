@@ -9,8 +9,10 @@ import {installRuntime, useRuntime} from './runtime/install.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
 import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
-import {CuaError} from './runtime/errors.mjs';
+import {CuaError, fail} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
+import {devicesEntry, enrollDevice, readDevice} from './remote/device.mjs';
+import {runAgent} from './remote/agent.mjs';
 import {runSecrets} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
@@ -26,7 +28,7 @@ const USAGE = `usage: cua <command>
   install [--archive <ChatGPT zip>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
-  serve                                                        MCP over stdin/stdout until EOF or a signal
+  serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
   login [--device-auth]                                        sign the server in to Codex, at this terminal
   login --status                                               whether the server has a Codex login (never shows it)
   secrets set <label>                                          store a secret, typed hidden at this terminal
@@ -39,7 +41,12 @@ const USAGE = `usage: cua <command>
   profiles open <key> [--json]                                 open a window in that Chrome profile, then report its readiness
   chrome register [--replace] [--json]                         register cua's Chrome host with the browsers
   chrome unregister [--json]                                   remove cua's registration, restoring what it replaced
-environment: CUA_HOME (default ~/Library/Application Support/cua)`;
+  remote enroll [--relay <wss url>] [--rotate] [--json]        enrol this Mac for remote control; shows the client credential once
+  remote show [--json]                                         the device id, relay URL and the relay's devices.json line
+  agent run [--http <host:port>] [--relay]                     serve MCP to remote clients until a signal; --http 127.0.0.1:7801
+                                                               serves this Mac only, its LAN address serves the LAN
+environment: CUA_HOME (default ~/Library/Application Support/cua); for agent run: CUA_AGENT_MAX_SESSIONS (default 1),
+  CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser origins allowed to call; none by default)`;
 
 class UsageError extends Error {}
 
@@ -104,9 +111,67 @@ async function runtime(args) {
 // must not crash the server before it has removed what it owns, so stderr write errors are dropped. Once the server has
 // closed and cleaned up, nothing may keep the process alive: an unreferenced timer exits if anything still does.
 async function serve(args) {
-  parse(args, {}, 0);
+  const {values} = parse(args, {http: {type: 'string'}}, 0);
+  if (values.http !== undefined) return agentRun({http: values.http, relay: false});
   process.stderr.on('error', () => {});
   const code = await serveMcp({home: defaultHome()});
+  setTimeout(() => process.exit(code), 1000).unref();
+  return code;
+}
+
+// Remote control (src/remote). enroll mints the device record and shows the client credential this once; nothing
+// else ever prints it (or the secret): a relay-only update and show print the device id and the relay's line, hashes
+// only.
+const REMOTE_USAGE = {enroll: 'remote enroll takes only --relay <wss url>, --rotate and --json', show: 'remote show takes only --json'};
+
+function remote(args) {
+  const [command, ...rest] = args;
+  if (!Object.hasOwn(REMOTE_USAGE, command)) throw new UsageError('remote takes enroll or show');
+  let values;
+  try { ({values} = parse(rest, command === 'enroll' ? {relay: {type: 'string'}, rotate: {type: 'boolean'}} : {}, 0)); } catch (error) {
+    if (error instanceof UsageError) throw new UsageError(REMOTE_USAGE[command]);
+    throw error;
+  }
+  const home = defaultHome();
+  if (command === 'show') {
+    const record = readDevice(home);
+    if (!record) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll'});
+    const shown = {deviceId: record.deviceId, relayUrl: record.relayUrl ?? null, enrolledAt: record.enrolledAt, devicesEntry: devicesEntry(record)};
+    if (values.json) return done({ok: true, ...shown});
+    return done(`device    ${shown.deviceId}\nrelay     ${shown.relayUrl ?? 'none (local only)'}\nenrolled  ${shown.enrolledAt}\nthe relay's devices.json line:\n  ${shown.devicesEntry}`);
+  }
+  const result = enrollDevice({home, relayUrl: values.relay, rotate: values.rotate});
+  if (values.json) return done({ok: true, ...result});
+  const relayLine = `the relay's devices.json line:\n  ${result.devicesEntry}`;
+  if (result.updated) return done(`device ${result.deviceId} now uses the relay ${result.relayUrl}; its secret and credentials are unchanged\n${relayLine}`);
+  return done([
+    `${values.rotate ? 'rotated the secret of' : 'enrolled this Mac as'} device ${result.deviceId} (relay: ${result.relayUrl ?? 'none, local only'})`,
+    'client credential, shown this once (cua never prints it again; --rotate replaces it):',
+    `  ${result.clientCredential}`,
+    'register it on the client under the name cua_repl, for example:',
+    `  claude mcp add --transport http cua_repl http://<this Mac's address>:7801/mcp --header "Authorization: Bearer ${result.clientCredential}"`,
+    relayLine,
+  ].join('\n'));
+}
+
+// The resident agent (src/remote/agent.mjs). Its diagnostics go to stderr; once it has closed every session nothing
+// may keep the process alive.
+const AGENT_USAGE = 'agent run takes --http <host:port>, --relay, or both';
+
+async function agent(args) {
+  const [command, ...rest] = args;
+  if (command !== 'run') throw new UsageError('agent takes run');
+  let values;
+  try {
+    ({values} = parseArgs({args: rest, options: {http: {type: 'string'}, relay: {type: 'boolean'}}, allowPositionals: false, strict: true}));
+  } catch { throw new UsageError(AGENT_USAGE); }
+  if (values.http === undefined && !values.relay) throw new UsageError(AGENT_USAGE);
+  return agentRun({http: values.http ?? null, relay: values.relay === true});
+}
+
+async function agentRun({http, relay}) {
+  process.stderr.on('error', () => {});
+  const code = await runAgent({home: defaultHome(), http, relay});
   setTimeout(() => process.exit(code), 1000).unref();
   return code;
 }
@@ -372,7 +437,7 @@ export function unregisterLines(result) {
   return lines;
 }
 
-const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome};
+const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome, remote, agent};
 
 export async function main(argv) {
   const [command, ...rest] = argv;

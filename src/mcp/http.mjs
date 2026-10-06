@@ -30,6 +30,7 @@
 // `open` is the connection opener, a seam for tests; `console` is the console state E2 wires into the js refusal.
 import {randomUUID} from 'node:crypto';
 import {PassThrough} from 'node:stream';
+import {createInterface} from 'node:readline';
 import {openConnection} from './connection.mjs';
 import {credentialMatches} from '../remote/device.mjs';
 
@@ -71,7 +72,6 @@ const onAbort = (signal, fn) => {
 export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1, idleMs = 15 * 60_000,
   bufferLimit = 16 * 1024 * 1024, console: consoleState = () => ({onConsole: true, locked: false}),
   diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection}) {
-  void consoleState;
   const sessions = new Map();
   const ending = new Set();        // close promises of sessions on their way out
   const opening = new Set();       // opens in progress, each holding a place under the cap
@@ -167,19 +167,13 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     const session = {id, connection, input, streams: new Map(), nextStream: 1, routes: new Map(), get: null,
       buffer: [], bufferBytes: 0, serverPending: new Set(), timer: null, gone: false, closing: null};
     input.on('error', () => {});
-    output.setEncoding('utf8');
-    let partial = '';
-    output.on('data', chunk => {
-      partial += chunk;
-      for (let at = partial.indexOf('\n'); at >= 0; at = partial.indexOf('\n')) {
-        const line = partial.slice(0, at);
-        partial = partial.slice(at + 1);
-        if (!line.trim()) continue;
-        const msg = JSON.parse(line);
-        if (msg.method === undefined) deliverResponse(session, msg);
-        else deliverServerMessage(session, msg);
-        touch(session);
-      }
+    // The connection writes one JSON-RPC message per line, and every line is read before its `closed` settles.
+    createInterface({input: output}).on('line', line => {
+      if (!line.trim()) return;
+      const msg = JSON.parse(line);
+      if (msg.method === undefined) deliverResponse(session, msg);
+      else deliverServerMessage(session, msg);
+      touch(session);
     });
     connection.closed.then(result => {
       if (!session.gone) {

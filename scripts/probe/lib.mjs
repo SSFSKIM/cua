@@ -64,12 +64,30 @@ export function descendants(psText, rootPid) {
 // The installed desktop app's runtime: its macOS bundle, its Linux deb, or the computer-use copy it keeps under ~/.codex.
 const DESKTOP_RUNTIME = /\/ChatGPT\.app\/Contents\/|^\/usr\/lib\/chatgpt\/|\/\.codex\/computer-use\//;
 
-export function classifyProcesses(tree, {relocatedRoot}) {
+// `systemSandbox`: the system sandbox launcher's executable paths (Linux: bubblewrap, which the pinned codex runs to
+// sandbox each runtime child), the one executable outside the release a runtime tree may hold.
+export function classifyProcesses(tree, {relocatedRoot, systemSandbox = []}) {
+  const relocated = p => p.executable.startsWith(relocatedRoot + '/');
   return {
     desktopRuntimePaths: tree.filter(p => DESKTOP_RUNTIME.test(p.executable)),
-    allExecutablesRelocated: tree.length > 0 && tree.every(p => p.executable.startsWith(relocatedRoot + '/')),
+    allExecutablesRelocated: tree.some(relocated) && tree.every(p => relocated(p) || systemSandbox.includes(p.executable)),
   };
 }
+
+// The processes of `tree` outside the anchor's process group (pgid = anchorPid), except a system sandbox launcher and
+// everything below it: bubblewrap starts its child in a new session (--new-session), so that subtree leaves the group
+// by design; it is tied to its parent instead (--die-with-parent), which `survivors` checks after the close.
+export function outsideAnchorGroup(tree, {anchorPid, pgidOf, systemSandbox = []}) {
+  const byPid = new Map(tree.map(p => [p.pid, p]));
+  const underLauncher = p => {
+    for (let at = p; at; at = byPid.get(at.ppid)) if (systemSandbox.includes(at.executable)) return true;
+    return false;
+  };
+  return tree.filter(p => pgidOf(p.pid) !== anchorPid && !underLauncher(p));
+}
+
+// The processes of `tree` still alive by `isAlive(pid)`.
+export const survivors = (tree, isAlive) => tree.filter(p => isAlive(p.pid));
 
 // `ps -eo pid=,ppid=` text and a reader of /proc/<pid>/exe -> the same `pid ppid executable` lines `descendants`
 // reads. Linux's ps truncates `comm` to 15 characters, so the executable path comes from /proc. `readExe(pid)` returns

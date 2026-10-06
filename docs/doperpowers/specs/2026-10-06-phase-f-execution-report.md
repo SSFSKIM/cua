@@ -4,6 +4,8 @@ Spec: `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`, milestones
 
 ## Status
 
+PR: https://github.com/SSFSKIM/cua/pull/57 (ready for review, base `main`).
+
 DONE_WITH_CONCERNS. F1 is complete and reviewed clean. F2 is complete and reviewed clean, except acceptance 10's tab cell, which is BLOCKED on the owner's ChatGPT sign-in inside the VM (the owner was unattended). The whole-branch review is clean.
 
 ## Timeline and commits

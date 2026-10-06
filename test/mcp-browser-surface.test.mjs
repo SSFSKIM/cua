@@ -103,10 +103,11 @@ const BROWSER_RULES = {
   'never pick or bind a profile': /Never pick or bind a profile for the user/,
   'DOM-only tabs': /tab\.playwright/,
   'keys go to a focusable element, not a frame body, and cua.type pastes': /never a frame body; tab\.cua\.type pastes/,
-  'the fixed 3 s browser action cap and how to wait longer': /Browser locator actions, waits and evaluate stop at 3 s \(timeoutMs can only shorten it\); to wait longer, loop short waits to your own deadline under a larger js timeout_ms\./,
+  'the fixed 3 s browser action cap and how to wait longer': /Locator actions, waits and evaluate stop at 3 s \(timeoutMs can only shorten it\); to wait longer, loop short waits to your own deadline under a larger js timeout_ms\./,
   'read-only evaluate': /evaluate is read-only: no fetch, no require, objects are non-extensible\./,
   'createBrowserTab limit': /timeout_ms of at least 60000/,
   'leftover tab': /tab may still have opened/,
+  'closing the only window unloads the profile and its host': /closing your tab or end_task unloads it; mark a tab handoff/,
 };
 
 test('the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters', async () => {

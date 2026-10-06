@@ -157,14 +157,14 @@ export function withLiveness(statuses, liveIds) {
 // The one step that brings a profile's host back without changing its binding. Toggling the extension wakes it too,
 // but can mint a new instance id (Surprises, 2026-10-04; not always, second-mac-acceptance.md), so it is offered only
 // with the rebind it may then need.
-const WAKE = 'open Chrome profile "<dir>" and click the OpenAI (ChatGPT) extension\'s icon to wake it, then retry';
+const WAKE = 'open a window in Chrome profile "<dir>" (Chrome unloads a profile and its extension host when the profile\'s last window closes, including a window a cua task opened and then closed) and click the OpenAI (ChatGPT) extension\'s icon if it still has no backend, then retry';
 
 export const REASONS = {
   profile_directory_missing: 'the Chrome profile directory no longer exists',
   extension_not_installed: 'the OpenAI extension is not installed in this Chrome profile (install it there yourself; cua never does)',
   not_bound: 'not bound to an extension instance yet: run cua profiles bind',
-  host_not_live: `no live OpenAI extension backend serves it (Chrome is closed, or its extension host exited): ${WAKE}; turning the extension off and on at chrome://extensions also wakes it but can mint a new instance id, so run cua profiles bind <key> after that`,
-  binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile's host is not running (${WAKE}), or the extension was turned off and on or reinstalled, which can mint a new instance id (bind it again with cua profiles bind <key>)`,
+  host_not_live: `no live OpenAI extension backend serves it (Chrome is closed, or no window of that profile is open): ${WAKE}; turning the extension off and on at chrome://extensions also wakes it but can mint a new instance id, so run cua profiles bind <key> after that`,
+  binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (${WAKE}), or the extension was turned off and on or reinstalled, which can mint a new instance id (bind it again with cua profiles bind <key>)`,
   backends_unlistable: 'the live OpenAI extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',
   chrome_data_unreadable: 'this process cannot read Chrome\'s data directory (macOS Privacy & Security → Full Disk Access for your terminal, or run from a process that has it); the live check still works',
 };

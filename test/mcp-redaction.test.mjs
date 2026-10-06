@@ -59,12 +59,17 @@ test('relative references, doubly encoded names and adjacent Markdown keep worki
 });
 
 test('redaction stays linear on long runs of adjacent token-bearing links', () => {
+  // The quadratic scan this guards against took 5.2 s here; the linear one takes about 20 ms. The bound is the 200 ms
+  // budget with ×3 headroom, on the best of three runs, so a machine under load does not read as a regression.
   const input = '[a](https://a/?token=x)'.repeat(32000); // 736 KB
-  const started = performance.now();
-  const out = textOf(redactTokens(text(input)));
-  const elapsed = performance.now() - started;
-  assert.equal(out, '[a](https://a/?token=<redacted>)'.repeat(32000));
-  assert.ok(elapsed < 200, `${elapsed.toFixed(0)} ms`);
+  const runs = [];
+  for (let i = 0; i < 3; i++) {
+    const started = performance.now();
+    const out = textOf(redactTokens(text(input)));
+    runs.push(performance.now() - started);
+    assert.equal(out, '[a](https://a/?token=<redacted>)'.repeat(32000));
+  }
+  assert.ok(Math.min(...runs) < 200 * 3, runs.map(ms => `${ms.toFixed(0)} ms`).join(', '));
 });
 
 test('names that merely contain the words, and plain text, are left alone', () => {

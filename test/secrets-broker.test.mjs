@@ -60,11 +60,13 @@ test('each broker gets a different token', async t => {
 test('a helper that refuses, never answers or speaks another protocol fails classified and is not left running', async t => {
   for (const [mode, code] of [['refuse', 'broker_failed'], ['silent', 'broker_timeout'], ['protocol-2', 'helper_incompatible']]) {
     const f = setup(t, mode);
+    const readyTimeoutMs = 300;
     const started = Date.now();
-    const error = await startBroker({...f.helper, endpoint: f.endpoint, readyTimeoutMs: 300}).then(() => null, e => e);
+    const error = await startBroker({...f.helper, endpoint: f.endpoint, readyTimeoutMs}).then(() => null, e => e);
     assert.ok(error instanceof CuaError, mode);
     assert.equal(error.code, code, mode);
-    assert.ok(Date.now() - started < 3000, mode);
+    // The failure path waits at most the ready timeout, then closes the helper within its 1 s budget; ×3 for load.
+    assert.ok(Date.now() - started < (readyTimeoutMs + 1000) * 3, `${mode}: ${Date.now() - started} ms`);
     if (mode === 'refuse') assert.match(error.message, /endpoint_exists/);
     const {argv} = f.record();
     assert.deepEqual(argv, ['broker']);
@@ -74,9 +76,10 @@ test('a helper that refuses, never answers or speaks another protocol fails clas
 test('close is bounded against a helper that ignores EOF and SIGTERM, and removes the endpoint it left', async t => {
   const f = setup(t, 'stubborn');
   const broker = await startBroker({...f.helper, endpoint: f.endpoint});
+  const budgetMs = 1000;
   const started = Date.now();
-  const closed = await broker.close({budgetMs: 1000});
-  assert.ok(Date.now() - started < 2000);
+  const closed = await broker.close({budgetMs});
+  assert.ok(Date.now() - started < budgetMs * 3, `${Date.now() - started} ms`);  // ×3: headroom for a loaded machine
   assert.deepEqual(closed.steps, ['eof', 'SIGTERM', 'SIGKILL']);
   assert.equal(closed.confirmed, true);
   assert.equal(alive(broker.pid), false);

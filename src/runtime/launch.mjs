@@ -5,6 +5,12 @@
 // Environment contract (everything else from the caller's environment is dropped, including every NODE_REPL_*,
 // SKY_*, BROWSER_USE_*, CUA_REPL_* and NODE_OPTIONS value, so an ambient override cannot redirect the runtime):
 //   HOME USER LOGNAME TMPDIR LANG LC_ALL LC_CTYPE __CF_USER_TEXT_ENCODING   copied when set
+//   DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_DATA_DIRS   linux only, copied when set: the X11
+//                                            display and the session bus (AT-SPI) the vendor helper uses, and where
+//                                            its app discovery reads .desktop entries. Without DBUS_SESSION_BUS_ADDRESS
+//                                            (an SSH session) it is derived as unix:path=$XDG_RUNTIME_DIR/bus. With
+//                                            DISPLAY and XAUTHORITY a model cell can reach X directly: on Linux the
+//                                            trusted sky wrapper is not a boundary
 //   PATH                                     fixed system path
 //   CODEX_HOME                               <home>/state/codex: runtime config and per-user approvals
 //   CUA_REPL_NODE_REPL_PATH                  relocated node_repl (required by the vendor launcher)
@@ -20,9 +26,12 @@
 //                                            registered services must be exactly those of the enabled surfaces); unset
 //                                            lets the vendor launcher use its own services
 //   NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000, NODE_REPL_DISABLE_ANALYTICS=1
-//   CODEX_CLI_PATH                           relocated CodexCLI.app executable (the sandbox; no unsandboxed fallback)
-//   SKY_CUA_SERVICE_PATH                     computer surface: relocated helper app, opened by the vendor through
+//   CODEX_CLI_PATH                           relocated CodexCLI.app executable, or on linux the relocated `codex` (the
+//                                            sandbox; no unsandboxed fallback)
+//   SKY_CUA_SERVICE_PATH                     computer surface, darwin: relocated helper app, opened by the vendor through
 //                                            LaunchServices
+//   OAI_SKY_LINUX_BIN                        computer surface, linux: the relocated sky_linux helper, which the vendor
+//                                            spawns as a child over stdio (pinned rather than resolved by the vendor)
 //   CUA_SKY_VENDOR_SERVICE                   computer surface: vendor sky service module, for the trusted wrapper
 //   CUA_BROWSER_VENDOR_SERVICE               browser surface: vendor @oai/browser-desktop service module, for the
 //                                            trusted browser wrapper (src/services/browser.mjs) to delegate to
@@ -49,6 +58,7 @@ import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {BROKER_ENV} from '../secrets/client.mjs';
+import {desktopSessionEnv} from './linux-desktop.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -71,9 +81,11 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
+  const linux = runtime.manifest.platform === 'linux';
 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
+  if (linux) Object.assign(env, desktopSessionEnv(ambient));
   const trustedCodePaths = [p.moduleDir];
   Object.assign(env, {
     PATH: FIXED_PATH,
@@ -94,7 +106,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: p.codexCli,
   });
-  if (enabled.includes('computer')) Object.assign(env, {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
+  if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
   if (broker) {
     env[BROKER_ENV.endpoint] = broker.endpoint;

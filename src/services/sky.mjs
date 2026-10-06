@@ -15,7 +15,9 @@
 // other fields, text that merely contains a marker, and arbitrary JavaScript, which is never scanned.
 //
 // Failing closed: a reference with an invalid label, an unknown label, a denied or locked Keychain, secrets turned off
-// or unavailable, or a reference in any other shape of an eligible command fails before anything is delivered. If the
+// or unavailable, or a reference in any other shape of an eligible command fails before anything is delivered. On a
+// platform without a secrets backend (Linux) every reference fails first with secrets_unsupported_platform: the
+// Linux client's {window, text} type_text is never matched. If the
 // vendor fails after substitution, the rejection is a fixed, bounded diagnostic instead of the vendor's error, whose
 // message, stack or properties may carry the value (SkyComputerUseError keeps the request it sent). The trusted worker
 // returns a rejection's message to model code and console output to the model, so this module never logs, and no
@@ -23,7 +25,7 @@
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
-  SecretInputError, NOTHING_ENTERED, propertyKey, matchesShape, invalidLabel, unavailable, readFailure, inputFailed, secretsFromEnv,
+  SecretInputError, NOTHING_ENTERED, propertyKey, matchesShape, invalidLabel, unavailable, readFailure, inputFailed, secretsFromEnv, refusedOnThisPlatform,
 } from './secret-input.mjs';
 
 export {SecretInputError};
@@ -94,6 +96,7 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     if (!plan) return (await vendorService()).handleRpc(request);
 
     const {method, rule, input, reference} = plan;
+    if (refusedOnThisPlatform(secretsUnavailable)) throw unavailable(secretsUnavailable);
     if (reference.invalid) throw invalidLabel();
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);

@@ -42,11 +42,11 @@ import {locateChromeComponent} from '../../src/runtime/chrome-component.mjs';
 import {settingsFrom} from '../../src/mcp/server.mjs';
 import {chromeFacts} from '../../src/profiles/chrome.mjs';
 import {PROFILE_KEY, profileStatuses, REASONS} from '../../src/profiles/registry.mjs';
-import {BROWSERS, hostSuffixes, readRecord} from '../../src/chrome/registration.mjs';
+import {hostSuffixes, readRecord} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
-  c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
+  C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
   matrixChecks, packChecks, profilesListCheck, registrationGuard, SCRATCH_PROFILES, slotStates, scratchAddCheck, scratchHumanCheck, scratchListCheck,
   tapTestStatus, verifyCheck, writeScratchChrome,
 } from './chrome-all-lib.mjs';
@@ -291,7 +291,7 @@ export async function runAll(argv) {
       }
     }
     // The browsers' manifest slots, and what each run may do to them.
-    const slotPaths = BROWSERS.map(b => ({browser: b.browser, path: join(userHome, b.dataDir, 'NativeMessagingHosts', `${NATIVE_HOST}.json`)}));
+    const slotPaths = C6_BROWSERS(userHome).map(b => ({browser: b.browser, path: join(b.dataDir, 'NativeMessagingHosts', `${NATIVE_HOST}.json`)}));
     const fingerprint = () => JSON.stringify([...slotPaths.map(({path}) => {
       try { const s = statSync(path); return `${createHash('sha256').update(readFileSync(path)).digest('hex')}:${s.mtimeMs}:${s.ino}`; } catch { return 'absent'; }
     }), existsSync(join(home, 'chrome'))]);

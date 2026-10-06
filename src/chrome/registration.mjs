@@ -15,8 +15,9 @@
 //     backup and verifies the restored bytes. A backup is restored only when the record holds its hash; when there is
 //     no backup, no record, or no matching hash, or the restore does not verify, restoration is BLOCKED with the exact
 //     user action and an unverified backup is kept, never installed.
-// The manifest is the vendor installManifest.mjs format byte-for-byte except `path`. Browsers are the five the vendor
-// targets on macOS whose user-data directory exists; their NativeMessagingHosts directory is created when missing.
+// The manifest is the vendor installManifest.mjs format byte-for-byte except `path`. Browsers are those of
+// `browsersFor` (the vendor's targets on this platform) whose user-data directory exists; their NativeMessagingHosts
+// directory is created when missing.
 // A slot this process may not read is `unreadable`, never absent or foreign: macOS 26+ puts browsers' user-data
 // directories behind privacy protection, so a process without Full Disk Access gets EPERM there. A user-data directory
 // it may not even stat counts as present (whether that browser is installed is unknown). Register and unregister both
@@ -38,16 +39,46 @@ import {realHome} from '../runtime/layout.mjs';
 import {verifyCodeSignatures} from '../runtime/checks.mjs';
 import {locateChromeComponent, verifyPlacedChromeComponent} from '../runtime/chrome-component.mjs';
 import {loadPins} from '../runtime/manifest.mjs';
-import {hostPathClass, PERMISSION_FIX, readFailure} from '../profiles/chrome.mjs';
+import {hostPathClass, linuxConfigHome, PERMISSION_FIX, readFailure} from '../profiles/chrome.mjs';
 
 // macOS user-data directories, relative to the user's home (the vendor's chromium-family manifest directories).
-export const BROWSERS = [
+const DARWIN_BROWSERS = [
   {browser: 'chrome', name: 'Google Chrome', dataDir: 'Library/Application Support/Google/Chrome'},
   {browser: 'edge', name: 'Microsoft Edge', dataDir: 'Library/Application Support/Microsoft Edge'},
   {browser: 'brave', name: 'Brave', dataDir: 'Library/Application Support/BraveSoftware/Brave-Browser'},
   {browser: 'opera', name: 'Opera', dataDir: 'Library/Application Support/com.operasoftware.Opera'},
   {browser: 'vivaldi', name: 'Vivaldi', dataDir: 'Library/Application Support/Vivaldi'},
 ];
+// Linux user-data directories, relative to the configuration base (linuxConfigHome): the vendor's user-level table
+// less google-chrome-for-testing, where no user profile lives. The keys are what registration.json and the backups
+// record, so the darwin ones keep their names.
+const LINUX_BROWSERS = [
+  {browser: 'chrome', name: 'Google Chrome', dataDir: 'google-chrome', chromeFamily: true},
+  {browser: 'chrome-beta', name: 'Google Chrome Beta', dataDir: 'google-chrome-beta', chromeFamily: true},
+  {browser: 'chrome-unstable', name: 'Google Chrome Unstable', dataDir: 'google-chrome-unstable', chromeFamily: true},
+  {browser: 'chromium', name: 'Chromium', dataDir: 'chromium', chromeFamily: true},
+  {browser: 'edge', name: 'Microsoft Edge', dataDir: 'microsoft-edge'},
+  {browser: 'brave', name: 'Brave', dataDir: 'BraveSoftware/Brave-Browser'},
+  {browser: 'opera', name: 'Opera', dataDir: 'opera'},
+  {browser: 'vivaldi', name: 'Vivaldi', dataDir: 'vivaldi'},
+];
+
+// The browsers cua registers with on `host`, each {browser, name, dataDir} with its absolute user-data directory.
+export function browsersFor({host = {platform: process.platform}, env = process.env, userHome = homedir()} = {}) {
+  if (host.platform === 'linux')
+    return LINUX_BROWSERS.map(({chromeFamily, ...b}) => ({...b, dataDir: join(linuxConfigHome({env, userHome, chromeFamily}), b.dataDir)}));
+  return DARWIN_BROWSERS.map(b => ({...b, dataDir: join(userHome, b.dataDir)}));
+}
+
+// "Chrome, Edge, … or Vivaldi user-data directory under <their common parent>": what register looked for.
+function searched(browsers) {
+  const names = browsers.map(b => b.name.replace(/^(Google|Microsoft) /, ''));
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names.join('');
+  const split = browsers.map(b => dirname(b.dataDir).split('/'));
+  let shared = 0;
+  while (shared < split[0].length && split.every(parts => parts[shared] === split[0][shared])) shared++;
+  return `${list} user-data directory under ${split[0].slice(0, shared).join('/') || '/'}`;
+}
 
 export const REPLACE_CONSEQUENCES = [
   'While cua\'s host is registered, the ChatGPT desktop app\'s Codex side panel and other app-server features in the browser stop working: no chrome-native-hosts-v2.json entry names cua\'s host, and that registry gates the app-server.',
@@ -67,9 +98,9 @@ export function manifestText({name, description, extensionIds}, hostPath) {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
-function slots({userHome, nativeHost, onlyPresent}) {
-  return BROWSERS.filter(b => !onlyPresent || mayBePresent(join(userHome, b.dataDir))).map(b => {
-    const manifestDir = join(userHome, b.dataDir, 'NativeMessagingHosts');
+function slots({browsers, nativeHost, onlyPresent}) {
+  return browsers.filter(b => !onlyPresent || mayBePresent(b.dataDir)).map(b => {
+    const manifestDir = join(b.dataDir, 'NativeMessagingHosts');
     return {...b, manifestDir, manifestPath: join(manifestDir, `${nativeHost}.json`)};
   });
 }
@@ -309,25 +340,26 @@ const SETTLE_MS = 100;
 // manifest cua did not write is actually replaced (including one that appeared after the plan); the consequences are
 // therefore always announced before anything foreign is overwritten. `onStep(step, {browser, manifestPath})` (called
 // right before each publish or take, and as `settle` before waiting for a manifest that did not read whole), `io`
-// (see FS) and `lockTiming` (see LOCK_TIMING) are test seams, module API only.
-export async function registerHost({home, runtime, replace = false, userHome = homedir(), verifySignatures = verifyCodeSignatures, onReplace, onStep, pins = loadPins(), io = FS, lockTiming = LOCK_TIMING}) {
+// (see FS) and `lockTiming` (see LOCK_TIMING) are test seams, module API only. `browsers` is this host's table
+// (browsersFor).
+export async function registerHost({home, runtime, replace = false, userHome = homedir(), browsers = browsersFor({userHome}), verifySignatures = verifyCodeSignatures, onReplace, onStep, pins = loadPins(), io = FS, lockTiming = LOCK_TIMING}) {
   const cuaHome = realHome(home);
   const lock = acquireLock(cuaHome, lockTiming);
   try {
-    return await registerLocked({cuaHome, runtime, replace, userHome, verifySignatures, onReplace, onStep, pins, io});
+    return await registerLocked({cuaHome, runtime, replace, userHome, browsers, verifySignatures, onReplace, onStep, pins, io});
   } finally {
     releaseLock(lock);
   }
 }
 
-async function registerLocked({cuaHome, runtime, replace, userHome, verifySignatures, onReplace, onStep, pins, io}) {
+async function registerLocked({cuaHome, runtime, replace, userHome, browsers: table, verifySignatures, onReplace, onStep, pins, io}) {
   const paths = locateChromeComponent(runtime);
   const native = runtime.manifest.chromePlugin.nativeHost;
   const desired = Buffer.from(manifestText(native, paths.host));
   const context = {home: cuaHome, userHome, suffixes: hostSuffixes([...pins, runtime.manifest])};
-  const planned = slots({userHome, nativeHost: native.name, onlyPresent: true}).map(s => ({...s, slot: readSlot(s.manifestPath, context)}));
+  const planned = slots({browsers: table, nativeHost: native.name, onlyPresent: true}).map(s => ({...s, slot: readSlot(s.manifestPath, context)}));
   if (!planned.length)
-    fail('no_supported_browser', `no Chrome, Edge, Brave, Opera or Vivaldi user-data directory under ${join(userHome, 'Library', 'Application Support')}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
+    fail('no_supported_browser', `no ${searched(table)}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
   const refused = planned.filter(s => s.slot.state === 'unreadable');
   if (refused.length) unreadable(refused, native.name, 'register');
   const foreign = planned.filter(s => s.slot.state === 'foreign');
@@ -493,22 +525,22 @@ const restoreYourself = (name, manifestPath) => `restore ${name}'s previous regi
 // read first; when any is unreadable the command refuses as a whole (chrome_data_unreadable) before changing anything.
 // Then every browser is processed; an I/O failure in one is that browser's BLOCKED result (backup and record kept),
 // never a stop.
-export function unregisterHost({home, userHome = homedir(), nativeHost = 'com.openai.codexextension', pins = loadPins(), onStep, io = FS, lockTiming = LOCK_TIMING}) {
+export function unregisterHost({home, userHome = homedir(), browsers = browsersFor({userHome}), nativeHost = 'com.openai.codexextension', pins = loadPins(), onStep, io = FS, lockTiming = LOCK_TIMING}) {
   const cuaHome = realHome(home);
   const lock = acquireLock(cuaHome, lockTiming);
   try {
-    return unregisterLocked({cuaHome, userHome, nativeHost, pins, onStep, io});
+    return unregisterLocked({cuaHome, userHome, browsers, nativeHost, pins, onStep, io});
   } finally {
     releaseLock(lock);
   }
 }
 
-function unregisterLocked({cuaHome, userHome, nativeHost, pins, onStep, io}) {
+function unregisterLocked({cuaHome, userHome, browsers: table, nativeHost, pins, onStep, io}) {
   const context = {home: cuaHome, userHome, suffixes: hostSuffixes(pins)};
   const record = readRecord(cuaHome);
   let recordChanged = false;
   const forget = browser => { if (record.browsers[browser]) { delete record.browsers[browser]; recordChanged = true; } };
-  const all = slots({userHome, nativeHost, onlyPresent: false});
+  const all = slots({browsers: table, nativeHost, onlyPresent: false});
   const refused = all.map(s => ({...s, slot: readSlot(s.manifestPath, context)})).filter(s => s.slot.state === 'unreadable');
   if (refused.length) unreadable(refused, nativeHost, 'unregister');
   const browsers = all.map(s => {

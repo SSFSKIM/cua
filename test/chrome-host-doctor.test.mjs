@@ -21,8 +21,8 @@ function forged(t, options) {
   t.after(s.cleanup);
   const home = join(s.dir, 'cua');
   mkdirSync(home);
-  forgeActiveRuntime(home);
-  return {home, component: options === null ? null : forgeChromeComponent(home, options)};
+  forgeActiveRuntime(home, {}, {host: HOST});
+  return {home, component: options === null ? null : forgeChromeComponent(home, {...options, host: HOST})};
 }
 const doctor = (home, extra = {}) => inspectRuntime({home, pins: loadPins(), ...passive, ...extra});
 

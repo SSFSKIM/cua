@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
-import {chromeFacts, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
+import {chromeFacts, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {chromeChecks} from '../src/profiles/checks.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
@@ -30,13 +30,15 @@ function machine(t) {
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default'}, work: {chromeProfileDirectory: 'Profile 8'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
   return {home, userData, chrome: chromeFacts({userData})};
 }
+// The macOS process table and host classes (PS_TWO_HOSTS), injected so these run the same on Linux.
+const DARWIN = {platform: 'darwin', arch: 'arm64'};
 const byName = checks => Object.fromEntries(checks.map(c => [c.name, c]));
 
 test('per-profile extension checks, the native host registration by path class, and the live host count', t => {
   const {home, userData, chrome} = machine(t);
   mkdirSync(join(userData, 'NativeMessagingHosts'));
   writeFileSync(join(userData, 'NativeMessagingHosts', 'com.openai.codexextension.json'), JSON.stringify({path: '/Users/x/.codex/plugins/cache/openai-bundled/chrome/latest/extension-host/macos/arm64/ChatGPT for Chrome'}));
-  const checks = byName(chromeChecks({home, chrome, psText: PS_TWO_HOSTS, userHome: '/Users/x'}));
+  const checks = byName(chromeChecks({home, chrome, psText: PS_TWO_HOSTS, userHome: '/Users/x', host: DARWIN}));
   assert.equal(checks['chrome.extension.personal'].status, 'pass');
   assert.equal(checks['chrome.extension.work'].status, 'blocked');
   assert.match(checks['chrome.extension.work'].detail, /not installed/);
@@ -82,14 +84,16 @@ test('doctor reports the Chrome checks beside runtime health and they never chan
 test('Chrome data this process may not read is blocked with the Full Disk Access hint and the code, never "not installed"', t => {
   const {home} = machine(t);
   const chrome = fakeChromeFacts({Default: {extension: 'installed'}, 'Profile 8': {extension: 'unreadable'}, 'Profile 6': {directory: 'unreadable'}}, {nativeHost: {readError: 'EPERM'}});
-  const checks = byName(chromeChecks({home, chrome, psText: PS_TWO_HOSTS, userHome: '/Users/x'}));
+  const checks = byName(chromeChecks({home, chrome, psText: PS_TWO_HOSTS, userHome: '/Users/x', host: DARWIN}));
   assert.equal(checks['chrome.extension.personal'].status, 'pass');
   for (const key of ['work', 'school']) {
     const c = checks[`chrome.extension.${key}`];
     assert.equal(c.status, 'blocked', key);
-    assert.match(c.detail, /may not read Chrome's data directory \(EPERM\).*Full Disk Access.*the live check still works/, key);
+    assert.match(c.detail, /may not read Chrome's data directory \(EPERM\).*the live check still works/, key);
+    assert.ok(c.detail.includes(PERMISSION_FIX), key);
     assert.doesNotMatch(c.detail, /not installed|no longer exists/, key);
   }
   assert.equal(checks['chrome.host.registered'].status, 'blocked');
-  assert.match(checks['chrome.host.registered'].detail, /is unknown: this process may not read it .*\(EPERM\).*Full Disk Access/);
+  assert.match(checks['chrome.host.registered'].detail, /is unknown: this process may not read it .*\(EPERM\)/);
+  assert.ok(checks['chrome.host.registered'].detail.includes(PERMISSION_FIX));
 });

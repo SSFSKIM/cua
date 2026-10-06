@@ -10,8 +10,9 @@
 //     the socket this broker created is ever removed: its identity (device and inode) is recorded once the helper
 //     reports ready and checked again before unlinking. A broker that never became ready removes nothing, and a path
 //     that now holds anything else (an earlier socket, a replacement) is left alone; a path is not ownership.
-// Secrets being unavailable (disabled, helper not built, broker failed to start) never fails the connection; native
-// control works without them and secrets_list reports why.
+// Secrets being unavailable (disabled, helper not built, broker failed to start, or a platform with no secrets backend:
+// Linux, secrets_unsupported_platform) never fails the connection; native control works without them and secrets_list
+// reports why.
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {lstatSync, rmSync} from 'node:fs';
@@ -20,7 +21,7 @@ import net from 'node:net';
 import {createInterface} from 'node:readline';
 import {fail} from '../runtime/errors.mjs';
 import {realHome, homeLayout} from '../runtime/layout.mjs';
-import {brokerClient, BROKER_PROTOCOL} from './client.mjs';
+import {brokerClient, BROKER_PROTOCOL, UNSUPPORTED_PLATFORM} from './client.mjs';
 import {BUILD_HINT} from './helper.mjs';
 
 const MAX_SOCKET_PATH_BYTES = 103;  // sockaddr_un.sun_path is 104 bytes on macOS, including the terminator
@@ -127,9 +128,10 @@ export async function startBroker({command, args = ['broker'], env = {}, endpoin
 }
 
 // The secrets side of one connection: either a running broker ({broker: {endpoint, token}, list, close}) or the
-// reason there is none ({unavailable: {code, message}, close}).
-export async function openSecrets({enabled, helper, home, sessionId, ambient = process.env, diagnostics = () => {}}) {
+// reason there is none ({unavailable: {code, message}, close}). The Keychain helper is macOS only.
+export async function openSecrets({enabled, helper, home, sessionId, ambient = process.env, diagnostics = () => {}, host = {platform: process.platform}}) {
   const none = (code, message) => ({unavailable: {code, message}, close: async () => ({confirmed: true, steps: []})});
+  if (host.platform !== 'darwin') return none(UNSUPPORTED_PLATFORM, `cua has no secrets backend on ${host.platform} (the Keychain helper is macOS only), so secret storage is unavailable`);
   if (!enabled) return none('secrets_disabled', 'secret storage is turned off for this server (CUA_SHIM_SECRETS=off)');
   if (!helper?.built) return none('helper_not_built', `the Keychain helper is not built; ${BUILD_HINT}`);
   try {

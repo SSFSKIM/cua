@@ -17,6 +17,7 @@ import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
+import {ACCESS_NOTE} from './chrome.mjs';
 
 export const PROFILE_KEY = /^[a-z][a-z0-9-]{0,31}$/;
 const INSTANCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
@@ -166,7 +167,7 @@ export const REASONS = {
   host_not_live: `no live OpenAI extension backend serves it (Chrome is closed, or no window of that profile is open): ${WAKE}; turning the extension off and on at chrome://extensions also wakes it but can mint a new instance id, so run cua profiles bind <key> after that`,
   binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (${WAKE}), or the extension was turned off and on or reinstalled, which can mint a new instance id (bind it again with cua profiles bind <key>)`,
   backends_unlistable: 'the live OpenAI extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',
-  chrome_data_unreadable: 'this process cannot read Chrome\'s data directory (macOS Privacy & Security → Full Disk Access for your terminal, or run from a process that has it); the live check still works',
+  chrome_data_unreadable: `this process cannot read Chrome's data directory (${ACCESS_NOTE}, or run from a process that has it); the live check still works`,
 };
 
 // The unreadable case says what the live check can still do for this profile.

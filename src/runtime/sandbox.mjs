@@ -2,8 +2,9 @@
 // (issues #20, #33, #36). Without it node_repl applies its restrictive default to cells and trusted services: reads
 // allowed, every write denied, temp directories included. CUA_SHIM_SANDBOX picks what cua sends on every call it makes
 // to the runtime:
-//   scoped    (default) a managed profile: reads everywhere, writes only to the launch's working directory (the run
-//             directory, node_repl's `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`), no network.
+//   scoped    (default; on Linux only without the computer surface, see defaultSandboxMode) a managed profile: reads
+//             everywhere, writes only to the launch's working directory (the run directory, node_repl's
+//             `project_roots`, resolved against sandboxCwd) and $TMPDIR (`tmpdir`), no network.
 //             node_repl denies every kernel connection under any managed profile, so `network` says `restricted`.
 //             `slash_tmp` stays out: it would make any checkout or runtime under /tmp writable.
 //   disabled  the disabled permission profile: cells may write wherever the user can, and reach the network
@@ -16,12 +17,20 @@ import {lstatSync, readlinkSync, realpathSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
+import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
 const MODES = ['scoped', 'disabled', 'default'];
 
-export function sandboxModeFrom(env) {
-  const mode = env.CUA_SHIM_SANDBOX ?? 'scoped';
+// The mode when CUA_SHIM_SANDBOX is unset: scoped, except on Linux with the computer surface, where it is disabled.
+// Under any managed profile node_repl lets no runtime process connect to a socket (measured on Ubuntu 24.04, F2: its
+// NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS and a profile's `network: enabled` are not honoured there), so the scoped
+// sandbox would keep the computer-use helper (sky_linux, a child of the trusted worker) off the X display and the
+// session bus. The browser surface reaches its backends through node_repl and works under scoped.
+export const defaultSandboxMode = ({platform, surfaces}) => (platform === 'linux' && surfaces.includes('computer') ? 'disabled' : 'scoped');
+
+export function sandboxModeFrom(env, {platform = process.platform, surfaces = ['computer']} = {}) {
+  const mode = env.CUA_SHIM_SANDBOX ?? defaultSandboxMode({platform, surfaces});
   if (!MODES.includes(mode)) fail('invalid_setting', 'CUA_SHIM_SANDBOX must be scoped, disabled or default');
   return mode;
 }
@@ -120,8 +129,11 @@ export function describeConflicts(conflicts) {
     + 'runtime\'s configuration must stay outside every writable directory (node_repl refuses to start a kernel over writable trusted code)';
 }
 
-export const SANDBOX_CONFLICT_HINT = 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
-  + '(the default CUA_HOME, ~/Library/Application Support/cua, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled';
+// The remedy names this platform's default CUA_HOME (src/runtime/layout.mjs defaultHome).
+const DEFAULT_HOME_TEXT = {darwin: '~/Library/Application Support/cua', linux: '~/.local/share/cua'};
+export const sandboxConflictHint = platform => 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
+  + `(the default CUA_HOME, ${DEFAULT_HOME_TEXT[platform] ?? DEFAULT_HOME_TEXT.darwin}, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled`;
+export const SANDBOX_CONFLICT_HINT = sandboxConflictHint(process.platform);
 
 // Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
 // its NODE_REPL_TRUSTED_CODE_PATHS or its CODEX_HOME.
@@ -132,4 +144,19 @@ export function assertSandboxFits(mode, launch) {
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
+}
+
+// Linux: the vendor's sandbox fails open where bubblewrap cannot create an unprivileged user namespace (measured on
+// Ubuntu 24.04, F2: the runtime then starts its kernel and trusted worker with no sandbox, and cells write anywhere and
+// reach the network). A scoped launch there is refused with sandbox_unavailable before anything starts, rather than run
+// unconfined while cua claims scoped. `probe` is bwrapUserns (doctor's sandbox.userns probe), injectable for tests; it
+// runs once per launch, and only for scoped on Linux.
+export const SANDBOX_UNAVAILABLE_HINT = `${USERNS_REMEDY}; install bubblewrap if it is missing; or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly`;
+export async function assertSandboxConfines(mode, {platform, probe = bwrapUserns}) {
+  if (mode !== 'scoped' || platform !== 'linux') return;
+  const found = await probe();
+  if (found.status === 'pass') return;
+  const why = found.status === 'missing' ? 'bubblewrap (bwrap) is not installed'
+    : `bubblewrap cannot create an unprivileged user namespace here (bwrap --ro-bind / / true: ${found.detail})`;
+  fail('sandbox_unavailable', `CUA_SHIM_SANDBOX=scoped, but ${why}, and the runtime would then run JavaScript cells with no sandbox at all; nothing was started`, {hint: SANDBOX_UNAVAILABLE_HINT});
 }

@@ -56,7 +56,7 @@ const NO_PROFILES = {list: () => []};
 
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
-  persist = 'session', hostNotes = hostNotesFor(surfaces), model, sandboxState = null,
+  platform = process.platform, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform}), model, sandboxState = null,
   completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {},
 }) {
@@ -220,7 +220,7 @@ export function createServer({
       clientModel ??= typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined;
       return passThrough(msg, result => ({...result, instructions: withHostNotes(result?.instructions, hostNotes)}));
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces})}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform})}));
     return passThrough(msg);
   }
 
@@ -322,14 +322,15 @@ export function createServer({
   return {sessionId, closed, close, get state() { return lifecycle.state; }};
 }
 
-export function settingsFrom(env) {
+// `platform` picks the host notes and search hints (src/mcp/surface.mjs); the process's own by default.
+export function settingsFrom(env, {platform = process.platform} = {}) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
   const surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
-  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces));
+  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform}));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env)};
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform};
 }
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];

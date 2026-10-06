@@ -1,7 +1,8 @@
 // Passive diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
 // observe from outside: it never opens an app, starts or signals the helper, connects to its socket or requests a
-// grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively.
+// grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively;
+// `skip` marks a check that does not apply on this host (neither a failure nor blocked evidence).
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
 // The Keychain helper (secrets) cua would run for this home ($CUA_HOME/bin/cua-keychain, else the checkout's build
@@ -23,14 +24,18 @@
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
 // Another mode is the user's choice and only described.
+// On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
+// not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
+// sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted), and secrets.helper
+// reads `skip`: there is no Linux secrets backend (secrets_unsupported_platform).
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
 // The `agent.*` rows describe remote control (src/remote): the launchd job (`agent.installed`, `agent.running`), the
 // device enrolment (`agent.enrolled`) and whether this user's session is on the console and unlocked (`agent.console`,
-// the state in which remote js does nothing and is refused as console_locked). A fourth status, `skip`, means "not
-// applicable here": it never changes `ok` and is not listed as blocked. On a Mac never enrolled, with no job installed,
-// all four are `skip` (a locked Mac that does no remote control is healthy).
+// the state in which remote js does nothing and is refused as console_locked). On a Mac never enrolled, with no job
+// installed, all four are `skip` (a locked Mac that does no remote control is healthy); off macOS they are `skip` too,
+// launchd and the console registry never consulted (the agent is untested on Linux).
 import {existsSync, readFileSync, statSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -47,6 +52,8 @@ import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
+import {linuxDesktopChecks} from './linux-desktop.mjs';
+import {surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
 import {agentLogPath, agentStatus} from '../remote/launchd.mjs';
 import {checkConsole, consoleCheckFrom} from '../remote/console.mjs';
@@ -56,7 +63,7 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -84,35 +91,47 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   if (runtime) {
     const {root, manifest} = runtime;
     const layout = checkLayout(root, manifest);
-    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root)}`));
+    checks.push(result('runtime.files', layout.ok ? 'pass' : 'fail', layout.ok ? 'every pinned runtime path is present' : `missing ${layout.missing.join(', ')}; ${recoveryHint(root, manifest.platform)}`));
     const vendor = checkVendorManifest(root, manifest);
     checks.push(result('runtime.vendor-manifest', vendor.ok ? 'pass' : 'fail', vendor.detail));
     const ipc = checkIpc(root, manifest);
     checks.push(result('runtime.ipc', ipc.ok ? 'pass' : 'fail', ipc.detail));
-    const signatures = await verifySignatures(root, manifest);
-    const bad = signatures.filter(s => !s.valid);
-    const signed = !bad.length && signatures.length === manifest.signing.components.length;
-    checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
-      ? `${signatures.length} components signed by team ${manifest.signing.team}`
-      : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
+    let signed = true;
+    if (manifest.signing) {
+      const signatures = await verifySignatures(root, manifest);
+      const bad = signatures.filter(s => !s.valid);
+      signed = !bad.length && signatures.length === manifest.signing.components.length;
+      checks.push(result('runtime.signatures', signed ? 'pass' : 'fail', signed
+        ? `${signatures.length} components signed by team ${manifest.signing.team}`
+        : `invalid vendor signature: ${bad.map(s => `${s.component} (${s.detail})`).join('; ') || 'unchecked components'}; ${recoveryHint(root)}`));
+    } else {
+      checks.push(result('runtime.signatures', 'pass', `archive hash is the trust root on ${manifest.platform}: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed`));
+    }
     if (layout.ok && signed) untrusted = null;
     else if (layout.ok) untrusted = 'not asked: runtime.signatures failed in this run, and doctor never executes a release binary it found untrusted; fix the release first (see runtime.signatures), then run cua login';
     checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
   } else {
     checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
   }
-  checks.push(sandboxCheck({home, env, runtime}));
+  const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
+  const sandbox = sandboxCheck({home, env, runtime, platform: host.platform, userns: linuxRows?.find(row => row.name === 'sandbox.userns')});
+  checks.push(sandbox.row);
   checks.push(runSweepCheck(home, sweep));
 
-  const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
-  const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
-  checks.push(result('helper.live', helper.status, helper.detail));
-  checks.push(result('helper.permissions', 'blocked',
-    'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
-    + `Confirm with a live probe (${LIVE_PROBE}).`));
-  checks.push(...classifyKeychainHelper(await inspectSecrets({home})));
+  if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {env, sandbox}) : row)));
+  if (linuxRows) {
+    checks.push(result('secrets.helper', 'skip', 'secrets_unsupported_platform: cua has no secrets backend on linux, so secrets_list reports it and a {{secret:…}} reference is refused before anything is entered'));
+  } else {
+    const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
+    const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
+    checks.push(result('helper.live', helper.status, helper.detail));
+    checks.push(result('helper.permissions', 'blocked',
+      'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
+      + `Confirm with a live probe (${LIVE_PROBE}).`));
+    checks.push(...classifyKeychainHelper(await inspectSecrets({home})));
+  }
   checks.push(await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
-  checks.push(...await inspectChrome({home}));
+  checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
@@ -120,14 +139,46 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   return report;
 }
 
-function sandboxCheck({home, env, runtime}) {
+// sandbox.userns as it bears on this setup. A scoped connection is itself refused where the probe fails, so its row
+// stands. Otherwise it is `skip` only when no scoped launch can happen here: the browser surface is off (only the
+// profile listing launches scoped behind a disabled connection), or CUA_SHIM_SANDBOX is set to another mode, which the
+// listing honours too. Otherwise a refusal stays `blocked`: the connection runs disabled, but `cua profiles list` and
+// `bind` launch scoped and are refused (sandbox_unavailable).
+function usernsRow(row, {env, sandbox}) {
+  if (row.status === 'pass' || !sandbox.surfaces || sandbox.mode === 'scoped') return row;
+  const explicitOther = env.CUA_SHIM_SANDBOX !== undefined && env.CUA_SHIM_SANDBOX !== 'scoped';
+  if (!sandbox.surfaces.includes('browser') || explicitOther) return result('sandbox.userns', 'skip', `not needed here: no scoped launch happens with ${explicitOther ? `CUA_SHIM_SANDBOX=${env.CUA_SHIM_SANDBOX}` : 'the browser surface off'}. CUA_SHIM_SANDBOX=scoped or the browser surface's profile listing would need it, and it would read: ${row.detail}`);
+  return result('sandbox.userns', 'blocked', `${row.detail}. The connection runs under ${sandbox.mode}, but cua profiles list and bind launch under scoped and are refused (sandbox_unavailable)`);
+}
+
+// -> {mode, surfaces, row}. On Linux the row also says what F2 measured there (src/runtime/sandbox.mjs
+// defaultSandboxMode): the scoped sandbox keeps the computer-use helper off the X display and the session bus, and where
+// bubblewrap cannot create a user namespace (`userns`, the sandbox.userns row) the runtime's sandbox fails open, so
+// scoped launches are refused. The surfaces are read on Linux only, where the default and the remedies depend on them;
+// the darwin row is what it was before Phase F, and serve rejects an invalid CUA_SHIM_SURFACES itself.
+function sandboxCheck({home, env, runtime, platform, userns}) {
+  const linux = platform === 'linux';
+  let surfaces = null;
   let mode;
-  try { mode = sandboxModeFrom(env); } catch (error) {
+  try {
+    if (linux) surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
+    mode = sandboxModeFrom(env, linux ? {platform, surfaces} : {platform});
+  } catch (error) {
     if (!(error instanceof CuaError)) throw error;
-    return result('sandbox', 'fail', error.message);
+    return {mode: null, surfaces: null, row: result('sandbox', 'fail', error.message)};
   }
+  return {mode, surfaces, row: sandboxRow({home, env, runtime, platform, surfaces, userns, mode})};
+}
+
+function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
+  const linux = platform === 'linux';
+  if (mode === 'disabled' && linux && env.CUA_SHIM_SANDBOX === undefined) return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled, because under the scoped sandbox node_repl lets no runtime process connect to a socket and the computer-use helper could not reach the X display or the session bus. JavaScript cells may write wherever your account can and reach the network (on Linux they can reach the X display directly too); CUA_SHIM_SURFACES=browser keeps scoped');
   if (mode === 'disabled') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=disabled: JavaScript cells may write wherever your account can, cua\'s trusted code roots included (accepted under the trust model, #20), and reach the network');
   if (mode === 'default') return result('sandbox', 'pass', 'CUA_SHIM_SANDBOX=default: cua sends no sandbox state; node_repl denies every write and network connection, so profile labels and other features that need scratch space fail');
+  const computer = linux && surfaces.includes('computer');
+  if (linux && userns && userns.status !== 'pass') return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped, but bubblewrap cannot create a user namespace here (see sandbox.userns): the runtime\'s sandbox fails open in that state, running JavaScript cells with no sandbox at all, so cua serve and the profile listing refuse scoped connections (sandbox_unavailable). Fix what sandbox.userns names, or set CUA_SHIM_SANDBOX=disabled to choose that openly'
+    + (computer ? '. And even with user namespaces, scoped would keep the computer-use helper (sky_linux) off the X display and the session bus; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser' : ''));
+  if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
   const owned = homeLayout(realHome(home));
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
@@ -147,7 +198,7 @@ function runSweepCheck(home, sweep) {
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
-const defaultInspectChrome = async ({home}) => chromeChecks({home, chrome: chromeFacts(), psText: processTable()});
+const defaultInspectChrome = async ({home, host, env}) => chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})});
 const defaultInspectAgent = ({home, env, host}) => agentChecks({home, env, host});
 
 async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {

@@ -4,11 +4,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {harness, initialized, UPSTREAM_TOOLS, structured} from './fixtures/mcp-harness.mjs';
-import {DEFAULT_HOST_NOTES, hostNotesFor, SECRETS_LIST_TOOL} from '../src/mcp/surface.mjs';
+import {DEFAULT_HOST_NOTES, LINUX_HOST_NOTES, hostNotesFor, SECRETS_LIST_TOOL} from '../src/mcp/surface.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
+import {ACCESS_NOTE} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile} from '../src/profiles/registry.mjs';
 import {profileReadiness} from '../src/profiles/commands.mjs';
 
@@ -31,7 +32,7 @@ test('by default the surface is unchanged: four tools, the native host notes, no
   const tools = await toolsOf(h);
   assert.deepEqual(tools.map(t => t.name), ['js', 'js_reset', 'end_task', 'secrets_list']);
   assert.equal(tools.find(t => t.name === 'secrets_list').description, SECRETS_LIST_TOOL.description);
-  assert.equal(hostNotesFor(['computer']), DEFAULT_HOST_NOTES);
+  assert.equal(hostNotesFor(['computer'], {platform: 'darwin'}), DEFAULT_HOST_NOTES);
   const call = await h.client.call('profiles_list').response;
   assert.equal(call.error.code, -32602);
 });
@@ -112,20 +113,52 @@ const BROWSER_RULES = {
 
 test('the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters', async () => {
   for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
-    const notes = hostNotesFor(surfaces);
+    const notes = hostNotesFor(surfaces, {platform: 'darwin'});
     const browser = surfaces.includes('browser');
     for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `${surfaces.join()}: ${rule}`);
     for (const [rule, pattern] of Object.entries(BROWSER_RULES)) {
       if (browser) assert.match(notes, pattern, `${surfaces.join()}: ${rule}`);
       else assert.doesNotMatch(notes, pattern, `${surfaces.join()} has no Chrome rule: ${rule}`);
     }
-    const h = harness({server: {surfaces, profiles: {list: () => []}}});
+    const h = harness({server: {surfaces, hostNotes: notes, profiles: {list: () => []}}});
     const instructions = (await initialized(h)).result.instructions;
     assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${notes}`);
     assert.ok(instructions.length <= 2048, `${surfaces.join()}: ${instructions.length} characters`);
   }
-  assert.doesNotMatch(hostNotesFor(['browser']), /osascript|getAXState\(\) on it relaunches/, 'native-only notes stay out of a browser-only connection');
-  assert.ok(hostNotesFor(['computer', 'browser']).startsWith(DEFAULT_HOST_NOTES), 'the native notes are kept whole beside the browser ones');
+  assert.doesNotMatch(hostNotesFor(['browser'], {platform: 'darwin'}), /osascript|getAXState\(\) on it relaunches/, 'native-only notes stay out of a browser-only connection');
+  assert.ok(hostNotesFor(['computer', 'browser'], {platform: 'darwin'}).startsWith(DEFAULT_HOST_NOTES), 'the native notes are kept whole beside the browser ones');
+});
+
+// Phase F: the Linux constant replaces the macOS-only sentences and fits the same 2,048-character budget beside the
+// vendor's line, on every surface combination.
+const LINUX_RULES = {
+  'bind by X11 window': /cua\.getApp\(\{windowId\}\) with an id from listWindows\(\)/,
+  'GTK3 text views: pressKey, not typeText or paste': /typeText and paste crash GTK3 text views: type there with pressKey/,
+  'X keysyms': /one X keysym per call/,
+  'no per-app approval': /No app asks for approval: this connection drives every window of the session/,
+  'the trusted wrapper is not a boundary': /the trusted wrapper is not a boundary on Linux/,
+};
+const MACOS_ONLY = /macOS|osascript|getAXState|approval once per connection|typeText drops characters|role names are in the system language/;
+
+test('the Linux host notes carry the Linux rules, none of the macOS-only ones, and fit 2048 characters on every surface', async () => {
+  assert.equal(hostNotesFor(['computer'], {platform: 'linux'}), LINUX_HOST_NOTES);
+  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
+    const notes = hostNotesFor(surfaces, {platform: 'linux'});
+    for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `linux ${surfaces.join()}: ${rule}`);
+    for (const [rule, pattern] of Object.entries(LINUX_RULES)) {
+      if (surfaces.includes('computer')) assert.match(notes, pattern, `linux ${surfaces.join()}: ${rule}`);
+      else assert.doesNotMatch(notes, pattern, `linux ${surfaces.join()} has no computer rule: ${rule}`);
+    }
+    for (const [rule, pattern] of Object.entries(BROWSER_RULES)) if (surfaces.includes('browser')) assert.match(notes, pattern, `linux ${surfaces.join()}: ${rule}`);
+    assert.doesNotMatch(notes, MACOS_ONLY, `linux ${surfaces.join()}`);
+    const h = harness({server: {surfaces, hostNotes: notes, profiles: {list: () => []}}});
+    const instructions = (await initialized(h)).result.instructions;
+    assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${notes}`);
+    assert.ok(instructions.length <= 2048, `linux ${surfaces.join()}: ${instructions.length} characters`);
+  }
+  assert.equal(hostNotesFor(['browser'], {platform: 'linux'}), hostNotesFor(['browser'], {platform: 'darwin'}), 'the Chrome notes are the same on both');
+  assert.equal(settingsFrom({}, {platform: 'linux'}).hostNotes, LINUX_HOST_NOTES);
+  assert.equal(settingsFrom({}, {platform: 'darwin'}).hostNotes, DEFAULT_HOST_NOTES);
 });
 
 test('CUA_SHIM_SURFACES selects computer (default), browser or both, and anything else is refused', () => {
@@ -157,8 +190,49 @@ test('profiles_list with unreadable Chrome data: a bound live profile is ready, 
     {key: 'work', ready: false, reason: 'chrome_data_unreadable'},
   ]});
   const text = response.result.content[0].text;
-  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*Full Disk Access.*not confirmed live/);
+  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*not confirmed live/);
+  assert.ok(text.includes(ACCESS_NOTE), 'the OS\'s access fix is named');
   assert.match(text, /work is not ready \(chrome_data_unreadable\): .*not bound yet/);
   assert.match(text, /Tell the user/);
   assert.ok(!/EPERM|Default|Profile 8/.test(JSON.stringify(structured(response))), 'no error codes or directory names in the model-visible list');
+});
+
+// The tools' search hints name the platform too (spike #12 (d)): Linux says linux, macOS keeps its exact hints.
+test('search hints say linux on Linux and keep their macOS wording on macOS, on every surface', async () => {
+  const {modelTools} = await import('../src/mcp/surface.mjs');
+  const hints = tools => Object.fromEntries(tools.map(t => [t.name, t._meta?.['anthropic/searchHint']]));
+  assert.deepEqual(hints(modelTools(UPSTREAM_TOOLS, {surfaces: ['computer'], platform: 'darwin'})), {
+    js: 'control macos apps through their gui (computer use): click, type, read the screen, screenshot',
+    js_reset: 'reset the computer-use session for macos gui control',
+    end_task: 'finish end complete the current macos gui computer-use task',
+    secrets_list: 'list stored secret credential labels for computer-use typing',
+  });
+  assert.equal(hints(modelTools(UPSTREAM_TOOLS, {surfaces: ['computer', 'browser'], platform: 'darwin'})).js, 'control macos apps and the user\'s chrome browser profiles: click, type, fill forms, read, screenshot');
+  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
+    const tools = modelTools(UPSTREAM_TOOLS, {surfaces, platform: 'linux'});
+    assert.doesNotMatch(JSON.stringify(tools.map(t => t._meta)), /macos/i, surfaces.join());
+    if (surfaces.includes('computer')) assert.match(hints(tools).js, /linux/);
+  }
+  const h = harness({server: {surfaces: ['computer'], platform: 'linux', profiles: {list: () => []}}});
+  await initialized(h);
+  const list = h.client.request('tools/list', {});
+  h.upstream.reply(await h.upstream.nextRequest('tools/list'), {tools: UPSTREAM_TOOLS});
+  const served = (await list.response).result.tools;
+  assert.match(hints(served).js, /linux/);
+  assert.equal(settingsFrom({}, {platform: 'linux'}).platform, 'linux');
+});
+
+// On Linux there is no secrets backend: secrets_list says so instead of teaching references Linux refuses.
+test('secrets_list tells the model on Linux that secrets are unavailable there; macOS keeps its description', async () => {
+  const {modelTools} = await import('../src/mcp/surface.mjs');
+  const secretsTool = (surfaces, platform) => modelTools(UPSTREAM_TOOLS, {surfaces, platform}).find(t => t.name === 'secrets_list');
+  assert.deepEqual(secretsTool(['computer'], 'darwin'), SECRETS_LIST_TOOL);
+  assert.match(secretsTool(['computer', 'browser'], 'darwin').description, /or of a Chrome tab's locator\.fill/);
+  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
+    const tool = secretsTool(surfaces, 'linux');
+    assert.match(tool.description, /secrets_unsupported_platform/, surfaces.join());
+    assert.doesNotMatch(tool.description, /typeText|paste|setValue|locator\.fill|\{\{secret:/, surfaces.join());
+    assert.deepEqual(tool.inputSchema, SECRETS_LIST_TOOL.inputSchema);
+    assert.deepEqual(tool.annotations, SECRETS_LIST_TOOL.annotations);
+  }
 });

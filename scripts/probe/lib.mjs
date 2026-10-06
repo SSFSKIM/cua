@@ -61,13 +61,59 @@ export function descendants(psText, rootPid) {
   return out;
 }
 
-const DESKTOP_RUNTIME = /\/ChatGPT\.app\/Contents\/|\/\.codex\/computer-use\//;
+// The installed desktop app's runtime: its macOS bundle, its Linux deb, or the computer-use copy it keeps under ~/.codex.
+const DESKTOP_RUNTIME = /\/ChatGPT\.app\/Contents\/|^\/usr\/lib\/chatgpt\/|\/\.codex\/computer-use\//;
 
-export function classifyProcesses(tree, {relocatedRoot}) {
+// `systemSandbox`: the system sandbox launcher's executable paths (Linux: bubblewrap, which the pinned codex runs to
+// sandbox each runtime child), the one executable outside the release a runtime tree may hold.
+export function classifyProcesses(tree, {relocatedRoot, systemSandbox = []}) {
+  const relocated = p => p.executable.startsWith(relocatedRoot + '/');
   return {
     desktopRuntimePaths: tree.filter(p => DESKTOP_RUNTIME.test(p.executable)),
-    allExecutablesRelocated: tree.length > 0 && tree.every(p => p.executable.startsWith(relocatedRoot + '/')),
+    allExecutablesRelocated: tree.some(relocated) && tree.every(p => relocated(p) || systemSandbox.includes(p.executable)),
   };
+}
+
+// The processes of `tree` outside the anchor's process group (pgid = anchorPid), except a system sandbox launcher and
+// everything below it: bubblewrap starts its child in a new session (--new-session), so that subtree leaves the group
+// by design; it is tied to its parent instead (--die-with-parent), which `survivors` checks after the close.
+export function outsideAnchorGroup(tree, {anchorPid, pgidOf, systemSandbox = []}) {
+  const byPid = new Map(tree.map(p => [p.pid, p]));
+  const underLauncher = p => {
+    for (let at = p; at; at = byPid.get(at.ppid)) if (systemSandbox.includes(at.executable)) return true;
+    return false;
+  };
+  return tree.filter(p => pgidOf(p.pid) !== anchorPid && !underLauncher(p));
+}
+
+// The processes of `tree` still alive by `isAlive(pid)`.
+export const survivors = (tree, isAlive) => tree.filter(p => isAlive(p.pid));
+
+// `ps -eo pid=,ppid=` text and a reader of /proc/<pid>/exe -> the same `pid ppid executable` lines `descendants`
+// reads. Linux's ps truncates `comm` to 15 characters, so the executable path comes from /proc. `readExe(pid)` returns
+// the path or throws: a process that is gone by then (ENOENT, ESRCH) is dropped, its children having been reparented
+// already; any other failure (EACCES: another user's process, or one that made itself non-dumpable, as a sandbox
+// launcher may) keeps its row as `<unreadable CODE>`, so the tree stays connected and such a process can never pass
+// as relocated. The report's process ancestry names its pid.
+export const UNREADABLE_EXE = code => `<unreadable ${code}>`;
+const GONE = new Set(['ENOENT', 'ESRCH']);
+export function procTable(psText, readExe) {
+  return psText.split('\n').map(line => line.match(/^\s*(\d+)\s+(\d+)\s*$/)).filter(Boolean)
+    .flatMap(([, pid, ppid]) => {
+      let exe;
+      try { exe = readExe(Number(pid)); } catch (error) {
+        if (GONE.has(error?.code)) return [];
+        exe = UNREADABLE_EXE(error?.code ?? 'error');
+      }
+      return [`${pid} ${ppid} ${exe}`];
+    }).join('\n');
+}
+
+// The native-socket holder step of verify.mjs: null where it applies (macOS), else why it is skipped. On Linux the
+// computer-use helper is a child process of the runtime over stdio and holds no socket.
+export function nativeSocketStep(platform) {
+  return platform === 'darwin' ? null
+    : {status: 'skip', reason: `${platform}: the computer-use helper (sky_linux) is a child process of the runtime over stdio, not a native socket holder`};
 }
 
 // `lsof -F pc <path>` field output -> [{pid, command}].

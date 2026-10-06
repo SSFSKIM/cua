@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {loadPins, selectPin} from '../../src/runtime/manifest.mjs';
 
 export const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const REAL_PIN_FILE = join(REPO, 'runtime', 'releases', '26.928.40906-darwin-arm64.json');
@@ -18,8 +19,17 @@ export function scratch(prefix = 'cua-test-', parent = tmpdir()) {
   return {dir, cleanup: () => rmSync(dir, {recursive: true, force: true})};
 }
 
-// A scratch directory short enough for unix socket paths below it (the macOS per-user temp directory is not).
-export const shortScratch = (prefix = 'cua-') => scratch(prefix, '/tmp');
+// A scratch directory short enough for unix socket paths below it (the macOS per-user temp directory is not), and
+// outside $TMPDIR, where the scoped sandbox requires a CUA_HOME to be: /tmp, or /var/tmp where $TMPDIR covers /tmp (a
+// Linux session may export TMPDIR=/tmp).
+const SHORT_PARENTS = ['/tmp', '/var/tmp'];
+const realOrSelf = path => { try { return realpathSync(path); } catch { return path; } };
+export function shortScratch(prefix = 'cua-') {
+  const tmp = process.env.TMPDIR?.startsWith('/') ? realOrSelf(process.env.TMPDIR).replace(/\/+$/, '') : null;
+  const parent = SHORT_PARENTS.find(dir => { const real = realOrSelf(dir); return !tmp || (real !== tmp && !real.startsWith(`${tmp}/`)); });
+  if (!parent) throw new Error(`no short scratch parent outside $TMPDIR (${process.env.TMPDIR}) among ${SHORT_PARENTS.join(', ')}`);
+  return scratch(prefix, parent);
+}
 
 // Writes the fixture app tree under `root`. `vendor` overrides fields of cua_node/manifest.json (`vendorRaw` replaces
 // its text outright); `ipc` replaces the IPC version string; `omit` lists layout-relative paths (inside the extracted
@@ -93,11 +103,15 @@ export function fixturePin({release = '0.0.1-darwin-arm64', appVersion = release
 // this accepting double, and one test proves the production checker does reject the fixture.
 export const acceptSignatures = async (root, pin) => pin.signing.components.map(component => ({component, valid: true, detail: 'fixture'}));
 
-// A home whose active release is the checked-in pin, laid out with placeholder files (no vendor code), so the CLI's
-// real pin resolution finds it. Signatures are never checked on this path (resolveRuntime checks structure only).
-// `files` maps layout keys to file contents; executables start with "#!".
-export function forgeActiveRuntime(home, files = {}) {
-  const pin = realPinJson();
+// The checked-in pin for `host` ({platform, arch}; this process's by default), so a forged home is the one the CLI's
+// own pin resolution expects on whatever host runs the suite. Tests of the macOS layout pass the darwin host.
+const pinFor = host => selectPin(loadPins(), host ?? {platform: process.platform, arch: process.arch});
+
+// A home whose active release is the checked-in pin of `host`, laid out with placeholder files (no vendor code), so
+// the CLI's real pin resolution finds it. Signatures are never checked on this path (resolveRuntime checks structure
+// only). `files` maps layout keys to file contents; executables start with "#!".
+export function forgeActiveRuntime(home, files = {}, {host} = {}) {
+  const pin = pinFor(host);
   const root = join(home, 'runtimes', pin.release);
   const dirs = new Set(['moduleDir', 'skyServiceApp']);
   for (const [key, rel] of Object.entries(pin.layout)) {
@@ -131,14 +145,14 @@ exit ${exit}
 
 // The Chrome plugin component of a forged active runtime (forgeActiveRuntime), with its record and the host
 // configuration install would write; `config` replaces fields of that configuration. Nothing here is vendor code.
-export function forgeChromeComponent(home, {config = {}} = {}) {
-  const pin = realPinJson();
+export function forgeChromeComponent(home, {config = {}, host: target} = {}) {
+  const pin = pinFor(target);
   const real = realpathSync(home);
   const releaseRoot = join(real, 'runtimes', pin.release);
   const root = join(releaseRoot, pin.chromePlugin.dir);
   for (const rel of Object.values(pin.chromePlugin.layout)) {
     mkdirSync(dirname(join(root, rel)), {recursive: true});
-    writeFileSync(join(root, rel), rel.endsWith('ChatGPT for Chrome') ? '#!/bin/sh\necho fixture host, never run\n' : 'export {};\n');
+    writeFileSync(join(root, rel), rel === pin.chromePlugin.layout.host ? '#!/bin/sh\necho fixture host, never run\n' : 'export {};\n');
   }
   const host = join(root, pin.chromePlugin.layout.host);
   chmodSync(host, 0o755);
@@ -158,3 +172,87 @@ export function forgeChromeComponent(home, {config = {}} = {}) {
   writeFileSync(join(root, 'component.json'), JSON.stringify({schema: 1, component: pin.chromePlugin.dir, release: pin.release, archive: {sha256: pin.archive.sha256, length: pin.archive.length}}));
   return {root, host, config: hostConfig};
 }
+
+// ---- Linux: a harmless stand-in for the vendor's deb ----------------------------------------------------------------
+// The same member layout as chatgpt_<version>_<arch>.deb (debian-binary, control.tar.xz, data.tar.xz in a common-format
+// ar archive, the data tar holding ./usr/lib/chatgpt/resources/...), a few bytes per file. The ar archive is written
+// here byte by byte, in the format dpkg-deb writes, because macOS's own `ar` adds a symbol table and BSD long names;
+// the installer reads it with the system `ar` like the real deb.
+export const LINUX_PIN_FILE = arch => join(REPO, 'runtime', 'releases', `26.928.40906-linux-${arch}.json`);
+export const linuxPinJson = (arch = 'x64') => JSON.parse(readFileSync(LINUX_PIN_FILE(arch), 'utf8'));
+
+// `omit` lists paths relative to usr/lib/chatgpt/resources to leave out; `vendor` overrides cua_node/manifest.json.
+export function writeLinuxFixtureTree(root, {arch = 'x64', vendor = {}, omit = []} = {}) {
+  const files = {
+    'usr/lib/chatgpt/ChatGPT': '#!/bin/sh\necho desktop app, never installed\n',
+    'etc/apparmor.d/chatgpt': '# profile for the desktop app only\n',
+    'usr/lib/chatgpt/resources/app.asar': 'not a runtime component',
+    'usr/lib/chatgpt/resources/cua_node/bin/node': '#!/bin/sh\necho fixture node\n',
+    'usr/lib/chatgpt/resources/cua_node/bin/node_repl': '#!/bin/sh\necho fixture node_repl\n',
+    'usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs': 'export {};\n',
+    [`usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_${arch}`]: '#!/bin/sh\necho fixture sky_linux\n',
+    'usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js': 'export async function handleRpc() {}\n',
+    'usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs': 'export async function handleRpc() {}\n',
+    'usr/lib/chatgpt/resources/cua_node/manifest.json': JSON.stringify({
+      platform: 'linux', arch, target: `linux-${arch}`,
+      node_version: '24.21.0-cua.1', runtime_archive_version: '0.0.27/20260927214556-b77d38801cca', ...vendor,
+    }),
+    'usr/lib/chatgpt/resources/codex': '#!/bin/sh\necho fixture codex\n',
+    [`usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/chrome/extension-host/linux/${arch}/extension-host`]: '#!/bin/sh\necho fixture host, never run\n',
+    'usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/chrome/scripts/browser-client.mjs': 'export {};\n',
+    'usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/chrome/scripts/browser-service.mjs': 'export {};\n',
+    'usr/lib/chatgpt/resources/plugins/openai-bundled/plugins/chrome/scripts/installManifest.mjs': 'export async function install() {}\n',
+  };
+  for (const [rel, body] of Object.entries(files)) {
+    if (omit.includes(rel.replace(/^usr\/lib\/chatgpt\/resources\//, ''))) continue;
+    mkdirSync(dirname(join(root, rel)), {recursive: true});
+    writeFileSync(join(root, rel), body);
+    chmodSync(join(root, rel), body.startsWith('#!') ? 0o755 : 0o644);
+  }
+  mkdirSync(join(root, 'usr/bin'), {recursive: true});
+  symlinkSync('../lib/chatgpt/ChatGPT', join(root, 'usr/bin/chatgpt'));
+}
+
+function arArchive(members) {
+  const field = (value, width) => String(value).padEnd(width, ' ');
+  const parts = [Buffer.from('!<arch>\n')];
+  for (const [name, data] of members) {
+    parts.push(Buffer.from(field(name, 16) + field(0, 12) + field(0, 6) + field(0, 6) + field(100644, 8) + field(data.length, 10) + '`\n'), data);
+    if (data.length % 2) parts.push(Buffer.from('\n'));
+  }
+  return Buffer.concat(parts);
+}
+
+// -> {deb, sha256, length}. `dataMember` renames the data tar member (a deb whose payload cua cannot read).
+export function debFixture(dir, {dataMember = 'data.tar.xz', ...options} = {}) {
+  const tree = join(dir, 'deb-tree');
+  writeLinuxFixtureTree(tree, options);
+  const tar = (out, ...paths) => {
+    const r = spawnSync('tar', ['-cJf', join(dir, out), '-C', tree, ...paths], {encoding: 'utf8'});
+    if (r.status !== 0) throw new Error(`tar failed: ${r.stderr}`);
+    const bytes = readFileSync(join(dir, out));
+    rmSync(join(dir, out));
+    return bytes;
+  };
+  const data = tar('data.tar.xz', '.');
+  const control = tar('control.tar.xz', './etc');
+  rmSync(tree, {recursive: true, force: true});
+  const bytes = arArchive([['debian-binary', Buffer.from('2.0\n')], ['control.tar.xz', control], [dataMember, data]]);
+  const deb = join(dir, 'fixture.deb');
+  writeFileSync(deb, bytes);
+  return {deb, ...digest(bytes)};
+}
+
+export function linuxFixturePin({arch = 'x64', release = `0.0.1-linux-${arch}`, appVersion = release.replace(/-linux-[a-z0-9]+$/, ''), sha256, length, ...overrides} = {}) {
+  const pin = linuxPinJson(arch);
+  return {
+    ...pin, release, appVersion,
+    archive: {format: 'deb', url: `https://example.invalid/chatgpt_${appVersion}_${arch}.deb`, length, sha256},
+    ...overrides,
+  };
+}
+
+// The tools a deb install needs, found on this machine's PATH (`ar` and `tar` ship with macOS; `xz` is only looked up,
+// since tar decompresses itself here), with `missing` ones reported absent.
+export const debTools = ({missing = []} = {}) => name => missing.includes(name) ? null
+  : spawnSync('/bin/sh', ['-c', `command -v ${name}`], {encoding: 'utf8'}).stdout.trim() || (name === 'xz' ? '/usr/bin/true' : null);

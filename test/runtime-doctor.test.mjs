@@ -49,10 +49,10 @@ test('an unsupported platform is an explicit failure and nothing else is inspect
   const s = scratch();
   try {
     let helperInspected = false;
-    const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'x64'}, inspectHelper: async () => { helperInspected = true; }});
+    const report = await inspectRuntime({home: s.dir, host: {platform: 'linux', arch: 'riscv64'}, inspectHelper: async () => { helperInspected = true; }});
     assert.equal(report.ok, false);
     assert.deepEqual(report.checks.map(c => [c.name, c.status]), [['platform', 'fail']]);
-    assert.match(report.checks[0].detail, /linux-x64/);
+    assert.match(report.checks[0].detail, /linux-riscv64/);
     assert.equal(helperInspected, false);
   } finally { s.cleanup(); }
 });
@@ -93,6 +93,22 @@ test('the sandbox check describes the mode and fails a scoped home whose runtime
   const invalid = check(await inspect({CUA_SHIM_SANDBOX: 'managed'}), 'sandbox');
   assert.equal(invalid.status, 'fail');
   assert.match(invalid.detail, /must be scoped, disabled or default/);
+});
+
+// The darwin sandbox row never reads CUA_SHIM_SURFACES (only Linux's default and remedies depend on the surfaces), so an
+// invalid surfaces value leaves it as it was before Phase F: serve rejects that value itself. Runs on any host.
+test('on macOS the sandbox row ignores CUA_SHIM_SURFACES, a bad value included', async t => {
+  const s = shortScratch();
+  t.after(s.cleanup);
+  const pin = fixturePin({sha256: '0'.repeat(64), length: 1});
+  for (const surfaces of [undefined, 'computer,chrome', '']) {
+    const env = surfaces === undefined ? {} : {CUA_SHIM_SURFACES: surfaces};
+    const report = await inspectRuntime({home: join(s.dir, 'home'), env, pins: [pin], host: HOST, verifySignatures: acceptSignatures,
+      inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectLogin: async () => ({state: 'logged-out'}), inspectChrome: async () => []});
+    const row = check(report, 'sandbox');
+    assert.equal(row.status, 'pass', JSON.stringify(surfaces));
+    assert.match(row.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\)/);
+  }
 });
 
 test('signature and layout damage in the installed tree fail the doctor with the component named', {skip: !darwin}, async t => {

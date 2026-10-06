@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Checks the standalone server end to end through the actual launcher: `cua serve` on the installed runtime in
-// $CUA_HOME (default ~/Library/Application Support/cua). It runs the MCP handshake, checks the tool surface (four
+// $CUA_HOME (default ~/Library/Application Support/cua; on Linux ${XDG_DATA_HOME:-~/.local/share}/cua). It runs the MCP handshake, checks the tool surface (four
 // tools; five with the browser surface of CUA_SHIM_SURFACES, which adds profiles_list and documents the browser API
 // in the js description, while the default documents none) and instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
 // (its banner), which reaches the native helper read-only. Then end_task, a second task, and EOF. It records which
@@ -13,17 +13,23 @@
 //
 // profiles_list (browser surface) is checked for shape only and never opens a tab.
 //
+// On Linux the process tree is read from /proc (ps truncates executable names there), and the native-socket holder
+// step reads skip: the computer-use helper is a child process of the runtime, not a socket holder. Under the scoped
+// sandbox the pinned codex runs each runtime child inside the system bubblewrap, which starts a new session: bubblewrap
+// is the one executable allowed outside the release, its subtree may leave the anchor's process group, and every
+// runtime process seen must be gone shortly after the close.
+//
 //   node verify.mjs                                       exit 0 when every check passes; prints a JSON report
 //   CUA_SHIM_SURFACES=computer,browser node verify.mjs   the same with the browser surface
 import {spawn, spawnSync} from 'node:child_process';
-import {existsSync, lstatSync, readFileSync, readdirSync, realpathSync} from 'node:fs';
+import {existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
-import {descendants, classifyProcesses, socketHolders} from './scripts/probe/lib.mjs';
+import {descendants, classifyProcesses, socketHolders, nativeSocketStep, procTable, outsideAnchorGroup, survivors} from './scripts/probe/lib.mjs';
 import {locateHelper} from './src/secrets/helper.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
 
@@ -37,6 +43,13 @@ const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ?
 const report = {home, surfaces, problems};
 const check = (ok, problem) => { if (!ok) problems.push(problem); return ok; };
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8'}).stdout ?? '';
+const exeOf = pid => readlinkSync(`/proc/${pid}/exe`);
+// `pid ppid executable` for every process (descendants reads it).
+const processTable = () => process.platform === 'linux' ? procTable(sh('ps', ['-eo', 'pid=,ppid=']), exeOf) : sh('ps', ['-axo', 'pid=,ppid=,comm=']);
+// Linux: the system bubblewrap the pinned codex sandboxes each runtime child with, as the runtime's fixed PATH finds it.
+const SYSTEM_SANDBOX = process.platform === 'linux' ? [...new Set(['/usr/bin/bwrap', '/bin/bwrap'].filter(existsSync).map(path => realpathSync(path)))] : [];
+const isAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+let runtimeTree = [];
 
 let runtime;
 try {
@@ -61,6 +74,9 @@ const sessionEntries = session => [`${session}.pid`, session, `${session}.sock`]
 const server = spawn(process.execPath, [CLI, 'serve'], {stdio: ['pipe', 'pipe', 'inherit'], env: {...process.env, CUA_HOME: home}});
 const exited = new Promise(resolve => server.on('exit', (code, signal) => resolve({code, signal})));
 const pending = new Map();
+// A server that has gone (a refused open, say) answers nothing more: fail what waits instead of waiting out its timeout.
+// 'close' comes after its stdout is drained, so an answer still in the pipe is read first.
+server.on('close', (code, signal) => { for (const waiter of pending.values()) waiter.reject(new Error(`cua serve exited (${JSON.stringify({code, signal})}) before answering`)); pending.clear(); });
 let nextId = 0;
 report.elicitationsDeclined = 0;
 const send = msg => server.stdin.write(JSON.stringify(msg) + '\n');
@@ -130,17 +146,17 @@ try {
   // beside it, the connection's secrets broker when the Keychain helper is built.
   const helperPath = locateHelper({home}).path;
   const helper = existsSync(helperPath) ? realpathSync(helperPath) : null;
-  const all = descendants(sh('ps', ['-axo', 'pid=,ppid=,comm=']), server.pid).filter(p => p.pid !== server.pid);
+  const all = descendants(processTable(), server.pid).filter(p => p.pid !== server.pid);
   const brokers = all.filter(p => p.ppid === server.pid && helper && [helperPath, helper].includes(p.executable));
   const tree = all.filter(p => !brokers.includes(p));
   report.secretsBroker = brokers.map(p => ({pid: p.pid, executable: p.executable.replace(homedir(), '~')}));
   check(secrets?.status !== 'ok' || brokers.length === 1, 'secrets_list answered but no broker helper runs under the server');
   const hostNode = realpathSync(process.execPath);
   const anchor = tree.find(p => p.ppid === server.pid);
-  const runtimeTree = tree.filter(p => p !== anchor);
+  runtimeTree = tree.filter(p => p !== anchor);
   const pgid = pid => Number(sh('ps', ['-o', 'pgid=', '-p', String(pid)]).trim());
   const label = executable => executable.replace(runtime.root, '$RUNTIME').replace(hostNode, '<host node>').replace(homedir(), '~');
-  const classification = classifyProcesses(runtimeTree, {relocatedRoot: runtime.root});
+  const classification = classifyProcesses(runtimeTree, {relocatedRoot: runtime.root, systemSandbox: SYSTEM_SANDBOX});
   report.processes = {
     ancestry: [{pid: server.pid, ppid: process.pid, pgid: pgid(server.pid), executable: '<host node> bin/cua.mjs serve'},
       ...tree.map(p => ({pid: p.pid, ppid: p.ppid, pgid: pgid(p.pid), executable: label(p.executable)}))],
@@ -148,10 +164,10 @@ try {
     desktopRuntimePaths: classification.desktopRuntimePaths.map(p => p.executable),
   };
   check(anchor?.executable === hostNode && runtimeTree.every(p => p.ppid !== server.pid), 'the runtime is not started under the server\'s anchor');
-  check(anchor && tree.every(p => pgid(p.pid) === anchor.pid), 'a runtime process is outside the anchor\'s process group');
+  check(anchor && outsideAnchorGroup(tree, {anchorPid: anchor.pid, pgidOf: pgid, systemSandbox: SYSTEM_SANDBOX}).length === 0, 'a runtime process is outside the anchor\'s process group');
   check(classification.desktopRuntimePaths.length === 0, 'an installed-desktop runtime path served this connection');
-  check(classification.allExecutablesRelocated, 'not every runtime process runs from the installed release');
-  report.nativeHelper = (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])
+  check(classification.allExecutablesRelocated, `not every runtime process runs from the installed release: ${runtimeTree.filter(p => !p.executable.startsWith(runtime.root + '/') && !SYSTEM_SANDBOX.includes(p.executable)).map(p => `pid ${p.pid} ${label(p.executable)}`).join(', ') || 'no runtime process found'}`);
+  report.nativeHelper = nativeSocketStep(process.platform) ?? (existsSync(NATIVE_SOCKET) ? socketHolders(sh('lsof', ['-F', 'pc', NATIVE_SOCKET])) : [])
     .map(h => ({pid: h.pid, executable: sh('ps', ['-o', 'comm=', '-p', String(h.pid)]).trim()}))
     .map(h => ({pid: h.pid, executable: h.executable.replace(homedir(), '~'), origin: h.executable.startsWith(runtime.root) ? 'pinned runtime' : 'another installation (not started or stopped by cua)'}));
 
@@ -176,6 +192,14 @@ try {
   const leftover = [...new Set([...(report.session ? [report.session.id] : []), ...sessionsOf(server.pid)])]
     .flatMap(sessionEntries).filter(name => present(join(runDir, name)));
   check(leftover.length === 0, `this connection's run entries left under ${runDir}: ${leftover.join(', ')}`);
+  // Every runtime process seen during the session is gone shortly after the close: a sandboxed subtree outside the
+  // anchor's group (Linux bubblewrap) ends through its parent, not through the group's signal.
+  let left = survivors(runtimeTree, isAlive);
+  for (let waited = 0; left.length && waited < 5000; waited += 250) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    left = survivors(left, isAlive);
+  }
+  check(left.length === 0, `runtime processes outlived the connection: ${left.map(p => `pid ${p.pid} ${p.executable}`).join(', ')}`);
   // Informational: entries that appeared while verify ran belong to other connections in this home, not to this one.
   const others = runEntries().filter(name => !runBefore.includes(name) && !leftover.includes(name));
   if (others.length) report.runNote = `${others.length} other entr${others.length === 1 ? 'y' : 'ies'} appeared under ${runDir} while verify ran (another cua serve or listing in this home; not counted): ${others.join(', ')}`;

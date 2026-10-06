@@ -6,10 +6,12 @@ import {spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync, chmodSync} from 'node:fs';
 import {join} from 'node:path';
 import {loginInvocation, runLogin, loginStatus, LOGIN_STATES} from '../src/runtime/login.mjs';
+import {installedHomeSupported} from './fixtures/installed-home.mjs';
 import {REPO, scratch, forgeActiveRuntime, fakeCodexScript, FAKE_CODEX_SENTINEL} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
-const darwinArm = process.platform === 'darwin' && process.arch === 'arm64';
+// The CLI routes need a checked-in pin for this host (they forge it: forgeActiveRuntime).
+const hostPinned = installedHomeSupported;
 
 function fakeRuntime(dir, options) {
   const codexCli = join(dir, 'codex');
@@ -129,7 +131,7 @@ test('cua login accepts only --device-auth or --status; anything else is a usage
   assert.equal(fakeLog(join(home, 'state', 'codex')), null);
 });
 
-test('cua login without a terminal refuses clearly and runs nothing', {skip: !darwinArm}, t => {
+test('cua login without a terminal refuses clearly and runs nothing', {skip: !hostPinned}, t => {
   const s = scratch();
   t.after(s.cleanup);
   const home = join(s.dir, 'home');
@@ -141,7 +143,7 @@ test('cua login without a terminal refuses clearly and runs nothing', {skip: !da
   assert.equal(existsSync(join(home, 'state', 'codex', 'fake-codex.log')), false);
 });
 
-test('cua login --status prints a value-free result and maps the exit code', {skip: !darwinArm}, t => {
+test('cua login --status prints a value-free result and maps the exit code', {skip: !hostPinned}, t => {
   const s = scratch();
   t.after(s.cleanup);
   for (const [exit, status, message] of [[0, 0, /has a Codex login/], [1, 1, /no Codex login.*cua login/]]) {
@@ -155,11 +157,42 @@ test('cua login --status prints a value-free result and maps the exit code', {sk
   }
 });
 
-test('cua login with no installed runtime gives the existing install guidance', {skip: !darwinArm}, t => {
+test('cua login with no installed runtime gives the existing install guidance', {skip: !hostPinned}, t => {
   const s = scratch();
   t.after(s.cleanup);
   const r = cua(['login', '--status'], join(s.dir, 'empty'));
   assert.equal(r.status, 1);
   assert.match(r.stderr, /runtime_not_installed/);
   assert.match(r.stderr, /cua install/);
+});
+
+// ---- Linux (Phase F) ----------------------------------------------------------------------------------------------
+
+test('on Linux the login CLI also gets the desktop session, so xdg-open can reach a browser; macOS gets none of it', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const ambient = {HOME: '/home/u', DISPLAY: ':0', XAUTHORITY: '/home/u/.Xauthority', XDG_RUNTIME_DIR: '/run/user/1000', PATH: '/evil/bin'};
+  const linux = loginInvocation({runtime: {paths: {codexCli: '/r/codex'}, manifest: {platform: 'linux'}}, home: s.dir, mode: 'login', ambient});
+  assert.equal(linux.env.DISPLAY, ':0');
+  assert.equal(linux.env.XAUTHORITY, '/home/u/.Xauthority');
+  assert.equal(linux.env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
+  assert.equal(linux.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin');
+  const darwin = loginInvocation({runtime: {paths: {codexCli: '/r/codex'}, manifest: {platform: 'darwin'}}, home: s.dir, mode: 'login', ambient});
+  for (const key of ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']) assert.equal(key in darwin.env, false, key);
+});
+
+test('on Linux without xdg-open, login says the browser will not open and how to sign in anyway, then runs the CLI', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const runtime = {...fakeRuntime(s.dir), manifest: {platform: 'linux'}};
+  const notes = [];
+  const run = opener => runLogin({home: join(s.dir, 'home'), runtime, isTTY: () => true, ambient: {HOME: s.dir}, stdio: 'ignore', note: line => notes.push(line), opener});
+  assert.equal(await run(() => null), 0);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /xdg-open/);
+  assert.match(notes[0], /--device-auth/);
+  assert.match(fakeLog(join(realpathSync(s.dir), 'home', 'state', 'codex')), /argv: login/);
+  notes.length = 0;
+  assert.equal(await run(() => '/usr/bin/xdg-open'), 0);
+  assert.deepEqual(notes, []);
 });

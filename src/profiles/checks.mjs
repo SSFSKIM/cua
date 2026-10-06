@@ -5,7 +5,8 @@
 //   chrome.profiles          only when $CUA_HOME/profiles.json cannot be read
 //   chrome.host.registered   the native-messaging manifest for com.openai.codexextension exists, and the class of
 //                            the host it names (desktop's, cua's or other); pass either way
-//   chrome.hosts.live        OpenAI hosts currently running under the user's Chrome (a count)
+//   chrome.hosts.live        OpenAI hosts currently running under the user's Chrome (a count; on Linux, the running
+//                            Linux hosts for this arch, read from `ps -eo pid=,args=`)
 import {execFileSync} from 'node:child_process';
 import {homedir} from 'node:os';
 import {CuaError} from '../runtime/errors.mjs';
@@ -15,7 +16,7 @@ import {profileStatuses, REASONS} from './registry.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export function chromeChecks({home, chrome, psText, userHome = homedir()}) {
+export function chromeChecks({home, chrome, psText, userHome = homedir(), host = {platform: process.platform, arch: process.arch}}) {
   const checks = [];
   let statuses = [];
   try { statuses = profileStatuses({home, chrome}); } catch (error) {
@@ -31,21 +32,23 @@ export function chromeChecks({home, chrome, psText, userHome = homedir()}) {
       checks.push(result(name, 'blocked', `${REASONS[p.reason]} ${where}`));
     else checks.push(result(name, 'pass', `the OpenAI extension is installed in Chrome profile "${p.chromeProfileDirectory}" (file presence only; enabled/connected is not checked)`));
   }
-  const host = chrome.nativeHost({cuaHome: realHome(home), userHome});
-  checks.push(host.readError
-    ? result('chrome.host.registered', 'blocked', `whether a native-messaging manifest for ${NATIVE_HOST_NAME} exists is unknown: this process may not read it in ${chrome.userData} (${host.readError}); ${PERMISSION_FIX}`)
-    : !host.present
+  const registered = chrome.nativeHost({cuaHome: realHome(home), userHome});
+  checks.push(registered.readError
+    ? result('chrome.host.registered', 'blocked', `whether a native-messaging manifest for ${NATIVE_HOST_NAME} exists is unknown: this process may not read it in ${chrome.userData} (${registered.readError}); ${PERMISSION_FIX}`)
+    : !registered.present
     ? result('chrome.host.registered', 'blocked', `no native-messaging manifest for ${NATIVE_HOST_NAME} in ${chrome.userData}: the OpenAI extension cannot reach a host`)
-    : host.unreadable
+    : registered.unreadable
       ? result('chrome.host.registered', 'blocked', `the native-messaging manifest for ${NATIVE_HOST_NAME} does not name a host path`)
-      : result('chrome.host.registered', 'pass', `${host.pathClass}: ${NATIVE_HOST_NAME} names ${host.path}`));
-  const live = countLiveHosts(psText);
+      : result('chrome.host.registered', 'pass', `${registered.pathClass}: ${NATIVE_HOST_NAME} names ${registered.path}`));
+  const live = countLiveHosts(psText, {host});
   checks.push(live
-    ? result('chrome.hosts.live', 'pass', `${live} OpenAI Chrome host(s) running under Google Chrome`)
+    ? result('chrome.hosts.live', 'pass', `${live} OpenAI Chrome host(s) running${host.platform === 'linux' ? '' : ' under Google Chrome'}`)
     : result('chrome.hosts.live', 'blocked', 'no OpenAI Chrome host is running: open Chrome with the OpenAI extension enabled in a profile'));
   return checks;
 }
 
-export function processTable() {
-  try { return execFileSync('/bin/ps', ['-axo', 'pid=,ppid=,comm='], {encoding: 'utf8', timeout: 5000}); } catch { return ''; }
+// The process table countLiveHosts reads for this host (see there).
+export function processTable({host = {platform: process.platform}} = {}) {
+  const args = host.platform === 'linux' ? ['-eo', 'pid=,args='] : ['-axo', 'pid=,ppid=,comm='];
+  try { return execFileSync('/bin/ps', args, {encoding: 'utf8', timeout: 5000}); } catch { return ''; }
 }

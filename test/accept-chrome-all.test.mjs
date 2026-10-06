@@ -7,18 +7,20 @@ import {spawnSync} from 'node:child_process';
 import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
-  binaryKind, C2_LIVE_STEPS, C2_MATRIX, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
+  binaryKind, C2_LIVE_STEPS, C2_MATRIX, C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
   desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
   PHASE_C_MODULES, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck,
   scratchListCheck, slotStates, tapTestStatus, matrixChecks, verifyCheck, writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
-import {BROWSERS, hostSuffixes, registerHost, unregisterHost} from '../src/chrome/registration.mjs';
+import {hostSuffixes, registerHost, unregisterHost} from '../src/chrome/registration.mjs';
 import {loadPins, resolveRuntime} from '../src/runtime/manifest.mjs';
 import {runAll} from '../scripts/accept/chrome-all.mjs';
 import {rollup} from '../scripts/accept/lib.mjs';
-import {chromeFacts} from '../src/profiles/chrome.mjs';
+import {chromeFacts, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {REASONS} from '../src/profiles/registry.mjs';
 import {acceptSignatures, forgeActiveRuntime, forgeChromeComponent, REPO, scratch} from './fixtures/runtime-fixture.mjs';
+
+const BROWSERS = C6_BROWSERS();
 
 const statuses = checks => checks.map(c => c.status);
 
@@ -266,20 +268,23 @@ test('register and unregister on a desktop-absent fixture produce a passing desk
   t.after(s.cleanup);
   const home = join(s.dir, 'cua');
   mkdirSync(home);
-  forgeActiveRuntime(home);
-  forgeChromeComponent(home);
+  // C6 is the macOS gate: the darwin pin and browser table, injected so this runs the same on any host.
+  const darwin = {platform: 'darwin', arch: 'arm64'};
+  forgeActiveRuntime(home, {}, {host: darwin});
+  forgeChromeComponent(home, {host: darwin});
   const userHome = join(s.dir, 'user');
   mkdirSync(join(userHome, 'Library', 'Application Support', 'Google', 'Chrome'), {recursive: true});
-  const runtime = resolveRuntime({home});
+  const runtime = resolveRuntime({home, host: darwin});
   const suffixes = hostSuffixes([...loadPins(), runtime.manifest]);
   // The runner reads slots against the real path of its home, as register writes them (realHome).
   const snap = () => slotStates({home: realpathSync(home), userHome, suffixes});
   const slotsBefore = snap();
   assert.ok(slotsBefore.every(x => x.state === 'absent'));
-  const registered = await registerHost({home, runtime, userHome, verifySignatures: acceptSignatures});
+  const browsers = C6_BROWSERS(userHome);
+  const registered = await registerHost({home, runtime, userHome, browsers, verifySignatures: acceptSignatures});
   const register = {ok: true, host: registered.host, browsers: registered.browsers};
   const slotsRegistered = snap();
-  const unregister = {ok: true, ...unregisterHost({home, userHome})};
+  const unregister = {ok: true, ...unregisterHost({home, userHome, browsers})};
   const report = passingAbsentGate({slotsBefore, register, slotsRegistered, unregister, slotsAfter: snap()});
   const checks = desktopAbsentGateChecks(report);
   assert.equal(rollup(statuses(checks)), 'PASS', JSON.stringify(checks.filter(c => c.status !== 'PASS')));
@@ -494,7 +499,10 @@ test('the scratch scenario passes through the real CLI against the fixture, and 
   writeScratchChrome(join(s.dir, 'user'));
   mkdirSync(join(s.dir, 'empty'));
   const cli = (args, user) => {
-    const r = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env: {...process.env, CUA_HOME: join(s.dir, `cua-${user}`), HOME: join(s.dir, user)}, encoding: 'utf8', timeout: 30_000});
+    const env = {...process.env, CUA_HOME: join(s.dir, `cua-${user}`), HOME: join(s.dir, user)};
+    delete env.XDG_CONFIG_HOME;
+    delete env.CHROME_CONFIG_HOME;
+    const r = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), ...args], {env, encoding: 'utf8', timeout: 30_000});
     return {code: r.status, stdout: r.stdout};
   };
   const adds = user => SCRATCH_PROFILES.map(({key, directory, extension}) => {
@@ -785,11 +793,11 @@ test('unreadable Chrome data: a bound live profile passes C4 with the state reco
   assert.deepEqual(statuses(defaults), ['PASS', 'PASS', 'BLOCKED', 'BLOCKED', 'PASS', 'PASS']);
   assert.match(defaults[1].detail, /ready on live evidence/);
   assert.match(defaults.at(-1).detail, /ready on live evidence/);
-  // C5: doctor's unreadable row is BLOCKED with the Full Disk Access fix.
+  // C5: doctor's unreadable row is BLOCKED with the access fix (Full Disk Access on macOS).
   const c5 = doctorChromeChecks({code: 0, doctor: doctorOf({'chrome.extension.personal': ['blocked', 'whether the OpenAI extension is installed is unknown: this process may not read Chrome\'s data directory (EPERM)']})});
   const row = c5.find(c => c.name === 'chrome.extension.personal');
   assert.equal(row.status, 'BLOCKED');
-  assert.match(row.detail, /Full Disk Access/);
+  assert.ok(row.detail.includes(PERMISSION_FIX), row.detail);
 });
 
 test('the scratch list checks fail on any contract violation before an unreadable row can make them BLOCKED', () => {

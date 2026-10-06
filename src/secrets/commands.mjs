@@ -5,6 +5,7 @@ import {spawn, execFile} from 'node:child_process';
 import {constants} from 'node:os';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {locateHelper, BUILD_HINT} from './helper.mjs';
+import {UNSUPPORTED_PLATFORM} from './client.mjs';
 
 const HELPER_ENV_KEYS = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM'];
 const helperEnv = (ambient = process.env) => {
@@ -36,11 +37,12 @@ function builtHelper(helper) {
   return helper.path;
 }
 
-export async function runSecrets({command, label, yes = false, json = false}, {
+export async function runSecrets({command, label, yes = false, json = false, host = {platform: process.platform}}, {
   helper = locateHelper(), interactive = runInteractive, captured = runCaptured,
   print = value => process.stdout.write(typeof value === 'string' ? value + '\n' : JSON.stringify(value, null, 2) + '\n'),
   note = line => process.stderr.write(line + '\n'),
 } = {}) {
+  if (host.platform !== 'darwin') fail(UNSUPPORTED_PLATFORM, `cua has no secrets backend on ${host.platform}: the Keychain helper is macOS only`, {hint: 'secret references are refused on this platform; type such values yourself'});
   const path = builtHelper(helper);
   if (command === 'set') return interactive(path, ['set', label]);
   if (command === 'remove') return interactive(path, ['remove', label, ...(yes ? ['--yes'] : [])]);

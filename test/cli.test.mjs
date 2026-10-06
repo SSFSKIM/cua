@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {writeFileSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
+import {installedHomeSupported} from './fixtures/installed-home.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
@@ -12,7 +13,7 @@ function cua(args, home, extra = {}) {
   return spawnSync(process.execPath, [CLI, ...args], {env, encoding: 'utf8', timeout: 60_000});
 }
 
-test('doctor --json on an empty home exits nonzero with structured checks and install guidance', {skip: process.platform !== 'darwin' || process.arch !== 'arm64'}, () => {
+test('doctor --json on an empty home exits nonzero with structured checks and install guidance', {skip: !installedHomeSupported}, () => {
   const s = scratch();
   try {
     // HOME is the scratch too, so the agent rows find no LaunchAgents plist (launchd is never asked), and the console
@@ -30,7 +31,7 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
   } finally { s.cleanup(); }
 });
 
-test('install --archive with a file that is not the pinned archive fails classified and activates nothing', {skip: process.platform !== 'darwin' || process.arch !== 'arm64'}, () => {
+test('install --archive with a file that is not the pinned archive fails classified and activates nothing', {skip: !installedHomeSupported}, () => {
   const s = scratch();
   try {
     const archive = join(s.dir, 'not-the-pin.zip');
@@ -71,4 +72,40 @@ test('there is no public way to swap the release pins or skip verification', () 
     for (const flag of ['--pins', '--releases', '--skip-verify', '--no-verify', '--insecure'])
       assert.equal(cua(['install', flag, 'x'], s.dir).status, 2, flag);
   } finally { s.cleanup(); }
+});
+
+test('the usage names the default home per platform: Application Support on macOS, XDG on Linux', async () => {
+  const {usageFor} = await import('../src/cli.mjs');
+  assert.match(usageFor('darwin'), /^environment: CUA_HOME \(default ~\/Library\/Application Support\/cua\); for agent run \(agent install/m);
+  assert.match(usageFor('darwin'), /install \[--archive <ChatGPT zip>\]/);
+  assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run:/m);
+  assert.match(usageFor('linux'), /install \[--archive <ChatGPT deb>\]/);
+});
+
+test('the launchd agent commands and the console check are macOS-only; agent run and its --relay are listed everywhere', async () => {
+  const {usageFor} = await import('../src/cli.mjs');
+  for (const text of [/^  agent install /m, /^  agent uninstall /m, /^  agent status /m, /CUA_AGENT_CONSOLE_CHECK/]) {
+    assert.match(usageFor('darwin'), text);
+    assert.doesNotMatch(usageFor('linux'), text);
+  }
+  for (const platform of ['darwin', 'linux']) assert.match(usageFor(platform), /agent run \[--http <host:port>\] \[--relay\][^]*dials the relay/);
+});
+
+test('off macOS, agent install, uninstall and status refuse with unsupported_platform before touching launchd', {skip: process.platform === 'darwin'}, () => {
+  const s = scratch();
+  try {
+    for (const command of ['install', 'uninstall', 'status']) {
+      const r = cua(['agent', command, '--json'], s.dir, {HOME: s.dir});
+      assert.equal(r.status, 1, r.stderr);
+      assert.match(r.stdout + r.stderr, /unsupported_platform/, command);
+    }
+  } finally { s.cleanup(); }
+});
+
+test('a detached opener resolves once the program has started, and reports one that cannot start', async () => {
+  const {runOpen} = await import('../src/cli.mjs');
+  assert.deepEqual(await runOpen('true', [], {detached: true}), {code: 0, stderr: ''});
+  const missing = await runOpen('cua-test-no-such-program', ['--profile-directory=Default'], {detached: true});
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /ENOENT/);
 });

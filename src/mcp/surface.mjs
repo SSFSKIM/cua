@@ -14,16 +14,18 @@ export function surfacesFrom(value = 'computer') {
 }
 
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
-// js_add_node_module_dir (it would widen what model code can import) stay private.
+// js_add_node_module_dir (it would widen what model code can import) stay private. Their search hints name the
+// platform the computer surface drives (`os`: macos, or linux on Linux).
 const PASSED_THROUGH = new Map([
-  ['js', 'control macos apps through their gui (computer use): click, type, read the screen, screenshot'],
-  ['js_reset', 'reset the computer-use session for macos gui control'],
+  ['js', os => `control ${os} apps through their gui (computer use): click, type, read the screen, screenshot`],
+  ['js_reset', os => `reset the computer-use session for ${os} gui control`],
 ]);
 // Search hints when the browser surface is on (alone, or with computer use).
 const BROWSER_HINTS = {
-  browser: {js: 'operate the user\'s chrome browser profiles: open tabs, read pages, fill forms, screenshot', js_reset: 'reset the browser-use session'},
-  both: {js: 'control macos apps and the user\'s chrome browser profiles: click, type, fill forms, read, screenshot', js_reset: 'reset the computer-use and browser-use session'},
+  browser: {js: () => 'operate the user\'s chrome browser profiles: open tabs, read pages, fill forms, screenshot', js_reset: () => 'reset the browser-use session'},
+  both: {js: os => `control ${os} apps and the user's chrome browser profiles: click, type, fill forms, read, screenshot`, js_reset: () => 'reset the computer-use and browser-use session'},
 };
+const hintOs = platform => platform === 'linux' ? 'linux' : 'macos';
 
 const NO_ARGUMENTS = {type: 'object', properties: {}, additionalProperties: false};
 
@@ -37,6 +39,7 @@ export const END_TASK_TOOL = {
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'finish end complete the current macos gui computer-use task'},
 };
+const LINUX_END_TASK_TOOL = {...END_TASK_TOOL, _meta: {'anthropic/searchHint': 'finish end complete the current linux gui computer-use task'}};
 
 export const SECRETS_LIST_TOOL = {
   name: 'secrets_list',
@@ -54,6 +57,15 @@ export const SECRETS_LIST_TOOL = {
 const SECRETS_LIST_BROWSER_TOOL = {
   ...SECRETS_LIST_TOOL,
   description: SECRETS_LIST_TOOL.description.replace('or the whole value of setValue:', 'or the whole value of setValue or of a Chrome tab\'s locator.fill:'),
+};
+
+// On Linux there is no secrets backend (src/secrets/broker.mjs): the tool stays, so the surface is the same everywhere,
+// but says that secrets are unavailable rather than teaching references the platform refuses.
+const LINUX_SECRETS_LIST_TOOL = {
+  ...SECRETS_LIST_TOOL,
+  description: 'List the labels of stored secrets for computer-use input. On this platform cua has no secrets backend, so '
+    + 'it returns status "unavailable" with code "secrets_unsupported_platform", and secret references in input are '
+    + 'refused; ask the user to type such values themselves.',
 };
 
 export const PROFILES_LIST_TOOL = {
@@ -105,11 +117,31 @@ const BROWSER_NOTES = [
   '- createBrowserTab can take 60 s: give that js call timeout_ms of at least 60000; after a timeout a tab may still have opened: tell the user, do not retry. If the profile had no other window, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
 ];
 
-export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
+// The computer surface on Linux (Phase F) differs where the vendor's Linux target does: apps are bound by X11 window,
+// key names are X keysyms, and nothing asks the user per app (the owner's allow-all decision; cua adds no allowlist).
+// DISPLAY and XAUTHORITY reach the runtime, so a model cell can talk to X directly: the trusted wrapper is not a boundary
+// there. Text input is F2's measurement on Ubuntu 24.04 arm64 (docs/evidence/2026-10-06-linux-acceptance.md): the
+// helper's typeText and paste insert through AT-SPI and crashed the GTK3 editors gedit and mousepad (SIGSEGV in
+// gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in GTK4's gnome-text-editor they inserted the
+// text and then threw (Text.SetCaretOffset unsupported), which the general "observe, act, verify" rule covers. The vendor's
+// own document already says that setValue and selectText do not exist on Linux.
+const LINUX_COMPUTER_HEAD = '- Use this when a Linux app\'s GUI is the only way; the first js call returns the API document.';
+const LINUX_COMPUTER_NOTES = [
+  '- Bind by window: cua.getApp({windowId}) with an id from listWindows().',
+  '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
+  '- Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier).',
+  '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
+  '- If REPL state is confused, js_reset and rebind the window from listWindows().',
+];
 
-export function hostNotesFor(surfaces) {
-  if (!surfaces.includes('browser')) return DEFAULT_HOST_NOTES;
-  if (surfaces.includes('computer')) return [DEFAULT_HOST_NOTES, ...BROWSER_NOTES].join('\n');
+export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
+export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, ...LINUX_COMPUTER_NOTES].join('\n');
+
+// The notes for the enabled surfaces on `platform` (the host's by default). The Chrome notes are the same everywhere.
+export function hostNotesFor(surfaces, {platform = process.platform} = {}) {
+  const computer = platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
+  if (!surfaces.includes('browser')) return computer;
+  if (surfaces.includes('computer')) return [computer, ...BROWSER_NOTES].join('\n');
   return [TITLE, BROWSER_HEAD, ...GENERAL_NOTES, ...BROWSER_NOTES].join('\n');
 }
 
@@ -121,16 +153,18 @@ export function withHostNotes(instructions, hostNotes) {
   return [instructions, hostNotes].filter(Boolean).join('\n\n');
 }
 
-const hintFor = (name, surfaces) => !surfaces.includes('browser') ? PASSED_THROUGH.get(name)
-  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name];
+const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)
+  : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
-export function modelTools(upstreamTools, {surfaces = ['computer']} = {}) {
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform} = {}) {
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
-    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces)}}));
+    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)}}));
+  const linux = platform === 'linux';
+  const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   return surfaces.includes('browser')
-    ? [...passed, END_TASK_TOOL, SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
-    : [...passed, END_TASK_TOOL, SECRETS_LIST_TOOL];
+    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
+    : [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_TOOL];
 }
 
 // node_repl labels JPEG screenshots image/png; the bytes say what they are.

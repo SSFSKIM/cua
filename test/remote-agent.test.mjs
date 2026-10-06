@@ -235,15 +235,16 @@ test('agent run --relay refuses a relay URL that is not wss: or loopback ws: (a 
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });
 
-test('runAgent hands the HTTP handler the real console check unless CUA_AGENT_CONSOLE_CHECK=off', async t => {
+test('runAgent hands the HTTP handler the real console check on macOS unless CUA_AGENT_CONSOLE_CHECK=off, and none elsewhere', async t => {
   const home = emptyHome(t);
   enroll(home);
   const stop = new Error('captured');
-  for (const [env, expected] of [[{}, checkConsole], [{CUA_AGENT_CONSOLE_CHECK: 'on'}, checkConsole], [{CUA_AGENT_CONSOLE_CHECK: 'off'}, undefined]]) {
+  for (const [env, platform, expected] of [[{}, 'darwin', checkConsole], [{CUA_AGENT_CONSOLE_CHECK: 'on'}, 'darwin', checkConsole],
+    [{CUA_AGENT_CONSOLE_CHECK: 'off'}, 'darwin', undefined], [{}, 'linux', undefined], [{CUA_AGENT_CONSOLE_CHECK: 'on'}, 'linux', undefined]]) {
     let options;
-    await assert.rejects(runAgent({home, env, http: '127.0.0.1:0', diagnostics: () => {},
+    await assert.rejects(runAgent({home, env, platform, http: '127.0.0.1:0', diagnostics: () => {},
       createHttp: given => { options = given; throw stop; }}), stop);
-    assert.equal(options.console, expected, JSON.stringify(env));
+    assert.equal(options.console, expected, JSON.stringify({env, platform}));
   }
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });

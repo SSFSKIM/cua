@@ -33,7 +33,7 @@ import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, invalidLabel, unavailable, readFailure,
-  inputFailed, secretsFromEnv,
+  inputFailed, secretsFromEnv, refusedOnThisPlatform,
 } from './secret-input.mjs';
 
 export const PINNED_VENDOR_VERSION = '0.1.1';
@@ -138,6 +138,7 @@ export function createBrowserService({loadVendor, vendorVersion, secrets, secret
     if (!plan) return (await vendorService()).handleRpc(request);
 
     const {reference} = plan;
+    if (refusedOnThisPlatform(secretsUnavailable)) throw unavailable(secretsUnavailable);
     if (reference.invalid) throw invalidLabel();
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);

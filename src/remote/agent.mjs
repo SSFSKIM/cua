@@ -18,7 +18,8 @@
 // same mouse, keyboard and Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins
 // allowed to call, comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js
 // and js_reset answer console_locked while this user's session is off the console or its screen is locked
-// (src/remote/console.mjs).
+// (src/remote/console.mjs). The console is read on macOS only; elsewhere (the agent is untested off macOS) the setting
+// is validated and nothing is refused.
 // Diagnostics go to stderr (under launchd, $CUA_HOME/state/agent.log); no credential ever appears in them.
 import {createServer as createHttpServer} from 'node:http';
 import {linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
@@ -124,8 +125,8 @@ const listen = (server, host, port) => new Promise((resolve, reject) => {
   server.listen({host, port}, () => { server.off('error', reject); resolve(server.address()); });
 });
 
-// `createHttp` is the HTTP handler's factory, a seam for tests.
-export async function runAgent({home, env = process.env, http = null, relay = false,
+// `createHttp` is the HTTP handler's factory and `platform` picks whether the console is read, seams for tests.
+export async function runAgent({home, env = process.env, http = null, relay = false, platform = process.platform,
   diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), createHttp = createMcpHttp}) {
   const lock = acquireAgentLock(home);
   let onSignal;
@@ -147,7 +148,7 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     if (relay) checkRelayUrl(device.relayUrl);
     settingsFrom(env);
     const limits = limitsFrom(env);
-    const consoleChecked = consoleCheckFrom(env);
+    const consoleChecked = consoleCheckFrom(env) && platform === 'darwin';
     if (http === null && !relay) fail('agent_nothing_to_serve', 'the agent was given nothing to serve', {hint: 'give --http <host>:<port>, --relay, or both'});
     const address = http === null ? null : parseAddress(http);
     if (relay) await loadWebSocket();

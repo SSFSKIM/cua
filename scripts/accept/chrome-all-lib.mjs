@@ -7,9 +7,9 @@ import {mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {profileView} from '../../src/mcp/surface.mjs';
-import {hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
+import {chromeUserData, hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
 import {awaitsLiveEvidence, REASONS} from '../../src/profiles/registry.mjs';
-import {BROWSERS, isOwnHostPath} from '../../src/chrome/registration.mjs';
+import {browsersFor, isOwnHostPath} from '../../src/chrome/registration.mjs';
 import {forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
 
 const check = (name, status, detail) => ({name, status, detail});
@@ -148,6 +148,9 @@ export const replaceGateBlocked = (profile = 'personal') => check('live: --repla
 //    servingHost: {pathClass: 'cua'}, roundTrip: <accept-chrome --live report>, unregister: <`cua chrome unregister
 //    --json`>, slotsAfter}, each slots* the `slots` of `node scripts/accept-chrome.mjs --c6-slots` at that moment.
 const ABSENT_SCENARIO = 'C6-desktop-absent-live-gate';
+// C6 is a macOS gate: its slots are the macOS browsers' (the paths only matter to slotStates).
+export const C6_BROWSERS = (userHome = '/') => browsersFor({host: {platform: 'darwin'}, userHome});
+const BROWSERS = C6_BROWSERS();
 const coversEveryBrowser = map => map !== null && map.size === BROWSERS.length && BROWSERS.every(b => map.has(b.browser));
 const bySlot = slots => {
   if (!Array.isArray(slots) || slots.length !== BROWSERS.length || !slots.every(s => isObject(s) && typeof s.browser === 'string' && typeof s.state === 'string')) return null;
@@ -259,9 +262,9 @@ export function desktopAbsentState(slots, record) {
 // Only a path that is not there is absent; a read this process may not make (macOS can protect Chrome's directory from
 // a terminal without Full Disk Access) is `unreadable` with its code, never absence.
 export function slotStates({home, userHome, suffixes, nativeHost = 'com.openai.codexextension'}) {
-  return BROWSERS.map(({browser, dataDir}) => {
+  return C6_BROWSERS(userHome).map(({browser, dataDir}) => {
     let bytes = null;
-    try { bytes = readFileSync(join(userHome, dataDir, 'NativeMessagingHosts', `${nativeHost}.json`)); } catch (error) {
+    try { bytes = readFileSync(join(dataDir, 'NativeMessagingHosts', `${nativeHost}.json`)); } catch (error) {
       if (!['ENOENT', 'ENOTDIR'].includes(error.code)) return {browser, state: 'unreadable', error: error.code ?? error.message};
     }
     const slot = classifySlot(bytes === null ? null : bytes.toString('utf8'), {home, userHome, suffixes});
@@ -300,14 +303,15 @@ export function launchEnvCheck(name, env, {browser}) {
 
 // The scratch scenario runs against a fixture Chrome, never this Mac's: three profile directories named in Local State,
 // the OpenAI extension's manifest in exactly one. The CLI finds Chrome's user-data directory under $HOME
-// (src/profiles/chrome.mjs CHROME_USER_DATA), so the scratch commands run with HOME set to `userHome`.
+// (src/profiles/chrome.mjs chromeUserData), so the scratch commands run with HOME set to `userHome`.
 export const SCRATCH_PROFILES = [
   {key: 'personal', directory: 'Default', extension: 'installed'},
   {key: 'work', directory: 'Profile 8', extension: 'absent'},
   {key: 'school', directory: 'Profile 6', extension: 'absent'},
 ];
 export function writeScratchChrome(userHome) {
-  const userData = join(userHome, 'Library', 'Application Support', 'Google', 'Chrome');
+  // Where the CLI run with HOME=userHome (and no XDG overrides) looks for this host's Chrome.
+  const userData = chromeUserData({userHome, env: {}});
   const infoCache = {};
   for (const {key, directory, extension} of SCRATCH_PROFILES) {
     mkdirSync(join(userData, directory), {recursive: true});

@@ -287,7 +287,7 @@ async function profiles(args) {
     const runtime = () => resolveRuntime({home});
     const result = await openCommand({home, key: positionals[0], chrome, run: runOpen,
       listBackends: () => listLiveBackends({home, runtime: runtime(), tabCounts: false}),
-      onCheck: values.json ? undefined : ({check, of, afterMs}) => process.stderr.write(`checking its readiness ${afterMs / 1000} s after opening (${check} of at most ${of}; one bounded runtime launch)...\n`)});
+      onCheck: values.json ? undefined : ({check, of, afterMs}) => process.stderr.write(`checking its readiness ${Math.round(afterMs / 1000)} s after opening (${check} of at most ${of}; one bounded runtime launch)...\n`)});
     if (values.json) { print(result); return result.ok ? 0 : 1; }
     print(`ran: ${result.command.map(shellWord).join(' ')}`);
     if (result.readiness.listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${result.readiness.listingError}: ${result.readiness.listingMessage})\n`);

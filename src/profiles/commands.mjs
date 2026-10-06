@@ -132,7 +132,7 @@ const awaitsWindow = p => p.reason === 'host_not_live' || p.reason === 'binding_
 // -> {ok, key, directory, opened: true, command: [command, ...args], readiness: {ready, reason?, extensionInstanceId?, checks, listingError?}}
 // Throws unknown_profile, profile_not_ready (the directory is gone) and chrome_open_failed (open exited non-zero);
 // nothing is opened for a refused key.
-export async function openCommand({home, key, chrome, run, listBackends, pollAt = OPEN_POLL_MS, wait = sleep, onCheck}) {
+export async function openCommand({home, key, chrome, run, listBackends, pollAt = OPEN_POLL_MS, wait = sleep, now = Date.now, onCheck}) {
   const entry = readRegistry(home).profiles[key];
   if (!entry) fail('unknown_profile', `no registered profile "${key}"`, {hint: 'cua profiles list shows the registered keys'});
   const directory = entry.chromeProfileDirectory;
@@ -143,18 +143,20 @@ export async function openCommand({home, key, chrome, run, listBackends, pollAt 
   let status;
   let listingError;
   let checks = 0;
-  let waited = 0;
+  // Each check at its offset from the open: a listing takes seconds, so the wait before the next is what is left.
+  const opened = now();
   for (const at of pollAt) {
-    await wait(at - waited);
-    waited = at;
+    const left = at - (now() - opened);
+    if (left > 0) await wait(left);
     checks += 1;
-    onCheck?.({check: checks, of: pollAt.length, afterMs: at});
+    onCheck?.({check: checks, of: pollAt.length, afterMs: now() - opened});
     const readiness = await profileReadiness({home, chrome, listBackends});
     status = readiness.profiles.find(p => p.key === key);
     listingError = readiness.listingError;
     if (!status || status.ready || listingError || !awaitsWindow(status)) break;
   }
-  if (!status) fail('profile_changed', `profile "${key}" was removed while its readiness was being checked`, {hint: 'cua profiles list shows the registered keys'});
+  // The readiness of the profile that was opened, never of a registration that replaced it meanwhile.
+  if (!status || status.chromeProfileDirectory !== directory) fail('profile_changed', `profile "${key}" was removed or registered again while its readiness was being checked; Chrome profile ${JSON.stringify(directory)} was opened`, {hint: 'cua profiles list shows the registered keys'});
   const {key: _key, chromeProfileDirectory: _directory, ...rest} = status;
   return {ok: status.ready, key, directory, opened: true, command: [command, ...args],
     readiness: {...rest, checks, ...(listingError ? {listingError: listingError.code, listingMessage: listingError.message} : {})}};

@@ -285,7 +285,8 @@ function listings(...lists) {
   const listBackends = async () => listing(lists[Math.min(calls++, lists.length - 1)])();
   return {listBackends, calls: () => calls};
 }
-const waits = () => { const at = []; return {at, wait: async ms => { at.push(ms); }}; };
+// A fake clock: waits advance it, and each listing can take `listMs` of it.
+const waits = () => { let clock = 0; const at = []; return {at, now: () => clock, advance: ms => { clock += ms; }, wait: async ms => { at.push(ms); clock += ms; }}; };
 
 test('profiles open runs open -n -a "Google Chrome" for the registered directory, then polls until the profile is ready', async t => {
   const {home, chrome} = setup(t, {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work', extension: true}});
@@ -294,7 +295,7 @@ test('profiles open runs open -n -a "Google Chrome" for the registered directory
   const {runs, run} = opener();
   const live = listings([], [{instanceId: 'inst-w'}]);
   const timer = waits();
-  const result = await openCommand({home, key: 'work', chrome, run, listBackends: live.listBackends, wait: timer.wait});
+  const result = await openCommand({home, key: 'work', chrome, run, listBackends: live.listBackends, wait: timer.wait, now: timer.now});
   assert.deepEqual(runs, [['open', '-n', '-a', 'Google Chrome', '--args', '--profile-directory=Profile 8']], 'one argument, no shell: the space stays inside it');
   assert.deepEqual(result, {ok: true, key: 'work', directory: 'Profile 8', opened: true, command: runs[0],
     readiness: {ready: true, extensionInstanceId: 'inst-w', boundAt: '2026-10-06T00:00:00.000Z', checks: 2}});
@@ -309,11 +310,32 @@ test('profiles open checks at most three times (5, 10, 20 s) and reports the las
   for (const [backends, reason] of [[[], 'host_not_live'], [[{instanceId: 'inst-new'}], 'binding_stale']]) {
     const live = listings(backends);
     const timer = waits();
-    const result = await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: live.listBackends, wait: timer.wait});
+    const result = await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: live.listBackends, wait: timer.wait, now: timer.now});
     assert.deepEqual({ok: result.ok, ready: result.readiness.ready, reason: result.readiness.reason, checks: result.readiness.checks}, {ok: false, ready: false, reason, checks: 3});
     assert.deepEqual(timer.at, [5_000, 5_000, 10_000]);
     assert.equal(live.calls(), 3, 'one bounded launch per check, three at most');
   }
+  // A listing takes seconds: each check still starts at its offset from the open, and one that overran the next
+  // offset is followed at once.
+  const timer = waits();
+  const started = [];
+  const slow = async () => { started.push(timer.now()); timer.advance(7_000); return listing([])(); };
+  await openCommand({home, key: 'personal', chrome, run: opener().run, listBackends: slow, wait: timer.wait, now: timer.now});
+  assert.deepEqual(started, [5_000, 12_000, 20_000]);
+  assert.deepEqual(timer.at, [5_000, 1_000]);
+});
+
+test('profiles open never reports the readiness of a registration that replaced the opened one', async t => {
+  const {home, chrome} = setup(t, {Default: {name: 'Personal', extension: true}, 'Profile 8': {name: 'Work', extension: true}});
+  addProfile({home, key: 'work', directory: 'Profile 8', chrome});
+  bindProfile({home, key: 'work', extensionInstanceId: 'inst-w'});
+  const swap = async () => {
+    removeProfile({home, key: 'work'});
+    addProfile({home, key: 'work', directory: 'Default', chrome});
+    bindProfile({home, key: 'work', extensionInstanceId: 'inst-d'});
+  };
+  await assert.rejects(openCommand({home, key: 'work', chrome, run: opener().run, listBackends: listing([{instanceId: 'inst-d'}]), wait: swap}),
+    e => e.code === 'profile_changed' && /"Profile 8" was opened/.test(e.message));
 });
 
 test('profiles open stops after one check when a window cannot change the answer: not bound, or the listing failed', async t => {

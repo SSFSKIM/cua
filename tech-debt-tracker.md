@@ -2,6 +2,18 @@
 
 ## Open
 
+- **2026-10-07 — Secret fixtures leave their temporary store home behind when interrupted (minor, issue #66).**
+  `scripts/accept/secret-seed.mjs` users (`textedit.mjs`, `probe-secrets.mjs`, `accept-chrome.mjs`) remove the temporary
+  `$HOME` holding a generated sentinel in `finally`, which a SIGINT or SIGTERM skips: the 0600 file stays under
+  `$TMPDIR` (`cua-*`). A signal handler that runs the same cleanup, or a sweep of stale `cua-*` store homes at the next
+  run, would close it.
+
+- **2026-10-07 — `accept-native` reads BLOCKED on a healthy macOS checkout (minor, predates issue #66).** Item 1 counts
+  the one Linux-only skip of `npm test` as coverage that did not run (so every item citing a unit suite inherits
+  BLOCKED), and the clean clone (item 10) runs `npm test` without `npm ci`, so the relay tests that need `ws` skip there.
+  A list of platform skips the verdict expects, and `npm ci` in the clone (or a `ws`-free relay test double), would let
+  a healthy run read PASS. Evidence `docs/evidence/2026-10-07-file-secrets-acceptance.md`.
+
 - **2026-10-07 — `hooks/cua-approve.sh`'s jq branch adds nothing to a fixed answer (minor, plugin bundle review).** With
   jq present, empty or invalid stdin yields no answer or exit 2 (a deny), where the printf fallback always accepts.
   Claude Code always sends a JSON payload, so nothing breaks; the jq branch earns its place only when the script is

@@ -9,6 +9,11 @@
 // --vendor    layer (b): the relocated pinned vendor runtime, browser surface only, discovering ONLY owned fixture
 //             backends through an explicit BROWSER_USE_BACKEND_PATHS; no account, no browser process, no native
 //             helper. Every browser answer it receives is synthetic and reported as such.
+// --vendor --network default|off
+//             S0 (own Chrome extension spec): the same relocated runtime against a recording stub backend shaped like
+//             cua's own host (getInfo without agentRequestHeaderEnabled), no Codex login, the vendor network at its
+//             default or switched off; judges whether session requests reach the backend and the backend-path
+//             discovery rules (scripts/probe/chrome/no-header.mjs). Without --network, --vendor is M7's layer.
 // Reports carry PASS/FAIL/BLOCKED per scenario, chromeAttached:false and a sentinel scan; stdout is a summary.
 import {mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync} from 'node:fs';
 import {tmpdir, homedir} from 'node:os';
@@ -23,9 +28,11 @@ const {values: opts} = parseArgs({options: {
   vendor: {type: 'boolean', default: false},
   report: {type: 'string'},
   home: {type: 'string', default: process.env.CUA_HOME},
+  network: {type: 'string'},
 }});
 if (opts.fixtures === opts.vendor) usage('choose exactly one of --fixtures or --vendor');
 if (!opts.report) usage('--report FILE is required');
+if (opts.network !== undefined && (!opts.vendor || !['default', 'off'].includes(opts.network))) usage('--network default|off goes with --vendor');
 
 function usage(message) { process.stderr.write(`probe-chrome-contract: ${message}\n`); process.exit(2); }
 
@@ -33,12 +40,12 @@ const sentinels = fakeSentinels();
 const prints = [sentinels.token, sentinels.capability].flatMap(fingerprints);
 const base = {
   probe: 'scripts/probe-chrome-contract.mjs',
-  milestone: 'M7',
+  milestone: opts.network ? 'S0 (own Chrome extension)' : 'M7',
   at: new Date().toISOString(),
   chromeAttached: false,
   facts: {
     real: 'none: no Chrome process, extension, profile, token or account was used',
-    synthetic: 'every tab, debugger session, CDP answer and extension message came from the fake peer',
+    synthetic: opts.network ? 'every backend answer came from the recording stub backend (no CDP served)' : 'every tab, debugger session, CDP answer and extension message came from the fake peer',
     sourceOnly: 'citations name the pinned vendor and installed-extension source lines each scenario reproduces',
   },
   sentinels: 'generated fake token and relay-capability markers; values never written here',
@@ -57,6 +64,10 @@ async function runFixtures() {
 }
 
 async function runVendor() {
+  if (opts.network) {
+    const {runNoHeaderLayer} = await import('./probe/chrome/no-header.mjs');
+    return await runNoHeaderLayer({home: opts.home, network: opts.network, sentinels});
+  }
   const {runVendorLayer} = await import('./probe/chrome/vendor-layer.mjs');
   return await runVendorLayer({home: opts.home, sentinels});
 }

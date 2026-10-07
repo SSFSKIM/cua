@@ -10,6 +10,7 @@
 //                                   BROWSER_USE_DISABLE_AMBIENT_NETWORK=1 suppresses telemetry and identity initialization
 //   browser-service.mjs:17686-17735 the extension request-header policy reads the identity promise, which that switch
 //                                   leaves unset (cn() stops jm); normal-network identity behaviour is NOT measured here
+//                                   (S0's no-header.mjs measures it, through vendorEnv's `network` parameter)
 import {spawn, spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {mkdirSync, realpathSync, rmSync} from 'node:fs';
@@ -19,7 +20,7 @@ import {resolveRuntime} from '../../../src/runtime/manifest.mjs';
 import {startFixture} from './fixture.mjs';
 import {backendInfo, NO_HANDLER} from './adapter.mjs';
 
-const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
+export const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const CONFIGS = [
   {label: 'extension', kind: 'extension', info: backendInfo('extension')},
@@ -30,7 +31,12 @@ const CONFIGS = [
 
 // Built from an explicit allowlist: an inherited PLAYWRIGHT_MCP_EXTENSION_TOKEN, BROWSER_USE_*, NODE_REPL_* or SKY_*
 // value can never reach the child, and nothing here reads one.
-export function vendorEnv({ambient, paths, codexHome, backendPath}) {
+// `network`: 'off' (M7's runs) sets BROWSER_USE_DISABLE_AMBIENT_NETWORK=1; 'default' leaves the vendor's own network
+// behaviour, as production `cua serve` does (S0 measures both). `availableBackends` mirrors production's
+// BROWSER_USE_AVAILABLE_BACKENDS when given.
+export const NETWORKS = ['default', 'off'];
+export function vendorEnv({ambient, paths, codexHome, backendPath, network = 'off', availableBackends}) {
+  if (!NETWORKS.includes(network)) throw new Error(`network must be one of ${NETWORKS.join(', ')}; got ${network}`);
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
   return Object.assign(env, {
@@ -45,7 +51,8 @@ export function vendorEnv({ambient, paths, codexHome, backendPath}) {
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: paths.codexCli,
     BROWSER_USE_BACKEND_PATHS: backendPath,
-    BROWSER_USE_DISABLE_AMBIENT_NETWORK: '1',
+    ...(network === 'off' ? {BROWSER_USE_DISABLE_AMBIENT_NETWORK: '1'} : {}),
+    ...(availableBackends ? {BROWSER_USE_AVAILABLE_BACKENDS: availableBackends} : {}),
   });
 }
 
@@ -59,7 +66,7 @@ function answerElicitation(params, approveOrigin, record) {
   return approve ? {action: 'accept', content: {}} : {action: 'decline'};
 }
 
-function mcpClient(child, transcript, {approveOrigin, elicitations}) {
+export function mcpClient(child, transcript, {approveOrigin, elicitations}) {
   let nextId = 0;
   const pending = new Map();
   const send = msg => child.stdin.write(JSON.stringify(msg) + '\n');
@@ -86,7 +93,7 @@ function mcpClient(child, transcript, {approveOrigin, elicitations}) {
 }
 
 // Each cell writes one "M7RESULT <json>" line; vendor output (documentation, banners) is never stored.
-const cell = body => `globalThis.__m7 ??= {};
+export const cell = body => `globalThis.__m7 ??= {};
 const __out = {};
 try { ${body} } catch (e) { __out.error = String(e?.message ?? e).slice(0, 400); }
 nodeRepl.write("M7RESULT " + JSON.stringify(__out));`;
@@ -159,14 +166,7 @@ async function runConfig({runtime, home, config, sentinels, ambient}) {
   } catch (e) {
     out.error = e.message;
   } finally {
-    child.stdin.end();
-    if (!(await Promise.race([exited, sleep(5000).then(() => null)]))) {
-      if (!exitInfo) { try { process.kill(-child.pid, 'SIGTERM'); out.teardownSignal = 'SIGTERM'; } catch {} }
-      if (!(await Promise.race([exited, sleep(5000).then(() => null)])) && !exitInfo) { try { process.kill(-child.pid, 'SIGKILL'); out.teardownSignal = 'SIGKILL'; } catch {} await exited; }
-    }
-    // Group members can outlive the launcher; signal the group we created only while a member remains.
-    if (spawnSync('pgrep', ['-g', String(child.pid)]).status === 0) { try { process.kill(-child.pid, 'SIGTERM'); out.groupStragglersSignalled = true; } catch {} }
-    out.exit = exitInfo;
+    Object.assign(out, await stopVendor(child, exited, () => exitInfo));
     out.stderrBytes = Buffer.byteLength(stderr);
     out.frames = fixture.backend.frames;
     out.extensionCommands = fixture.extension.commands.map(c => ({method: c.method, ...(c.cdp ? {cdp: c.cdp} : {}), ...(c.debuggee ? {debuggee: Object.keys(c.debuggee).sort()} : {})}));
@@ -174,6 +174,20 @@ async function runConfig({runtime, home, config, sentinels, ambient}) {
     await fixture.close();
   }
   return {out, scanTexts: [stderr, transcript.join('\n'), JSON.stringify(fixture.backend.frames), JSON.stringify(fixture.adapter.events)], scanRoots: [codexHome, cwd]};
+}
+
+// Closes the launcher's stdin, then escalates SIGTERM/SIGKILL on the process group we created only while it lives.
+export async function stopVendor(child, exited, exitInfo) {
+  const out = {};
+  child.stdin.end();
+  if (!(await Promise.race([exited, sleep(5000).then(() => null)]))) {
+    if (!exitInfo()) { try { process.kill(-child.pid, 'SIGTERM'); out.teardownSignal = 'SIGTERM'; } catch {} }
+    if (!(await Promise.race([exited, sleep(5000).then(() => null)])) && !exitInfo()) { try { process.kill(-child.pid, 'SIGKILL'); out.teardownSignal = 'SIGKILL'; } catch {} await exited; }
+  }
+  // Group members can outlive the launcher; signal the group we created only while a member remains.
+  if (spawnSync('pgrep', ['-g', String(child.pid)]).status === 0) { try { process.kill(-child.pid, 'SIGTERM'); out.groupStragglersSignalled = true; } catch {} }
+  out.exit = exitInfo();
+  return out;
 }
 
 const status = (pass, blocked) => pass ? 'PASS' : blocked ? 'BLOCKED' : 'FAIL';

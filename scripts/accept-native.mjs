@@ -463,7 +463,7 @@ const report = {
   connectionDirectoriesLeft: runLeftovers.length,
   items,
 };
-const text = JSON.stringify(report, (key, value) => typeof value === 'string' ? sanitize(value) : value, 2);
+const text = JSON.stringify(report, (_key, value) => typeof value === 'string' ? sanitize(value) : value, 2);
 if (textLeaks(text, forbidden.flatMap(fingerprints))) {
   console.error('accept-native: refusing to write a report containing a generated value');
   process.exit(1);

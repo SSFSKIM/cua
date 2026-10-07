@@ -37,7 +37,7 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   const report = await inspectRuntime({home, env: {}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: never('the Keychain helper inspection'),
     inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS; },
-    inspectLogin: async () => { asked++; return {state: 'logged-in'}; }, inspectChrome: async () => []});
+    inspectLogin: async () => { asked++; return {state: 'logged-in'}; }, inspectChrome: async () => [], inspectAgent: async () => []});
   const rows = byName(report);
   assert.equal(report.ok, true);
   for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'chrome.host.config', 'sandbox', 'codex.login'])
@@ -64,7 +64,7 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
   const doctor = (env, userns) => inspectRuntime({home, env, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: never('the Keychain helper inspection'),
     inspectLinux: async () => [DESKTOP_ROWS[0], DESKTOP_ROWS[1], {name: 'sandbox.userns', status: userns, detail: 'fixture'}],
-    inspectLogin: async () => ({state: 'logged-in'}), inspectChrome: async () => []}).then(byName);
+    inspectLogin: async () => ({state: 'logged-in'}), inspectChrome: async () => [], inspectAgent: async () => []}).then(byName);
 
   let rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'pass');
   assert.equal(rows.sandbox.status, 'fail');
@@ -230,7 +230,7 @@ test('the default Chrome checks on Linux read the host\'s Chrome under $XDG_CONF
   const host = join(realpathSync(home), 'runtimes', pin.release, 'chrome-plugin', 'extension-host', 'linux', 'x64', 'extension-host');
   writeFileSync(join(manifestDir, 'com.openai.codexextension.json'), JSON.stringify({name: 'com.openai.codexextension', type: 'stdio', path: host}));
   const report = await inspectRuntime({home, env: {XDG_CONFIG_HOME: realpathSync(config)}, pins: [pin], host: LINUX,
-    inspectLinux: async () => DESKTOP_ROWS, inspectLogin: async () => ({state: 'logged-in'})});
+    inspectLinux: async () => DESKTOP_ROWS, inspectLogin: async () => ({state: 'logged-in'}), inspectAgent: async () => []});
   const rows = byName(report);
   assert.equal(rows['chrome.host.registered'].status, 'pass');
   assert.equal(rows['chrome.host.registered'].detail, `cua: com.openai.codexextension names ${host}`);

@@ -133,12 +133,16 @@ test('enroll --relay says to run cua agent install when the installed job does n
   const userHome = emptyHome(t);
   const env = {HOME: userHome};
   enroll(home);
-  const plist = join(userHome, 'Library', 'LaunchAgents', 'com.ssfskim.cua.agent.plist');
-  mkdirSync(join(userHome, 'Library', 'LaunchAgents'), {recursive: true});
-  const job = (...args) => writeFileSync(plist, `<?xml version="1.0" encoding="UTF-8"?>
+  // The installed job as this platform's service manager keeps it: a launchd plist on macOS, a systemd user unit on Linux.
+  const linux = process.platform === 'linux';
+  const dir = linux ? join(userHome, '.config', 'systemd', 'user') : join(userHome, 'Library', 'LaunchAgents');
+  mkdirSync(dir, {recursive: true});
+  const job = (...args) => (linux
+    ? writeFileSync(join(dir, 'cua-agent.service'), `[Service]\nExecStart=${['/n', '/c', 'agent', 'run', ...args].join(' ')}\n`)
+    : writeFileSync(join(dir, 'com.ssfskim.cua.agent.plist'), `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict><key>Label</key><string>com.ssfskim.cua.agent</string>
 <key>ProgramArguments</key><array>${['/n', '/c', 'agent', 'run', ...args].map(a => `<string>${a}</string>`).join('')}</array></dict></plist>
-`);
+`));
   job('--http', '127.0.0.1:7801');
   let r = cua(['remote', 'enroll', '--relay', 'wss://relay.example/ws'], home, env);
   assert.equal(r.status, 0, r.stderr);

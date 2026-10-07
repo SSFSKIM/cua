@@ -1,15 +1,19 @@
 // A `chrome.*` stub for loading the cua extension's service worker (extension/background.js) in node:test, no Chrome.
 // It models the slice of Chrome the extension uses: tabs, windows, tab groups, chrome.debugger (debuggees by tabId or
 // OOPIF targetId, child sessions, events, detaches), runtime (native port, lifecycle events, popup messages),
-// storage.local and alarms. Every API returns a promise and rejects with Chrome's documented error wording.
+// storage.local/session and alarms. Every API returns a promise and rejects with Chrome's documented error wording.
+// chrome.debugger follows Chromium: a second attach by the same extension fails with "Another debugger is already
+// attached" while DevTools and other extensions attach alongside; a CDP-level error rejects with the protocol error as a
+// JSON string; commands pending when a debuggee detaches reject with "Detached while handling command.".
 //
 // The native port is the point: `runtime.connectNative(name)` spawns the real host (src/chrome/host.mjs) as Chrome does
 // — a child process with the home baked into its environment, u32-framed JSON on stdin/stdout — or, with
 // `nativeHost: 'fake'`, connects to a test-held JSON-RPC peer (`hostPeers`) for primitive-level checks. Chrome's limits
 // are enforced: a host->extension message over 1 MB tears the port down, as Chrome does.
 //
-// `load()` runs background.js in a fresh vm context whose timers are the stub's (`timers`, fired by `fireTimers()`), so
-// the 5 s retry is observable without waiting. Loading twice with the same stub is a service worker restart: storage
+// `load()` runs background.js in a fresh vm context whose timers are the stub's (`timers`, fired by `fireTimers()`) and
+// whose clock is `stub.now` (advanced by `advance(ms)`), so the 5 s retry and the alarm backoff are observable without
+// waiting. Loading twice with the same stub is a service worker restart: storage
 // survives, the worker's memory does not.
 import {spawn} from 'node:child_process';
 import {readFileSync} from 'node:fs';
@@ -48,8 +52,10 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     groups: new Map(),           // groupId -> {id, windowId, title}
     frames: new Map(),           // OOPIF targetId -> {tabId, url}
     attached: new Map(),         // debuggee key -> the debuggee the extension attached
-    foreign: new Set(),          // debuggee keys another debugger (DevTools, another extension) holds
+    devtools: new Set(),         // debuggee keys another client (DevTools, another extension) is attached to, alongside
+    pending: new Map(),          // debuggee key -> rejecters of its commands in flight
     storage: {},
+    session: {},                 // storage.session: survives a worker restart, not a browser restart
     alarms: new Map(),
   };
   // Every chrome.* call the extension made: {api, args}. Chrome serializes what crosses its API, and so does the stub:
@@ -78,6 +84,8 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     for (const [key, d] of [...state.attached]) {
       if (!predicate(d)) continue;
       state.attached.delete(key);
+      for (const reject of state.pending.get(key) ?? []) reject(new Error('Detached while handling command.'));
+      state.pending.delete(key);
       ev.debuggerDetach.dispatch({...d}, reason);
     }
   }
@@ -97,6 +105,8 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       if (!state.frames.has(d.targetId) && !pageTarget(d.targetId)) throw new Error(`No target with given id ${d.targetId}.`);
     } else if (!state.tabs.has(d?.tabId)) throw new Error(`No tab with given id ${d?.tabId}.`);
   }
+  const attachedByAnyone = key => state.attached.has(key) || state.devtools.has(key);
+  const heldCdp = new Map();     // CDP method -> resolvers of commands the test holds unanswered
   const pageTarget = targetId => [...state.tabs.values()].find(t => `PAGE-${t.id}` === targetId);
   const notAttached = d => (d?.targetId !== undefined ? `Debugger is not attached to the target with id: ${d.targetId}.` : `Debugger is not attached to the tab with id: ${d?.tabId}.`);
   const call = (api, fn) => async (...args) => { record(api, ...args); await later(); return fn(...args); };
@@ -185,6 +195,15 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
         },
         set: async items => { record('storage.local.set', items); await later(); Object.assign(state.storage, structuredClone(items)); },
       },
+      session: {
+        get: async keys => {
+          await later();
+          const names = keys == null ? Object.keys(state.session) : [keys].flat();
+          return Object.fromEntries(names.filter(k => Object.hasOwn(state.session, k)).map(k => [k, structuredClone(state.session[k])]));
+        },
+        set: async items => { await later(); Object.assign(state.session, structuredClone(items)); },
+        remove: async keys => { await later(); for (const k of [keys].flat()) delete state.session[k]; },
+      },
     },
     alarms: {
       create: async (name, info) => { record('alarms.create', name, info); state.alarms.set(name, {name, ...info}); },
@@ -249,7 +268,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
         if (version !== '1.3') return fail(`Requested protocol version is not supported: ${version}.`);
         requireDebuggee(debuggee);
         const key = keyOf(debuggee);
-        if (state.attached.has(key) || state.foreign.has(key))
+        if (state.attached.has(key))
           return fail(`Another debugger is already attached to the ${debuggee.targetId !== undefined ? 'target' : 'tab'} with id: ${debuggee.targetId ?? debuggee.tabId}.`);
         state.attached.set(key, debuggee.targetId !== undefined ? {targetId: debuggee.targetId} : {tabId: debuggee.tabId});
       }),
@@ -257,12 +276,26 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
         if (!state.attached.delete(keyOf(debuggee))) return fail(notAttached(debuggee));
       }),
       sendCommand: call(`debugger.sendCommand`, async (target, method, params) => {
-        if (!state.attached.has(keyOf(target))) return fail(notAttached(target));
-        return await cdp({target, method, params, stub});
+        const key = keyOf(target);
+        if (!state.attached.has(key)) return fail(notAttached(target));
+        if (heldCdp.has(method)) {
+          return await new Promise((resolve, reject) => {
+            heldCdp.get(method).push(resolve);
+            state.pending.set(key, [...(state.pending.get(key) ?? []), reject]);
+          });
+        }
+        try {
+          return await cdp({target, method, params, stub});
+        } catch (error) {
+          // The protocol's own error: Chrome hands the extension its JSON as the message.
+          if (error instanceof CdpError) throw new Error(JSON.stringify({code: error.code, message: error.message}));
+          throw error;
+        }
       }),
       getTargets: call(`debugger.getTargets`, () => [
-        ...[...state.tabs.values()].map(t => ({type: 'page', id: `PAGE-${t.id}`, tabId: t.id, attached: state.attached.has(`tab:${t.id}`), title: t.title, url: t.url})),
-        ...[...state.frames].map(([id, f]) => ({type: 'iframe', id, attached: state.attached.has(`target:${id}`), title: '', url: f.url})),
+        // Chromium's SerializeTarget: an OOPIF is type "other"; `attached` is true for any client, not only this one.
+        ...[...state.tabs.values()].map(t => ({type: 'page', id: `PAGE-${t.id}`, tabId: t.id, attached: attachedByAnyone(`tab:${t.id}`), title: t.title, url: t.url})),
+        ...[...state.frames].map(([id, f]) => ({type: 'other', id, attached: attachedByAnyone(`target:${id}`), title: '', url: f.url})),
       ]),
       onEvent: ev.debuggerEvent, onDetach: ev.debuggerDetach,
     },
@@ -278,6 +311,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       for (const t of timers) t.cleared = true;
       const context = vm.createContext({
         chrome, console, crypto: globalThis.crypto, TextEncoder,
+        Date: stubDate(),
         setTimeout: (fn, ms) => { const timer = {fn, ms, cleared: false}; timers.push(timer); return timer; },
         clearTimeout: timer => { if (timer) timer.cleared = true; },
       });
@@ -293,7 +327,12 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       return due.map(t => t.ms);
     },
     pendingTimers: () => timers.filter(t => !t.cleared).map(t => t.ms),
-    fireAlarm(name) { ev.alarm.dispatch({name, scheduledTime: Date.now()}); },
+    fireAlarm(name) { ev.alarm.dispatch({name, scheduledTime: stub.now}); },
+    now: Date.now(),
+    advance(ms) { stub.now += ms; },
+    // CDP commands of `method` stay unanswered until released (or their debuggee detaches).
+    holdCdp(method) { heldCdp.set(method, []); },
+    releaseCdp(method, result = {}) { for (const resolve of heldCdp.get(method) ?? []) resolve(result); heldCdp.delete(method); },
     // The popup asking the worker something, as chrome.runtime.sendMessage does.
     sendMessage(message) {
       return new Promise((resolve, reject) => {
@@ -328,7 +367,16 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       })));
     },
   };
+  // The worker's Date: real dates, but Date.now() is the stub's clock.
+  function stubDate() {
+    return class extends Date { static now() { return stub.now; } };
+  }
   return stub;
+}
+
+// A CDP handler throws this for a protocol-level error (what Chrome reports as {"code":…,"message":…}).
+export class CdpError extends Error {
+  constructor(code, message) { super(message); this.code = code; }
 }
 
 // Runtime.evaluate echoes its expression (so a round trip is visible); everything else answers {}.

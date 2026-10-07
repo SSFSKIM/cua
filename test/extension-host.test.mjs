@@ -9,7 +9,7 @@ import {connect} from 'node:net';
 import {join} from 'node:path';
 import {createPeer, frameDecoder} from '../src/chrome/protocol.mjs';
 import {backendDir, CUA_EXTENSION_ID, CUA_HOST_NAME, PROTOCOL_VERSION, socketNameFor} from '../src/chrome/extension.mjs';
-import {createChromeStub, MANIFEST} from './helpers/chrome-stub.mjs';
+import {CdpError, createChromeStub, MANIFEST} from './helpers/chrome-stub.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 
 const waitFor = async (predicate, what, ms = 5000) => {
@@ -141,14 +141,44 @@ test('attach, executeCdp, events and child sessions relay through chrome.debugge
     {method: 'onCDPEvent', params: {source: {tabId: id, sessionId: 'CHILD-1'}, method: 'Runtime.consoleAPICalled', params: {type: 'log'}}},
   ]);
 
-  // Chrome's own errors pass through verbatim.
-  const other = await s.call('createTab', {});
-  stub.state.foreign.add(`tab:${other.id}`);
-  await assert.rejects(s.call('attach', {tabId: other.id}), {message: `Another debugger is already attached to the tab with id: ${other.id}.`});
+  // An attachment Chrome kept for this extension (its worker forgot it) is adopted: the host's attach succeeds.
+  const kept = await s.call('createTab', {});
+  stub.state.attached.set(`tab:${kept.id}`, {tabId: kept.id});
+  assert.deepEqual(await s.call('attach', {tabId: kept.id}), {});
+  assert.equal((await status(stub)).debuggees, 2);
+  await s.call('detach', {tabId: kept.id});
 
   await s.call('detach', {tabId: id});
   assert.equal(stub.state.attached.size, 0);
   assert.equal((await status(stub)).debuggees, 0);
+});
+
+test('a CDP-level error reaches the backend client verbatim, as the JSON string Chrome gives', async t => {
+  const {socketPath} = await start(t, {cdp: ({method}) => {
+    if (method === 'DOM.describeNode') throw new CdpError(-32000, 'Could not find node with given id');
+    return {};
+  }});
+  const c = await backendClient(t, socketPath);
+  const s = c.session('sess');
+  const {id} = await s.call('createTab', {});
+  await s.call('attach', {tabId: id});
+  await assert.rejects(s.call('executeCdp', {target: {tabId: id}, method: 'DOM.describeNode', commandParams: {nodeId: 9}}),
+    {message: '{"code":-32000,"message":"Could not find node with given id"}'});
+});
+
+test('commands in flight when the user cancels debugging or closes the tab fail with Chrome\'s "Detached while handling command."', async t => {
+  const {stub, socketPath} = await start(t);
+  const c = await backendClient(t, socketPath);
+  const s = c.session('sess');
+  stub.holdCdp('Page.navigate');
+  for (const cut of [id => stub.userCancel({tabId: id}), id => stub.userCloseTab(id)]) {
+    const {id} = await s.call('createTab', {});
+    await s.call('attach', {tabId: id});
+    const inFlight = s.call('executeCdp', {target: {tabId: id}, method: 'Page.navigate', commandParams: {url: 'http://127.0.0.1:9/'}});
+    await waitFor(() => stub.state.pending.size === 1, 'the command reaching Chrome');
+    cut(id);
+    await assert.rejects(inFlight, {message: 'Detached while handling command.'});
+  }
 });
 
 test('a cross-origin iframe attaches by targetId: commands are routed to it and its events name it', async t => {
@@ -254,6 +284,10 @@ test('a host of another protocol refuses with hostRefused: the popup status show
   assert.match(seen.refusal.message, /speaks protocol 2; this host speaks 1/);
   assert.deepEqual(stub.pendingTimers(), [], 'no 5 s retry against a host that will refuse again');
 
+  stub.fireAlarm('cua-reconnect');
+  await new Promise(r => setTimeout(r, 50));
+  assert.equal(stub.ports.length, 1, 'backed off: no host spawned on the next alarm');
+  stub.advance(60_000);
   stub.fireAlarm('cua-reconnect');
   await waitFor(() => stub.ports.length === 2, 'the alarm\'s retry');
   await waitFor(async () => stub.port.exited && !(await status(stub)).connected, 'the second refusal');

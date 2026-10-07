@@ -1,8 +1,10 @@
 // A fake cua extension: the extension protocol's primitives (spec, Interfaces and Dependencies, "The extension
 // protocol") over synthetic Chrome state, for the host's tests and the H1 vendor probe. No Chrome is involved: windows,
 // tabs, tab groups, debuggees and CDP answers are made up here. Chrome's errors use the documented wordings
-// (chrome.tabs: "No tab with id: N."; chrome.debugger: "No tab with given id N.", "Another debugger is already attached
-// to the tab with id: N.", "Debugger is not attached to the tab with id: N.").
+// (chrome.tabs: "No tab with id: N."; chrome.debugger: "No tab with given id N.", "Cannot access a chrome:// URL",
+// "Debugger is not attached to the tab with id: N."). As the real extension, an attach of a debuggee it already holds
+// answers {alreadyHeld: true} (Chromium refuses only the holder's second attach, which the extension adopts; DevTools and
+// other extensions attach alongside, so there is no foreign refusal).
 //
 // Two wirings: `api` ({request(method, params)}, answered on a later turn) plugs straight into createHost, with
 // `onNotify` receiving the extension's notifications; `connect({toHost, fromHost})` speaks real native-messaging
@@ -32,7 +34,6 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     tabs: new Map(),
     groups: new Map(),          // groupId -> {id, windowId, key, title}
     held: new Set(),            // debuggee keys this extension holds
-    foreign: new Set(),         // debuggee keys another debugger (DevTools, another extension) holds
   };
   const calls = [];             // every primitive the host asked for: {method, params}
   const hold = new Map();       // CDP method -> pending resolvers: never answered while held
@@ -94,7 +95,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
       requireDebuggee(debuggee);
       const key = keyOf(debuggee);
       if (state.held.has(key)) return {alreadyHeld: true};
-      if (state.foreign.has(key)) throw new Error(`Another debugger is already attached to the tab with id: ${debuggee.tabId ?? debuggee.targetId}.`);
+      if (debuggee?.tabId !== undefined && state.tabs.get(debuggee.tabId).url.startsWith('chrome://')) throw new Error('Cannot access a chrome:// URL');
       state.held.add(key);
       return {alreadyHeld: false};
     },

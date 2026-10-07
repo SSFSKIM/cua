@@ -13,8 +13,10 @@
 // Connection: at load and on runtime.onStartup/onInstalled the worker connects and says hello. While disconnected it
 // retries every 5 s, and the cua-reconnect alarm retries every minute (it wakes a suspended worker). When the port
 // drops, every held debuggee is detached: a host that is gone cannot clean up. A host that refuses this extension
-// (hostRefused {code, message}) is shown in the popup; protocol_mismatch and hello_invalid would only repeat, so after
-// them only the alarm retries.
+// (hostRefused {code, message}) is shown in the popup. protocol_mismatch and hello_invalid repeat until the host or the
+// extension is updated, and every attempt spawns a host that writes a log, so after them only the alarm retries, backing
+// off from 1 minute doubling to 60 (kept in storage.session, so a worker the alarm wakes honours it); onStartup and
+// onInstalled start over. The popup is told of every change (cua.changed) so an open one stays current.
 'use strict';
 
 const HOST_NAME = 'io.github.ssfskim.cua';
@@ -24,6 +26,9 @@ const ALARM = 'cua-reconnect';
 const INSTANCE_KEY = 'extensionInstanceId';
 const DEBUGGER_VERSION = '1.3';
 const LASTING_REFUSALS = new Set(['protocol_mismatch', 'hello_invalid']);
+const BACKOFF_KEY = 'lastingRefusal';     // storage.session: {refusal, streak, notBefore}
+const MINUTE_MS = 60_000;
+const MAX_BACKOFF_MINUTES = 60;
 
 let port = null;           // the open native port
 let peer = null;           // its JSON-RPC peer
@@ -33,7 +38,7 @@ let refusal = null;        // the host's hostRefused {code, message} on the late
 let lastError = null;      // Chrome's reason the latest port closed
 let instanceIdLoad = null;
 const held = new Map();    // debuggee key -> the debuggee this extension attached
-const groups = new Map();  // windowId + session key -> the Chrome tab group cua made for it
+const groups = new Map();  // windowId + session key -> promise of the Chrome tab group cua made for it
 
 const keyOf = d => (d.targetId != null ? `target:${d.targetId}` : `tab:${d.tabId}`);
 const debuggeeOf = d => (d?.targetId != null ? {targetId: d.targetId} : {tabId: d?.tabId});
@@ -57,20 +62,28 @@ function loadInstanceId() {
 
 // --- the primitives the host asks for -------------------------------------------------------------------------------
 
+// Joins the (window, key) group, or makes it. The map holds the group's promise from the moment it is being made, so
+// concurrent creates for one session join one group; a group the user closed or dragged to another window is replaced.
 async function groupTab(tab, {key, title}) {
   const k = groupKey(tab.windowId, key);
-  const known = groups.get(k);
-  if (known !== undefined) {
-    const group = await chrome.tabGroups.get(known).catch(() => null);
+  for (let known = groups.get(k); known !== undefined; known = groups.get(k)) {
+    const groupId = await known.catch(() => undefined);
+    const group = groupId === undefined ? null : await chrome.tabGroups.get(groupId).catch(() => null);
     if (group?.windowId === tab.windowId) {
-      await chrome.tabs.group({groupId: known, tabIds: [tab.id]});
+      await chrome.tabs.group({groupId, tabIds: [tab.id]});
       return;
     }
-    groups.delete(k);           // the user closed it or dragged it to another window
+    if (groups.get(k) === known) groups.delete(k);
   }
-  const groupId = await chrome.tabs.group({tabIds: [tab.id], createProperties: {windowId: tab.windowId}});
-  groups.set(k, groupId);
-  if (title) await chrome.tabGroups.update(groupId, {title});
+  const making = chrome.tabs.group({tabIds: [tab.id], createProperties: {windowId: tab.windowId}}).then(async groupId => {
+    if (title) await chrome.tabGroups.update(groupId, {title}).catch(() => {});
+    return groupId;
+  });
+  groups.set(k, making);
+  await making.catch(error => {
+    if (groups.get(k) === making) groups.delete(k);
+    throw error;
+  });
 }
 
 const primitives = {
@@ -96,8 +109,9 @@ const primitives = {
   // A group the user closed has nothing left to rename.
   'group.title': async ({windowId, key, title}) => {
     const k = groupKey(windowId, key);
-    const groupId = groups.get(k);
-    if (groupId !== undefined) await chrome.tabGroups.update(groupId, {title}).catch(() => groups.delete(k));
+    const known = groups.get(k);
+    const groupId = await known?.catch(() => undefined);
+    if (groupId !== undefined) await chrome.tabGroups.update(groupId, {title}).catch(() => { if (groups.get(k) === known) groups.delete(k); });
     return {};
   },
 
@@ -105,23 +119,26 @@ const primitives = {
 
   'windows.create': async ({focused = false}) => ({id: (await chrome.windows.create({focused, type: 'normal'})).id}),
 
-  // Chrome refuses a second attach by the same extension with "Another debugger is already attached"; when this
-  // extension is the holder that is success (alreadyHeld), and the host relies on telling the two apart.
+  // Chromium answers "Another debugger is already attached" only to the extension that already holds the debuggee
+  // (DevTools and other extensions attach alongside): an attachment Chrome kept while this worker forgot it, e.g. after a
+  // worker restart. It is adopted, as the vendor extension does, and is success for the host.
   'debugger.attach': async debuggee => {
     const d = debuggeeOf(debuggee);
+    let alreadyHeld = false;
     try {
       await chrome.debugger.attach(d, DEBUGGER_VERSION);
     } catch (error) {
-      if (held.has(keyOf(d)) && /Another debugger is already attached/.test(error?.message ?? '')) return {alreadyHeld: true};
-      throw error;
+      if (!/Another debugger is already attached/.test(error?.message ?? '')) throw error;
+      alreadyHeld = true;
     }
     held.set(keyOf(d), d);
-    return {alreadyHeld: false};
+    changed();
+    return {alreadyHeld};
   },
 
   'debugger.detach': async debuggee => {
     const d = debuggeeOf(debuggee);
-    try { await chrome.debugger.detach(d); } finally { held.delete(keyOf(d)); }
+    try { await chrome.debugger.detach(d); } finally { held.delete(keyOf(d)); changed(); }
     return {};
   },
 
@@ -131,7 +148,7 @@ const primitives = {
     try {
       return await chrome.debugger.sendCommand(sessionId != null ? {...d, sessionId} : d, method, params);
     } catch (error) {
-      if (notAttached(error)) held.delete(keyOf(d));
+      if (notAttached(error) && held.delete(keyOf(d))) changed();
       throw error;
     }
   },
@@ -146,7 +163,7 @@ const primitives = {
 function createPeer(p) {
   const send = message => { try { p.postMessage(message); } catch {} };   // the port closed meanwhile
   const notifications = {
-    hostRefused: ({code, message}) => { refusal = {code: String(code), message: String(message ?? '')}; },
+    hostRefused: ({code, message}) => { refusal = {code: String(code), message: String(message ?? '')}; changed(); },
   };
   async function answer({id, method, params}) {
     const primitive = Object.hasOwn(primitives, method) ? primitives[method] : null;
@@ -171,6 +188,11 @@ function tell(method, params) {
   peer?.notify(method, params);
 }
 
+// Tells an open popup to re-read the status; with no popup open nobody answers, which is fine.
+function changed() {
+  chrome.runtime.sendMessage({type: 'cua.changed'}).catch(() => {});
+}
+
 function clearRetry() {
   if (retryTimer !== null) clearTimeout(retryTimer);
   retryTimer = null;
@@ -181,9 +203,25 @@ function scheduleRetry() {
   retryTimer = setTimeout(() => { retryTimer = null; connect(); }, RETRY_MS);
 }
 
-async function open() {
+// The backoff after a lasting refusal: whether an alarm (or a worker's load) may try now. It also restores the refusal
+// for the popup in a worker started since.
+async function backedOff() {
+  const backoff = (await chrome.storage.session.get(BACKOFF_KEY))[BACKOFF_KEY];
+  if (!backoff) return false;
+  if (!port) refusal ??= backoff.refusal;
+  return Date.now() < backoff.notBefore;
+}
+
+async function recordRefusal(lasting) {
+  if (!lasting) return chrome.storage.session.remove(BACKOFF_KEY);
+  const streak = ((await chrome.storage.session.get(BACKOFF_KEY))[BACKOFF_KEY]?.streak ?? 0) + 1;
+  const minutes = Math.min(2 ** (streak - 1), MAX_BACKOFF_MINUTES);
+  await chrome.storage.session.set({[BACKOFF_KEY]: {refusal: lasting, streak, notBefore: Date.now() + minutes * MINUTE_MS}});
+}
+
+async function open({gated}) {
   const extensionInstanceId = await loadInstanceId();
-  if (port) return;
+  if (port || (gated && await backedOff())) return;
   const p = chrome.runtime.connectNative(HOST_NAME);
   port = p;
   peer = createPeer(p);
@@ -193,13 +231,16 @@ async function open() {
   p.onMessage.addListener(message => { if (port === p) portPeer.receive(message); });
   p.onDisconnect.addListener(() => closed(p));
   portPeer.notify('hello', {extensionId: chrome.runtime.id, extensionInstanceId, version: chrome.runtime.getManifest().version, protocolVersion: PROTOCOL_VERSION});
+  changed();
 }
 
-function connect() {
+// `gated`: an alarm or a worker's load, which honour the backoff after a lasting refusal; the 5 s retry never runs
+// after one, and onStartup/onInstalled clear it first.
+function connect({gated = false} = {}) {
   if (port) return Promise.resolve();
   if (connecting) return connecting;
   clearRetry();
-  connecting = open()
+  connecting = open({gated})
     .catch(error => { lastError = String(error?.message ?? error); scheduleRetry(); })
     .finally(() => { connecting = null; });
   return connecting;
@@ -213,7 +254,10 @@ function closed(p) {
   const debuggees = [...held.values()];
   held.clear();
   for (const d of debuggees) chrome.debugger.detach(d).catch(() => {});
-  if (!(refusal && LASTING_REFUSALS.has(refusal.code))) scheduleRetry();
+  const lasting = refusal && LASTING_REFUSALS.has(refusal.code) ? refusal : null;
+  if (!lasting) scheduleRetry();
+  recordRefusal(lasting).catch(() => {});
+  changed();
 }
 
 // --- what Chrome tells the extension --------------------------------------------------------------------------------
@@ -230,7 +274,9 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 
 chrome.debugger.onDetach.addListener((source, reason) => {
   const debuggee = sourceDebuggee(source);
-  if (held.delete(keyOf(debuggee))) tell('debugger.detached', {debuggee, reason});
+  if (!held.delete(keyOf(debuggee))) return;
+  tell('debugger.detached', {debuggee, reason});
+  changed();
 });
 
 chrome.tabs.onRemoved.addListener(tabId => tell('tabs.removed', {tabId}));
@@ -243,14 +289,18 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 // The popup's question: is the host connected, and if not, why.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'cua.status' || sender?.id !== chrome.runtime.id) return false;
-  loadInstanceId().catch(() => null).then(instanceId => sendResponse({
+  Promise.all([loadInstanceId().catch(() => null), backedOff().catch(() => false)]).then(([instanceId]) => sendResponse({
     hostName: HOST_NAME, connected: port !== null && refusal === null, refusal, error: port ? null : lastError, instanceId, debuggees: held.size,
   }));
   return true;
 });
 
-chrome.runtime.onStartup.addListener(() => { connect(); });
-chrome.runtime.onInstalled.addListener(() => { connect(); });
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) connect(); });
+// Chrome starting and the extension installing or updating try at once and start any backoff over.
+const fresh = () => {
+  chrome.storage.session.remove(BACKOFF_KEY).catch(() => {}).then(() => connecting).then(() => connect());
+};
+chrome.runtime.onStartup.addListener(fresh);
+chrome.runtime.onInstalled.addListener(fresh);
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) connect({gated: true}); });
 chrome.alarms.get(ALARM).then(alarm => alarm ?? chrome.alarms.create(ALARM, {periodInMinutes: 1})).catch(() => {});
-connect();
+connect({gated: true});

@@ -8,7 +8,7 @@ import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME, extensionIdFromKey} from '../src/chrome/extension.mjs';
 import {createChromeStub, EXTENSION_DIR, MANIFEST} from './helpers/chrome-stub.mjs';
-import {render, statusLines} from '../extension/popup.js';
+import {render, start, statusLines} from '../extension/popup.js';
 
 const waitFor = async (predicate, what, ms = 3000) => {
   const deadline = Date.now() + ms;
@@ -78,4 +78,21 @@ test('the popup page loads popup.js as a module and renders the worker\'s answer
   const silent = {runtime: {sendMessage: () => Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'))}};
   await render({getElementById: id => elements[id]}, silent);
   assert.equal(elements.host.textContent, 'host: unknown (the extension\'s worker did not answer)');
+});
+
+test('an open popup follows the worker: a refusal arriving after it opened replaces "connected"', async () => {
+  const stub = createChromeStub({nativeHost: 'fake'});
+  stub.load();
+  await waitFor(() => stub.hostPeers[0]?.hello, 'hello');
+  const elements = Object.fromEntries(['host', 'instance', 'debuggees'].map(id => [id, {textContent: ''}]));
+  await start({getElementById: id => elements[id]}, stub.chrome);
+  assert.equal(elements.host.textContent, 'host: connected io.github.ssfskim.cua');
+
+  stub.hostPeers[0].notify('hostRefused', {code: 'protocol_mismatch', message: 'the extension speaks protocol 1; this host speaks 2'});
+  await waitFor(() => elements.host.textContent.includes('protocol_mismatch'), 'the popup updating');
+  assert.equal(elements.host.textContent, 'host: disconnected io.github.ssfskim.cua (protocol_mismatch: the extension speaks protocol 1; this host speaks 2)');
+
+  const tab = stub.addTab();
+  await stub.hostPeers[0].request('debugger.attach', {tabId: tab.id});
+  await waitFor(() => elements.debuggees.textContent === 'debuggees: 1', 'the debuggee count updating');
 });

@@ -20,7 +20,7 @@ async function start(options = {}) {
   return {stub, host: stub.hostPeers[0]};
 }
 
-test('debugger.attach answers alreadyHeld: true only for a debuggee this extension holds; another debugger\'s refusal passes through', async () => {
+test('debugger.attach adopts what Chrome says this extension already holds (alreadyHeld: true); DevTools alongside is no obstacle', async () => {
   const {stub, host} = await start();
   const tab = stub.addTab();
   const frame = stub.addFrame(tab.id);
@@ -29,10 +29,12 @@ test('debugger.attach answers alreadyHeld: true only for a debuggee this extensi
   assert.deepEqual(await host.request('debugger.attach', {targetId: frame}), {alreadyHeld: false});
   assert.deepEqual(await host.request('held', {}), [{tabId: tab.id}, {targetId: frame}]);
 
-  const devtools = stub.addTab();
-  stub.state.foreign.add(`tab:${devtools.id}`);
-  await assert.rejects(host.request('debugger.attach', {tabId: devtools.id}), {message: `Another debugger is already attached to the tab with id: ${devtools.id}.`, code: 1});
-  await assert.rejects(host.request('debugger.attach', {tabId: 999}), {message: 'No tab with given id 999.'});
+  // DevTools (or another extension) attached to a tab: Chromium attaches this extension alongside.
+  const inspected = stub.addTab();
+  stub.state.devtools.add(`tab:${inspected.id}`);
+  assert.deepEqual(await host.request('debugger.attach', {tabId: inspected.id}), {alreadyHeld: false});
+  assert.deepEqual(await host.request('debugger.detach', {tabId: inspected.id}), {});
+  await assert.rejects(host.request('debugger.attach', {tabId: 999}), {message: 'No tab with given id 999.', code: 1});
   assert.equal((await host.request('held', {})).length, 2);
 
   // Chrome detached the tab behind the extension's back (the user's cancel): no longer held, so not "already held".
@@ -47,6 +49,24 @@ test('debugger.attach answers alreadyHeld: true only for a debuggee this extensi
   await assert.rejects(host.request('debugger.sendCommand', {debuggee: {targetId: frame}, method: 'Runtime.enable'}), {message: `Debugger is not attached to the target with id: ${frame}.`});
 });
 
+test('after a worker restart Chrome still holds its attachments: an attach adopts them, and a port drop then detaches them', async () => {
+  const {stub, host} = await start();
+  const tab = stub.addTab();
+  const frame = stub.addFrame(tab.id);
+  await host.request('debugger.attach', {tabId: tab.id});
+  await host.request('debugger.attach', {targetId: frame});
+  // The worker restarts with the port up (Chrome keeps the attachments, the worker's memory is gone).
+  stub.load();
+  await waitFor(() => stub.hostPeers[1]?.hello, 'the new worker\'s hello');
+  const again = stub.hostPeers[1];
+  assert.deepEqual(await again.request('held', {}), []);
+  assert.deepEqual(await again.request('debugger.attach', {tabId: tab.id}), {alreadyHeld: true});
+  assert.deepEqual(await again.request('debugger.attach', {targetId: frame}), {alreadyHeld: true});
+  assert.deepEqual(await again.request('held', {}), [{tabId: tab.id}, {targetId: frame}]);
+  again.exit();
+  await waitFor(() => stub.state.attached.size === 0, 'the adopted debuggees detached on port drop');
+});
+
 test('the peer answers an unknown method with the exact No-handler string and Chrome\'s errors verbatim', async () => {
   const {stub, host} = await start();
   await assert.rejects(host.request('tabs.duplicate', {tabId: 1}), {message: 'No handler registered for method: tabs.duplicate', code: -1});
@@ -55,7 +75,10 @@ test('the peer answers an unknown method with the exact No-handler string and Ch
   assert.deepEqual(await host.request('tabs.get', {tabId: tab.id}), {id: tab.id, windowId: 1, url: 'https://t.invalid/', title: 'T', status: 'complete'});
   assert.deepEqual(await host.request('tabs.query', {}), [{id: tab.id, windowId: 1, url: 'https://t.invalid/', title: 'T', active: false, groupId: -1}]);
   assert.deepEqual(await host.request('windows.query', {}), [{id: 1, focused: true, type: 'normal'}]);
-  assert.deepEqual(await host.request('debugger.getTargets', {}), [{type: 'page', id: `PAGE-${tab.id}`, tabId: tab.id, attached: false, title: 'T', url: 'https://t.invalid/'}]);
+  const frame = stub.addFrame(tab.id);
+  stub.state.devtools.add(`target:${frame}`);
+  assert.deepEqual(await host.request('debugger.getTargets', {}), [{type: 'page', id: `PAGE-${tab.id}`, tabId: tab.id, attached: false, title: 'T', url: 'https://t.invalid/'},
+    {type: 'other', id: frame, attached: true, title: '', url: 'http://127.0.0.1:9/frame'}]);
   assert.deepEqual(stub.console.lines, []);
 });
 
@@ -117,6 +140,63 @@ test('groups are per (window, key): a closed or moved group is replaced, group.t
   const w = await host.request('windows.create', {focused: false});
   assert.deepEqual(Object.keys(w), ['id']);
   assert.equal(stub.state.windows.get(w.id).focused, false);
+});
+
+test('concurrent tabs.create for one (window, session) share one new group', async () => {
+  const {stub, host} = await start();
+  const made = await Promise.all([1, 2, 3].map(() => host.request('tabs.create', {url: 'about:blank', windowId: 1, group: {key: 'S', title: 'cua'}})));
+  assert.equal(new Set(made.map(t => stub.state.tabs.get(t.id).groupId)).size, 1);
+  assert.equal(stub.callsOf('tabs.group').filter(([args]) => args.createProperties).length, 1);
+  assert.equal(stub.state.groups.size, 1);
+});
+
+// Every host refuses with a lasting code; resolves once the n-th port is refused and closed.
+async function refuse(stub, n) {
+  await waitFor(() => stub.hostPeers[n]?.hello, `host ${n}'s hello`);
+  stub.hostPeers[n].notify('hostRefused', {code: 'protocol_mismatch', message: 'the extension speaks protocol 1; this host speaks 2'});
+  stub.hostPeers[n].exit();
+  await waitFor(async () => !stub.hostPeers[n].connected && (await status(stub)).refusal && !(await status(stub)).connected, `host ${n}'s refusal`);
+  await new Promise(r => setTimeout(r, 10));
+}
+// The alarm at `ms` after now spawns nothing until the backoff passes, then one host.
+async function alarmAfter(stub, minutes) {
+  const ports = stub.ports.length;
+  stub.advance(minutes * 60_000 - 1);
+  stub.fireAlarm('cua-reconnect');
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(stub.ports.length, ports, `nothing before ${minutes} min`);
+  stub.advance(1);
+  stub.fireAlarm('cua-reconnect');
+  await waitFor(() => stub.ports.length === ports + 1, `the attempt at ${minutes} min`);
+}
+
+test('after a lasting refusal the alarm retries with backoff doubling to an hour, across worker restarts; onStartup/onInstalled reset it', async () => {
+  const stub = createChromeStub({nativeHost: 'fake'});
+  stub.load();
+  await refuse(stub, 0);
+  let n = 1;
+  for (const minutes of [1, 2, 4, 8, 16, 32, 60, 60]) {
+    await alarmAfter(stub, minutes);
+    await refuse(stub, n++);
+  }
+  assert.deepEqual(stub.pendingTimers(), [], 'never the 5 s retry');
+
+  // A restarted worker (the alarm woke it) keeps the backoff and still shows why.
+  stub.load();
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(stub.hostPeers.length, n, 'the restarted worker did not connect at load');
+  assert.equal((await status(stub)).refusal.code, 'protocol_mismatch');
+  await alarmAfter(stub, 60);
+  await refuse(stub, n++);
+
+  // Chrome starting (or the extension updating) tries at once and starts the backoff over.
+  stub.events.startup.dispatch();
+  await waitFor(() => stub.hostPeers.length === n + 1, 'the startup attempt');
+  await refuse(stub, n++);
+  await alarmAfter(stub, 1);
+  await refuse(stub, n++);
+  stub.events.installed.dispatch({reason: 'update'});
+  await waitFor(() => stub.hostPeers.length === n + 1, 'the update attempt');
 });
 
 test('hostRefused is kept for the popup; a transient refusal (already_served) retries in 5 s, and a later serving port clears it', async () => {

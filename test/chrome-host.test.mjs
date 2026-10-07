@@ -149,7 +149,7 @@ test('executeCdp passes CDP through unchanged: method, params, child sessionId; 
   await assert.rejects(a.call('executeCdp', {target: {tabId: tab.id, sessionId: 'S', targetId: 'T'}, method: 'DOM.enable'}), /either sessionId or targetId, not both/);
 });
 
-test('attach is idempotent, an already-held debuggee is success, and another debugger is a refusal with Chrome\'s wording', async () => {
+test('attach is idempotent, an already-held debuggee is success, and an attach Chrome refuses is a refusal with Chrome\'s wording', async () => {
   const {ext, client, session, sent} = setup();
   const a = session(client(), 'sA');
   const tab = await a.call('createTab', {});
@@ -158,8 +158,8 @@ test('attach is idempotent, an already-held debuggee is success, and another deb
   assert.deepEqual(await a.call('attach', {tabId: tab.id}), {});
   assert.equal(sent('debugger.attach').length, 1);
   const other = await a.call('createTab', {});
-  ext.state.foreign.add(`tab:${other.id}`);
-  await assert.rejects(a.call('attach', {tabId: other.id}), e => e.message === `Another debugger is already attached to the tab with id: ${other.id}.`);
+  ext.state.tabs.get(other.id).url = 'chrome://settings/';
+  await assert.rejects(a.call('attach', {tabId: other.id}), e => e.message === 'Cannot access a chrome:// URL');
   await assert.rejects(a.call('executeCdp', {target: {tabId: other.id}, method: 'Page.enable'}), /Debugger unattached/);
 });
 

@@ -594,12 +594,13 @@ and `docs/evidence/2026-10-06-hosted-relay-acceptance.md` the acceptance run thr
 On the client machine, register the device once in cua's device list, `~/.config/cua/devices.json` (mode 0600; one
 entry per device, `{"<name>": {"deviceId": "…", "relayUrl": "https://<relay>"}}`), and keep its client credential in
 the secret store under the device's key, `CUA_DEVICE_` and the device id with `-` as `_` (`clientSecretKey` in
-`enroll --json`). Either way below, nothing prints the credential.
+`enroll --json`). There are two ways, and neither prints the credential: from a client config you already have, or
+by storing the credential with the plugin's `/secret <clientSecretKey>` (typed into its masked field) and then adding
+the entry with the `devicesAddCommand` that `enroll --json` printed.
 
 ```sh
-cua devices import ~/.config/cua-relay/mini.mcp.json    # from a client config: registers "mini", stores the credential
-/secret CUA_DEVICE_<id with - as _>                     # or: the owner types the credential into /secret's masked field,
-cua devices add mini --relay https://<relay> --device=<deviceId>     # then adds the entry (enroll's devicesAddCommand)
+cua devices import ~/.config/cua-relay/mini.mcp.json    # registers "mini" and stores the credential from the config
+cua devices add mini --relay https://<relay> --device=<deviceId>     # or, after /secret: the entry alone
 cua devices list                                        # name, device id, relay, whether the credential is stored
 cua devices remove mini                                 # the entry only; cua secrets remove <key> drops the credential
 ```

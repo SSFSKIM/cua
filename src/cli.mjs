@@ -4,6 +4,7 @@
 // error.
 import {parseArgs} from 'node:util';
 import {execFile, spawn} from 'node:child_process';
+import {hostname} from 'node:os';
 import {defaultHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
@@ -13,10 +14,12 @@ import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
 import {CuaError, fail} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
 import {clientSecretKey, devicesEntry, enrollDevice, readDevice, relayEndpoint} from './remote/device.mjs';
+import {addDevice, credentialStored, devicesFile, importDevice, readDevices, removeDevice, suggestedDeviceName} from './remote/devices.mjs';
 import {runAgent} from './remote/agent.mjs';
 import * as launchd from './remote/launchd.mjs';
 import * as systemd from './remote/systemd.mjs';
 import {runSecrets, PREFERRED_ENTRY} from './secrets/commands.mjs';
+import {fileStore, storeDir} from './secrets/store.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
 import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
@@ -73,6 +76,12 @@ export const usageFor = platform => {
                                                                serves this Mac only, its LAN address serves the LAN; --relay
                                                                dials the relay enrolled with remote enroll --relay (both: both)
 ${AGENT_JOB_USAGE[darwin ? 'darwin' : 'linux']}
+  devices add <name> --relay <url> --device <id> [--replace] [--json]  register a remote device for devices_use; its
+                                                               credential is the secret CUA_DEVICE_<id, - as _> (/secret)
+  devices import <file> [--name <name>] [--replace] [--json]   register the device a client config (*.mcp.json) reaches and
+                                                               store its credential (name: the file's, less .mcp.json)
+  devices list [--json]                                        registered devices and whether each credential is stored
+  devices remove <name> [--json]                               forget a device (its stored credential stays)
 environment: CUA_HOME (default ${home}); for agent run (agent install carries those set into
   the ${darwin ? 'job' : 'unit'}): CUA_AGENT_MAX_SESSIONS (default 1), CUA_AGENT_IDLE_MINUTES (default 15), CUA_AGENT_ALLOWED_ORIGINS (browser
   origins allowed to call; none by default)${darwin ? `, CUA_AGENT_CONSOLE_CHECK (on: js answers console_locked while the screen is
@@ -170,9 +179,14 @@ function remote(args) {
   // --json also names where a client keeps the credential, the /secret store, and the registration that reads it there,
   // so the client's setup is a printed command whose output never holds the credential. Without a relay the client's URL
   // is an address only its owner knows, so there is no command to print (null).
+  // devicesAddCommand is the plugin route's registration (cua devices add), under a name taken from this machine's.
   const clientSetup = (deviceId, endpoint) => {
     const key = clientSecretKey(deviceId);
-    return {clientSecretKey: key, clientRegisterCommand: endpoint ? mcpAdd(endpoint, `$(cat ~/.config/claude-secrets/${key})`) : null};
+    return {
+      clientSecretKey: key,
+      clientRegisterCommand: endpoint ? mcpAdd(endpoint, `$(cat ~/.config/claude-secrets/${key})`) : null,
+      devicesAddCommand: endpoint ? `cua devices add ${suggestedDeviceName(hostname())} --relay ${new URL(endpoint).origin} --device=${deviceId}` : null,
+    };
   };
   if (command === 'show') {
     const record = readDevice(home);
@@ -208,6 +222,67 @@ function remote(args) {
     relayLine,
     ...installHint,
   ].join('\n'));
+}
+
+// The client's device registry (src/remote/devices.mjs) for the stdio server's devices_use. Usage errors are fixed
+// messages that never repeat what was passed (a stray word may be a credential pasted in the wrong place). Output names
+// devices, ids, relays and the credential's key and whether it is stored, never a value.
+const DEVICES_USAGE = {
+  add: 'devices add takes a name, --relay <url> and --device <id> (an id starting with - as --device=<id>), and optionally --replace and --json',
+  import: 'devices import takes one client config file, and optionally --name <name>, --replace and --json',
+  list: 'devices list takes only --json',
+  remove: 'devices remove takes exactly one name and optionally --json',
+};
+const DEVICES_OPTIONS = {
+  add: {relay: {type: 'string'}, device: {type: 'string'}, replace: {type: 'boolean'}},
+  import: {name: {type: 'string'}, replace: {type: 'boolean'}},
+  list: {},
+  remove: {},
+};
+const ENTRY_OUTCOMES = {added: 'registered', unchanged: 'already registered', replaced: 're-registered'};
+const PRESENCE = new Map([[true, 'credential stored'], [false, 'credential missing'], [null, 'credential unknown (the secret store cannot be listed)']]);
+
+async function devices(args) {
+  const [command, ...rest] = args;
+  if (!Object.hasOwn(DEVICES_USAGE, command)) throw new UsageError('devices takes add, import, list or remove');
+  let values, positionals;
+  try { ({values, positionals} = parse(rest, DEVICES_OPTIONS[command], command === 'list' ? 0 : 1)); } catch (error) {
+    if (error instanceof UsageError) throw new UsageError(DEVICES_USAGE[command]);
+    throw error;
+  }
+  if (command === 'add' && (values.relay === undefined || values.device === undefined)) throw new UsageError(DEVICES_USAGE.add);
+  const env = process.env;
+  const store = fileStore({dir: storeDir(env)});
+  const describe = d => `${d.name}: device ${d.deviceId} on ${d.relayUrl}`;
+  if (command === 'list') {
+    const listed = [];
+    for (const [name, {deviceId, relayUrl}] of Object.entries(readDevices({env})))
+      listed.push({name, deviceId, relayUrl, clientSecretKey: clientSecretKey(deviceId), credentialStored: await credentialStored(store, deviceId)});
+    if (values.json) return done({ok: true, devices: listed});
+    if (!listed.length) { process.stderr.write(`no devices are registered in ${devicesFile(env)}\n`); return 0; }
+    const width = Math.max(...listed.map(d => d.name.length));
+    return done(listed.map(d => `${d.name.padEnd(width)}  ${d.deviceId}  ${d.relayUrl}  ${PRESENCE.get(d.credentialStored)}`).join('\n'));
+  }
+  if (command === 'remove') {
+    const removed = removeDevice({env, name: positionals[0]});
+    const key = clientSecretKey(removed.deviceId);
+    if (values.json) return done({ok: true, ...removed, clientSecretKey: key});
+    return done(`removed ${describe(removed)}; its credential stays stored under ${key} (cua secrets remove ${key} deletes it)`);
+  }
+  if (command === 'import') {
+    const {entry, credential, ...device} = await importDevice({env, file: positionals[0], name: values.name, replace: values.replace, store});
+    const key = clientSecretKey(device.deviceId);
+    if (values.json) return done({ok: true, ...device, entry, clientSecretKey: key, credential});
+    return done(`${ENTRY_OUTCOMES[entry]} ${describe(device)}; credential ${credential} under ${key}`);
+  }
+  const {entry, ...device} = addDevice({env, name: positionals[0], relayUrl: values.relay, deviceId: values.device, replace: values.replace});
+  const key = clientSecretKey(device.deviceId);
+  const stored = await credentialStored(store, device.deviceId);
+  const storeStep = `store the device's client credential with /secret ${key} in Claude Code (or cua secrets set ${key})`;
+  if (stored === false) process.stderr.write(`warning: no credential is stored under ${key} yet; ${storeStep}\n`);
+  if (stored === null) process.stderr.write(`warning: the secret store cannot be listed, so whether ${key} is stored is unknown; ${storeStep}\n`);
+  if (values.json) return done({ok: true, ...device, entry, clientSecretKey: key, credentialStored: stored});
+  return done(`${ENTRY_OUTCOMES[entry]} ${describe(device)}`);
 }
 
 // The resident agent (src/remote/agent.mjs) and the service that runs it: a launchd job on macOS
@@ -607,7 +682,7 @@ export function unregisterLines(result) {
   return lines;
 }
 
-const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome, remote, agent};
+const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome, remote, agent, devices};
 
 export async function main(argv) {
   const [command, ...rest] = argv;

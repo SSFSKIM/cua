@@ -15,6 +15,8 @@ const deviceDir = home => join(home, 'remote');
 const deviceFile = home => join(deviceDir(home), 'device.json');
 const B64URL = /^[A-Za-z0-9_-]+$/;
 const ofLength = (text, bytes) => typeof text === 'string' && B64URL.test(text) && Buffer.from(text, 'base64url').length === bytes;
+// A device id as enrolment mints it: 16 random bytes, base64url.
+export const isDeviceId = id => ofLength(id, 16);
 
 const isLoopback = host => host === 'localhost' || host === '[::1]' || /^127(\.\d{1,3}){3}$/.test(host);
 
@@ -23,7 +25,7 @@ const isLoopback = host => host === 'localhost' || host === '[::1]' || /^127(\.\
 // client refuses it.
 // The host is a plain name or address too: the client's registration line (`remote enroll --json`) carries it into a
 // shell, and a URL host may hold shell syntax (`;`, `$`, braces).
-const PLAIN_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$/;
+export const PLAIN_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$/;
 
 export function checkRelayUrl(relayUrl) {
   let url;

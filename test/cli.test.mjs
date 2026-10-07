@@ -82,6 +82,14 @@ test('the usage names the default home per platform: Application Support on macO
   assert.match(usageFor('linux'), /install \[--archive <ChatGPT deb>\]/);
 });
 
+test('devices add, import, list and remove are listed on both platforms', async () => {
+  const {usageFor} = await import('../src/cli.mjs');
+  for (const platform of ['darwin', 'linux']) for (const line of [
+    /^  devices add <name> --relay <url> --device <id> \[--replace\] \[--json\] /m, /^  devices import <file> \[--name <name>\] \[--replace\] \[--json\] /m,
+    /^  devices list \[--json\] /m, /^  devices remove <name> \[--json\] /m,
+  ]) assert.match(usageFor(platform), line, platform);
+});
+
 test('agent install, uninstall and status are listed on both platforms (launchd on macOS, the systemd user unit on Linux); the console check is macOS-only', async () => {
   const {usageFor} = await import('../src/cli.mjs');
   for (const platform of ['darwin', 'linux']) for (const text of [/^  agent install /m, /^  agent uninstall /m, /^  agent status /m])

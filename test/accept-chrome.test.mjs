@@ -4,7 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {request} from 'node:http';
-import {startAcceptancePage, SCRIPT, CSP, expectedDigest, INPUT_LABEL} from '../scripts/accept/chrome-page.mjs';
+import {startAcceptancePage, SCRIPT, CSP, expectedDigest, INPUT_LABEL, FRAME_SCRIPT, FRAME_CLICKED, frameCsp, framedCsp, USER_CSP} from '../scripts/accept/chrome-page.mjs';
 import {inducedFailure, fillReference, CLOSE_TAB} from '../scripts/accept/chrome-cells.mjs';
 import {inputFailed} from '../src/services/secret-input.mjs';
 
@@ -40,7 +40,37 @@ test('the page is one self-contained document on its exact loopback Host, with a
   assert.match(ok.body, new RegExp(`<input id="secret" type="password" aria-label="${INPUT_LABEL}"`));
   assert.equal((await get(page.url, `localhost:${new URL(page.url).port}`)).status, 421);
   assert.equal((await get(`${page.origin}/other`)).status, 404);
-  assert.deepEqual(page.requests(), {total: 3, served: 1, refused: 2});
+  assert.deepEqual(page.requests(), {total: 3, served: 1, refused: 2, frame: {total: 0, served: 0, refused: 0}});
+});
+
+test('the framed page embeds a cross-site frame (localhost, a second loopback port) that only it may embed; the user page carries its own marker', async t => {
+  const page = await startAcceptancePage();
+  t.after(page.close);
+  assert.match(page.frameOrigin, /^http:\/\/localhost:\d+$/);
+  assert.notEqual(new URL(page.frameOrigin).port, new URL(page.origin).port);
+  assert.deepEqual(page.origins, [page.origin, page.frameOrigin]);
+  const framed = await get(page.framedUrl);
+  assert.equal(framed.status, 200);
+  assert.equal(framed.headers['content-security-policy'], framedCsp(page.frameOrigin));
+  assert.ok(framed.body.includes(page.framedMarker));
+  assert.ok(framed.body.includes(`<iframe id="cross" title="Cross-site frame" src="${page.frameUrl}"`));
+  const frame = await get(`http://127.0.0.1:${new URL(page.frameOrigin).port}/`, new URL(page.frameOrigin).host);
+  assert.equal(frame.status, 200);
+  assert.equal(frame.headers['content-security-policy'], frameCsp(page.origin));
+  assert.ok(frame.body.includes(page.frameMarker));
+  assert.equal((await get(`http://127.0.0.1:${new URL(page.frameOrigin).port}/`)).status, 421, 'the frame answers only as localhost');
+  const user = await get(page.userUrl);
+  assert.equal(user.status, 200);
+  assert.ok(user.body.includes(page.userMarker));
+  assert.equal(user.headers['content-security-policy'], USER_CSP);
+  assert.deepEqual(page.requests(), {total: 2, served: 2, refused: 0, frame: {total: 2, served: 1, refused: 1}});
+});
+
+test('the frame\'s button sets its status line; nothing else runs in it', () => {
+  const elements = {'frame-out': {textContent: 'waiting'}, 'frame-button': {addEventListener: (type, fn) => { elements['frame-button'].click = fn; }}};
+  vm.runInContext(FRAME_SCRIPT, vm.createContext({document: {getElementById: id => elements[id]}}));
+  elements['frame-button'].click();
+  assert.equal(elements['frame-out'].textContent, FRAME_CLICKED);
 });
 
 test('the induced-failure cell extracts the wrapper\'s code and classification from its fixed message', async () => {

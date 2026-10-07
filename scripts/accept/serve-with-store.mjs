@@ -14,6 +14,7 @@ import {defaultHome} from '../../src/runtime/layout.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {chromeFacts} from '../../src/profiles/chrome.mjs';
 import {listLiveBackends} from '../../src/profiles/inventory.mjs';
+import {chromeRoute, extensionIdFor} from '../../src/chrome/route.mjs';
 import {accountHome, isAccountHome, withAccountHome} from './secret-seed.mjs';
 
 if (!process.env.CUA_HOME || isAccountHome(process.env.HOME)) {
@@ -26,7 +27,8 @@ const account = {...process.env, HOME: accountHome()};
 const code = await serve({
   home,
   prepareLaunch: withAccountHome,
-  chrome: chromeFacts({env: account, userHome: account.HOME}),
+  // The route's extension, as `cua serve` itself checks it (src/mcp/connection.mjs).
+  chrome: chromeFacts({env: account, userHome: account.HOME, extensionId: extensionIdFor(chromeRoute(home))}),
   listBackends: () => listLiveBackends({home, runtime: resolveRuntime({home}), ambient: account, tabCounts: false, sandbox: settingsFrom(process.env).sandbox}),
 });
 setTimeout(() => process.exit(code), 1000).unref();

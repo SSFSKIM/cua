@@ -206,8 +206,8 @@ re-attached. `Another debugger is already attached` from Chrome is success when 
 debuggee (the extension reports its held set) and a refusal otherwise.
 
 **Socket placement and discovery.** Sockets live in `$CUA_HOME/chrome/b/` (0700; the short name keeps the path under
-the macOS limit for any username up to 40 characters at the default home; `register` refuses a home whose worst-case
-path exceeds 96 bytes with `socket_path_too_long`). The socket name is `h(instanceId)` = the first 12 hex chars of
+the macOS limit for any username up to 37 characters at the default home; `register` refuses a home whose worst-case
+path exceeds 103 bytes with `socket_path_too_long`). The socket name is `h(instanceId)` = the first 12 hex chars of
 sha256(instanceId); the host never reads `profiles.json`. At listen, a stale file is probed: unlinked when dead,
 and when live the new host logs `already_served` and exits (the worker reconnected before the old host exited). Beside
 the socket the host keeps `<name>.json` `{instanceId, extensionVersion, protocolVersion, pid, sessions:[{session_id,
@@ -503,11 +503,13 @@ npm run extension:pack                                        # dist/cua-extensi
 
 Notifications from the extension: `hello {extensionId, extensionInstanceId, version, protocolVersion}` (first message
 after connect), `debugger.event {debuggee, sessionId?, method, params}`, `debugger.detached {debuggee, reason}`,
-`tabs.removed {tabId}`, `tabs.updated {tabId, url?, title?, status?}`. Errors carry Chrome's
+`tabs.removed {tabId}`, `tabs.updated {tabId, url?, title?, status?}`. Notification from the host: `hostRefused {code,
+message}` (`protocol_mismatch`, `hello_invalid`, `already_served`, `listen_failed`), sent before the host exits; the
+popup shows it. Errors carry Chrome's
 `chrome.runtime.lastError.message` verbatim; the host's own refusals are `message_too_large`, `protocol_mismatch`.
 
 **`src/chrome/host.mjs`**: `export async function runHost({stdin, stdout, home, env})` (the program's `main`);
-`export function createHost({extension, home, now, log})` returning `{handleBackendRequest(client, message),
+`export function createHost({extension, hello, home, now, log, pid})` returning `{methods, handleBackendRequest(client, message),
 clientClosed(client), onExtensionNotification(message), extensionClosed(), status()}` for tests, where `extension`
 is `{request(method, params)}` and a `client` is `{notify(method, params)}`; `status()` is the `<name>.json` shape.
 
@@ -544,6 +546,22 @@ No new npm dependencies.
   after `hello`).
 - Observation (S0): `CUA_EXTENSION_ID` = `jkejaaijdfpohkdhankllbekkhmnippb`, from the key generated at
   `~/.config/cua/extension-key.pem` (0600); the manifest `key` value (public) is in the S0 evidence file.
+- Observation (H1): the macOS socket-path bound is tighter than first written: at the default home the worst-case path
+  is 96 bytes for a 30-character username, 103 (the limit) for 37, 106 for 40 (Linux `/home/<40>`: 90). Design text
+  corrected (37 characters, refusal above 103 bytes).
+- Observation (H1): the service calls `getCommittedTabUrl` and issues `Fetch.enable`, `Emulation.setFocusEmulationEnabled`,
+  `Page.startScreencast`/`captureScreenshot` and `Page.createIsolatedWorld` on every createBrowserTab/evaluate
+  (`docs/evidence/2026-10-07-h1-host-probe.md`); `Fetch.enable` through `chrome.debugger` pauses requests until the
+  service continues them — H3b watches for stalls there. `listTabs` on an extension backend also lists unowned tabs as
+  user tabs (`getUserTabs`), so acceptance 5's "neither lists the other's tab" is about `getTabs`.
+- Observation (H1): the vendor extension moves a session's active leases to each new turn and makes a late `turnEnded` a
+  no-op; cua's per-turn ownership closes a finished task's tabs even when its `turnEnded` arrives late (by design).
+- Observation (H4 gate, measured early, 2026-10-07): branded Google Chrome 154 (Linux aarch64, the Tart VM) force-installs
+  an off-store CRX3 through `ExtensionInstallForcelist` with `<id>;http://127.0.0.1:<port>/update.xml` (requests carry
+  `installedby=policy`, `installsource=notfromwebstore`): picked up ~6 s after the policy file was written, no restart;
+  installed per profile when that profile loads (a fresh instance at startup); removal from the list uninstalls (~45 s).
+  Several files in `policies/managed/` setting the same policy are **not merged** (the last file alphabetically wins), so
+  provisioning writes one combined force-list. A remote HTTPS update URL was not tested (H4 does).
 
 ## Decision Log
 
@@ -576,6 +594,29 @@ No new npm dependencies.
   (`scripts/probe/chrome/no-header.mjs`, a recording stub backend answering `getInfo` as the host will); `--vendor`
   alone keeps M7's checks. The spike launched the vendor service with the M7 harness environment plus
   `BROWSER_USE_AVAILABLE_BACKENDS=chrome`, not through cua's browser wrapper (a pass-through); H3b covers that path live.
+
+- Decision (H1, 2026-10-07): ownership details the design left open. A tab belongs to the turn that last created,
+  claimed, resumed or used it (a current-turn `attach`/`attachTarget`/`executeCdp`/`markTab`/`claimUserTab` adopts it;
+  stale-turn requests and `detach` never re-turn it), so a late `turnEnded(N)` never closes a tab turn N+1 uses. An
+  ended turn takes no new tabs (`createTab`/`claimUserTab` refused; a `createTab` in flight when its turn ends closes the
+  tab). A resumed handoff tab loses its mark. A client disconnect ends its turns and then releases the session's handoff
+  tabs open and ungrouped (a dead session cannot resume them). Claimed user tabs are never grouped or ungrouped. A tab no
+  session owns is refused with the vendor's `Tab N is not part of browser session S`; another session's with `tab owned
+  by another session`. `Target.getTargets` is not filtered (vendor parity, same-user trust). Child sessions are not
+  tracked (Chrome scopes a child `sessionId` to its debuggee).
+- Decision (H1): `executeCdp` timeout answers the vendor's `Timed out after <t>ms waiting for CDP command <m>.` and
+  detaches; the next command answers `Debugger unattached`, the string the service's one re-attach recovers from (the
+  design's "Debugger is not attached wording" read as that sequence). Chrome's own "Debugger is not attached" from
+  `sendCommand` makes the host forget the attachment so the re-attach is real. After `canceled_by_user` the host refuses
+  `attach`/`attachTarget` on that tab while the session owns it.
+- Decision (H1): the host listens before it builds session state, writes `<name>.json` only after listening (a refused
+  host never overwrites a live host's status), creates `chrome/b` and `chrome/logs` (0700) if missing, and removes its
+  socket and status file on a clean exit. Refusals reach the extension as `hostRefused {code, message}` (Interfaces).
+  `createHost` takes `hello` and `pid` and returns `methods`; `runHost` returns `{code, reason, logPath}` for tests.
+  The probe's host configuration lives in `scripts/probe/chrome/host-layer.mjs` with the shared `launchVendor` in
+  `vendor-layer.mjs`; the probe and the tests share `test/helpers/fake-cua-extension.mjs`.
+- Decision (controller, 2026-10-07): the socket-path refusal threshold is the real macOS limit, 103 bytes (the name is
+  fixed-length, so the worst case is exact and a margin buys nothing); the design text's "40 characters" becomes 37.
 
 ## Outcomes & Retrospective
 

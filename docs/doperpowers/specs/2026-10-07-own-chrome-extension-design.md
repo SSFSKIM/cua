@@ -30,8 +30,12 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-07 09:40) H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
 - [x] (2026-10-07 09:40) H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
 - [ ] H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
+      (2026-10-07 16:20) Runner built and reviewed clean; acceptance 2 PASS live; items 1, 3–6 BLOCKED on the owner's
+      unpacked load.
 - [x] (2026-10-07 14:10) H4 — Linux: the Tart VM and the cloud VM template, unattended, with a self-hosted CRX.
-- [ ] H5 — packaging, docs, the Store listing (owner action) and the acceptance section as written.
+- [x] (2026-10-07 16:20) H5 — packaging, docs, plugin 0.4.0, board #78 (Store listing, owner) and #79 (vendor-route
+      removal, blocked by #78); acceptance 8 zip/CRX half and 10 pass. Remaining: 8's Store half (owner, #78) and the
+      live Mac items with H3b.
 
 ## Facts this design rests on
 
@@ -690,6 +694,14 @@ No new npm dependencies.
   API cannot send `executeCdp` for another session's tab); the user-tab exception covers exactly the runner's own page
   (found by its per-run URL, claimed, read, closed); the Chrome-restart runner waits for the host's pid to change and
   its socket to answer, else BLOCKED with cleanup; `serve-with-store.mjs` passes the route to `chromeFacts()`.
+
+- Decision (H5, 2026-10-07): `npm run extension:pack` always writes the Store zip (manifest re-serialized without `key`)
+  and adds the CRX and `update.xml` when `CUA_EXTENSION_KEY` is set, packing the CRX first so a refused key writes
+  nothing. Cua-route readiness and bind reasons name cua's extension and its popup (codes and shapes unchanged; vendor
+  text byte-identical). Plugin 0.4.0 (a new default route). Chromium uses the force-list update URL only for the first
+  install, so VMs installed from the hosted CRX keep updating from the relay after the template flips to `store`
+  (moving one in place is untested; noted on #79). Board: #78 Store listing (owner), #79 vendor-route removal blocked
+  by #78.
 
 ## Outcomes & Retrospective
 

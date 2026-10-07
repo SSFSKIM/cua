@@ -63,9 +63,10 @@ relay/deploy/update.sh --ext dist               # publish the self-hosted cua ex
 ```
 
 `--ext` takes what `CUA_EXTENSION_KEY=<owner's key> node scripts/extension-pack.mjs` wrote (`update.xml` and the CRX it
-names): it copies the CRX, then `update.xml`, to `/var/lib/cua-relay/ext`, installs this checkout's `Caddyfile` (its
-`/ext/` file server) under the server's current site address when that differs, and reloads Caddy after `caddy
-validate`. Linux VMs force-install the extension from `https://<host>/ext/update.xml` (`deploy/cloud-vm/`).
+names): it copies the CRX, then `update.xml`, to `/var/lib/cua-relay/ext`, and replaces the server's live
+`/etc/caddy/Caddyfile` with this checkout's `Caddyfile` (its `/ext/` file server) when they differ: only the site line
+is kept from the live file (so a moved domain survives), any other hand edit there is overwritten. It prints the diff
+first, installs only after `caddy validate` accepts the new file, and reloads Caddy. Linux VMs force-install the extension from `https://<host>/ext/update.xml` (`deploy/cloud-vm/`).
 
 `--devices` replaces the server's whole table, so keep every device's line in the file you send (the current one:
 `ssh root@<ip> cat /etc/cua-relay/devices.json`). To rebuild (or after a failed cloud-init), `hcloud server delete

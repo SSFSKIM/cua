@@ -4,7 +4,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 import {CUA_EXTENSION_ID} from '../src/chrome/extension.mjs';
@@ -77,4 +79,31 @@ test('the deploy scripts parse', () => {
     const run = spawnSync('bash', ['-n', `${dir}${script}`], {encoding: 'utf8'});
     assert.equal(run.status, 0, `${script}: ${run.stderr}`);
   }
+});
+
+test('create-hetzner.sh copies an upload whose local path has a space to the name the VM watches', t => {
+  const scratch = mkdtempSync(join(tmpdir(), 'cua hetzner '));
+  t.after(() => rmSync(scratch, {recursive: true, force: true}));
+  const bin = join(scratch, 'bin'), remote = join(scratch, 'remote'), log = join(scratch, 'calls.log');
+  mkdirSync(bin); mkdirSync(remote);
+  // A git bundle holding the ref, at a path with a space.
+  const repo = join(scratch, 'repo');
+  const git = (...args) => { const run = spawnSync('git', args, {cwd: repo, encoding: 'utf8'}); assert.equal(run.status, 0, run.stderr); };
+  mkdirSync(repo);
+  git('init', '-q', '-b', 'my-branch'); git('-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '--allow-empty', '-m', 'x');
+  const bundle = join(scratch, 'my bundle.bundle');
+  git('bundle', 'create', '-q', bundle, 'my-branch');
+  // Stand-ins: hcloud knows no server of that name and creates it; ssh succeeds; scp copies into remote/.
+  const stub = (name, body) => { writeFileSync(join(bin, name), `#!/usr/bin/env bash\nprintf '${name} %s\\n' "$*" >>'${log}'\n${body}\n`); chmodSync(join(bin, name), 0o755); };
+  stub('hcloud', 'case "$*" in *"server describe"*-o*) echo 1;; *"server describe"*) exit 1;; *"server ip"*) echo 203.0.113.9;; esac; exit 0');
+  stub('ssh', 'exit 0');
+  stub('ssh-keygen', 'exit 0');
+  stub('scp', `cp "\${@: -2:1}" '${remote}/'"$(basename "\${@: -1}")"`);
+  const run = spawnSync('bash', [`${dir}create-hetzner.sh`, '--name', 'cua-test', '--ref', 'my-branch', '--repo', bundle],
+    {encoding: 'utf8', env: {...process.env, PATH: `${bin}:${process.env.PATH}`, HCLOUD_CONTEXT: 'cua'}});
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(readFileSync(join(remote, 'cua.bundle.part')), readFileSync(bundle));
+  const calls = readFileSync(log, 'utf8');
+  assert.match(calls, /mv \/var\/cache\/cua\/cua\.bundle\.part \/var\/cache\/cua\/cua\.bundle/);
+  assert.doesNotMatch(calls, /\.failed/);
 });

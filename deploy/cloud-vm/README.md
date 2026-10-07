@@ -28,9 +28,12 @@ deploy/cloud-vm/create-hetzner.sh --name cua-vm --ref my-branch --repo /tmp/cua.
 
 Other flags: `--type`, `--location` (Hetzner sometimes has no capacity for a type in a location: pick another, such as
 `fsn1`), `--ssh-key` (default `macbook`), `--user` (default `cua`), `--ref` (default `main`), `--repo` (default
-`https://github.com/SSFSKIM/cua`; a local git bundle holding `--ref` is copied to the VM's `/var/cache/cua/cua.bundle`
-while cloud-init runs, and the VM waits for it), `--extension hosted|store` (default `hosted`) and `--extension-url`
-(the hosted update manifest, default `https://178-104-102-73.sslip.io/ext/update.xml`). The hcloud context is
+`https://github.com/SSFSKIM/cua`; a local git bundle holding `--ref` as a branch, `git bundle create <file> <branch>`,
+is copied to the VM's `/var/cache/cua/cua.bundle` while cloud-init runs, and the VM waits for it; a tag or a commit id
+is refused), `--extension hosted|store` (default `hosted`) and `--extension-url` (the hosted update manifest, default
+`https://178-104-102-73.sslip.io/ext/update.xml`). `--extension-url` only says where Chrome first installs from: the
+CRX carries its own `update_url`, `<--base-url>update.xml` from `scripts/extension-pack.mjs`, so a VM pointed at another
+URL installs from there but takes later versions from the packer's URL. Pack with the same base URL you pass here. The hcloud context is
 `$HCLOUD_CONTEXT`, `cua` when unset; `devbox` is refused. The server gets the firewall `cua-vm` (SSH in only, created
 once and shared). The script refuses a name that already exists, and prints the delete command when it is done. A
 server costs money for every hour it exists: `hcloud server delete <name>`.

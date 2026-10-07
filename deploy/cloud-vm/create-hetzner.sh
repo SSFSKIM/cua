@@ -40,14 +40,14 @@ here="$(cd "$(dirname "$0")" && pwd)"
 t0=$SECONDS
 elapsed() { printf '%dm%02ds' "$(((SECONDS - t0) / 60))" "$(((SECONDS - t0) % 60))"; }
 
-# Files copied to the VM's /var/cache/cua while cloud-init runs: "<local path> <name there>" each.
-uploads=()
+# Files copied to the VM's /var/cache/cua while cloud-init runs: upload_src[i] (a local path) to upload_name[i].
+upload_src=() upload_name=()
 # A local git bundle must hold the ref the VM checks out.
 if [[ -n "$repo" && "$repo" != https://* ]]; then
   ref=main
   for ((i = 0; i < ${#render_args[@]}; i += 2)); do [[ "${render_args[i]}" == --ref ]] && ref="${render_args[i + 1]}"; done
   git bundle list-heads "$repo" | grep -q " refs/heads/$ref\$" || { echo "$repo holds no branch $ref (git bundle create <file> $ref)" >&2; exit 1; }
-  uploads+=("$repo cua.bundle")
+  upload_src+=("$repo") upload_name+=(cua.bundle)
 fi
 # A local deb must be the pinned one for this architecture: check it here rather than after a 10-minute upload.
 if [[ -n "$deb" && "$deb" != pin && "$deb" != https://* ]]; then
@@ -59,7 +59,7 @@ if [[ -n "$deb" && "$deb" != pin && "$deb" != https://* ]]; then
   [[ "$file" == *_"$deb_arch".deb ]] || { echo "the $arch pin does not name an $deb_arch deb ($file)" >&2; exit 1; }
   echo "checking $deb against the $arch pin ($file)"
   [[ "$(shasum -a 256 "$deb" | cut -d' ' -f1)" == "$want" ]] || { echo "$deb does not match the pin's sha256 ($want)" >&2; exit 1; }
-  uploads+=("$deb upload.deb")
+  upload_src+=("$deb") upload_name+=(upload.deb)
 fi
 
 if hcloud server describe "$name" >/dev/null 2>&1; then
@@ -104,9 +104,9 @@ echo "ssh up ($(elapsed))"
 # The uploads run beside cloud-init, in order (the bundle first: the checkout comes before the deb), each to a fixed
 # name the VM watches (/var/cache/cua/cua.bundle, upload.deb); the VM checks the deb against its own checkout's pin. A
 # failed copy leaves <name>.failed there, which ends the VM's wait at once.
-if ((${#uploads[@]})); then
-  ( for upload in "${uploads[@]}"; do
-      read -r src there <<<"$upload"
+if ((${#upload_src[@]})); then
+  ( for i in "${!upload_src[@]}"; do
+      src="${upload_src[i]}" there="${upload_name[i]}"
       echo "copying $src to /var/cache/cua/$there in the background"
       { ssh "${ssh_opts[@]}" "root@$ip" 'mkdir -p /var/cache/cua' \
           && scp "${ssh_opts[@]}" -q "$src" "root@$ip:/var/cache/cua/$there.part" \

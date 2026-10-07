@@ -537,7 +537,7 @@ const describeDirectory = b => b.chromeProfile === undefined ? ''
   : `  Chrome profile ${quoted(b.chromeProfile.directory)}${b.chromeProfile.name === null ? '' : ` ${quoted(b.chromeProfile.name)}`} (${b.chromeProfile.thisProfile ? 'this profile\'s directory' : 'another profile\'s directory'})`;
 const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId}  ${b.tabCount ?? '?'} tab(s)${describeDirectory(b)}  ${describeLabel(b)}${b.likelyMatch ? '  <- likely match' : ''}`;
 const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
-const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. An extension disable/enable or reinstall mints a new id; pick this profile's new one from the live backends.`;
+const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. A reinstall of the extension (for the ChatGPT extension, also a disable/enable) mints a new id; pick this profile's new one from the live backends.`;
 
 async function pickBackend(list, reason, nonChromeExcluded, {staleBinding, route} = {}) {
   if (staleBinding) process.stderr.write(`${describeStale(staleBinding)}\n`);

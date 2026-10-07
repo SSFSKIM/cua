@@ -136,6 +136,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       // The extension closing its end: no onDisconnect on this side; the host sees its stdin end.
       disconnect() { if (!entry.connected) return; entry.connected = false; entry.child?.stdin.end(); entry.closeFake?.(); },
     };
+    entry.port = port;
     if (name !== CUA_HOST_NAME || !hostInstalled) {
       setImmediate(() => drop('Specified native messaging host not found.'));
       return port;
@@ -319,6 +320,13 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       context.globalThis = context;
       vm.runInContext(source, context, {filename: 'background.js'});
       return context;
+    },
+    // The worker dies (Chrome stopped it) and a new one loads: the dead worker's ports close from its side (no
+    // onDisconnect runs in it, so it detaches nothing) and their hosts see the port end; Chrome keeps the debugger
+    // attachments, which belong to the extension, not the worker.
+    restartWorker() {
+      for (const entry of ports) if (entry.connected) entry.port.disconnect();
+      return stub.load();
     },
     // Fires every pending worker timer (optionally only those of `ms`), returning the delays fired.
     fireTimers(ms) {

@@ -286,12 +286,14 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (Object.keys(fields).length) tell('tabs.updated', {tabId, ...fields});
 });
 
-// The popup's question: is the host connected, and if not, why.
+// The popup's question: is the host connected, and if not, why. A popup that just opened (`retry`) while a lasting
+// refusal backs off also clears the backoff and tries once now: the user who updated cua should not wait out an hour.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'cua.status' || sender?.id !== chrome.runtime.id) return false;
-  Promise.all([loadInstanceId().catch(() => null), backedOff().catch(() => false)]).then(([instanceId]) => sendResponse({
-    hostName: HOST_NAME, connected: port !== null && refusal === null, refusal, error: port ? null : lastError, instanceId, debuggees: held.size,
-  }));
+  Promise.all([loadInstanceId().catch(() => null), backedOff().catch(() => false)]).then(([instanceId]) => {
+    sendResponse({hostName: HOST_NAME, connected: port !== null && refusal === null, refusal, error: port ? null : lastError, instanceId, debuggees: held.size});
+    if (message.retry === true && !port && !connecting && LASTING_REFUSALS.has(refusal?.code)) fresh();
+  });
   return true;
 });
 

@@ -10,15 +10,17 @@ export function statusLines(status) {
   return {host, instance: `instance: ${status.instanceId ? status.instanceId.slice(0, 8) : '-'}`, debuggees: `debuggees: ${status.debuggees}`};
 }
 
-export async function render(document, chrome) {
-  const status = await chrome.runtime.sendMessage({type: 'cua.status'}).catch(() => null);
+// `retry`: the popup just opened, so a host that refused for a lasting reason is tried once more now (the user may
+// have updated cua since); re-renders on a change never retry, or a refusing host would be spawned in a loop.
+export async function render(document, chrome, {retry = false} = {}) {
+  const status = await chrome.runtime.sendMessage({type: 'cua.status', ...(retry ? {retry: true} : {})}).catch(() => null);
   for (const [id, text] of Object.entries(statusLines(status))) document.getElementById(id).textContent = text;
 }
 
 // Renders now and again whenever the worker reports a change, so an open popup never shows a stale "connected".
 export function start(document, chrome) {
   chrome.runtime.onMessage.addListener(message => { if (message?.type === 'cua.changed') render(document, chrome); });
-  return render(document, chrome);
+  return render(document, chrome, {retry: true});
 }
 
 if (typeof document !== 'undefined') start(document, chrome);

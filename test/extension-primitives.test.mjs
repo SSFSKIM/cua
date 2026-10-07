@@ -49,14 +49,16 @@ test('debugger.attach adopts what Chrome says this extension already holds (alre
   await assert.rejects(host.request('debugger.sendCommand', {debuggee: {targetId: frame}, method: 'Runtime.enable'}), {message: `Debugger is not attached to the target with id: ${frame}.`});
 });
 
-test('after a worker restart Chrome still holds its attachments: an attach adopts them, and a port drop then detaches them', async () => {
+test('after the worker dies Chrome still holds its attachments: the new worker\'s attach adopts them, and a port drop then detaches them', async () => {
   const {stub, host} = await start();
   const tab = stub.addTab();
   const frame = stub.addFrame(tab.id);
   await host.request('debugger.attach', {tabId: tab.id});
   await host.request('debugger.attach', {targetId: frame});
-  // The worker restarts with the port up (Chrome keeps the attachments, the worker's memory is gone).
-  stub.load();
+  // The worker dies: its port closes and that host goes; the attachments stay with Chrome, the worker's memory is gone.
+  stub.restartWorker();
+  assert.equal(host.connected, false, 'the dead worker\'s port closed');
+  assert.equal(stub.state.attached.size, 2, 'Chrome kept the attachments (the dead worker ran no cleanup)');
   await waitFor(() => stub.hostPeers[1]?.hello, 'the new worker\'s hello');
   const again = stub.hostPeers[1];
   assert.deepEqual(await again.request('held', {}), []);
@@ -197,6 +199,39 @@ test('after a lasting refusal the alarm retries with backoff doubling to an hour
   await refuse(stub, n++);
   stub.events.installed.dispatch({reason: 'update'});
   await waitFor(() => stub.hostPeers.length === n + 1, 'the update attempt');
+});
+
+test('opening the popup while a lasting refusal backs off clears the backoff and tries once at once; only then', async () => {
+  const stub = createChromeStub({nativeHost: 'fake'});
+  stub.load();
+  await refuse(stub, 0);
+  let n = 1;
+  for (const minutes of [1, 2, 4, 8, 16, 32, 60]) { await alarmAfter(stub, minutes); await refuse(stub, n++); }
+  // At the hour cap; the user updated cua and opens the popup.
+  const elements = Object.fromEntries(['host', 'instance', 'debuggees'].map(id => [id, {textContent: ''}]));
+  const {start: startPopup} = await import('../extension/popup.js');
+  await startPopup({getElementById: id => elements[id]}, stub.chrome);
+  await waitFor(() => stub.hostPeers.length === n + 1 && stub.hostPeers[n].hello, 'the popup\'s attempt');
+  // Refused again: the popup re-renders on the change, and that spawns nothing more.
+  await refuse(stub, n++);
+  await waitFor(() => elements.host.textContent.includes('protocol_mismatch'), 'the popup showing the refusal');
+  await new Promise(r => setTimeout(r, 30));
+  assert.equal(stub.hostPeers.length, n, 'one attempt per popup open');
+  // The backoff started over: the next alarm attempt is a minute away.
+  await alarmAfter(stub, 1);
+  await refuse(stub, n++);
+
+  // Connected, or disconnected for another reason (the 5 s retry covers it): opening the popup spawns nothing.
+  stub.events.startup.dispatch();
+  await waitFor(() => stub.hostPeers[n]?.hello, 'a serving host');
+  await startPopup({getElementById: id => elements[id]}, stub.chrome);
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(stub.hostPeers.length, n + 1);
+  stub.hostPeers[n].exit();
+  await waitFor(() => stub.pendingTimers().length === 1, 'the 5 s retry');
+  await startPopup({getElementById: id => elements[id]}, stub.chrome);
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(stub.hostPeers.length, n + 1);
 });
 
 test('hostRefused is kept for the popup; a transient refusal (already_served) retries in 5 s, and a later serving port clears it', async () => {

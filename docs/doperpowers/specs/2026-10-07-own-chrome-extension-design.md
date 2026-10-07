@@ -202,8 +202,9 @@ which cua creates immediately after `end_task` with `turn_id = taskId`): unmarke
 claimed tabs and `deliverable` tabs are released open and leave the group; `handoff` tabs stay owned with the debugger
 detached and are listed by `getTabs` on the session's next turn. A client disconnect runs `turnEnded` for every turn of
 its sessions. A detach initiated by the user (reason `canceled_by_user`) is forwarded as `onCDPDetach` and never
-re-attached. `Another debugger is already attached` from Chrome is success when this extension already holds the
-debuggee (the extension reports its held set) and a refusal otherwise.
+re-attached. `Another debugger is already attached` from Chrome is success: Chromium raises it only when this same
+extension already holds the debuggee (DevTools and other extensions attach alongside), so the extension adopts the
+debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor extension does.
 
 **Socket placement and discovery.** Sockets live in `$CUA_HOME/chrome/b/` (0700; the short name keeps the path under
 the macOS limit for any username up to 37 characters at the default home; `register` refuses a home whose worst-case
@@ -628,6 +629,18 @@ No new npm dependencies.
   the path keeps its files; the log is renamed to `<name>.log` only after listening. `claimUserTab` refuses `chrome://`,
   `chrome-extension://`, `chrome-untrusted://` and `devtools://` tabs (`Chrome internal tab N cannot be claimed`);
   `getUserTabs` lists them, as the vendor does. Deferred: per-tab serialization of attach/detach (bounded by turn end).
+
+- Revision (H3a review, 2026-10-07): the "refusal otherwise" half of the `Another debugger is already attached` rule
+  rested on a Chrome behaviour that does not exist. Chromium's `DebuggerAttachFunction::Run` returns
+  `kAlreadyAttachedError` only from `FindClientHost()`, which matches the same agent host **and the same extension id**;
+  DevTools and other extensions attach alongside. The real case is an attachment Chrome kept for this extension after
+  its worker lost memory of it, so the extension adopts it (vendor `Os`/`Zf` swallow the error via `Fs` and add to the
+  held set). Design text revised; the stub and the fake extension stop modelling a foreign refusal.
+- Decision (H3a, 2026-10-07): after a lasting `hostRefused` (`protocol_mismatch`, `hello_invalid`) the extension skips the
+  5 s retry and retries on the minute alarm with backoff (each attempt spawns a host that writes a log); the worker keeps
+  an in-memory (window, session) → group map, re-validated on use; `minimum_chrome_version` 125 (child-session
+  `sendCommand` by `sessionId`); `windows.create` passes `type:'normal'`; `background.js` is a classic worker (tests load
+  it with `vm`), the popup an ES module; icons are placeholders.
 
 ## Outcomes & Retrospective
 

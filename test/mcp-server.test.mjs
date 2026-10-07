@@ -88,7 +88,7 @@ test('secrets_list over the connection\'s store omits reserved CUA_DEVICE_ keys 
   t.after(() => rmSync(home, {recursive: true, force: true}));
   const dir = join(home, '.config', 'claude-secrets');
   mkdirSync(dir, {recursive: true, mode: 0o700});
-  for (const key of ['WORK_PASSWORD', 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ', 'CUA_DEVICE_', 'CUA_DEVICES', 'A_CUA_DEVICE_x'])
+  for (const key of ['WORK_PASSWORD', 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ', 'CUA_DEVICE_', 'Cua_Device_jMTkLnzn_rsbzoZAHJ8EbQ', 'CUA_DEVICES', 'A_CUA_DEVICE_x'])
     writeFileSync(join(dir, key), 'sentinel-value', {mode: 0o600});
   const h = harness({server: {secrets: connectionSecrets({enabled: true, env: {HOME: home}})}});
   await initialized(h);

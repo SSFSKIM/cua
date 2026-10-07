@@ -279,3 +279,17 @@ test('a reference to a reserved CUA_DEVICE_ key is refused secret_reserved befor
     assert.deepEqual(reads, []);
   }
 });
+
+test('a reserved key in lower or mixed case is refused too: the store\'s file system may be case-insensitive', async () => {
+  for (const device of ['cua_device_nuadM_MUKSbSN4L59EffLQ', 'Cua_Device_nuadM_MUKSbSN4L59EffLQ']) {
+    const reads = [];
+    const {service, received} = harness({read: async label => { reads.push(label); return 'sentinel-Device-cred'; }});
+    for (const request of [fill(REF(device)), axPaste(REF(device)), axType(REF(device)), axSet(REF(device))]) {
+      const error = await rejection(service.handleRpc(request));
+      assert.equal(error.code, 'secret_reserved', `${device} ${request.params.action?.kind ?? request.params.type}`);
+      assertValueFree(error, 'sentinel-Device-cred');
+    }
+    assert.deepEqual(received, []);
+    assert.deepEqual(reads, []);
+  }
+});

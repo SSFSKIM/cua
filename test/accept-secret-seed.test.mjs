@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, statSync} from 'node:fs';
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
-import {createStoreHome, EXIT_MARKER, generatedKey, isAccountHome, ptyCommand, removeStoreHome, seedSecret} from '../scripts/accept/secret-seed.mjs';
+import {createStoreHome, generatedKey, isAccountHome, ptyCommand, removeStoreHome, seedSecret} from '../scripts/accept/secret-seed.mjs';
 import {isLabel} from '../src/secrets/label.mjs';
 import {fileStore, storeDir} from '../src/secrets/store.mjs';
 
 const hasPty = ['darwin', 'linux'].includes(process.platform) && existsSync('/bin/bash')
-  && (process.platform === 'darwin' ? existsSync('/usr/bin/script') : ['/usr/bin/script', '/bin/script'].some(existsSync));
+  && (process.platform === 'darwin' ? existsSync('/usr/bin/script') : ['/usr/bin/python3', '/bin/python3'].some(existsSync));
 
 test('generated keys follow the store grammar and differ', () => {
   const [a, b] = [generatedKey(), generatedKey('CUA_PROBE')];
@@ -19,11 +19,13 @@ test('generated keys follow the store grammar and differ', () => {
   assert.notEqual(generatedKey(), a);
 });
 
-test('the pty command keeps the value out of argv and quotes the Linux command line', () => {
+test('the pty command keeps the value out of argv and passes the command as arguments', () => {
   const mac = ptyCommand(['/n/node', '/c/cua.mjs', 'secrets', 'set', 'KEY'], 'darwin');
   assert.deepEqual(mac.args.slice(2), ['/usr/bin/script', '-q', '/dev/null', '/n/node', '/c/cua.mjs', 'secrets', 'set', 'KEY']);
   const linux = ptyCommand(["/o'dd/node", '/c/cua.mjs', 'secrets', 'set', 'KEY'], 'linux');
-  assert.deepEqual(linux.args.slice(2), ['script', '-q', '-e', '-c', `'/o'\\''dd/node' '/c/cua.mjs' 'secrets' 'set' 'KEY'; printf '\\n${EXIT_MARKER}%s\\n' "$?"`, '/dev/null']);
+  assert.deepEqual(linux.args.slice(2, 4), ['python3', '-c']);
+  assert.match(linux.args[4], /pty\.spawn\(sys\.argv\[1:\]\)/);
+  assert.deepEqual(linux.args.slice(5), ["/o'dd/node", '/c/cua.mjs', 'secrets', 'set', 'KEY'], 'argv passed as arguments, never through a shell');
   assert.equal(linux.command, '/bin/bash');
 });
 
@@ -37,7 +39,7 @@ test('the account home is never a store home', async () => {
   assert.throws(() => seedSecret({home: '/tmp/x', key: 'K', value: 'a\nb'}), /control characters/);
 });
 
-test('cua secrets set at a pty stores exactly the value, 0600 in a 0700 store, without echoing it', {skip: !hasPty && 'needs bash and script'}, async () => {
+test('cua secrets set at a pty stores exactly the value, 0600 in a 0700 store, without echoing it', {skip: !hasPty && 'needs bash and a pty (script on macOS, python3 on Linux)'}, async () => {
   const home = createStoreHome();
   assert.equal(isAccountHome(home), false);
   const key = generatedKey('CUA_TEST');
@@ -55,7 +57,7 @@ test('cua secrets set at a pty stores exactly the value, 0600 in a 0700 store, w
   }
 });
 
-test('a set that fails before any prompt ends without waiting for the timeout', {skip: !hasPty && 'needs bash and script'}, async () => {
+test('a set that fails before any prompt ends without waiting for the timeout', {skip: !hasPty && 'needs bash and a pty (script on macOS, python3 on Linux)'}, async () => {
   const home = createStoreHome();
   try {
     const started = Date.now();

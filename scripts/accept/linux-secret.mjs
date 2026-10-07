@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 // Live Linux secret fixture (issue #66, acceptance 4): over `cua serve` on stdio it binds one fixture window by X11
 // window id, enters `{{secret:<KEY>}}` with typeText (the cua API's paste sends the same `type_text {window, text}`),
-// and checks what the target shows without the value ever crossing the MCP stream: the expected value's SHA-256 and
-// length go into the readback cell, which hashes every same-length run of the window's accessibility text and returns
-// only whether one matched. It then scans the whole MCP transcript and the server's stderr for the value (raw and its
+// and checks what the target received without the value ever crossing the MCP stream. gedit: the expected value's
+// SHA-256 and length go into the readback cell, which hashes every same-length run of the window's accessibility text
+// and returns only whether one matched. zenity (an entry dialog, whose accessibility text does not show the entry's
+// value): the cell clicks OK (by its element index; Return was not delivered to the dialog), and zenity prints the
+// entry to its stdout, which this process compares. It then scans the whole MCP transcript and the server's stderr for the value (raw and its
 // base64 forms), ends the task and checks that the connection left nothing under $CUA_HOME/run.
 // The key must already be stored in this process's $HOME store (`cua secrets set <KEY>`); its value is read here only
 // to hash it and to scan for it, and is never printed. GUI footprint: one fixture process on a file (gedit) or an entry
 // dialog (zenity) it starts, ended in `finally`, and a directory under /tmp it removes. On arm64, gedit's GTK3 text
 // view crashed under the helper's typeText in Phase F; the fixture records whether the window survived rather than
-// assuming either outcome. Run it in the X session's environment (DISPLAY, XAUTHORITY):
+// assuming either outcome (whether the bound window is still listed; a crashed process can linger as a zombie). Run it in the X session's environment (DISPLAY, XAUTHORITY):
 //   node scripts/accept/linux-secret.mjs --key CUA_TEST_SECRET [--app gedit|zenity]   JSON report; exit 0 when all pass
 import {spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
@@ -49,7 +51,10 @@ try {
     writeFileSync(file, '');
     fixture = spawn(tool, ['--standalone', file], {detached: true, stdio: 'ignore'});
   } else {
-    fixture = spawn(tool, ['--entry', '--title', title, '--text', 'cua secret fixture'], {detached: true, stdio: 'ignore'});
+    fixture = spawn(tool, ['--entry', '--title', title, '--text', 'cua secret fixture'], {detached: true, stdio: ['ignore', 'pipe', 'ignore']});
+    fixture.output = '';
+    fixture.stdout.on('data', data => { fixture.output += data; });
+    fixture.exited = new Promise(resolve => fixture.once('exit', code => resolve(code)));
   }
   const runBefore = runEntries();
   session = openSession({args: [CLI, 'serve'], env: process.env, clientName: 'cua-linux-secret'});
@@ -68,10 +73,21 @@ try {
   const leakedAtType = textLeaks(session.transcript.join('\n') + session.stderr, prints);
   report.typeResult = {isError: !!typed.result?.isError || !!typed.error, timedOut: !!typed.timedOut, text: typedText.split(value).join('<value>').slice(0, 600)};
   step('typeText({{secret:KEY}}) through the trusted wrapper', !typed.result?.isError && !typed.timedOut && /"typed":true/.test(typedText) && !leakedAtType, report.typeResult);
-  const survived = alive(fixture.pid);
-  step('the fixture window survived the input', survived, {pid: fixture.pid, alive: survived});
+  await new Promise(r => setTimeout(r, 1500));
+  const listed = await session.js(`nodeRepl.write(JSON.stringify({windowPresent: (await cua.listWindows({emit: false})).some(w => w.id === ${JSON.parse(bound).windowId})}));`, 60_000);
+  const survived = /"windowPresent":true/.test(resultText(listed));
+  step('the fixture window survived the input', survived, {windowListed: survived});
 
-  if (survived) {
+  if (survived && options.app === 'zenity') {
+    const pressed = await session.js(`const __tree = await fixtureApp.getAXState({emit: false, disableDiffing: true});
+      const __ok = /^\\s*(\\d+) button[^\\n]*\\bOK$/m.exec(__tree)?.[1];
+      if (!__ok) throw new Error('no OK button in the dialog');
+      await fixtureApp.click(__ok); nodeRepl.write('{"pressed":true}');`, 60_000);
+    const code = await Promise.race([fixture.exited, new Promise(r => setTimeout(() => r('timeout'), 10_000))]);
+    const got = fixture.output.endsWith('\n') ? fixture.output.slice(0, -1) : fixture.output;
+    step('the app received exactly the stored value (zenity printed its entry on OK; compared outside the MCP stream)', /"pressed":true/.test(resultText(pressed)) && code === 0 && got === value,
+      {exit: code, printedChars: [...got].length, expectedChars: [...value].length, exact: got === value});
+  } else if (survived) {
     await new Promise(r => setTimeout(r, 1000));
     const observe = await session.js(`const __tree = await fixtureApp.getAXState({emit: false, disableDiffing: true});
       const {createHash} = await import('node:crypto');

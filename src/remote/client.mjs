@@ -15,6 +15,10 @@
 //   for a whole budget: a GET naming a stream the device has forgotten becomes its ordinary standing stream, which
 //   neither replays nor answers, and must not be retried forever. A POST that fails before any event id is never
 //   resent (the device may have received it; a js cell must not run twice).
+// - Bounds: the wait for a POST's response head is bounded by `headTimeoutMs` (30 s: the initialize answer comes once
+//   the device has spawned its runtime; any other request's head and priming event come at once), past which the POST
+//   reads device_offline and, a request, is never resent; an answered stream then reads as long as it lives. A
+//   cancellation goes to the device only once its request's head has arrived, so it never overtakes the request.
 // - Close: DELETE, bounded at 2 s; a failure is logged, never thrown (the device's idle rule frees the session).
 // Nothing logged or returned carries the credential or any request header value.
 
@@ -99,8 +103,11 @@ const sleep = (ms, signal) => new Promise(resolve => {
   signal.addEventListener('abort', done, {once: true});
 });
 
+// `signal` cancels the open (DeviceError `cancelled`; a session already granted is deleted); it has no effect once open.
 export async function openDeviceSession({endpoint, credential, initializeParams, fetch = globalThis.fetch,
-  onMessage = () => {}, diagnostics = () => {}, backoff = {firstMs: 1000, maxMs: 15_000, budgetMs: 90_000}}) {
+  onMessage = () => {}, diagnostics = () => {}, backoff = {firstMs: 1000, maxMs: 15_000, budgetMs: 90_000},
+  headTimeoutMs = 30_000, signal}) {
+  if (signal?.aborted) throw new DeviceError('cancelled', 'the open was cancelled');
   const {firstMs, maxMs, budgetMs} = backoff;
   const lifetime = new AbortController();   // every fetch of the session; aborted when it ends
   const pending = new Map();               // request id -> its entry
@@ -118,8 +125,21 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
     ...(protocolVersion ? {'mcp-protocol-version': protocolVersion} : {}),
     ...extra,
   });
-  const post = (message, signal = lifetime.signal) => fetch(endpoint, {method: 'POST', signal, body: JSON.stringify(message),
+  const post = (message, signal) => fetch(endpoint, {method: 'POST', signal, body: JSON.stringify(message),
     headers: headers('application/json, text/event-stream', {'content-type': 'application/json'})});
+
+  // A POST whose wait for the response head is bounded by `headTimeoutMs` (a DeviceError device_offline past it) and
+  // stopped by the session's end or `extra`; once the head is in, its body reads for as long as the session lives.
+  async function postWithin(message, extra) {
+    const head = new AbortController();
+    const timer = setTimeout(() => head.abort(), headTimeoutMs);
+    try {
+      return await post(message, AbortSignal.any([lifetime.signal, head.signal, ...(extra ? [extra] : [])]));
+    } catch (error) {
+      if (head.signal.aborted) throw offline(`no answer within ${headTimeoutMs / 1000} s`);
+      throw error;
+    } finally { clearTimeout(timer); }
+  }
 
   function finish(code) {
     if (end) return;
@@ -177,11 +197,12 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
   }
 
   // Posts a notification or a response, which the device acknowledges with 202.
-  async function deliver(message) {
+  async function deliver(message, extra) {
     if (end) throw ended();
     let response;
-    try { response = await post(message); } catch (error) {
-      throw end ? ended() : offline(why(error));
+    try { response = await postWithin(message, extra); } catch (error) {
+      if (end) throw ended();
+      throw error instanceof DeviceError ? error : offline(why(error));
     }
     if (response.ok) {
       if (response.status === 202) return void await response.body?.cancel().catch(() => {});
@@ -197,8 +218,9 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
 
   const initId = ++nextId;
   let response;
-  try { response = await post({jsonrpc: '2.0', id: initId, method: 'initialize', params: initializeParams}); } catch (error) {
-    throw offline(why(error));
+  try { response = await postWithin({jsonrpc: '2.0', id: initId, method: 'initialize', params: initializeParams}, signal); } catch (error) {
+    if (signal?.aborted) throw new DeviceError('cancelled', 'the open was cancelled');
+    throw error instanceof DeviceError ? error : offline(why(error));
   }
   if (!response.ok) throw await refusal(response, {onSession: false});
   sessionId = response.headers.get('mcp-session-id');
@@ -212,11 +234,12 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
     if (!sessionId) throw protocol('no Mcp-Session-Id');
     if (typeof initialize.result?.protocolVersion !== 'string') throw protocol('no protocol version in the initialize result');
     protocolVersion = initialize.result.protocolVersion;
-    await deliver({jsonrpc: '2.0', method: 'notifications/initialized'});
+    await deliver({jsonrpc: '2.0', method: 'notifications/initialized'}, signal);
+    if (signal?.aborted) throw new DeviceError('cancelled', 'the open was cancelled');
   } catch (error) {
     if (sessionId) await remove();
     finish('closed');
-    throw error;
+    throw signal?.aborted ? new DeviceError('cancelled', 'the open was cancelled') : error;
   }
 
   // ---- the standing GET ----
@@ -308,9 +331,12 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
 
   async function exchange(entry, message) {
     let answer;
-    try { answer = await post(message); } catch (error) {
-      throw end ? ended() : offline(`the request could not be sent (${why(error)}); it is not resent`);
+    try { answer = await postWithin(message); } catch (error) {
+      entry.headed(false);
+      if (end) throw ended();
+      throw offline(`the request could not be sent or got no answer (${error instanceof DeviceError ? error.message : why(error)}); it is not resent`);
     }
+    entry.headed(answer.ok);
     if (!answer.ok) {
       const error = await refusal(answer, {onSession: true});
       if (error.code === 'device_session_ended') finish(error.code);
@@ -329,8 +355,12 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
   function cancel(entry, reason) {
     if (entry.settled || entry.cancelled) return;
     entry.cancelled = true;
-    deliver({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: entry.id, ...(typeof reason === 'string' ? {reason} : {})}})
-      .catch(error => diagnostics(`request ${entry.id}: its cancellation could not be delivered (${error.code})`));
+    // Only once the device has the request (its POST answered), so the cancellation cannot overtake it.
+    entry.head.then(received => {
+      if (!received || end) return;
+      deliver({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: entry.id, ...(typeof reason === 'string' ? {reason} : {})}})
+        .catch(error => diagnostics(`request ${entry.id}: its cancellation could not be delivered (${error.code})`));
+    });
     // A request whose stream is already lost will not be answered on it: stop resuming.
     if (entry.resuming) {
       entry.reject(new DeviceError('cancelled', 'the request was cancelled before its answer arrived'));
@@ -340,8 +370,11 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
 
   async function request(method, params, {signal} = {}) {
     if (end) throw ended();
+    // Cancelled before it was sent (while the session was opening, typically): never sent, so nothing to cancel.
+    if (signal?.aborted) throw new DeviceError('cancelled', 'the request was cancelled before it was sent');
     const id = ++nextId;
     const entry = {id, settled: false, cancelled: false, resuming: false};
+    entry.head = new Promise(resolve => { entry.headed = resolve; });
     const answer = new Promise((resolve, reject) => {
       entry.resolve = msg => { if (!entry.settled) { entry.settled = true; resolve(replyOf(msg)); } };
       entry.reject = error => { if (!entry.settled) { entry.settled = true; reject(error); } };
@@ -364,7 +397,9 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
       await answer.body?.cancel().catch(() => {});
       if (!answer.ok && answer.status !== 404) diagnostics(`DELETE of the device session answered ${answer.status}; the device's idle rule will free it`);
     } catch (error) {
-      diagnostics(`DELETE of the device session failed (${why(error)}); the device's idle rule will free it`);
+      diagnostics(error?.name === 'TimeoutError'
+        ? `DELETE of the device session got no answer within ${CLOSE_MS / 1000} s: whether the device ended it is unknown (if not, its idle rule frees it)`
+        : `DELETE of the device session failed (${why(error)}); the device's idle rule will free it`);
     }
   }
 

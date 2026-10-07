@@ -42,12 +42,17 @@ async function device(t, options = {}) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     const body = Buffer.concat(chunks);
-    const entry = {method: req.method, headers: req.headers, message: body.length ? JSON.parse(body) : undefined, res};
+    const entry = {method: req.method, headers: req.headers, message: body.length ? JSON.parse(body) : undefined, res, body, url: req.url, at: Date.now()};
     requests.push(entry);
-    if (ctx.front?.(entry)) return;
+    if (!ctx.front?.(entry)) ctx.pass(entry);
+  });
+  // Hands a request to the handler (a front that held one may pass it on later).
+  ctx.pass = entry => {
+    const {res} = entry;
+    entry.passedAt = Date.now();
     const controller = new AbortController();
     res.on('close', () => { if (!res.writableEnded) controller.abort(); });
-    http.handle({method: req.method, url: req.url, headers: req.headers, body: [body], signal: controller.signal}, {
+    http.handle({method: entry.method, url: entry.url, headers: entry.headers, body: [entry.body], signal: controller.signal}, {
       writeHead: (status, headers) => {
         res.writeHead(status, headers);
         if (headers?.['Content-Type'] === 'text/event-stream') res.flushHeaders();
@@ -55,7 +60,7 @@ async function device(t, options = {}) {
       write: chunk => res.write(chunk),
       end: chunk => res.end(chunk),
     });
-  });
+  };
   await new Promise(resolve => server.listen({host: '127.0.0.1', port: 0}, resolve));
   t.after(async () => {
     server.closeAllConnections();
@@ -81,6 +86,15 @@ const rejectsWith = async (promise, code) => {
   assert.equal(error.code, code, error.message);
   return error;
 };
+
+// An endpoint nothing listens on.
+async function deadEndpoint() {
+  const server = createHttpServer();
+  await new Promise(resolve => server.listen({host: '127.0.0.1', port: 0}, resolve));
+  const {port} = server.address();
+  await new Promise(resolve => server.close(resolve));
+  return `http://127.0.0.1:${port}/mcp`;
+}
 
 const credentialFree = d => {
   for (const line of d.diagnostics) assert.ok(!line.includes(CREDENTIAL), `a diagnostic carries the credential: ${line}`);
@@ -364,7 +378,7 @@ test('close also rejects a request still in flight, and a DELETE that fails or h
   const elapsed = Date.now() - started;
   assert.ok(elapsed >= 1900 && elapsed < 3000, `${elapsed} ms`);
   await rejected;
-  assert.ok(d.diagnostics.some(line => /DELETE/.test(line)), d.diagnostics.join('\n'));
+  assert.ok(d.diagnostics.some(line => /DELETE .*no answer within 2 s: whether the device ended it is unknown/.test(line)), d.diagnostics.join('\n'));
 
   const other = await device(t);
   const second = await other.session();
@@ -425,11 +439,7 @@ test('open classifies its refusals: 401, relay 503 device offline, 502, session 
   await d.upstreamOf(d.open.opened.length - 1).nextCall('js');
   await rejectsWith(open(), 'session_limit');
 
-  const closed = createHttpServer();
-  await new Promise(resolve => closed.listen({host: '127.0.0.1', port: 0}, resolve));
-  const {port} = closed.address();
-  await new Promise(resolve => closed.close(resolve));
-  await rejectsWith(open({endpoint: `http://127.0.0.1:${port}/mcp`}), 'device_offline');
+  await rejectsWith(open({endpoint: await deadEndpoint()}), 'device_offline');
   credentialFree(d);
 });
 
@@ -468,9 +478,132 @@ test('probeDevice: online on the device\'s session-less 400, locked with Cua-Con
   assert.equal(d.open.opened.length, 0, 'no session was opened');
   assert.equal(d.http.sessions.size, 0);
 
-  const closed = createHttpServer();
-  await new Promise(resolve => closed.listen({host: '127.0.0.1', port: 0}, resolve));
-  const {port} = closed.address();
-  await new Promise(resolve => closed.close(resolve));
-  assert.deepEqual(await probe({endpoint: `http://127.0.0.1:${port}/mcp`}), {status: 'offline', code: 'relay_unreachable'});
+  assert.deepEqual(await probe({endpoint: await deadEndpoint()}), {status: 'offline', code: 'relay_unreachable'});
+  d.front = entry => (json(entry.res, 404, {jsonrpc: '2.0', id: null, error: {code: -32000, message: 'cua-relay: not found'}}), true);
+  assert.deepEqual(await probe(), {status: 'offline', code: 'device_protocol'}, 'an answer no device or relay gives');
+});
+
+// ---- review fold-back ----
+
+test('a request whose signal is already aborted is never sent: cancelled, with no cancellation either', async t => {
+  const d = await device(t);
+  const session = await d.session();
+  const controller = new AbortController();
+  controller.abort('cancelled while the session opened');
+  await rejectsWith(session.request(...call('js', {code: 'must not run'}), {signal: controller.signal}), 'cancelled');
+  await tick(30);
+  assert.equal(d.posts('tools/call').length, 0);
+  assert.equal(d.posts('notifications/cancelled').length, 0);
+});
+
+test('a cancellation waits for its request\'s response head, so it never overtakes the request', async t => {
+  const d = await device(t);
+  const session = await d.session();
+  d.front = entry => {
+    if (entry.message?.method !== 'tools/call') return false;
+    setTimeout(() => d.pass(entry), 150);    // the request is slow to reach the device
+    return true;
+  };
+  const controller = new AbortController();
+  const ran = session.request(...call('js', {code: 'long'}), {signal: controller.signal});
+  await until(() => d.posts('tools/call').length === 1, 'the POST');
+  controller.abort();
+  const upstream = d.upstreamOf(0);
+  const js = await upstream.nextCall('js');
+  await until(() => d.posts('notifications/cancelled').length === 1, 'the cancellation');
+  const [post] = d.posts('tools/call');
+  const [cancelled] = d.posts('notifications/cancelled');
+  assert.ok(cancelled.at >= post.passedAt, 'sent once the device had the request');
+  assert.equal(cancelled.message.params.requestId, post.message.id);
+  await upstream.next(m => m.method === 'notifications/cancelled', {label: 'the cancellation upstream'});
+  upstream.text(js, 'stopped');
+  assert.equal((await ran).result.content[0].text, 'stopped');
+});
+
+test('the waits for a response head are bounded: an open and a request that get no head read device_offline; the request is not resent', async t => {
+  const d = await device(t);
+  d.front = entry => entry.message?.method === 'initialize';    // never answered
+  const started = Date.now();
+  const error = await rejectsWith(openDeviceSession({endpoint: d.endpoint, credential: CREDENTIAL, initializeParams: INITIALIZE_PARAMS, headTimeoutMs: 150}), 'device_offline');
+  assert.ok(Date.now() - started < 1500);
+  assert.match(error.message, /no answer within/);
+
+  d.front = null;
+  const session = await d.session({headTimeoutMs: 150});
+  d.front = entry => entry.message?.method === 'tools/call';
+  await rejectsWith(session.request(...call('js', {code: '1'})), 'device_offline');
+  await tick(50);
+  assert.equal(d.posts('tools/call').length, 1, 'never resent');
+  d.front = null;
+  const upstream = d.upstreamOf(0);
+  const late = session.request(...call('js', {code: 'long'}));
+  const js = await upstream.nextCall('js');
+  await tick(300);    // past the head bound: an answered stream reads as long as it lives
+  upstream.text(js, 'slow but fine');
+  assert.equal((await late).result.content[0].text, 'slow but fine');
+});
+
+test('an open cancelled through its signal rejects cancelled and deletes a session the device already granted', async t => {
+  const d = await device(t);
+  const before = new AbortController();
+  before.abort();
+  await rejectsWith(openDeviceSession({endpoint: d.endpoint, credential: CREDENTIAL, initializeParams: INITIALIZE_PARAMS, signal: before.signal}), 'cancelled');
+  assert.equal(d.requests.length, 0);
+
+  const controller = new AbortController();
+  d.front = entry => {
+    if (entry.message?.method !== 'notifications/initialized') return false;
+    controller.abort();
+    d.pass(entry);
+    return true;
+  };
+  await rejectsWith(openDeviceSession({endpoint: d.endpoint, credential: CREDENTIAL, initializeParams: INITIALIZE_PARAMS, signal: controller.signal}), 'cancelled');
+  await until(() => d.requests.some(r => r.method === 'DELETE'), 'the DELETE');
+  await until(() => d.http.sessions.size === 0, 'the device session to end');
+});
+
+test('a cancellation while the request is resuming rejects it cancelled at once and stops resuming', async t => {
+  const d = await device(t);
+  const session = await d.session({backoff: {firstMs: 20, maxMs: 40, budgetMs: 5000}});
+  const controller = new AbortController();
+  const ran = session.request(...call('js', {code: 'long'}), {signal: controller.signal});
+  await d.upstreamOf(0).nextCall('js');
+  await tick(30);
+  d.front = entry => entry.method === 'GET' && entry.headers['last-event-id'] && (deviceOffline(entry.res), true);
+  d.posts('tools/call')[0].res.destroy();
+  await until(() => d.gets().filter(g => g.headers['last-event-id']).length >= 2, 'resuming');
+  const started = Date.now();
+  controller.abort();
+  await rejectsWith(ran, 'cancelled');
+  assert.ok(Date.now() - started < 500);
+  await until(() => d.posts('notifications/cancelled').length === 1, 'the cancellation, its request having reached the device');
+  const resumes = d.gets().filter(g => g.headers['last-event-id']).length;
+  await tick(150);
+  assert.equal(d.gets().filter(g => g.headers['last-event-id']).length, resumes, 'no more resumes');
+});
+
+test('the standing GET keeps retrying through 401 and stops for good on 405', async t => {
+  const d = await device(t);
+  let refusals = 2;
+  d.front = entry => entry.method === 'GET' && refusals > 0 && (refusals--, json(entry.res, 401, {jsonrpc: '2.0', id: null, error: {code: -32000, message: 'cua: unauthorized'}}), true);
+  const session = await d.session();
+  await until(() => d.http.sessions.get(session.sessionId)?.get, 'the GET held after two 401s');
+  assert.equal(d.gets().length, 3);
+  assert.equal(d.diagnostics.filter(line => /standing stream could not be opened \(HTTP 401\)/.test(line)).length, 1, 'logged once per status');
+
+  const other = await device(t);
+  other.front = entry => entry.method === 'GET' && (entry.res.writeHead(405, {Allow: 'POST, DELETE'}), entry.res.end(), true);
+  await other.session();
+  await until(() => other.gets().length === 1, 'the GET');
+  await tick(100);
+  assert.equal(other.gets().length, 1, 'not retried');
+  assert.ok(other.diagnostics.some(line => /405/.test(line)));
+});
+
+test('a request the device fails with 500 rejects device_failed with the device\'s message', async t => {
+  const d = await device(t);
+  const session = await d.session();
+  d.front = entry => entry.message?.method === 'tools/call' && (json(entry.res, 500, {jsonrpc: '2.0', id: null, error: {code: -32603, message: 'cua: internal error'}}), true);
+  const error = await rejectsWith(session.request(...call('js', {code: '1'})), 'device_failed');
+  assert.match(error.message, /cua: internal error/);
 });

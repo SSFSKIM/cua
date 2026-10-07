@@ -255,6 +255,8 @@ was re-run on the final code, with the mini's job reinstalled from the worktree 
   home on loopback. The `onConsole: false` branch (another user at the screen) was not exercised live.
 - A cloud or Linux client, and a relay behind nginx: the client was the MacBook and the TLS proxy was ngrok's edge
   (both legs over the internet, as above).
+  Later runs: a hosted relay behind Caddy (`2026-10-06-hosted-relay-acceptance.md`, #53) and a Linux client through
+  it (`2026-10-06-linux-client-relay-acceptance.md`, #54); nginx is still unexercised.
 - A relay outage longer than Claude Code's resume window (two attempts spaced by the 15 s `retry` hint), and Claude
   Code's behaviour on a `404` for an ended session.
 

@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-10-07 — A success result's text is invisible in Claude Code when it has structured content (minor, issue
+  #70 G4).** Claude Code 2.1.292 shows the model only the JSON of `structuredContent` for a successful MCP result and
+  drops its text blocks (evidence `docs/evidence/2026-10-07-device-multiplexing-acceptance.md`). `devices_use` and the
+  device-session note were fixed in G4; the local `profiles_list` still puts its "not ready: tell the user, do not bind
+  or pick a profile" guidance only in the text (`statusResult(…, {message})` in `src/mcp/server.mjs`), so the model sees
+  the reason code but not the instruction. Moving each such message into the structured content (or a `note` field in
+  `statusResult` itself) would close it.
+
 - **2026-10-07 — Secret fixtures leave their temporary store home behind when interrupted (minor, issue #66).**
   `scripts/accept/secret-seed.mjs` users (`textedit.mjs`, `probe-secrets.mjs`, `accept-chrome.mjs`) remove the temporary
   `$HOME` holding a generated sentinel in `finally`, which a SIGINT or SIGTERM skips: the 0600 file stays under

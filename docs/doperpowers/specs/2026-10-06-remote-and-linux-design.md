@@ -1,6 +1,6 @@
 # cua over the network and on Linux: remote control of a user's Mac, and a cloud agent's own Linux VM
 
-Parent: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` (the standalone server this document extends; its terms, components and acceptance items are referenced, not restated). Board: Phase E is issue #11, Phase F is issue #51; Phase F's basis is spike #12 (`docs/evidence/2026-10-06-spike-12-linux-runtime.md`) and the arm64 deb inspection recorded in the Decision Log. Approved by the owner on 2026-10-06 after the brainstorming round recorded in the Decision Log; revised the same day after the two independent reviews (design review, buildability review), whose fold-back is the Decision Log's block of entries dated 2026-10-06 "review fold-back".
+Parent: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` (the standalone server this document extends; its terms, components and acceptance items are referenced, not restated). Board: Phase E is issue #11, Phase F is issue #51, Phase G is issue #70; Phase F's basis is spike #12 (`docs/evidence/2026-10-06-spike-12-linux-runtime.md`) and the arm64 deb inspection recorded in the Decision Log. Approved by the owner on 2026-10-06 after the brainstorming round recorded in the Decision Log; revised the same day after the two independent reviews (design review, buildability review), whose fold-back is the Decision Log's block of entries dated 2026-10-06 "review fold-back".
 
 ## Purpose
 
@@ -23,6 +23,10 @@ Both phases keep every rule of the parent: unmodified, pinned vendor runtime; on
 - Note (2026-10-06 23:45 UTC, issue #53, branch `feat/hosted-relay`): the standing relay is up. `cua-relay` runs on the Hetzner server `cua-relay` (id 169121500, `cx23`, nbg1) behind Caddy at `https://178-104-102-73.sslip.io`, deployed by `relay/deploy/`; the mini is enrolled against it with its launchd agent dialling it, and acceptance 6 (plus item 1 through the relay) passed again through Caddy, including the in-flight result across a relay restart. Evidence `docs/evidence/2026-10-06-hosted-relay-acceptance.md`.
 - Note (2026-10-07 00:20 UTC, issue #58, branch `feat/linux-agent-x64`): Phase F's residue is closed. `cua agent install|uninstall|status` on Linux manage a systemd user unit (`cua-agent.service`, Decision Log under Phase F), and doctor's `agent.*` rows read it on Linux. The Tart VM ran its agent as that unit through the hosted relay, and a `claude -p` client on the MacBook typed into gedit there with `pressKey` and opened an example.com tab in profile `me`. The x64 pin passed install, doctor, the native fixture and `verify.mjs` on a throwaway Hetzner `cx23` (id 169123728, deleted). On x64, `typeText` in GTK3 failed without crashing. Evidence `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 - Note (2026-10-07 00:01 UTC, issue #54, branch `feat/linux-client-acceptance`): the product's end-to-end scene passed from a Linux client. A headless `claude -p` (Claude Code 2.1.292) in the Tart arm64 Ubuntu VM `cua-linux`, configured with only the relayed `cua_repl` (`--strict-mcp-config`) and the owner's elicitation hook, drove the mini through the standing relay: item 1 by curl through Caddy, a TextEdit marker typed and read back, a `school` tab opened, read and closed, a 45 s `js` result delivered across a relay restart (`Last-Event-Id` resume, no re-`initialize`), `run/` clean after each session's `DELETE`, and the client credential 0 times in the VM's transcripts. Not exercised: nginx, and a client outside the MacBook's uplink (the VM is its NAT guest). Evidence `docs/evidence/2026-10-06-linux-client-relay-acceptance.md`.
+- [ ] G1 — Phase G registry, `cua devices` CLI and the reserved `CUA_DEVICE_` prefix (issue #70, branch `feat/device-multiplexing`).
+- [ ] G2 — Phase G Streamable HTTP client (`src/remote/client.mjs`) and the device's `Cua-Console` header.
+- [ ] G3 — Phase G target in the stdio server: `devices_list`, `devices_use`, routing, host-notes rule.
+- [ ] G4 — Phase G live acceptance (items 13–18), README, skill, plugin 0.3.0, retrospective.
 
 ## Orientation: what exists, and the seam each phase uses
 
@@ -336,6 +340,137 @@ node bin/cua.mjs chrome register && node bin/cua.mjs profiles add me --chrome-pr
 node verify.mjs           # the stdio smoke the parent ships; the native-socket step reads skip on linux
 ```
 
+## Phase G: one server, every device
+
+Board: issue #70 (design approved by the owner 2026-10-07; it also settles #69's open question). This section is self-contained: its own purpose, design, acceptance, interfaces and milestones; the Progress list, the Decision Log and Surprises & Discoveries carry its living record beside the earlier phases'.
+
+### Purpose
+
+Phase E made a device reachable as its own HTTP MCP server, which a client registers per device (`claude mcp add --transport http cua_repl …`: one registration per device, a reconnect for each, the credential expanded into `~/.claude.json`). With the plugin installed, that also means two servers whose tools differ only by name (`mcp__plugin_cua_cua_repl__*` for this machine, `mcp__cua_repl__*` for the device), which agents mix up. Phase G makes **one server reach every device**: the plugin's own `cua_repl` (stdio `cua serve`) keeps its tool names and gains a per-connection **target**, `local` by default, switched with `devices_use` to any device in a local registry. Seen from the user's chair: `/secret CUA_DEVICE_<id>` and `cua devices add mini …` once (or `cua devices import ~/.config/cua-relay/mini.mcp.json`), then in any session "on the mini, open my school calendar" is `devices_list`, `devices_use mini`, the usual `js` work, `end_task`, `devices_use local`, with no registration and no reconnect. The standalone HTTP registration stays supported for clients without the plugin.
+
+What stays as it is: `js`'s schema (no `device` argument: the target is connection state, so the vendor's tool and every prompt that teaches it stay untouched), the device side's HTTP surface (Phase E) apart from one response header, the relay, the credentials' derivation, and the per-connection runtime rule (the remote target is a session on the device owning the device's runtime; the local runtime stays owned by the local connection).
+
+### Design
+
+**Target and tools.** A stdio connection holds `target` (`local` or a registry name) and, for a remote target, at most one open device session. Two tools join the list on stdio connections only (the HTTP agent's sessions never list them: a device driving a third device through itself would hide a hop and a credential):
+
+- `devices_list` (no arguments): `{status: "ok", current, devices: [{name: "local", status: "online"}, {name, deviceId, relay, status, code?}, …]}`. Each configured device is probed concurrently with a 3 s timeout and reads `online`, `offline`, `locked` or `unauthorized`, with a `code` where it says more (`credential_missing`, `relay_unreachable`, `timeout`). A probe never opens a session (an `initialize` spawns the device's runtime and, at the device's cap of 1, could evict another client's idle session): it is one authenticated `POST /mcp` of a `ping` request without `Mcp-Session-Id`. The relay answers `503` (`device offline`) when the device has no link and `401` on a credential it does not know; a device answers `401` itself on a mismatch and otherwise `400` (no session header), which reads `online`, or `locked` when the response carries `Cua-Console: locked` (the device side, G2: set on that session-less answer when the console check reports locked or off-console; an older agent never sends it, so it reads `online` and its `js` still answers `console_locked`). A network failure or a timeout reads `offline` with its code.
+- `devices_use {device}` (`device`: `local` or a registry name): refused with `task_open` while a task is open on the current target (local: the task lifecycle is not `idle`; remote: a `js`/`js_reset` was sent since the session's last `end_task` answered `ended` or `noop`); naming the current target is a no-op `ok`. Switching to a device reads the registry and the credential, opens a device session (below) and answers `{status: "ok", device, previous}` with the device's own host notes (its `InitializeResult.instructions`, which then apply) in the text; any failure leaves the target unchanged and answers a classified tool error. Switching away from a device ends its session (DELETE).
+
+`js`, `js_reset`, `end_task`, `profiles_list` and `secrets_list` route to the target. With a remote target each is sent to the device session as a `tools/call` with the client's own `params` (including `timeout_ms` and `_meta`), and its result is relayed unchanged (the device already corrected images and redacted tokens), tagged `_meta["cua/device"]: <name>`; a JSON-RPC error is relayed as an error. `end_task` on a device, once answered, also ends the device session (DELETE), so the device's runtime and `run/` entry are freed for other clients the moment a task ends; the next `js` opens a fresh session lazily. Classified errors are tool errors (`statusResult`, `isError`) whose `code` is one of: `task_open`, `device_unknown`, `credential_missing`, `device_offline` (relay `503 device offline`, a `502` from its proxy, the relay unreachable, or the resume budget spent), `device_unauthorized` (`401`), `session_limit` (`503` session limit), `device_session_ended` (the device answered `404`, or ended the session, while a task was open there: its REPL state is gone; the next call opens a new session), `device_protocol` (an answer the client cannot read). `console_locked` arrives from the device as its own tool result and passes through. A `404` while no remote task is open re-opens the session once and retries the call, transparently. `tools/list` is the local list plus the two tools; `profiles_list` is listed by the local surfaces, as today (the plugin enables the browser surface).
+
+**The device session** (`src/remote/client.mjs`, an MCP Streamable HTTP client over Node's built-in `fetch`; no new dependency, so the plugin copy runs without `node_modules`). It speaks to the endpoint `<relayUrl>/d/<deviceId>/mcp` with `Authorization: Bearer <credential>` on every request, under the rules of the Phase E server it talks to:
+
+- *Open*: `initialize` carrying **the local client's own initialize params** (protocol version, capabilities, client info), so the device's runtime sees an elicitation-capable client and the turn metadata names the real client; then `notifications/initialized`; every later request carries `Mcp-Session-Id` and `MCP-Protocol-Version` (the negotiated version). Once open it holds the standing `GET`, as Claude Code's own client does (it keeps the session from reading Idle-for-eviction 60 s into a task, the Phase E rule), reopened with the backoff below while the session lives.
+- *Requests*: proxy-owned ids from the session's own counter (the local client's ids never reach the device). The answer is a JSON body or an SSE stream, parsed per the SSE format (`id:`, `event:`, `data:` lines, comments ignored, the named `priming` event recorded for its id and otherwise ignored). The response settles its request; server-initiated messages on any stream (POST or GET) go to `onMessage`.
+- *Resumption*: when a POST stream ends or errors before its response, the client `GET`s with `Last-Event-ID: <the last id seen on that stream>` and reads on until the response arrives; a failed attempt retries after 1 s doubling to 15 s within a 90 s budget (the device keeps a dropped stream's events that long, `streamGraceMs`), across a `502` from the TLS proxy and `503 device offline` while the relay or the agent reconnects. A spent budget answers `device_offline`. A POST that fails before carrying any event id (the device sends the priming event first, so the request may not have reached it) is answered `device_offline` and never resent: a `js` cell must not run twice.
+- *Cancellation*: a local `notifications/cancelled` for a routed request becomes the device's `notifications/cancelled` with the proxy id.
+- *Server requests*: an `elicitation/create` (or any other request) from the device is written to the local client under a fresh id `cua-device-<n>`; the local client's answer is mapped back to the device's id and POSTed (`202`). The local `persist` rewrite does not apply (the device's own server applies its persist mode). Notifications pass unchanged.
+- *Close*: `DELETE` with a 2 s bound on `end_task`, on switching away, and at the local connection's close (before `closed` settles); a failed DELETE is logged, never fatal (the device's idle rule frees the session).
+- Nothing the client logs or returns carries the credential or any request header value; diagnostics name the device and status codes only.
+
+**Registry** (`src/remote/devices.mjs`): `$HOME/.config/cua/devices.json`, mode 0600 in a 0700 directory, exactly the ticket's shape `{"<name>": {"deviceId": "…", "relayUrl": "https://<relay origin>"}}`. Names match `^[a-z0-9][a-z0-9_-]{0,31}$`; `local` is reserved. `relayUrl` is stored as the relay's origin; `add` also accepts the enrolment's `wss://<relay>/ws` (and `ws`/`http` for a LAN relay) and normalises it. The credential is **not** in the registry: it is the secret store's `CUA_DEVICE_<deviceId with - as _>` (`clientSecretKey`, `src/remote/device.mjs`), read by the server process (the store's `read`) at each session open and probe, never by the model's cells. The registry and the credential are read at every `devices_list`/`devices_use`, so `cua devices add` takes effect without a reconnect.
+
+CLI: `cua devices add <name> --relay <url> --device <id> [--replace] [--json]` (refuses an existing name without `--replace`; warns, without failing, when the credential key is absent, naming the `/secret` step); `devices remove <name> [--json]` (the registry entry only; the stored credential is the owner's to remove with `cua secrets remove`); `devices list [--json]` (name, device id, relay, whether the credential is stored; never probes, never a value); `devices import <file> [--name <name>] [--replace] [--json]`, which reads a client config of today's shape (`{"mcpServers": {"cua_repl": {"type": "http", "url": "https://<relay>/d/<id>/mcp", "headers": {"Authorization": "Bearer <credential>"}}}}`, or the one server entry when there is a single one), derives the device id and relay from the URL, writes the credential to the store under its key (reporting `stored`, `unchanged` or `replaced`, never the value), and adds the registry entry under `--name` or the file's basename less `.mcp.json`. `remote enroll --json` and `remote show --json` gain `devicesAddCommand` (the `cua devices add` line for a client) beside `clientRegisterCommand`.
+
+**The reserved prefix** (closes #69). Keys starting `CUA_DEVICE_` are device credentials: the model-facing `secrets_list` omits them (in `connectionSecrets`, so local and device sessions both), and a `{{secret:CUA_DEVICE_…}}` reference is refused in both trusted services (`sky`, `browser`) before the store is read, with the code `secret_reserved` and nothing entered. `cua secrets list` (the owner's terminal) still shows them. A device enforces this once it runs this version; the client side, where the credential lives, enforces it at once.
+
+**Host notes.** One rule joins the stdio notes (only where the device tools exist), within the 2,048-character budget the test measures with the vendor's 63-character first line, in substance: `devices_use` switches every tool to that machine, whose notes (in its result) then apply; `end_task` before switching. The macOS notes for `computer,browser` are at 1,980 characters today, so the rule's room comes from tightening existing lines without dropping any rule the tests name.
+
+**Skill and README.** `cua-remote` Part B collapses to: the owner stores the credential (`/secret <clientSecretKey>`), `cua devices add` (or `import`), then `devices_list` / `devices_use <name>` in any session; the standalone registration stays as the route for a client without the plugin. README's remote section leads with the plugin route and keeps the standalone one second.
+
+### Acceptance (Phase G)
+
+Live, on the standing setup: relay `https://178-104-102-73.sslip.io`; the mini enrolled as `nuadM-MUKSbSN4L59EffLQ`, this MacBook as `jMTkLnzn-rsbzoZAHJ8EbQ`, both launchd agents connected and running `main` (they are not switched to this branch; the device-side changes, the `Cua-Console` header and the reserved prefix on the device, are proven by unit tests). The client side runs the branch through a temporary MCP config registering the worktree's `cua-shim.mjs` as `cua_repl` (`CUA_SHIM_SURFACES=computer,browser`), which the owner's Elicitation hook matcher (`cua_repl|plugin:cua:cua_repl`) covers, driven by `claude -p --strict-mcp-config`. Both Macs stay unlocked; `console_locked` at any step is a stop-and-report.
+
+13. **Registry.** On the MacBook, `cua devices import ~/.config/cua-relay/mini.mcp.json` registers `mini` and stores its credential (reported `stored` or `unchanged`); `cua devices list` shows it with the credential present; no command output contains the credential.
+14. **MacBook → mini.** In one `claude -p` session: `devices_list` shows `mini` `online` and `current: local`; `devices_use mini` answers ok with the mini's notes; a TextEdit marker is typed and read back on the mini; a Chrome tab in profile `school` is opened, read and closed on the mini; `devices_use local` before `end_task` is refused `task_open`; after `end_task`, `devices_use local` succeeds and a local `js` call reads this MacBook (its host name). The mini's `$CUA_HOME/run` holds no entry of the session afterwards (the DELETE).
+15. **Resumption.** A ~45 s `js` call on the mini, with the relay restarted (`systemctl restart cua-relay`, once, after `journalctl -u cua-relay` shows no other active session) about 12 s in, delivers its result in the same call without a new `initialize` (the device's agent log and the relay's journal).
+16. **Secrets.** On the `local` target `secrets_list` omits every `CUA_DEVICE_*` key (the MacBook's store holds the mini's after item 13), and `typeText("{{secret:CUA_DEVICE_<id>}}")` is refused `secret_reserved` with nothing typed. The credential occurs 0 times in the run's stream-json output and the session's transcript file (counted with `grep -c -F` against the value read from the client config inside the command, never printed).
+17. **Mini → MacBook.** Items 13, 14 and 16 again from the mini (a branch worktree beside its checkout, `~/.local/bin/claude`, nvm node v24.18.0), importing `~/.config/cua-relay/macbook.mcp.json` as `macbook`; item 15 too when no other session is active on the relay then (one restart per run).
+18. **Regression.** `npm test` passes (704 before Phase G, plus G's tests); the standalone registration still works (one `claude -p` with `~/.config/cua-relay/mini.mcp.json` as-is: `js` reads the mini's host name).
+
+Evidence: `docs/evidence/2026-10-07-device-multiplexing-acceptance.md`.
+
+### Interfaces (Phase G)
+
+```js
+// src/secrets/label.mjs (G1)
+export const RESERVED_PREFIX = 'CUA_DEVICE_';
+export const isReserved = label => typeof label === 'string' && label.startsWith(RESERVED_PREFIX);
+
+// src/remote/devices.mjs (G1)
+export const DEVICE_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;          // 'local' reserved
+export const devicesFile = (env = process.env) => join(env.HOME || homedir(), '.config', 'cua', 'devices.json');
+export function readDevices({env}) → {[name]: {deviceId, relayUrl}}     // no file → {}; unparseable or wrong shape → CuaError devices_invalid
+export function addDevice({env, name, relayUrl, deviceId, replace = false}) → {name, deviceId, relayUrl}   // device_exists, invalid_device_name, invalid_relay_url, invalid_device_id
+export function removeDevice({env, name}) → {name, deviceId, relayUrl}                                    // device_unknown
+export async function importDevice({env, file, name, replace = false, store}) → {name, deviceId, relayUrl, credential: 'stored'|'unchanged'|'replaced'}
+export function normalizeRelayUrl(url) → 'https://host[:port]' (http for a LAN relay)
+export const endpointOf = ({deviceId, relayUrl}) => `${relayUrl}/d/${deviceId}/mcp`;
+// src/cli.mjs: `devices add|remove|list|import` as in the design, with USAGE lines.
+
+// src/remote/client.mjs (G2)
+export async function openDeviceSession({endpoint, credential /* string */, initializeParams, fetch = globalThis.fetch,
+  onMessage = () => {}, diagnostics, backoff = {firstMs: 1000, maxMs: 15_000, budgetMs: 90_000}})
+  // → {sessionId, initializeResult, request(method, params, {signal}) → Promise<{result} | {error}>,
+  //    respond(deviceRequestId, reply), notify(method, params), close() → Promise<void> /* DELETE, 2 s */, closed: Promise<{code}>}
+  // transport failures reject (open) or settle (request) with DeviceError {code}: device_offline, device_unauthorized,
+  // session_limit, device_session_ended, device_protocol
+export async function probeDevice({endpoint, credential, fetch, timeoutMs = 3000}) → {status: 'online'|'offline'|'locked'|'unauthorized', code?}
+export class DeviceError extends Error { code }
+// src/mcp/http.mjs (G2, device side): the session-less 400 carries `Cua-Console: locked` when console() reports locked or off-console.
+
+// src/mcp/server.mjs (G3)
+createServer({..., devices = null})   // {list() → Promise<entries>, probe(name), open(name, {initializeParams, onMessage}) → device session} or null (no device tools)
+// src/remote/targets.mjs (G3): deviceDirectory({env, fetch}) builds `devices` from the registry, the store and the client.
+// serve() passes deviceDirectory({env}); openConnection forwards `devices`; createMcpHttp never does.
+hostNotesFor(surfaces, {platform, devices = false})   // the devices rule only with devices
+```
+
+### Plan of Work (Phase G)
+
+Constraints: those of the Plan of Work above, plus: tests never touch the owner's real secret store or `~/.config/cua` (a temporary `$HOME`); no worker puts the secret store's path in a shell command (the `/secret` mod's guard refuses it; use file tools, or cua's own CLI, which reads the store itself); nothing prints a credential. The milestones run in order on `feat/device-multiplexing` (worktree `/Users/new/Developer/GitHub/cua-wt-70`); the main checkout stays on `main`, because the plugin cache and both launchd agents run from it.
+
+#### G1 — Registry, CLI and the reserved prefix
+
+At the end: `src/remote/devices.mjs` and `cua devices add|remove|list|import` as designed (USAGE included), `devicesAddCommand` in `remote enroll|show --json`, `RESERVED_PREFIX`/`isReserved` in `label.mjs`, `secrets_list` omitting reserved keys, and both trusted services refusing a reserved reference with `secret_reserved` before any read. Touches `src/remote/devices.mjs` (new), `src/remote/device.mjs`, `src/secrets/label.mjs`, `src/secrets/store.mjs`, `src/services/sky.mjs`, `src/services/browser.mjs` (or the shared `src/services/secret-input.mjs`), `src/cli.mjs`; tests `test/remote-devices.test.mjs` (new), `test/secrets-label.test.mjs`, `test/services-sky.test.mjs`, `test/services-browser.test.mjs`, `test/mcp-server.test.mjs` (secrets_list), `test/cli.test.mjs`. Independent of G2.
+
+#### G2 — The Streamable HTTP client and the device's console header
+
+At the end: `src/remote/client.mjs` (`openDeviceSession`, `probeDevice`, `DeviceError`) as designed, and the device's session-less `400` carrying `Cua-Console: locked`. Tested against the real `createMcpHttp` handler on an ephemeral `node:http` server with its `open` seam (no runtime): initialize and headers, JSON and SSE answers, a server request relayed through `onMessage` and answered through `respond`, cancellation, a POST stream cut mid-request and resumed by `Last-Event-ID` (the handler's own replay), the standing GET reopened, `DELETE`, every classified code (a fake relay or proxy for `503 device offline`, `502`, `401`), the resume budget, and `probeDevice`'s outcomes. Touches `src/remote/client.mjs` (new), `src/mcp/http.mjs`; tests `test/remote-client.test.mjs` (new), `test/mcp-http.test.mjs`. Independent of G1.
+
+#### G3 — The target in the stdio server
+
+At the end: `devices_list`/`devices_use`, routing of the five tools to a device session, the server-request id remap, cancellation, `DELETE` on `end_task`, on switching away and at close, the `404` rules, `_meta["cua/device"]`, the host-notes rule within budget, `serve` wiring the directory and the HTTP agent not. Touches `src/mcp/server.mjs`, `src/mcp/surface.mjs`, `src/mcp/connection.mjs`, `src/remote/targets.mjs` (new); tests `test/mcp-devices.test.mjs` (new: a stdio server with a fake local upstream and a device served by `createMcpHttp` on an ephemeral port, so a routed `js`, an elicitation round trip and a resume run end to end), `test/mcp-browser-surface.test.mjs` (budget, the rule), `test/mcp-http.test.mjs` (no device tools on the agent). Consumes G1 and G2.
+
+#### G4 — Live acceptance, docs and the 0.3.0 plugin
+
+At the end: acceptance 13–18 recorded in `docs/evidence/2026-10-07-device-multiplexing-acceptance.md`; README (remote control: the plugin route first, the standalone registration second; `cua devices`), `skills/cua-remote/SKILL.md` (Part B collapsed), `relay/README.md` where it tells clients how to connect, the plugin at 0.3.0 (`.claude-plugin/plugin.json` and `marketplace.json`, descriptions naming the device tools); the Outcomes & Retrospective entry for Phase G; fixes the live run requires. Consumes G1–G3. Then the whole-branch review (opus reviewers with the `doperpowers:reviewer-high` brief) and its fix loop, and the PR (`Closes #70`, `Closes #69`).
+
+### Concrete Steps (Phase G)
+
+```
+# MacBook, in the worktree
+node bin/cua.mjs devices import ~/.config/cua-relay/mini.mcp.json        # name mini; credential stored|unchanged
+node bin/cua.mjs devices list
+cat > /tmp/g70-accept.mcp.json <<'J'
+{"mcpServers": {"cua_repl": {"command": "node", "args": ["/Users/new/Developer/GitHub/cua-wt-70/cua-shim.mjs"], "env": {"CUA_SHIM_SURFACES": "computer,browser"}}}}
+J
+claude -p --strict-mcp-config --mcp-config /tmp/g70-accept.mcp.json --allowedTools mcp__cua_repl \
+  --output-format stream-json --verbose '<prompt>' > /tmp/g70-run-<n>.jsonl
+# credential count, the value never printed (read from the client config, not from the secret store):
+grep -c -F "$(jq -r '.mcpServers.cua_repl.headers.Authorization' ~/.config/cua-relay/mini.mcp.json | sed 's/^Bearer //')" /tmp/g70-run-<n>.jsonl
+# item 15's relay restart: check first, then once
+ssh root@178.104.102.73 'journalctl -u cua-relay --since "-10 min" --no-pager | tail -20'
+ssh root@178.104.102.73 systemctl restart cua-relay
+
+# mini (ssh mini; PATH with nvm node v24.18.0)
+cd /Users/new/Developer/GitHub/cua && git fetch -q && git worktree add ../cua-wt-70 origin/feat/device-multiplexing   # the main checkout stays on main
+cd ../cua-wt-70 && node bin/cua.mjs devices import ~/.config/cua-relay/macbook.mcp.json
+~/.local/bin/claude -p --strict-mcp-config --mcp-config /tmp/g70-accept.mcp.json …         # the same config with the mini's worktree path
+```
+
 ## Surprises & Discoveries
 
 - 2026-10-06 (acceptance 6 through ngrok): the tunnel's edge re-serialises SSE. Bytes leaving the relay on loopback were `retry: 15000\nid: 2-0\ndata: \n\n`; the same stream through `*.ngrok-free.dev` arrived as `id: 3-0\nretry: 15000\n\n`, the empty `data:` line dropped and fields reordered (response events arrive as `data: …\nid: …`). An event with no `data` line is never dispatched by an SSE parser (WHATWG: empty data buffer, return), so Claude Code never saw the priming id, did not resume the `js` call whose stream the relay restart cut, and hung on it (ngrok's request log: the POST cut at 13.6 s, then only the standing GET reconnecting, with no `Last-Event-ID`). Keepalive comments are likely dropped the same way; they still keep the proxy's upstream leg busy.
@@ -361,6 +496,9 @@ node verify.mjs           # the stdio smoke the parent ships; the native-socket 
 
 ## Decision Log
 
+- Decision (2026-10-07, Phase G, issue #70, owner for the design, executor session for the silent choices): one server reaches every device. The owner's decisions (the ticket): a per-connection target switched with `devices_list`/`devices_use`; an MCP Streamable HTTP client in `src/remote/client.mjs`; the registry `~/.config/cua/devices.json` with `cua devices add|remove|list|import`; the credential read by the server from the secret store under `CUA_DEVICE_<id, - as _>`; the `CUA_DEVICE_` prefix reserved (hidden from `secrets_list`, refused by `{{secret:…}}`, closing #69); the standalone HTTP registration kept; skill Part B collapsed; `js`'s schema unchanged. The executor's choices, each where the ticket was silent: (1) a probe is one authenticated session-less `POST` of `ping` (relay `503` offline, `401` unauthorized, the device's `400` online), never `initialize`, which would spawn the device's runtime and could evict another client's idle session at the cap of 1; `locked` comes from a new `Cua-Console: locked` header on that `400`, so older agents read `online`; (2) the device session opens at `devices_use` (failing fast, and its result carries the device's notes, which may be Linux's) and ends by `DELETE` after `end_task`, on switching away and at close, so a device's runtime is freed the moment a task ends and `run/` is clean; a lost session re-opens transparently only when no task was open there, otherwise `device_session_ended`; (3) the device session's `initialize` forwards the local client's own params, so the device sees an elicitation-capable client; the device's server requests reach the local client under fresh ids `cua-device-<n>` (mapped back on the answer, never colliding with the local runtime's), and its persist mode applies, not the local one; (4) resumption follows Claude Code's own client: `Last-Event-ID` on a GET, retried 1 s doubling to 15 s within 90 s (the device's grace); a POST that failed before any event id is never resent (a `js` cell must not run twice); the standing GET is held, as Claude Code holds it, so a session mid-task never reads Idle for eviction; (5) the device tools exist on stdio connections only, never on the agent's HTTP sessions (no chained hops); (6) the registry is exactly the ticket's flat shape, `relayUrl` stored as the relay's origin (`wss://…/ws` accepted and normalised), names `^[a-z0-9][a-z0-9_-]{0,31}$` with `local` reserved; registry and credential are read at each `devices_*` call, so no reconnect follows `cua devices add`; (7) the reserved prefix binds the model-facing surfaces (`secrets_list`, both trusted services, code `secret_reserved`) and not the owner's `cua secrets list`; (8) results from a device carry `_meta["cua/device"]`; `tools/list` keeps the local surfaces' list plus the two tools.
+  Rationale: the owner's goal is one tool namespace for every machine with no per-device registration; each choice keeps a Phase E guarantee (the cap and eviction, no double execution, the credential never in a model-visible place) or follows the reference client the device already serves. Rejected: a `device` argument on `js` (changes the vendor schema every prompt teaches); probing by `initialize` (side effects on the device); keeping device sessions open across tasks (holds the cap-1 device and its `run/` entry for nothing).
+  Date/Author: 2026-10-07, the owner (design) and the Phase G executor session.
 - Decision (2026-10-06, issue #53, owner for the host, session for the mechanism): the standing relay is a Hetzner Cloud `cx23` in nbg1 with Caddy terminating TLS (Let's Encrypt), named `<ip-with-dashes>.sslip.io` until a real domain replaces the Caddyfile's site line. `relay/deploy/create-server.sh` reserves the IPv4 as a named primary IP (kept on server deletion, so the name is stable and known before cloud-init renders the Caddyfile), adds a firewall admitting only TCP 22, 80 and 443, and creates the server with cloud-init that installs Caddy and Node 22, clones the repository and runs `cua-relay.service` on `127.0.0.1:7800`; `update.sh` changes the ref or installs `devices.json`. Caddy's access log is on (it redacts `Authorization`; it does record device ids and `Mcp-Session-Id` values, which need the bearer to use), because it is the only record of a client's resumes.
   Rationale: issue #53 asked for a stable host for real use; a VPS with Caddy needs no tunnel account and gives a fixed URL, and Caddy passes WebSocket upgrades and unbuffered SSE with `reverse_proxy` and `flush_interval -1`. Rejected: Tailscale Funnel (not enabled on the tailnet; ties the relay to a tailnet member), nginx with certbot (more configuration for the same behaviour), keeping ngrok (URL and account bound to the MacBook).
   Date/Author: 2026-10-06, the owner and the issue #53 session.

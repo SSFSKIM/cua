@@ -12,11 +12,11 @@ import {dirname, isAbsolute} from 'node:path';
 import {realpathSync} from 'node:fs';
 import {serve} from '../../src/mcp/server.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
-import {withAccountHome} from '../accept/secret-seed.mjs';
+import {isAccountHome, withAccountHome} from '../accept/secret-seed.mjs';
 
 const [target, ...rest] = process.argv.slice(2);
-if (!target || !isAbsolute(target) || rest.length) {
-  process.stderr.write('serve-fake-sky-target: pass the absolute path of the fake target module\n');
+if (!target || !isAbsolute(target) || rest.length || !process.env.CUA_HOME || isAccountHome(process.env.HOME)) {
+  process.stderr.write('serve-fake-sky-target: pass the absolute path of the fake target module, with CUA_HOME set and HOME set to a temporary store home\n');
   process.exit(2);
 }
 const real = realpathSync(target);

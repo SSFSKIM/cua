@@ -4,7 +4,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
+import {mkdirSync, readFileSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
@@ -799,4 +799,9 @@ test('the scratch list checks fail on any contract violation before an unreadabl
   assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'chrome_data_unreadable'], ['work', 'not ready', 'chrome_data_unreadable']]), REASONS).status, 'BLOCKED', 'pure unreadable');
   assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'extension_not_installed'], ['work', 'ready', 'inst-w']]), REASONS).status, 'FAIL', 'mixed with a wrongly ready row');
   assert.equal(scratchHumanCheck(lines([['personal', 'not ready', 'chrome_data_unreadable'], ['school', 'not ready', 'not_bound']]), REASONS).status, 'FAIL', 'a wrong reason and a missing key');
+});
+
+test('every C2 matrix row names a test that exists in the browser wrapper suite', () => {
+  const suite = readFileSync(new URL('./services-browser.test.mjs', import.meta.url), 'utf8');
+  for (const {title} of C2_MATRIX) assert.ok(suite.includes(`test(${JSON.stringify(title).replaceAll('"', "'")}`) || suite.includes(`test(${JSON.stringify(title)}`), title);
 });

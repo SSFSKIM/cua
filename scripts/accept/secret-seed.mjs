@@ -12,7 +12,7 @@ import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, mkdtempSync, realpathSync, rmSync} from 'node:fs';
 import {tmpdir, userInfo} from 'node:os';
-import {join} from 'node:path';
+import {basename, dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {isLabel} from '../../src/secrets/label.mjs';
 import {fileStore, storeDir} from '../../src/secrets/store.mjs';
@@ -90,9 +90,14 @@ export function seedSecret({home, key, value, timeoutMs = 15_000, cli = CLI, pla
   });
 }
 
+// Whether `home` is a home createStoreHome made: directly in the system temporary directory, named cua-*.
+const isTemporaryHome = home => {
+  try { return dirname(realpathSync(home)) === realpathSync(tmpdir()) && basename(home).startsWith('cua-'); } catch { return false; }
+};
+
 // Removes `key` from the store of `home` (when given) and then the temporary home itself. Resolves {keyGone, homeGone}.
 export async function removeStoreHome({home, key}) {
-  if (isAccountHome(home)) throw new TypeError('removeStoreHome removes only a temporary $HOME, never this account\'s');
+  if (isAccountHome(home) || (existsSync(home) && !isTemporaryHome(home))) throw new TypeError('removeStoreHome removes only a temporary $HOME createStoreHome made, never this account\'s');
   let keyGone = true;
   if (key) {
     const store = fileStore({dir: storeDir({HOME: home})});

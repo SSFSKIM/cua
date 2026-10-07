@@ -40,7 +40,7 @@ export function tapTestStatus(tap, title) {
 export const C2_MATRIX = [
   {claim: 'both eligible shapes (playwright_locator_fill value; tab_ax_action text and value) substitute an exact reference', title: 'an exact reference in each eligible field is replaced by the stored value before the vendor sees it'},
   {claim: 'ordinary values and every other command pass through unchanged', title: 'ordinary values and every other command are delegated unchanged and never read a secret'},
-  {claim: 'invalid and unknown labels fail before input, value-free', title: 'an unknown label, an invalid label and broker failures fail before input, value-free'},
+  {claim: 'invalid and unknown labels fail before input, value-free', title: 'an unknown label, an invalid label and store refusals fail before input, value-free'},
   {claim: 'secrets off or unavailable fail closed', title: 'with secrets turned off or unavailable, a reference fails closed and is never entered literally'},
   {claim: 'an unsupported shape fails before input', title: 'a reference in a shape other than the pinned one fails before input instead of guessing'},
   {claim: 'a vendor rejection after substitution becomes a value-free classification', title: 'a substituted command the vendor rejects becomes a bounded value-free classification'},

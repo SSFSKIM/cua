@@ -185,9 +185,14 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
       try { value = await fileStore({dir: storeDir({HOME: storeHome})}).read(label); } catch (error) {
         return record(STEP.secretCreate, 'BLOCKED', `the caller's key could not be read from the store home given (${error.code ?? 'error'}: ${error.message})`);
       }
+      // Checked before it becomes a leak fingerprint: a very short value's base64 fingerprints are empty and would match
+      // every text, so nothing could be reported.
+      if (value.length < 8 || /[\u0000-\u001f\u007f]/.test(value)) {
+        value = null;
+        return record(STEP.secretCreate, 'BLOCKED', 'the caller\'s value is shorter than 8 characters or holds a control character; store a longer one-line value');
+      }
       forbid(value);
       prints = fingerprints(value);
-      if (!value || /[\u0000-\u001f\u007f]/.test(value)) return record(STEP.secretCreate, 'BLOCKED', 'the caller\'s value is empty or holds a control character, which typeText cannot deliver as one line');
       record(STEP.secretCreate, 'PASS', `the caller's key ${label}, stored before this run in the store home given (left in place)`);
     } else if (secret) {
       storeHome = createStoreHome('cua-accept-textedit-');

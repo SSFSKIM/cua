@@ -22,7 +22,8 @@
 //   4  `node verify.mjs`, plus the native no-account check (the runtime's own CODEX_HOME holds no auth file)
 //   5  --live-textedit only: scripts/accept/textedit.mjs (one disposable TextEdit document)
 //   6  in a temporary $HOME store only (never ~/.config/claude-secrets): `secrets set` without a terminal, then at a
-//      pty (masked, typed twice), `secrets list --json`, `secrets remove`; MCP `secrets_list`; --live-secrets runs
+//      pty (masked, typed twice), `secrets list --json`, `secrets remove`; MCP `secrets_list` as verify.mjs (item 4)
+//      saw it, which lists the account's own store (a key count only, no names or values); --live-secrets runs
 //      scripts/probe-secrets.mjs (generated sentinels in its own temporary $HOME, removed in finally); with both flags
 //      the TextEdit fixture also types {{secret:KEY}} into its document and reads it back (target observation): a
 //      generated value under a generated key in a temporary $HOME it removes, or the caller's --secret-key
@@ -37,7 +38,7 @@ import {spawn, execFileSync} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {loadPins, readInstalledRecord, resolveRuntime, selectPin} from '../src/runtime/manifest.mjs';
@@ -47,7 +48,7 @@ import {fileStore, storeDir} from '../src/secrets/store.mjs';
 import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
+  approvalObservation, diffSnapshots, doctorHealth, DOCTOR_INFORMATIONAL, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
@@ -74,15 +75,16 @@ if ((home + '/').startsWith(REPO + '/')) {
   console.error('accept-native: CUA_HOME must be outside the repository');
   process.exit(2);
 }
-// The caller's key for the TextEdit secret step, and the store home it lives in.
-const callerSecret = options['secret-key'] === undefined ? null : {key: options['secret-key'], home: options['secret-home'] ?? process.env.HOME};
+// The caller's key for the TextEdit secret step, and the store home it lives in (by its real, absolute path).
+const absoluteDir = path => { try { return realpathSync(resolve(path)); } catch { return null; } };
+const callerSecret = options['secret-key'] === undefined ? null : {key: options['secret-key'], home: absoluteDir(options['secret-home'] ?? process.env.HOME ?? '')};
 if (options['secret-home'] !== undefined && !callerSecret) {
   console.error('accept-native: --secret-home goes with --secret-key');
   process.exit(2);
 }
-if (callerSecret && (!options['live-secrets'] || !options['live-textedit'] || !isLabel(callerSecret.key) || isAccountHome(callerSecret.home))) {
-  console.error('accept-native: --secret-key <KEY> needs --live-secrets --live-textedit, a key of letters, digits and _, and a store home'
-    + ' (--secret-home, else $HOME) that is not this account\'s home');
+if (callerSecret && (!options['live-secrets'] || !options['live-textedit'] || !isLabel(callerSecret.key) || !callerSecret.home || isAccountHome(callerSecret.home))) {
+  console.error('accept-native: --secret-key <KEY> needs --live-secrets --live-textedit, a key of letters, digits and _, and an existing store'
+    + ' home (--secret-home, else $HOME) that is not this account\'s home');
   process.exit(2);
 }
 
@@ -193,7 +195,8 @@ async function item3() {
   const status = name => doctor?.checks?.find(c => c.name === name)?.status ?? 'missing';
   const required = ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures'];
   const live = ['helper.live', 'helper.permissions', 'secrets.store'];
-  const health = doctorHealth({code: r.code, doctor});
+  // secrets.store describes the account's own store (~/.config/claude-secrets), not the runtime: reported, not gating.
+  const health = doctorHealth({code: r.code, doctor, informational: row => DOCTOR_INFORMATIONAL(row) || row.name === 'secrets.store'});
   const healthy = health.healthy && doctor.runtime?.release && required.every(n => status(n) === 'pass');
   checks.push(check('doctor --json on the installed home', healthy && live.every(n => status(n) !== 'missing') ? 'PASS' : 'FAIL',
     `${health.detail}; release ${doctor?.runtime?.release ?? 'none'}; ${[...required, ...live].map(n => `${n} ${status(n)}`).join(', ')}`,
@@ -306,7 +309,8 @@ async function item6(probe, textedit) {
     checks.push(check('secrets remove deletes the key\'s file', removed.code === 0 && gone ? 'PASS' : 'FAIL', `exit ${removed.code}; the key is ${gone ? 'gone' : 'still listed'}`));
   } finally {
     const cleaned = await removeStoreHome({home: storeHome, key});
-    checks.push(check('the temporary store home is removed', cleaned.keyGone && cleaned.homeGone ? 'PASS' : 'FAIL', cleaned.homeGone ? 'removed' : 'still present'));
+    checks.push(check('the temporary store home is removed', cleaned.keyGone && cleaned.homeGone ? 'PASS' : 'FAIL',
+      `key file ${cleaned.keyGone ? 'gone' : 'NOT removed'}; home ${cleaned.homeGone ? 'removed' : 'still present'}`));
   }
   const mcp = state.verify?.secretsList;
   checks.push(check('MCP secrets_list returns keys only', mcp?.status === 'ok' && Number.isInteger(mcp.labelCount) ? 'PASS' : mcp ? 'BLOCKED' : 'FAIL',

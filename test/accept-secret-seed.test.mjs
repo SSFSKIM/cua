@@ -2,7 +2,7 @@
 // $HOME, nothing echoes it, and the account's own home is refused.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, statSync} from 'node:fs';
+import {existsSync, mkdirSync, statSync} from 'node:fs';
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {createStoreHome, generatedKey, isAccountHome, ptyCommand, removeStoreHome, seedSecret} from '../scripts/accept/secret-seed.mjs';
@@ -68,4 +68,13 @@ test('a set that fails before any prompt ends without waiting for the timeout', 
   } finally {
     await removeStoreHome({home});
   }
+});
+
+test('only a temporary home createStoreHome made is ever removed', async () => {
+  const home = createStoreHome();
+  const inside = join(home, 'not-a-store-home');
+  mkdirSync(inside);
+  await assert.rejects(removeStoreHome({home: inside}), /temporary \$HOME/);
+  assert.ok(existsSync(inside));
+  assert.deepEqual(await removeStoreHome({home}), {keyGone: true, homeGone: true});
 });

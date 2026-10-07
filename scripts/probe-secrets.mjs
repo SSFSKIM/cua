@@ -361,8 +361,9 @@ try {
   for (const child of children) child.kill('SIGTERM');
   if (storeHome) {
     if (unreadableHome) { try { chmodSync(storeDir({HOME: unreadableHome}), 0o700); } catch {} }
-    const removed = await removeStoreHome({home: storeHome, key: label});
-    const extra = unreadableHome ? await removeStoreHome({home: unreadableHome}) : {homeGone: true};
+    const remove = async target => { try { return await removeStoreHome(target); } catch { return {keyGone: false, homeGone: false}; } };
+    const removed = await remove({home: storeHome, key: label});
+    const extra = unreadableHome ? await remove({home: unreadableHome}) : {homeGone: true};
     const ok = removed.keyGone && removed.homeGone && extra.homeGone;
     record('cleanup', ok ? 'PASS' : 'FAIL', ok ? 'the probe\'s key file and its temporary homes were removed'
       : `CLEANUP FAILED: remove ${storeHome}${unreadableHome ? ` and ${unreadableHome}` : ''} by hand (key ${label})`);

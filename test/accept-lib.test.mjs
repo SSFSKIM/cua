@@ -313,3 +313,12 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   assert.equal(doctorHealth({code: 1, doctor: report(runtime)}).healthy, false, 'nonzero exit from a healthy report');
   assert.deepEqual(doctorHealth({code: 1, doctor: null}), {healthy: false, detail: 'exit 1; no report'});
 });
+
+test('a caller may make more doctor rows informational: reported, never gating, and the report must still agree with itself', () => {
+  const rows = [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'secrets.store', status: 'fail', detail: ''}];
+  const store = row => row.name === 'secrets.store';
+  assert.equal(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}).healthy, false);
+  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}, informational: store}),
+    {healthy: true, detail: 'exit 1; ok false; informational, not gating: secrets.store fail'});
+  assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}, informational: store}).healthy, false, 'ok that contradicts its rows');
+});

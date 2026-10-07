@@ -25,13 +25,13 @@ export function rollup(statuses) {
 // (agent.*), which describe this Mac's launchd agent and console, not the runtime: an enrolled Mac whose screen is
 // locked fails agent.console with nothing native wrong (#56). Those rows are informational here: reported, never
 // gating. Every other failing row still fails, and the exit code and `ok` must agree with the rows (a report that
-// contradicts itself is not health). -> {healthy, detail}
+// contradicts itself is not health). A caller may name more informational rows. -> {healthy, detail}
 export const DOCTOR_INFORMATIONAL = row => row.name.startsWith('agent.');
-export function doctorHealth({code, doctor}) {
+export function doctorHealth({code, doctor, informational = DOCTOR_INFORMATIONAL}) {
   if (!doctor || !Array.isArray(doctor.checks)) return {healthy: false, detail: `exit ${code}; no report`};
   const anyFail = doctor.checks.some(c => c.status === 'fail');
-  const gating = doctor.checks.filter(c => c.status === 'fail' && !DOCTOR_INFORMATIONAL(c)).map(c => c.name);
-  const info = doctor.checks.filter(c => DOCTOR_INFORMATIONAL(c) && c.status !== 'skip').map(c => `${c.name} ${c.status}`);
+  const gating = doctor.checks.filter(c => c.status === 'fail' && !informational(c)).map(c => c.name);
+  const info = doctor.checks.filter(c => informational(c) && c.status !== 'skip').map(c => `${c.name} ${c.status}`);
   const consistent = doctor.ok === !anyFail && code === (anyFail ? 1 : 0);
   return {
     healthy: consistent && !gating.length,

@@ -98,7 +98,7 @@ function writeDevices(env, devices) {
 // What adding `name` would do, checked against the registry as it is, without writing: the registry with the entry in
 // place and whether the entry is added, unchanged (the same device on the same relay) or replaced (only with replace).
 function planAdd({env, name, relayUrl, deviceId, replace}) {
-  if (!isDeviceName(name)) fail('invalid_device_name', `${JSON.stringify(String(name))} is not a device name: ${NAME_RULE}`, {hint: 'name the device with --name <name>'});
+  if (!isDeviceName(name)) fail('invalid_device_name', `that is not a device name: ${NAME_RULE}`, {hint: 'name it as cua devices add <name> …, or cua devices import <file> --name <name>'});
   if (!isDeviceId(deviceId)) fail('invalid_device_id', 'the device id is not one an enrolment mints (16 bytes, base64url: 22 characters of A-Z a-z 0-9 - _)', {hint: 'cua remote show on the device prints its id'});
   const origin = normalizeRelayUrl(relayUrl);
   const devices = readDevices({env});
@@ -118,7 +118,9 @@ export function addDevice({env = process.env, name, relayUrl, deviceId, replace 
 
 export function removeDevice({env = process.env, name}) {
   const devices = readDevices({env});
-  if (!isDeviceName(name) || !Object.hasOwn(devices, name)) fail('device_unknown', `no device is registered as ${JSON.stringify(String(name))}`, {hint: 'cua devices list shows the registered names'});
+  // Only a well-formed name is repeated: anything else may be a credential pasted in the wrong place.
+  if (!isDeviceName(name) || !Object.hasOwn(devices, name))
+    fail('device_unknown', isDeviceName(name) ? `no device is registered as "${name}"` : `no device is registered under that name (${NAME_RULE})`, {hint: 'cua devices list shows the registered names'});
   const {[name]: removed, ...rest} = devices;
   writeDevices(env, rest);
   return {name, ...removed};
@@ -141,6 +143,7 @@ function readClientConfig(file) {
   const servers = config?.mcpServers;
   if (!isPlainObject(servers)) invalid('it has no mcpServers');
   const names = Object.keys(servers);
+  if (!names.length) invalid('its mcpServers is empty');
   const server = Object.hasOwn(servers, 'cua_repl') ? servers.cua_repl : names.length === 1 ? servers[names[0]] : invalid('it names no cua_repl server and more than one other');
   if (!isPlainObject(server) || server.type !== 'http' || typeof server.url !== 'string') invalid('its server is not an http server with a url');
   let url;

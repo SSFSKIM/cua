@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
-import {existsSync, mkdirSync, readFileSync, statSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {
@@ -166,6 +166,7 @@ test('import refuses a file it cannot use, classified, without the credential in
     'missing.mcp.json': null,
     'notjson.mcp.json': `{"mcpServers": {"cua_repl": {"headers": {"Authorization": "Bearer ${CREDENTIAL}"`,
     'noservers.mcp.json': {servers: {}},
+    'emptyservers.mcp.json': {mcpServers: {}},
     'two.mcp.json': clientConfig({name: 'a', extra: {b: clientConfig().mcpServers.cua_repl}}),
     'stdio.mcp.json': {mcpServers: {cua_repl: {command: 'node', args: ['x'], env: {TOKEN: CREDENTIAL}}}},
     'path.mcp.json': {mcpServers: {cua_repl: {type: 'http', url: `${RELAY}/mcp`, headers: {Authorization: `Bearer ${CREDENTIAL}`}}}},
@@ -180,10 +181,12 @@ test('import refuses a file it cannot use, classified, without the credential in
     const path = config === null ? join(home, file) : writeConfig(home, file, config);
     const error = await asyncRefusal(importDevice({env, file: path}));
     codes[file] = error.code;
+    if (file === 'emptyservers.mcp.json') assert.match(error.message, /its mcpServers is empty/);
     for (const text of [error.message, error.hint ?? '', JSON.stringify(error)]) assert.ok(!text.includes(CREDENTIAL), `${file} exposed the credential`);
   }
   assert.deepEqual(codes, {
     'missing.mcp.json': 'client_config_unreadable', 'notjson.mcp.json': 'invalid_client_config', 'noservers.mcp.json': 'invalid_client_config',
+    'emptyservers.mcp.json': 'invalid_client_config',
     'two.mcp.json': 'invalid_client_config', 'stdio.mcp.json': 'invalid_client_config', 'path.mcp.json': 'invalid_client_config',
     'badid.mcp.json': 'invalid_client_config', 'clear.mcp.json': 'invalid_relay_url', 'noauth.mcp.json': 'invalid_client_config',
     'envvar.mcp.json': 'invalid_client_config', 'notbearer.mcp.json': 'invalid_client_config',
@@ -254,4 +257,47 @@ test('cua devices usage errors exit 2 without repeating what was passed', t => {
     assert.ok(!r.stderr.includes(CREDENTIAL), `${args.join(' ')} repeated its input`);
   }
   assert.match(cua(['help'], home).stdout, /devices add <name> --relay <url> --device <id>/);
+});
+
+test('a name that is not one, or that names no device, is refused without repeating it unless it follows the name rule', t => {
+  const {env} = scratchHome(t);
+  addDevice({env, name: 'mini', relayUrl: RELAY, deviceId: MINI});
+  for (const name of [CREDENTIAL, `Bearer ${CREDENTIAL}`, 'Mini']) {
+    const invalid = refusal(() => addDevice({env, name, relayUrl: RELAY, deviceId: MINI}));
+    assert.equal(invalid.code, 'invalid_device_name');
+    assert.ok(!`${invalid.message} ${invalid.hint}`.includes(name), `invalid_device_name repeated ${name}`);
+    assert.match(invalid.hint, /cua devices add <name>/);
+    assert.match(invalid.hint, /--name <name>/);
+    const unknown = refusal(() => removeDevice({env, name}));
+    assert.equal(unknown.code, 'device_unknown');
+    assert.ok(!unknown.message.includes(name), `device_unknown repeated ${name}`);
+  }
+  assert.match(refusal(() => removeDevice({env, name: 'macbook'})).message, /"macbook"/, 'a well-formed name is named');
+});
+
+test('an unsafe or unreadable existing credential file is overwritten by import, 0600, and reported replaced', async t => {
+  const {home, env} = scratchHome(t);
+  const key = clientSecretKey(MINI);
+  mkdirSync(storeDir(env), {recursive: true, mode: 0o700});
+  for (const existing of [CREDENTIAL, OTHER_CREDENTIAL]) {
+    writeFileSync(join(storeDir(env), key), existing, {mode: 0o644});
+    chmodSync(join(storeDir(env), key), 0o644);
+    const file = writeConfig(home, 'mini.mcp.json', clientConfig());
+    assert.equal((await importDevice({env, file})).credential, 'replaced', existing === CREDENTIAL ? 'same value, unsafe mode' : 'other value');
+    assert.equal(statSync(join(storeDir(env), key)).mode & 0o777, 0o600);
+    assert.equal(await fileStore({dir: storeDir(env)}).read(key), CREDENTIAL);
+  }
+});
+
+test('when the secret store cannot be listed, a device\'s credential reads unknown (null), and add warns so', t => {
+  const {home} = scratchHome(t);
+  const store = storeDir({HOME: home});
+  mkdirSync(join(store, '..'), {recursive: true});
+  writeFileSync(store, 'not a directory');
+  const added = cua(['devices', 'add', 'mini', '--relay', RELAY, '--device', MINI, '--json'], home);
+  assert.equal(added.status, 0, added.stderr);
+  assert.equal(JSON.parse(added.stdout).credentialStored, null);
+  assert.match(added.stderr, new RegExp(`cannot be listed.*${clientSecretKey(MINI)}.*/secret ${clientSecretKey(MINI)}`, 's'));
+  assert.equal(JSON.parse(cua(['devices', 'list', '--json'], home).stdout).devices[0].credentialStored, null);
+  assert.match(cua(['devices', 'list'], home).stdout, /^mini\s+\S+\s+\S+\s+credential unknown \(the secret store cannot be listed\)$/m);
 });

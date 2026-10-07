@@ -26,7 +26,7 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-07) Independent design review and buildability review (both opus, adversarial brief); 5 blocking and
       ~20 important/minor findings folded in (Decision Log, 2026-10-07 revision).
 - [x] (2026-10-07 04:55) S0 — spike: the vendor service without `agentRequestHeaderEnabled`, no login, normal network; the extension key.
-- [ ] H1 — the host and its contract with the vendor service, proven against a fake extension.
+- [x] (2026-10-07 07:10) H1 — the host and its contract with the vendor service, proven against a fake extension.
 - [ ] H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
 - [ ] H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
 - [ ] H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
@@ -621,6 +621,13 @@ No new npm dependencies.
 - Decision (controller + session, 2026-10-07): H4's provisioning merges the cua extension's force-list entry into the
   one managed policy file the template already writes (`/etc/opt/chrome/policies/managed/cua.json`, a single
   `ExtensionInstallForcelist`), never a second file with its own list (Chrome does not merge them; the last file wins).
+
+- Decision (H1 review, 2026-10-07): when a late `turnEnded(N)` hands off a tab after turn N+1 began, the tab resumes into
+  N+1 at once (listed by `getTabs`, mark cleared, debugger detached). An exiting host removes `<name>.json` before
+  closing its server and never unlinks the socket path itself (libuv unlinks at `close()`), so a successor that took
+  the path keeps its files; the log is renamed to `<name>.log` only after listening. `claimUserTab` refuses `chrome://`,
+  `chrome-extension://`, `chrome-untrusted://` and `devtools://` tabs (`Chrome internal tab N cannot be claimed`);
+  `getUserTabs` lists them, as the vendor does. Deferred: per-tab serialization of attach/detach (bounded by turn end).
 
 ## Outcomes & Retrospective
 

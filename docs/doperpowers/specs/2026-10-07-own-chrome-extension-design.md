@@ -25,7 +25,7 @@ extension built here is designed so that C reuses it unchanged.
       Web Store unlisted distribution, minimal popup, vendor route kept until the listing is live).
 - [x] (2026-10-07) Independent design review and buildability review (both opus, adversarial brief); 5 blocking and
       ~20 important/minor findings folded in (Decision Log, 2026-10-07 revision).
-- [ ] S0 — spike: the vendor service without `agentRequestHeaderEnabled`, no login, normal network; the extension key.
+- [x] (2026-10-07 04:55) S0 — spike: the vendor service without `agentRequestHeaderEnabled`, no login, normal network; the extension key.
 - [ ] H1 — the host and its contract with the vendor service, proven against a fake extension.
 - [ ] H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
 - [ ] H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).

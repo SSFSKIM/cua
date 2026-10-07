@@ -2,13 +2,12 @@
 
 ## Open
 
-- **2026-10-07 — A success result's text is invisible in Claude Code when it has structured content (minor, issue
-  #70 G4).** Claude Code 2.1.292 shows the model only the JSON of `structuredContent` for a successful MCP result and
-  drops its text blocks (evidence `docs/evidence/2026-10-07-device-multiplexing-acceptance.md`). `devices_use` and the
-  device-session note were fixed in G4; the local `profiles_list` still puts its "not ready: tell the user, do not bind
-  or pick a profile" guidance only in the text (`statusResult(…, {message})` in `src/mcp/server.mjs`), so the model sees
-  the reason code but not the instruction. Moving each such message into the structured content (or a `note` field in
-  `statusResult` itself) would close it.
+- **2026-10-07 — `assertModelSeesText` is opt-in and has two latent false-fail shapes (minor, issue #72 review).**
+  It runs at eight call sites (`test/mcp-*.test.mjs`), so a new successful result with text-only guidance is caught
+  only where a test calls it, and a routed `profiles_list` with guidance on a fresh device session (`guidance` plus
+  `cua/note`) works by construction but is not pinned. Its JSON-line branch also compares a JSON array line key by key
+  and a JSON object line inside free text as top-level fields; no current result has either. Calling it from the
+  harness client on every tools/call response, with the JSON branch limited to the last line, would close both.
 
 - **2026-10-07 — Phase G task-review minors left (minor, issue #70).** (a) `src/cli.mjs` is past 700 lines with the
   `devices` handler; a split by command family (as `src/secrets/commands.mjs` did) would keep it readable. (b)
@@ -136,6 +135,11 @@
   HEAD` and the release, and have `--all` report (or refuse) a report from another commit.
 
 ## Resolved
+
+- **2026-10-07 — A success result's text is invisible in Claude Code when it has structured content (minor, issue
+  #70 G4; resolved 2026-10-07, issue #72).** Resolved: `profiles_list` puts its not-ready guidance in a `guidance`
+  field of the structured content too; the audit found no other successful result whose text says more than its
+  structured content, and `assertModelSeesText` (`test/fixtures/mcp-harness.mjs`) pins that at eight call sites.
 
 - **2026-10-03 — Two copies of the helper-suite verdict and the step runner in the acceptance runners (minor, M13; obsolete 2026-10-07).** Obsolete: issue #66 removed the Swift helper and its suites, so `helperSuiteVerdict` and `helperSuite` are gone; the duplicated step runner, if it remains, is ordinary duplication.
   `scripts/accept/chrome-all-lib.mjs` (`helperSuiteVerdict`) and `scripts/accept/chrome-all.mjs` (`run`) repeat the

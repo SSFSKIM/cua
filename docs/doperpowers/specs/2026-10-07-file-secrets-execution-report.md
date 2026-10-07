@@ -49,7 +49,7 @@ Evidence: `docs/evidence/2026-10-07-file-secrets-acceptance.md`.
 
 ## Acceptance (per item)
 
-1. `npm test`: macOS 703 tests, 702 pass, 1 Linux-only skip, 0 fail (after the merge and fix wave: see the last
+1. `npm test`: macOS 701 tests, 700 pass, 1 Linux-only skip, 0 fail before the merge (after the merge and fix wave: see the last
    section). VM (arm64, `node_modules` copied in): 701 tests, 663 pass, 38 darwin-only skips, 0 fail, before the merge.
 2. macOS local: PASS (`accept-native --live-secrets --live-textedit --secret-key CUA_TEST_SECRET --secret-home <tmp>`,
    temporary `CUA_HOME` `/tmp/cua-66-home`; TextEdit readback exact by SHA-256 in the cell; probe-secrets 34/34).
@@ -75,3 +75,15 @@ mod moved into this repo on `main` while the branch was open: stale "doperpowers
 helper paragraph to drop on merge) and four P3s (empty value, short-value leak fingerprints in two fixtures, C5's
 doctor health counting `secrets.store`, the README's `secrets_list` wording). The P2 was resolved by merging `main`
 and rewording; the P3s by one fix wave.
+
+## Final state
+
+Fix wave `3a86290`: empty values refused (`secret_empty`), a shared `fingerprintable` rule for the fixtures' leak scans
+(`scripts/probe/leak-scan.mjs`), `secrets.store` informational in every acceptance doctor-health row, the README's
+`secrets_list` wording. After it: `npm test` on macOS 705 tests, 704 pass, 1 Linux-only skip, 0 fail; on the VM
+(arm64) 705 tests, 667 pass, 38 darwin-only skips, 0 fail. `bash tests/mods/run-mods-tests.sh` 20/20 after the merge.
+The live runs above were made before the merge and the fix wave; neither changed the substitution path except the
+empty-value refusal, which is covered by the unit suites.
+
+Cleanup: the VM's and the mini's test keys removed; the local temporary store home removed; the mini's checkout back
+on `main` with its agent reconnected; the scratch `CUA_HOME` `/tmp/cua-66-home` left for inspection (delete at will).

@@ -3,9 +3,9 @@
 # devices.json; either restarts the relay (agents reconnect by themselves, sessions survive on the Macs). The file
 # replaces the server's whole table: keep every device in it (the current one: ssh root@<host> cat /etc/cua-relay/devices.json).
 # --ext publishes the self-hosted cua extension (the directory `CUA_EXTENSION_KEY=… npm run extension:pack` wrote:
-# update.xml and the CRX it names; the Store zip there is not copied) at https://<host>/ext/, the URL Linux VMs force-install it from; it installs this checkout's
-# Caddyfile (the /ext/ route) under the server's current site address when that differs, and reloads Caddy. It does
-# not restart the relay.
+# update.xml and the CRX it names; the Store zip there is not copied) at https://<host>/ext/, the URL Linux VMs
+# force-install it from; it installs this checkout's Caddyfile (the /ext/ route) under the server's current site
+# address when that differs, and reloads Caddy. It does not restart the relay.
 #
 #   relay/deploy/update.sh [--ref <git ref>] [--devices <devices.json>] [--ext <dist dir>] [--host <address>]
 #

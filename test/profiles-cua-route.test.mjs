@@ -148,7 +148,10 @@ test('on the cua route the readiness reasons and bind\'s no-backend reason name 
   // The vendor route's wording stands.
   assert.match(reasonText({...p, reason: 'host_not_live'}, {route: 'vendor'}), /click the OpenAI \(ChatGPT\) extension's icon/);
   assert.equal(pickReasonFor('no_live_backends', 'vendor'), PICK_REASONS.no_live_backends);
-  assert.equal(pickReasonFor('unlabelled', 'cua'), PICK_REASONS.unlabelled);
+  assert.equal(pickReasonFor('unlabelled', 'vendor'), PICK_REASONS.unlabelled);
+  // On the cua route every backend is unlabelled, so `unlabelled` means the directory had nothing to decide with.
+  assert.match(pickReasonFor('unlabelled', 'cua'), /this profile directory's cua extension store .*no live backend.*no profile label/);
+  assert.equal(pickReasonFor('local_state_unreadable', 'cua'), PICK_REASONS.local_state_unreadable);
   assert.match(pickReasonFor('no_live_backends', 'cua'), /^no cua extension backend of Google Chrome is live/);
   assert.doesNotMatch(pickReasonFor('no_live_backends', 'cua'), /OpenAI/);
 });

@@ -79,9 +79,10 @@ node bin/cua.mjs profiles list
 ```
 
 `bind` lists the live extension backends with the Chrome profile directory and display name cua computes for each
-(copies of the extension's settings store, read with the runtime's own `classic-level`). It binds by itself when the registered directory's store names exactly one live backend; otherwise it asks for a pick,
-and from a non-terminal it prints the candidates and takes `--extension-instance-id <id>`. `--dry-run` shows the
-decision without recording it. The profile is `ready` when its bound instance is live now.
+(copies of the extension's settings store, read with the runtime's own `classic-level`). It binds by itself when the
+registered directory's store names exactly one live backend; otherwise it asks for a pick, and from a non-terminal it
+prints the candidates and takes `--extension-instance-id <id>`. `--dry-run` shows the decision without recording it. The
+profile is `ready` when its bound instance is live now.
 
 The binding lasts as long as the extension instance: reinstalling the extension (or removing an unpacked load and
 loading it again) mints a new id, after which `list` says `binding_stale` and `bind` again repairs it. `host_not_live`
@@ -115,7 +116,8 @@ network); `disabled` lifts both.
 
 What this sequence implies for a service that is meant to run without a person:
 
-- **Console steps are one-time.** Permissions (7) and the extension install (4) happen once per Mac and profile; everything after is unattended, including the listing launch, `profiles list` and `cua serve`.
+- **Console steps are one-time.** Permissions (7) and the extension install (4) happen once per Mac and profile;
+  everything after is unattended, including the listing launch, `profiles list` and `cua serve`.
 - **Chrome must be open on the profile, with the extension awake.** The host is started by Chrome when the extension
   connects and ends when that connection closes (spike #7). A service should check readiness (`profiles list --json`
   or the agent's `profiles_list`) before each task and surface `host_not_live` / `binding_stale` as a person's step,

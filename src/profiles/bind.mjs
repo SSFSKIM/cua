@@ -94,6 +94,9 @@ export const PICK_REASONS = {
 const CUA_PICK_REASONS = {
   ...PICK_REASONS,
   no_live_backends: 'no cua extension backend of Google Chrome is live (is Chrome open on this profile with the cua extension enabled? its popup shows whether its host is connected)',
+  // The service labels no backend on the cua route (cua's host omits the extension id it labels by), so only the
+  // directory's store could have decided.
+  unlabelled: 'this profile directory\'s cua extension store records no live backend (the extension is not loaded in this profile, its host is not running, or the store could not be read), and the cua route gives backends no profile label to fall back on',
 };
 export const pickReasonFor = (reason, route) => (effectiveRoute(route) === 'cua' ? CUA_PICK_REASONS : PICK_REASONS)[reason];
 

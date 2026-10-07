@@ -17,8 +17,8 @@ Working rules:
   a live probe or the readable vendor source (`--readable-source`), not against the spec alone.
 - Never read or print `auth.json`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN`, the extension's private key
   (`~/.config/cua/extension-key.pem`, the owner's; only `CUA_EXTENSION_KEY=… npm run extension:pack` reads it to sign)
-  or any secret value; `codex login` runs only as `cua login`. Never kill Chrome, the ChatGPT app or their hosts; never click or edit TCC consent; stop on any password
-  prompt.
+  or any secret value; `codex login` runs only as `cua login`. Never kill Chrome, the ChatGPT app or their hosts; never
+  click or edit TCC consent; stop on any password prompt.
 - Permission dialogs need the GUI login session: run live GUI steps from the console, not over SSH. Tests and probes
   that touch secrets use a temporary `$HOME`, never the owner's real `~/.config/claude-secrets`. A terminal without Full Disk Access cannot read Chrome's
   user-data directory on macOS 27.

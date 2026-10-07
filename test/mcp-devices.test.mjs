@@ -1,5 +1,5 @@
 // Phase G: the target in the stdio server. A stdio connection (createServer over the harness's fake local upstream)
-// with a device directory (src/remote/targets.mjs) built from a temporary $HOME's registry and secret store, reaching
+// with a device directory (src/remote/directory.mjs) built from a temporary $HOME's registry and secret store, reaching
 // devices served by the real Streamable HTTP handler (src/mcp/http.mjs) on ephemeral loopback ports, whose sessions are
 // in-process connections over fake upstreams (mcp-harness.mjs inProcessConnections). A front in front of each device
 // rewrites /d/<id>/mcp to /mcp as the relay does, and may answer or cut a request first.
@@ -11,7 +11,7 @@ import {createMcpHttp} from '../src/mcp/http.mjs';
 import {openDeviceSession} from '../src/remote/client.mjs';
 import {addDevice} from '../src/remote/devices.mjs';
 import {clientSecretKey} from '../src/remote/device.mjs';
-import {deviceDirectory} from '../src/remote/targets.mjs';
+import {deviceDirectory} from '../src/remote/directory.mjs';
 import {fileStore, storeDir} from '../src/secrets/store.mjs';
 import {harness, initialized, inProcessConnections, structured, textOf, tick, UPSTREAM_TOOLS} from './fixtures/mcp-harness.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
@@ -512,4 +512,188 @@ test('calls that arrive while devices_use is switching wait for it, so each runs
   const js = await mini.upstreamOf(0).nextCall('js');
   mini.upstreamOf(0).text(js, 'on mini');
   assert.equal((await ran.response).result._meta['cua/device'], 'mini');
+});
+
+// Ends the device task on `mini` (session n) so the next call opens a session lazily.
+async function endRemoteTask(h, mini, n = 0) {
+  const ran = h.client.call('js', {code: 'task'});
+  mini.upstreamOf(n).text(await mini.upstreamOf(n).nextCall('js'), 'done');
+  await ran.response;
+  const ended = h.client.call('end_task');
+  mini.upstreamOf(n).reply(await mini.upstreamOf(n).nextCall('turn_ended'), {content: [], isError: false});
+  await ended.response;
+}
+
+// Holds the next initialize the device receives; release() hands it to the handler.
+function holdInitialize(d) {
+  const hold = {entry: null};
+  d.front = entry => entry.message?.method === 'initialize' && (hold.entry = entry, true);
+  hold.release = async () => {
+    d.front = null;
+    const {entry} = hold;
+    const replay = await fetch(`${d.relayUrl}/d/${d.deviceId}/mcp`, {method: 'POST', headers: entry.headers, body: entry.body});
+    entry.res.writeHead(replay.status, Object.fromEntries(replay.headers));
+    entry.res.end(Buffer.from(await replay.arrayBuffer()));
+  };
+  return hold;
+}
+
+test('a js waiting for its lazy open already holds the task open: devices_use is refused task_open', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  await use(h, 'mini');
+  await endRemoteTask(h, mini);
+  const hold = holdInitialize(mini);
+  const ran = h.client.call('js', {code: 'opening'});
+  await until(() => hold.entry, 'the held initialize');
+  assert.equal(code(await use(h, 'local')), 'task_open');
+  await hold.release();
+  mini.upstreamOf(1).text(await mini.upstreamOf(1).nextCall('js'), 'ran');
+  assert.equal((await ran.response).result.content.at(-1).text, 'ran');
+  assert.equal(mini.http.sessions.size, 1, 'the session with the open task was kept');
+  assert.equal(code(await use(h, 'local')), 'task_open');
+});
+
+test('the new-session note goes on the first answer a lazily opened session gives, once, even when the call that opened it was withdrawn', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  await use(h, 'mini');
+  await endRemoteTask(h, mini);
+  const hold = holdInitialize(mini);
+  const opener = h.client.call('js', {code: 'withdrawn'});
+  await until(() => hold.entry, 'the held initialize');
+  const secrets = [h.client.call('secrets_list'), h.client.call('secrets_list')];
+  await tick(20);
+  h.client.notify('notifications/cancelled', {requestId: opener.id});
+  await hold.release();
+  const listed = await Promise.all(secrets.map(async call => (await call.response).result));
+  assert.deepEqual(listed.map(result => result._meta['cua/deviceSession']).filter(Boolean), ['new'], 'one note for the session, on the first answer');
+  assert.match(listed.find(result => result._meta['cua/deviceSession']).content[0].text, /new session on mini/);
+  const after = h.client.call('js', {code: 'later'});
+  mini.upstreamOf(1).text(await mini.upstreamOf(1).nextCall('js'), 'later');
+  assert.equal((await after.response).result._meta['cua/deviceSession'], undefined, 'said once per session');
+  assert.deepEqual(h.client.responsesFor(opener.id), []);
+  assert.equal(mini.upstreamOf(1).calls('js').length, 1, 'the withdrawn call never ran');
+});
+
+test('stray ids are dropped: an answer to a cua-device- id no longer awaited, and a device cancellation naming no request of its', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  await use(h, 'mini');
+  const deviceUp = mini.upstreamOf(0);
+  const ran = h.client.call('js', {code: 'x'});
+  const js = await deviceUp.nextCall('js');
+  h.client.send({jsonrpc: '2.0', id: 'cua-device-99', result: {action: 'accept', content: {}}});
+  deviceUp.emit({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 42}});
+  deviceUp.emit({jsonrpc: '2.0', method: 'notifications/message', params: {level: 'info', data: 'after'}});
+  await h.client.next(m => m.method === 'notifications/message', {label: 'the later notification'});
+  assert.equal(h.client.frames.filter(m => m.method === 'notifications/cancelled').length, 0, 'the device\'s raw id never reaches the client');
+  await tick(30);
+  assert.equal(h.upstream.sent.filter(m => m.id === 'cua-device-99').length, 0, 'never sent to the local runtime');
+  assert.equal(deviceUp.sent.filter(m => m.id === 'cua-device-99').length, 0);
+  assert.ok(h.client.diagnostics.some(line => /cua-device-99.*dropped/.test(line)));
+  deviceUp.text(js, 'x');
+  await ran.response;
+});
+
+test('end_task on a device gone offline answers device_offline with ended:false and frees the target', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  await use(h, 'mini');
+  const ran = h.client.call('js', {code: 'x'});
+  mini.upstreamOf(0).text(await mini.upstreamOf(0).nextCall('js'), 'x');
+  await ran.response;
+  mini.front = entry => {
+    entry.res.writeHead(503, {'Content-Type': 'application/json'});
+    entry.res.end(JSON.stringify({jsonrpc: '2.0', id: null, error: {code: -32000, message: 'cua-relay: device offline'}}));
+    return true;
+  };
+  const ended = await h.client.call('end_task').response;
+  assert.deepEqual(structured(ended), {status: 'error', ended: false, code: 'device_offline', device: 'mini'});
+  assert.match(textOf(ended), /the device session is closed; devices_use still works/);
+  assert.deepEqual(structured(await use(h, 'local')), {status: 'ok', device: 'local', previous: 'mini'});
+});
+
+test('a cancelled devices_use is never answered and leaves the target; a js queued behind a switch can be cancelled and never runs', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  let hold = holdInitialize(mini);
+  const switching = h.client.call('devices_use', {device: 'mini'});
+  await until(() => hold.entry, 'the held initialize');
+  h.client.notify('notifications/cancelled', {requestId: switching.id});
+  await tick(50);
+  assert.deepEqual(h.client.responsesFor(switching.id), []);
+  assert.equal(structured(await h.client.call('devices_list').response).current, 'local');
+  hold.entry.res.destroy();
+
+  hold = holdInitialize(mini);
+  const again = h.client.call('devices_use', {device: 'mini'});
+  await until(() => hold.entry, 'the second held initialize');
+  const queued = h.client.call('js', {code: 'never'});
+  await tick(20);
+  h.client.notify('notifications/cancelled', {requestId: queued.id});
+  await hold.release();
+  assert.equal(structured(await again.response).status, 'ok');
+  await tick(50);
+  assert.deepEqual(h.client.responsesFor(queued.id), []);
+  assert.equal(mini.upstreamOf(0).calls('js').length + h.upstream.calls('js').length, 0);
+});
+
+test('a session end with no task open retries secrets_list once on a new session', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  await use(h, 'mini');
+  mini.front = entry => entry.method === 'GET';
+  await mini.http.endSessions('eof');
+  const listed = h.client.call('secrets_list');
+  await until(() => mini.open.opened.length === 2, 'the re-opened session');
+  mini.front = null;
+  const result = (await listed.response).result;
+  assert.equal(result.structuredContent.code, 'secrets_not_configured', 'the device\'s answer');
+  assert.equal(result._meta['cua/deviceSession'], 'new');
+});
+
+test('closing the connection answers what is in flight connection_closing: a remote js, and a devices_use still opening', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  const other = await device(t);
+  await register(home, 'mini', mini);
+  await register(home, 'other', other);
+  const h = harness({server: {devices: deviceDirectory({env: home.env})}});
+  await initialized(h);
+  await use(h, 'mini');
+  await endRemoteTask(h, mini);
+  const ran = h.client.call('js', {code: 'long'});
+  await until(() => mini.open.opened.length === 2, 'the lazy session');
+  await mini.upstreamOf(1).nextCall('js');
+  h.client.eof();
+  await h.server.closed;
+  const response = await ran.response;
+  assert.equal(code(response), 'connection_closing');
+  assert.doesNotMatch(textOf(response), /next call/);
+  assert.equal(mini.http.sessions.size, 0);
+
+  const second = await device(t);
+  await register(home, 'second', second);
+  const h2 = harness({server: {devices: deviceDirectory({env: home.env})}});
+  await initialized(h2);
+  const hold = holdInitialize(second);
+  const switching = h2.client.call('devices_use', {device: 'second'});
+  await until(() => hold.entry, 'the held initialize');
+  h2.client.eof();
+  await h2.server.closed;
+  assert.equal(code(await switching.response), 'connection_closing');
+  hold.entry.res.destroy();
 });

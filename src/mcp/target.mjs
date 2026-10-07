@@ -1,5 +1,5 @@
 // The target of one stdio connection (Phase G): `local`, this machine's runtime, or a registered device reached through
-// a device session (src/remote/client.mjs, opened through the directory of src/remote/targets.mjs). The server
+// a device session (src/remote/client.mjs, opened through the directory of src/remote/directory.mjs). The server
 // (src/mcp/server.mjs) answers devices_list and devices_use here and hands every js, js_reset, end_task, secrets_list
 // and profiles_list call to `route`, which runs it locally or on the device.
 //
@@ -11,23 +11,27 @@
 //   corrected images and redacted tokens) and tagged `_meta["cua/device"]`; a JSON-RPC error is relayed as an error;
 //   a transport failure is a classified tool error (statusResult) naming the device. end_task, once answered (or
 //   failed), ends the device session, so the device's runtime is freed the moment a task ends; the next call opens a
-//   session lazily. Every call that opened a session says, in its text and as `_meta["cua/deviceSession"]: "new"`,
-//   that the device's REPL state is fresh.
+//   session lazily. The first call answered on a session opened that way says, in its text and as
+//   `_meta["cua/deviceSession"]: "new"`, that the device's REPL state is fresh (devices_use's own answer says it for the
+//   session it opens). A failed end_task says the device session is closed and devices_use still works.
 // - The device ending the session (a 404, or its own connection_closing/connection_failed answer): with no task open
 //   there and the call certainly not run, the session is re-opened once and the call retried; otherwise the call
 //   answers device_session_ended (its REPL state is gone; a js cell never runs twice).
 // - A local cancellation of a routed js/js_reset becomes the device's notifications/cancelled. A call that rejects
-//   `cancelled` (withdrawn by the device before it ran, or cancelled while its session was opening) is never answered,
-//   as the local server answers nothing for a withdrawn request.
+//   `cancelled` (withdrawn by the device before it ran, cancelled while its session was opening, or while it waited for
+//   a switch) is never answered, as the local server answers nothing for a withdrawn request. On a closing connection a
+//   call cut short answers connection_closing.
 // - The device's own requests (an elicitation) reach the local client under fresh ids `cua-device-<n>`, and its answer
 //   goes back under the device's id, unchanged (the device applies its own persist mode). Its notifications pass as
-//   they are, except its cancellation of such a request, which names our id for it.
+//   they are, except its cancellation of such a request, which names our id for it (and is dropped when it names none);
+//   a local answer to a `cua-device-` id no longer awaited is dropped.
 // - close(): ends the device session (DELETE, bounded) and settles what is still in flight.
 import {DeviceError} from '../remote/client.mjs';
 import {DEVICE_NAME, LOCAL} from '../remote/devices.mjs';
 import {statusResult, WORK_TOOLS} from './surface.mjs';
 
 const idKey = id => JSON.stringify(id);
+const DEVICE_REQUEST = 'cua-device-';     // the local ids of the device's own requests
 const NEVER = new AbortController().signal;
 const ENDING_CODES = new Set(['connection_closing', 'connection_failed']);
 const ENDING_ERROR = /^cua: connection_(?:closing|failed)\b/;
@@ -49,7 +53,7 @@ function sessionEnd(reply, failure) {
 }
 
 export function connectionTarget({devices, write, diagnostics, initializeParams, localTaskOpen, onWithdrawn = () => {}}) {
-  let current = null;              // the device target: {name, link, opening, taskOpen, inflight, ended}; null is local
+  let current = null;              // the device target: {name, link, opening, taskOpen, pendingWork, inflight, ended}; null is local
   let switching = null;            // the devices_use under way
   let closing = false;
   const routed = new Map();        // client request id key -> AbortController: cancellable routed calls, devices_use
@@ -62,18 +66,19 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
   const named = name => (typeof name === 'string' && DEVICE_NAME.test(name) ? name : null);
 
   // A classified tool error, naming the device when there is one to name.
-  function failed(error, device, {endTask = false} = {}) {
+  function failed(error, device, {endTask = false, after = null} = {}) {
     const known = typeof error?.code === 'string';
     if (!known) diagnostics(`${device ? `device ${device}: ` : ''}a call failed: ${error?.stack ?? error}`);
     const code = known ? error.code : 'device_failed';
     const structured = {status: 'error', ...(endTask ? {ended: false} : {}), code, ...(device ? {device} : {})};
-    const result = statusResult(structured, {isError: true, message: `cua: ${device ? `${device}: ` : ''}${known ? error.message : 'the call failed'}`});
+    const text = `${device ? `${device}: ` : ''}${known ? error.message : 'the call failed'}${after ? `; ${after}` : ''}`;
+    const result = statusResult(structured, {isError: true, message: `cua: ${text}`});
     return device ? {...result, _meta: {'cua/device': device}} : result;
   }
 
   function tagged(result, device, fresh) {
     const content = Array.isArray(result?.content) ? result.content : [];
-    const note = {type: 'text', text: `cua: this call opened a new session on ${device}: its REPL state is fresh (rebind apps and tabs).`};
+    const note = {type: 'text', text: `cua: this is a new session on ${device}: its REPL state is fresh (rebind apps and tabs).`};
     return {
       ...result,
       ...(fresh ? {content: [note, ...content]} : {}),
@@ -89,21 +94,22 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
       // The device withdrawing one of its requests names it by its own id; the local client knows it by ours.
       if (msg.method === 'notifications/cancelled') {
         const local = [...deviceRequests].find(([, entry]) => entry.link === link && idKey(entry.id) === idKey(msg.params?.requestId))?.[0];
-        if (local) {
-          deviceRequests.delete(local);
-          return write({...msg, params: {...msg.params, requestId: local}});
-        }
+        // A withdrawal of nothing the local client was asked would name an id it never saw: dropped.
+        if (!local) return diagnostics(`device ${link.name}: a cancellation names no request of its awaiting an answer; dropped`);
+        deviceRequests.delete(local);
+        return write({...msg, params: {...msg.params, requestId: local}});
       }
       return write(msg);
     }
-    const id = `cua-device-${++nextDeviceRequest}`;
+    const id = `${DEVICE_REQUEST}${++nextDeviceRequest}`;
     deviceRequests.set(id, {link, id: msg.id});
     write({...msg, id});
   }
 
-  // A link is one device session: {name, session} (session set once open).
-  async function openLink(name, signal) {
-    const link = {name, session: null};
+  // A link is one device session: {name, session (set once open), announced}. A link opened lazily is announced (the
+  // new-session note) on the first call it answers; devices_use's own answer announces the one it opens.
+  async function openLink(name, signal, {announced = false} = {}) {
+    const link = {name, session: null, announced};
     link.session = await devices.open(name, {initializeParams: initializeParams(), signal, diagnostics,
       onMessage: msg => fromDevice(link, msg)});
     return link;
@@ -176,19 +182,23 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     });
   }
 
-  // One routed call on the device target → {reply, fresh}, or a throw (a DeviceError, `cancelled` included).
+  // Whether a task is open on the device target, or a js/js_reset is on its way there (waiting for the session).
+  const taskOpenOn = rec => rec.taskOpen || rec.pendingWork > 0;
+
+  // One routed call on the device target → {reply, link} (link: the session that answered, null for a local answer),
+  // or a throw (a DeviceError, `cancelled` included).
   async function remoteCall(rec, msg, signal) {
     const tool = msg.params.name;
     const work = WORK_TOOLS.has(tool);
     // No session, so no task: nothing to end, and no session is opened to say so.
-    if (tool === 'end_task' && !rec.link && !rec.opening) return {reply: {result: statusResult({status: 'noop', ended: false})}, fresh: false};
-    let fresh = false;
+    if (tool === 'end_task' && !rec.link && !rec.opening) return {reply: {result: statusResult({status: 'noop', ended: false})}, link: null};
     for (let attempt = 1; ; attempt++) {
       if (rec.ended) throw gone();
       let link = rec.link;
       if (!link) {
-        link = await ensureLink(rec, signal);
-        fresh = true;
+        // While it waits for the session, a js/js_reset already holds the task open against devices_use.
+        if (work) rec.pendingWork++;
+        try { link = await ensureLink(rec, signal); } finally { if (work) rec.pendingWork--; }
       }
       const hadTask = rec.taskOpen;
       if (work) rec.taskOpen = true;
@@ -201,13 +211,13 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
           if (work && failure.sent === false) rec.taskOpen = hadTask;
           throw failure;
         }
-        return {reply, fresh};
+        return {reply, link};
       }
       dropLink(rec, link);
       rec.taskOpen = false;
       if (tool === 'end_task') {
         if (hadTask) throw lost();
-        return {reply: {result: statusResult({status: 'noop', ended: false})}, fresh: false};
+        return {reply: {result: statusResult({status: 'noop', ended: false})}, link: null};
       }
       if (hadTask) throw lost();
       if (!(work && end.ran) && attempt === 1) continue;
@@ -232,14 +242,19 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     if (controller) routed.set(key, controller);
     const done = (async () => {
       try {
-        const {reply, fresh} = await remoteCall(rec, msg, controller?.signal ?? NEVER);
+        const {reply, link} = await remoteCall(rec, msg, controller?.signal ?? NEVER);
         if (tool === 'end_task') await endSession(rec);
-        if (reply.error) write({jsonrpc: '2.0', id: msg.id, error: reply.error});
-        else respond(msg.id, tagged(reply.result, rec.name, fresh));
+        if (reply.error) return write({jsonrpc: '2.0', id: msg.id, error: reply.error});
+        const fresh = Boolean(link && !link.announced);
+        if (link) link.announced = true;
+        respond(msg.id, tagged(reply.result, rec.name, fresh));
       } catch (error) {
-        if (tool === 'end_task') await endSession(rec);
+        const endTask = tool === 'end_task';
+        if (endTask) await endSession(rec);
         if (error?.code === 'cancelled' && !closing) return onWithdrawn(msg.id);
-        respond(msg.id, failed(closing && error?.code === 'cancelled' ? closingError() : error, rec.name, {endTask: tool === 'end_task'}));
+        // On a closing connection no next call follows: the call is answered as the local ones are.
+        const answered = closing && ['cancelled', 'device_session_ended'].includes(error?.code) ? closingError() : error;
+        respond(msg.id, failed(answered, rec.name, {endTask, after: endTask && !closing ? 'the device session is closed; devices_use still works' : null}));
       } finally {
         if (controller && routed.get(key) === controller) routed.delete(key);
       }
@@ -266,9 +281,12 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
   async function switchTo(msg, wanted, signal) {
     const previous = targetName();
     if (wanted === previous) return respond(msg.id, statusResult({status: 'ok', device: wanted, previous}));
-    if (current ? current.taskOpen : localTaskOpen())
-      return respond(msg.id, failed(new DeviceError('task_open', `a task is open on ${previous}: call end_task there first, then devices_use`), null));
-    if (current) await Promise.allSettled([...current.inflight]);
+    const refuse = () => respond(msg.id, failed(new DeviceError('task_open', `a task is open on ${previous}: call end_task there first, then devices_use`), null));
+    if (current ? taskOpenOn(current) : localTaskOpen()) return refuse();
+    if (current) {
+      await Promise.allSettled([...current.inflight]);
+      if (taskOpenOn(current)) return refuse();
+    }
     if (closing) throw closingError();
     if (wanted === LOCAL) {
       if (current) await leave(current);
@@ -276,13 +294,13 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
       return respond(msg.id, statusResult({status: 'ok', device: LOCAL, previous},
         {message: 'cua: every tool now drives this machine (local) again, under the host notes in this server\'s instructions.'}));
     }
-    const link = await openLink(wanted, signal);
+    const link = await openLink(wanted, signal, {announced: true});
     if (closing) {
       await endLink(link).catch(() => {});
       throw closingError();
     }
     if (current) await leave(current);
-    current = {name: wanted, link, opening: null, taskOpen: false, inflight: new Set(), ended: false};
+    current = {name: wanted, link, opening: null, taskOpen: false, pendingWork: 0, inflight: new Set(), ended: false};
     const notes = link.session.initializeResult?.instructions;
     const message = `cua: every tool (js, js_reset, end_task, secrets_list, profiles_list) now drives ${wanted}, in a new session `
       + `there (its REPL state is fresh). Its host notes apply until devices_use switches again:\n\n${typeof notes === 'string' && notes ? notes : '(the device sent none)'}\n`;
@@ -313,8 +331,18 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
 
   // A js, js_reset, end_task, secrets_list or profiles_list call: `local()` runs it here (at once when no switch is under
   // way, so local calls keep their order), else it goes to the device.
+  // A js/js_reset waiting for the switch can be cancelled meanwhile: it is withdrawn and never runs.
   function route(msg, local) {
-    if (switching) return void switching.then(() => route(msg, local));
+    if (switching) {
+      const key = idKey(msg.id);
+      const controller = WORK_TOOLS.has(msg.params.name) ? new AbortController() : null;
+      if (controller) routed.set(key, controller);
+      return void switching.then(() => {
+        if (controller && routed.get(key) === controller) routed.delete(key);
+        if (controller?.signal.aborted) return onWithdrawn(msg.id);
+        route(msg, local);
+      });
+    }
     if (!current) return local();
     routeRemote(current, msg);
   }
@@ -330,10 +358,15 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
       controller.abort(params?.reason);
       return true;
     },
-    // The local client's answer to a request: true when it answered one of the device's, which goes back to it.
+    // The local client's answer to a request: true when it answered one of the device's (every `cua-device-` id is
+    // ours, never the local runtime's), which goes back to it; an answer to one no longer awaited is dropped.
     answer(msg) {
-      const entry = typeof msg.id === 'string' ? deviceRequests.get(msg.id) : undefined;
-      if (!entry) return false;
+      if (typeof msg.id !== 'string' || !msg.id.startsWith(DEVICE_REQUEST)) return false;
+      const entry = deviceRequests.get(msg.id);
+      if (!entry) {
+        diagnostics(`an answer to ${msg.id} came after its device session ended or the device withdrew it; dropped`);
+        return true;
+      }
       deviceRequests.delete(msg.id);
       const reply = msg.error !== undefined ? {error: msg.error} : {result: msg.result};
       entry.link.session.respond(entry.id, reply)

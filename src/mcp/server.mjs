@@ -37,7 +37,7 @@ import {createInterface} from 'node:readline';
 import {TaskLifecycle} from './task.mjs';
 import {openConnection} from './connection.mjs';
 import {connectionTarget} from './target.mjs';
-import {deviceDirectory} from '../remote/targets.mjs';
+import {deviceDirectory} from '../remote/directory.mjs';
 import {
   DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
 } from './surface.mjs';
@@ -358,7 +358,7 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
 // `cua serve`: one connection (src/mcp/connection.mjs) on stdin/stdout, with the device tools (its target can be any
-// device in $HOME's registry, src/remote/targets.mjs). The settings are read first, so an invalid one
+// device in $HOME's registry, src/remote/directory.mjs). The settings are read first, so an invalid one
 // fails before anything else; then $CUA_HOME/run is swept of sessions whose owning process is gone, the signal handlers
 // go in, and the connection opens and serves until EOF or a signal. The connection's close waits for a readiness
 // listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime

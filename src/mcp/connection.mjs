@@ -23,7 +23,7 @@
 // `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
 // only. `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
-// directory, src/remote/targets.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
+// directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
 // passes one; the HTTP agent never does, so a device never drives a third one through itself.
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';

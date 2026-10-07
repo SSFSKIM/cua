@@ -754,6 +754,14 @@ native host and `codex`. It has been shown on an Ubuntu 24.04 arm64 VM with Xorg
 Chrome host, profile binding and a browser round trip. The x64 pin and the agent as a systemd user unit, driven
 through the hosted relay, are shown in `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 
+**A cloud VM in one step.** `deploy/cloud-vm/` turns a fresh Ubuntu 24.04 cloud VM into such a machine from user data:
+the X11 desktop with autologin, deb Chrome with the extension by policy and AT-SPI on, Node 22, a checkout with the
+pinned runtime installed, the host registered and a profile `me` bound, the user-namespace sysctl, and with a relay the
+enrolment and the agent unit; it prints doctor's summary and the steps left to you (the ChatGPT sign-in in Chrome,
+`cua login`, the relay's table). `deploy/cloud-vm/create-hetzner.sh` does it on Hetzner Cloud in about four minutes;
+`deploy/cloud-vm/render.sh` prints the user data for any other provider. See `deploy/cloud-vm/README.md` and
+`docs/evidence/2026-10-07-cloud-vm-provisioning.md`.
+
 What it needs:
 
 - **An X11 session.** Use Xorg, Xvfb or a VNC session, with an EWMH window manager (Openbox is enough) and the XTEST,

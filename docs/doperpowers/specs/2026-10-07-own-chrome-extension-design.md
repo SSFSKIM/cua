@@ -642,6 +642,20 @@ No new npm dependencies.
   `sendCommand` by `sessionId`); `windows.create` passes `type:'normal'`; `background.js` is a classic worker (tests load
   it with `vm`), the popup an ES module; icons are placeholders.
 
+- Decision (H2, 2026-10-07): `--replace` and `unregister` work on the manifest's bytes: a backup is kept with its hash in
+  the cua record beside `previous` (the launcher path it named), so the restore is byte-identical (acceptance 2).
+  `other_home` refuses any manifest of this name that does not name this home's launcher, an unparseable one included.
+  The vendor record counts toward the route only when it names a browser, and `register --vendor` touches it so it is
+  strictly newer than the cua record; a home with no registration is on the vendor route (no change for existing
+  homes). A binding stores `route` only when it is `cua`. `BROWSER_USE_BACKEND_PATHS` on the cua route lists bound
+  profiles' sockets plus every `*.sock` present, sorted. `unregister` with nothing blocked removes the record and the
+  launcher, else keeps the blocked browsers' entries. The 103-byte check runs on the home's eventual real path; a home
+  containing `:` is refused (`home_path_unsupported`, the path list separator). Doctor removes a refused socket only if
+  it is the inode it probed. The launcher appends a start line and Node's own stderr to `chrome/logs/launcher.log`.
+  The vendor acceptance runner passes `--vendor`. Hand-offs: H3b's runner must pass the route to `chromeFacts()`;
+  H4's `cua-provision.sh` must call the route it means; H5 revisits the "OpenAI extension" wording of the readiness
+  reasons shared with `profiles_list` on the cua route.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

@@ -27,8 +27,8 @@ extension built here is designed so that C reuses it unchanged.
       ~20 important/minor findings folded in (Decision Log, 2026-10-07 revision).
 - [x] (2026-10-07 04:55) S0 — spike: the vendor service without `agentRequestHeaderEnabled`, no login, normal network; the extension key.
 - [x] (2026-10-07 07:10) H1 — the host and its contract with the vendor service, proven against a fake extension.
-- [ ] H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
-- [ ] H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
+- [x] (2026-10-07 09:40) H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
+- [x] (2026-10-07 09:40) H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
 - [ ] H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
 - [ ] H4 — Linux: the Tart VM and the cloud VM template, unattended, with a self-hosted CRX.
 - [ ] H5 — packaging, docs, the Store listing (owner action) and the acceptance section as written.
@@ -655,6 +655,18 @@ No new npm dependencies.
   The vendor acceptance runner passes `--vendor`. Hand-offs: H3b's runner must pass the route to `chromeFacts()`;
   H4's `cua-provision.sh` must call the route it means; H5 revisits the "OpenAI extension" wording of the readiness
   reasons shared with `profiles_list` on the cua route.
+
+- Decision (H2 review, 2026-10-07): every hint the vendor route prints names `--vendor` (those commands now mean the cua
+  route without it); record rewrites that are not registrations (a failed register's undo, a blocked unregister, a
+  partial `unregister --vendor`) restore the record's earlier mtime so the route does not flip; a missing extension is
+  worded as cua's on the cua route (`reasonFor(reason, route)`), result shapes unchanged. Deferred: the vendor mtime
+  set into the future under clock skew; orphaned manifest backups after a blocked unregister.
+- Decision (H3a review, 2026-10-07): the backoff after a lasting refusal is cleared by opening the popup, which tries one
+  ungated connect (one host spawn per popup open, only while refused). H3a ran in a parallel worktree off H1's head
+  (it consumes H1 only) and was rebased onto H2 (`npm test` 907: 906 pass, 1 skip).
+- Hand-off to H3b (H2 review): confirm live that an empty `BROWSER_USE_BACKEND_PATHS` survives node_repl to the
+  service (a fixture socket in `/tmp/codex-browser-use` must not be listed on the cua route with nothing bound), and
+  that node_repl reaches `$CUA_HOME/chrome/b/*.sock` under the scoped sandbox.
 
 ## Outcomes & Retrospective
 

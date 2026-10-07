@@ -16,8 +16,9 @@
 // - A tab belongs to the turn that created, claimed, resumed or last used it. turnEnded acts on that turn's tabs only:
 //   unmarked created tabs close; unmarked claimed tabs and deliverables are released open (created ones leave the
 //   group; cua never groups a user's tab); handoff tabs stay owned with the debugger detached and resume on the
-//   session's next turn (a request carrying a turn_id the session has not seen). A turn that has ended takes no new
-//   tabs. A client disconnect ends every turn of its sessions and releases their handed-off tabs open.
+//   session's next turn (a request carrying a turn_id the session has not seen, or at once when their turnEnded
+//   arrives after that turn began). A turn that has ended takes no new tabs; a Chrome-internal tab is never claimed.
+//   A client disconnect ends every turn of its sessions and releases their handed-off tabs open.
 // - executeCdp passes CDP through unchanged (Target.getTargets is the getTargets primitive, as the vendor extension
 //   intercepts it), enforces timeoutMs (default 10 s) and on timeout detaches the tab unless preserveDebuggerOnTimeout,
 //   answering the vendor extension's timeout wording; the next command then answers "Debugger unattached", the string
@@ -42,6 +43,8 @@ const SESSION_EXEMPT = new Set(['getInfo', 'turnEnded', 'ping']);
 const MARKS = new Set(['handoff', 'deliverable']);
 const OTHER_SESSION = 'tab owned by another session';
 const TIMED_OUT = Symbol('timed out');
+// Pages chrome.debugger cannot drive and a user tab may not be claimed for (the vendor refuses chrome:// the same way).
+const INTERNAL_URL = /^(chrome|chrome-extension|chrome-untrusted|devtools):\/\//;
 
 class HostError extends Error {
   constructor(message, code = 1) { super(message); this.code = code; }
@@ -151,7 +154,16 @@ export function createHost({extension, hello, home = null, now = () => new Date(
     for (const tab of [...s.tabs.values()]) {
       if (tab.state !== 'active' || tab.turnId !== turn) continue;
       const detached = detachAll(tab);
-      if (tab.mark === 'handoff') { tab.state = 'handoff'; work.push(detached); continue; }
+      if (tab.mark === 'handoff') {
+        // A late turnEnded: the session's next turn has already begun, so the handoff resumes into it now (waiting for
+        // the next first-seen turn would strand the tab for the whole of the current one).
+        if (turn !== s.turn && s.turn !== null && !s.ended.has(s.turn) && !s.closed) {
+          Object.assign(tab, {mark: 'none', turnId: s.turn});
+          s.activeTabId ??= tab.tabId;
+        } else tab.state = 'handoff';
+        work.push(detached);
+        continue;
+      }
       release(s, tab);
       work.push(detached.then(() => {
         if (tab.origin !== 'created') return;
@@ -308,6 +320,7 @@ export function createHost({extension, hello, home = null, now = () => new Date(
       if (owners.has(tabId) && owners.get(tabId).session !== s) refuse(OTHER_SESSION);
       if (s.ended.has(turn)) refuse(turnOver(s, turn));
       const info = await extension.request('tabs.get', {tabId});
+      if (INTERNAL_URL.test(info.url ?? '')) refuse(`Chrome internal tab ${tabId} cannot be claimed`);
       const owner = owners.get(tabId);
       if (owner && owner.session !== s) refuse(OTHER_SESSION);
       if (s.closed || s.ended.has(turn)) refuse(turnOver(s, turn));
@@ -476,6 +489,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   const extension = createPeer({
     send: bytes => { if (!stdout.destroyed && !stdout.writableEnded) stdout.write(bytes); },
     maxFrameBytes: MAX_TO_EXTENSION_BYTES,
+    onError: (error, method) => log(`extension notification ${method} failed: ${error?.stack ?? error}`),
     handlers: {hello: params => gotHello(params), 'debugger.event': forward('debugger.event'), 'debugger.detached': forward('debugger.detached'),
       'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated')},
   });
@@ -506,8 +520,6 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     return await refuseExtension('protocol_mismatch', `the extension speaks protocol ${hello.protocolVersion}; this host speaks ${PROTOCOL_VERSION}`);
 
   const name = socketNameFor(hello.extensionInstanceId);
-  const named = join(logs, `${name}.log`);
-  try { renameSync(logPath, named); logPath = named; } catch (error) { log(`log rename failed: ${error.message}`); }
   log(`hello instance=${hello.extensionInstanceId} version=${hello.version} protocol=${hello.protocolVersion} socket=${name}`);
   const socketPath = join(backends, `${name}.sock`);
   if (await socketIsLive(socketPath)) return await refuseExtension('already_served', `another host serves ${socketPath}`);
@@ -518,6 +530,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     const client = {notify: (method, params) => peer.notify(method, params)};
     const peer = createPeer({
       send: bytes => { if (!socket.destroyed) socket.write(bytes); },
+      onError: (error, method) => log(`client notification ${method} failed: ${error?.message ?? error}`),
       handlers: Object.fromEntries(host.methods.map(method => [method, params => host.handleBackendRequest(client, {method, params})])),
     });
     const decode = frameDecoder();
@@ -540,6 +553,9 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   chmodSync(socketPath, 0o600);
   // Connections are accepted from the next turn on; the host exists before the first one arrives.
   host = createHost({extension, hello, home, log, pid});
+  // The log takes the profile's name only now: a host refused above never replaces the serving host's log.
+  const named = join(logs, `${name}.log`);
+  try { renameSync(logPath, named); logPath = named; } catch (error) { log(`log rename failed: ${error.message}`); }
   log(`listening ${socketPath}`);
 
   const reason = await closedPort;
@@ -547,13 +563,14 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   extension.close('extension disconnected');
   host.extensionClosed();
   await new Promise(resolve => setImmediate(resolve));       // refused requests' replies reach their clients
+  // The status file goes first, then close() unlinks the socket path at once (libuv) while waiting for clients: from
+  // then on a successor may take the path, so nothing at it is removed after this point.
+  rmSync(join(backends, `${name}.json`), {force: true});
   for (const socket of sockets) socket.end();
   const ended = new Promise(resolve => server.close(resolve));
   const forced = setTimeout(() => { for (const socket of sockets) socket.destroy(); }, 1000);
   await ended;
   clearTimeout(forced);
-  rmSync(socketPath, {force: true});
-  rmSync(join(backends, `${name}.json`), {force: true});
   return finish(0, 'port_closed');
 }
 

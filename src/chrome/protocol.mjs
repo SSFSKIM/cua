@@ -55,8 +55,9 @@ export const MESSAGE_TOO_LARGE = 'message_too_large';
 const rpcError = (message, code) => Object.assign(new Error(message), {code});
 
 // `send(bytes)` writes one encoded frame; `handlers` maps a method to `params => result` for requests and
-// notifications alike. `receive(message)` takes one decoded message from the other side.
-export function createPeer({send, handlers = {}, maxFrameBytes = 0xffffffff}) {
+// notifications alike. `receive(message)` takes one decoded message from the other side. A notification has no
+// reply, so a handler failure for one goes to `onError(error, method)`.
+export function createPeer({send, handlers = {}, maxFrameBytes = 0xffffffff, onError = () => {}}) {
   let nextId = 0;
   let closedReason = null;
   const pending = new Map();
@@ -101,7 +102,7 @@ export function createPeer({send, handlers = {}, maxFrameBytes = 0xffffffff}) {
       if (typeof message.method === 'string') {
         if (message.id !== undefined && message.id !== null) { answer(message); return; }
         const handler = Object.hasOwn(handlers, message.method) ? handlers[message.method] : null;
-        if (handler) Promise.resolve().then(() => handler(message.params ?? {})).catch(() => {});
+        if (handler) Promise.resolve().then(() => handler(message.params ?? {})).catch(error => onError(error, message.method));
         return;
       }
       const entry = pending.get(message.id);

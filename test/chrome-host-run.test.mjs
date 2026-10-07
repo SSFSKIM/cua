@@ -144,9 +144,14 @@ test('a stale socket file is replaced; a live one means another host serves the 
   await new Promise(r => other.listen(path, r));
   const toHost = new PassThrough(), fromHost = new PassThrough();
   const port = ext.connect({toHost, fromHost});
+  const liveLog = join(logDir(scratch.dir), `${socketNameFor(ext.instanceId)}.log`);
+  mkdirSync(logDir(scratch.dir), {recursive: true});
+  writeFileSync(liveLog, 'the live host\'s log\n');
   const refused = await runHost({stdin: toHost, stdout: fromHost, home: scratch.dir, pid: nextPid++});
   assert.equal(refused.reason, 'already_served');
   assert.equal(existsSync(path), true, 'the live socket is left alone');
+  assert.equal(readFileSync(liveLog, 'utf8'), 'the live host\'s log\n', 'the live host\'s log is left alone');
+  assert.match(readFileSync(refused.logPath, 'utf8'), /refused already_served/);
   port.disconnect();
   await new Promise(r => other.close(r));
   // Stale: a plain file where the socket was (the listener died without unlinking).
@@ -161,6 +166,32 @@ test('a stale socket file is replaced; a live one means another host serves the 
   c.close();
   port2.disconnect();
   assert.equal((await done).code, 0);
+});
+
+test('an exiting host never removes its successor\'s socket or status file', async t => {
+  const first = start(t);
+  await waitFor(() => existsSync(first.socketPath), 'the first socket');
+  // A client that keeps its side open after the host ends its own, so the first host's close waits on it.
+  const lingering = connect({path: first.socketPath, allowHalfOpen: true});
+  await new Promise((resolve, reject) => { lingering.once('connect', resolve); lingering.once('error', reject); });
+  lingering.on('error', () => {});
+  first.port.disconnect();
+  await waitFor(() => !existsSync(first.socketPath) || !existsSync(first.statusPath), 'the first host to give up the path');
+  // The extension reconnects: a second host for the same instance id while the first is still closing.
+  const ext2 = createFakeCuaExtension({instanceId: first.ext.instanceId});
+  const in2 = new PassThrough(), out2 = new PassThrough();
+  const port2 = ext2.connect({toHost: in2, fromHost: out2});
+  const second = runHost({stdin: in2, stdout: out2, home: first.home, pid: nextPid++});
+  await waitFor(() => existsSync(first.socketPath) && existsSync(first.statusPath), 'the successor listening');
+  assert.equal((await first.done).code, 0);
+  lingering.destroy();
+  assert.equal(existsSync(first.socketPath), true, 'the successor\'s socket survives');
+  assert.equal(existsSync(first.statusPath), true, 'the successor\'s status file survives');
+  const c = await backendClient(first.socketPath);
+  assert.equal((await c.request('getInfo', {})).metadata.extensionInstanceId, first.ext.instanceId);
+  c.close();
+  port2.disconnect();
+  assert.equal((await second).code, 0);
 });
 
 test('the port dropping mid-task fails pending requests with "extension disconnected", cleans up and exits', async t => {

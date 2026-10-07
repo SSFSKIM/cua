@@ -81,6 +81,14 @@ test('peer: notifications reach their handler, an unknown one is ignored, and no
   assert.equal(frameDecoder()(wire.a[0])[0].id, undefined);
 });
 
+test('peer: a notification handler that throws reports to onError instead of vanishing', async () => {
+  const errors = [];
+  const peer = createPeer({send: () => {}, handlers: {'debugger.event': () => { throw new Error('boom'); }}, onError: (error, method) => errors.push([method, error.message])});
+  peer.receive({jsonrpc: '2.0', method: 'debugger.event', params: {}});
+  await new Promise(r => setTimeout(r, 5));
+  assert.deepEqual(errors, [['debugger.event', 'boom']]);
+});
+
 test('peer: a frame over maxFrameBytes is never sent: a request rejects with message_too_large, a reply becomes that error', async () => {
   const {a, wire} = pair({maxA: 1024, maxB: 1024, handlersB: {echo: ({s}) => s, grow: ({n}) => 'x'.repeat(n)}});
   await assert.rejects(a.request('echo', {s: 'x'.repeat(2000)}), e => e.message === 'message_too_large');

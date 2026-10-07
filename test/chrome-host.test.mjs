@@ -321,6 +321,23 @@ test('a late turnEnded for turn N leaves turn N+1\'s tabs', async () => {
   assert.deepEqual(host.status().sessions[0].tabs.map(t => t.tabId), [second.id]);
 });
 
+test('a handoff tab whose turnEnded arrives after the next turn began resumes into that turn at once', async () => {
+  const {ext, host, client, session} = setup();
+  const a = session(client(), 'sA', 'task-1');
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  await a.call('markTab', {tabId: tab.id, status: 'handoff'});
+  a.turn = 'task-2';
+  await a.call('getTabs', {});                // task-2 has begun; task-1's turnEnded is late
+  await a.end('task-1');
+  assert.equal(ext.state.held.has(`tab:${tab.id}`), false, 'the handoff detached the debugger');
+  assert.deepEqual((await a.call('getTabs', {})).map(t => t.id), [tab.id], 'task-2 lists it without waiting for a third turn');
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(host.status().sessions[0].tabs, [{tabId: tab.id, origin: 'created', mark: 'none', attached: true}]);
+  await a.end('task-2');
+  assert.equal(ext.state.tabs.has(tab.id), false, 'unmarked in task-2, it closes with task-2');
+});
+
 test('a tab of turn N used by turn N+1 before turn N ends belongs to N+1', async () => {
   const {ext, client, session} = setup();
   const a = session(client(), 'sA', 'task-1');
@@ -362,7 +379,11 @@ test('getUserTabs lists tabs no session owns; claimUserTab leases one and return
   assert.equal(await b.call('getCommittedTabUrl', {tabId: user.id}), 'http://127.0.0.1:5000/marker');
   await assert.rejects(a.call('claimUserTab', {tabId: user.id}), e => e.message === OTHER);
   await assert.rejects(b.call('claimUserTab', {tabId: 4242}), /No tab with id: 4242\./);
-  assert.deepEqual(await a.call('getUserTabs', {}), []);
+  for (const url of ['chrome://settings/', 'chrome-extension://abc/page.html', 'devtools://devtools/bundled/inspector.html', 'chrome-untrusted://print/']) {
+    const internal = ext.addTab({url, title: 'Internal'});
+    await assert.rejects(b.call('claimUserTab', {tabId: internal.id}), e => e.message === `Chrome internal tab ${internal.id} cannot be claimed`, url);
+  }
+  assert.ok((await a.call('getUserTabs', {})).every(t => t.id !== user.id));
 });
 
 test('a client disconnect ends every turn of its sessions and releases handed-off tabs open', async () => {

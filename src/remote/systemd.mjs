@@ -22,7 +22,7 @@
 // `uninstall` runs `stop` and `disable`, removes the file and reloads. `systemctl` and `loginctl` and the user's home are
 // parameters, so tests never touch a real user manager or ~/.config/systemd.
 import {execFile} from 'node:child_process';
-import {chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir, userInfo} from 'node:os';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -256,8 +256,13 @@ export async function uninstallAgent({userHome = homedir(), systemctl = runSyste
   const removed = existsSync(unit);
   if (removed) await ran(systemctl, ['disable', AGENT_UNIT], 'agent_stop_failed', `run systemctl --user disable ${AGENT_UNIT} and retry`);
   rmSync(unit, {force: true});
-  if (known || removed || wasActive) await ran(systemctl, ['daemon-reload'], 'agent_stop_failed', 'run systemctl --user daemon-reload');
-  return {unit: AGENT_UNIT, path: unit, stopped: wasActive, removed};
+  // `disable` refuses once the file is gone (systemd 255: "Unit file … does not exist"), leaving the enable link behind.
+  const wants = join(dirname(unit), 'default.target.wants', AGENT_UNIT);
+  let linked = false;
+  try { linked = lstatSync(wants).isSymbolicLink() && readlinkSync(wants) === unit; } catch {}
+  if (linked) rmSync(wants, {force: true});
+  if (known || removed || wasActive || linked) await ran(systemctl, ['daemon-reload'], 'agent_stop_failed', 'run systemctl --user daemon-reload');
+  return {unit: AGENT_UNIT, path: unit, stopped: wasActive, removed: removed || linked};
 }
 
 // The unit as installed, from its file alone (the manager is not asked): {unit, path, installed, job?, invalid?}.

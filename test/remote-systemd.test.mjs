@@ -3,7 +3,7 @@
 // The quoting the unit uses was checked against systemd 255 on Ubuntu 24.04 (docs/evidence/2026-10-06-linux-agent-and-x64.md).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {AGENT_UNIT, agentStatus, agentUnitPath, installAgent, installedJob, readUnit, uninstallAgent} from '../src/remote/systemd.mjs';
 import {enrollDevice} from '../src/remote/device.mjs';
@@ -166,12 +166,18 @@ test('uninstall stops and disables the unit, removes it and reloads; with nothin
   rmSync(unit);
   assert.deepEqual(await uninstallAgent(common), {unit: AGENT_UNIT, path: unit, stopped: true, removed: false});
   assert.equal(systemctl.active, false);
-  // So is one whose file was deleted and the manager reloaded: not-found, but still running.
+  // So is one whose file was deleted and the manager reloaded: not-found, but still running. Its enable link, which
+  // `disable` no longer removes without the file, is removed by cua (a link elsewhere is left alone).
   await install({http: '127.0.0.1:7801'});
+  const wants = join(unit, '..', 'default.target.wants');
+  mkdirSync(wants, {recursive: true});
+  symlinkSync(unit, join(wants, AGENT_UNIT));
+  symlinkSync('/elsewhere/other.service', join(wants, 'other.service'));
   rmSync(unit);
   await systemctl.run(['daemon-reload']);
   systemctl.calls.length = 0;
-  assert.deepEqual(await uninstallAgent(common), {unit: AGENT_UNIT, path: unit, stopped: true, removed: false});
+  assert.deepEqual(await uninstallAgent(common), {unit: AGENT_UNIT, path: unit, stopped: true, removed: true});
+  assert.deepEqual(readdirSync(wants), ['other.service']);
   assert.deepEqual(systemctl.calls.filter(c => c[0] !== 'show'), [['stop', AGENT_UNIT], ['daemon-reload']]);
   assert.equal(systemctl.active, false);
 });

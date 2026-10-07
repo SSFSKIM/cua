@@ -27,7 +27,7 @@ import {addProfile, readRegistry, removeProfile, reasonText} from './profiles/re
 import {bindCommand, openCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
-import {PICK_REASONS} from './profiles/bind.mjs';
+import {pickReasonFor} from './profiles/bind.mjs';
 import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
 import {chooseVendorRoute, registerCuaHost, registerHost, unregisterCuaHost, unregisterVendorHost} from './chrome/registration.mjs';
 import {chromeRoute, effectiveRoute, extensionIdFor} from './chrome/route.mjs';
@@ -60,7 +60,8 @@ export const usageFor = platform => {
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
-  login [--device-auth]                                        sign the server in to Codex, at this terminal
+  login [--device-auth]                                        sign the server in to Codex, at this terminal (only the
+                                                               ChatGPT extension route, chrome register --vendor, needs it)
   login --status                                               whether the server has a Codex login (never shows it)
   secrets set <KEY>                                            store a secret in ~/.config/claude-secrets/KEY, typed hidden
                                                                at this terminal (in Claude Code, /secret KEY is preferred)
@@ -459,7 +460,7 @@ async function secrets(args) {
 const LOGIN_USAGE = 'login takes only --device-auth or --status';
 const LOGIN_MESSAGES = {
   [LOGIN_STATES.loggedIn]: 'the cua server has a Codex login in its own CODEX_HOME',
-  [LOGIN_STATES.notLoggedIn]: 'the cua server has no Codex login in its own CODEX_HOME; run `cua login`',
+  [LOGIN_STATES.notLoggedIn]: 'the cua server has no Codex login in its own CODEX_HOME (only the ChatGPT extension route needs one: run `cua login` for it)',
 };
 
 async function login(args) {
@@ -538,9 +539,9 @@ const describeBackend = (b, i) => `  ${i + 1}) extension instance ${b.instanceId
 const describeExcluded = n => n ? `\n  (${n} extension backend(s) of a browser other than Google Chrome not listed: cua binds Google Chrome profiles only)` : '';
 const describeStale = id => `the recorded binding, extension instance ${id}, is stale: it is not among the live backends. An extension disable/enable or reinstall mints a new id; pick this profile's new one from the live backends.`;
 
-async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {}) {
+async function pickBackend(list, reason, nonChromeExcluded, {staleBinding, route} = {}) {
   if (staleBinding) process.stderr.write(`${describeStale(staleBinding)}\n`);
-  process.stderr.write(`which live backend is this profile could not be determined: ${PICK_REASONS[reason]}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
+  process.stderr.write(`which live backend is this profile could not be determined: ${pickReasonFor(reason, route)}\n${list.map(describeBackend).join('\n')}${describeExcluded(nonChromeExcluded)}\n`);
   const {createInterface} = await import('node:readline/promises');
   const rl = createInterface({input: process.stdin, output: process.stderr});
   try {
@@ -623,7 +624,7 @@ async function profiles(args) {
   const runtime = resolveRuntime({home});
   if (!values.json) process.stderr.write('listing the live Chrome extension backends through the runtime (one bounded launch)...\n');
   const result = await bindCommand({home, key: positionals[0], chrome, explicitId, dryRun,
-    listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined,
+    listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? (list, reason, excluded, options) => pickBackend(list, reason, excluded, {...options, route}) : undefined,
     mapDirectories: () => mapExtensionDirectories({home, chrome, moduleDir: runtime.paths.moduleDir,
       extensionIds: route === 'cua' ? [CUA_EXTENSION_ID] : runtime.manifest.chromePlugin.nativeHost.extensionIds})});
   if (values.json) { print(result); return result.ok ? 0 : 1; }
@@ -635,7 +636,7 @@ async function profiles(args) {
     if (automatic) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}${describeExcluded(result.nonChromeExcluded)}\nif the marked one is not this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
     return 0;
   }
-  print(`${result.key} was not bound: ${PICK_REASONS[result.reason]}${describeExcluded(result.nonChromeExcluded)}`);
+  print(`${result.key} was not bound: ${pickReasonFor(result.reason, route)}${describeExcluded(result.nonChromeExcluded)}`);
   if (result.staleBinding) print(describeStale(result.staleBinding));
   if (result.backends.length) print(`live backends:\n${result.backends.map(describeBackend).join('\n')}\nrerun with the instance of this Chrome profile: cua profiles bind ${result.key} --extension-instance-id <id>`);
   return 1;

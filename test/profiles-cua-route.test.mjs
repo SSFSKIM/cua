@@ -10,6 +10,7 @@ import {chromeFacts, CUA_EXTENSION_ID, OPENAI_EXTENSION_ID} from '../src/profile
 import {CUA_EXTENSION_ID as EXTENSION_MODULE_ID, CUA_HOST_NAME} from '../src/chrome/extension.mjs';
 import {addProfile, bindProfile, profileStatuses, readRegistry, reasonText} from '../src/profiles/registry.mjs';
 import {bindCommand} from '../src/profiles/commands.mjs';
+import {PICK_REASONS, pickReasonFor} from '../src/profiles/bind.mjs';
 import {extensionIdFor} from '../src/chrome/route.mjs';
 
 const VERSIONED = 'versioned';
@@ -126,4 +127,28 @@ test('a missing extension is worded as the route\'s: cua\'s on the cua route, th
   assert.match(reasonText(p, {route: 'cua'}), /^the cua extension is not installed or loaded in this Chrome profile/);
   assert.match(reasonText(p), /^the OpenAI extension is not installed in this Chrome profile/);
   assert.equal(reasonText(p, {route: 'vendor'}), reasonText(p));
+});
+
+// H2's hand-off to H5: the readiness reasons profiles_list and `cua profiles list` share named the OpenAI extension and
+// its icon on both routes. On the cua route they name cua's extension and its popup (which wakes its worker and shows
+// whether the host is connected), and say what mints a new instance id there; the codes and the steps' shape stay.
+test('on the cua route the readiness reasons and bind\'s no-backend reason name cua\'s extension, never OpenAI\'s', () => {
+  const p = {key: 'personal', chromeProfileDirectory: 'Profile 8', extensionInstanceId: 'inst-a'};
+  for (const reason of ['host_not_live', 'binding_stale', 'backends_unlistable', 'chrome_data_unreadable', 'extension_not_installed']) {
+    const text = reasonText({...p, reason}, {route: 'cua'});
+    assert.doesNotMatch(text, /OpenAI|ChatGPT/, reason);
+    assert.notEqual(text, reasonText({...p, reason}), `${reason} differs from the vendor route's`);
+  }
+  for (const reason of ['host_not_live', 'binding_stale', 'chrome_data_unreadable'])
+    assert.match(reasonText({...p, reason}, {route: 'cua'}),
+      /Chrome profile "Profile 8" \(one line: cua profiles open personal;.*open the cua extension's popup \(its toolbar icon\).*then retry/, reason);
+  assert.match(reasonText({...p, reason: 'host_not_live'}, {route: 'cua'}), /^no live cua extension backend serves it/);
+  assert.match(reasonText({...p, reason: 'binding_stale'}, {route: 'cua'}), /reinstalled.*bind it again with cua profiles bind personal/);
+  assert.match(reasonText({...p, reason: 'backends_unlistable'}, {route: 'cua'}), /^the live cua extension backends could not be listed/);
+  // The vendor route's wording stands.
+  assert.match(reasonText({...p, reason: 'host_not_live'}, {route: 'vendor'}), /click the OpenAI \(ChatGPT\) extension's icon/);
+  assert.equal(pickReasonFor('no_live_backends', 'vendor'), PICK_REASONS.no_live_backends);
+  assert.equal(pickReasonFor('unlabelled', 'cua'), PICK_REASONS.unlabelled);
+  assert.match(pickReasonFor('no_live_backends', 'cua'), /^no cua extension backend of Google Chrome is live/);
+  assert.doesNotMatch(pickReasonFor('no_live_backends', 'cua'), /OpenAI/);
 });

@@ -1,6 +1,6 @@
-// The standalone server's own Codex login. The browser route's session requests need a Codex identity, which
-// `codex app-server` reads from the runtime's CODEX_HOME; the server's CODEX_HOME is <home>/state/codex, never the
-// desktop's ~/.codex. `cua login` runs the relocated bundled CLI (`codex login`) against that home, interactively at
+// The standalone server's own Codex login. The ChatGPT extension route's session requests need a Codex identity (cua's
+// own extension route needs none), which `codex app-server` reads from the runtime's CODEX_HOME; the server's
+// CODEX_HOME is <home>/state/codex, never the desktop's ~/.codex. `cua login` runs the relocated bundled CLI (`codex login`) against that home, interactively at
 // the user's terminal; `loginStatus` asks `codex login status` and keeps only its exit code.
 //
 // This module never opens, reads, prints or stores the credential file the CLI writes, and offers no route that feeds

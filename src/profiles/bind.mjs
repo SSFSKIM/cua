@@ -28,6 +28,7 @@
 // registered profile's own display name is unknown (Local State unreadable or silent about it), the user's live choice
 // stands.
 import {ACCESS_NOTE} from './chrome.mjs';
+import {effectiveRoute} from '../chrome/route.mjs';
 
 export const isChromeBackend = backend => backend?.family === 'chrome';
 
@@ -88,6 +89,13 @@ export const PICK_REASONS = {
   instance_in_several_directories: 'the extension stores of several profile directories record the same instance id, so the directory cannot tell them apart',
   labelled_backend_other_directory: 'the backend labelled with this profile\'s name belongs to another profile directory by its extension store',
 };
+
+// The cua route's extension where PICK_REASONS names the ChatGPT extension (codes unchanged).
+const CUA_PICK_REASONS = {
+  ...PICK_REASONS,
+  no_live_backends: 'no cua extension backend of Google Chrome is live (is Chrome open on this profile with the cua extension enabled? its popup shows whether its host is connected)',
+};
+export const pickReasonFor = (reason, route) => (effectiveRoute(route) === 'cua' ? CUA_PICK_REASONS : PICK_REASONS)[reason];
 
 export const REFUSED = {
   not_live: 'that extension instance is not among the live backends now (only Google Chrome\'s count)',

@@ -8,8 +8,8 @@
 // `secrets.store` (src/secrets/check.mjs) describes the secret store, $HOME/.config/claude-secrets, from metadata only:
 // absent is `blocked` (nothing stored yet), a directory or key file the trusted services would refuse is `fail`.
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
-// a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
-// capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
+// a Codex login, which the ChatGPT extension route needs (on the cua route the row is skip); only the exit code is kept
+// and no auth file is opened. It is capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
 // executes a release binary, so it runs only when this same run found the release's files present and its vendor
 // signatures valid (`runtime.signatures` pass); otherwise it is `blocked` naming the failed check.
 // `chrome.host.config` (chrome-component.mjs) is installed-runtime health: the Chrome host component cua placed in the
@@ -217,8 +217,8 @@ async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
     return result('codex.login', 'blocked', `${error.message}; run cua login once CUA_HOME is fixed`);
   }
   return status.state === LOGIN_STATES.loggedIn
-    ? result('codex.login', 'pass', 'the server has a Codex login in its own CODEX_HOME (needed by the browser route)')
-    : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the browser route needs one: run cua login`);
+    ? result('codex.login', 'pass', 'the server has a Codex login in its own CODEX_HOME (needed by the ChatGPT extension route)')
+    : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the ChatGPT extension route needs one: run cua login`);
 }
 
 const AGENT_ROWS = ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'];

@@ -165,9 +165,15 @@ export function withLiveness(statuses, liveIds) {
 }
 
 // The one step that brings a profile's host back without changing its binding (`cua profiles open <key>` takes it for
-// the user who asks; nothing takes it for them). Toggling the extension wakes it too, but can mint a new instance id
-// (Surprises, 2026-10-04; not always, second-mac-acceptance.md), so it is offered only with the rebind it may then need.
-const WAKE = 'open a window in Chrome profile "<dir>" (one line: cua profiles open <key>; Chrome unloads a profile and its extension host when the profile\'s last window closes, including a window a cua task opened and then closed) and click the OpenAI (ChatGPT) extension\'s icon if it still has no backend, then retry';
+// the user who asks; nothing takes it for them), with the route's nudge for an extension that still has no backend.
+// The ChatGPT extension (the vendor route) wakes on a click of its icon; toggling it wakes it too, but can mint a new
+// instance id (Surprises, 2026-10-04; not always, second-mac-acceptance.md), so it is offered only with the rebind it
+// may then need. cua's extension (the cua route) connects by itself when its profile loads and retries every 5 s; its
+// popup wakes its worker and shows whether the host is connected and why not. Its instance id lives in its own
+// chrome.storage.local, which a disable/enable keeps and a reinstall (or removing an unpacked load) loses.
+const wake = nudge => `open a window in Chrome profile "<dir>" (one line: cua profiles open <key>; Chrome unloads a profile and its extension host when the profile's last window closes, including a window a cua task opened and then closed) and ${nudge}, then retry`;
+const WAKE = wake('click the OpenAI (ChatGPT) extension\'s icon if it still has no backend');
+const CUA_WAKE = wake('open the cua extension\'s popup (its toolbar icon) if it still has no backend: that wakes it and shows whether its host is connected, and if not why');
 
 export const REASONS = {
   profile_directory_missing: 'the Chrome profile directory no longer exists',
@@ -180,17 +186,24 @@ export const REASONS = {
   chrome_data_unreadable: `this process cannot read Chrome's data directory (${ACCESS_NOTE}, or run from a process that has it); the live check still works`,
 };
 
-// The unreadable case says what the live check can still do for this profile.
-const UNREADABLE_NEXT = {
-  bound: `its bound extension instance was not confirmed live: if Chrome is closed or its extension host exited, ${WAKE}`,
-  unbound: 'it is not bound yet: cua profiles bind <key> works without that access',
+// The cua route's wording where the vendor route's names the ChatGPT extension (H2's hand-off; codes unchanged).
+const CUA_REASONS = {
+  ...REASONS,
+  extension_not_installed: 'the cua extension is not installed or loaded in this Chrome profile (install it from the Chrome Web Store, or load the checkout\'s extension/ directory unpacked; cua never installs it)',
+  host_not_live: `no live cua extension backend serves it (Chrome is closed, no window of that profile is open, or the host is not registered: cua doctor's chrome.host.registered says): ${CUA_WAKE}`,
+  binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (${CUA_WAKE}), or the cua extension was reinstalled (or its unpacked load removed and loaded again), which mints a new instance id (bind it again with cua profiles bind <key>)`,
+  backends_unlistable: 'the live cua extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',
 };
+const reasonsFor = route => (effectiveRoute(route) === 'cua' ? CUA_REASONS : REASONS);
 
-// On the cua route the missing extension is cua's own (REASONS names the OpenAI extension of the vendor route).
-const CUA_NOT_INSTALLED = 'the cua extension is not installed or loaded in this Chrome profile (install it from the Chrome Web Store, or load the checkout\'s extension/ directory unpacked; cua never installs it)';
-export const reasonFor = (reason, route) => (reason === 'extension_not_installed' && effectiveRoute(route) === 'cua' ? CUA_NOT_INSTALLED : REASONS[reason]);
+// The unreadable case says what the live check can still do for this profile.
+const unreadableNext = (route, bound) => (bound
+  ? `its bound extension instance was not confirmed live: if Chrome is closed or its extension host exited, ${effectiveRoute(route) === 'cua' ? CUA_WAKE : WAKE}`
+  : 'it is not bound yet: cua profiles bind <key> works without that access');
+
+export const reasonFor = (reason, route) => reasonsFor(route)[reason];
 
 // The registered profile's Chrome directory appears only where the user's step happens in that profile. `route` is the
 // home's Chrome route (src/chrome/route.mjs), for the wording only.
 export const reasonText = ({key, reason, extensionInstanceId, chromeProfileDirectory}, {route} = {}) => (reason === 'chrome_data_unreadable'
-  ? `${REASONS[reason]}; ${UNREADABLE_NEXT[extensionInstanceId ? 'bound' : 'unbound']}` : reasonFor(reason, route)).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);
+  ? `${REASONS[reason]}; ${unreadableNext(route, Boolean(extensionInstanceId))}` : reasonFor(reason, route)).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);

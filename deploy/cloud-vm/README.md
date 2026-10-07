@@ -32,7 +32,7 @@ Other flags: `--type`, `--location` (Hetzner sometimes has no capacity for a typ
 is copied to the VM's `/var/cache/cua/cua.bundle` while cloud-init runs, and the VM waits for it; a tag or a commit id
 is refused), `--extension hosted|store` (default `hosted`) and `--extension-url` (the hosted update manifest, default
 `https://178-104-102-73.sslip.io/ext/update.xml`). `--extension-url` only says where Chrome first installs from: the
-CRX carries its own `update_url`, `<--base-url>update.xml` from `scripts/extension-pack.mjs`, so a VM pointed at another
+CRX carries its own `update_url`, `<--base-url>update.xml` from `npm run extension:pack`, so a VM pointed at another
 URL installs from there but takes later versions from the packer's URL. Pack with the same base URL you pass here. The hcloud context is
 `$HCLOUD_CONTEXT`, `cua` when unset; `devbox` is refused. The server gets the firewall `cua-vm` (SSH in only, created
 once and shared). The script refuses a name that already exists, and prints the delete command when it is done. A
@@ -55,9 +55,9 @@ as Hetzner's 32 KiB).
   host). cua's extension (id `jkejaaijdfpohkdhankllbekkhmnippb`) is force-installed by policy
   (`/etc/opt/chrome/policies/managed/cua.json`, the whole `ExtensionInstallForcelist`: Chrome does not merge one
   policy across files there). With `--extension hosted` it comes from the self-hosted CRX the relay serves
-  (`node scripts/extension-pack.mjs` with the owner's key, then `relay/deploy/update.sh --ext dist`); with `store`, from
-  the Chrome Web Store. A VM provisioned by an earlier version of this template had OpenAI's extension in that list; a
-  re-run replaces it with cua's, so Chrome uninstalls OpenAI's.
+  (`CUA_EXTENSION_KEY=<the owner's key> npm run extension:pack`, then `relay/deploy/update.sh --ext dist`); with
+  `store`, from the Chrome Web Store (see "Hosted or store" below). A VM provisioned by an earlier version of this
+  template had OpenAI's extension in that list; a re-run replaces it with cua's, so Chrome uninstalls OpenAI's.
   `/usr/local/bin/google-chrome` adds `--force-renderer-accessibility` (web contents in the native route's tree),
   `--password-store=basic` (no keyring prompt in an autologin session) and no first-run prompts. Toolkit accessibility
   is on as a system dconf default. One profile, `Default`.
@@ -79,6 +79,22 @@ as Hetzner's 32 KiB).
   another relay URL moves the enrolment without rotating it.
 - **Results.** `/var/log/cua-provision.json` is `cua doctor --json` at the end of the run;
   `/var/lib/cua-provision/checklist.txt` is the owner's checklist; `/var/log/cua-provision.log` the whole output.
+
+## Hosted or store
+
+`hosted` is the default while cua's extension is not on the Chrome Web Store: Chrome installs the CRX the owner packed
+and published on the relay. Once the Store item is published (unlisted is enough: the force-list installs it by id),
+`--extension store` selects it per VM, and flipping the default makes it the norm: `CUA_EXTENSION` in
+`cua-provision.sh`, `extension` in `render.sh`, `create-hetzner.sh`'s usage and this README. The id is the same either
+way, so the host registration and the profile binding do not change.
+
+The flip is for new VMs. Chrome uses a force-list entry's update URL only for the first install; later updates come
+from the `update_url` inside the installed copy (Chromium's `ExtensionInstallForcelist` definition), and the
+`ExtensionSettings` override does not apply to a Store URL. So a VM that installed the hosted CRX keeps updating from
+the relay even after its `/etc/cua-provision.conf` says `store`: keep publishing new versions there with
+`relay/deploy/update.sh --ext` while such VMs exist, or replace them. Moving an installed VM from the hosted copy to
+the Store's in place (taking it off the force-list so Chrome uninstalls it, then listing the Store's, then binding
+again, since an uninstall drops the instance id) is untested.
 
 ## What it leaves to the owner
 

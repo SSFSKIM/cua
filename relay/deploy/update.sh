@@ -2,8 +2,8 @@
 # Change the running cua-relay server: run another git ref of https://github.com/SSFSKIM/cua, or install a new
 # devices.json; either restarts the relay (agents reconnect by themselves, sessions survive on the Macs). The file
 # replaces the server's whole table: keep every device in it (the current one: ssh root@<host> cat /etc/cua-relay/devices.json).
-# --ext publishes the self-hosted cua extension (the directory `node scripts/extension-pack.mjs` wrote: update.xml and
-# the CRX it names) at https://<host>/ext/, the URL Linux VMs force-install it from; it installs this checkout's
+# --ext publishes the self-hosted cua extension (the directory `CUA_EXTENSION_KEY=… npm run extension:pack` wrote:
+# update.xml and the CRX it names; the Store zip there is not copied) at https://<host>/ext/, the URL Linux VMs force-install it from; it installs this checkout's
 # Caddyfile (the /ext/ route) under the server's current site address when that differs, and reloads Caddy. It does
 # not restart the relay.
 #
@@ -31,7 +31,7 @@ done
 # The extension directory: update.xml and the CRX its codebase names, both here, before anything reaches the server.
 crx=''
 if [[ -n "$ext" ]]; then
-  [[ -f "$ext/update.xml" ]] || { echo "no update.xml in $ext (node scripts/extension-pack.mjs writes it)" >&2; exit 2; }
+  [[ -f "$ext/update.xml" ]] || { echo "no update.xml in $ext (CUA_EXTENSION_KEY=<key> npm run extension:pack writes it)" >&2; exit 2; }
   crx="$(sed -n "s|.*codebase='[^']*/\([^'/]*\)'.*|\1|p" "$ext/update.xml")"
   [[ "$crx" =~ ^[A-Za-z0-9._-]+\.crx$ ]] || { echo "$ext/update.xml names no plain .crx file: ${crx:-none}" >&2; exit 2; }
   [[ -f "$ext/$crx" ]] || { echo "$ext/update.xml names $crx, which is not in $ext" >&2; exit 2; }

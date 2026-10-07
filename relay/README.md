@@ -62,8 +62,8 @@ relay/deploy/update.sh --ref main               # run another ref (git fetch, np
 relay/deploy/update.sh --ext dist               # publish the self-hosted cua extension at https://<host>/ext/ (no restart)
 ```
 
-`--ext` takes what `CUA_EXTENSION_KEY=<owner's key> node scripts/extension-pack.mjs` wrote (`update.xml` and the CRX it
-names): it copies the CRX, then `update.xml`, to `/var/lib/cua-relay/ext`, and replaces the server's live
+`--ext` takes what `CUA_EXTENSION_KEY=<owner's key> npm run extension:pack` wrote (`update.xml` and the CRX it
+names; the Store zip beside them is not published): it copies the CRX, then `update.xml`, to `/var/lib/cua-relay/ext`, and replaces the server's live
 `/etc/caddy/Caddyfile` with this checkout's `Caddyfile` (its `/ext/` file server) when they differ: only the site line
 is kept from the live file (so a moved domain survives), any other hand edit there is overwritten. It prints the diff
 first, installs only after `caddy validate` accepts the new file, and reloads Caddy. Linux VMs force-install the extension from `https://<host>/ext/update.xml` (`deploy/cloud-vm/`).

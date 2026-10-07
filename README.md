@@ -824,9 +824,7 @@ confirm with the user and do not retry it blindly after a timeout.
 ## Verify and acceptance
 
 ```sh
-npm test                  # Node only; no Swift, runtime, GUI or network
-npm run build:helper      # the Keychain helper
-npm run test:helper       # the actual helper: in-memory storage and pseudo-terminals, no Keychain access
+npm test                  # Node only; no runtime, GUI or network
 node verify.mjs           # the installed runtime in $CUA_HOME, through `cua serve`
 CUA_SHIM_SURFACES=computer,browser node verify.mjs   # the same with the browser surface (five tools)
 ```
@@ -845,19 +843,25 @@ records an accepted consequence is `INFO` and does not change its item's status)
 export CUA_HOME="$(mktemp -d /tmp/cua-accept.XXXXXX)"
 node bin/cua.mjs install --archive <ChatGPT-darwin-arm64-26.928.40906.zip>
 node scripts/accept-native.mjs --report "$CUA_HOME/acceptance.json"
-node scripts/accept-native.mjs --live-keychain --report "$CUA_HOME/acceptance-keychain.json"
+node scripts/accept-native.mjs --live-secrets --report "$CUA_HOME/acceptance-secrets.json"
 node scripts/accept-native.mjs --live-textedit --report "$CUA_HOME/acceptance-live.json"
-node scripts/accept-native.mjs --live-keychain --live-textedit --report "$CUA_HOME/acceptance-keychain-ui.json"
+node scripts/accept-native.mjs --live-secrets --live-textedit --report "$CUA_HOME/acceptance-secrets-ui.json"
+# with a key you stored yourself in a scratch store home (never your own ~/.config/claude-secrets):
+HOME="$STORE_HOME" node bin/cua.mjs secrets set CUA_TEST_SECRET
+node scripts/accept-native.mjs --live-secrets --live-textedit --secret-key CUA_TEST_SECRET --secret-home "$STORE_HOME" --report …
 ```
 
 Without a flag it runs the suites, install/reinstall, doctor, `verify.mjs`, the read-only lifecycle probe
-(`scripts/probe-lifecycle.mjs`), packaging checks and a clean clone of `HEAD` that runs `npm test`, `build:helper` and
-`test:helper` (deleted afterwards). The opt-in flags add live scenarios:
+(`scripts/probe-lifecycle.mjs`), the secrets CLI against a temporary store home, packaging checks and a clean clone of
+`HEAD` that runs `npm test` (deleted afterwards). Every secret these runs store lives in a temporary `$HOME` store that
+is removed afterwards; the server they start resolves its store from that home and runs the runtime with your real
+home (`scripts/accept/serve-with-store.mjs`), because the vendor finds the computer-use helper's socket under `$HOME`.
+The opt-in flags add live scenarios:
 
-- `--live-keychain` runs `scripts/probe-secrets.mjs`: one uniquely labelled disposable Keychain item holding generated
-  values, created and replaced through a test-only pseudo-terminal driver typing into the production `set`, read
-  through the real helper → broker → trusted service → a controlled fake input target, and deleted at the end. It
-  checks every input method, the failures, failing closed with secrets off or no broker, and that neither value
+- `--live-secrets` runs `scripts/probe-secrets.mjs`: one generated key in a temporary store holding generated values,
+  created and replaced by typing into the production `cua secrets set` at a pseudo-terminal, read by the trusted
+  service and delivered to a controlled fake input target. It checks every input method, the failures, failing closed
+  with secrets off or an unreadable store, and that neither value
   appears in the MCP traffic, the server's and runtime's stderr, files under `$CUA_HOME` or the report. Item 7 also
   carries two trusted-root rows, where a cell tries to create a module in each trusted code root and, for
   comparison, in its own run directory and `$TMPDIR`. "sandbox scoped (default): trusted roots unwritable, run
@@ -870,13 +874,18 @@ Without a flag it runs the suites, install/reinstall, doctor, `verify.mjs`, the 
   `cua serve`, reads it back (accessibility text and a screenshot, recorded as metadata), closes only that window and
   deletes the file. It never touches another document and never quits TextEdit. It accepts the app-approval
   elicitation only when it is exactly the request for `com.apple.TextEdit`, for the session only, and declines
-  anything else; that answer lives in the test harness, not in `cua serve`. With both flags it also types a
-  disposable secret into that document; reading it back is observation of the target, not confidentiality evidence.
+  anything else; that answer lives in the test harness, not in `cua serve`. With both flags it also types
+  `{{secret:KEY}}` into that document (a generated key, or `--secret-key`) and checks that the document holds exactly
+  the stored value by comparing SHA-256 digests inside the cell, so the value never crosses the MCP stream; the
+  transcript and stderr are scanned for it before and after.
 
-A macOS permission or Keychain prompt is never answered by these scripts: the step stops and is reported BLOCKED
-with the human action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned
-helper's own cold start, first-run permission prompts, Developer ID signing across an upgrade) are always reported
-BLOCKED here. `npm run test:keychain-live` is the narrower Keychain-only roundtrip from the helper's milestone.
+On Linux, `scripts/accept/linux-secret.mjs --key KEY [--app zenity|gedit]` is the same check against a key in your
+store: it types `{{secret:KEY}}` into a zenity entry dialog (whose printed answer is compared outside the MCP stream)
+or a gedit window (whose GTK3 text view the helper's text input crashes on arm64; the fixture records it).
+
+A macOS permission prompt is never answered by these scripts: the step stops and is reported BLOCKED with the human
+action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned helper's own cold
+start, first-run permission prompts) are always reported BLOCKED here.
 
 The Chrome acceptance (spec C1-C7) has its own runner, against `$CUA_HOME` (by default your real home: it needs the
 server's login and your registered profiles):
@@ -917,8 +926,8 @@ record that it replaced nothing (`$CUA_HOME/chrome/registration.json`) is what t
 gate left mid-run, which stays BLOCKED.
 
 `--live` is the browser secret round trip: through `cua serve` it selects the registered profile by its instance id,
-creates one tab, opens the runner's own loopback page, fills its password field with `{{secret:<label>}}` for a
-disposable generated Keychain item (removed at the end), and compares the page's own digest of what it received with
+creates one tab, opens the runner's own loopback page, fills its password field with `{{secret:<KEY>}}` for a
+generated key in a temporary store home (removed at the end), and compares the page's own digest of what it received with
 the generated value's. It accepts only the access request for that page's exact origin, for the session; it closes the
 tab it created and reports any it could not close, and it scans the MCP traffic, stderr, the screenshot and
 `$CUA_HOME/state` for the value.
@@ -927,7 +936,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 
 | variable | default | meaning |
 |---|---|---|
-| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory, broker socket and a record of the process that owns them; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
+| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through the original OpenAI extension and host, with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |

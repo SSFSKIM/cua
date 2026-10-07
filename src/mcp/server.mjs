@@ -23,7 +23,7 @@
 //   Readiness includes the live check (a bound instance among the live backends), so it can take a runtime launch. It
 //   is the gate before profile selection: only a ready profile's instance id is handed out, and a profile with no live
 //   host reads host_not_live with the wake step. A selection that fails later (the host exited after profiles_list)
-//   fails closed inside the REPL with the vendor's own error; the host notes send the agent back to profiles_list.
+//   fails closed inside the REPL with the vendor's own error; profiles_list's description sends the agent back to it.
 // - secrets_list asks the connection's secrets provider (the file store, src/secrets/store.mjs) for its keys; it never
 //   reads a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.

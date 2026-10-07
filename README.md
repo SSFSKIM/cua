@@ -1016,7 +1016,7 @@ directory the runner creates (and deletes), and your home's registry is checked 
 
 `--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface,
 the profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for
-`profiles_list` and the host notes, `cua doctor` (C5 expects the desktop's registration, or, on a Mac without the desktop app, cua's own or none), a no-op
+`profiles_list` and the Chrome rules in its description, `cua doctor` (C5 expects the desktop's registration, or, on a Mac without the desktop app, cua's own or none), a no-op
 `cua install`, `cua chrome register` without `--replace`
 (which must refuse) and `cua chrome unregister` (which must change nothing; both are skipped while cua's own host is
 registered for the `--replace` gate, and reported `N/A` on a Mac without the desktop app, where nothing else is

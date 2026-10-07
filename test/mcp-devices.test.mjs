@@ -429,6 +429,25 @@ test('a call cancelled while its lazy open is under way is never answered, and t
   assert.equal((await next.response).result._meta['cua/deviceSession'], 'new');
 });
 
+test('a devices_use cancelled while the device lists its tools is withdrawn, even when the device answers the list anyway', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  let held = null;
+  mini.front = entry => entry.message?.method === 'tools/list' && (held = entry, true);
+  const switching = h.client.call('devices_use', {device: 'mini'});
+  await until(() => held, 'the held tools/list');
+  h.client.notify('notifications/cancelled', {requestId: switching.id});
+  await tick(50);
+  held.res.writeHead(200, {'Content-Type': 'application/json'});
+  held.res.end(JSON.stringify({jsonrpc: '2.0', id: held.message.id, result: {tools: UPSTREAM_TOOLS}}));
+  await until(() => mini.deletes().length, 'the new session ended');
+  assert.deepEqual(h.client.responsesFor(switching.id), [], 'a withdrawn request is never answered');
+  mini.front = null;
+  assert.equal(structured(await h.client.call('devices_list').response).current, 'local', 'the target is unchanged');
+});
+
 test('a POST stream cut mid-call is resumed by Last-Event-ID and the result delivered in the same call, with no new initialize', async t => {
   const home = userHome(t);
   const mini = await device(t);

@@ -322,6 +322,11 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
       await endLink(link).catch(() => {});
       throw new DeviceError('device_protocol', 'the device did not list its tools');
     }
+    // The device may answer a list this devices_use's cancellation already withdrew: the client has stopped waiting.
+    if (signal.aborted) {
+      await endLink(link).catch(() => {});
+      throw new DeviceError('cancelled', 'devices_use was cancelled while the device listed its tools');
+    }
     if (closing) {
       await endLink(link).catch(() => {});
       throw closingError();

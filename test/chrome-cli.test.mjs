@@ -41,7 +41,7 @@ test('chrome register refuses while the desktop\'s manifest is present, with the
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /the desktop's registration is in use and already works with `cua serve`/);
   assert.match(r.stderr, /registration_in_use/);
-  assert.match(r.stderr, /--replace/);
+  assert.match(r.stderr, /cua chrome register --vendor --replace/);
   assert.equal(readFileSync(join(m.nmh, MANIFEST), 'utf8'), m.desktopBytes);
   assert.equal(existsSync(join(m.home, 'chrome')), false);
   const json = m.cua(['chrome', 'register', '--vendor', '--json']);
@@ -87,7 +87,7 @@ test('chrome register and unregister name an unreadable Chrome directory and the
   for (const [command, r, json] of runs) {
     assert.equal(r.status, 1, `${command}: ${r.stdout}${r.stderr}`);
     assert.match(r.stderr, /cannot read the native-messaging directory of Google Chrome .*EACCES.*Nothing was changed\. \[chrome_data_unreadable\]/, command);
-    assert.ok(r.stderr.includes(`${PERMISSION_FIX}; then run \`cua chrome ${command}\` again`), `${command}: ${r.stderr}`);
+    assert.ok(r.stderr.includes(`${PERMISSION_FIX}; then run \`cua chrome ${command} --vendor\` again`), `${command}: ${r.stderr}`);
     assert.doesNotMatch(r.stdout + r.stderr, /registration_in_use|nothing to unregister|removed|not ours/, command);
     assert.deepEqual([json.ok, json.error.code], [false, 'chrome_data_unreadable'], command);
   }

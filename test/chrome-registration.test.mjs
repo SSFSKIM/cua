@@ -596,7 +596,7 @@ test('undoing preserves a concurrent writer\'s file, and an undo that cannot com
   assert.equal(error?.code, 'registration_partial');
   assert.doesNotMatch(error.message, /Nothing was changed/);
   assert.match(error.message, /chrome/);
-  assert.match(error.hint, /cua chrome unregister/);
+  assert.match(error.hint, /cua chrome unregister --vendor/);
   assert.equal(readFileSync(p.manifests.chrome, 'utf8'), ourManifest(p.component.host));
   assert.deepEqual(record(p).browsers.chrome, {manifest: p.manifests.chrome, replaced: false});
   // The recovery the error names works.
@@ -818,7 +818,7 @@ const DENIED = ['Google/Chrome', 'Google', 'Google/Chrome/NativeMessagingHosts']
 const unreadableRefusal = command => err => {
   assert.equal(err.code, 'chrome_data_unreadable', err.message);
   assert.match(err.message, /cannot read the native-messaging directory of Google Chrome \(.*NativeMessagingHosts: EACCES\), so whether com\.openai\.codexextension is registered there is unknown\. Nothing was changed\.$/);
-  assert.match(err.hint, new RegExp(`${FIX}.*then run \`cua chrome ${command}\` again`));
+  assert.match(err.hint, new RegExp(`${FIX}.*then run \`cua chrome ${command} --vendor\` again`));
   return true;
 };
 
@@ -889,7 +889,7 @@ test('a directory that becomes unreadable mid-run: register undoes its earlier w
   const chrome = result.browsers.find(b => b.browser === 'chrome');
   assert.deepEqual([chrome.action, chrome.restoration], ['unknown', 'blocked']);
   assert.match(chrome.reason, /whether cua's registration is still there is unknown \(this process cannot read it: EACCES\)/);
-  assert.match(chrome.userAction, new RegExp(`${FIX}.*\`cua chrome unregister\` again`));
+  assert.match(chrome.userAction, new RegExp(`${FIX}.*\`cua chrome unregister --vendor\` again`));
   assert.ok(readFileSync(m.manifests.chrome).equals(ours), 'it was in fact still there');
   assert.equal(result.blocked, true);
 });
@@ -905,7 +905,7 @@ test('a register run stopped by an unreadable directory whose undo also fails ke
     }}), err => {
       assert.equal(err.code, 'registration_partial', err.message);
       assert.match(err.message, /native-messaging directory of Brave .*EACCES.*\(chrome_data_unreadable\)\. cua had already registered chrome in this run, but could not finish chrome/);
-      assert.match(err.hint, new RegExp(`^${FIX}; then run \`cua chrome unregister\``));
+      assert.match(err.hint, new RegExp(`^${FIX}; then run \`cua chrome unregister --vendor\``));
       return true;
     });
   } finally { chmodSync(braveData, 0o755); chmodSync(nmh, 0o755); }
@@ -923,6 +923,6 @@ test('a restore whose rollback fails in a slot that turned unreadable puts the a
   const chrome = result.browsers.find(b => b.browser === 'chrome');
   assert.deepEqual([chrome.action, chrome.restoration], ['unknown', 'blocked']);
   assert.match(chrome.reason, /putting the manifest that was there back failed \(EACCES\)/);
-  assert.match(chrome.userAction, new RegExp(`^${FIX}; then restore it yourself: mv ".*\\.taken" ".*com\\.openai\\.codexextension\\.json"; then run \`cua chrome unregister\` again$`));
+  assert.match(chrome.userAction, new RegExp(`^${FIX}; then restore it yourself: mv ".*\\.taken" ".*com\\.openai\\.codexextension\\.json"; then run \`cua chrome unregister --vendor\` again$`));
   assert.equal(readFileSync(join(m.backups, 'chrome.json'), 'utf8'), m.original, 'backup kept');
 });

@@ -87,7 +87,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);
-    const profiles = {list: async () => {
+    // `route` words a missing extension as the home's route's (registry.mjs reasonText).
+    const profiles = {route: chromeRoute(home), list: async () => {
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;

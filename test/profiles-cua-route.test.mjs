@@ -120,3 +120,10 @@ test('bind on the cua route records route cua', async t => {
   assert.equal(result.by, 'directory');
   assert.deepEqual(readRegistry(home).profiles.personal, {chromeProfileDirectory: 'Default', extensionInstanceId: 'cua-inst', boundAt: readRegistry(home).profiles.personal.boundAt, route: 'cua'});
 });
+
+test('a missing extension is worded as the route\'s: cua\'s on the cua route, the OpenAI extension otherwise', () => {
+  const p = {key: 'work', reason: 'extension_not_installed', chromeProfileDirectory: 'Profile 1'};
+  assert.match(reasonText(p, {route: 'cua'}), /^the cua extension is not installed or loaded in this Chrome profile/);
+  assert.match(reasonText(p), /^the OpenAI extension is not installed in this Chrome profile/);
+  assert.equal(reasonText(p, {route: 'vendor'}), reasonText(p));
+});

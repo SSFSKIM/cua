@@ -91,7 +91,7 @@ function searched(browsers) {
 
 export const REPLACE_CONSEQUENCES = [
   'While cua\'s host is registered, the ChatGPT desktop app\'s Codex side panel and other app-server features in the browser stop working: no chrome-native-hosts-v2.json entry names cua\'s host, and that registry gates the app-server.',
-  'The ChatGPT desktop app rewrites its own com.openai.codexextension manifest when it next runs, which replaces cua\'s registration again; `cua chrome unregister` restores the backed-up manifest now.',
+  'The ChatGPT desktop app rewrites its own com.openai.codexextension manifest when it next runs, which replaces cua\'s registration again; `cua chrome unregister --vendor` restores the backed-up manifest now.',
 ];
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -368,11 +368,11 @@ async function registerLocked({cuaHome, runtime, replace, userHome, browsers: ta
   const context = {home: cuaHome, userHome, suffixes: hostSuffixes([...pins, runtime.manifest])};
   const planned = slots({browsers: table, nativeHost: native.name, onlyPresent: true}).map(s => ({...s, slot: readSlot(s.manifestPath, context)}));
   if (!planned.length)
-    fail('no_supported_browser', `no ${searched(table)}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
+    fail('no_supported_browser', `no ${searched(table)}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register --vendor` again'});
   const refused = planned.filter(s => s.slot.state === 'unreadable');
-  if (refused.length) unreadable(refused, native.name, 'register');
+  if (refused.length) unreadable(refused, native.name, 'register --vendor');
   const foreign = planned.filter(s => s.slot.state === 'foreign');
-  const replaceHint = `\`cua chrome register --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister\` restores it`;
+  const replaceHint = `\`cua chrome register --vendor --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister --vendor\` restores it`;
   if (foreign.length && !replace) fail('registration_in_use', refusal(foreign, native.name), {hint: replaceHint});
   // The host must be cua's verified host, with the configuration it reads, before any browser is pointed at it.
   await verifyPlacedChromeComponent(runtime, {verifySignatures});
@@ -393,7 +393,7 @@ async function registerLocked({cuaHome, runtime, replace, userHome, browsers: ta
         unsettled = false;
         // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
         const slot = readSlot(s.manifestPath, context);
-        if (slot.state === 'unreadable') unreadable([{...s, slot}], native.name, 'register');
+        if (slot.state === 'unreadable') unreadable([{...s, slot}], native.name, 'register --vendor');
         if (slot.state === 'absent') {
           record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
           writeRecord(cuaHome, record);
@@ -496,7 +496,7 @@ function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}
   const access = error.code === 'chrome_data_unreadable' ? [PERMISSION_FIX] : [];
   return new CuaError('registration_partial',
     `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not finish ${unfinished}`,
-    {hint: [...new Set([...access, ...left.filter(l => l.hint).map(l => l.hint)])].concat('then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)').join('; '), cause: error});
+    {hint: [...new Set([...access, ...left.filter(l => l.hint).map(l => l.hint)])].concat('then run `cua chrome unregister --vendor` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)').join('; '), cause: error});
 }
 
 // One change's undo: `restored` (cua's write is gone and the earlier bytes, if any, are back), `superseded` (another
@@ -551,7 +551,7 @@ function unregisterLocked({cuaHome, userHome, browsers: table, nativeHost, pins,
   const forget = browser => { if (record.browsers[browser]) { delete record.browsers[browser]; recordChanged = true; } };
   const all = slots({browsers: table, nativeHost, onlyPresent: false});
   const refused = all.map(s => ({...s, slot: readSlot(s.manifestPath, context)})).filter(s => s.slot.state === 'unreadable');
-  if (refused.length) unreadable(refused, nativeHost, 'unregister');
+  if (refused.length) unreadable(refused, nativeHost, 'unregister --vendor');
   const browsers = all.map(s => {
     const row = {browser: s.browser, manifestPath: s.manifestPath};
     try {
@@ -564,11 +564,11 @@ function unregisterLocked({cuaHome, userHome, browsers: table, nativeHost, pins,
         : now.state === 'unreadable' ? ['unknown', `whether cua's registration is still there is unknown (this process cannot read it: ${now.code})`]
         : ['removed', 'cua\'s registration is no longer there'];
       // Every recovery step touches the slot, so for one this process cannot read the access comes first.
-      const recovery = error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again`
-        : now.state === 'unreadable' ? 'run `cua chrome unregister` again'
+      const recovery = error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister --vendor\` again`
+        : now.state === 'unreadable' ? 'run `cua chrome unregister --vendor` again'
         : record.browsers[s.browser]?.replaced
-        ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
-        : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`;
+        ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister --vendor\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
+        : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister --vendor\` again, or ${restoreYourself(s.name, s.manifestPath)}`;
       return {...row, action, restoration: 'blocked',
         reason: `${['manifest_rollback_failed', 'manifest_write_failed', 'chrome_data_unreadable'].includes(error.code) ? error.message : error.code ?? error.message} while unregistering ${s.manifestPath}; ${state}, and the backup and its record were kept`,
         userAction: now.state === 'unreadable' ? `${PERMISSION_FIX}; then ${recovery}` : recovery};
@@ -753,6 +753,7 @@ function registerCuaLocked({cuaHome, host, nodePath, replace, table, io}) {
   }
   writeAtomic(launcher, launcherText({home: cuaHome, nodePath, host}), {mode: 0o700, dirMode: 0o700});
   const before = readCuaRecord(cuaHome);
+  const beforeAt = before ? writtenAt(cuaRecordFile(cuaHome)) : null;
   const record = {schema: 1, route: 'cua', launcher, backendsDir: backendDir(cuaHome), browsers: {...before?.browsers}};
   const backups = [];
   for (const s of planned) {
@@ -791,7 +792,7 @@ function registerCuaLocked({cuaHome, host, nodePath, replace, table, io}) {
       rows.push(s.slot.state === 'ours' ? {...row, action: 'updated'} : {...row, action: 'replaced', backup: cuaBackupFile(cuaHome, s.browser)});
     }
   } catch (error) {
-    throw undoCuaRun(error, applied, {cuaHome, before, backups, desired, io});
+    throw undoCuaRun(error, applied, {cuaHome, before, beforeAt, backups, desired, io});
   }
   return {launcher, backendsDir: backendDir(cuaHome), browsers: rows};
 }
@@ -799,7 +800,7 @@ function registerCuaLocked({cuaHome, host, nodePath, replace, table, io}) {
 // Undoes this run's manifest writes, newest first, putting back what was there; with every one undone the record is
 // what it was before the run (and this run's backups go), otherwise the run's record and backups are kept for
 // `cua chrome unregister` and the error is registration_partial naming what is left.
-function undoCuaRun(error, applied, {cuaHome, before, backups, desired, io}) {
+function undoCuaRun(error, applied, {cuaHome, before, beforeAt, backups, desired, io}) {
   const left = [];
   for (const change of [...applied].reverse()) {
     try {
@@ -815,7 +816,10 @@ function undoCuaRun(error, applied, {cuaHome, before, backups, desired, io}) {
     return new CuaError('registration_partial', `${error.message.replace(/ Nothing was changed\.$/, '')} (${error.code ?? 'error'}); cua could not undo what this run registered in ${left.join('; ')}`,
       {hint: 'run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)', cause: error});
   try {
-    if (before) writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify(before, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+    if (before) {
+      writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify(before, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+      restoreWrittenAt(cuaRecordFile(cuaHome), beforeAt);
+    }
     else rmSync(cuaRecordFile(cuaHome), {force: true});
     for (const backup of backups) rmSync(backup, {force: true});
   } catch {}
@@ -853,7 +857,11 @@ function unregisterCuaLocked({cuaHome, table, io}) {
   });
   const blocked = rows.filter(r => r.restoration === 'blocked');
   if (blocked.length) {
-    if (record) writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify({...record, browsers: Object.fromEntries(blocked.filter(r => record.browsers[r.browser]).map(r => [r.browser, record.browsers[r.browser]]))}, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+    if (record) {
+      const at = writtenAt(cuaRecordFile(cuaHome));
+      writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify({...record, browsers: Object.fromEntries(blocked.filter(r => record.browsers[r.browser]).map(r => [r.browser, record.browsers[r.browser]]))}, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+      restoreWrittenAt(cuaRecordFile(cuaHome), at);
+    }
   } else {
     rmSync(cuaRecordFile(cuaHome), {force: true});
     rmSync(launcher, {force: true});
@@ -891,6 +899,21 @@ function unregisterCuaSlot(s, row, {cuaHome, entry, io}) {
     return {...row, action: 'restored', restoration: 'blocked', previous, reason: `${s.manifestPath} does not read back as the backup; the backup and its record were kept`, userAction: `copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}")`};
   rmSync(backup, {force: true});
   return {...row, action: 'restored', restoration: 'restored', previous, backup};
+}
+
+// The route is whichever record was written last (route.mjs), so a record rewrite that is not a registration (an undo,
+// a blocked unregister keeping its entries) puts back the time the record had, and the route stays where it was.
+const writtenAt = path => { try { const {atimeMs, mtimeMs} = statSync(path); return {atimeMs, mtimeMs}; } catch { return null; } };
+function restoreWrittenAt(path, at) {
+  if (at) try { utimesSync(path, at.atimeMs / 1000, at.mtimeMs / 1000); } catch {}
+}
+
+// `cua chrome unregister --vendor`: the vendor route's unregisterHost, keeping the time its record was written (a
+// partly blocked unregister rewrites the record with the blocked browsers' entries; that is no registration).
+export function unregisterVendorHost(options) {
+  const file = recordFile(realHome(options.home));
+  const at = writtenAt(file);
+  try { return unregisterHost(options); } finally { restoreWrittenAt(file, at); }
 }
 
 // `cua chrome register --vendor` ran last: its record counts as the newer one (route.mjs), even when it changed no

@@ -1,5 +1,6 @@
 // Doctor's Chrome checks: passive capability evidence beside runtime health, `pass` or `blocked`, never `fail` (they
-// never change doctor's `ok`). Read from files and the process table only (chrome.mjs).
+// never change doctor's `ok`). On the vendor route read from files and the process table only (chrome.mjs); on the cua
+// route from files, plus a connection to each of cua's own host sockets (chrome.hosts.live, below).
 //   chrome.extension.<key>   per registered profile: the OpenAI extension is installed in its Chrome profile; blocked
 //                            when absent, and when this process may not read Chrome's data directory (with the code)
 //   chrome.profiles          only when $CUA_HOME/profiles.json cannot be read
@@ -23,7 +24,7 @@ import {join} from 'node:path';
 import {CuaError} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {NATIVE_HOST_NAME, PERMISSION_FIX, PERMISSION_HINT, countLiveHosts} from './chrome.mjs';
-import {profileStatuses, REASONS} from './registry.mjs';
+import {profileStatuses, REASONS, reasonFor} from './registry.mjs';
 import {backendDir, CUA_HOST_NAME, launcherPath} from '../chrome/extension.mjs';
 import {parseLauncher} from '../chrome/registration.mjs';
 
@@ -77,7 +78,7 @@ export const LIVE_PROBE_MS = 500;
 
 export async function cuaChromeChecks({home, chrome, userHome = homedir(), probeMs = LIVE_PROBE_MS}) {
   const checks = extensionRows({home, chrome, extension: 'cua',
-    notInstalled: 'the cua extension is not installed or loaded in this Chrome profile (install it from the Chrome Web Store, or load the checkout\'s extension/ directory unpacked; cua never installs it)',
+    notInstalled: reasonFor('extension_not_installed', 'cua'),
     installed: directory => `the cua extension is installed or loaded unpacked in Chrome profile "${directory}" (file presence only; enabled/connected is not checked)`});
   checks.push(cuaRegistration({home, chrome, userHome}));
   checks.push(await liveCuaHosts(home, probeMs));

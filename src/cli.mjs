@@ -29,7 +29,7 @@ import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
 import {PICK_REASONS} from './profiles/bind.mjs';
 import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
-import {chooseVendorRoute, registerCuaHost, registerHost, unregisterCuaHost, unregisterHost} from './chrome/registration.mjs';
+import {chooseVendorRoute, registerCuaHost, registerHost, unregisterCuaHost, unregisterVendorHost} from './chrome/registration.mjs';
 import {chromeRoute, effectiveRoute, extensionIdFor} from './chrome/route.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME} from './chrome/extension.mjs';
 
@@ -69,7 +69,7 @@ export const usageFor = platform => {
   profiles add <key> --chrome-profile <directory> [--json]     register an existing Chrome profile under a key
   profiles list [--json]                                       registered profiles and whether each is ready
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
-  profiles bind <key> [--extension-instance-id <id>] [--dry-run] [--json]  bind a key to its live OpenAI extension backend
+  profiles bind <key> [--extension-instance-id <id>] [--dry-run] [--json]  bind a key to its live Chrome extension backend
   profiles open <key> [--json]                                 open a window in that Chrome profile, then report its readiness
   chrome register [--replace] [--json]                         register cua's own Chrome host for the cua extension
   chrome unregister [--json]                                   remove that registration, restoring what it replaced
@@ -550,7 +550,7 @@ async function pickBackend(list, reason, nonChromeExcluded, {staleBinding} = {})
   } finally { rl.close(); }
 }
 
-const readinessLine = p => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p)}`;
+const readinessLine = (p, route) => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p, {route})}`;
 // The command as the user could paste it; it runs without a shell (execFile).
 const shellWord = word => /^[A-Za-z0-9_./=:-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 // A detached opener (Linux's google-chrome, which becomes the browser itself when none runs) is done once it has
@@ -596,7 +596,7 @@ async function profiles(args) {
     if (values.json) { print({ok: !leftover, profiles: list, ...(listingError ? {listingError: listingError.code} : {})}); return leftover ? 1 : 0; }
     if (listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${listingError.code}: ${listingError.message})\n`);
     if (!list.length) return done('no Chrome profiles are registered (cua profiles add <key> --chrome-profile <directory>)');
-    for (const p of list) print(readinessLine(p));
+    for (const p of list) print(readinessLine(p, route));
     return leftover ? 1 : 0;
   }
   if (command === 'open') {
@@ -608,7 +608,7 @@ async function profiles(args) {
     if (values.json) { print(result); return result.ok ? 0 : 1; }
     print(`ran: ${result.command.map(shellWord).join(' ')}`);
     if (result.readiness.listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${result.readiness.listingError}: ${result.readiness.listingMessage})\n`);
-    print(readinessLine({key: result.key, chromeProfileDirectory: result.directory, ...result.readiness}));
+    print(readinessLine({key: result.key, chromeProfileDirectory: result.directory, ...result.readiness}, route));
     return result.ok ? 0 : 1;
   }
   if (command === 'remove') {
@@ -686,7 +686,7 @@ async function chrome(args) {
     if (rebind.length) print(rebindLine(rebind));
     return 0;
   }
-  const result = unregisterHost({home});
+  const result = unregisterVendorHost({home});
   if (values.json) { print({ok: true, ...result}); return result.blocked ? 1 : 0; }
   for (const line of unregisterLines(result)) print(line);
   return result.blocked ? 1 : 0;

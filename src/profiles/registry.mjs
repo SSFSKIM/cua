@@ -186,6 +186,11 @@ const UNREADABLE_NEXT = {
   unbound: 'it is not bound yet: cua profiles bind <key> works without that access',
 };
 
-// The registered profile's Chrome directory appears only where the user's step happens in that profile.
-export const reasonText = ({key, reason, extensionInstanceId, chromeProfileDirectory}) => (reason === 'chrome_data_unreadable'
-  ? `${REASONS[reason]}; ${UNREADABLE_NEXT[extensionInstanceId ? 'bound' : 'unbound']}` : REASONS[reason]).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);
+// On the cua route the missing extension is cua's own (REASONS names the OpenAI extension of the vendor route).
+const CUA_NOT_INSTALLED = 'the cua extension is not installed or loaded in this Chrome profile (install it from the Chrome Web Store, or load the checkout\'s extension/ directory unpacked; cua never installs it)';
+export const reasonFor = (reason, route) => (reason === 'extension_not_installed' && effectiveRoute(route) === 'cua' ? CUA_NOT_INSTALLED : REASONS[reason]);
+
+// The registered profile's Chrome directory appears only where the user's step happens in that profile. `route` is the
+// home's Chrome route (src/chrome/route.mjs), for the wording only.
+export const reasonText = ({key, reason, extensionInstanceId, chromeProfileDirectory}, {route} = {}) => (reason === 'chrome_data_unreadable'
+  ? `${REASONS[reason]}; ${UNREADABLE_NEXT[extensionInstanceId ? 'bound' : 'unbound']}` : reasonFor(reason, route)).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);

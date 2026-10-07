@@ -3,16 +3,19 @@
 // directory or the real default cua home: every test passes its own scratch `browsers` table and CUA_HOME.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync} from 'node:fs';
+
+const FS_SEAM = {linkSync, renameSync, readFileSync, writeFileSync};
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
-import {browsersFor, chooseVendorRoute, manifestText, readCuaRecord, registerCuaHost, unregisterCuaHost} from '../src/chrome/registration.mjs';
+import {browsersFor, chooseVendorRoute, manifestText, readCuaRecord, registerCuaHost, registerHost, unregisterCuaHost, unregisterVendorHost} from '../src/chrome/registration.mjs';
+import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {chromeRoute} from '../src/chrome/route.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME, MAX_SOCKET_PATH_BYTES, backendDir, launcherLog, launcherPath, logDir, longestSocketPath} from '../src/chrome/extension.mjs';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {PERMISSION_FIX} from '../src/profiles/chrome.mjs';
-import {REPO, shortScratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, shortScratch, forgeActiveRuntime, forgeChromeComponent, acceptSignatures} from './fixtures/runtime-fixture.mjs';
 
 const DARWIN = {platform: 'darwin', arch: 'arm64'};
 const MANIFEST = `${CUA_HOST_NAME}.json`;
@@ -99,8 +102,10 @@ test('register bakes real paths: a symlinked home and a symlinked checkout (npm 
 test('a second register is unchanged and keeps what the first recorded', async t => {
   const m = machine(t);
   await register(m);
+  const recorded = readCuaRecord(m.home);
   const again = await register(m);
   assert.deepEqual(again.browsers.map(b => b.action), ['unchanged', 'unchanged']);
+  assert.deepEqual(readCuaRecord(m.home), recorded);
 });
 
 test('register refuses a manifest naming another home\'s launcher (other_home, hint --replace) and writes nothing', async t => {
@@ -276,4 +281,52 @@ test('the route is whichever registration ran last: none, cua, vendor, back to c
   assert.equal(chromeRoute(m.home), 'cua');
   unregister(m);
   assert.equal(chromeRoute(m.home), 'vendor', 'unregistering the cua route leaves the vendor registration');
+});
+
+// A record rewrite that is not a registration keeps the route where it was (the newer record wins).
+const vendorRecord = m => join(m.home, 'chrome', 'registration.json');
+function onVendorRoute(m) {
+  writeFileSync(vendorRecord(m), JSON.stringify({schema: 1, browsers: {chrome: {manifest: m.vendorManifest, replaced: false}}}));
+  chooseVendorRoute(m.home);
+  assert.equal(chromeRoute(m.home), 'vendor');
+}
+
+test('a cua register that fails midway on a vendor-route home restores the earlier cua record and leaves the route vendor', async t => {
+  const m = machine(t);
+  await register(m);
+  rmSync(m.manifests.brave);
+  onVendorRoute(m);
+  const before = readCuaRecord(m.home);
+  const io = {...FS_SEAM, linkSync: (from, to) => { if (to === m.manifests.brave) throw Object.assign(new Error('denied'), {code: 'EACCES'}); return linkSync(from, to); }};
+  await assert.rejects(register(m, {io}), err => err.code === 'EACCES');
+  assert.deepEqual(readCuaRecord(m.home), before);
+  assert.equal(chromeRoute(m.home), 'vendor');
+});
+
+test('a blocked cua unregister on a vendor-route home keeps the route vendor', async t => {
+  const m = machine(t);
+  writeFileSync(m.manifests.chrome, cuaManifest('/elsewhere/chrome/host'));
+  await register(m, {replace: true});
+  writeFileSync(join(m.home, 'chrome', 'cua-manifest-backup', 'chrome.json'), 'tampered');
+  onVendorRoute(m);
+  assert.equal(unregister(m).blocked, true);
+  assert.ok(readCuaRecord(m.home), 'the record was rewritten with the blocked entry');
+  assert.equal(chromeRoute(m.home), 'vendor');
+});
+
+test('a partly blocked unregister --vendor on a cua-route home keeps the route cua', async t => {
+  const m = machine(t);
+  forgeActiveRuntime(m.home, {}, {host: DARWIN});
+  forgeChromeComponent(m.home, {host: DARWIN});
+  const runtime = resolveRuntime({home: m.home, host: DARWIN});
+  const vendor = await registerHost({home: m.home, runtime, userHome: m.userHome, browsers: m.browsers, verifySignatures: acceptSignatures, replace: true});
+  assert.equal(vendor.browsers.find(b => b.browser === 'chrome').action, 'replaced');
+  await register(m);
+  assert.equal(chromeRoute(m.home), 'cua');
+  // Chrome's slot fails to change hands (its entry and backup are kept); Brave's is removed, so the record is rewritten.
+  const io = {...FS_SEAM, renameSync: (from, to) => { if (from === m.vendorManifest) throw Object.assign(new Error('denied'), {code: 'EACCES'}); return renameSync(from, to); }};
+  const out = unregisterVendorHost({home: m.home, userHome: m.userHome, browsers: m.browsers, io});
+  assert.equal(out.blocked, true);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(vendorRecord(m), 'utf8')).browsers), ['chrome']);
+  assert.equal(chromeRoute(m.home), 'cua');
 });

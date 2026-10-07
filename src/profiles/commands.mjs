@@ -11,7 +11,7 @@
 // in or labelled with it. Only Google Chrome's backends are listed, can be bound (bind.mjs) and count as live for
 // readiness; another browser's are reported as a count (`nonChromeExcluded`), nothing more, not even its label.
 import {fail} from '../runtime/errors.mjs';
-import {readRegistry, bindProfile, profileStatuses, withLiveness, awaitsLiveEvidence, REASONS} from './registry.mjs';
+import {readRegistry, bindProfile, profileStatuses, withLiveness, awaitsLiveEvidence, REASONS, reasonFor} from './registry.mjs';
 import {decideBinding, isChromeBackend, placements, REFUSED} from './bind.mjs';
 import {teardownUnconfirmed} from './inventory.mjs';
 import {chromeRoute} from '../chrome/route.mjs';
@@ -64,7 +64,7 @@ export async function bindCommand({home, key, chrome, listBackends, mapDirectori
   const found = chrome.profileDirectoryExists(directory);
   if (found === 'missing') fail('profile_not_ready', `profile "${key}": ${REASONS.profile_directory_missing}`);
   const extension = found === 'unreadable' ? 'unreadable' : chrome.extensionInstalled(directory);
-  if (extension === 'absent') fail('profile_not_ready', `profile "${key}": ${REASONS.extension_not_installed}`);
+  if (extension === 'absent') fail('profile_not_ready', `profile "${key}": ${reasonFor('extension_not_installed', route)}`);
   const chromeDataUnreadable = extension === 'unreadable' ? chrome.readError?.(directory) ?? 'unknown' : undefined;
 
   const {backends: live, elicitationsDeclined, teardown} = await listBackends();

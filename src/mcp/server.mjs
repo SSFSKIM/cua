@@ -187,7 +187,7 @@ export function createServer({
     try {
       const list = await profiles.list();
       const fields = {status: 'ok', profiles: list.map(profileView)};
-      const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p)}.`);
+      const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p, {route: profiles.route})}.`);
       if (!notReady.length) return respond(msg.id, statusResult(fields));
       const guidance = `${notReady.join('\n')}\nTell the user; do not bind or pick a profile for them.`;
       respond(msg.id, {content: [{type: 'text', text: `${guidance}\n${JSON.stringify(fields)}`}], structuredContent: {...fields, guidance}, isError: false});

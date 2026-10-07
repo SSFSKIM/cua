@@ -12,7 +12,8 @@
       "source": "./",
       "author": {
         "name": "SSFSKIM"
-      }
+      },
+      "homepage": "https://github.com/SSFSKIM/cua"
     }
   ]
 }

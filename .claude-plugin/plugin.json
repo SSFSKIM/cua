@@ -10,7 +10,12 @@
       "command": "node",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/cua-shim.mjs"
-      ]
+      ],
+      "env": {
+        "CUA_SHIM_SURFACES": "computer,browser"
+      }
     }
-  }
+  },
+  "homepage": "https://github.com/SSFSKIM/cua",
+  "repository": "https://github.com/SSFSKIM/cua"
 }

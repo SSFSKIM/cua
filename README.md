@@ -65,12 +65,21 @@ claude plugin marketplace add SSFSKIM/cua
 claude plugin install cua@cua
 ```
 
-The plugin runs `node cua-shim.mjs`, which is `cua serve`. It also carries the `cua-remote` skill, the procedure for
-setting up or driving another computer through cua (Remote control), and, where function hooks are enabled
-(`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY` command: a value typed into a masked field and stored as
-`~/.config/claude-secrets/KEY` (mode 600), which the model sees only by its key (`hooks/mods/README.md`). Then allow the tools in your settings so each call does not
-prompt: `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next
-section. This repository is the plugin's source of truth.
+This repository is its own marketplace, so the installed plugin follows `main` (`claude plugin marketplace update cua`
+picks up a new version). The plugin runs `node cua-shim.mjs`, which is `cua serve`, as the MCP server
+`plugin:cua:cua_repl` with `CUA_SHIM_SURFACES=computer,browser`; its tools are `mcp__plugin_cua_cua_repl__*`. The
+installed copy needs no `npm ci`: `ws`, the one dependency, is loaded only on the relay path of `cua agent`, never by
+`serve` (the suite checks that; a copy without `node_modules` reaches the runtime check). The plugin cannot install the runtime: run
+`cua install` from a checkout once (Install, above), into the same `CUA_HOME`. If you registered `cua_repl` yourself
+before (Plain MCP server, below), remove that registration (`claude mcp remove cua_repl -s user`), or two servers drive
+the same Mac. The app-approval hook's matcher (next section) covers both names.
+
+The plugin also carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
+(Remote control), and, where function hooks are enabled (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY`
+command: a value typed into a masked field and stored as `~/.config/claude-secrets/KEY` (mode 600), which the model
+sees only by its key (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
+`"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next section.
+This repository is the plugin's source of truth.
 
 The plugin's copy of cua has no Keychain helper build of its own, so for secrets build it once from a checkout with
 `npm run build:helper` (Swift needed). The build installs the helper as `$CUA_HOME/bin/cua-keychain`, and every copy

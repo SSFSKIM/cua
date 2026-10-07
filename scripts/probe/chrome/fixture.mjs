@@ -5,7 +5,7 @@ import {randomBytes} from 'node:crypto';
 import {createFakeExtension} from './fake-extension.mjs';
 import {createAdapter, backendInfo} from './adapter.mjs';
 import {startBackend} from './backend-server.mjs';
-import {encodeFrame, frameDecoder} from './frame.mjs';
+import {encodeFrame, frameDecoder} from '../../../src/chrome/protocol.mjs';
 
 // Generated, obviously fake markers: a relay capability path and a token, placed only in the fake connect page's URL
 // (where the real extension's auto-connect puts them: connect.js:27-69 + background.mjs:537-539 offer sender.tab).

@@ -373,7 +373,7 @@ What stays as it is: `js`'s schema (no `device` argument: the target is connecti
 
 CLI: `cua devices add <name> --relay <url> --device <id> [--replace] [--json]` (refuses an existing name without `--replace`; warns, without failing, when the credential key is absent, naming the `/secret` step); `devices remove <name> [--json]` (the registry entry only; the stored credential is the owner's to remove with `cua secrets remove`); `devices list [--json]` (name, device id, relay, whether the credential is stored; never probes, never a value); `devices import <file> [--name <name>] [--replace] [--json]`, which reads a client config of today's shape (`{"mcpServers": {"cua_repl": {"type": "http", "url": "https://<relay>/d/<id>/mcp", "headers": {"Authorization": "Bearer <credential>"}}}}`, or the one server entry when there is a single one), derives the device id and relay from the URL, writes the credential to the store under its key (reporting `stored`, `unchanged` or `replaced`, never the value), and adds the registry entry under `--name` or the file's basename less `.mcp.json`. `remote enroll --json` and `remote show --json` gain `devicesAddCommand` (the `cua devices add` line for a client) beside `clientRegisterCommand`.
 
-**The reserved prefix** (closes #69). Keys starting `CUA_DEVICE_` are device credentials: the model-facing `secrets_list` omits them (in `connectionSecrets`, so local and device sessions both), and a `{{secret:CUA_DEVICE_…}}` reference is refused in both trusted services (`sky`, `browser`) before the store is read, with the code `secret_reserved` and nothing entered. `cua secrets list` (the owner's terminal) still shows them. A device enforces this once it runs this version; the client side, where the credential lives, enforces it at once.
+**The reserved prefix** (closes #69). Keys starting `CUA_DEVICE_`, in any letter case (macOS's default file system would open `CUA_DEVICE_x` for `cua_device_x`; G1 review, 2026-10-07), are device credentials: the model-facing `secrets_list` omits them (in `connectionSecrets`, so local and device sessions both), and a `{{secret:CUA_DEVICE_…}}` reference is refused in both trusted services (`sky`, `browser`) before the store is read, with the code `secret_reserved` and nothing entered. `cua secrets list` (the owner's terminal) still shows them. A device enforces this once it runs this version; the client side, where the credential lives, enforces it at once.
 
 **Host notes.** One rule joins the stdio notes (only where the device tools exist), within the 2,048-character budget the test measures with the vendor's 63-character first line, in substance: `devices_use` switches every tool to that machine, whose notes (in its result) then apply; `end_task` before switching. The macOS notes for `computer,browser` are at 1,980 characters today, so the rule's room comes from tightening existing lines without dropping any rule the tests name.
 
@@ -397,7 +397,7 @@ Evidence: `docs/evidence/2026-10-07-device-multiplexing-acceptance.md`.
 ```js
 // src/secrets/label.mjs (G1)
 export const RESERVED_PREFIX = 'CUA_DEVICE_';
-export const isReserved = label => typeof label === 'string' && label.startsWith(RESERVED_PREFIX);
+export const isReserved = label => typeof label === 'string' && label.toUpperCase().startsWith(RESERVED_PREFIX);   // any case: the store's file system may be case-insensitive
 
 // src/remote/devices.mjs (G1)
 export const DEVICE_NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/;          // 'local' reserved

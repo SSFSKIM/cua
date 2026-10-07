@@ -25,7 +25,7 @@
 //      pty (masked, typed twice), `secrets list --json`, `secrets remove`; MCP `secrets_list` as verify.mjs (item 4)
 //      saw it, which lists the account's own store (a key count only, no names or values); --live-secrets runs
 //      scripts/probe-secrets.mjs (generated sentinels in its own temporary $HOME, removed in finally); with both flags
-//      the TextEdit fixture also types {{secret:KEY}} into its document and reads it back (target observation): a
+//      the TextEdit fixture also types {{secret:KEY}} into its document and compares it inside the cell by hash: a
 //      generated value under a generated key in a temporary $HOME it removes, or the caller's --secret-key
 //   7  substitution suites, and the live probe's substitution steps when --live-secrets ran it, with its trusted-root
 //      rows: unwritable under the scoped default (a guarantee) and, informational (INFO), what an explicit disabled allows

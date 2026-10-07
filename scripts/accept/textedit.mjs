@@ -24,7 +24,7 @@
 // home's store as it is, reads the expected value from the key's file in this process (never printed), and leaves
 // both in place.
 import {execFile, execFileSync} from 'node:child_process';
-import {randomBytes, randomUUID} from 'node:crypto';
+import {createHash, randomBytes, randomUUID} from 'node:crypto';
 import {existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
@@ -57,7 +57,7 @@ export const STEP = {
   teardown: 'every server the fixture started has exited',
   secretCreate: 'secret: the value in a fixture store',
   secretType: 'secret: type the reference',
-  secretReadback: 'secret: target observation (plaintext readback, not confidentiality evidence)',
+  secretReadback: 'secret: the document holds exactly the stored value (compared by hash inside the cell)',
   secretCleanup: 'secret: cleanup',
 };
 export const OWN_STEPS = [STEP.preconditions, STEP.open, STEP.bindA, STEP.type, STEP.closeA, STEP.bindB, STEP.closeDoc, STEP.closeB, STEP.removeDoc, STEP.teardown];
@@ -242,14 +242,19 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
         else record(STEP.secretType, !delivered.isError && delivered.done && !leakedBefore ? 'PASS' : 'FAIL', delivered.isError
           ? `failed: ${String(delivered.error).split(value).join('<value>')}` : leakedBefore ? 'the value appeared in the MCP transport or stderr before any readback' : 'typeText({{secret:<KEY>}}) returned; nothing so far carried the value (MCP transport, server/runtime stderr)');
         if (!guiStopped && steps.at(-1).status === 'PASS') {
-          // Intentional plaintext readback from the target: target observation, not confidentiality evidence.
-          const readback = cellJson(await b.js(`${OBSERVE}\n${out(`{own: ${own}, value: ${own} ? __value : null}`)}`, stepMs));
-          const got = typeof readback.value === 'string' ? readback.value : '';
+          // The readback never carries the value: the cell hashes the document's text and returns the hash and the
+          // marker check, so the value crosses neither the MCP stream nor the report. The whole transcript is scanned
+          // again afterwards.
+          const expected = createHash('sha256').update(marker + value, 'utf8').digest('hex');
+          const readback = cellJson(await b.js(`${OBSERVE}\nconst {createHash: __hash} = await import('node:crypto');\n${out(`{own: ${own}, hash: ${own} ? __hash('sha256').update(__value, 'utf8').digest('hex') : null, startsWithMarker: __value.startsWith(${JSON.stringify(marker)}), chars: [...__value].length}`)}`, stepMs));
+          const exact = readback.own && readback.hash === expected;
+          const leakedAfter = textLeaks(b.transcript.join('\n') + b.stderr, prints);
           if (readback.own === false) lost(STEP.secretReadback, 'read the document back');
-          else record(STEP.secretReadback, readback.own && got === marker + value ? 'PASS' : readback.timedOut ? 'BLOCKED' : 'FAIL',
-            readback.own && got === marker + value ? 'the document reads back the marker followed by exactly the stored value'
-              : readback.timedOut ? `no answer within ${stepMs} ms` : readback.isError ? `the readback failed (${readback.error})`
-                : `the document reads back something else (starts with the marker: ${got.startsWith(marker)}; ${got.length} characters, expected ${marker.length + value.length}; contains the value: ${got.includes(value)})`);
+          else record(STEP.secretReadback, exact && !leakedAfter ? 'PASS' : readback.timedOut ? 'BLOCKED' : 'FAIL',
+            exact && !leakedAfter ? 'the document holds the marker followed by exactly the stored value (SHA-256 compared inside the cell); the value appears nowhere in the MCP transport or stderr'
+              : readback.timedOut ? `no answer within ${stepMs} ms` : readback.isError ? `the readback failed (${String(readback.error).split(value).join('<value>')})`
+                : leakedAfter ? 'the value appeared in the MCP transport or stderr'
+                  : `the document holds something else (starts with the marker: ${readback.startsWithMarker}; ${readback.chars} characters, expected ${[...(marker + value)].length})`);
         }
       }
       if (!guiStopped) {

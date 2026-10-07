@@ -1,4 +1,4 @@
-// The secret store: the plain-file directory the doperpowers `secrets` mod writes (`/secret KEY` in Claude Code),
+// The secret store: the plain-file directory the plugin's `/secret` mod writes (hooks/mods/secrets.tsx, in Claude Code),
 // $HOME/.config/claude-secrets/<KEY>, one value per file, mode 0600 in a 0700 directory. cua reads it in two places:
 // the trusted services (src/services, inside node_repl's trusted worker), which read a value to substitute a
 // {{secret:KEY}} reference, and `cua serve`/`cua secrets`, which list keys and (the CLI) write or remove one file.

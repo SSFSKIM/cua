@@ -12,7 +12,7 @@ import {resolveRuntime} from './runtime/manifest.mjs';
 import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
 import {CuaError, fail} from './runtime/errors.mjs';
 import {serve as serveMcp} from './mcp/server.mjs';
-import {devicesEntry, enrollDevice, readDevice, relayEndpoint} from './remote/device.mjs';
+import {clientSecretKey, devicesEntry, enrollDevice, readDevice, relayEndpoint} from './remote/device.mjs';
 import {runAgent} from './remote/agent.mjs';
 import * as launchd from './remote/launchd.mjs';
 import * as systemd from './remote/systemd.mjs';
@@ -154,6 +154,7 @@ async function serve(args) {
 // Remote control (src/remote). enroll mints the device record and shows the client credential this once; nothing
 // else ever prints it (or the secret): a relay-only update and show print the device id and the relay's line, hashes
 // only. Both suggest the client's registration: on the relay's endpoint when one is enrolled, else on this Mac's address.
+const mcpAdd = (endpoint, credential) => `claude mcp add --transport http cua_repl ${endpoint ?? 'http://<this Mac\'s address>:7801/mcp'} --header "Authorization: Bearer ${credential}"`;
 const REMOTE_USAGE = {enroll: 'remote enroll takes only --relay <wss url>, --rotate and --json', show: 'remote show takes only --json'};
 
 function remote(args) {
@@ -165,12 +166,19 @@ function remote(args) {
     throw error;
   }
   const home = defaultHome();
-  const register = (endpoint, credential) => `  claude mcp add --transport http cua_repl ${endpoint ?? 'http://<this Mac\'s address>:7801/mcp'} --header "Authorization: Bearer ${credential}"`;
+  const register = (endpoint, credential) => `  ${mcpAdd(endpoint, credential)}`;
+  // --json also names where a client keeps the credential, the /secret store, and the registration that reads it there,
+  // so the client's setup is a printed command whose output never holds the credential. Without a relay the client's URL
+  // is an address only its owner knows, so there is no command to print (null).
+  const clientSetup = (deviceId, endpoint) => {
+    const key = clientSecretKey(deviceId);
+    return {clientSecretKey: key, clientRegisterCommand: endpoint ? mcpAdd(endpoint, `$(cat ~/.config/claude-secrets/${key})`) : null};
+  };
   if (command === 'show') {
     const record = readDevice(home);
     if (!record) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll'});
     const shown = {deviceId: record.deviceId, relayUrl: record.relayUrl ?? null, relayEndpoint: relayEndpoint(record), enrolledAt: record.enrolledAt, devicesEntry: devicesEntry(record)};
-    if (values.json) return done({ok: true, ...shown});
+    if (values.json) return done({ok: true, ...shown, ...clientSetup(shown.deviceId, shown.relayEndpoint)});
     return done([
       `device    ${shown.deviceId}\nrelay     ${shown.relayUrl ?? 'none (local only)'}\nenrolled  ${shown.enrolledAt}\nthe relay's devices.json line:\n  ${shown.devicesEntry}`,
       ...(shown.relayEndpoint ? ['a client registers on the relay under the name cua_repl, with the credential enroll showed:', register(shown.relayEndpoint, '<client credential>')] : []),
@@ -181,7 +189,7 @@ function remote(args) {
   // A job installed before the relay was enrolled serves only its --http address until install rewrites it.
   const job = values.relay === undefined ? null : installedAgentJob();
   const lacksRelay = Boolean(job && !job.args.includes('--relay'));
-  if (values.json) return done({ok: true, ...result, relayEndpoint: endpoint, ...(lacksRelay ? {agentJobLacksRelay: true} : {})});
+  if (values.json) return done({ok: true, ...result, relayEndpoint: endpoint, ...clientSetup(result.deviceId, endpoint), ...(lacksRelay ? {agentJobLacksRelay: true} : {})});
   const relayLine = `the relay's devices.json line:\n  ${result.devicesEntry}`;
   const installHint = lacksRelay ? ['the installed agent job does not dial the relay: run cua agent install to add --relay'] : [];
   if (result.updated) return done([

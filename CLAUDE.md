@@ -2,10 +2,12 @@
 
 A standalone MCP server (`cua serve`) that lets Claude Code drive OpenAI's computer-use runtime (`cua_repl`) without the
 Codex/ChatGPT desktop app: the pinned vendor release relocated under `CUA_HOME`, `{{secret:<KEY>}}` substitution by
-trusted code from the plain-file store `~/.config/claude-secrets` (shared with the doperpowers `/secret` mod), and the
+trusted code from the plain-file store `~/.config/claude-secrets` (written by the plugin's `/secret` mod, `hooks/mods`), and the
 user's existing Chrome profiles through the original OpenAI extension and host. The living spec is `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` (Decision Log newest-first;
 Surprises & Discoveries for observations). Phase reports and residue live beside it; live-run evidence under
-`docs/evidence/`; narrow debts in `tech-debt-tracker.md`.
+`docs/evidence/`; narrow debts in `tech-debt-tracker.md`. The plugin bundles the server with the `cua-remote` skill
+(`skills/cua-remote/SKILL.md`: onboard a device, connect a client to it) the `/secret` mod (`hooks/mods/`, tests
+`npm run test:mods`) and an `Elicitation` hook that accepts cua_repl's approvals (`hooks/cua-approve.sh`).
 
 Working rules:
 - The vendor runtime is unmodified and version-pinned; cua wraps it and never patches it. Verify runtime claims against

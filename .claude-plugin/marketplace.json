@@ -1,18 +1,19 @@
 {
   "name": "cua",
-  "description": "Native macOS computer use for Claude Code through OpenAI's Codex computer-use stack",
+  "description": "Computer use for Claude Code on macOS and Linux through OpenAI's computer-use stack, with remote control and /secret",
   "owner": {
     "name": "SSFSKIM"
   },
   "plugins": [
     {
       "name": "cua",
-      "description": "Native macOS computer use for Claude Code through OpenAI's computer-use runtime (requires the pinned runtime installed with `cua install`)",
-      "version": "0.1.0",
+      "description": "Computer use on macOS and Linux through OpenAI's computer-use runtime (requires the pinned runtime installed with `cua install`), remote control of another computer (the cua-remote skill), and /secret",
+      "version": "0.2.0",
       "source": "./",
       "author": {
         "name": "SSFSKIM"
-      }
+      },
+      "homepage": "https://github.com/SSFSKIM/cua"
     }
   ]
 }

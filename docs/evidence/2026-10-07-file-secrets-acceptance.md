@@ -2,7 +2,7 @@
 
 Date: 2026-10-07 (UTC; 2026-10-06 evening Pacific). Spec: `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`,
 M14 and the Decision Log entry of the same date. Branch `feat/file-secrets`. The store is
-`$HOME/.config/claude-secrets/<KEY>` (file 0600, directory 0700), the directory of the doperpowers `secrets` mod; the
+`$HOME/.config/claude-secrets/<KEY>` (file 0600, directory 0700), the directory of the `/secret` mod (`hooks/mods/secrets.tsx`, moved into this repo from doperpowers the same day); the
 Keychain helper and broker are gone. Every value below was generated for the run, typed into `cua secrets set` at a
 pseudo-terminal, and never printed: each check compares digests or scans for the value (raw and its base64 forms,
 `scripts/probe/leak-scan.mjs`) without showing it.

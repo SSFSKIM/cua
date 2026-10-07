@@ -41,7 +41,7 @@ export function classifyStore(info, {enabled = true} = {}) {
   const row = (status, detail) => ({name: 'secrets.store', status, detail});
   if (!enabled) return row('skip', 'secrets are turned off for this server (CUA_SHIM_SECRETS=off)');
   const {dir} = info;
-  if (!info.exists) return row('blocked', `no secret store at ${dir} yet, so nothing is stored; /secret KEY in Claude Code (the doperpowers secrets mod) or cua secrets set KEY creates it`);
+  if (!info.exists) return row('blocked', `no secret store at ${dir} yet, so nothing is stored; /secret KEY in Claude Code (the cua plugin's mod) or cua secrets set KEY creates it`);
   if (info.error && info.directory === undefined) return row('fail', `the secret store ${dir} could not be read (${info.error})`);
   if (!info.directory) return row('fail', `${dir} is not a directory, so no secret can be stored or read there`);
   if (!info.owned) return row('fail', `the secret store ${dir} is not owned by you`);

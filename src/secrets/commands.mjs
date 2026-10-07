@@ -5,7 +5,7 @@
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {fileStore, storeDir, SecretStoreError} from './store.mjs';
 
-export const PREFERRED_ENTRY = 'in Claude Code with the doperpowers secrets mod, /secret KEY stores a secret in the same file (preferred)';
+export const PREFERRED_ENTRY = 'in Claude Code, the cua plugin\'s /secret KEY stores a secret in the same file (preferred)';
 
 // Reads one line from a terminal without echo. Resolves the line, or null when the user cancels (Ctrl-C, Ctrl-D on an
 // empty line, Escape). Backspace edits; any other control character is ignored, so the value is printable text.

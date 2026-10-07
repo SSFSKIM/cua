@@ -36,10 +36,10 @@ differ from the pinned record, and never modifies vendor files. Doctor's `runtim
 ### 2. Secrets (only if secret substitution will be used)
 
 ```sh
-node bin/cua.mjs secrets set WORK_PASSWORD   # or /secret WORK_PASSWORD in Claude Code with the doperpowers secrets mod
+node bin/cua.mjs secrets set WORK_PASSWORD   # or /secret WORK_PASSWORD in Claude Code (the cua plugin's mod)
 ```
 
-Each secret is a file `~/.config/claude-secrets/<KEY>` (mode 0600), the store the doperpowers `secrets` mod writes, so
+Each secret is a file `~/.config/claude-secrets/<KEY>` (mode 0600), the store the plugin's `/secret` mod writes, so
 there is nothing to build or sign (issue #66). This works over SSH too (`ssh -t` for the masked prompt).
 
 ### 3. Codex login for the server

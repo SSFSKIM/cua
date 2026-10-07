@@ -618,6 +618,10 @@ No new npm dependencies.
 - Decision (controller, 2026-10-07): the socket-path refusal threshold is the real macOS limit, 103 bytes (the name is
   fixed-length, so the worst case is exact and a margin buys nothing); the design text's "40 characters" becomes 37.
 
+- Decision (controller + session, 2026-10-07): H4's provisioning merges the cua extension's force-list entry into the
+  one managed policy file the template already writes (`/etc/opt/chrome/policies/managed/cua.json`, a single
+  `ExtensionInstallForcelist`), never a second file with its own list (Chrome does not merge them; the last file wins).
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

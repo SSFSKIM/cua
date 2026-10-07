@@ -6,6 +6,8 @@ import {agentChecks, inspectRuntime, classifyHelper, summarize} from '../src/run
 import {agentPlistPath, installAgent} from '../src/remote/launchd.mjs';
 import {enrollDevice} from '../src/remote/device.mjs';
 import {UID, fakeLaunchctl} from './fixtures/fake-launchctl.mjs';
+import {agentUnitPath, installAgent as installUnit} from '../src/remote/systemd.mjs';
+import {fakeLoginctl, fakeSystemctl} from './fixtures/fake-systemctl.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {sweepRun} from '../src/runtime/run-dir.mjs';
 import {parsePin, recoveryHint} from '../src/runtime/manifest.mjs';
@@ -431,10 +433,85 @@ test('agent.console fails while locked or off the console, is blocked when unrea
   assert.match(row.detail, /CUA_AGENT_CONSOLE_CHECK must be on or off/);
 });
 
-test('off macOS every agent row reads skip: the launchd agent is macOS-only', async t => {
+test('on a platform with neither launchd nor systemd every agent row reads skip', async t => {
   const {rows} = await agentSetup(t);
-  const r = await rows({host: {platform: 'linux', arch: 'x64'}});
+  const r = await rows({host: {platform: 'freebsd', arch: 'x64'}});
   for (const c of Object.values(r)) assert.equal(c.status, 'skip', c.name);
+});
+
+// #58: the same rows on Linux describe the systemd user unit. A scratch user home holds ~/.config/systemd/user, the
+// manager and logind are fakes and the display check is injected, so nothing real is read.
+const LINUX = {platform: 'linux', arch: 'x64'};
+async function linuxSetup(t, {enrol = true, relayUrl, install = null, linger = 'yes', display = {status: 'pass', detail: 'X display :0 has XTEST, Composite and XFIXES'}, env = {}} = {}) {
+  const s = scratch();
+  t.after(s.cleanup);
+  const home = join(s.dir, 'home');
+  const userHome = join(s.dir, 'user');
+  mkdirSync(userHome);
+  const cli = join(s.dir, 'cua.mjs');
+  writeFileSync(cli, '');
+  if (enrol) enrollDevice({home, ...(relayUrl ? {relayUrl} : {})});
+  const systemctl = fakeSystemctl({userHome});
+  const unitSeams = {userHome, user: 'me', systemctl: systemctl.run, loginctl: fakeLoginctl({linger}).run};
+  if (install) await installUnit({home, env: {}, node: process.execPath, cli, loadRelay: async () => {}, ...unitSeams, ...install});
+  systemctl.calls.length = 0;
+  const displays = [];
+  const checkDisplay = async displayEnv => { displays.push(displayEnv); return {name: 'display', ...display}; };
+  const rows = async (extra = {}) => Object.fromEntries((await agentChecks({home, env, host: LINUX, systemd: unitSeams, checkDisplay, ...extra})).map(c => [c.name, c]));
+  return {home, userHome, cli, systemctl, unitSeams, displays, rows};
+}
+
+test('on Linux never enrolled, with no unit, every agent row reads skip; neither the manager nor the display is asked', async t => {
+  const {systemctl, displays, rows} = await linuxSetup(t, {enrol: false});
+  const r = await rows();
+  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console']);
+  for (const row of Object.values(r)) {
+    assert.equal(row.status, 'skip', row.name);
+    assert.match(row.detail, /this machine is not set up for remote control.*cua remote enroll, then cua agent install/);
+  }
+  assert.deepEqual(systemctl.calls, []);
+  assert.deepEqual(displays, []);
+});
+
+test('on Linux an installed, running unit passes every row, naming the unit, its display, linger, and that a lock is not read', async t => {
+  const {rows, displays, userHome} = await linuxSetup(t, {relayUrl: 'wss://relay.example/ws', install: {display: ':0', xauthority: '/home/me/.Xauthority'}, env: {DISPLAY: ':9'}});
+  const r = await rows();
+  for (const row of Object.values(r)) assert.equal(row.status, 'pass', `${row.name}: ${row.detail}`);
+  assert.match(r['agent.installed'].detail, new RegExp(`^${agentUnitPath(userHome).replace(/[.]/g, '\\.')}: node .* agent run --relay, display :0$`));
+  assert.match(r['agent.running'].detail, /^pid 4343, systemd user unit cua-agent\.service \(enabled; linger on: it runs from boot and survives logout\)$/);
+  assert.match(r['agent.enrolled'].detail, /relay wss:\/\/relay\.example\/ws/);
+  assert.match(r['agent.console'].detail, /for the agent's unit; a locked screen is not detected on Linux$/);
+  assert.deepEqual([displays[0].DISPLAY, displays[0].XAUTHORITY], [':0', '/home/me/.Xauthority'], 'the unit\'s display, not doctor\'s');
+});
+
+test('on Linux the agent rows name what is missing: no unit, a stopped unit, linger off, an unreachable display, an unreachable manager', async t => {
+  const {rows} = await linuxSetup(t, {display: {status: 'fail', detail: 'xdpyinfo could not use display :0 (unable to open display)'}, env: {DISPLAY: ':0'}});
+  let r = await rows();
+  assert.equal(r['agent.installed'].status, 'blocked');
+  assert.match(r['agent.installed'].detail, /no systemd user unit.*run cua agent install/);
+  assert.equal(r['agent.running'].status, 'blocked');
+  assert.equal(r['agent.console'].status, 'fail');
+  assert.match(r['agent.console'].detail, /unable to open display\) \(in this environment\)$/);
+
+  const linger = await linuxSetup(t, {linger: 'no', install: {http: '127.0.0.1:7801'}});
+  r = await linger.rows();
+  assert.equal(r['agent.running'].status, 'pass');
+  assert.match(r['agent.running'].detail, /linger off: it stops when this user's last session ends \(loginctl enable-linger keeps it\)/);
+  linger.systemctl.active = false;
+  linger.systemctl.exit = '1';
+  r = await linger.rows();
+  assert.equal(r['agent.running'].status, 'fail');
+  assert.match(r['agent.running'].detail, /not running \(failed \(dead\), last exit status 1\); see .*agent\.log$/);
+
+  const relay = await linuxSetup(t, {install: {http: '127.0.0.1:7801'}});
+  enrollDevice({home: relay.home, relayUrl: 'wss://relay.example/ws'});
+  r = await relay.rows();
+  assert.equal(r['agent.installed'].status, 'fail');
+  assert.match(r['agent.installed'].detail, /does not dial the relay wss:\/\/relay\.example\/ws enrolled since/);
+
+  r = await relay.rows({systemd: {...relay.unitSeams, systemctl: fakeSystemctl({unreachable: true}).run}});
+  assert.equal(r['agent.running'].status, 'blocked');
+  assert.match(r['agent.running'].detail, /No medium found/);
 });
 
 test('doctor reports the agent rows, and skip neither fails ok nor counts as blocked in the verdict', async t => {

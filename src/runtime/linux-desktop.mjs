@@ -69,6 +69,9 @@ export async function linuxDesktopChecks({env = process.env, exec = defaultExec,
   return [await displayCheck(env, exec, findTool), await busCheck(env, exec, findTool), await usernsCheck(exec, findSystemTool, osRelease)];
 }
 
+// The display row alone, for another environment than doctor's: the installed agent's (doctor's agent.console on Linux).
+export const xDisplayCheck = (env, {exec = defaultExec, findTool = name => findOnPath(name, env.PATH ?? process.env.PATH)} = {}) => displayCheck(env, exec, findTool);
+
 async function displayCheck(env, exec, findTool) {
   if (!env.DISPLAY) return result('display', 'fail', 'DISPLAY is not set: the computer surface drives an X11 display (Xorg, Xvfb or a VNC session; Wayland only through XWayland); export DISPLAY (for example :0) where cua runs');
   const xdpyinfo = findTool('xdpyinfo');

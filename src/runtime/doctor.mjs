@@ -34,8 +34,11 @@
 // The `agent.*` rows describe remote control (src/remote): the launchd job (`agent.installed`, `agent.running`), the
 // device enrolment (`agent.enrolled`) and whether this user's session is on the console and unlocked (`agent.console`,
 // the state in which remote js does nothing and is refused as console_locked). On a Mac never enrolled, with no job
-// installed, all four are `skip` (a locked Mac that does no remote control is healthy); off macOS they are `skip` too,
-// launchd and the console registry never consulted (the agent is untested on Linux).
+// installed, all four are `skip` (a locked Mac that does no remote control is healthy). On Linux the same rows describe
+// the systemd user unit (src/remote/systemd.mjs): `agent.installed` the unit file, `agent.running` the user manager's
+// view of it (and whether linger keeps it past logout), and `agent.console` whether the agent's X display (the unit's
+// DISPLAY and XAUTHORITY, else doctor's own) answers with the extensions the helper needs; Linux has no portable
+// screen-lock signal, so the row says the lock is not read. Elsewhere all four are `skip`.
 import {existsSync, readFileSync, statSync} from 'node:fs';
 import {execFile} from 'node:child_process';
 import {homedir} from 'node:os';
@@ -52,10 +55,11 @@ import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, processTable} from '../profiles/checks.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
-import {linuxDesktopChecks} from './linux-desktop.mjs';
+import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
 import {agentLogPath, agentStatus} from '../remote/launchd.mjs';
+import * as systemd from '../remote/systemd.mjs';
 import {checkConsole, consoleCheckFrom} from '../remote/console.mjs';
 
 export const NATIVE_SOCKET = join(homedir(), 'Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock');
@@ -215,16 +219,18 @@ async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
 
 const AGENT_ROWS = ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'];
 
-// The remote-control rows. `launchd` ({userHome, uid, launchctl}) and `checkConsole` are seams: tests never read the
-// real launchd domain, ~/Library/LaunchAgents or the console.
-export async function agentChecks({home, env = process.env, host, launchd = {}, checkConsole: readConsole = checkConsole}) {
-  if (host.platform !== 'darwin') return AGENT_ROWS.map(name => result(name, 'skip', 'remote control\'s launchd agent and console check are macOS-only'));
+// The remote-control rows. `launchd` ({userHome, uid, launchctl}), `systemd` ({userHome, user, systemctl, loginctl}),
+// `checkConsole` and `checkDisplay` are seams: tests never read the real launchd domain, ~/Library/LaunchAgents, the
+// user's systemd manager, ~/.config/systemd, the console or an X display.
+export async function agentChecks({home, env = process.env, host, launchd = {}, systemd: unitSeams = {}, checkConsole: readConsole = checkConsole, checkDisplay = xDisplayCheck}) {
+  if (host.platform !== 'darwin' && host.platform !== 'linux') return AGENT_ROWS.map(name => result(name, 'skip', 'remote control\'s installed agent is a launchd job on macOS or a systemd user unit on Linux'));
   let device = null;
   let deviceError = null;
   try { device = readDevice(home); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     deviceError = error;
   }
+  if (host.platform === 'linux') return linuxAgentChecks({home, env, device, deviceError, unitSeams, checkDisplay});
   const status = await agentStatus(launchd);
   if (!device && !deviceError && !status.installed) {
     const notSetUp = 'this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install';
@@ -237,16 +243,62 @@ export async function agentChecks({home, env = process.env, host, launchd = {}, 
     await consoleRow(status.job ? status.job.environment : env, uid, readConsole, status.job ? 'the agent\'s job' : 'this environment')];
 }
 
-function installedRow(status, device) {
-  if (!status.installed) return result('agent.installed', 'blocked', `this Mac is enrolled but has no launchd agent, so nothing serves remote clients unless an agent runs in a terminal; run cua agent install`);
-  if (status.invalid) return result('agent.installed', 'fail', `${status.plist}: ${status.invalid}; run cua agent install to replace it`);
-  const {job} = status;
-  const described = `${status.plist}: node ${job.node}, runs ${job.cli} agent run ${job.args.join(' ')}`;
+async function linuxAgentChecks({home, env, device, deviceError, unitSeams, checkDisplay}) {
+  const status = await systemd.agentStatus(unitSeams);
+  if (!device && !deviceError && !status.installed) {
+    const notSetUp = 'this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install';
+    return AGENT_ROWS.map(name => result(name, 'skip', notSetUp));
+  }
+  return [unitInstalledRow(status, device), unitRunningRow(status, home), enrolledRow(home, device, deviceError, 'this machine'),
+    await displayRow(status.job ? status.job.environment : env, status.job ? 'the agent\'s unit' : 'this environment', checkDisplay)];
+}
+
+// What is wrong with an installed job's program and its relay flag, whichever manager runs it.
+function jobProblems(job, device) {
   const problems = [];
   if (!existsSync(job.node)) problems.push(`the node it runs, ${job.node}, is gone (moved by a node upgrade?)`);
   if (!existsSync(job.cli)) problems.push(`its program, ${job.cli}, is gone`);
   if (device?.relayUrl && !job.args.includes('--relay')) problems.push(`it does not dial the relay ${device.relayUrl} enrolled since`);
   if (device && !device.relayUrl && job.args.includes('--relay')) problems.push('it dials a relay, but the device has no relay URL');
+  return problems;
+}
+
+function unitInstalledRow(status, device) {
+  if (!status.installed) return result('agent.installed', 'blocked', 'this machine is enrolled but has no systemd user unit, so nothing serves remote clients unless an agent runs in a terminal; run cua agent install');
+  if (status.invalid) return result('agent.installed', 'fail', `${status.path}: ${status.invalid}; run cua agent install to replace it`);
+  const {job} = status;
+  const display = job.environment.DISPLAY ? `, display ${job.environment.DISPLAY}` : ', no DISPLAY (the computer surface cannot reach X)';
+  const described = `${status.path}: node ${job.node}, runs ${job.cli} agent run ${job.args.join(' ')}${display}`;
+  const problems = jobProblems(job, device);
+  return problems.length
+    ? result('agent.installed', 'fail', `${described}; but ${problems.join('; ')}; run cua agent install with the node you use now to rewrite it`)
+    : result('agent.installed', 'pass', described);
+}
+
+function unitRunningRow(status, home) {
+  if (!status.installed || status.invalid) return result('agent.running', 'blocked', 'needs a systemd user unit cua can read (see agent.installed)');
+  if (status.systemdError) return result('agent.running', 'blocked', status.systemdError);
+  const log = status.job.standardErrorPath ?? agentLogPath(home);
+  const linger = status.linger === true
+    ? 'linger on: it runs from boot and survives logout'
+    : `linger ${status.linger === false ? 'off' : 'unknown'}: it stops when this user's last session ends (loginctl enable-linger keeps it)`;
+  if (status.running) return result('agent.running', 'pass', `pid ${status.pid}, systemd user unit ${status.unit} (${status.enabled ? 'enabled' : 'not enabled: it will not start at the next login'}; ${linger})`);
+  if (status.loaded) return result('agent.running', 'fail', `the user manager has the unit but it is not running (${status.state ?? 'unknown'}, last exit status ${status.lastExitCode ?? 'unknown'}); see ${log}`);
+  return result('agent.running', 'fail', `the user manager has not loaded ${status.unit}; run cua agent install to load and start it; its log is ${log}`);
+}
+
+async function displayRow(env, whose, checkDisplay) {
+  const row = await checkDisplay(env);
+  const detail = row.status === 'pass' ? `${row.detail} for ${whose}; a locked screen is not detected on Linux` : `${row.detail} (in ${whose})`;
+  return result('agent.console', row.status, detail);
+}
+
+function installedRow(status, device) {
+  if (!status.installed) return result('agent.installed', 'blocked', `this Mac is enrolled but has no launchd agent, so nothing serves remote clients unless an agent runs in a terminal; run cua agent install`);
+  if (status.invalid) return result('agent.installed', 'fail', `${status.plist}: ${status.invalid}; run cua agent install to replace it`);
+  const {job} = status;
+  const described = `${status.plist}: node ${job.node}, runs ${job.cli} agent run ${job.args.join(' ')}`;
+  const problems = jobProblems(job, device);
   return problems.length
     ? result('agent.installed', 'fail', `${described}; but ${problems.join('; ')}; run cua agent install with the node you use now to rewrite it`)
     : result('agent.installed', 'pass', described);
@@ -261,9 +313,11 @@ function runningRow(status, home, uid) {
   return result('agent.running', 'fail', `the job is not loaded in launchd's gui/${uid} domain (booted out, or this login session has not loaded it); run cua agent install to load it; its log is ${log}`);
 }
 
-function enrolledRow(home, device, deviceError) {
+function enrolledRow(home, device, deviceError, machine = 'this Mac') {
   if (deviceError) return result('agent.enrolled', 'fail', `${deviceError.message}${deviceError.hint ? `; ${deviceError.hint}` : ''}`);
-  if (!device) return result('agent.enrolled', 'fail', 'a launchd agent is installed but this Mac is not enrolled, so the agent cannot start; run cua remote enroll (or cua agent uninstall)');
+  if (!device) return result('agent.enrolled', 'fail', machine === 'this Mac'
+    ? 'a launchd agent is installed but this Mac is not enrolled, so the agent cannot start; run cua remote enroll (or cua agent uninstall)'
+    : 'a systemd user unit is installed but this machine is not enrolled, so the agent cannot start; run cua remote enroll (or cua agent uninstall)');
   const path = join(home, 'remote', 'device.json');
   const mode = statSync(path).mode & 0o777;
   if (mode !== 0o600) return result('agent.enrolled', 'fail', `${path} is mode 0${mode.toString(8)} but holds the device secret; chmod 600 "${path}"`);

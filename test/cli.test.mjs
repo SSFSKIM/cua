@@ -78,27 +78,29 @@ test('the usage names the default home per platform: Application Support on macO
   const {usageFor} = await import('../src/cli.mjs');
   assert.match(usageFor('darwin'), /^environment: CUA_HOME \(default ~\/Library\/Application Support\/cua\); for agent run \(agent install/m);
   assert.match(usageFor('darwin'), /install \[--archive <ChatGPT zip>\]/);
-  assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run:/m);
+  assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run \(agent install carries those set into\n  the unit\):/m);
   assert.match(usageFor('linux'), /install \[--archive <ChatGPT deb>\]/);
 });
 
-test('the launchd agent commands and the console check are macOS-only; agent run and its --relay are listed everywhere', async () => {
+test('agent install, uninstall and status are listed on both platforms (launchd on macOS, the systemd user unit on Linux); the console check is macOS-only', async () => {
   const {usageFor} = await import('../src/cli.mjs');
-  for (const text of [/^  agent install /m, /^  agent uninstall /m, /^  agent status /m, /CUA_AGENT_CONSOLE_CHECK/]) {
-    assert.match(usageFor('darwin'), text);
-    assert.doesNotMatch(usageFor('linux'), text);
-  }
+  for (const platform of ['darwin', 'linux']) for (const text of [/^  agent install /m, /^  agent uninstall /m, /^  agent status /m])
+    assert.match(usageFor(platform), text, platform);
+  assert.match(usageFor('darwin'), /run the agent as a launchd job in this login session/);
+  assert.match(usageFor('linux'), /agent install \[--http <host:port>\] \[--surfaces <list>\] \[--display <:N>\] \[--xauthority <file>\][^]*systemd user unit \(cua-agent\.service\)/);
+  assert.doesNotMatch(usageFor('linux'), /launchd/);
+  assert.match(usageFor('darwin'), /CUA_AGENT_CONSOLE_CHECK/);
+  assert.doesNotMatch(usageFor('linux'), /CUA_AGENT_CONSOLE_CHECK/);
   for (const platform of ['darwin', 'linux']) assert.match(usageFor(platform), /agent run \[--http <host:port>\] \[--relay\][^]*dials the relay/);
 });
 
-test('off macOS, agent install, uninstall and status refuse with unsupported_platform before touching launchd', {skip: process.platform === 'darwin'}, () => {
+test('on Linux, agent status reads the systemd user unit under the user\'s home without asking the manager when there is none', {skip: process.platform !== 'linux'}, () => {
   const s = scratch();
   try {
-    for (const command of ['install', 'uninstall', 'status']) {
-      const r = cua(['agent', command, '--json'], s.dir, {HOME: s.dir});
-      assert.equal(r.status, 1, r.stderr);
-      assert.match(r.stdout + r.stderr, /unsupported_platform/, command);
-    }
+    const r = cua(['agent', 'status', '--json'], s.dir, {HOME: s.dir});
+    assert.equal(r.status, 0, r.stderr);
+    const status = JSON.parse(r.stdout);
+    assert.deepEqual([status.installed, status.unit, status.path], [false, 'cua-agent.service', join(s.dir, '.config', 'systemd', 'user', 'cua-agent.service')]);
   } finally { s.cleanup(); }
 });
 

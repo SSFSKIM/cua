@@ -1,5 +1,5 @@
 // The agent's limits, from its environment: read by `agent run`, which applies them, and by `agent install`, which
-// carries them into the launchd job, so both refuse the same values (invalid_setting).
+// carries them into the launchd job or systemd unit, so both refuse the same values (invalid_setting).
 //   CUA_AGENT_MAX_SESSIONS   default 1: every session drives the same mouse, keyboard and Chrome
 //   CUA_AGENT_IDLE_MINUTES   default 15
 //   CUA_AGENT_ALLOWED_ORIGINS  browser origins allowed to call, comma-separated; none by default

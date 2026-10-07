@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-10-07 — Linux agent unit: what doctor reads is the unit file (minor, issue #58).** (a) A `systemctl --user
+  edit cua-agent` drop-in or an unreloaded edit can change what runs while `agent.installed` describes the file; showing
+  `DropInPaths` and `NeedDaemonReload` in doctor's rows would close it (`agent status` already shows a pending reload).
+  (b) `agent status` and doctor read "not installed" for an agent still running after its file was deleted and the
+  manager reloaded (`uninstall` stops it). (c) `agent install` pins the installing session's `DISPLAY` and `XAUTHORITY`:
+  under `ssh -X` that is a forwarded display that dies with the session, and under XWayland the cookie path changes at
+  each login; a warning for a display with a host part, and a README line, would cover both.
+
 - **2026-10-06 — The hosted relay's Caddy advertises HTTP/3 with UDP 443 closed (minor, issue #53).** Caddy's default
   `Alt-Svc: h3` points browsers at UDP 443, which the `cua-relay` firewall does not admit; MCP clients and agents use
   HTTP/1.1 or 2 and are unaffected. Either `servers { protocols h1 h2 }` in `relay/deploy/Caddyfile` or a UDP 443 rule

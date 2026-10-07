@@ -76,6 +76,13 @@ In the same report, doctor's own `display` row read `fail` ("DISPLAY is not set"
   "not installed", `agent.installed` read `blocked` (enrolled, no unit), `run/` was empty and no agent or runtime
   process remained.
 
+**After the review** (`821eb0c`), the unit uses `Type=exec`. It was installed again on the VM with no `XAUTHORITY` in
+the SSH session, so the unit has none. Doctor's `agent.console` then passed: it now checks the unit's display with the
+user's `HOME`, so `~/.Xauthority` is found as the agent finds it. Next, the unit file was deleted and the manager
+reloaded, which left `LoadState=not-found` with `ActiveState=active`. `agent uninstall` stopped that orphan (`not-found
+inactive` afterwards, no agent process left). The review found that the earlier uninstall would have reported "nothing
+changed" there.
+
 **Tests.** `test/remote-systemd.test.mjs` covers the unit text and its read-back, the refusals, an unreachable
 manager, reinstall, a failed start, status, linger and uninstall. It runs against a fake `systemctl --user` and a fake
 `loginctl` (`test/fixtures/fake-systemctl.mjs`). `test/runtime-doctor.test.mjs` covers the Linux `agent.*` rows with

@@ -293,7 +293,8 @@ async function agentUnit(command, values) {
     const result = await systemd.uninstallAgent();
     if (values.json) return done({ok: true, ...result});
     if (!result.stopped && !result.removed) return done(`no systemd user unit ${result.unit} was installed; nothing changed`);
-    return done(`${result.stopped ? 'stopped and disabled' : 'disabled the stopped'} systemd user unit ${result.unit}${result.removed ? ` and removed ${result.path}` : ''}`);
+    if (!result.removed) return done(`stopped systemd user unit ${result.unit}, whose file ${result.path} was already gone`);
+    return done(`${result.stopped ? 'stopped and disabled' : 'disabled the stopped'} systemd user unit ${result.unit} and removed ${result.path}`);
   }
   const status = await systemd.agentStatus();
   if (values.json) return done({ok: true, ...status});

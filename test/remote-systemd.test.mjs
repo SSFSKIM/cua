@@ -35,7 +35,7 @@ test('install writes the user unit (node, cli, agent run --http, the display, Re
   const text = readFileSync(unit, 'utf8');
   const log = join(home, 'state', 'agent.log');
   assert.ok(text.includes('ExecStart="/opt/node & \\"co\\"/bin/node" "/home/me/cua 100%%/$$HOME/bin/cua\'s.mjs" "agent" "run" "--http" "192.168.1.20:7801"\n'), 'quoted, escaped, %% and $$');
-  for (const line of ['Restart=on-failure', 'RestartSec=10', 'KillMode=mixed', `StandardOutput=append:${log}`, `StandardError=append:${log}`, 'WantedBy=default.target', 'Environment="DISPLAY=:1"'])
+  for (const line of ['Type=exec', 'Restart=on-failure', 'RestartSec=10', 'KillMode=mixed', `StandardOutput=append:${log}`, `StandardError=append:${log}`, 'WantedBy=default.target', 'Environment="DISPLAY=:1"'])
     assert.ok(text.split('\n').includes(line), line);
   const job = readUnit(text);
   assert.deepEqual(job, {
@@ -157,19 +157,28 @@ test('uninstall stops and disables the unit, removes it and reloads; with nothin
   await install({http: '127.0.0.1:7801'});
   systemctl.calls.length = 0;
   assert.deepEqual(await uninstallAgent(common), {unit: AGENT_UNIT, path: unit, stopped: true, removed: true});
-  assert.deepEqual(systemctl.calls.filter(c => c[0] !== 'show'), [['disable', '--now', AGENT_UNIT], ['daemon-reload']]);
+  assert.deepEqual(systemctl.calls.filter(c => c[0] !== 'show'), [['stop', AGENT_UNIT], ['disable', AGENT_UNIT], ['daemon-reload']]);
   assert.equal(existsSync(unit), false);
   assert.equal(systemctl.active, false);
   assert.equal(systemctl.loadedText, null);
-  // A unit still loaded whose file someone deleted is stopped and disabled all the same.
+  // A unit still loaded whose file someone deleted is stopped all the same.
   await install({http: '127.0.0.1:7801'});
   rmSync(unit);
   assert.deepEqual(await uninstallAgent(common), {unit: AGENT_UNIT, path: unit, stopped: true, removed: false});
+  assert.equal(systemctl.active, false);
+  // So is one whose file was deleted and the manager reloaded: not-found, but still running.
+  await install({http: '127.0.0.1:7801'});
+  rmSync(unit);
+  await systemctl.run(['daemon-reload']);
+  systemctl.calls.length = 0;
+  assert.deepEqual(await uninstallAgent(common), {unit: AGENT_UNIT, path: unit, stopped: true, removed: false});
+  assert.deepEqual(systemctl.calls.filter(c => c[0] !== 'show'), [['stop', AGENT_UNIT], ['daemon-reload']]);
+  assert.equal(systemctl.active, false);
 });
 
 test('readUnit reads what cua writes and tolerates hand-added keys, but refuses what it cannot read as written', () => {
   const base = '[Unit]\nDescription=x\n[Service]\nExecStart="/n" "/c" "agent" "run" "--relay"\n';
-  assert.deepEqual(readUnit(`${base}Nice=5\nEnvironment=A=1 "B=two words"\nEnvironment=C=3\n[Install]\nWantedBy=default.target\n`).environment, {A: '1', B: 'two words', C: '3'});
+  assert.deepEqual(readUnit(`${base}Nice=5\nX-Hand-Added=yes\nEnvironment=A=1 "B=two words"\nEnvironment=C=3\n[Install]\nWantedBy=default.target\n`).environment, {A: '1', B: 'two words', C: '3'});
   assert.deepEqual(readUnit('[Service]\nExecStart=/n /c agent run --http 127.0.0.1:7801\n').args, ['--http', '127.0.0.1:7801'], 'bare words');
   assert.deepEqual(readUnit(`${base}Environment=A=1\nEnvironment=\nEnvironment=B=2\n`).environment, {B: '2'}, 'an empty assignment resets the list, as systemd does');
   for (const [text, why] of [

@@ -6,7 +6,8 @@
 // else the installing session's; unset, X clients read ~/.Xauthority). The session bus needs nothing: the user manager
 // gives every unit XDG_RUNTIME_DIR, from which the launch derives the bus as it does over SSH.
 //
-// Restart=on-failure with RestartSec=10 is launchd's KeepAlive {SuccessfulExit: false} and its 10 s throttle: a crash
+// Type=exec, so a start whose program cannot be executed fails `restart` (agent_start_failed) rather than reading as
+// started. Restart=on-failure with RestartSec=10 is launchd's KeepAlive {SuccessfulExit: false} and its 10 s throttle: a crash
 // or a refusal (agent_already_running) is restarted, the agent's deliberate stops (a signal, relay close codes 4001 and
 // 4003, all exit 0) are not, so two agents for one device never take the relay link from each other in a loop.
 // KillMode=mixed sends the stop's SIGTERM to the agent alone, which closes its sessions and their runtimes itself;
@@ -18,7 +19,7 @@
 // The unit is written by templating with systemd's quoting (C escapes inside double quotes, %% for a literal %, $$ for a
 // literal $ in ExecStart) and checked by reading it back with cua's own reader before it replaces anything. `install`
 // runs `systemctl --user daemon-reload`, `enable` and `restart` (a running agent is replaced by the new unit);
-// `uninstall` runs `disable --now`, removes the file and reloads. `systemctl` and `loginctl` and the user's home are
+// `uninstall` runs `stop` and `disable`, removes the file and reloads. `systemctl` and `loginctl` and the user's home are
 // parameters, so tests never touch a real user manager or ~/.config/systemd.
 import {execFile} from 'node:child_process';
 import {chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
@@ -61,7 +62,7 @@ export function agentUnit({programArguments, environment, log}) {
 Description=cua agent (remote control of this desktop)
 
 [Service]
-Type=simple
+Type=exec
 ExecStart=${programArguments.map(arg => quote(arg, {dollar: true})).join(' ')}
 ${env}Restart=on-failure
 RestartSec=10
@@ -123,7 +124,7 @@ export function readUnit(text) {
     if (line.endsWith('\\')) invalidUnit('it continues a line with \\, which cua does not write');
     const header = /^\[(.+)\]$/.exec(line);
     if (header) { section = header[1]; continue; }
-    const pair = /^([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*)$/.exec(line);
+    const pair = /^([A-Za-z][A-Za-z0-9_-]*)\s*=\s*(.*)$/.exec(line);
     if (!pair) invalidUnit(`a line is not key=value: ${JSON.stringify(line.slice(0, 80))}`);
     if (section !== 'Service') continue;
     const [, key, value] = pair;
@@ -243,16 +244,20 @@ export async function installAgent({home, env = process.env, http, surfaces = DE
 }
 
 // Stops and disables the unit (also when its file is already gone), removes the file and reloads the manager.
+// An agent still running after its file was deleted and the manager reloaded reads LoadState=not-found while active:
+// it is stopped all the same, and `disable` (which needs the file) runs only while the file exists.
 export async function uninstallAgent({userHome = homedir(), systemctl = runSystemctl} = {}) {
   const unit = agentUnitPath(userHome);
   const before = await showUnit(systemctl);
   const known = before.LoadState !== 'not-found';
-  const wasActive = before.ActiveState === 'active' || before.ActiveState === 'activating' || before.ActiveState === 'reloading';
-  if (known) await ran(systemctl, ['disable', '--now', AGENT_UNIT], 'agent_stop_failed', `run systemctl --user disable --now ${AGENT_UNIT} and retry`);
+  const wasActive = ['active', 'activating', 'reloading', 'deactivating'].includes(before.ActiveState);
+  const hint = `run systemctl --user stop ${AGENT_UNIT} and retry`;
+  if (wasActive) await ran(systemctl, ['stop', AGENT_UNIT], 'agent_stop_failed', hint);
   const removed = existsSync(unit);
+  if (removed) await ran(systemctl, ['disable', AGENT_UNIT], 'agent_stop_failed', `run systemctl --user disable ${AGENT_UNIT} and retry`);
   rmSync(unit, {force: true});
-  if (known || removed) await ran(systemctl, ['daemon-reload'], 'agent_stop_failed', 'run systemctl --user daemon-reload');
-  return {unit: AGENT_UNIT, path: unit, stopped: known && wasActive, removed};
+  if (known || removed || wasActive) await ran(systemctl, ['daemon-reload'], 'agent_stop_failed', 'run systemctl --user daemon-reload');
+  return {unit: AGENT_UNIT, path: unit, stopped: wasActive, removed};
 }
 
 // The unit as installed, from its file alone (the manager is not asked): {unit, path, installed, job?, invalid?}.

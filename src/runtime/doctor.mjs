@@ -37,7 +37,7 @@
 // installed, all four are `skip` (a locked Mac that does no remote control is healthy). On Linux the same rows describe
 // the systemd user unit (src/remote/systemd.mjs): `agent.installed` the unit file, `agent.running` the user manager's
 // view of it (and whether linger keeps it past logout), and `agent.console` whether the agent's X display (the unit's
-// DISPLAY and XAUTHORITY, else doctor's own) answers with the extensions the helper needs; Linux has no portable
+// DISPLAY and XAUTHORITY, with the user's HOME as the manager gives it, so ~/.Xauthority is found; else doctor's own) answers with the extensions the helper needs; Linux has no portable
 // screen-lock signal, so the row says the lock is not read. Elsewhere all four are `skip`.
 import {existsSync, readFileSync, statSync} from 'node:fs';
 import {execFile} from 'node:child_process';
@@ -250,7 +250,7 @@ async function linuxAgentChecks({home, env, device, deviceError, unitSeams, chec
     return AGENT_ROWS.map(name => result(name, 'skip', notSetUp));
   }
   return [unitInstalledRow(status, device), unitRunningRow(status, home), enrolledRow(home, device, deviceError, 'this machine'),
-    await displayRow(status.job ? status.job.environment : env, status.job ? 'the agent\'s unit' : 'this environment', checkDisplay)];
+    await displayRow(status.job ? {HOME: env.HOME ?? homedir(), ...status.job.environment} : env, status.job ? 'the agent\'s unit' : 'this environment', checkDisplay)];
 }
 
 // What is wrong with an installed job's program and its relay flag, whichever manager runs it.

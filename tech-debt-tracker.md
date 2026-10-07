@@ -16,8 +16,10 @@
 - **2026-10-06 — The vendor helper's text input crashes GTK3 text views on Linux (vendor, Phase F, issue #51).** On
   the pinned 26.928.40906 arm64 runtime, `typeText` and `paste` SIGSEGV gedit 46.2 and mousepad 0.6.1 (in
   `gtk_text_buffer_get_iter_at_offset`); in GTK4 they insert and then throw `SetCaretOffset NotSupported`. Nothing cua
-  can fix without patching the vendor runtime; the Linux host notes steer the model to `pressKey`. Revisit at the next
-  pin bump (and check x64), evidence `docs/evidence/2026-10-06-linux-acceptance.md`.
+  can fix without patching the vendor runtime; the Linux host notes steer the model to `pressKey`. On x64 (#58, same
+  gedit and GTK builds) `typeText` does not crash but throws "editable Paste did not insert text", so the notes' word
+  "crash" is exact for arm64 only; their advice holds on both. Revisit at the next pin bump, evidence
+  `docs/evidence/2026-10-06-linux-acceptance.md` and `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 
 - **2026-10-06 — Two F1 review leftovers on Linux (minor, Phase F, issue #51).** (a) `countLiveHosts` on Linux
   (`src/profiles/chrome.mjs`) reads `ps -eo pid=,args=` with no parent check, as the spec specified, so a wrapper

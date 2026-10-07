@@ -3,7 +3,8 @@
 import {readFileSync} from 'node:fs';
 import {AGENT_UNIT, agentUnitPath} from '../../src/remote/systemd.mjs';
 
-// `texts` records the unit text each start ran; `unreachable` fails every call as a missing user bus does.
+// `texts` records the unit text each start ran; `unreachable` fails every call as a missing user bus does. A unit whose
+// file is removed and reloaded while it runs reads LoadState=not-found and ActiveState=active, as systemd shows it.
 export function fakeSystemctl({userHome, unreachable = false, startFails = false, pid = 4343} = {}) {
   const manager = {loadedText: null, enabled: false, active: false, pid, exit: '0', calls: [], texts: [], needsReload: false};
   const fileText = () => { try { return readFileSync(agentUnitPath(userHome), 'utf8'); } catch { return null; } };
@@ -43,10 +44,10 @@ export function fakeSystemctl({userHome, unreachable = false, startFails = false
       manager.pid += manager.texts.length > 1 ? 1 : 0;
       return ok();
     }
+    if (verb === 'stop') { manager.active = false; return ok(); }
     if (verb === 'disable') {
-      if (!rest.includes('--now')) throw new Error('disable without --now');
+      if (fileText() === null) return {code: 1, stdout: '', stderr: `Failed to disable unit: Unit file ${AGENT_UNIT} does not exist.\n`};
       manager.enabled = false;
-      manager.active = false;
       return ok();
     }
     throw new Error(`unexpected systemctl --user ${args.join(' ')}`);

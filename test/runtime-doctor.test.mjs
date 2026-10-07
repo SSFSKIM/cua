@@ -484,6 +484,12 @@ test('on Linux an installed, running unit passes every row, naming the unit, its
   assert.deepEqual([displays[0].DISPLAY, displays[0].XAUTHORITY], [':0', '/home/me/.Xauthority'], 'the unit\'s display, not doctor\'s');
 });
 
+test('on Linux a unit without XAUTHORITY is checked with the user\'s HOME, where X clients find ~/.Xauthority as the agent does', async t => {
+  const {rows, displays} = await linuxSetup(t, {install: {http: '127.0.0.1:7801'}, env: {HOME: '/home/me'}});
+  await rows();
+  assert.deepEqual(displays[0], {HOME: '/home/me', DISPLAY: ':0', CUA_SHIM_SURFACES: 'computer,browser'});
+});
+
 test('on Linux the agent rows name what is missing: no unit, a stopped unit, linger off, an unreachable display, an unreachable manager', async t => {
   const {rows} = await linuxSetup(t, {display: {status: 'fail', detail: 'xdpyinfo could not use display :0 (unable to open display)'}, env: {DISPLAY: ':0'}});
   let r = await rows();

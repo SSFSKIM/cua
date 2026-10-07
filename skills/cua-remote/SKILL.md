@@ -53,6 +53,9 @@ decide it.
    command; it needs `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`) and paste the credential into the field it opens. You
    cannot do this for them, and you never read the file: the shell form inside the command below is the only use.
    Without the command, the owner writes `~/.config/claude-secrets/<KEY>` (mode 600) from their own terminal.
+   If the key is absent but the owner keeps a ready-made client config (an `*.mcp.json` with `mcpServers.cua_repl`
+   inside, such as `~/.config/cua-relay/<device>.mcp.json`), register from that and skip the `/secret` step:
+   `claude mcp add-json cua_repl -s user "$(jq -c .mcpServers.cua_repl <file>)"`.
 2. **Register** under the name `cua_repl`, with the command `enroll` printed (`cua remote show --json` on the device
    prints it again):
    ```sh

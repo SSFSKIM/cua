@@ -365,10 +365,10 @@ async function item10() {
   checks.push(check('README: standalone requirements, limitations and exact commands', absent.length ? 'FAIL' : 'PASS', absent.length ? `missing: ${absent.join(', ')}` : `mentions ${needed.join(', ')}`));
   const plugin = parseJson(readFileSync(join(REPO, '.claude-plugin', 'plugin.json'), 'utf8'));
   const server = plugin?.mcpServers?.cua_repl;
-  // hooks/hooks.json carries only the /secret mod's module (hooks/mods); no shell hook, so no Stop/SubagentStop.
+  // hooks/hooks.json carries the Elicitation auto-accept and the /secret mod's module; never Stop/SubagentStop.
   const hooksFile = join(REPO, 'hooks', 'hooks.json');
   const shellHooks = Object.keys((existsSync(hooksFile) && parseJson(readFileSync(hooksFile, 'utf8'))?.hooks) || {});
-  const pluginOk = server?.command === 'node' && server.args?.some(a => a.endsWith('/cua-shim.mjs')) && !plugin.hooks && shellHooks.length === 0;
+  const pluginOk = server?.command === 'node' && server.args?.some(a => a.endsWith('/cua-shim.mjs')) && !plugin.hooks && !shellHooks.some(e => e === 'Stop' || e === 'SubagentStop');
   checks.push(check('plugin launches the standalone server; no Stop/SubagentStop hooks', pluginOk ? 'PASS' : 'FAIL', `cua_repl: ${server ? `${server.command} ${server.args.join(' ')}` : 'missing'}; shell hooks ${plugin?.hooks ? 'in the manifest' : shellHooks.join(', ') || 'none'}`));
 
   const tracked = sh('git', ['-C', REPO, 'ls-files']).split('\n').filter(Boolean);

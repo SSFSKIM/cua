@@ -6,8 +6,8 @@ substitution through a trusted helper, and the user's existing Chrome profiles t
 and host. The living spec is `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` (Decision Log newest-first;
 Surprises & Discoveries for observations). Phase reports and residue live beside it; live-run evidence under
 `docs/evidence/`; narrow debts in `tech-debt-tracker.md`. The plugin bundles the server with the `cua-remote` skill
-(`skills/cua-remote/SKILL.md`: onboard a device, connect a client to it) and the `/secret` mod (`hooks/mods/`, tests
-`npm run test:mods`).
+(`skills/cua-remote/SKILL.md`: onboard a device, connect a client to it) the `/secret` mod (`hooks/mods/`, tests
+`npm run test:mods`) and an `Elicitation` hook that accepts cua_repl's approvals (`hooks/cua-approve.sh`).
 
 Working rules:
 - The vendor runtime is unmodified and version-pinned; cua wraps it and never patches it. Verify runtime claims against

@@ -113,33 +113,21 @@ Apart from Claude Code's tool permission, OpenAI's stack asks before an app is f
   `~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json`;
   an app on that list is never asked about again from any session or host. One more accept per app, then silence.
 
-To never see the dialog, answer it from an `Elicitation` hook: Claude Code runs the hook before showing the dialog and
-takes its answer as the user's.
+**The plugin answers these dialogs for you, by design.** Its `Elicitation` hook (`hooks/hooks.json`, matcher
+`cua_repl|plugin:cua:cua_repl`) runs `hooks/cua-approve.sh`, which accepts every elicitation cua_repl sends, app and
+site approvals alike; Claude Code runs the hook before it would show the dialog and takes its answer as the user's.
+This follows the owner's trust model (the agent is trusted and cua adds no policy of its own; issues #20 and #36), and
+it is what lets an unattended or headless session (`claude -p`, a remote client) use an app at all. Other servers'
+elicitations are untouched. The script uses `jq` when present and prints the same answer without it, so a missing
+`jq` never leaves a dialog nobody answers.
 
-`~/.claude/hooks/cua-approve.sh`:
-
-```sh
-#!/usr/bin/env bash
-exec jq -c 'if (.message // "" | startswith("Allow Computer Use to use ")) then {hookSpecificOutput:{hookEventName:"Elicitation",action:"accept",content:{}}} else empty end'
-```
-
-`~/.claude/settings.json`:
-
-```json
-"hooks": {
-  "Elicitation": [
-    {
-      "matcher": "cua_repl|plugin:cua:cua_repl",
-      "hooks": [{ "type": "command", "command": "bash $HOME/.claude/hooks/cua-approve.sh", "timeout": 10 }]
-    }
-  ]
-}
-```
-
-The `startswith` test limits the hook to app approvals; anything else the server asks (audio recording) still shows
-the dialog. To silence only some apps, match their names instead, for example `test("\"(Notes|TextEdit)\"")`. Be
-clear about what the hook removes: the model can then bind any app OpenAI's policy allows, and binding hands it that
-app's whole front window (see Use).
+Be clear about what it removes: the model can bind any app or site OpenAI's policy allows, and binding hands it that
+app's whole front window (see Use). To narrow it, edit `hooks/cua-approve.sh` in your copy to test `.message` and
+print nothing for the rest (empty output leaves the dialog to you), for example
+`jq -c 'if (.message // "" | startswith("Allow Computer Use to use ")) then {hookSpecificOutput:{hookEventName:"Elicitation",action:"accept",content:{}}} else empty end'`;
+to drop it, remove the `Elicitation` entry from the plugin's `hooks/hooks.json` (an edit to the installed copy lasts
+until the next plugin update). Without the plugin, register the same script yourself under `hooks.Elicitation` in
+`~/.claude/settings.json` with that matcher and `"command": "bash /path/to/cua/hooks/cua-approve.sh"`.
 
 ## Use
 

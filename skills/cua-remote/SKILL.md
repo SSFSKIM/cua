@@ -59,8 +59,8 @@ decide it.
      --header "Authorization: Bearer $(cat ~/.config/claude-secrets/<clientSecretKey>)"
    ```
    (`clientSecretKey` is `CUA_DEVICE_` and the device id with `-` as `_`, since a key allows only letters, digits and `_`.)
-   The name is what permission rules (`mcp__cua_repl__*`) and the app-approval `Elicitation` hook (README, "App
-   approvals") match; under another name every first use of an app waits on a dialog. Check `claude mcp list` first:
+   The name is what permission rules (`mcp__cua_repl__*`) and the plugin's approval hook (README, "App approvals")
+   match; under another name every first use of an app or site waits on a dialog. Check `claude mcp list` first:
    one `cua_repl` per scope, so remove a stale one or use the other of `--scope local|user`. Never `--scope project`:
    the shell expands the credential at registration, and that scope writes it into the repository's `.mcp.json`.
 3. **Reconnect.** A running session does not pick up a server added under it: reconnect through `/mcp`, or start a

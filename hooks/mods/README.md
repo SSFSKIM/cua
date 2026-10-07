@@ -3,7 +3,7 @@
 Function hooks of the cua plugin: one module (`register.tsx`, named by
 `hooks/hooks.json` under `modules`) that registers each mod below. The engine
 loads it only where `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is set and ignores it
-elsewhere, where the plugin is its MCP server alone.
+elsewhere; the shell hook beside this folder (`cua-approve.sh`) runs everywhere.
 
 The store, `~/.config/claude-secrets/<KEY>`, is cua's: the mod writes it, and
 issue #66 moves the server's `{{secret:…}}` substitution onto it. A

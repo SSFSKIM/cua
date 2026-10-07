@@ -7,364 +7,451 @@ works after a Codex login (`cua login`), because the extension's `getInfo` answe
 caller's identity before every browser request. After this change a user installs cua's own extension ("cua") from
 the Chrome Web Store (or loads it unpacked), runs `cua chrome register`, and the browser surface works with **no
 ChatGPT or OpenAI account at all**: `cua doctor` passes with `codex.login` skipped, `cua profiles bind <key>` binds the
-profile, and the agent's `cua.getBrowser(...)`/`createBrowserTab` calls behave exactly as before, because the agent-facing
-API (the vendor's `browser-service.mjs`, pinned inside the runtime) is unchanged. The cloud VM template then provisions
-a browser-capable device unattended (no ChatGPT sign-in, no `cua login`), and a user's Mac is onboarded without a
-ChatGPT account. The OpenAI extension route keeps working side by side until cua's Store listing is live; its removal
-is a later ticket.
+profile, and the agent's `cua.getBrowser(...)`/`createBrowserTab`/`tab.playwright` calls keep the same API, because the
+agent-facing layer (the vendor's `browser-service.mjs`, pinned inside the runtime) is unchanged. The cloud VM template
+then provisions a browser-capable device unattended (no ChatGPT sign-in, no `cua login`), and a user's Mac is onboarded
+without a ChatGPT account. The ChatGPT extension route stays available (`cua chrome register --vendor`) until cua's
+Store listing is live; a home uses one route at a time; the vendor route's removal is a later ticket.
 
-The owner's stated reason for this initiative (2026-10-07) is "users without a ChatGPT account"; the two other reasons
-on the table (independence from OpenAI's update cadence and policy, lifting the vendor API's limits such as the 3 s
-locator cap and read-only `evaluate`) are served partly (the first) or not at all (the second). The second needs cua's
-own service in place of the vendor's (the session's "option C"); the extension built here is designed so that C reuses
-it unchanged.
+The owner's stated reason for this initiative (2026-10-07) is "users without a ChatGPT account"; independence from
+OpenAI's extension update cadence comes with it; lifting the vendor API's limits (3 s locator cap, read-only
+`evaluate`) does not — that needs cua's own service in place of the vendor's (the session's "option C"), and the
+extension built here is designed so that C reuses it unchanged.
 
 ## Progress
 
 - [x] (2026-10-07) Research: the installed extension's code and the readable desktop bundle read; facts recorded below.
 - [x] (2026-10-07) Design approved by the owner in a live brainstorming session (name "cua", user-tab claims included,
       Web Store unlisted distribution, minimal popup, vendor route kept until the listing is live).
-- [ ] S0 — spike: the vendor service without `agentRequestHeaderEnabled`, no login, normal network; dead backend paths.
+- [x] (2026-10-07) Independent design review and buildability review (both opus, adversarial brief); 5 blocking and
+      ~20 important/minor findings folded in (Decision Log, 2026-10-07 revision).
+- [ ] S0 — spike: the vendor service without `agentRequestHeaderEnabled`, no login, normal network; the extension key.
 - [ ] H1 — the host and its contract with the vendor service, proven against a fake extension.
 - [ ] H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
-- [ ] H3 — the extension; live acceptance on this Mac from a scratch home with no login.
-- [ ] H4 — Linux: the Tart VM and the cloud VM template, unattended.
+- [ ] H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
+- [ ] H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
+- [ ] H4 — Linux: the Tart VM and the cloud VM template, unattended, with a self-hosted CRX.
 - [ ] H5 — packaging, docs, the Store listing (owner action) and the acceptance section as written.
 
 ## Facts this design rests on
 
-Read on 2026-10-07; citations are to the readable vendor tree `~/codex-app-src/readable/chatgpt-26.928.40906/` (`BS` =
-`cua_node/@oai/browser-desktop/scripts/browser-service.mjs`, the runtime's pinned service) and to the installed
-extension `hehggadaopoacecdllhhajmbjkdcmajg` 1.26.901.11451 (`EXT` = its `background.js`, minified to 14 lines, cited as
-line:column). The desktop bundle contains the host side only; the extension is not in it.
+Read on 2026-10-07 and re-verified by the design review; citations are to the readable vendor tree
+`~/codex-app-src/readable/chatgpt-26.928.40906/` (`BS` = `cua_node/@oai/browser-desktop/scripts/browser-service.mjs`,
+the runtime's pinned service) and to the installed extension `hehggadaopoacecdllhhajmbjkdcmajg` 1.26.901.11451
+(`EXT` = its `background.js`, minified to 14 lines, cited as line:column). The desktop bundle contains the host side
+only; the extension is not in it.
 
 - **Three layers.** (L1) The vendor service runs inside the node REPL that `cua serve` launches and gives the agent
   94 command types (17 `playwright_locator_*`, 11 Playwright page commands, 8 `cua_*` coordinate inputs, 2 `tab_ax_*`,
-  screenshots, dialogs, clipboard, …; defined at BS:31979–35713). (L2) It talks to a **backend** over a Unix socket:
-  u32 length-prefixed JSON-RPC 2.0, 23 request methods (client class at BS:67808–68110), one notification it sends
-  (`webMcpToolInvoked`), and from the backend it expects the request `ping` (answered "pong", BS:68147) and the
+  screenshots, dialogs, clipboard, …; BS:31979–35713). (L2) It talks to a **backend** over a Unix socket: u32
+  length-prefixed JSON-RPC 2.0, 23 request methods (client class BS:67808–68110), one notification it sends
+  (`webMcpToolInvoked`); from the backend it expects the request `ping` (answered "pong", BS:68147) and the
   notifications `onCDPEvent`, `onCDPDetach`, `onPageEvent`, `onDownloadChange`. (L3) The vendor's native host
-  `extension-host` (Rust, 1 MB, signed) is a content-blind relay: `strings` on it has no backend method name at all;
-  it bridges the socket to Chrome native messaging, checks the socket peer's code signature, and proxies the side
-  panel's app-server. The extension implements every backend method itself (EXT L8:C63748 `Kf`, per-session logic
-  `Rs` at L8:C71868) and maps `executeCdp` to `chrome.debugger.sendCommand` (L8:C87929). It builds no accessibility
-  tree and runs no page logic: page intelligence is all in L1 (`browser-accessibility.wasm.br` beside BS).
-- **The login chain.** The extension's `getInfo` always carries `agentRequestHeaderEnabled` (EXT L8:C68493, a local
-  flag false by default). When that field is present, the service runs `readRequestHeaderEnabled` before every backend
-  request except `getInfo` (BS:68066–68092, wired at BS:68363); it awaits the identity promise or throws "Browser
-  request-header policy requires caller identity." (BS:17686–17692); the identity comes from
-  `https://chatgpt.com/backend-api/aura/identity` through node_repl's authenticated fetch, which asks `codex app-server`
-  for the token under `CODEX_HOME` (BS:17655–17668, 17727–17735; measured in `docs/evidence/m9-original-chrome.md`
-  55–73). When the field is **absent** the check is skipped (measured in `docs/evidence/m7-chrome-contract.md`
-  118–133, under `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`; the normal-network case is S0's question). Nothing else on
-  the browser route needs the login; native control never did.
+  `extension-host` (Rust, 1 MB, signed) is a content-blind relay: `strings` on it has no backend method name; it
+  bridges the socket to Chrome native messaging, checks the socket peer's code signature, and proxies the side panel's
+  app-server. The extension implements every backend method itself (EXT L8:C63748 `Kf`, per-session `Rs` L8:C71868)
+  and maps `executeCdp` to `chrome.debugger.sendCommand` (L8:C87929). It builds no accessibility tree: page intelligence
+  is all in L1 (`browser-accessibility.wasm.br` beside BS).
+- **The login chain.** The extension's `getInfo` always carries `agentRequestHeaderEnabled` (EXT L8:C68493). When the
+  field is present (`!== undefined`, BS:68068–68072) the service runs the header check before every backend request
+  except `getInfo`, awaiting the identity promise or throwing "Browser request-header policy requires caller
+  identity." (BS:17686–17692); the identity comes from `https://chatgpt.com/backend-api/aura/identity` through
+  node_repl's authenticated fetch, which asks `codex app-server` for the token under `CODEX_HOME` (BS:17655–17668,
+  17727–17735; `docs/evidence/m9-original-chrome.md` 55–73). When the field is **absent** the check is skipped
+  (`docs/evidence/m7-chrome-contract.md` 118–133, measured under `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`; the
+  normal-network case is S0's question). Nothing else on the browser route needs the login.
 - **Backend discovery.** `BROWSER_USE_BACKEND_PATHS` (absolute socket paths, `:`-separated) is used verbatim when set
-  (BS:67723–67742); otherwise the service scans `/tmp/codex-browser-use` (BS:10567), a directory shared by every user
-  on the machine. With `BROWSER_USE_AVAILABLE_BACKENDS=chrome` (set by `src/runtime/launch.mjs`) a backend is kept
-  when its `getInfo` has `type:"extension"`; the availability name of that type is `chrome`.
+  and the `/tmp/codex-browser-use` scan is then skipped entirely (BS:67723–67742; the scan directory BS:10567).
+  Every `listBrowsers`/`getBrowser`/`getDefault`/`getForUrl` calls `refresh()` (BS:66038–66070); failed pipes are not
+  cached (BS:67495–67590) and a connect is bounded by `NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000`
+  (`src/runtime/launch.mjs`). So a listed path with no listener costs at most 1 s per call and is retried on the next
+  call. With `BROWSER_USE_AVAILABLE_BACKENDS=chrome` a backend is kept when its `getInfo` has `type:"extension"`.
 - **Profile identity.** `getInfo.metadata.extensionInstanceId` is a UUID the extension keeps in `chrome.storage.local`
-  under the key `extensionInstanceId` (EXT L14:C19175). When `metadata.extensionId` and `extensionInstanceId` are
-  both present, the service reads Chrome's `Local State` and copies that extension's `Local Extension Settings`
-  LevelDB to match a profile display name into `profileName` (BS:67352–67470). cua's own directory map
-  (`src/profiles/directory-map.mjs`) reads the same LevelDB key for the same purpose, and `src/profiles/bind.mjs`
-  binds by that mapping.
-- **The vendor extension's semantics that the host notes already teach**: agent-created tabs are closed at turn end
-  unless marked `handoff` or `deliverable` (`markTab {tabId, status}`; `finalizeTabs`), agent tabs live in a tab group
-  named by `nameSession`, a session is `{session_id, turn_id, session_context}` on every request but `getInfo`,
-  `turnEnded`, `ping`. The extension pings its host every 30 s and detaches every debugger when a ping fails
-  (EXT L14:C9737); `getInfo` awaits its feature-flag client (3 s identity + 10 s Statsig timeouts), which can exceed the
-  service's discovery timeout right after a service-worker start (inferred, not measured).
-- **M7's adapter** `scripts/probe/chrome/adapter.mjs` already implements the backend side for seven methods
-  (`getInfo getTabs createTab attach detach executeCdp turnEnded`) plus `onCDPEvent`/`onCDPDetach`, with child
-  sessions, exact `No handler registered for method: <m>` fallbacks and ownership rules; `scripts/probe/chrome/
-  {backend-server,frame,fake-extension,scenarios,vendor-layer}.mjs` are its socket server, framing, synthetic peer,
-  15 fixture scenarios and the harness that runs the real vendor service against an owned backend
-  (`node scripts/probe-chrome-contract.mjs --vendor`).
+  under the key `extensionInstanceId` (EXT L14:C19175); the service selects a backend by that id alone (BS:68272–68276).
+  When `metadata.extensionId` is also present the service copies the extension's `Local Extension Settings` LevelDB
+  per profile to label `profileName` (BS:67374–67437); M7 ruled that out ("never send these fields", m7:135–139) and
+  cua's own directory map (`src/profiles/directory-map.mjs`) reads the same LevelDB key itself and
+  `src/profiles/bind.mjs` binds by it. An **unpacked** extension never appears under `<profile>/Extensions/<id>/`;
+  Chrome loads it from its source directory, but it still gets `Local Extension Settings/<id>/` on first run.
+- **Vendor extension semantics the host notes teach the agent** (and this host reproduces): every request but
+  `getInfo`, `turnEnded`, `ping` carries `{session_id, turn_id, session_context}`; `turnEnded` acts on the leases of
+  that `turn_id` only (EXT near byte 187332): unmarked agent-created tabs close, `deliverable` tabs are released
+  open, `handoff` tabs stay leased to the session with the debugger detached and resume on its next turn (EXT
+  `handoffTabs`/`resumeHandoffTabs`; the agent docs at BS:5551 say "Handoff tabs can resume in your next turn unless
+  another session has claimed them"). `executeCdp` carries `timeoutMs` and `preserveDebuggerOnTimeout` (BS:47565–47574);
+  the extension enforces 10 s by default and detaches on timeout unless preserved (EXT `mg`), and the service's
+  "Debugger is not attached" recovery (BS:47585–47595) relies on that. `attachTarget(tabId, targetId)` attaches
+  `chrome.debugger` to `{targetId}` for cross-origin iframes (OOPIFs) and later `executeCdp` names
+  `target:{tabId, targetId}` (BS:47718–47757; detach BS:48656); the service swallows an `attachTarget` failure, so a
+  backend without it silently loses frames. `createTab {preferredWindowId}` (BS:68000–68008): the extension picks that
+  window, else the focused one, else any, else creates one unfocused. `claimUserTab` returns `{id, title?, url?}`
+  (BS:27535–27548). The vendor extension pings its host every 30 s and detaches all on failure (EXT L14:C9737).
+- **Chrome platform facts.** Native messaging: host→extension messages are capped at 1 MB, extension→host at 64 MiB;
+  a connected native port keeps an MV3 service worker alive (Chrome 105+); nothing wakes the worker after a Chrome
+  restart unless `runtime.onStartup`/`onInstalled` listeners exist. `--load-extension` is removed from branded Google
+  Chrome 137+ (Chromium PSA; it still works in Chromium and Chrome for Testing); on Linux `ExtensionInstallForcelist`
+  accepts an off-store update URL (H4 verifies this first). The Chrome Web Store rejects a manifest containing `key`;
+  to keep a development id, the first upload is a zip without `key` that contains the private `key.pem` at its root.
+  macOS limits a Unix socket path to 103 bytes (`sun_path` 104).
+- **M7's spike code** `scripts/probe/chrome/{adapter,backend-server,frame,fake-extension,scenarios,vendor-layer}.mjs`
+  carries over: `frame.mjs` (the u32 framing), the exact `No handler registered for method: <m>` rule, the
+  child-session (`Target.attachedToTarget`, flatten) and "a target names at most one of sessionId/targetId" rules, and
+  the harness that launches the real vendor service against an owned backend (`node scripts/probe-chrome-contract.mjs
+  --vendor`, `vendor-layer.mjs`, which today hard-wires the Playwright-shaped fixture and
+  `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`). Its adapter's session model (one offered-tab pool, no per-session
+  ownership, string errors, no closing on `turnEnded`) does not carry over: the host's session model is new code.
 
 ## Design
 
 ### Shape: thin extension, thick host
 
 The vendor pairs a thick extension (session, tab leases, cleanup, 84 KB) with a content-blind host. cua inverts it:
-the **extension** exposes Chrome's primitives (tabs, tab groups, `chrome.debugger`) over native messaging and keeps no
-session state beyond "which tabs' debuggers do I hold"; the **host**, a Node program Chrome spawns per profile,
-implements the vendor backend protocol with all session, turn and ownership semantics. Reasons: the host is tested in
-`node:test` against a fake extension (the M7 pattern), while extension code is only testable live; the extension then
-changes rarely, so Store re-reviews are rare; and option C needs exactly this extension (a CDP relay Playwright can
-connect to), so it is built once. The alternative, porting the vendor extension's shape, was rejected for those three
-reasons.
+the **extension** exposes Chrome's primitives (tabs, windows, tab groups, `chrome.debugger`) over native messaging and
+keeps no state beyond which debuggees it holds; the **host**, a Node program Chrome spawns per profile, implements the
+vendor backend protocol with all session, turn and ownership semantics. Reasons: the host is tested in `node:test`
+against a fake extension, and the real extension against the real host under a `chrome.*` stub, while live Chrome is
+needed only for acceptance; the extension then changes rarely, so Store re-reviews are rare; and option C needs exactly
+this extension (a CDP relay Playwright can connect to), so it is built once. Porting the vendor extension's shape was
+rejected for those three reasons.
 
 ```
 Claude Code ── cua serve (node REPL + vendor browser-service, L1)
                   │ Unix socket, u32-framed JSON-RPC 2.0: the vendor backend protocol (L2), unchanged
                   ▼
-            cua host  src/chrome/host.mjs   (one per Chrome profile, spawned by Chrome, Node)
-                  │ Chrome native messaging (stdio, u32-framed JSON): the cua extension protocol (~12 primitives)
+            cua host  src/chrome/host.mjs   (one per Chrome profile, spawned by Chrome through the launcher, Node)
+                  │ Chrome native messaging (stdio, u32-framed JSON): the cua extension protocol (~14 primitives)
                   ▼
             cua extension  extension/   (MV3 service worker + popup) ── chrome.debugger / chrome.tabs ──▶ tabs
 ```
 
 ### The extension (`extension/`)
 
-Manifest V3, name **cua**, permissions `debugger`, `nativeMessaging`, `tabs`, `tabGroups`, `storage`; no
-`host_permissions` and no content scripts (nothing runs in pages; the cursor overlay, favicon badges and popup
-interception of the vendor extension are not reproduced). The manifest carries a `key` so the unpacked load and the
-Store build share one extension id; that id is the constant `CUA_EXTENSION_ID` in `src/chrome/extension.mjs` and is
-what registration, binding, doctor and the cloud template use. The extension's version is its own (Store review unit),
-not cua's package version.
+Manifest V3, name **cua**, permissions `debugger`, `nativeMessaging`, `tabs`, `tabGroups`, `storage`, `alarms`; no
+`host_permissions`, no content scripts (nothing runs in pages; the vendor's cursor overlay, favicon badges and popup
+interception are not reproduced). The manifest carries `key` (the public key) so the unpacked load, the self-hosted
+CRX and the Store build share one id; the id is `CUA_EXTENSION_ID` in `src/chrome/extension.mjs`, derived from that
+key (first 32 hex chars of sha256(DER public key), `0-f` → `a-p`; a test recomputes it from `extension/manifest.json`).
+The private key lives with the owner at `~/.config/cua/extension-key.pem` (0600, never in git, never printed); the
+pack script needs it only for the CRX. The extension's version is its own (Store review unit), not cua's package
+version; `hello` carries `protocolVersion: 1`, and the host refuses a different major with a logged, popup-visible
+`protocol_mismatch`.
 
-The service worker connects to the native host `io.github.ssfskim.cua` as soon as it starts, sends `hello`, and
-reconnects every 5 s while disconnected (a `chrome.alarms` backup every minute keeps a suspended worker trying). When
-the port drops, it detaches every debugger it holds: a host that is gone cannot clean up, so the extension does. It
-keeps the instance id under `chrome.storage.local.extensionInstanceId` (the same key the vendor and cua's directory
-map read), minted on first run.
+The service worker connects to the native host `io.github.ssfskim.cua` from `runtime.onStartup`, `runtime.onInstalled`
+and its own top level, sends `hello`, and while disconnected retries every 5 s plus a `chrome.alarms` backup every
+minute. When the port drops it detaches every debuggee it holds: a host that is gone cannot clean up, so the extension
+does. It keeps the instance id under `chrome.storage.local.extensionInstanceId` (the key the vendor and cua's directory
+map read), minted on first run — which also creates `Local Extension Settings/<id>/`, the presence signal cua uses for
+unpacked loads.
 
 Agent-created tabs are created inactive (`active:false`) so the user's focus is not taken, and are placed in a tab
-group titled **cua** in their window (the only visible product semantic kept from the vendor: the user sees which
-tabs not to touch). Chrome's own "cua started debugging this browser" infobar is the consent surface; the extension
-adds none.
+group per **session** (key = `session_id`, title "cua" until `nameSession`), so concurrent sessions never rename each
+other's group and the user sees which tabs not to touch. Chrome's own "cua started debugging this browser" infobar is
+the consent surface; the extension adds none.
 
-The popup (plain HTML + ES module, no build step) shows: host connected / disconnected (with the host name), the
-instance id's first 8 characters (for a human to match against `cua profiles bind` output), and the count of tabs
-whose debugger it holds. Nothing else.
+The popup (plain HTML + ES module, no build step) shows: host connected / disconnected (host name, and
+`protocol_mismatch` when that is why), the instance id's first 8 characters (for a human to match against
+`cua profiles bind` output), and the count of debuggees it holds. Nothing else.
 
 ### The extension protocol (extension ↔ host)
 
-JSON-RPC 2.0 over native messaging, both directions, the same peer conventions as the vendor wire so M7's
-`frame.mjs`/peer code is reused: numeric ids from 1 per direction, an error reply is `{code, message}` and rejects with
-the bare message, an unknown method answers `No handler registered for method: <m>`. The methods are in Interfaces and
-Dependencies; they are Chrome API primitives with Chrome's own error strings passed through, nothing interpreted.
+JSON-RPC 2.0 over native messaging, both directions, with the vendor wire's peer conventions so one peer module
+serves both wires: numeric ids from 1 per direction, an error reply is `{code, message}` and rejects with the bare
+message, an unknown method answers `No handler registered for method: <m>`. The methods (Interfaces and Dependencies)
+are Chrome API primitives; a debuggee is `{tabId}` or `{targetId}` (OOPIF frames), Chrome's own error strings pass
+through, nothing is interpreted. The host refuses to send a frame over 1 MB (`message_too_large`) rather than let Chrome
+tear the port down.
 
 ### The host (`src/chrome/host.mjs`)
 
-Spawned by Chrome through the launcher script registration writes (below); stdin/stdout are the native-messaging
-port; stderr goes to `$CUA_HOME/chrome/logs/<instanceId>.log` (truncated at start; Chrome discards stderr). It exits
-when the port closes (Chrome closed, extension disabled or reloaded) after releasing every socket client.
+Spawned by Chrome through the launcher registration writes (below); stdin/stdout are the native-messaging port;
+stderr goes to `$CUA_HOME/chrome/logs/<pid>.log` (renamed to `<socketName>.log` after `hello`; truncated at start;
+Chrome discards stderr). It exits when the port closes (Chrome closed, extension disabled or reloaded) after running
+turn-end cleanup for every session and closing every socket client.
 
 **Backend protocol coverage.** The host answers the vendor service's 23 methods as follows; everything not listed
 answers the exact `No handler registered for method: <m>` string so the service takes its own fallbacks.
 
 | Group | Methods | Behaviour |
 |---|---|---|
-| Core | `getInfo`, `getTabs`, `createTab`, `attach`, `detach`, `executeCdp`, `turnEnded`, `ping` | As M7's adapter, promoted: ownership enforced in the host, CDP passed through unchanged (the service issues ~127 distinct CDP methods and `tab_cdp_call` lets the agent issue more; a fixed allowlist would break it). `ping` is answered by the service, not sent by the host; the host sends none. |
-| Frames | `attachTarget`, `detachTarget` | Child sessions from `Target.attachedToTarget` keep `{tabId, sessionId}`; a target names at most one of `sessionId`/`targetId` (M7 facts). |
-| User tabs | `getUserTabs`, `claimUserTab`, `getCommittedTabUrl` | `getUserTabs` lists tabs in the profile that no session owns (id, title, url); `claimUserTab` makes the tab the session's (attach follows as a separate `attach`); the service's origin-access elicitation happens before and is not the host's concern. `getCommittedTabUrl` returns the tab's current committed URL. |
-| Marking | `markTab`, `nameSession` | `markTab {tabId, status: "handoff"\|"deliverable"}` records the mark; `nameSession` renames the session's tab group. |
-| No-op | `moveMouse` | Succeeds, does nothing (no overlay). |
-| Fallback | `executeCdpWithCachedExpression`, `executeTabRead`, `followSessionTab`, `allowDownload`, `browserAuthNewTargetProtection`, `executeUnhandledCommand`, `getUserHistory`, … | `No handler registered for method: <m>` |
-| Notifications sent | `onCDPEvent {source:{tabId, sessionId?}, method, params}`, `onCDPDetach {tabId, reason}` | Every `chrome.debugger` event/detach for a tab a session owns, forwarded unfiltered. `onPageEvent`, `onDownloadChange` are never sent. |
+| Core | `getInfo`, `getTabs`, `createTab`, `attach`, `detach`, `executeCdp`, `turnEnded`, `ping` | Ownership enforced here; CDP passed through unchanged (the service issues ~127 distinct CDP methods and `tab_cdp_call` lets the agent issue more). `createTab {preferredWindowId?}` picks that window, else the focused normal window, else any, else `windows.create {focused:false}`. `executeCdp` honours `timeoutMs` (default 10 000) and on timeout detaches the debuggee unless `preserveDebuggerOnTimeout`, answering the vendor's `Debugger is not attached` wording so the service's one re-attach works. `ping` is answered by the service, never sent by the host. |
+| Frames | `attachTarget {tabId, targetId}`, `detachTarget` | `debugger.attach {targetId}`; the host maps targetId → owning tab for ownership and routes `executeCdp` with `target:{tabId, targetId}` to that debuggee. Child sessions from `Target.attachedToTarget` (flatten) keep `{tabId, sessionId}`; a target names at most one of `sessionId`/`targetId`. |
+| User tabs | `getUserTabs`, `claimUserTab`, `getCommittedTabUrl` | `getUserTabs` lists tabs no session owns (id, title, url); `claimUserTab` leases the tab to the session for this turn and returns `{id, title?, url?}`; the service's origin-access elicitation happens before and is not the host's concern. `getCommittedTabUrl` returns the tab's current URL. |
+| Marking | `markTab {tabId, status}`, `nameSession {name}` | records `handoff`/`deliverable`; renames the session's group. |
+| No-op | `moveMouse` | Succeeds, does nothing. |
+| Fallback | `executeCdpWithCachedExpression`, `executeTabRead`, `followSessionTab`, `allowDownload`, `browserAuthNewTargetProtection`, `executeUnhandledCommand`, `getUserHistory` | `No handler registered for method: <m>` |
+| Notifications sent | `onCDPEvent {source:{tabId, sessionId?, targetId?}, method, params}`, `onCDPDetach {tabId, reason}` | Every `chrome.debugger` event/detach for a debuggee a session owns, to that session's client. `onPageEvent`, `onDownloadChange` never. |
+
+**What differs from the vendor backend, by design:** `getInfo.capabilities` is `{browser:[], tab:[]}` (no viewport,
+management, page assets or WebMCP), `getUserHistory`/bookmarks/top sites answer `No handler`, there is no cursor
+overlay, and `profileName` is not labelled by the vendor (cua's directory map labels bind candidates instead).
 
 **`getInfo`** is `{type:"extension", family:"chrome", name:"cua", version:<extension version>, capabilities:{browser:[],
-tab:[]}, metadata:{extensionId: CUA_EXTENSION_ID, extensionInstanceId}}` — and **no `agentRequestHeaderEnabled`**.
-That omission is what removes the login (Facts, "The login chain"). Omitting a field the pinned service treats as
-optional is honest about what the backend can do (it cannot add agent request headers) and is stable under cua's
-version pin; it is not a bypass flag. `metadata.extensionId` is included so the service's own `profileName`
-enrichment keeps labelling bind candidates.
+tab:[]}, metadata:{extensionInstanceId}}` — **no `agentRequestHeaderEnabled`** and, per M7's rule, no `extensionId`.
+The omission is what removes the login (Facts, "The login chain"): the backend honestly cannot add agent request
+headers, the pinned service treats the field as optional, and the pin makes the behaviour stable; it is not a bypass
+flag.
 
-**Sessions, turns, ownership.** The host serves several socket clients at once (one per `cua serve`, and this Mac
-runs several Claude Code sessions). State: `clients` (socket → set of session ids), `sessions` (session_id →
-{client, turn_id, tabs: tabId → {createdByUs, mark, attached, children}}). A session is created by the first request
-carrying its `session_id`; `session_context` is accepted but not enforced (the vendor extension's `cached` check
-protects a product cua does not have). A tab is owned by at most one session; `attach`/`executeCdp`/`detach` on a tab
-another session owns is refused with the message `tab owned by another session`. `turnEnded {session_id}` detaches the
-session's debuggers and closes its created tabs whose mark is absent; marked tabs stay open and leave the session's
-ownership. A client disconnect runs `turnEnded` for each of its sessions. A `chrome.debugger` detach initiated by the
-user (the infobar's Cancel, reason `canceled_by_user`) is forwarded as `onCDPDetach` and never re-attached: the user
-released it. Attach on `Another debugger is already attached` is a refusal, not a retry.
+**Sessions, turns, ownership.** The host serves several socket clients at once (one per `cua serve`; this Mac runs
+several Claude Code sessions). State: `clients` (socket → session ids), `sessions` (session_id → {client, groupId per
+window, tabs}), each owned tab `{tabId, turnId, origin: created|claimed, mark: none|handoff|deliverable, debuggees:
+Set, children: sessionId → targetId}`. A session is created by the first request carrying its `session_id`;
+`session_context` is accepted, not enforced. A tab is owned by at most one session; `attach`/`executeCdp`/`detach`/
+`markTab` on a tab another session owns is refused with the message `tab owned by another session`. `turnEnded
+{session_id, turn_id}` acts on that turn's tabs only (a late `turnEnded` for task N must not touch task N+1's tabs,
+which cua creates immediately after `end_task` with `turn_id = taskId`): unmarked created tabs are closed; unmarked
+claimed tabs and `deliverable` tabs are released open and leave the group; `handoff` tabs stay owned with the debugger
+detached and are listed by `getTabs` on the session's next turn. A client disconnect runs `turnEnded` for every turn of
+its sessions. A detach initiated by the user (reason `canceled_by_user`) is forwarded as `onCDPDetach` and never
+re-attached. `Another debugger is already attached` from Chrome is success when this extension already holds the
+debuggee (the extension reports its held set) and a refusal otherwise.
 
-**Socket placement and discovery.** Sockets live in `$CUA_HOME/chrome/backends/` (mode 0700, created by registration).
-After `hello` the host reads `$CUA_HOME/profiles.json`: when a registered profile is bound to this instance id, the
-socket is `<profileKey>.sock`; otherwise `<instanceId>.sock`. `cua serve` and the inventory (`src/profiles/inventory.mjs`)
-set `BROWSER_USE_BACKEND_PATHS` to the `<key>.sock` path of every registered profile plus every `<instanceId>.sock`
-present in the directory at launch — so a Chrome opened after `cua serve` started is found at its pre-listed path.
-This lifts the one-VM-per-user limit the shared `/tmp/codex-browser-use` imposed on Linux. It depends on the service
-tolerating listed paths with no listener; S0 measures that, and if it fails, the host puts its socket in the vendor
-directory instead and `BROWSER_USE_BACKEND_PATHS` stays unset (the design's fallback, decided here so the executor does
-not have to).
+**Socket placement and discovery.** Sockets live in `$CUA_HOME/chrome/b/` (0700; the short name keeps the path under
+the macOS limit for any username up to 40 characters at the default home; `register` refuses a home whose worst-case
+path exceeds 96 bytes with `socket_path_too_long`). The socket name is `h(instanceId)` = the first 12 hex chars of
+sha256(instanceId); the host never reads `profiles.json`. At listen, a stale file is probed: unlinked when dead,
+and when live the new host logs `already_served` and exits (the worker reconnected before the old host exited). Beside
+the socket the host keeps `<name>.json` `{instanceId, extensionVersion, protocolVersion, pid, sessions:[{session_id,
+turn_id, tabs:[{tabId, origin, mark, attached}]}], updatedAt}`, rewritten on every change: that is how doctor, the
+acceptance runner and a human observe the host without a popup. `cua serve` and the inventory set
+`BROWSER_USE_BACKEND_PATHS` to `h(instanceId)` for every bound profile in `profiles.json` plus every `*.sock` present
+in the directory at launch; a Chrome opened after `cua serve` started is found at its pre-listed path on the next
+`listBrowsers` (Facts: dead paths are retried per call, ≤ 1 s each). There is no shared `/tmp` directory, so Linux no
+longer needs one VM per user.
+
+**Socket trust.** The vendor host checks its socket peer's code signature; cua's host accepts any process of the same
+user that can open the 0700 directory. That is a deliberate narrowing: the owner's model for cua is allow-all
+approvals and a 0600 plain-file secret store, so a same-user process is already trusted everywhere else in cua, and a
+model cell with the sandbox off can already drive Chrome by other means. Recorded in the Decision Log; revisited if
+the trust model changes.
 
 ### Registration, launch, binding, doctor (`cua chrome …`, `cua serve`, `cua profiles …`, `cua doctor`)
 
-`cua chrome register` becomes the cua route's registration: it writes `$CUA_HOME/chrome/host` (a shell launcher that
-`exec`s the current Node — `process.execPath`, as `cua agent install` records it — with `<checkout>/src/chrome/host.mjs`),
-creates `$CUA_HOME/chrome/backends/`, and writes the native-messaging manifest `io.github.ssfskim.cua.json`
-(`allowed_origins: ["chrome-extension://<CUA_EXTENSION_ID>/"]`, description "cua browser native messaging host",
-`type: stdio`) into every browser directory `browsersFor` lists, in the vendor's byte format (`manifestText`). It
-never touches `com.openai.codexextension.json`, so `--replace`, the backups and the "desktop rewrites it" warning do not
-apply to this route. The vendor route's registration stays reachable as `cua chrome register --vendor [--replace]`
-and `cua chrome unregister --vendor`, unchanged, until the removal ticket. `cua chrome unregister` removes cua's
-manifests and launcher. The registration record `$CUA_HOME/chrome/registration.json` gains `route: "cua"|"vendor"`.
+A home has one **route**, `cua` or `vendor`, set by whichever registration ran last and recorded in
+`$CUA_HOME/chrome/cua-registration.json` (the cua record; the vendor route keeps its own `registration.json` untouched,
+so neither overwrites the other's backups). `cua chrome register` is the cua route: it writes
+`$CUA_HOME/chrome/host`, a shell launcher that exports `CUA_HOME=<this home, absolute real path>` and `exec`s
+`process.execPath` with `<checkout real path>/src/chrome/host.mjs` (Chrome spawns the host with its own environment,
+so the home must be baked in; real paths because `npm link` checkouts are symlinks), creates `chrome/b/` and
+`chrome/logs/`, and writes the native-messaging manifest `io.github.ssfskim.cua.json` (`allowed_origins:
+["chrome-extension://<CUA_EXTENSION_ID>/"]`, description "cua browser native messaging host", `type: stdio`, the
+vendor's byte format via `manifestText`) into every browser directory `browsersFor` lists. A manifest of that name
+that already names another home's launcher is refused (`other_home`, hint `--replace`); `--replace` records the
+previous path in the record so `cua chrome unregister` restores it, and `unregister` removes only a manifest that
+names this home's launcher. The vendor route stays as `cua chrome register --vendor [--replace]` and `unregister
+--vendor`, the existing functions unchanged. Switching a home's route re-labels every binding: `profiles.json`
+bindings gain `route`, `profiles list`/`profiles_list` report `rebind_required` for a binding made under the other
+route, and `cua profiles bind` re-binds.
 
-`cua serve` (browser surface) adds `BROWSER_USE_BACKEND_PATHS` as above; nothing else in `src/runtime/launch.mjs`
-changes. `src/profiles/chrome.mjs` exports `CUA_EXTENSION_ID` next to `OPENAI_EXTENSION_ID`; the directory map and the
-profile status checks take the cua id (the vendor id only under the `--vendor` route). The bind rule is unchanged.
+`cua serve` (browser surface) sets `BROWSER_USE_BACKEND_PATHS` as above when the route is `cua` and leaves it unset on
+the vendor route (setting it would hide the vendor's scanned sockets). `src/profiles/chrome.mjs` re-exports
+`CUA_EXTENSION_ID` from `src/chrome/extension.mjs`; the directory map and the presence check take the route's id, and
+for the cua id **presence** is `<profile>/Extensions/<id>/` *or* `<profile>/Local Extension Settings/<id>/`
+(unpacked loads only have the second). The bind rule is unchanged.
 
-Doctor rows: `chrome.extension.<key>` reports the cua extension's presence in the profile directory;
-`chrome.host.registered` reports the `io.github.ssfskim.cua` manifest and whether its path is cua's launcher;
-`chrome.hosts.live` counts sockets in `$CUA_HOME/chrome/backends/` that accept a connection (a dead socket file is
-removed, not counted); `codex.login` becomes `skip` with the text "not needed: the cua extension route needs no Codex
-login (the ChatGPT extension route does)" unless the vendor route is registered, in which case it stays as today.
-`chrome.host.config` (the vendor host's config file) is reported only under the vendor route.
+Doctor rows: `chrome.extension.<key>` uses that presence rule; `chrome.host.registered` reports the
+`io.github.ssfskim.cua` manifest, whether its path is this home's launcher, and whether the launcher's node and
+`host.mjs` targets still exist (a plugin update moves the checkout); `chrome.hosts.live` counts sockets in
+`chrome/b/` that accept a connection within 500 ms (a file refused with `ECONNREFUSED` is removed; a timeout is
+reported, not removed) — doctor's header note "never connects" is amended for this one row; `codex.login` is `skip`
+with the text "not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)" on the cua
+route and unchanged on the vendor route; `chrome.host.config` is reported only on the vendor route.
 
 ### Distribution
 
-`npm run extension:pack` zips `extension/` to `dist/cua-extension-<version>.zip` (no build step: the directory is the
-extension). The owner lists it on the Chrome Web Store as **unlisted** (developer registration, one-time fee, upload,
-review of a few days): reachable by link, auto-updating, installable by enterprise policy on Linux. Until the listing
-is live, and on developer machines, the extension is loaded unpacked from `<checkout>/extension`
-(`chrome://extensions` → Developer mode → Load unpacked), or on Linux by `--load-extension=<checkout>/extension` on
-Chrome's command line, which `deploy/cloud-vm/cua-provision.sh` can set because it owns the desktop session's Chrome
-launch. After listing, the template's `ExtensionInstallForcelist` names `CUA_EXTENSION_ID` with the Web Store update
-URL (the line that names the OpenAI id today). The `key` in the manifest keeps the id identical across all three.
+`npm run extension:pack` writes `dist/cua-extension-<version>.zip` (the Store upload: `extension/` without the
+`key` field) and, when `CUA_EXTENSION_KEY=<pem path>` is set, `dist/cua-extension-<version>.crx` (CRX3 signed with the
+owner's key, so its id is `CUA_EXTENSION_ID`) and `dist/update.xml` (the Chrome update manifest naming the CRX URL).
+The owner lists the zip on the Chrome Web Store as **unlisted** — developer registration, one-time fee, first upload
+with `key.pem` at the zip root so the Store keeps the id, visibility unlisted, review of a few days — and the Store
+build then auto-updates and is policy-installable. Until then, and for Linux VMs before the listing: a Mac developer
+loads `<checkout>/extension` unpacked (`chrome://extensions` → Developer mode → Load unpacked); a Linux VM
+force-installs the self-hosted CRX through `ExtensionInstallForcelist` with `dist/update.xml` served by the relay
+host (`relay/deploy/update.sh --ext <dist dir>` copies it to a Caddy `file_server` route `/ext/`). After listing, the
+template's force-list line names `CUA_EXTENSION_ID` with the Web Store update URL. The `key` keeps the id identical
+across all three, so registration, binding and doctor never care which one is installed.
 
 ### What users see change
 
-- README "Chrome" section: install the cua extension (Store link or unpacked), `cua chrome register`, `cua profiles
-  add/bind`; the ChatGPT extension, `cua login` and `--replace` move to a "ChatGPT extension route (until removal)"
-  subsection. "The server's Codex login" is rewritten as optional.
+- README "Chrome": install the cua extension (Store link or unpacked), `cua chrome register`, `cua profiles add/bind`;
+  the ChatGPT extension, `cua login` and `--replace` move to a "ChatGPT extension route (until removal)" subsection;
+  "The server's Codex login" becomes optional. `CLAUDE.md`'s line that Chrome is driven "through the original OpenAI
+  extension and host" is updated.
 - `skills/cua-remote/SKILL.md` Part A step 2: browser prerequisites no longer include `cua login`.
-- `deploy/cloud-vm/cua-provision.sh` + README: the owner checklist loses "ChatGPT sign-in" and `cua login --device-auth`;
-  provisioning ends with a browser-ready device.
-- Host notes, `profiles_list`, the secret wrappers (`src/services/browser.mjs`), `verify.mjs` and the acceptance runners:
-  unchanged, because the agent-facing API is the same vendor service.
+- `deploy/cloud-vm/cua-provision.sh` + README: the extension source is a parameter (`store` after listing, `hosted`
+  with the update URL before); the owner checklist loses "ChatGPT sign-in" and `cua login --device-auth`; the wait loop
+  uses the presence rule above.
+- Host notes, `profiles_list`, the secret wrappers (`src/services/browser.mjs`) and `verify.mjs` are unchanged. The
+  acceptance runners change: `scripts/accept-chrome.mjs` takes `--route cua|vendor` (on `cua` the Codex-login gate is
+  skipped and live hosts are counted by sockets), gains cells for the new behaviours, and documents a user-tab
+  exception for acceptance 3; `scripts/accept/linux-chrome.mjs` stops asserting a host under `$CUA_HOME/runtimes`.
 
 ### Out of scope
 
 Replacing the vendor service (option C); removing the vendor route, `cua login`, M12's host placement and
-`chrome.host.config` (a follow-up ticket after the Store listing is live); MAWS's in-app browser; downloads, file
-choosers, page events, WebMCP, browser management (they answer `No handler`, as the vendor's fallbacks expect); the
-cursor overlay and favicon badges; Windows.
+`chrome.host.config` (a follow-up ticket, registered in H5, after the Store listing is live); MAWS's in-app browser;
+downloads, file choosers, page events, WebMCP, browser management, history/bookmarks (they answer `No handler`); the
+cursor overlay and favicon badges; peer code-signature checks on the socket; Windows.
 
 ## Acceptance
 
 All from the repository root unless stated. "Scratch home" means `CUA_HOME=$(mktemp -d /tmp/cua-h.XXXXXX)` with
-`cua install` run in it and **never** `cua login`: it proves the no-login claim. Chrome is the owner's running Chrome;
-profile `personal` is `Default`.
+`cua install` run in it and **never** `cua login`; the negative control is that `$CUA_HOME/state/codex/auth.json` does
+not exist (an existence check only). Chrome is the owner's running Chrome; profile `personal` is `Default`.
 
-1. **No-login browser surface, end to end.** In a scratch home: `cua chrome register` (exit 0, prints the browsers
-   written), the extension loaded unpacked in `personal`, popup shows "host: connected io.github.ssfskim.cua";
-   `cua profiles add personal --chrome-profile Default`, `cua profiles bind personal` → `bound (automatic, by
-   directory)`; `cua doctor --json` → `ok:true`, `codex.login: skip`, `chrome.extension.personal: pass`,
+1. **No-login browser surface, end to end.** In a scratch home: `cua chrome register --replace` (exit 0; prints the
+   browsers written and the previous launcher it recorded), the extension loaded unpacked in `personal` (popup shows
+   "host: connected io.github.ssfskim.cua"); `cua profiles add personal --chrome-profile Default`,
+   `cua profiles bind personal` → `bound (automatic, by directory)` with the extension loaded **unpacked**;
+   `cua doctor --json` → `ok:true`, `codex.login: skip`, `chrome.extension.personal: pass`,
    `chrome.host.registered: pass (cua: io.github.ssfskim.cua …)`, `chrome.hosts.live: pass (1)`;
    `CUA_SHIM_SURFACES=browser node verify.mjs` → exit 0, `problems: []`;
-   `node scripts/accept-chrome.mjs --live --profile personal --report <path>` → every scenario PASS, including the
-   secret-substitution cell (`{{secret:…}}` filled into the loopback form, value absent from the report).
+   `node scripts/accept-chrome.mjs --live --route cua --profile personal --report <path>` → every scenario PASS,
+   including the secret-substitution cell (`{{secret:…}}` filled into the loopback form, value absent from the
+   report) and a cross-origin iframe cell (a locator inside an iframe served from a second loopback port). The report
+   records `goto` latency per navigation. Finally `cua chrome unregister` restores the previous manifest.
 2. **The vendor manifest is untouched.** sha256 of every `com.openai.codexextension.json` under the browsers'
-   `NativeMessagingHosts` before and after 1 is equal.
-3. **User-tab claim.** With a loopback page opened as the user (not by the agent) in `personal`, the agent's
-   `js` lists it through the vendor `user` tabs API, claims it, Chrome shows the debugger infobar, the origin-access
-   elicitation reaches the client and is accepted by the plugin's hook, and the agent reads the page's marker. The
-   tab stays open after `end_task`.
-4. **Turn end.** Within one task the agent creates two tabs and marks one `handoff`; after `end_task` the unmarked
-   tab is closed and the marked one remains, outside the cua tab group's ownership (the popup's held-tab count is 0).
-5. **Several clients.** Two `cua serve` processes on the same host (two Claude Code sessions, or the acceptance runner
-   twice in parallel) each drive their own tab in `personal`; neither sees the other's tab in `getTabs`, and a tab
-   owned by one is refused to the other with `tab owned by another session`.
-6. **Chrome after serve.** With `cua serve` already running, quitting and reopening Chrome makes the profile usable
-   again without restarting `cua serve` (the socket reappears at its pre-listed path).
-7. **Linux, unattended.** `deploy/cloud-vm/create-hetzner.sh` (or the Tart VM `cua-linux` with the same provisioning
-   script) with no ChatGPT sign-in and no `cua login`: `cua doctor --json` `ok:true` with `chrome.hosts.live: pass (1)`,
-   `CUA_SHIM_SURFACES=browser node verify.mjs` exit 0, `node scripts/accept/linux-chrome.mjs` PASS; the printed owner
-   checklist contains neither sign-in step.
-8. **Store build.** `npm run extension:pack` writes `dist/cua-extension-<version>.zip`; installed from the Store
-   (after the owner's listing), `chrome://extensions` shows the same id as the unpacked load, and 1 passes with the
-   Store install. (Gated on the owner's listing; recorded BLOCKED until then.)
-9. **Vendor route unchanged.** `cua chrome register --vendor` behaves as `cua chrome register` did before this
-   change (its tests pass unmodified apart from the flag); `cua doctor` with the vendor route registered shows
-   `codex.login` as before.
-10. `npm test` passes (≥ 785 + the new suites); `node scripts/probe-chrome-contract.mjs --fixtures` still passes.
+   `NativeMessagingHosts` before and after 1 is equal, and after 1's `unregister` the `io.github.ssfskim.cua.json`
+   files are byte-identical to before 1 (or absent, if absent before).
+3. **User-tab claim.** With a loopback page opened as the user in `personal` (`open -n -a "Google Chrome" --args
+   --profile-directory=Default <url>`, not by the agent), the agent's `js` lists it through the vendor `user` tabs
+   API, claims it, the origin-access elicitation reaches the client and the runner answers accept (what the plugin's
+   hook does in Claude Code, proven by #66), Chrome shows the debugger infobar, and the agent reads the page's marker.
+   After `end_task` the tab is open and `<name>.json` lists it under no session.
+4. **Turn end and handoff.** Within one task the agent creates three tabs and marks one `handoff`, one `deliverable`;
+   after `end_task`, `<name>.json` shows: the unmarked tab closed, the deliverable tab open and unowned, the handoff tab
+   open, owned by the session, `attached:false`; the next task's `browser.tabs.list()` in the same session lists the
+   handoff tab.
+5. **Several clients.** Two `cua serve` processes (the runner twice in parallel) each drive their own tab in
+   `personal`; neither lists the other's tab in `getTabs`, and `executeCdp` on the other's tab is refused with
+   `tab owned by another session`.
+6. **Chrome after serve.** With `cua serve` running and a task open, the owner quits and reopens Chrome: the open task's
+   next `js` fails with a classified backend error (no hang beyond the vendor's timeout), `end_task` succeeds, and a
+   new task drives the profile without restarting `cua serve` (the socket reappeared at its pre-listed path).
+7. **Linux, unattended.** `deploy/cloud-vm/create-hetzner.sh` with the `hosted` extension source (or the Tart VM
+   `cua-linux` with the same provisioning script), no ChatGPT sign-in and no `cua login`: `cua doctor --json` `ok:true`
+   with `chrome.hosts.live: pass (1)`, `CUA_SHIM_SURFACES=browser node verify.mjs` exit 0,
+   `node scripts/accept/linux-chrome.mjs` PASS; the printed owner checklist contains neither sign-in step.
+8. **Store build.** `npm run extension:pack` writes the zip (no `key` in its manifest) and, with the owner's key, the
+   CRX and `update.xml` whose id equals `CUA_EXTENSION_ID`; installed from the Store (after the owner's listing),
+   `chrome://extensions` shows that id and 1 passes with the Store install. (The Store half is gated on the owner's
+   listing; recorded BLOCKED until then.)
+9. **Vendor route unchanged, routes switch.** `cua chrome register --vendor` behaves as `cua chrome register` did
+   before this change (its tests pass with the flag added); `cua doctor` on the vendor route shows `codex.login` as
+   before; switching a home from `vendor` to `cua` makes `profiles list` show `rebind_required` until `profiles bind`.
+10. `npm test` passes (≥ 785 + the new suites); `node scripts/probe-chrome-contract.mjs --fixtures` still passes; the
+    host suite pins (one test each): a late `turnEnded` for turn N leaves turn N+1's tabs; a profile with no window
+    creates one unfocused; the port dropping mid-task fails pending requests with `extension disconnected`, runs
+    cleanup and exits; the worst-case default-home socket path is under the limit and an over-long home is refused;
+    an unpacked-style profile fixture counts as present; a host→extension frame over 1 MB is refused.
 
 ## Constraints binding every milestone
 
-- No attribution footers in commits, PRs or issues. Never read or print `auth.json`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN`
-  or anything under a Chrome profile except the extension's own code directory and what `directory-map.mjs` already
-  reads. Never kill Chrome, a host or the owner's processes; never click Chrome dialogs or TCC prompts for the user.
+- No attribution footers in commits, PRs or issues. Never read or print `auth.json`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN`,
+  the extension private key, or anything under a Chrome profile except an extension's own code directory and what
+  `directory-map.mjs` already reads. Never kill Chrome, a host or the owner's processes; never click Chrome dialogs
+  or TCC prompts for the user; Chrome quit/reopen (acceptance 6) is the owner's action.
 - No bypass flags in production: `BROWSER_USE_DISABLE_AMBIENT_NETWORK` and `BROWSER_USE_SECURITY_MODE` appear only
   inside S0 as a measured comparison.
-- Node 22+; no new runtime dependency for the host (Node's `net`, `fs`, the existing `src/mcp` framing helpers or M7's
-  `frame.mjs` promoted into `src/chrome/`); the extension has no dependencies and no build step.
-- The plugin version (`.claude-plugin/plugin.json` + `marketplace.json`) is bumped in H5 (doctor text and README reach
-  plugin users).
-- The vendor route's code paths and tests stay green throughout; this is additive until the removal ticket.
+- Node 22+; no new npm dependency (the host uses `node:net`/`node:fs`/`node:crypto` and `src/chrome/protocol.mjs`,
+  promoted from `scripts/probe/chrome/frame.mjs`; the CRX3 packer is written with `node:crypto`; the extension has no
+  dependencies and no build step). `package.json` `files` gains `extension/`.
+- One branch, one PR: nothing merges to `main` before H5 (between H2 and H4 `main` would default `cua chrome register`
+  to a route the template cannot install). The plugin version (`.claude-plugin/plugin.json` + `marketplace.json`) is
+  bumped in H5.
+- The vendor route's code paths and tests stay green throughout.
 - Do not touch `/Users/new/Developer/GitHub/MAWS`.
 
 ## Plan of Work
 
-### S0 — Spike: the vendor service without the header field, and dead backend paths
+### S0 — Spike: the vendor service without the header field; the extension key
 
-Prototyping; deliverable is knowledge. Questions: (a) with `getInfo` lacking `agentRequestHeaderEnabled`, no Codex
-login (scratch `CODEX_HOME`), and the network at the vendor default (no ambient-network switch), does the real
-vendor service complete `createBrowserTab` + one `Runtime.evaluate` + `turnEnded` against the owned fixture backend?
-(b) Same with `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`, as the comparison. (c) With `BROWSER_USE_BACKEND_PATHS` listing
-one live socket and one path with no listener, does `listBrowsers` return the live one, and is the dead path retried
-on the next `listBrowsers` after a listener appears there? (d) Does `getInfo` need `capabilities` (try without).
-Build: extend `scripts/probe/chrome/vendor-layer.mjs`/`scenarios.mjs` with these scenarios (`--vendor` already launches
-the real service against `backend-server.mjs`). Observe: PASS/FAIL per question in the report JSON. Promote: (a) PASS
-→ the design stands; (a) FAIL but (b) PASS → stop and report to the owner (the design's no-login claim would rest on
-a switch the constraints forbid; that is a fork under the gate). (c) PASS → socket placement as designed; FAIL → the
-fallback in "Socket placement and discovery". Record verdicts in Surprises & Discoveries. Scope edge: no Chrome, no
-extension code.
+Prototyping; deliverable is knowledge plus one artifact. Questions: (a) with `getInfo` lacking
+`agentRequestHeaderEnabled`, no Codex login (scratch `CUA_HOME`, so a scratch `CODEX_HOME`), and the network at the
+vendor default, do session requests (`getTabs`, `createTab`, `attach`) **reach the backend** without an identity
+error, and how long after launch does the first one arrive? (b) The same with `BROWSER_USE_DISABLE_AMBIENT_NETWORK=1`
+(today's harness default), as the comparison. (c) Confirmation of the source reading: with `BROWSER_USE_BACKEND_PATHS`
+naming one live socket and one dead path, `listBrowsers` returns the live one within ~1 s and finds a listener that
+appears at the dead path on the next call. Build: a `vendor-layer.mjs` parameter for the network switch and a scenario
+set that judges "session request reached the backend" rather than the fixture's CDP refusals. Observe: PASS/FAIL per
+question in the report JSON. Promote: (a) PASS → the design stands. (a) FAIL and (b) PASS → stop and report to the
+owner: the no-login claim would rest on a switch the constraints forbid (a fork under the gate). (a) FAIL and (b) FAIL →
+stop: omission is not sufficient; report what the service demanded. (c) FAIL → stop and report (the discovery design
+rests on it). Artifact: generate the extension keypair (`openssl genrsa 2048` → `~/.config/cua/extension-key.pem`
+0600; never print it), derive `CUA_EXTENSION_ID` and the manifest `key` value, and record the id (not the key) in
+Surprises & Discoveries. Scope edge: no Chrome, no extension code, no host code.
 
 ### H1 — The host and its contract with the vendor service
 
-At the end: `node src/chrome/host.mjs` (started by a test harness with a fake native-messaging peer on stdio)
-serves the backend protocol on a socket, and the vendor service, launched by the M7 harness against that socket,
-completes the M7 vendor scenarios plus the new ones. Touches: `src/chrome/host.mjs`, `src/chrome/protocol.mjs` (the
-extension protocol's method table and the JSON-RPC peer, promoted from `scripts/probe/chrome/{frame,adapter}.mjs`),
-`src/chrome/extension.mjs` (`CUA_EXTENSION_ID`, host name constant), `test/chrome-host*.test.mjs` with
-`test/helpers/fake-cua-extension.mjs` (a synthetic extension speaking the extension protocol: tabs, debugger state,
-CDP answers, user-initiated detach, port drop). Decisions: the host is a plain program (`#!/usr/bin/env node` is not
-relied on; the launcher passes the node path); the M7 adapter's ownership and child-session logic is reused by
-promotion, not import from `scripts/`; the fake extension's Chrome error strings are the documented ones
-(`Another debugger is already attached to the tab with id: N`, `No tab with given id N.`, `Debugger is not attached to
-the tab with id: N.`). Not touched: registration, CLI, launch, doctor, the real extension. Proves: the behaviours in
-"Sessions, turns, ownership" and the coverage table (each row pinned by a test), acceptance 5's refusal string, 10's
-fixture suite.
+At the end: the host serves the backend protocol on a socket and is proven two ways: (i) `node:test` suites with a
+fake cua extension on an in-process port, pinning every row of the coverage table and every rule in "Sessions, turns,
+ownership" (acceptance 10's host pins, acceptance 5's refusal string); (ii) the real vendor service, launched by the M7
+harness with a new configuration that spawns `host.mjs` with the fake extension on its stdio, runs a listed scenario
+set with expected statuses (getInfo kept as `chrome`; createBrowserTab → `createTab`+`attach` reach the host; a
+`Runtime.evaluate` answered by the fake extension round-trips; turnEnded closes the created tab; header policy skipped)
+— a probe in a scratch runtime home, not part of `npm test`. Touches: `src/chrome/host.mjs`,
+`src/chrome/protocol.mjs`, `src/chrome/extension.mjs`, `test/chrome-host*.test.mjs`, `test/helpers/fake-cua-extension.mjs`
+(tabs, windows, groups, debuggee state, CDP answers, user-initiated detach, port drop), `scripts/probe/chrome/
+vendor-layer.mjs` (the host configuration), `scripts/probe-chrome-contract.mjs` (`--vendor --backend host`). Decisions:
+the fake extension's Chrome error strings are the documented ones (`Another debugger is already attached to the tab
+with id: N`, `No tab with given id N.`, `Debugger is not attached to the tab with id: N.`); the host's `main` reads
+`CUA_HOME` from the environment the launcher set and refuses to start without it (`home_missing`). Not touched:
+registration, CLI, launch, doctor, the real extension. Proves: acceptance 5's string, 10's host pins; consumes S0's
+id.
 
 ### H2 — Registration, launch, discovery, binding, doctor for the cua route
 
-At the end: `cua chrome register|unregister` manage the cua manifests and launcher (and `--vendor` keeps the old
-behaviour), `cua serve` lists backend paths, `cua profiles` and `cua doctor` know the cua extension id and the socket
-directory. Touches: `src/chrome/registration.mjs` (a second host record alongside the vendor one; `manifestText`
-reused), `src/cli.mjs`, `src/runtime/launch.mjs`, `src/profiles/{chrome,checks,directory-map,inventory}.mjs`,
-`src/runtime/doctor.mjs`, their tests (injected temporary manifest directories, as M12's tests do). Decisions: the
-launcher script records node's real path and the checkout's real path (symlinked `npm link` checkouts must resolve
-to real paths, as `NODE_REPL_TRUSTED_CODE_PATHS` already requires); `registration.json` gains `route`; `codex.login`'s
-`skip` text as in the design; `chrome.hosts.live` probes sockets with a 500 ms connect and removes stale files. Not
-touched: the extension, docs, the cloud template. Proves: acceptance 2 and 9 by tests; 1's doctor rows by tests
-against fixtures; consumes H1's host path and constants.
+At the end: `cua chrome register|unregister` manage the cua manifests, launcher and record (`--vendor` keeps the old
+behaviour through the existing functions), `cua serve` lists backend paths on the cua route, `cua profiles` and
+`cua doctor` know the cua id, the presence rule, the route and the socket directory. Touches: `src/chrome/registration.mjs`
+(new `registerCuaHost`/`unregisterCuaHost` sharing the lock and `manifestText`; `readRecord` untouched),
+`src/cli.mjs`, `src/runtime/launch.mjs`, `src/profiles/{chrome,checks,directory-map,inventory,registry,commands}.mjs`,
+`src/runtime/doctor.mjs`, their tests (injected temporary manifest and profile directories, as M12's tests do; an
+unpacked-style profile fixture). Decisions: as in the design's registration section; `chrome.hosts.live` is the one
+doctor row that connects. Not touched: the extension, docs, the cloud template. Proves: acceptance 2's manifest
+rules, 9, 10's path-length and presence pins, 1's doctor rows (against fixtures); consumes H1's host path and
+constants.
 
-### H3 — The extension, and live acceptance on this Mac
+### H3a — The extension, proven against the real host without Chrome
 
-At the end: `extension/` exists (manifest with `key`, `background.js` service worker, `popup.html`, `popup.js`,
-icons), loads unpacked, connects to the host, and acceptance 1–6 pass live from a scratch home. Touches:
-`extension/`, `scripts/accept-chrome.mjs` and `scripts/accept/chrome-*.mjs` (new cells for user-tab claim, turn-end
-marking, two-client refusal; the runner takes `--route cua|vendor`), `docs/evidence/2026-10-07-own-extension-acceptance.md`.
-Decisions: the extension's JSON-RPC peer is a ~60-line copy of the host's conventions (no shared module: extensions
-cannot import from the checkout); `chrome.debugger.attach` version `"1.3"`; `Target.getTargets` is answered from
-`chrome.debugger.getTargets()` (the vendor extension's one special case); the user-tab acceptance opens the page via
-`open -a "Google Chrome" --args --profile-directory=Default <url>`; the live run needs the owner's Chrome open with
-the extension loaded, so the executor asks the owner once, in one message, to load it (path, profile) before the
-live part and otherwise records BLOCKED. Not touched: Linux, docs, packaging. Proves: acceptance 1–6.
+At the end: `extension/` exists (manifest with `key`, `background.js`, `popup.html`, `popup.js`, icons) and a
+`node:test` loads `background.js` under a `chrome.*` stub (tabs, windows, tabGroups, debugger, runtime, storage,
+alarms) wired to the real `host.mjs` over a pipe, driving the backend protocol end to end: hello/version check,
+createTab → group, attach, executeCdp relay, OOPIF attach by targetId, events, turnEnded cleanup, port drop →
+detach-all, `message_too_large`. Touches: `extension/`, `test/extension-*.test.mjs`, `test/helpers/chrome-stub.mjs`.
+Decisions: the extension's JSON-RPC peer is a ~60-line copy of the host's conventions (extensions cannot import from
+the checkout); `chrome.debugger.attach` version `"1.3"`; `Target.getTargets` is the host's `debugger.getTargets`
+primitive (no extension-side intercept). Not touched: live Chrome, docs, Linux. Proves: 10's extension contract.
+
+### H3b — Live acceptance on this Mac
+
+At the end: acceptance 1–6 pass live from a scratch home. Touches: `scripts/accept-chrome.mjs` and
+`scripts/accept/chrome-*.mjs` (`--route`, the new cells: user-tab claim, turn-end marking, two-client refusal,
+cross-origin iframe, goto latency; the user-tab exception), `docs/evidence/2026-10-07-own-extension-acceptance.md`.
+Decisions: the live run needs the owner once — one message listing: load `<worktree>/extension` unpacked in `Default`,
+and, when asked, quit and reopen Chrome for acceptance 6 — otherwise the affected items are recorded BLOCKED and the
+rest run. Proves: acceptance 1–6.
 
 ### H4 — Linux: the Tart VM and the cloud template
 
-At the end: `deploy/cloud-vm/cua-provision.sh` installs the cua extension (unpacked from `/opt/cua/extension` via
-`--load-extension` until the Store id is live; a `CUA_EXTENSION_SOURCE=store|checkout` parameter in `render.sh`
-decides) and registers the host; the owner checklist drops both sign-in steps; the Tart VM `cua-linux` is switched to
-the cua route and passes. Touches: `deploy/cloud-vm/`, `scripts/accept/linux-chrome.mjs`, `src/chrome/registration.mjs`
-(Linux manifest directories, already listed by `browsersFor`), evidence. Decisions: Chrome's `--load-extension` must
-be on the same command line the desktop session uses (the autostart entry the script writes); the force-list policy
-line is written only for `store`. A throwaway Hetzner run is required (as #76 did), deleted afterwards. Proves:
+At the end: the provisioning script installs the cua extension by force-list from a self-hosted CRX (`hosted`) or the
+Store (`store`), registers the cua host, drops both sign-in steps, and the Tart VM and a throwaway Hetzner VM pass
+acceptance 7. First step, measured before anything else: force-install of an off-store CRX on the VM's branded Chrome
+works (if not, stop and report: the fallback is Chromium/Chrome for Testing in the template, an owner decision).
+Touches: `deploy/cloud-vm/`, `relay/deploy/{Caddyfile,update.sh}` (`/ext/` file server), `scripts/extension-pack.mjs`
+(CRX3 + `update.xml`, needed here before H5's zip), `scripts/accept/linux-chrome.mjs`, evidence. Decisions: the CRX
+is packed on this Mac with the owner's key and uploaded with `update.sh --ext`; the force-list line names
+`CUA_EXTENSION_ID;https://178-104-102-73.sslip.io/ext/update.xml`; the throwaway server is deleted afterwards. Proves:
 acceptance 7.
 
 ### H5 — Packaging, docs, the Store listing, and the acceptance section as written
 
-At the end: `npm run extension:pack`, README/skill/template docs updated, plugin version bumped, and every acceptance
-item run and recorded (8 as BLOCKED until the owner's listing exists; the executor prints the owner's exact steps:
-developer registration, upload of the zip, visibility unlisted, and what to send back — the Store URL — and does not
-wait for it). Touches: `package.json`, `scripts/extension-pack.mjs`, `README.md`, `skills/cua-remote/SKILL.md`,
-`deploy/cloud-vm/README.md`, `.claude-plugin/{plugin,marketplace}.json`, this spec's record. Proves: acceptance 8
-(or BLOCKED), 10, and the re-run of 1–7 on the final branch.
+At the end: `npm run extension:pack` complete (zip without `key`), README/`CLAUDE.md`/skill/template docs updated,
+plugin version bumped, the vendor-route removal ticket registered on the board (blocked by the Store listing), and
+every acceptance item run and recorded (8's Store half BLOCKED until the owner's listing; the executor prints the
+owner's exact steps — developer registration, first upload of the zip with `key.pem` at its root, visibility
+unlisted, and what to send back: the Store URL — and does not wait). Touches: `package.json`, `scripts/extension-pack.mjs`,
+`README.md`, `CLAUDE.md`, `skills/cua-remote/SKILL.md`, `deploy/cloud-vm/README.md`, `.claude-plugin/{plugin,marketplace}.json`,
+this spec's record. Proves: acceptance 8 (zip/CRX half), 10, and the re-run of 1–7 on the final branch.
 
 ## Concrete Steps
 
@@ -372,57 +459,70 @@ Working directory: the worktree of branch `feat/own-chrome-extension`.
 
 ```sh
 npm test                                                       # all pass; counts rise per milestone
-node scripts/probe-chrome-contract.mjs --fixtures --report /tmp/cua-s0-fixtures.json     # 15/15 (H1: more)
-CUA_HOME=$(mktemp -d /tmp/cua-s0.XXXXXX) node bin/cua.mjs install && \
-  CUA_HOME=$CUA_HOME node scripts/probe-chrome-contract.mjs --vendor --report /tmp/cua-s0-vendor.json   # S0 verdicts
-# H3 live (owner's Chrome open, extension loaded unpacked in Default):
-export CUA_HOME=$(mktemp -d /tmp/cua-h3.XXXXXX); node bin/cua.mjs install
-node bin/cua.mjs chrome register            # expect: "registered io.github.ssfskim.cua for chrome, edge, brave, opera, vivaldi"
+node scripts/probe-chrome-contract.mjs --fixtures --report /tmp/cua-s0-fixtures.json      # 15/15
+export CUA_HOME=$(mktemp -d /tmp/cua-s0.XXXXXX); node bin/cua.mjs install
+node scripts/probe-chrome-contract.mjs --vendor --network default --report /tmp/cua-s0-a.json   # S0 (a)
+node scripts/probe-chrome-contract.mjs --vendor --network off --report /tmp/cua-s0-b.json       # S0 (b)
+node scripts/probe-chrome-contract.mjs --vendor --backend host --report /tmp/cua-h1.json        # H1 (ii)
+# H3b live (owner's Chrome open, extension loaded unpacked in Default):
+export CUA_HOME=$(mktemp -d /tmp/cua-h3.XXXXXX); node bin/cua.mjs install; test ! -e "$CUA_HOME/state/codex/auth.json"
+node bin/cua.mjs chrome register --replace   # per-browser table, then "previous launcher recorded: <path>" or "none"
 node bin/cua.mjs profiles add personal --chrome-profile Default && node bin/cua.mjs profiles bind personal
 node bin/cua.mjs doctor --json | jq '.ok, (.checks[] | select(.id | startswith("chrome") or . == "codex.login"))'
-CUA_SHIM_SURFACES=browser node verify.mjs                                   # exit 0, problems: []
+CUA_SHIM_SURFACES=browser node verify.mjs                                    # exit 0, problems: []
 node scripts/accept-chrome.mjs --live --route cua --profile personal --report /tmp/cua-h3.json   # all PASS
 node bin/cua.mjs chrome unregister; rm -rf "$CUA_HOME"
-# H4: ssh cua-linux, same sequence with DISPLAY=:0; deploy/cloud-vm/create-hetzner.sh … then delete the server
-# H5:
-npm run extension:pack                      # dist/cua-extension-<version>.zip
+# H4: ssh cua-linux (DISPLAY=:0), same sequence; deploy/cloud-vm/create-hetzner.sh … --extension hosted; delete the server
+npm run extension:pack                                        # dist/cua-extension-<version>.zip (+ .crx, update.xml with CUA_EXTENSION_KEY)
 ```
 
 ## Interfaces and Dependencies
 
-**`src/chrome/extension.mjs`**: `export const CUA_EXTENSION_ID = '<32 lowercase a–p chars derived from the manifest key>'`,
-`export const CUA_HOST_NAME = 'io.github.ssfskim.cua'`.
+**`src/chrome/extension.mjs`**: `export const CUA_EXTENSION_ID` (32 chars `a–p`, derived as in the design),
+`export const CUA_HOST_NAME = 'io.github.ssfskim.cua'`, `export const PROTOCOL_VERSION = 1`,
+`export function extensionIdFromKey(base64PublicKey)`, `export function socketNameFor(instanceId)` (12 hex chars).
 
-**The extension protocol** (host ↔ extension, JSON-RPC 2.0 over native messaging). Requests from the host:
+**The extension protocol** (host ↔ extension, JSON-RPC 2.0 over native messaging). A `debuggee` is `{tabId}` or
+`{targetId}`. Requests from the host:
 
 | Method | Params | Result |
 |---|---|---|
 | `tabs.query` | `{}` | `[{id, windowId, url, title, active, groupId}]` |
-| `tabs.create` | `{url?, windowId?}` | `{id, windowId}` (created inactive, added to the window's "cua" group) |
+| `tabs.create` | `{url?, windowId?, group:{key, title}}` | `{id, windowId}` (inactive; in the (window, key) group, created if needed) |
 | `tabs.remove` | `{tabId}` | `{}` |
 | `tabs.get` | `{tabId}` | `{id, windowId, url, title, status}` |
-| `tabs.ungroup` | `{tabId}` | `{}` (a marked tab leaves the cua group at turn end) |
-| `group.title` | `{windowId, title}` | `{}` |
-| `debugger.attach` | `{tabId}` | `{}` |
-| `debugger.detach` | `{tabId}` | `{}` |
-| `debugger.sendCommand` | `{tabId, sessionId?, method, params?}` | the CDP result |
+| `tabs.ungroup` | `{tabId}` | `{}` |
+| `group.title` | `{windowId, key, title}` | `{}` |
+| `windows.query` | `{}` | `[{id, focused, type}]` |
+| `windows.create` | `{focused:false}` | `{id}` |
+| `debugger.attach` | `debuggee` | `{alreadyHeld: boolean}` |
+| `debugger.detach` | `debuggee` | `{}` |
+| `debugger.sendCommand` | `{debuggee, sessionId?, method, params?}` | the CDP result |
 | `debugger.getTargets` | `{}` | `chrome.debugger.getTargets()` result |
+| `held` | `{}` | `[debuggee]` |
 
-Notifications from the extension: `hello {extensionId, extensionInstanceId, version}` (first message after connect),
-`debugger.event {tabId, sessionId?, method, params}`, `debugger.detached {tabId, reason}`, `tabs.removed {tabId}`,
-`tabs.updated {tabId, url?, title?, status?}`. Errors carry Chrome's `chrome.runtime.lastError.message` verbatim.
+Notifications from the extension: `hello {extensionId, extensionInstanceId, version, protocolVersion}` (first message
+after connect), `debugger.event {debuggee, sessionId?, method, params}`, `debugger.detached {debuggee, reason}`,
+`tabs.removed {tabId}`, `tabs.updated {tabId, url?, title?, status?}`. Errors carry Chrome's
+`chrome.runtime.lastError.message` verbatim; the host's own refusals are `message_too_large`, `protocol_mismatch`.
 
-**`src/chrome/host.mjs`**: `export async function runHost({stdin, stdout, home, env})` (the program's `main` calls it
-with the process streams); `export function createHost({extension, home, now})` returns `{handleBackendRequest(client,
-message), onExtensionNotification(message), close()}` for tests, where `extension` is `{request(method, params)}`.
+**`src/chrome/host.mjs`**: `export async function runHost({stdin, stdout, home, env})` (the program's `main`);
+`export function createHost({extension, home, now, log})` returning `{handleBackendRequest(client, message),
+clientClosed(client), onExtensionNotification(message), extensionClosed(), status()}` for tests, where `extension`
+is `{request(method, params)}` and a `client` is `{notify(method, params)}`; `status()` is the `<name>.json` shape.
 
-**`src/chrome/protocol.mjs`**: `encodeFrame`, `frameDecoder` (u32 LE length + JSON, the vendor wire; also the
-native-messaging wire), `NO_HANDLER(method)`, `createPeer({send, handlers})`.
+**`src/chrome/protocol.mjs`**: `encodeFrame`, `frameDecoder` (u32 LE length + JSON; the vendor wire and the
+native-messaging wire), `NO_HANDLER(method)`, `createPeer({send, handlers, maxFrameBytes?})`.
 
-**Registration record** `$CUA_HOME/chrome/registration.json`: existing fields plus `route: "cua"|"vendor"`,
-`launcher: <path>`, `backendsDir: <path>`.
+**`src/chrome/registration.mjs`**: `registerCuaHost({home, checkout, nodePath, replace, browsers, io, lockTiming})`,
+`unregisterCuaHost({home, browsers, io, lockTiming})`, `readCuaRecord(home)`. The cua record
+`$CUA_HOME/chrome/cua-registration.json`: `{schema:1, route:'cua', launcher, backendsDir, browsers:{<browser>:
+{manifestPath, previous: <path>|null}}}`. The route of a home: `cua` when the cua record exists and is newer than the
+vendor record's last write, else `vendor` when that exists, else none.
 
-**`cua serve` env** (browser surface): `BROWSER_USE_BACKEND_PATHS` as in "Socket placement and discovery".
+**`profiles.json` bindings** gain `route: 'cua'|'vendor'`; a missing field means `vendor`.
+
+**`cua serve` env** (browser surface, cua route): `BROWSER_USE_BACKEND_PATHS` as in "Socket placement and discovery".
 
 No new npm dependencies.
 
@@ -443,6 +543,21 @@ No new npm dependencies.
   section, both on `opus` general-purpose with the adversarial-reviewer brief (the astra/sol gateways are at their
   usage limits until 2026-10-09); the branch gets `doperpowers:review-code` at the high rung, on `opus` for the same
   reason. Execution through `doperpowers:plan-executor`.
+- Revision (2026-10-07, after both reviews): presence for the cua id includes `Local Extension Settings/<id>` (unpacked
+  loads never appear under `Extensions/`); sockets moved to `chrome/b/<12-hex>.sock` with a register-time length check
+  (macOS `sun_path`); Linux installs a self-hosted CRX by force-list (`--load-extension` is gone from branded Chrome
+  137+); the Store zip carries no `key` and the first upload carries `key.pem`; a separate cua registration record
+  and one route per home (one `registration.json` could not hold both, and `BROWSER_USE_BACKEND_PATHS` hides the
+  vendor's scan); the launcher bakes `CUA_HOME`; OOPIF frames attach by `targetId`; handoff tabs stay owned and resume
+  next turn, `turnEnded` is per `turn_id`, `executeCdp` enforces `timeoutMs` (vendor semantics the agent is taught);
+  per-session tab groups; `windows.create` for a windowless profile; `metadata.extensionId` omitted (M7's rule);
+  `hello` carries a protocol version; H3 split into H3a (stubbed contract) and H3b (live); the `/tmp` fallback dropped
+  (dead listed paths are retried per call, BS:66038–66070).
+- Decision (2026-10-07): the backend socket has no peer code-signature check (the vendor host has one). Threat model:
+  a same-user process is already trusted by cua's allow-all approvals and its 0600 file secret store, and a model cell
+  with the sandbox off can drive Chrome by other means; the 0700 directory is the boundary. Revisit with the trust
+  model. Alternative rejected: `/proc`/`lsof` peer lookups (platform-specific, racy, and not a boundary against the
+  process class that matters).
 
 ## Outcomes & Retrospective
 

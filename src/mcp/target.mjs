@@ -76,14 +76,27 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     return device ? {...result, _meta: {'cua/device': device}} : result;
   }
 
+  // Claude Code shows the model only the structured content of a successful result that has one, dropping its text, so
+  // a note the model must read goes in both.
   function tagged(result, device, fresh) {
     const content = Array.isArray(result?.content) ? result.content : [];
-    const note = {type: 'text', text: `cua: this is a new session on ${device}: its REPL state is fresh (rebind apps and tabs).`};
+    const text = `cua: this is a new session on ${device}: its REPL state is fresh (rebind apps and tabs).`;
+    const structured = result?.structuredContent;
+    const noted = fresh && structured && typeof structured === 'object' && !Array.isArray(structured);
     return {
       ...result,
-      ...(fresh ? {content: [note, ...content]} : {}),
+      ...(fresh ? {content: [{type: 'text', text}, ...content]} : {}),
+      ...(noted ? {structuredContent: {...structured, 'cua/note': text}} : {}),
       _meta: {...(result?._meta ?? {}), 'cua/device': device, ...(fresh ? {'cua/deviceSession': 'new'} : {})},
     };
+  }
+
+  // A devices_use answer: the note (and a device's host notes) in the text for clients that read it, and in the
+  // structured content for Claude Code, which reads only that; the text's JSON line repeats neither.
+  function switched({device, previous, note, hostNotes}) {
+    const fields = {status: 'ok', device, previous};
+    const text = [note, ...(hostNotes === undefined ? [] : ['', hostNotes, '']), JSON.stringify(fields)].join('\n');
+    return {content: [{type: 'text', text}], structuredContent: {...fields, note, ...(hostNotes === undefined ? {} : {hostNotes})}, isError: false};
   }
 
   // ---- the device session and its requests ----
@@ -291,8 +304,8 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     if (wanted === LOCAL) {
       if (current) await leave(current);
       current = null;
-      return respond(msg.id, statusResult({status: 'ok', device: LOCAL, previous},
-        {message: 'cua: every tool now drives this machine (local) again, under the host notes in this server\'s instructions.'}));
+      return respond(msg.id, switched({device: LOCAL, previous,
+        note: 'cua: every tool now drives this machine (local) again, under the host notes in this server\'s instructions.'}));
     }
     const link = await openLink(wanted, signal, {announced: true});
     if (closing) {
@@ -302,9 +315,10 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     if (current) await leave(current);
     current = {name: wanted, link, opening: null, taskOpen: false, pendingWork: 0, inflight: new Set(), ended: false};
     const notes = link.session.initializeResult?.instructions;
-    const message = `cua: every tool (js, js_reset, end_task, secrets_list, profiles_list) now drives ${wanted}, in a new session `
-      + `there (its REPL state is fresh). Its host notes apply until devices_use switches again:\n\n${typeof notes === 'string' && notes ? notes : '(the device sent none)'}\n`;
-    respond(msg.id, {...statusResult({status: 'ok', device: wanted, previous}, {message}), _meta: {'cua/device': wanted}});
+    const note = `cua: every tool (js, js_reset, end_task, secrets_list, profiles_list) now drives ${wanted}, in a new session `
+      + 'there (its REPL state is fresh). Its host notes (hostNotes) apply until devices_use switches again.';
+    const hostNotes = typeof notes === 'string' && notes ? notes : '(the device sent none)';
+    respond(msg.id, {...switched({device: wanted, previous, note, hostNotes}), _meta: {'cua/device': wanted}});
   }
 
   function use(msg) {

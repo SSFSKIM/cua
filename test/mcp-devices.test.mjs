@@ -92,6 +92,8 @@ async function local(t, home, server = {}) {
 }
 
 const use = async (h, name) => (await h.client.call('devices_use', {device: name}).response);
+// A devices_use answer's fields, less its note and the device's host notes (asserted where they are the subject).
+const switchFields = response => { const {note, hostNotes, ...fields} = structured(response); return fields; };
 const code = response => structured(response)?.code;
 
 const credentialFree = (h, ...devices) => {
@@ -156,9 +158,15 @@ test('devices_use opens a session with the local client\'s own initialize params
 
   const switched = await use(h, 'mini');
   assert.equal(switched.result.isError, false);
-  assert.deepEqual(structured(switched), {status: 'ok', device: 'mini', previous: 'local'});
+  const {note, hostNotes, ...fields} = structured(switched);
+  assert.deepEqual(fields, {status: 'ok', device: 'mini', previous: 'local'});
   assert.match(textOf(switched), /every tool .* now drives mini/);
   assert.match(textOf(switched), /Upstream\.\n\nHost notes:/, 'the device\'s own instructions, its host notes included');
+  // Claude Code shows a client only the structured content of a result that has one (its text is dropped), so the
+  // notes are in both, once each.
+  assert.match(note, /every tool .* now drives mini/);
+  assert.match(hostNotes, /^Upstream\.\n\nHost notes:/);
+  assert.equal(textOf(switched).split('Host notes:').length, 2, 'the text carries the notes once');
   const deviceUp = mini.upstreamOf(0);
   assert.deepEqual((await deviceUp.nextRequest('initialize')).params, CLIENT_INIT, 'the device\'s runtime sees the real client');
   assert.deepEqual(structured(await h.client.call('devices_list').response).current, 'mini');
@@ -227,7 +235,9 @@ test('devices_use is refused task_open while a task is open, local or remote; en
   assert.equal(mini.deletes().length, 1, 'end_task ended the device session');
   assert.equal(mini.http.sessions.size, 0, 'and the device released it before end_task answered');
 
-  assert.deepEqual(structured(await use(h, 'local')), {status: 'ok', device: 'local', previous: 'mini'});
+  const returned = structured(await use(h, 'local'));
+  assert.deepEqual({...returned, note: undefined}, {status: 'ok', device: 'local', previous: 'mini', note: undefined});
+  assert.match(returned.note, /drives this machine \(local\) again/, 'said where the model reads it');
   const after = h.upstream.sent.length;
   const back = h.client.call('js', {code: 'hostname()'});
   h.upstream.text(await h.upstream.nextCall('js', {after}), 'macbook.local');
@@ -479,7 +489,7 @@ test('switching from one device to another ends the first device\'s session; the
   const h = harness({server: {devices: deviceDirectory({env: home.env})}});
   await initialized(h);
   await use(h, 'mini');
-  assert.deepEqual(structured(await use(h, 'macbook')), {status: 'ok', device: 'macbook', previous: 'mini'});
+  assert.deepEqual(switchFields(await use(h, 'macbook')), {status: 'ok', device: 'macbook', previous: 'mini'});
   assert.equal(mini.deletes().length, 1);
   assert.equal(mini.http.sessions.size, 0);
   assert.equal(macbook.http.sessions.size, 1);
@@ -619,7 +629,7 @@ test('end_task on a device gone offline answers device_offline with ended:false 
   const ended = await h.client.call('end_task').response;
   assert.deepEqual(structured(ended), {status: 'error', ended: false, code: 'device_offline', device: 'mini'});
   assert.match(textOf(ended), /the device session is closed; devices_use still works/);
-  assert.deepEqual(structured(await use(h, 'local')), {status: 'ok', device: 'local', previous: 'mini'});
+  assert.deepEqual(switchFields(await use(h, 'local')), {status: 'ok', device: 'local', previous: 'mini'});
 });
 
 test('a cancelled devices_use is never answered and leaves the target; a js queued behind a switch can be cancelled and never runs', async t => {
@@ -663,6 +673,7 @@ test('a session end with no task open retries secrets_list once on a new session
   const result = (await listed.response).result;
   assert.equal(result.structuredContent.code, 'secrets_not_configured', 'the device\'s answer');
   assert.equal(result._meta['cua/deviceSession'], 'new');
+  assert.match(result.structuredContent['cua/note'], /new session on mini.*REPL state is fresh/, 'in the structured content too, which is all Claude Code shows');
 });
 
 test('closing the connection answers what is in flight connection_closing: a remote js, and a devices_use still opening', async t => {

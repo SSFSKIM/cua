@@ -945,6 +945,52 @@ test('a message POSTed while a js call waits for the console check reaches the c
   assert.deepEqual(received, ['initialize', 'tools/call', 'notifications/cancelled']);
 });
 
+// The console header (Phase G): a request without a session header doubles as a client's probe of the device
+// (src/remote/client.mjs probeDevice, a session-less POST of ping), so its 400 says whether js would be refused now.
+test('the session-less 400 carries Cua-Console: locked while the console refuses js; unlocked or unreadable, it carries none', async t => {
+  const PING = {jsonrpc: '2.0', id: 1, method: 'ping'};
+  for (const [state, header] of [
+    [{onConsole: true, locked: true}, 'locked'],
+    [{onConsole: false, locked: false}, 'locked'],
+    [{onConsole: true, locked: false}, undefined],
+    [Object.assign(new Error('ioreg failed'), {code: 'console_unreadable'}), undefined],
+  ]) {
+    const read = consoleAs(state);
+    const {http, open, send} = setup(t, {console: read});
+    for (const request of [{body: PING}, {method: 'GET'}, {method: 'DELETE'}]) {
+      const {res, done} = send(request);
+      await done;
+      assert.equal(res.status, 400, JSON.stringify(request));
+      assert.equal(res.headers['cua-console'], header, `${JSON.stringify(state)} ${request.method ?? 'POST'}`);
+      assert.equal(res.json().error.code, -32000);
+    }
+    assert.equal(read.reads, 3, 'the console is read for each session-less request');
+    assert.equal(open.opened.length, 0);
+    assert.equal(http.sessions.size, 0);
+  }
+});
+
+test('an unauthorized probe learns nothing of the console, and requests on a session never carry the header', async t => {
+  const read = consoleAs({onConsole: true, locked: true});
+  const {send, initialize, upstreamOf} = setup(t, {console: read});
+  const probe = send({body: {jsonrpc: '2.0', id: 1, method: 'ping'}, auth: `Bearer ${'d'.repeat(64)}`});
+  await probe.done;
+  assert.equal(probe.res.status, 401);
+  assert.equal(probe.res.headers['cua-console'], undefined);
+  assert.equal(read.reads, 0, 'the bearer is checked before the console is read');
+  const session = await initialize();
+  const ping = send({session, body: {jsonrpc: '2.0', id: 2, method: 'ping'}});
+  upstreamOf(0).reply(await upstreamOf(0).nextRequest('ping'), {});
+  await until(() => ping.res.ended, 'ping on the session');
+  assert.equal(ping.res.status, 200);
+  assert.equal(ping.res.headers['cua-console'], undefined);
+  const unknown = send({session: 'no-such-session', body: {jsonrpc: '2.0', id: 3, method: 'ping'}});
+  await unknown.done;
+  assert.equal(unknown.res.status, 404);
+  assert.equal(unknown.res.headers['cua-console'], undefined);
+  assert.equal(read.reads, 0);
+});
+
 // Real connections: openConnection on a scratch home whose runtime is the fake upstream process.
 test('over real connections, DELETE answers only after the session\'s run entries are released', {skip: !installedHomeSupported}, async t => {
   const home = fakeInstalledHome(t);

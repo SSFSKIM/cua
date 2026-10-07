@@ -2,6 +2,12 @@
 
 ## Open
 
+- **2026-10-07 — `hooks/cua-approve.sh`'s jq branch adds nothing to a fixed answer (minor, plugin bundle review).** With
+  jq present, empty or invalid stdin yields no answer or exit 2 (a deny), where the printf fallback always accepts.
+  Claude Code always sends a JSON payload, so nothing breaks; the jq branch earns its place only when the script is
+  narrowed to test `.message` (README, App approvals). Printing the answer unconditionally, with the whitelist as a
+  commented jq variant, would remove the asymmetry.
+
 - **2026-10-07 — Linux agent unit: what doctor reads is the unit file (minor, issue #58).** (a) A `systemctl --user
   edit cua-agent` drop-in or an unreloaded edit can change what runs while `agent.installed` describes the file; showing
   `DropInPaths` and `NeedDaemonReload` in doctor's rows would close it (`agent status` already shows a pending reload).

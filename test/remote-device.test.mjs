@@ -1,11 +1,11 @@
 // The enrolled device record ($CUA_HOME/remote/device.json) and the two leg credentials derived from its secret.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash, createHmac} from 'node:crypto';
+import {createHash, createHmac, randomBytes} from 'node:crypto';
 import {readFileSync, rmSync, statSync, utimesSync, writeFileSync, mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
-import {checkRelayUrl, credentialMatches, credentialsOf, devicesEntry, enrollDevice, followDevice, readDevice, relayEndpoint} from '../src/remote/device.mjs';
+import {checkRelayUrl, clientSecretKey, credentialMatches, credentialsOf, devicesEntry, enrollDevice, followDevice, readDevice, relayEndpoint} from '../src/remote/device.mjs';
 
 const home = t => { const s = scratch(); t.after(s.cleanup); return s.dir; };
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -79,8 +79,18 @@ test('a relay URL is wss:, or ws: only to a loopback host: anything else carries
   for (const bad of ['https://relay.example/ws', 'not a url', '', 'ws://relay.example/ws', 'ws://192.168.1.20:7800/ws', 'ws://100.92.238.1/ws', 'ws://localhost.example/ws', 'ws://[::2]/ws', 'wss://relay.example/ws#x'])
     assert.throws(() => enrollDevice({home: dir, relayUrl: bad}), {code: 'invalid_relay_url'}, bad);
   assert.equal(readDevice(dir), null);
-  for (const good of ['wss://relay.example/ws', 'wss://10.0.0.1:8443/ws', 'ws://127.0.0.1:7800/ws', 'ws://127.8.9.10/ws', 'ws://localhost:7800/ws', 'ws://[::1]:7800/ws'])
+  for (const good of ['wss://relay.example/ws', 'wss://10.0.0.1:8443/ws', 'ws://127.0.0.1:7800/ws', 'ws://127.8.9.10/ws', 'ws://localhost:7800/ws', 'ws://[::1]:7800/ws', 'wss://[2001:db8::1]/ws', 'wss://203-0-113-7.sslip.io/ws'])
     assert.doesNotThrow(() => checkRelayUrl(good), good);
+});
+
+test('a relay host that is not a plain name or address is refused: the client\'s registration line puts it in a shell', t => {
+  const dir = home(t);
+  for (const bad of ['wss://relay;{touch,pwned};x.example/ws', 'wss://relay$(id).example/ws', 'wss://a`b`.example/ws', "wss://a'b.example/ws"]) {
+    let host;
+    try { host = new URL(bad).hostname; } catch { host = null; }
+    assert.throws(() => enrollDevice({home: dir, relayUrl: bad}), {code: 'invalid_relay_url'}, `${bad} (URL host ${host})`);
+  }
+  assert.equal(readDevice(dir), null);
 });
 
 test('relayEndpoint is the client\'s URL on the enrolled relay: its origin (https for wss, http for loopback ws) and /d/<deviceId>/mcp', t => {
@@ -143,4 +153,9 @@ test('credentialMatches compares the whole credential and nothing else', () => {
   assert.equal(credentialMatches(credential, credential + 'a'), false);
   assert.equal(credentialMatches(credential, undefined), false);
   assert.equal(credentialMatches(credential, ''), false);
+});
+
+test('clientSecretKey is a /secret key for the device: CUA_DEVICE_ and the id, base64url\'s - as _', () => {
+  assert.equal(clientSecretKey('nuadM-MUKSbSN4L59EffLQ'), 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ');
+  for (let i = 0; i < 200; i++) assert.match(clientSecretKey(randomBytes(16).toString('base64url')), /^[A-Za-z_][A-Za-z0-9_]*$/);
 });

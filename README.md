@@ -65,9 +65,21 @@ claude plugin marketplace add SSFSKIM/cua
 claude plugin install cua@cua
 ```
 
-The plugin runs `node cua-shim.mjs`, which is `cua serve`. Then allow the tools in your settings so each call does not
-prompt: `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next
-section. This repository is the plugin's source of truth.
+This repository is its own marketplace, so the installed plugin follows `main` (`claude plugin marketplace update cua`
+picks up a new version). The plugin runs `node cua-shim.mjs`, which is `cua serve`, as the MCP server
+`plugin:cua:cua_repl` with `CUA_SHIM_SURFACES=computer,browser`; its tools are `mcp__plugin_cua_cua_repl__*`. The
+installed copy needs no `npm ci`: `ws`, the one dependency, is loaded only on the relay path of `cua agent`, never by
+`serve` (the suite checks that; a copy without `node_modules` reaches the runtime check). The plugin cannot install the runtime: run
+`cua install` from a checkout once (Install, above), into the same `CUA_HOME`. If you registered `cua serve` yourself
+before (Plain MCP server, below), remove that registration under the name you gave it (`claude mcp remove cua -s user`
+for the example there, or `cua_repl`), or two servers drive the same Mac.
+
+The plugin also carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
+(Remote control), and, where function hooks are enabled (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY`
+command: a value typed into a masked field and stored as `~/.config/claude-secrets/KEY` (mode 600), which the model
+sees only by its key (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
+`"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next section.
+This repository is the plugin's source of truth.
 
 The plugin's copy of cua has no Keychain helper build of its own, so for secrets build it once from a checkout with
 `npm run build:helper` (Swift needed). The build installs the helper as `$CUA_HOME/bin/cua-keychain`, and every copy
@@ -101,33 +113,21 @@ Apart from Claude Code's tool permission, OpenAI's stack asks before an app is f
   `~/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/Library/Application Support/Software/ComputerUseAppApprovals.json`;
   an app on that list is never asked about again from any session or host. One more accept per app, then silence.
 
-To never see the dialog, answer it from an `Elicitation` hook: Claude Code runs the hook before showing the dialog and
-takes its answer as the user's.
+**The plugin answers these dialogs for you, by design.** Its `Elicitation` hook (`hooks/hooks.json`, matcher
+`cua_repl|plugin:cua:cua_repl`) runs `hooks/cua-approve.sh`, which accepts every elicitation cua_repl sends, app and
+site approvals alike; Claude Code runs the hook before it would show the dialog and takes its answer as the user's.
+This follows the owner's trust model (the agent is trusted and cua adds no policy of its own; issues #20 and #36), and
+it is what lets an unattended or headless session (`claude -p`, a remote client) use an app at all. Other servers'
+elicitations are untouched. The script uses `jq` when present and prints the same answer without it, so a missing
+`jq` never leaves a dialog nobody answers.
 
-`~/.claude/hooks/cua-approve.sh`:
-
-```sh
-#!/usr/bin/env bash
-exec jq -c 'if (.message // "" | startswith("Allow Computer Use to use ")) then {hookSpecificOutput:{hookEventName:"Elicitation",action:"accept",content:{}}} else empty end'
-```
-
-`~/.claude/settings.json`:
-
-```json
-"hooks": {
-  "Elicitation": [
-    {
-      "matcher": "cua_repl|plugin:cua:cua_repl",
-      "hooks": [{ "type": "command", "command": "bash $HOME/.claude/hooks/cua-approve.sh", "timeout": 10 }]
-    }
-  ]
-}
-```
-
-The `startswith` test limits the hook to app approvals; anything else the server asks (audio recording) still shows
-the dialog. To silence only some apps, match their names instead, for example `test("\"(Notes|TextEdit)\"")`. Be
-clear about what the hook removes: the model can then bind any app OpenAI's policy allows, and binding hands it that
-app's whole front window (see Use).
+Be clear about what it removes: the model can bind any app or site OpenAI's policy allows, and binding hands it that
+app's whole front window (see Use). To narrow it, edit `hooks/cua-approve.sh` in your copy to test `.message` and
+print nothing for the rest (empty output leaves the dialog to you), for example
+`jq -c 'if (.message // "" | startswith("Allow Computer Use to use ")) then {hookSpecificOutput:{hookEventName:"Elicitation",action:"accept",content:{}}} else empty end'`;
+to drop it, remove the `Elicitation` entry from the plugin's `hooks/hooks.json` (an edit to the installed copy lasts
+until the next plugin update). Without the plugin, register the same script yourself under `hooks.Elicitation` in
+`~/.claude/settings.json` with that matcher and `"command": "bash /path/to/cua/hooks/cua-approve.sh"`.
 
 ## Use
 
@@ -475,7 +475,8 @@ your GUI login session (a launchd job; on Linux a systemd user unit, see "Linux"
 on an address of the Mac (`--http`, for a LAN or a tailnet), or through a small relay you host that the Mac dials out
 to (`--relay`), so the Mac needs no open port. The design is
 `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`; the live proof (Mac mini driven from a MacBook, LAN
-and relay) is `docs/evidence/2026-10-06-phase-e-remote-acceptance.md`.
+and relay) is `docs/evidence/2026-10-06-phase-e-remote-acceptance.md`. An agent asked to set up a device or drive one follows the
+plugin's `cua-remote` skill (`skills/cua-remote/SKILL.md`), which runs these steps in order.
 
 **While a remote agent drives it, the Mac must be unlocked and awake.** A locked screen or a session that is not the
 one on the screen cannot receive input or render screenshots, so the agent refuses `js` and `js_reset` there with the
@@ -496,7 +497,10 @@ node bin/cua.mjs remote show                                     # device id, re
 once, the **client credential** (what a client presents as its bearer), the `claude mcp add` line that registers it
 (on the relay's endpoint when a relay is enrolled, else on this Mac's address; see 4) and the line for the relay's
 `devices.json` (SHA-256 hashes only); `--json` prints `{deviceId, clientCredential, devicesEntry, relayUrl,
-relayEndpoint}`. Nothing prints the client credential again: keep it where the client will use it. Both legs get their
+relayEndpoint, clientSecretKey, clientRegisterCommand}`, the last two being the `/secret` key a client keeps the
+credential under and the registration that reads it from there (see 4; `remote show --json` prints both again; the
+command is `null` without a relay, since the address a direct client uses is one only you know). Nothing
+prints the client credential again: keep it where the client will use it. Both legs get their
 own credential derived from the secret, so the copy a client holds cannot be used to pose as the Mac to the relay.
 
 The relay URL is `wss://` (the relay behind TLS), or `ws://` only to a loopback address such as a relay on the same
@@ -579,6 +583,14 @@ show` prints the relay one again):
 claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"
 claude mcp add --transport http cua_repl http://<the Mac's address>:7801/mcp --header "Authorization: Bearer <client credential>"   # direct
 ```
+
+To keep the credential out of shell history and the transcript, store it on the client with `/secret <clientSecretKey>`
+(the key `enroll --json` names: `CUA_DEVICE_` and the device id, `-` as `_`) and register with the
+`clientRegisterCommand` it printed, which reads it in place:
+`--header "Authorization: Bearer $(cat ~/.config/claude-secrets/<clientSecretKey>)"` (for direct `--http`, write that
+header into the second line above yourself). The shell expands it once, at registration, so after a `--rotate` store
+the new value, `claude mcp remove cua_repl` in the scope it was added to (`claude mcp add` refuses a name that
+exists), and register again.
 
 The name matters: permission rules (`"mcp__cua_repl__*"` under `permissions.allow`) and the app-approval hook above
 (matcher `cua_repl`) match the server name; under another name the hook does not answer, and every first use of an

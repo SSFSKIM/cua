@@ -21,11 +21,15 @@ const isLoopback = host => host === 'localhost' || host === '[::1]' || /^127(\.\
 // A relay URL is wss:, or ws: only to this Mac's loopback (a relay on the same Mac, or a test): over ws: the device
 // credential and every client bearer would cross the network in clear. A #fragment is refused too, as the WebSocket
 // client refuses it.
+// The host is a plain name or address too: the client's registration line (`remote enroll --json`) carries it into a
+// shell, and a URL host may hold shell syntax (`;`, `$`, braces).
+const PLAIN_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])$/;
+
 export function checkRelayUrl(relayUrl) {
   let url;
   try { url = new URL(relayUrl); } catch {}
-  if (url?.protocol !== 'wss:' && !(url?.protocol === 'ws:' && isLoopback(url.hostname)) || url.hash)
-    fail('invalid_relay_url', `the relay URL must be wss://, or ws:// to a loopback address, without a #fragment (got ${JSON.stringify(relayUrl)})`, {hint: 'put the relay behind TLS and enrol it as wss://<relay>/ws, for example cua remote enroll --relay wss://relay.example/ws'});
+  if (url?.protocol !== 'wss:' && !(url?.protocol === 'ws:' && isLoopback(url.hostname)) || url.hash || !PLAIN_HOST.test(url.hostname))
+    fail('invalid_relay_url', `the relay URL must be wss://, or ws:// to a loopback address, on a plain host name or address, without a #fragment (got ${JSON.stringify(relayUrl)})`, {hint: 'put the relay behind TLS and enrol it as wss://<relay>/ws, for example cua remote enroll --relay wss://relay.example/ws'});
 }
 
 // The URL a client registers to reach this device through its relay: the relay's origin (https for wss:, http for a
@@ -35,6 +39,10 @@ export function relayEndpoint(record) {
   const url = new URL(record.relayUrl);
   return `${url.protocol === 'wss:' ? 'https:' : 'http:'}//${url.host}/d/${record.deviceId}/mcp`;
 }
+
+// The key a client stores this device's client credential under with the cua plugin's `/secret` (hooks/mods/secrets.tsx,
+// ~/.config/claude-secrets/<KEY>). Keys are [A-Za-z_][A-Za-z0-9_]* and a device id is base64url, so '-' becomes '_'.
+export const clientSecretKey = deviceId => `CUA_DEVICE_${deviceId.replaceAll('-', '_')}`;
 
 export function readDevice(home) {
   let text;

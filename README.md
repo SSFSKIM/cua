@@ -127,9 +127,9 @@ until the next plugin update). Without the plugin, register the same script your
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns OpenAI's API document to the model, which then writes small JavaScript cells against the `cua`
-API. The server adds host notes to the server instructions covering what that document leaves out: how to run a
-task (see Operating guidance for agents) and the native quirks (one approval per app, index-first addressing,
-dropping an app handle after quitting it, `typeText` and emoji, and so on).
+API. The server adds rules covering what that document leaves out: how to run a task, in the host notes it appends to
+the server instructions (see Operating guidance for agents), and the native quirks (index-first addressing, dropping
+an app handle after quitting it, `typeText` and emoji, and so on), ahead of OpenAI's text in the `js` description.
 
 The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (the keys of your
 stored secrets, never values; see Secrets). Calls on one connection form a task until the model calls `end_task`, which waits for
@@ -247,10 +247,10 @@ OpenAI's browser service. It reaches your running Chrome through OpenAI's Chrome
 agent works in your real profiles: their cookies, signed-in sessions, settings and password manager stay where they
 are, and nothing is copied or migrated. The default (`computer`) is unchanged: no browser API, no browser environment.
 
-With the browser surface the model gets a fifth tool, `profiles_list`, OpenAI's browser API in the `js` description,
-and the Chrome host notes: select only a profile `profiles_list` returned and never pick one for you, use Playwright
-locators for input, loop short waits past the 3 s browser action cap, treat page evaluation as read-only, give tab
-creation a long limit (see Operating guidance for agents).
+With the browser surface the model gets a fifth tool, `profiles_list`, whose description carries the Chrome rules:
+select only a profile `profiles_list` returned and never pick one for you, use Playwright locators for input, loop
+short waits past the 3 s browser action cap, treat page evaluation as read-only, give tab creation a long limit (see
+Operating guidance for agents). OpenAI's browser API is in the `js` description.
 
 ### The server's Codex login
 
@@ -326,7 +326,7 @@ profile's backend (Enter cancels); elsewhere it prints the same listing and exit
 bind <key> --extension-instance-id <id>`. A pick is accepted only for a backend that is live now, and refused when its
 store places it in another profile directory or, with no placement, when the runtime labels it as another profile. A
 single live backend is never bound without the store or the label; cua never chooses between profiles for you, and
-neither does the agent (its host notes say so).
+neither does the agent (the rules in `profiles_list`'s description say so).
 
 `--dry-run` makes the same decision and prints it as `would bind ...` without recording anything. `--json` returns the
 listing with each candidate's `chromeProfile` (`{directory, name, thisProfile}`, or null when no store accounts for
@@ -382,7 +382,7 @@ mean with `cua.getBrowser({extensionInstanceId})` (calling `profiles_list` again
 with `cua.createBrowserTab(...)`. `profiles_list` is the readiness gate: it hands out only a live profile's instance
 id, and for one that is not ready it tells the agent to pass the reason's step on to you. A host that exits after
 that check makes the selection fail inside the runtime with OpenAI's own "The Chrome instance is unavailable."; the
-agent's next `profiles_list` then names the cause. Three rules, also in the host notes:
+agent's next `profiles_list` then names the cause. Three rules, also in `profiles_list`'s description:
 
 - Tabs the extension creates are DOM-only: fill and click with `tab.playwright` locators (for example
   `tab.playwright.getByLabel("Email").fill(...)`, `tab.playwright.getByRole("button", {name: "Sign in"}).click()`).
@@ -477,7 +477,7 @@ configuration) and `codex.login`.
 ## Remote control
 
 `cua agent` lets an MCP client on another machine, typically a Claude Code session in a cloud VM, drive this Mac with
-exactly the tools and host notes it would have locally (`js`, `js_reset`, `end_task`, `secrets_list` and, with the
+exactly the tools and rules it would have locally (`js`, `js_reset`, `end_task`, `secrets_list` and, with the
 browser surface, `profiles_list`), one runtime per session, cleaned up the same way. The Mac runs a resident agent in
 your GUI login session (a launchd job; on Linux a systemd user unit, see "Linux"), and the client reaches it over MCP Streamable HTTP in one of two ways: directly
 on an address of the Mac (`--http`, for a LAN or a tailnet), or through a small relay you host that the Mac dials out
@@ -622,8 +622,9 @@ Then, in any session of the plugin's server (`mcp__plugin_cua_cua_repl__*`):
   "https://<relay>", "status": "online"}]}`. A status is `online`, `offline`, `locked` (the device's screen) or
   `unauthorized`, with a `code` where it says more (`credential_missing`, `relay_unreachable`, `timeout`). A probe is
   one authenticated `ping` without a session; it never starts the device's runtime or evicts its client.
-- `devices_use {"device": "mini"}` opens a session on the device and answers with the device's own host notes (a
-  Linux device's differ), which apply while it is the target. From then on `js`, `js_reset`, `end_task`,
+- `devices_use {"device": "mini"}` opens a session on the device and answers with the device's own host notes and its
+  own `js` and `profiles_list` descriptions, where its surface rules are (a Linux device's differ); they apply while it
+  is the target. From then on `js`, `js_reset`, `end_task`,
   `secrets_list` and `profiles_list` run there; their results come back as the device produced them, tagged
   `_meta["cua/device"]`. The device's approvals reach this client as elicitations, which the plugin's hook answers as
   it does local ones (App approvals).
@@ -845,7 +846,7 @@ lack of `DISPLAY`.
 
 - **Apps are bound by window.** Use `cua.getApp({windowId})` with an id from `listWindows()`. No app asks for
   approval, so one connection can drive every window of the session. `DISPLAY` and `XAUTHORITY` reach the runtime, so
-  a model cell can talk to X directly. The trusted wrapper is not a boundary on Linux. The host notes say so.
+  a model cell can talk to X directly. The trusted wrapper is not a boundary on Linux. The `js` description says so.
 - **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
   they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
   `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
@@ -868,8 +869,17 @@ lack of `DISPLAY`.
 The first real task run through `cua serve`, a graded ten-question assignment in an existing signed-in Chrome profile,
 finished with full marks and was still slow and rough, mostly from agent technique and undocumented API semantics
 rather than transport faults (`docs/evidence/2026-10-05-homework-1b-dogfooding.md`). These rules come from it. The
-host notes carry each one in a line (the server instructions are capped at 2,048 characters, the runtime's own
-included); this section is the longer form, for whoever writes prompts, skills or controllers around cua.
+model gets each one as a line, in one of two places. The rules for every call on every surface (when to use cua,
+`end_task`, one controller, observe-act-verify, batching and bounded waits, cancellation, approvals, secrets, devices)
+are the host notes in the server instructions, which Claude Code caps at 2,048 characters with the runtime's own
+line included; they stay under 1,000, with room to grow. A surface's own rules are in the description of the tool
+they govern, which the model reads before calling it: the Chrome rules in `profiles_list`'s, the computer rules
+(macOS or Linux) in `js`'s, ahead of OpenAI's text, and the device rule in `devices_use`'s. Claude Code keeps a
+description's first 2,048 characters too, so cua's lines come first. OpenAI's `js` text with the browser surface
+(2,847 characters with the browser alone, 2,952 with both, on the current pin) runs past that and loses its tail
+either way; what cua's lines push out is its in-app, MCP Apps and named-browser options, which cua's Chrome route does
+not use, and the first `js` call returns the whole API document. This section is the longer form, for whoever writes
+prompts, skills or controllers around cua.
 
 Every surface:
 
@@ -919,7 +929,7 @@ Chrome (browser surface):
   the task runs, and a blur-sensitive listbox stayed open across idle gaps of up to two minutes (issue #26). A
   `no_matches` on it means the site closed it (a timer, hover-out, a re-render): open and select in the same call.
 
-Beyond the host notes, the report's other lessons for task design: prefer focused reads (one tab, one element) over
+Beyond these rules, the report's other lessons for task design: prefer focused reads (one tab, one element) over
 whole inventories and full snapshots, which cost time and expose unrelated content; hand timed tasks whose subject is
 the user's own response to the user rather than simulate them; and before a consequential, irreversible click,
 confirm with the user and do not retry it blindly after a timeout.

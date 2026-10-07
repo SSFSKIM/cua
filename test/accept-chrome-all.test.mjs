@@ -8,7 +8,7 @@ import {mkdirSync, readFileSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
-  desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
+  desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, browserRulesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
   PHASE_C_MODULES, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck,
   scratchListCheck, slotStates, tapTestStatus, matrixChecks, verifyCheck, writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
@@ -518,12 +518,15 @@ test('the scratch scenario passes through the real CLI against the fixture, and 
   assert.deepEqual(statuses(adds('empty')), ['FAIL', 'FAIL', 'FAIL']);
 });
 
-test('the host notes must carry the three browser rules within the instructions limit', () => {
-  const notes = 'select it with cua.getBrowser({extensionInstanceId}). use tab.playwright locators. give that js call timeout_ms of at least 60000. If it times out, a tab may still have opened';
-  assert.equal(hostNotesCheck(notes).status, 'PASS');
-  assert.equal(hostNotesCheck(notes.replace('tab.playwright', 'typeText')).status, 'FAIL');
-  assert.equal(hostNotesCheck(notes + 'x'.repeat(2048)).status, 'FAIL');
-  assert.equal(hostNotesCheck(undefined).status, 'FAIL');
+test('profiles_list\'s description must carry the browser rules, and the instructions stay within their limit', () => {
+  const description = 'select it with cua.getBrowser({extensionInstanceId}). use tab.playwright locators. give that js call timeout_ms of at least 60000. If it times out, a tab may still have opened';
+  const tools = text => [{name: 'js', description: 'js'}, {name: 'profiles_list', description: text}];
+  assert.equal(browserRulesCheck('Host notes.', tools(description)).status, 'PASS');
+  assert.equal(browserRulesCheck('Host notes.', tools(description.replace('tab.playwright', 'typeText'))).status, 'FAIL');
+  assert.equal(browserRulesCheck('Host notes.', tools('x'.repeat(2048) + description)).status, 'FAIL', 'past the cut');
+  assert.equal(browserRulesCheck('x'.repeat(2049), tools(description)).status, 'FAIL');
+  assert.equal(browserRulesCheck(description, [{name: 'js', description: 'js'}]).status, 'FAIL', 'rules in the instructions only');
+  assert.equal(browserRulesCheck(undefined, tools(description)).status, 'FAIL');
 });
 
 test('profiles_list must equal the registry: keys, readiness, reasons, instance ids only when ready, no directories', () => {

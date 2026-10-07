@@ -1,10 +1,10 @@
 // The browser surface as the model sees it (M11, acceptance C1/C4 at the protocol level): with the browser surface
-// the server adds profiles_list and the Chrome host notes; by default nothing changes. The settings parser maps
-// CUA_SHIM_SURFACES to the launcher's surfaces.
+// the server adds profiles_list, whose description carries the Chrome rules; by default nothing changes. The settings
+// parser maps CUA_SHIM_SURFACES to the launcher's surfaces.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {assertModelSeesText, harness, initialized, UPSTREAM_TOOLS, structured} from './fixtures/mcp-harness.mjs';
-import {DEFAULT_HOST_NOTES, LINUX_HOST_NOTES, hostNotesFor, SECRETS_LIST_TOOL} from '../src/mcp/surface.mjs';
+import {DEFAULT_HOST_NOTES, LINUX_HOST_NOTES, hostNotesFor, jsRulesFor, SECRETS_LIST_TOOL} from '../src/mcp/surface.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
@@ -105,77 +105,134 @@ test('a registry that cannot be read is a value-free error, not an empty list', 
   assert.deepEqual(structured(response), {status: 'error', code: 'profiles_invalid'});
 });
 
-// The operating rules from the Homework 1b dogfood (issue #23,
-// docs/evidence/2026-10-05-homework-1b-dogfooding.md): the general ones on every surface, the Chrome ones with the
-// browser surface only.
+// Where each operating rule lives (issue #73; the rules come from the Homework 1b dogfood, issue #23,
+// docs/evidence/2026-10-05-homework-1b-dogfooding.md, and the later phases). The server instructions carry the rules
+// for every call on every surface, well inside Claude Code's 2,048-character cap on them; a surface's own rules are in
+// the description of the tool they govern (profiles_list for Chrome, js for the computer, devices_use for devices),
+// ahead of anything Claude Code's 2,048-character cap on a description would cut.
 const GENERAL_RULES = {
+  'use it when the GUI is the only way; the first js call returns the API docs': /the first js call returns the API docs/,
   'call end_task when the task is done': /Call end_task as soon as the task is done, before your final reply/,
+  'an end_task error spends the connection': /An error spends the connection: report it/,
   'one serial controller': /One controller per task, one js call at a time\./,
+  'only timeout_ms stops a running cell': /Only timeout_ms stops a running cell, not cancelling/,
   'observe, act, verify': /Observe, act, verify: a call returning is not success/,
   'stop after an unchanged state': /If the state is unchanged, stop and find out why rather than repeat/,
+  'batch deterministic steps': /Batch deterministic steps\./,
   'readiness waits, not fixed delays': /Wait for a visible readiness condition in a bounded poll, not a fixed delay/,
   'never read the secret store; type references': /Never read ~\/\.config\/claude-secrets; type secrets as \{\{secret:KEY\}\}/,
+  'the surface rules are in the tool descriptions': /Each tool's description carries the rules for its surface/,
 };
+const MACOS_APPROVAL = /Apps ask for approval once per connection; report a declined app, don't retry\./;
+const DEVICES_RULE = /devices_use moves every tool to that machine, under the notes and descriptions it returns; end_task first\./;
 const BROWSER_RULES = {
   'getBrowser only with an id from profiles_list, which is asked again on failure': /cua\.getBrowser\(\{extensionInstanceId\}\) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again/,
   'never pick or bind a profile': /Never pick or bind a profile for the user/,
-  'DOM-only tabs': /tab\.playwright/,
+  'DOM-only tabs': /Chrome tabs are DOM-only: tab\.playwright locators, not native input/,
   'keys go to a focusable element, not a frame body, and cua.type pastes': /never a frame body; tab\.cua\.type pastes/,
   'the fixed 3 s browser action cap and how to wait longer': /Locator actions, waits and evaluate stop at 3 s \(timeoutMs can only shorten it\); to wait longer, loop short waits to your own deadline under a larger js timeout_ms\./,
   'read-only evaluate': /evaluate is read-only: no fetch, no require, objects are non-extensible\./,
-  'createBrowserTab limit': /timeout_ms of at least 60000/,
-  'leftover tab': /tab may still have opened/,
-  'closing the only window unloads the profile and its host': /closing your tab or end_task unloads it; mark a tab handoff/,
+  'createBrowserTab limit': /createBrowserTab can take 60 s \(js timeout_ms of at least 60000\)/,
+  'leftover tab': /tab may still have opened: tell the user, don't retry/,
+  'closing the only window unloads the profile and its host': /closing your tab or end_task unloads it; mark a tab handoff to keep it/,
 };
-
-test('the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters', async () => {
-  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
-    const notes = hostNotesFor(surfaces, {platform: 'darwin'});
-    const browser = surfaces.includes('browser');
-    for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `${surfaces.join()}: ${rule}`);
-    for (const [rule, pattern] of Object.entries(BROWSER_RULES)) {
-      if (browser) assert.match(notes, pattern, `${surfaces.join()}: ${rule}`);
-      else assert.doesNotMatch(notes, pattern, `${surfaces.join()} has no Chrome rule: ${rule}`);
-    }
-    const h = harness({server: {surfaces, hostNotes: notes, profiles: {list: () => []}}});
-    const instructions = (await initialized(h)).result.instructions;
-    assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${notes}`);
-    assert.ok(instructions.length <= 2048, `${surfaces.join()}: ${instructions.length} characters`);
-  }
-  assert.doesNotMatch(hostNotesFor(['browser'], {platform: 'darwin'}), /osascript|getAXState\(\) on it relaunches/, 'native-only notes stay out of a browser-only connection');
-  assert.ok(hostNotesFor(['computer', 'browser'], {platform: 'darwin'}).startsWith(DEFAULT_HOST_NOTES), 'the native notes are kept whole beside the browser ones');
-});
-
-// Phase F: the Linux constant replaces the macOS-only sentences and fits the same 2,048-character budget beside the
-// vendor's line, on every surface combination.
+const BROWSER_POINTER = /Chrome: follow the rules in profiles_list's description/;
+const COMPUTER_RULES = {
+  'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
+  'role names in the system language': /role names are in the system language/,
+  'drop a quit app\'s handle': /Drop a quit app's handle: getAXState\(\) relaunches it\./,
+  'typeText drops emoji: paste those': /typeText drops characters the layout cannot key \(emoji\); paste those and multiline text\./,
+  'js_reset and rebind, never osascript': /If REPL state is confused, js_reset and rebind; never also use osascript\./,
+};
+// Phase F: the Linux rules replace the macOS-only ones.
 const LINUX_RULES = {
-  'bind by X11 window': /cua\.getApp\(\{windowId\}\) with an id from listWindows\(\)/,
+  'bind by X11 window': /cua\.getApp\(\{windowId\}\) with an id from listWindows\(\); if REPL state is confused, js_reset and rebind/,
+  'no setValue or selectText; paste types': /setValue and selectText do not exist; paste types like typeText/,
   'GTK3 text views: pressKey, not typeText or paste': /typeText and paste crash GTK3 text views: type there with pressKey/,
   'X keysyms': /one X keysym per call/,
+  'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
   'no per-app approval': /No app asks for approval: this connection drives every window of the session/,
   'the trusted wrapper is not a boundary': /the trusted wrapper is not a boundary on Linux/,
 };
 const MACOS_ONLY = /macOS|osascript|getAXState|approval once per connection|typeText drops characters|role names are in the system language/;
+const DESCRIPTION_CAP = 2048;
+// A vendor js description longer than the cap, as the browser surface's is (2,847 characters with the browser alone,
+// 2,952 with both, measured on the 2026-10 pin): cua's rules must come before the cut.
+const LONG_VENDOR_JS = `Upstream js description. ${'Vendor text. '.repeat(240)}`;
+// The vendor's js description with the computer surface alone, measured on the same pin (macOS): the default surface's
+// whole description, cua's rules included, stays within the cap.
+const VENDOR_COMPUTER_JS = 1511;
+const COMBINATIONS = ['darwin', 'linux'].flatMap(platform => [['computer'], ['browser'], ['computer', 'browser']]
+  .flatMap(surfaces => [false, true].map(devices => ({platform, surfaces, devices}))));
 
-test('the Linux host notes carry the Linux rules, none of the macOS-only ones, and fit 2048 characters on every surface', async () => {
-  assert.equal(hostNotesFor(['computer'], {platform: 'linux'}), LINUX_HOST_NOTES);
-  for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
-    const notes = hostNotesFor(surfaces, {platform: 'linux'});
-    for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `linux ${surfaces.join()}: ${rule}`);
-    for (const [rule, pattern] of Object.entries(LINUX_RULES)) {
-      if (surfaces.includes('computer')) assert.match(notes, pattern, `linux ${surfaces.join()}: ${rule}`);
-      else assert.doesNotMatch(notes, pattern, `linux ${surfaces.join()} has no computer rule: ${rule}`);
-    }
-    for (const [rule, pattern] of Object.entries(BROWSER_RULES)) if (surfaces.includes('browser')) assert.match(notes, pattern, `linux ${surfaces.join()}: ${rule}`);
-    assert.doesNotMatch(notes, MACOS_ONLY, `linux ${surfaces.join()}`);
-    const h = harness({server: {surfaces, hostNotes: notes, profiles: {list: () => []}}});
-    const instructions = (await initialized(h)).result.instructions;
-    assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${notes}`);
-    assert.ok(instructions.length <= 2048, `linux ${surfaces.join()}: ${instructions.length} characters`);
+async function served({platform, surfaces, devices}) {
+  const h = harness({server: {surfaces, platform, devices: devices ? {} : null, profiles: {list: () => []}}});
+  const instructions = (await initialized(h)).result.instructions;
+  const list = h.client.request('tools/list', {});
+  h.upstream.reply(await h.upstream.nextRequest('tools/list'), {tools: UPSTREAM_TOOLS.map(t => (t.name === 'js' ? {...t, description: LONG_VENDOR_JS} : t))});
+  const tools = Object.fromEntries((await list.response).result.tools.map(t => [t.name, t]));
+  return {instructions, tools};
+}
+
+test('the instructions carry the rules for every call on every surface, no surface\'s own rule, and stay under 1,400 characters', async () => {
+  for (const {platform, surfaces, devices} of COMBINATIONS) {
+    const label = `${platform} ${surfaces.join()}${devices ? ' devices' : ''}`;
+    const {instructions} = await served({platform, surfaces, devices});
+    assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${hostNotesFor(surfaces, {platform, devices})}`, label);
+    for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(instructions, pattern, `${label}: ${rule}`);
+    assert.equal(MACOS_APPROVAL.test(instructions), platform === 'darwin' && surfaces.includes('computer'), `${label}: the per-app approval rule`);
+    assert.equal(DEVICES_RULE.test(instructions), devices, `${label}: the devices rule with the device tools only`);
+    for (const [rule, pattern] of Object.entries({...BROWSER_RULES, ...COMPUTER_RULES, ...LINUX_RULES}))
+      assert.doesNotMatch(instructions, pattern, `${label}: ${rule} is in its tool's description`);
+    assert.ok(instructions.length < 1400, `${label}: ${instructions.length} characters`);
   }
-  assert.equal(hostNotesFor(['browser'], {platform: 'linux'}), hostNotesFor(['browser'], {platform: 'darwin'}), 'the Chrome notes are the same on both');
+  assert.equal(hostNotesFor(['computer'], {platform: 'darwin'}), DEFAULT_HOST_NOTES);
+  assert.equal(hostNotesFor(['computer'], {platform: 'linux'}), LINUX_HOST_NOTES);
+  assert.equal(hostNotesFor(['browser'], {platform: 'linux'}), hostNotesFor(['browser'], {platform: 'darwin'}), 'the browser-only notes are the same on both');
   assert.equal(settingsFrom({}, {platform: 'linux'}).hostNotes, LINUX_HOST_NOTES);
   assert.equal(settingsFrom({}, {platform: 'darwin'}).hostNotes, DEFAULT_HOST_NOTES);
+  assert.equal(settingsFrom({}, {platform: 'darwin', devices: true}).hostNotes, hostNotesFor(['computer'], {platform: 'darwin', devices: true}));
+});
+
+test('each surface\'s rules are in the description of its tool, ahead of the 2,048-character cut, and none is lost', async () => {
+  for (const {platform, surfaces, devices} of COMBINATIONS) {
+    const label = `${platform} ${surfaces.join()}${devices ? ' devices' : ''}`;
+    const {instructions, tools} = await served({platform, surfaces, devices});
+    const seen = name => tools[name]?.description.slice(0, DESCRIPTION_CAP) ?? '';
+    const computer = surfaces.includes('computer');
+    const browser = surfaces.includes('browser');
+
+    // js: cua's rules, then the vendor's description and schema unchanged.
+    const js = tools.js;
+    assert.equal(js.description, `${jsRulesFor(surfaces, {platform})}\n\n${LONG_VENDOR_JS}`, `${label}: cua's rules prepended`);
+    assert.deepEqual(js.inputSchema, UPSTREAM_TOOLS[0].inputSchema, `${label}: the vendor's schema`);
+    assert.ok(jsRulesFor(surfaces, {platform}).length + 2 < DESCRIPTION_CAP, `${label}: cua's rules are never cut`);
+    for (const [rule, pattern] of Object.entries(COMPUTER_RULES)) {
+      if (!(platform === 'linux' && /element indexes/.test(rule))) assert.equal(pattern.test(seen('js')), computer && platform === 'darwin', `${label}: js ${rule}`);
+    }
+    for (const [rule, pattern] of Object.entries(LINUX_RULES))
+      assert.equal(pattern.test(seen('js')), computer && (platform === 'linux' || /element indexes/.test(rule)), `${label}: js ${rule}`);
+    assert.equal(BROWSER_POINTER.test(seen('js')), browser, `${label}: js points to profiles_list's rules`);
+
+    // profiles_list: the Chrome rules, whole.
+    assert.equal(Boolean(tools.profiles_list), browser, label);
+    if (browser) {
+      for (const [rule, pattern] of Object.entries(BROWSER_RULES)) assert.match(seen('profiles_list'), pattern, `${label}: profiles_list ${rule}`);
+      assert.ok(tools.profiles_list.description.length <= DESCRIPTION_CAP, `${label}: profiles_list ${tools.profiles_list.description.length}`);
+    }
+
+    // devices_use: what a switch returns, and that it then applies.
+    assert.equal(Boolean(tools.devices_use), devices, label);
+    if (devices) {
+      assert.match(seen('devices_use'), /returns that machine's host notes \(hostNotes\) and its own js and profiles_list descriptions \(tools\): while it is the target, follow those instead of this server's/, label);
+      assert.match(seen('devices_use'), /Refused with task_open while a task is open: call end_task first/, label);
+      assert.ok(tools.devices_use.description.length <= DESCRIPTION_CAP, label);
+    }
+
+    // Nothing the model sees on Linux carries a macOS-only rule.
+    if (platform === 'linux') for (const text of [instructions, ...Object.keys(tools).map(seen)]) assert.doesNotMatch(text, MACOS_ONLY, label);
+  }
+  assert.ok(jsRulesFor(['computer'], {platform: 'darwin'}).length + 2 + VENDOR_COMPUTER_JS <= DESCRIPTION_CAP, 'the default surface\'s js description is never cut');
 });
 
 test('CUA_SHIM_SURFACES selects computer (default), browser or both, and anything else is refused', () => {
@@ -256,29 +313,4 @@ test('secrets_list teaches the reference on both platforms; on Linux without set
     assert.deepEqual(tool.inputSchema, SECRETS_LIST_TOOL.inputSchema);
     assert.deepEqual(tool.annotations, SECRETS_LIST_TOOL.annotations);
   }
-});
-
-// Phase G: a stdio connection carries the device tools, and one rule joins its notes on every platform and surface,
-// within the same budget measured with the vendor's 63-character first line. Without the device tools (the agent's
-// HTTP sessions) the rule is absent.
-const DEVICES_RULE = /devices_use moves every tool to that machine, under its notes; end_task first\./;
-const VENDOR_LINE = 63;
-
-test('with the device tools the notes add the devices_use rule, keep every other rule and fit 2048 characters', async () => {
-  for (const platform of ['darwin', 'linux']) {
-    for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
-      const label = `${platform} ${surfaces.join()}`;
-      const without = hostNotesFor(surfaces, {platform});
-      const notes = hostNotesFor(surfaces, {platform, devices: true});
-      assert.doesNotMatch(without, /devices_use/, `${label}: no rule without the device tools`);
-      assert.match(notes, DEVICES_RULE, label);
-      assert.equal(notes, `${without}\n${notes.split('\n').at(-1)}`, `${label}: the notes without the device tools, plus the rule`);
-      for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `${label}: ${rule}`);
-      if (surfaces.includes('browser')) for (const [rule, pattern] of Object.entries(BROWSER_RULES)) assert.match(notes, pattern, `${label}: ${rule}`);
-      if (platform === 'linux' && surfaces.includes('computer')) for (const [rule, pattern] of Object.entries(LINUX_RULES)) assert.match(notes, pattern, `${label}: ${rule}`);
-      assert.ok(VENDOR_LINE + 2 + notes.length <= 2048, `${label}: ${VENDOR_LINE + 2 + notes.length} characters`);
-    }
-  }
-  assert.equal(settingsFrom({}, {platform: 'darwin', devices: true}).hostNotes, hostNotesFor(['computer'], {platform: 'darwin', devices: true}));
-  assert.equal(settingsFrom({}, {platform: 'darwin'}).hostNotes, DEFAULT_HOST_NOTES);
 });

@@ -429,11 +429,15 @@ export const BROWSER_RULES = [
   {rule: 'a possible leftover tab after a create timeout', pattern: /tab may still have opened/},
 ];
 
-export function hostNotesCheck(instructions) {
-  if (typeof instructions !== 'string') return check('host notes carry the browser rules', 'FAIL', 'no instructions');
-  const missing = BROWSER_RULES.filter(r => !r.pattern.test(instructions)).map(r => r.rule);
+// Issue #73: the Chrome rules are in profiles_list's description (Claude Code keeps a description's first 2,048
+// characters), and the instructions stay within their own 2,048-character cap.
+export function browserRulesCheck(instructions, tools) {
+  const name = 'profiles_list\'s description carries the browser rules';
+  const description = Array.isArray(tools) ? tools.find(t => t?.name === 'profiles_list')?.description : undefined;
+  if (typeof instructions !== 'string' || typeof description !== 'string') return check(name, 'FAIL', `${typeof instructions === 'string' ? '' : 'no instructions; '}${typeof description === 'string' ? '' : 'no profiles_list description'}`);
+  const missing = BROWSER_RULES.filter(r => !r.pattern.test(description.slice(0, 2048))).map(r => r.rule);
   const ok = !missing.length && instructions.length <= 2048;
-  return check('host notes carry the browser rules', ok ? 'PASS' : 'FAIL', `${instructions.length} characters (limit 2048); ${missing.length ? `missing: ${missing.join('; ')}` : `all present: ${BROWSER_RULES.map(r => r.rule).join('; ')}`}`);
+  return check(name, ok ? 'PASS' : 'FAIL', `instructions ${instructions.length} characters (limit 2048); ${missing.length ? `missing: ${missing.join('; ')}` : `all present: ${BROWSER_RULES.map(r => r.rule).join('; ')}`}`);
 }
 
 // profiles_list over MCP against the registry it reads: the same keys, readiness and reasons, an instance id only when

@@ -69,7 +69,8 @@ server: no registration per device, no reconnect.
    file's, less `.mcp.json`; `--name` overrides). `cua devices list` must show it with its credential stored. Neither
    command prints the credential; never read the config or the store yourself.
 3. **Drive** with the plugin's tools (`mcp__plugin_cua_cua_repl__*`): `devices_list` shows each device's status and
-   the current target; `devices_use <name>` switches every tool to it and returns its host notes, which then apply.
+   the current target; `devices_use <name>` switches every tool to it and returns its host notes and its `js` and
+   `profiles_list` descriptions (its surface rules), which then apply.
    Work as usual, `end_task` when done (it also frees the device for other clients), then `devices_use local` to
    drive this machine again; a switch while a task is open is refused `task_open`.
 

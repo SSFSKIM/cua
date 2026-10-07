@@ -149,8 +149,8 @@ export function assertModelSeesText(response) {
 export const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
 
 // A connection opener for the HTTP handler (createMcpHttp's `open`) serving in-process connections: each session's
-// createServer runs over a fake upstream that answers initialize by itself; everything else waits for the test
-// (`open.opened[i].upstream`). `open.failWith` (a code) makes the next opens fail; `open.negotiate` is the protocol
+// createServer runs over a fake upstream that answers initialize and tools/list by itself; everything else waits for
+// the test (`open.opened[i].upstream`). `open.failWith` (a code) makes the next opens fail; `open.negotiate` is the protocol
 // version the runtime answers initialize with.
 const UPSTREAM_INIT = {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'rmcp', version: '1.5.0'}, instructions: 'Upstream.'};
 
@@ -163,6 +163,7 @@ export function inProcessConnections() {
     upstream.send = msg => {
       send(msg);
       if (msg.method === 'initialize') queueMicrotask(() => upstream.reply(msg, {...UPSTREAM_INIT, ...(open.negotiate ? {protocolVersion: open.negotiate} : {})}));
+      if (msg.method === 'tools/list') queueMicrotask(() => upstream.reply(msg, {tools: UPSTREAM_TOOLS}));
     };
     const server = createServer({input, output, upstream, sessionId, onWithdrawn, diagnostics: () => {}, completionDeadlineMs: 100, teardownBudgetMs: 100});
     const closed = server.closed.then(result => ({...result, listingLeftover: false}));

@@ -13,7 +13,7 @@ import {addDevice} from '../src/remote/devices.mjs';
 import {clientSecretKey} from '../src/remote/device.mjs';
 import {deviceDirectory} from '../src/remote/directory.mjs';
 import {fileStore, storeDir} from '../src/secrets/store.mjs';
-import {harness, initialized, inProcessConnections, structured, textOf, tick, UPSTREAM_TOOLS} from './fixtures/mcp-harness.mjs';
+import {assertModelSeesText, harness, initialized, inProcessConnections, structured, textOf, tick, UPSTREAM_TOOLS} from './fixtures/mcp-harness.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const CLIENT_INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'test-client', version: '0'}};
@@ -135,6 +135,7 @@ test('devices_list: local first and current; each device probed online, locked, 
 
   const response = await h.client.call('devices_list').response;
   assert.equal(response.result.isError, false);
+  assertModelSeesText(response);
   assert.deepEqual(structured(response), {status: 'ok', current: 'local', devices: [
     {name: 'local', status: 'online'},
     {name: 'bare', deviceId: bare.deviceId, relay: bare.relayUrl, status: 'unauthorized', code: 'credential_missing'},
@@ -167,6 +168,7 @@ test('devices_use opens a session with the local client\'s own initialize params
   assert.match(note, /every tool .* now drives mini/);
   assert.match(hostNotes, /^Upstream\.\n\nHost notes:/);
   assert.equal(textOf(switched).split('Host notes:').length, 2, 'the text carries the notes once');
+  assertModelSeesText(switched);
   const deviceUp = mini.upstreamOf(0);
   assert.deepEqual((await deviceUp.nextRequest('initialize')).params, CLIENT_INIT, 'the device\'s runtime sees the real client');
   assert.deepEqual(structured(await h.client.call('devices_list').response).current, 'mini');
@@ -261,6 +263,7 @@ test('the first call after end_task opens a new device session lazily and says i
 
   const noop = await h.client.call('end_task').response;
   assert.equal(structured(noop).status, 'noop');
+  assertModelSeesText(noop);
   assert.equal(noop.result._meta['cua/device'], 'mini');
   assert.equal(mini.posts('initialize').length, 1, 'no session was opened to say noop');
 

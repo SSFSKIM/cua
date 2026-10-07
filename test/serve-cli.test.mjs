@@ -148,10 +148,12 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   const list = await server.request('tools/list');
   assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list', 'devices_list', 'devices_use']);
   const profiles = await server.call('profiles_list');
-  assert.deepEqual(profiles.result.structuredContent, {status: 'ok', profiles: [
+  const {guidance, ...fields} = profiles.result.structuredContent;
+  assert.deepEqual(fields, {status: 'ok', profiles: [
     {key: 'personal', ready: false, reason: 'extension_not_installed'},
     {key: 'school', ready: false, reason: 'profile_directory_missing'},
   ]});
+  assert.match(guidance, /^personal is not ready \(extension_not_installed\): .*\nschool is not ready \(profile_directory_missing\): .*\nTell the user; do not bind or pick a profile for them\.$/);
   await server.call('js', {code: 'hello'});
   const [{start}] = records(home);
   assert.equal(start.env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
@@ -638,7 +640,9 @@ test('a readiness listing whose runtime teardown is unconfirmed makes profiles_l
   const {input, send, reply, served, diagnostics} = boundBrowserServe(t, unconfirmed);
   await reply(1);
   send({id: 2, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}});
-  assert.deepEqual((await reply(2)).result.structuredContent, {status: 'ok', profiles: [{key: 'personal', ready: false, reason: 'backends_unlistable'}]});
+  const {guidance, ...fields} = (await reply(2)).result.structuredContent;
+  assert.deepEqual(fields, {status: 'ok', profiles: [{key: 'personal', ready: false, reason: 'backends_unlistable'}]});
+  assert.match(guidance, /^personal is not ready \(backends_unlistable\): /);
   input.end();
   assert.equal(await served, 1);
   assert.ok(diagnostics.some(l => /readiness listing's runtime could not be confirmed stopped; owned processes may remain/.test(l)), diagnostics.join('\n'));

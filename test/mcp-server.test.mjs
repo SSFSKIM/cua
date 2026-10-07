@@ -2,7 +2,7 @@
 // namespaces, cancellation routing, elicitation forwarding/persistence and image MIME correction.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {harness, initialized, UPSTREAM_TOOLS, textOf, structured, tick} from './fixtures/mcp-harness.mjs';
+import {assertModelSeesText, harness, initialized, UPSTREAM_TOOLS, textOf, structured, tick} from './fixtures/mcp-harness.mjs';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -80,6 +80,7 @@ test('secrets_list returns the provider\'s labels and nothing else', async () =>
   assert.equal(response.result.isError, false);
   assert.deepEqual(structured(response), {status: 'ok', labels: ['a', 'b']});
   assert.deepEqual(JSON.parse(textOf(response)), {status: 'ok', labels: ['a', 'b']});
+  assertModelSeesText(response);
   assert.equal(h.upstream.calls('secrets_list').length, 0);
 });
 
@@ -139,7 +140,9 @@ test('client and internal requests use proxy-owned upstream IDs; responses retur
   await js.response;
   const end = h.client.call('end_task', {}, {id: 2});
   h.upstream.reply(await h.upstream.nextCall('turn_ended'), {content: [{type: 'text', text: '{}'}], isError: false});
-  assert.equal(structured(await end.response).status, 'ended');
+  const ended = await end.response;
+  assert.equal(structured(ended).status, 'ended');
+  assertModelSeesText(ended);
   await tick(10);
   // One response per client request (initialize, two pings, js, end_task) and nothing else.
   const responses = h.client.frames.filter(f => f.method === undefined).map(f => JSON.stringify(f.id)).sort();

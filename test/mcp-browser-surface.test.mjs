@@ -3,7 +3,7 @@
 // CUA_SHIM_SURFACES to the launcher's surfaces.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {harness, initialized, UPSTREAM_TOOLS, structured} from './fixtures/mcp-harness.mjs';
+import {assertModelSeesText, harness, initialized, UPSTREAM_TOOLS, structured} from './fixtures/mcp-harness.mjs';
 import {DEFAULT_HOST_NOTES, LINUX_HOST_NOTES, hostNotesFor, SECRETS_LIST_TOOL} from '../src/mcp/surface.mjs';
 import {settingsFrom} from '../src/mcp/server.mjs';
 import {join} from 'node:path';
@@ -46,10 +46,16 @@ test('with the browser surface, profiles_list is the fifth tool and returns keys
   assert.equal(typeof tool._meta['anthropic/searchHint'], 'string');
   assert.match(tools.find(t => t.name === 'secrets_list').description, /locator\.fill/, 'secret references are documented for Chrome fills too');
   const response = await h.client.call('profiles_list').response;
-  assert.deepEqual(structured(response), {status: 'ok', profiles: [
+  const {guidance, ...fields} = structured(response);
+  assert.deepEqual(fields, {status: 'ok', profiles: [
     {key: 'personal', ready: true, extensionInstanceId: 'inst-a'},
     {key: 'work', ready: false, reason: 'extension_not_installed'},
   ]});
+  // Claude Code shows the model only a successful result's structured content, so the guidance is there, and the text
+  // (for other clients) carries it once, before a JSON line that does not repeat it.
+  assert.equal(guidance, 'work is not ready (extension_not_installed): the OpenAI extension is not installed in this Chrome profile (install it there yourself; cua never does).\nTell the user; do not bind or pick a profile for them.');
+  assert.equal(response.result.content[0].text, `${guidance}\n${JSON.stringify(fields)}`);
+  assertModelSeesText(response);
   assert.ok(!JSON.stringify(response).includes('Profile 8') && !JSON.stringify(response).includes('Default'), 'no directory names');
   assert.equal(h.upstream.calls('profiles_list').length, 0, 'answered by the server');
 });
@@ -65,20 +71,30 @@ test('profiles_list hides a stale, sleeping or unverifiable binding\'s instance 
   await initialized(h);
   const response = await h.client.call('profiles_list').response;
   assert.equal(response.result.isError, false);
-  assert.deepEqual(structured(response), {status: 'ok', profiles: [
+  const {guidance: text, ...fields} = structured(response);
+  assert.deepEqual(fields, {status: 'ok', profiles: [
     {key: 'home', ready: false, reason: 'host_not_live'},
     {key: 'personal', ready: false, reason: 'binding_stale'},
     {key: 'school', ready: false, reason: 'backends_unlistable'},
     {key: 'work', ready: true, extensionInstanceId: 'inst-w'},
   ]});
-  assert.ok(!/Default|Profile/.test(JSON.stringify(structured(response))), 'the structured entries carry no directory');
-  const text = response.result.content[0].text;
+  assert.ok(!/Default|Profile/.test(JSON.stringify(fields)), 'the profile entries carry no directory');
+  assert.ok(response.result.content[0].text.startsWith(`${text}\n`), 'the text carries the same guidance');
+  assertModelSeesText(response);
   // The user's step happens in that Chrome profile, so the guidance names its directory (never its display name).
   assert.match(text, /home is not ready \(host_not_live\): .*Chrome profile "Profile 3".*click the OpenAI \(ChatGPT\) extension's icon.*then retry/);
   assert.match(text, /personal is not ready \(binding_stale\): .*Chrome profile "Default".*can mint a new instance id.*cua profiles bind personal/);
   assert.match(text, /school is not ready \(backends_unlistable\): .*could not be listed/);
   assert.match(text, /do not bind or pick a profile for them/);
   assert.ok(!/inst-old|inst-s\b|inst-h|Profile 6|Profile 8/.test(text), 'no instance id, and no directory where the user has no step');
+});
+
+test('profiles_list with every profile ready has no guidance: the text is its JSON line alone', async () => {
+  const h = harness({server: {surfaces: ['browser'], profiles: {list: () => PROFILES.slice(0, 1)}}});
+  await initialized(h);
+  const response = await h.client.call('profiles_list').response;
+  assert.deepEqual(structured(response), {status: 'ok', profiles: [{key: 'personal', ready: true, extensionInstanceId: 'inst-a'}]});
+  assert.equal(response.result.content[0].text, JSON.stringify(structured(response)));
 });
 
 test('a registry that cannot be read is a value-free error, not an empty list', async () => {
@@ -185,17 +201,19 @@ test('profiles_list with unreadable Chrome data: a bound live profile is ready, 
   const h = harness({server: {surfaces: ['browser'], profiles: {list: async () => (await profileReadiness({home, chrome, listBackends})).profiles}}});
   await initialized(h);
   const response = await h.client.call('profiles_list').response;
-  assert.deepEqual(structured(response), {status: 'ok', profiles: [
+  const {guidance: text, ...fields} = structured(response);
+  assert.deepEqual(fields, {status: 'ok', profiles: [
     {key: 'personal', ready: true, extensionInstanceId: 'inst-p'},
     {key: 'school', ready: false, reason: 'chrome_data_unreadable'},
     {key: 'work', ready: false, reason: 'chrome_data_unreadable'},
   ]});
-  const text = response.result.content[0].text;
+  assert.ok(response.result.content[0].text.startsWith(`${text}\n`), 'the text carries the same guidance');
+  assertModelSeesText(response);
   assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*not confirmed live/);
   assert.ok(text.includes(ACCESS_NOTE), 'the OS\'s access fix is named');
   assert.match(text, /work is not ready \(chrome_data_unreadable\): .*not bound yet/);
   assert.match(text, /Tell the user/);
-  assert.ok(!/EPERM|Default|Profile 8/.test(JSON.stringify(structured(response))), 'no error codes or directory names in the model-visible list');
+  assert.ok(!/EPERM|Default|Profile 8/.test(JSON.stringify(structured(response))), 'no error codes, and no directory where the user has no step, in what the model sees');
 });
 
 // The tools' search hints name the platform too (spike #12 (d)): Linux says linux, macOS keeps its exact hints.

@@ -17,8 +17,9 @@
 //   connection's sandbox state (CUA_SHIM_SANDBOX, src/runtime/sandbox.mjs) in place of any the client sent. end_task, secrets_list and (with the browser surface) profiles_list are answered here;
 //   hidden upstream tools are refused.
 // - profiles_list reads the registered Chrome profiles (src/profiles) when asked: key, readiness, the instance id of a
-//   ready profile, the reason of one that is not (with what to tell the user in the text, which names the registered
-//   profile's Chrome directory only where the user's step happens there); never a directory in the structured entries.
+//   ready profile, the reason of one that is not (with what to tell the user in `guidance`, text and structured content
+//   alike, which names the registered profile's Chrome directory only where the user's step happens there); never a
+//   directory in the profile entries.
 //   Readiness includes the live check (a bound instance among the live backends), so it can take a runtime launch. It
 //   is the gate before profile selection: only a ready profile's instance id is handed out, and a profile with no live
 //   host reads host_not_live with the wake step. A selection that fails later (the host exited after profiles_list)
@@ -179,13 +180,17 @@ export function createServer({
     }
   }
 
-  // A profile that is not ready says why in the text too: binding (and choosing between profiles) is the user's step.
+  // A profile that is not ready says why and what the user's step is, under `guidance`: binding (and choosing between
+  // profiles) is the user's step. Claude Code shows the model only the structured content of a successful result, so
+  // the guidance is there as well as in the text, whose JSON line does not repeat it.
   async function profilesList(msg) {
     try {
       const list = await profiles.list();
+      const fields = {status: 'ok', profiles: list.map(profileView)};
       const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p)}.`);
-      const message = notReady.length ? `${notReady.join('\n')}\nTell the user; do not bind or pick a profile for them.` : undefined;
-      respond(msg.id, statusResult({status: 'ok', profiles: list.map(profileView)}, {message}));
+      if (!notReady.length) return respond(msg.id, statusResult(fields));
+      const guidance = `${notReady.join('\n')}\nTell the user; do not bind or pick a profile for them.`;
+      respond(msg.id, {content: [{type: 'text', text: `${guidance}\n${JSON.stringify(fields)}`}], structuredContent: {...fields, guidance}, isError: false});
     } catch (error) {
       const code = error?.code === 'profiles_invalid' ? 'profiles_invalid' : 'unavailable';
       respond(msg.id, statusResult({status: 'error', code}, {isError: true, message: `cua: the registered profiles could not be read (${code}); run cua profiles list for details`}));

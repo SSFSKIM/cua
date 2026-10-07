@@ -102,5 +102,8 @@ missing, files are rewritten only when different (lightdm restarts only then), t
 `/etc/cua-provision.conf` and runs `npm ci` when it moved, `cua install` is a no-op for an installed release, and a
 registered profile or an existing enrolment is kept (a changed relay URL moves it and refreshes the relay fields of
 `/root/cua-enrollment.json`). Edit the conf to change the ref or the relay. With a relay, a re-run restarts the agent
-unit (`cua agent install` always does), which ends any remote session open at that moment. Root's SSH keys are copied
+unit (`cua agent install` always does), which ends any remote session open at that moment. On a VM provisioned by an earlier
+version of this template (the ChatGPT extension route), a re-run is the migration to the cua route: the force-list
+now names only cua's extension, so Chrome uninstalls the ChatGPT extension, the host registers as cua's and the profile
+re-binds; no sign-in is involved. Root's SSH keys are copied
 to the user only while the user has none, and everything under the user's home is written as the user.

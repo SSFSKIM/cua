@@ -7,6 +7,8 @@ milestone frontier (the task-reviewer brief), and a final whole-branch review (o
 Decision Log, Surprises & Discoveries and Outcomes & Retrospective are the authoritative record; this report is the
 account of the run.
 
+PR: https://github.com/SSFSKIM/cua/pull/80
+
 ## Status
 
 DONE_WITH_CONCERNS: every milestone is built and reviewed clean; H3b's live Mac items (acceptance 1 after

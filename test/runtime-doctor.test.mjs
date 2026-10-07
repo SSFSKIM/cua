@@ -17,7 +17,7 @@ const darwin = process.platform === 'darwin';
 const HOST = {platform: 'darwin', arch: 'arm64'};
 const check = (report, name) => report.checks.find(c => c.name === name);
 const noHelper = async () => ({socket: '/x/computeruse.sock', holders: []});
-const noSecrets = async () => ({path: '/x/cua-keychain', built: false});
+const noSecrets = async () => ({dir: '/nonexistent/.config/claude-secrets', exists: false});
 const noAgent = async () => [];
 
 // Under /tmp, outside $TMPDIR, where the scoped sandbox allows a home (the `sandbox` check).
@@ -183,25 +183,29 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
   assert.match(check(report, 'runtime.vendor-manifest').detail, /not a JSON object/);
 });
 
-test('Keychain helper checks are reported beside runtime health: blocked leaves ok alone, a broken helper fails', {skip: !darwin}, async t => {
+test('secrets.store is reported beside runtime health: no store yet is blocked, an unsafe one fails', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectAgent: noAgent};
   let asked;
-  const unbuilt = await inspectRuntime({...common, inspectSecrets: async args => { asked = args; return noSecrets(); }});
-  assert.equal(asked.home, home, 'the helper is looked up for the inspected home');
-  assert.equal(unbuilt.ok, true);
-  assert.equal(check(unbuilt, 'secrets.helper').status, 'blocked');
-  assert.match(check(unbuilt, 'secrets.helper').detail, /npm run build:helper/);
+  const env = {HOME: '/Users/u'};
+  const none = await inspectRuntime({...common, env, inspectSecrets: async args => { asked = args; return noSecrets(); }});
+  assert.deepEqual(asked, {env}, 'the store is looked up from the environment\'s HOME');
+  assert.equal(none.ok, true);
+  assert.equal(check(none, 'secrets.store').status, 'blocked');
+  assert.match(check(none, 'secrets.store').detail, /\/secret KEY/);
+  assert.equal(check(none, 'secrets.helper'), undefined);
+  assert.equal(check(none, 'secrets.signing'), undefined);
 
-  const adhoc = await inspectRuntime({...common, inspectSecrets: async () => ({path: '/x/cua-keychain', built: true, protocols: [1], signature: {valid: true, adhoc: true}})});
-  assert.equal(adhoc.ok, true);
-  assert.equal(check(adhoc, 'secrets.helper').status, 'pass');
-  assert.equal(check(adhoc, 'secrets.signing').status, 'blocked');
-  assert.match(summarize(adhoc), /secrets\.signing/);
+  const healthy = await inspectRuntime({...common, inspectSecrets: async () => ({dir: '/h/s', exists: true, directory: true, owned: true, mode: 0o700, keys: ['A'], unsafe: []})});
+  assert.equal(healthy.ok, true);
+  assert.equal(check(healthy, 'secrets.store').status, 'pass');
 
-  const stale = await inspectRuntime({...common, inspectSecrets: async () => ({path: '/x/cua-keychain', built: true, protocols: [0], signature: {valid: true, adhoc: true}})});
-  assert.equal(stale.ok, false);
-  assert.equal(check(stale, 'secrets.helper').status, 'fail');
+  const loose = await inspectRuntime({...common, inspectSecrets: async () => ({dir: '/h/s', exists: true, directory: true, owned: true, mode: 0o700, keys: ['A'], unsafe: [{key: 'A', why: 'mode 0644, not 0600'}]})});
+  assert.equal(loose.ok, false);
+  assert.equal(check(loose, 'secrets.store').status, 'fail');
+
+  const off = await inspectRuntime({...common, env: {CUA_SHIM_SECRETS: 'off'}, inspectSecrets: noSecrets});
+  assert.equal(check(off, 'secrets.store').status, 'skip');
 });
 
 test('codex.login is capability evidence: pass when logged in, blocked with "run cua login" otherwise, ok unchanged', {skip: !darwin}, async t => {

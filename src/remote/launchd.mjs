@@ -1,6 +1,6 @@
 // `cua agent install|uninstall|status`: the resident agent (`cua agent run`, src/remote/agent.mjs) as a launchd job in
 // the user's GUI login session, ~/Library/LaunchAgents/com.ssfskim.cua.agent.plist, loaded with
-// `launchctl bootstrap gui/<uid>`. A GUI-session job is the point: TCC prompts, the login Keychain and the screen belong
+// `launchctl bootstrap gui/<uid>`. A GUI-session job is the point: TCC prompts and the screen belong
 // to that session, and bootstrap puts a process there without a terminal (an SSH session cannot).
 //
 // The job runs what src/remote/job.mjs describes: the node that ran `install` (process.execPath, recorded and shown,

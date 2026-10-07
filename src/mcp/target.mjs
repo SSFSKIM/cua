@@ -313,6 +313,11 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
       throw closingError();
     }
     if (current) await leave(current);
+    // The connection may have closed during the previous device's DELETE: close() ended that one, not this one.
+    if (closing) {
+      await endLink(link).catch(() => {});
+      throw closingError();
+    }
     current = {name: wanted, link, opening: null, taskOpen: false, pendingWork: 0, inflight: new Set(), ended: false};
     const notes = link.session.initializeResult?.instructions;
     const note = `cua: every tool (js, js_reset, end_task, secrets_list, profiles_list) now drives ${wanted}, in a new session `
@@ -344,21 +349,23 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
   }
 
   // A js, js_reset, end_task, secrets_list or profiles_list call: `local()` runs it here (at once when no switch is under
-  // way, so local calls keep their order), else it goes to the device.
-  // A js/js_reset waiting for the switch can be cancelled meanwhile: it is withdrawn and never runs.
+  // way, so local calls keep their order), else it goes to the device. Behind a switch it takes its place in the same
+  // chain the devices_use calls do: it is dispatched on the target that switch leaves (taking the task open there
+  // synchronously), before any devices_use that arrived after it, which then sees that task. A js/js_reset waiting there
+  // can be cancelled meanwhile: it is withdrawn and never runs.
   function route(msg, local) {
-    if (switching) {
-      const key = idKey(msg.id);
-      const controller = WORK_TOOLS.has(msg.params.name) ? new AbortController() : null;
-      if (controller) routed.set(key, controller);
-      return void switching.then(() => {
-        if (controller && routed.get(key) === controller) routed.delete(key);
-        if (controller?.signal.aborted) return onWithdrawn(msg.id);
-        route(msg, local);
-      });
-    }
-    if (!current) return local();
-    routeRemote(current, msg);
+    const dispatch = () => (current ? routeRemote(current, msg) : local());
+    if (!switching) return void dispatch();
+    const key = idKey(msg.id);
+    const controller = WORK_TOOLS.has(msg.params.name) ? new AbortController() : null;
+    if (controller) routed.set(key, controller);
+    const step = switching.then(() => {
+      if (controller && routed.get(key) === controller) routed.delete(key);
+      if (controller?.signal.aborted) return onWithdrawn(msg.id);
+      dispatch();
+    }).catch(error => diagnostics(`a call queued behind a switch could not be dispatched: ${error?.stack ?? error}`))
+      .finally(() => { if (switching === step) switching = null; });
+    switching = step;
   }
 
   return {

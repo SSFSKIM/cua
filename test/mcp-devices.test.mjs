@@ -708,3 +708,49 @@ test('closing the connection answers what is in flight connection_closing: a rem
   assert.equal(code(await switching.response), 'connection_closing');
   hold.entry.res.destroy();
 });
+
+test('a call queued between two devices_use runs on the target of the first, and the second is refused task_open', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  const mac = await device(t);
+  await register(home, 'mini', mini);
+  await register(home, 'mac', mac);
+  const h = await local(t, home);
+  const first = h.client.call('devices_use', {device: 'mini'});
+  const ran = h.client.call('js', {code: 'on mini'});
+  const second = h.client.call('devices_use', {device: 'mac'});
+  assert.equal(structured(await first.response).status, 'ok');
+  const js = await mini.upstreamOf(0).nextCall('js');
+  assert.equal(js.params.arguments.code, 'on mini');
+  const refused = await second.response;
+  assert.equal(code(refused), 'task_open');
+  assert.equal(mac.posts('initialize').length, 0, 'the second switch opened nothing');
+  mini.upstreamOf(0).text(js, 'mini');
+  const result = (await ran.response).result;
+  assert.equal(result._meta['cua/device'], 'mini');
+  assert.equal(structured(await h.client.call('devices_list').response).current, 'mini');
+});
+
+test('a connection closing while devices_use DELETEs the previous device\'s session ends the new one too and answers connection_closing before closed settles', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  const mac = await device(t);
+  await register(home, 'mini', mini);
+  await register(home, 'mac', mac);
+  const h = harness({server: {devices: deviceDirectory({env: home.env})}});
+  await initialized(h);
+  await use(h, 'mini');
+  let heldDelete = null;
+  mini.front = entry => entry.method === 'DELETE' && (heldDelete = entry, true);
+  const switching = h.client.call('devices_use', {device: 'mac'});
+  await until(() => heldDelete, 'mini\'s held DELETE');
+  assert.equal(mac.http.sessions.size, 1, 'mac\'s session is open, not yet the target');
+  h.client.eof();
+  await h.server.closed;
+  assert.equal(mac.deletes().length, 1, 'the new device\'s session is DELETEd');
+  assert.equal(mac.http.sessions.size, 0);
+  // Asserted as answered: the devices_use settles inside the close, before its final flush.
+  assert.equal(h.client.responsesFor(switching.id).length, 1, 'answered before closed settled');
+  assert.equal(code(h.client.responsesFor(switching.id)[0]), 'connection_closing');
+  heldDelete.res.destroy();
+});

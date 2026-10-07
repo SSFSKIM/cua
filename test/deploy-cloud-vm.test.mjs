@@ -5,6 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {readFileSync} from 'node:fs';
+import {gunzipSync} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 
 const dir = fileURLToPath(new URL('../deploy/cloud-vm/', import.meta.url));
@@ -15,7 +16,7 @@ const contentOf = (text, path) => {
   return Buffer.from(match[1], 'base64');
 };
 
-test('render.sh fills the conf and embeds cua-provision.sh byte for byte, without the template comments', () => {
+test('render.sh fills the conf and embeds cua-provision.sh (gzipped) byte for byte, without the template comments', () => {
   const run = render('--user', 'agent', '--ref', 'feat/x-1', '--relay', 'wss://1-2-3-4.sslip.io/ws');
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /^#cloud-config\n/);
@@ -23,10 +24,11 @@ test('render.sh fills the conf and embeds cua-provision.sh byte for byte, withou
   assert.doesNotMatch(run.stdout, /@[A-Z_]+@/);
   assert.equal(contentOf(run.stdout, '/etc/cua-provision.conf').toString(),
     "CUA_USER='agent'\nCUA_REF='feat/x-1'\nCUA_REPO='https://github.com/SSFSKIM/cua'\nCUA_DEB='pin'\nCUA_RELAY='wss://1-2-3-4.sslip.io/ws'\n");
-  assert.deepEqual(contentOf(run.stdout, '/usr/local/sbin/cua-provision.sh'), readFileSync(`${dir}cua-provision.sh`));
+  assert.match(run.stdout, /- path: \/usr\/local\/sbin\/cua-provision\.sh\n {4}encoding: gz\+b64\n/);
+  assert.deepEqual(gunzipSync(contentOf(run.stdout, '/usr/local/sbin/cua-provision.sh')), readFileSync(`${dir}cua-provision.sh`));
   assert.match(run.stdout, /runcmd:\n {2}- \[\/usr\/local\/sbin\/cua-provision\.sh\]\n/);
-  // Hetzner Cloud takes at most 32 KiB of user data.
-  assert.ok(Buffer.byteLength(run.stdout) < 32 * 1024, `${Buffer.byteLength(run.stdout)} bytes`);
+  // AWS EC2 takes at most 16 KiB of user data (Hetzner Cloud 32 KiB).
+  assert.ok(Buffer.byteLength(run.stdout) < 16 * 1024, `${Buffer.byteLength(run.stdout)} bytes`);
 });
 
 test('render.sh: defaults, a mirror URL, and a local deb meaning the operator uploads it', () => {
@@ -40,7 +42,7 @@ test('render.sh: defaults, a mirror URL, and a local deb meaning the operator up
 
 test('render.sh refuses anything that is not plain (it lands in a shell-sourced file)', () => {
   for (const args of [
-    ['--user', 'root'], ['--user', "a'b"], ['--ref', 'main; rm -rf /'], ['--ref', "x'y"],
+    ['--user', 'root'], ['--user', "a'b"], ['--ref', 'main; rm -rf /'], ['--ref', "x'y"], ['--ref', '-x'], ['--ref', '--upload-pack=x'],
     ['--relay', 'ws://relay.example/ws'], ['--relay', "wss://r.example/ws'"], ['--deb', 'http://mirror.example/x.deb'],
     ['--deb', "https://m.example/a'b.deb"], ['--deb', '/nonexistent/chatgpt.deb'], ['--user'], ['--colour', 'x'],
   ]) {

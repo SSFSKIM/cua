@@ -29,7 +29,8 @@ once and shared). The script refuses a name that already exists, and prints the 
 server costs money for every hour it exists: `hcloud server delete <name>`.
 
 On another provider, `deploy/cloud-vm/render.sh [--user …] [--ref …] [--deb …] [--relay …] > user-data.yaml` and pass
-that file as the server's user data (it stays under the 32 KiB most providers allow).
+that file as the server's user data (about 10 KB: the script is embedded gzipped, so it fits AWS EC2's 16 KiB as well
+as Hetzner's 32 KiB).
 
 ## What the VM ends up with
 
@@ -52,9 +53,10 @@ that file as the server's user data (it stays under the 32 KiB most providers al
   `Default` and bound. The extension starts cua's host without a ChatGPT sign-in, so the bind needs no one; if it
   fails (Chrome not up yet), the checklist keeps it.
 - **The deb.** By default the VM downloads the pin's official URL (about 450 MB); `--deb <https URL>` downloads a
-  mirror instead; `--deb <file>` makes `create-hetzner.sh` copy your copy while cloud-init runs, and the VM waits for it
-  (with `render.sh` alone, copy it to `/var/cache/cua/<its file name>` yourself). Either way the bytes are checked
-  against the pin's sha256 before `cua install --archive` checks them again; the file stays in `/var/cache/cua`.
+  mirror instead; `--deb <file>` makes `create-hetzner.sh` copy your copy to the VM's `/var/cache/cua/upload.deb`
+  while cloud-init runs, and the VM waits for it (with `render.sh` alone, copy it there yourself; a failed copy is
+  marked `upload.deb.failed`, which ends the wait). Either way the bytes are checked against the VM checkout's pin
+  before `cua install --archive` checks them again; the file stays in `/var/cache/cua` under the pin's name.
 - **Remote control** (with `--relay`): `cua remote enroll --relay … --json` into `/root/cua-enrollment.json` (0600, the
   only place the client credential is written), then `cua agent install` (the systemd user unit). A re-run with
   another relay URL moves the enrolment without rotating it.
@@ -66,7 +68,7 @@ that file as the server's user data (it stays under the 32 KiB most providers al
 Printed at the end as a checklist with the VM's address filled in, because each needs a person or a decision:
 
 1. Sign in to ChatGPT in the VM's Chrome. The screen is reachable through an SSH tunnel to `x11vnc` with a one-time
-   password (the checklist has the command; macOS: open `vnc://localhost:5900`), or the provider's web console.
+   password (the checklist has the command; macOS: open `vnc://localhost:5901`), or the provider's web console.
 2. `cua login --device-auth` over SSH (the server's Codex login, which the browser route needs).
 3. With a relay: add the device's `devices.json` line (`cua remote show`) to the relay's table with
    `relay/deploy/update.sh --devices` (the file replaces the whole table), and give the client its credential
@@ -81,4 +83,7 @@ passes, `chrome.hosts.live` included, and the `agent.*` rows read `skip` without
 `ssh root@<vm> /usr/local/sbin/cua-provision.sh` repeats every step: packages and Chrome are installed only when
 missing, files are rewritten only when different (lightdm restarts only then), the checkout moves to the `CUA_REF` in
 `/etc/cua-provision.conf` and runs `npm ci` when it moved, `cua install` is a no-op for an installed release, and a
-registered profile or an existing enrolment is kept. Edit the conf to change the ref or the relay.
+registered profile or an existing enrolment is kept (a changed relay URL moves it and refreshes the relay fields of
+`/root/cua-enrollment.json`). Edit the conf to change the ref or the relay. With a relay, a re-run restarts the agent
+unit (`cua agent install` always does), which ends any remote session open at that moment. Root's SSH keys are copied
+to the user only while the user has none, and everything under the user's home is written as the user.

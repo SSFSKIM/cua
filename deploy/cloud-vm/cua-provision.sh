@@ -7,8 +7,8 @@
 #   CUA_REF      the git ref of CUA_REPO checked out at /opt/cua
 #   CUA_REPO     the repository (https://github.com/SSFSKIM/cua)
 #   CUA_DEB      where the pinned ChatGPT deb comes from: `pin` (the pin's own URL), an https URL (a mirror; the bytes
-#                must still match the pin), or `upload` (someone copies it to /var/cache/cua/<the pin's file name>;
-#                the script waits up to CUA_DEB_WAIT seconds for it, then stops at that step)
+#                must still match the pin), or `upload` (the operator copies it to /var/cache/cua/upload.deb; the
+#                script waits up to CUA_DEB_WAIT seconds for it, then stops at that step)
 #   CUA_RELAY    optional wss:// relay URL: enrol the device there and install the agent as a systemd user unit
 # Results: /var/log/cua-provision.json is `cua doctor --json` at the end, /var/lib/cua-provision/checklist.txt the
 # owner's remaining steps (also printed), /var/log/cua-provision.log this script's output. Nothing it prints or logs is
@@ -94,9 +94,20 @@ if ! id -u "$CUA_USER" >/dev/null 2>&1; then
   useradd --create-home --shell /bin/bash "$CUA_USER"
 fi
 uid="$(id -u "$CUA_USER")" home="$(getent passwd "$CUA_USER" | cut -d: -f6)"
-if [[ -s /root/.ssh/authorized_keys ]]; then
-  install -d -m 0700 -o "$CUA_USER" -g "$CUA_USER" "$home/.ssh"
-  install -m 0600 -o "$CUA_USER" -g "$CUA_USER" /root/.ssh/authorized_keys "$home/.ssh/authorized_keys"
+# Every command as the user: anything under $home is written this way, never by root (root writing into a directory the
+# user controls would follow the user's symlinks). It carries the X display and the systemd user bus (cua derives
+# DBUS_SESSION_BUS_ADDRESS from XDG_RUNTIME_DIR); cua's home is the XDG default, ~/.local/share/cua. It runs in the
+# user's home (or AS_CWD): node refuses to start in a directory it cannot read, such as root's.
+as_user() {
+  runuser -u "$CUA_USER" -- env -i -C "${AS_CWD:-$home}" HOME="$home" USER="$CUA_USER" LOGNAME="$CUA_USER" SHELL=/bin/bash LANG=C.UTF-8 \
+    PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:0 XAUTHORITY="$home/.Xauthority" XDG_RUNTIME_DIR="/run/user/$uid" "$@"
+}
+
+# root's SSH keys for the user, once: keys the owner adds later are theirs.
+if [[ -s /root/.ssh/authorized_keys ]] && ! as_user test -s "$home/.ssh/authorized_keys"; then
+  as_user install -d -m 0700 "$home/.ssh"
+  # shellcheck disable=SC2016  # $HOME expands in the user's shell
+  as_user sh -c 'cat >"$HOME/.ssh/authorized_keys"; chmod 0600 "$HOME/.ssh/authorized_keys"' </root/.ssh/authorized_keys
 fi
 loginctl enable-linger "$CUA_USER"
 for _ in $(seq 30); do [[ -S /run/user/$uid/bus ]] && break; sleep 1; done
@@ -115,7 +126,7 @@ dconf update
 # dummy driver (a GPU-less cloud VM). The session keeps the screen on, hands DISPLAY to the user manager, brings up the
 # AT-SPI bus and starts Chrome in its Default profile, so the extension's host is live whenever the session is.
 changed=0
-put() { # put <path> <mode> <owner>: stdin to path when it differs; marks a desktop change
+put() { # put <path> <mode> <owner>: stdin to a root-owned system path when it differs; marks a desktop change
   local tmp; tmp="$(mktemp)"; cat >"$tmp"
   if ! cmp -s "$tmp" "$1"; then install -D -m "$2" -o "$3" -g "$3" "$tmp" "$1"; changed=1; fi
   rm -f "$tmp"
@@ -156,7 +167,7 @@ Section "Screen"
 EndSection
 CONF
 fi
-put "$home/.config/openbox/autostart" 0644 "$CUA_USER" <<'CONF'
+IFS= read -r -d '' autostart <<'CONF' || true
 # cua-provision: keep the screen on (no blanking, no DPMS)
 xset s off -dpms
 xset s noblank
@@ -167,7 +178,11 @@ dbus-update-activation-environment --systemd DISPLAY XAUTHORITY
 # Chrome in its Default profile, so the extension (installed by policy) starts cua's native host
 google-chrome --profile-directory=Default &
 CONF
-chown -R "$CUA_USER:$CUA_USER" "$home/.config"
+if ! printf '%s' "$autostart" | as_user cmp -s - "$home/.config/openbox/autostart"; then
+  as_user mkdir -p "$home/.config/openbox"
+  printf '%s' "$autostart" | as_user tee "$home/.config/openbox/autostart" >/dev/null
+  changed=1
+fi
 systemctl set-default graphical.target >/dev/null
 if ! systemctl is-active --quiet lightdm; then
   log "starting the desktop (lightdm)"
@@ -177,14 +192,6 @@ elif ((changed)); then
   systemctl restart lightdm
 fi
 
-# The user's environment for every cua command below: the X display and the systemd user bus (cua derives
-# DBUS_SESSION_BUS_ADDRESS from XDG_RUNTIME_DIR); cua's home is the XDG default, ~/.local/share/cua. It runs in the
-# user's home (or AS_CWD): node refuses to start in a directory it cannot read, such as root's.
-as_user() {
-  runuser -u "$CUA_USER" -- env -i -C "${AS_CWD:-$home}" HOME="$home" USER="$CUA_USER" LOGNAME="$CUA_USER" SHELL=/bin/bash LANG=C.UTF-8 \
-    PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:0 XAUTHORITY="$home/.Xauthority" XDG_RUNTIME_DIR="/run/user/$uid" "$@"
-}
-
 # 7. The cua checkout at /opt/cua, owned by the user, at CUA_REF; `cua` on PATH.
 if [[ ! -d /opt/cua/.git ]]; then
   log "clone $CUA_REPO"
@@ -192,10 +199,16 @@ if [[ ! -d /opt/cua/.git ]]; then
   as_user git clone -q "$CUA_REPO" /opt/cua
 fi
 as_user git -C /opt/cua fetch -q origin "$CUA_REF"
-if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$(as_user git -C /opt/cua rev-parse FETCH_HEAD)" || ! -d /opt/cua/node_modules ]]; then
+if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$(as_user git -C /opt/cua rev-parse FETCH_HEAD)" ]]; then
   as_user git -C /opt/cua checkout -q --detach FETCH_HEAD
-  log "checkout $(as_user git -C /opt/cua log --oneline -1); npm ci"
+  log "checkout $(as_user git -C /opt/cua log --oneline -1)"
+fi
+# npm ci for the checked-out commit, once it has succeeded (a failed one is retried by the next run).
+head="$(as_user git -C /opt/cua rev-parse HEAD)"
+if [[ "$(cat "$state/npm-ci.head" 2>/dev/null)" != "$head" ]]; then
+  log "npm ci"
   AS_CWD=/opt/cua as_user npm ci --no-audit --no-fund --loglevel=error
+  echo "$head" >"$state/npm-ci.head"
 fi
 ln -sfn /opt/cua/bin/cua.mjs /usr/local/bin/cua
 
@@ -206,8 +219,8 @@ checklist() { # the owner's steps, written for create-hetzner.sh and printed
     echo "cua device $(hostname) ($ip): the owner's steps"
     if [[ -n "${1:-}" ]]; then echo "  !! provisioning stopped early: $1"; fi
     step "Sign in to ChatGPT in the VM's Chrome (profile Default). See the screen through an SSH tunnel:"
-    echo "       ssh -t -L 5900:localhost:5900 $CUA_USER@$ip 'p=\$(head -c6 /dev/urandom | base64); echo \"VNC password: \$p\"; x11vnc -display :0 -localhost -once -quiet -passwd \"\$p\"'"
-    echo "     then open vnc://localhost:5900 with that one-time password (or use the provider's web console)."
+    echo "       ssh -t -o ExitOnForwardFailure=yes -L 5901:localhost:5900 $CUA_USER@$ip 'p=\$(head -c6 /dev/urandom | base64); echo \"VNC password: \$p\"; x11vnc -display :0 -localhost -once -quiet -passwd \"\$p\"'"
+    echo "     then open vnc://localhost:5901 with that one-time password (or use the provider's web console)."
     echo "     In Chrome sign in at https://chatgpt.com, then open the ChatGPT extension (puzzle icon) and sign in"
     echo "     there if it asks."
     step "Sign the cua server in to Codex:  ssh -t $CUA_USER@$ip cua login --device-auth   (the URL and code open on any machine)"
@@ -221,7 +234,7 @@ checklist() { # the owner's steps, written for create-hetzner.sh and printed
       step "On the client: store the credential with /secret <clientSecretKey> (the value is clientCredential in"
       echo "     ssh root@$ip cat /root/cua-enrollment.json), then run its devicesAddCommand (both in that file)."
     fi
-    echo "  Check: ssh $CUA_USER@$ip cua doctor   (codex.login passes once the server is signed in)"
+    echo "  Check: ssh $CUA_USER@$ip DISPLAY=:0 cua doctor   (codex.login passes once the server is signed in)"
   } >"$state/checklist.txt"
 }
 doctor() {
@@ -249,10 +262,15 @@ fi
 if [[ ! -f "$deb" ]]; then
   case "$CUA_DEB" in
     upload)
-      log "waiting up to ${CUA_DEB_WAIT}s for $deb (copied there by the operator)"
-      for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$deb" ]] && break; sleep 5; done
-      [[ -f "$deb" ]] || stop_early "no deb at $deb: copy ${pin_url##*/} there, then run cua-provision.sh again"
-      echo "$pin_sha  $deb" | sha256sum -c --status || { rm -f "$deb"; stop_early "the uploaded $deb does not match the pin's sha256 (removed)"; }
+      # The operator copies the deb to /var/cache/cua/upload.deb (create-hetzner.sh --deb does, and touches
+      # upload.failed when its copy fails); it becomes $deb once it matches this checkout's pin.
+      up=/var/cache/cua/upload.deb
+      log "waiting up to ${CUA_DEB_WAIT}s for $up (copied there by the operator)"
+      for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$up" || -e "$up.failed" ]] && break; sleep 5; done
+      if [[ -e "$up.failed" ]]; then rm -f "$up.failed"; stop_early "the copy of the deb to $up failed: copy it there again, then run cua-provision.sh again"; fi
+      [[ -f "$up" ]] || stop_early "no deb at $up: copy ${pin_url##*/} there, then run cua-provision.sh again"
+      echo "$pin_sha  $up" | sha256sum -c --status || { rm -f "$up"; stop_early "the uploaded $up does not match the sha256 of the pin for $release (removed)"; }
+      mv "$up" "$deb"
       ;;
     *)
       url="$CUA_DEB"; [[ "$url" == pin ]] && url="$pin_url"
@@ -295,6 +313,11 @@ if [[ -n "$CUA_RELAY" ]]; then
   elif [[ "$current" != "$CUA_RELAY" ]]; then
     log "move the enrolment from ${current:-no relay} to $CUA_RELAY"
     as_user cua remote enroll --relay "$CUA_RELAY" --json >/dev/null
+    # The enrolment file keeps its client credential; its relay fields and commands follow the move.
+    if [[ -f /root/cua-enrollment.json ]]; then
+      (umask 077; as_user cua remote show --json | jq -s '.[0] + (.[1] | del(.ok))' /root/cua-enrollment.json - >/root/cua-enrollment.json.new)
+      mv /root/cua-enrollment.json.new /root/cua-enrollment.json
+    fi
   fi
   as_user cua agent install
 fi

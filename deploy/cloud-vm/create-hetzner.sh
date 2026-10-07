@@ -7,8 +7,9 @@
 #   deploy/cloud-vm/create-hetzner.sh [--name cua-vm] [--arch x64|arm64] [--type <server type>] [--location nbg1]
 #       [--ssh-key macbook] [--user cua] [--ref main] [--deb pin|<https URL>|<local file>] [--relay wss://<relay>/ws]
 #
-# --arch picks the type: cx23 (x64) or cax11 (arm64). --deb <local file> copies that deb (the pinned one for --arch,
-# checked here) to the server while cloud-init runs, instead of the server downloading it. The hcloud context is
+# --arch picks the type: cx23 (x64) or cax11 (arm64). --deb <local file> copies that deb (checked here against this
+# checkout's pin for --arch, as a quick precheck; the VM checks it against its own) to the server's
+# /var/cache/cua/upload.deb while cloud-init runs, instead of the server downloading it. The hcloud context is
 # $HCLOUD_CONTEXT, cua when unset; never devbox.
 set -euo pipefail
 
@@ -54,17 +55,29 @@ if hcloud server describe "$name" >/dev/null 2>&1; then
   echo "a server named $name already exists in context $HCLOUD_CONTEXT; re-run /usr/local/sbin/cua-provision.sh on it" >&2
   exit 1
 fi
+# One EXIT trap for everything this run leaves behind: the rules file, a background copy still running, and (on a
+# failure after the server exists) the reminder that the server keeps costing money.
+rules='' scp_pid='' created=''
+cleanup() {
+  local code=$?
+  [[ -n "$rules" ]] && rm -f "$rules"
+  if [[ -n "$scp_pid" ]]; then pkill -P "$scp_pid" 2>/dev/null; kill "$scp_pid" 2>/dev/null; fi
+  if [[ -n "$created" ]] && ((code != 0)); then
+    echo "$name still exists and costs money while it does: HCLOUD_CONTEXT=$HCLOUD_CONTEXT hcloud server delete $name" >&2
+  fi
+}
+trap cleanup EXIT
 if ! hcloud firewall describe cua-vm >/dev/null 2>&1; then
   rules="$(mktemp)"
-  trap 'rm -f "$rules"' EXIT
   echo '[{"direction": "in", "protocol": "tcp", "port": "22", "source_ips": ["0.0.0.0/0", "::/0"], "description": "ssh"}]' >"$rules"
-  hcloud firewall create --name cua-vm --rules-file "$rules" >/dev/null
+  hcloud --quiet firewall create --name cua-vm --rules-file "$rules"
 fi
 
 user_data="$("$here/render.sh" ${render_args[@]+"${render_args[@]}"})"
 echo "creating $name ($type, $arch, $location)"
-printf '%s\n' "$user_data" | hcloud server create --name "$name" --type "$type" --image ubuntu-24.04 \
+printf '%s\n' "$user_data" | hcloud --quiet server create --name "$name" --type "$type" --image ubuntu-24.04 \
   --location "$location" --ssh-key "$ssh_key" --firewall cua-vm --user-data-from-file - >/dev/null
+created=1
 ip="$(hcloud server ip "$name")"
 echo "server id $(hcloud server describe "$name" -o format='{{.ID}}') at $ip ($(elapsed))"
 
@@ -77,25 +90,28 @@ for try in $(seq 60); do
 done
 echo "ssh up ($(elapsed))"
 
-# The upload runs beside cloud-init; the VM's provisioning waits for the file under its final name.
-scp_pid=''
+# The upload runs beside cloud-init, to a fixed name the VM watches (/var/cache/cua/upload.deb); the VM checks it
+# against its own checkout's pin. A failed copy leaves upload.failed there, which ends the VM's wait at once.
 if [[ -n "$upload" ]]; then
-  echo "copying $deb to /var/cache/cua/$upload in the background"
-  # shellcheck disable=SC2029  # $upload is the pin's plain file name, meant to expand here
-  ( ssh "${ssh_opts[@]}" "root@$ip" 'mkdir -p /var/cache/cua' \
-    && scp "${ssh_opts[@]}" -q "$deb" "root@$ip:/var/cache/cua/$upload.part" \
-    && ssh "${ssh_opts[@]}" "root@$ip" "mv /var/cache/cua/$upload.part /var/cache/cua/$upload" \
-    && echo "deb copied ($(elapsed))" ) &
+  echo "copying $deb ($upload) to /var/cache/cua/upload.deb in the background"
+  ( { ssh "${ssh_opts[@]}" "root@$ip" 'mkdir -p /var/cache/cua' \
+      && scp "${ssh_opts[@]}" -q "$deb" "root@$ip:/var/cache/cua/upload.deb.part" \
+      && ssh "${ssh_opts[@]}" "root@$ip" 'mv /var/cache/cua/upload.deb.part /var/cache/cua/upload.deb' \
+      && echo "deb copied ($(elapsed))"; } \
+    || { ssh "${ssh_opts[@]}" "root@$ip" 'touch /var/cache/cua/upload.deb.failed' 2>/dev/null; echo "the deb copy failed" >&2; exit 1; } ) &
   scp_pid=$!
 fi
 
 echo "waiting for cloud-init (provisioning log: ssh root@$ip tail -f /var/log/cua-provision.log)"
 status=0
 ssh "${ssh_opts[@]}" "root@$ip" 'cloud-init status --wait >/dev/null' || status=$?
-if [[ -n "$scp_pid" ]]; then wait "$scp_pid" || echo "the deb copy failed: copy it to /var/cache/cua/$upload and re-run cua-provision.sh" >&2; fi
-# cloud-init status: 0 done, 2 done with warnings (recoverable), 1 error.
-if ((status == 1)); then
-  echo "cloud-init failed ($(elapsed)): ssh root@$ip tail -50 /var/log/cua-provision.log" >&2
+if [[ -n "$scp_pid" ]]; then
+  wait "$scp_pid" || echo "copy the deb to /var/cache/cua/upload.deb and run /usr/local/sbin/cua-provision.sh again" >&2
+  scp_pid=''
+fi
+# cloud-init status: 0 done, 2 done with recoverable warnings; anything else (1 error, 255 ssh lost) is not done.
+if ((status != 0 && status != 2)); then
+  echo "cloud-init did not finish cleanly (status $status, $(elapsed)): ssh root@$ip tail -50 /var/log/cua-provision.log" >&2
   exit 1
 fi
 echo "cloud-init done ($(elapsed))"

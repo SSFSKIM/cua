@@ -1,15 +1,15 @@
 #cloud-config
 # User data that turns a fresh Ubuntu 24.04 VM into a cua device. render.sh fills the placeholders and drops these
-# comments: @CONF_B64@ (/etc/cua-provision.conf, the parameters) and @PROVISION_B64@ (cua-provision.sh from this
-# directory), both base64. Nothing secret goes in here; a relay enrolment's client credential is minted on the VM.
+# comments: @CONF_B64@ (/etc/cua-provision.conf, the parameters) and @PROVISION_GZB64@ (cua-provision.sh from
+# this directory, gzip then base64, so the user data stays under AWS EC2's 16 KiB). Nothing secret goes in here; a relay enrolment's client credential is minted on the VM.
 write_files:
   - path: /etc/cua-provision.conf
     encoding: b64
     permissions: '0644'
     content: @CONF_B64@
   - path: /usr/local/sbin/cua-provision.sh
-    encoding: b64
+    encoding: gz+b64
     permissions: '0755'
-    content: @PROVISION_B64@
+    content: @PROVISION_GZB64@
 runcmd:
   - [/usr/local/sbin/cua-provision.sh]

@@ -125,12 +125,12 @@ export function replaceGateChecks(report, {profile = 'personal'} = {}) {
 
 const replaceGateSteps = profile => [
   `with the user, Chrome open with the OpenAI extension in ${profile}'s Chrome profile and codex.login pass; never kill the running desktop hosts`,
-  'node bin/cua.mjs chrome register --replace (prints the two consequences, backs up the five desktop manifests to <home>/chrome/manifest-backup/, writes cua\'s)',
+  'node bin/cua.mjs chrome register --replace --vendor (prints the two consequences, backs up the five desktop manifests to <home>/chrome/manifest-backup/, writes cua\'s)',
   'node bin/cua.mjs doctor --json (chrome.host.registered: pass, cua)',
   'the user makes the extension reconnect (disable/enable it at chrome://extensions, or reopen its side panel)',
   'ps -axo pid=,ppid=,comm= | grep \'ChatGPT for Chrome\' (a host under <home>/runtimes/.../chrome-plugin/)',
   liveCommand(profile, '/tmp/cua-m12-replace-roundtrip.json'),
-  'node bin/cua.mjs chrome unregister --json (restored, verified byte-for-byte, for every browser)',
+  'node bin/cua.mjs chrome unregister --json --vendor (restored, verified byte-for-byte, for every browser)',
   'node bin/cua.mjs doctor --json (chrome.host.registered: pass, desktop)',
   `assemble {scenario: "C6-replace-live-gate", servingHost: {pathClass: "cua"}, roundTrip: <that report>, unregister: <that output>} and rerun this runner with --c6-report <file>${profile === 'personal' ? '' : ` --profile ${profile}`}`,
 ];
@@ -206,15 +206,15 @@ export function desktopAbsentGateChecks(report, {profile = 'personal'} = {}) {
 const absentGateSteps = profile => [
   `with the user, Chrome open on ${profile}'s Chrome profile with the OpenAI extension installed and codex.login pass; no ChatGPT desktop app installed`,
   'node scripts/accept-chrome.mjs --c6-slots (slotsBefore: every browser absent)',
-  'node bin/cua.mjs chrome register --json (register: every present browser placed, nothing backed up)',
+  'node bin/cua.mjs chrome register --json --vendor (register: every present browser placed, nothing backed up)',
   'node scripts/accept-chrome.mjs --c6-slots (slotsRegistered: the placed browsers ours)',
   'the user wakes the extension (click its icon, or turn it off and on at chrome://extensions and rebind)',
   'ps -axo pid=,ppid=,comm= | grep \'ChatGPT for Chrome\' (a host under <home>/runtimes/.../chrome-plugin/: servingHost.pathClass cua)',
   liveCommand(profile, '/tmp/cua-c6-absent-roundtrip.json'),
-  'node bin/cua.mjs chrome unregister --json (unregister: placed browsers removed, restoration not_needed)',
+  'node bin/cua.mjs chrome unregister --json --vendor (unregister: placed browsers removed, restoration not_needed)',
   'node scripts/accept-chrome.mjs --c6-slots (slotsAfter: every browser absent again)',
   `assemble {scenario: "${ABSENT_SCENARIO}", slotsBefore, register, slotsRegistered, servingHost: {pathClass: "cua"}, roundTrip: <that report>, unregister, slotsAfter}`,
-  're-register: node bin/cua.mjs chrome register (cua\'s own registration is the steady state without the desktop app; the extension needs it to launch a host)',
+  're-register: node bin/cua.mjs chrome register --vendor (cua\'s own registration is the steady state without the desktop app; the extension needs it to launch a host)',
   `rerun this runner, registered, with --c6-report <file>${profile === 'personal' ? '' : ` --profile ${profile}`}`,
 ];
 
@@ -491,7 +491,7 @@ export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow
         // Doctor could not read the manifest (it reads before the snapshot): unknown, not a disagreement.
         : c.status === 'blocked' && !noManifest && /is unknown/.test(c.detail) ? ['BLOCKED', 'doctor could not read Chrome\'s manifest; rerun from a process that can read the browsers\' directories']
           : ['FAIL', 'Chrome\'s slot holds cua\'s registration but doctor does not report class cua'];
-      if (c.status === 'blocked' && noManifest) return ['BLOCKED', `cua is registered only for ${slotsNow.filter(s => s.state === 'ours').map(s => s.browser).join(', ')}; register Chrome too: node bin/cua.mjs chrome register, then rerun`];
+      if (c.status === 'blocked' && noManifest) return ['BLOCKED', `cua is registered only for ${slotsNow.filter(s => s.state === 'ours').map(s => s.browser).join(', ')}; register Chrome too: node bin/cua.mjs chrome register --vendor, then rerun`];
     }
     if (absent && /^(desktop|cua|other):/.test(c.detail)) return ['FAIL', 'doctor reports a registration but every browser slot is absent'];
     const chromeSlot = slotsNow?.find(s => s.browser === 'chrome');
@@ -499,7 +499,7 @@ export function doctorChromeChecks({code, doctor, profile = 'personal', slotsNow
     const unreadable = slotsNow?.filter(s => s.state === 'unreadable');
     if (unreadable?.length) return ['BLOCKED', `cannot read ${unreadable.map(s => `${s.browser}'s manifest (${s.error})`).join(', ')}, so whether a registration is present cannot be told`];
     return c.status !== 'pass' ? [c.status === 'blocked' ? 'BLOCKED' : 'FAIL', 'expected the desktop\'s registration on this Mac']
-      : /^desktop:/.test(c.detail) ? ['PASS'] : /^cua:/.test(c.detail) ? ['BLOCKED', 'cua\'s host is registered: the --replace gate is in progress or was left registered; rerun after node bin/cua.mjs chrome unregister']
+      : /^desktop:/.test(c.detail) ? ['PASS'] : /^cua:/.test(c.detail) ? ['BLOCKED', 'cua\'s host is registered: the --replace gate is in progress or was left registered; rerun after node bin/cua.mjs chrome unregister --vendor']
         : ['FAIL', 'expected the desktop\'s registration on this Mac'];
   });
   expect('chrome.hosts.live', c => c.status === 'pass' ? ['PASS'] : c.status === 'blocked' ? ['BLOCKED', `open Chrome on ${profile}'s Chrome profile with the OpenAI extension enabled, then rerun`] : ['FAIL']);
@@ -531,7 +531,7 @@ export function registrationGuard(slots, {record} = {}) {
     return {refusal: na('no manifest cua did not write exists for register to refuse'), noop: na('unregister would remove it, and the desktop-absent gate covers unregister')};
   }
   if (ours.length) {
-    const reason = `cua's host is registered in ${ours.join(', ')} (the --replace gate is in progress or was left registered); not touched. Rerun after node bin/cua.mjs chrome unregister`;
+    const reason = `cua's host is registered in ${ours.join(', ')} (the --replace gate is in progress or was left registered); not touched. Rerun after node bin/cua.mjs chrome unregister --vendor`;
     return {refusal: {run: false, reason}, noop: {run: false, reason}};
   }
   const unreadable = slots.filter(s => s.state === 'unreadable');

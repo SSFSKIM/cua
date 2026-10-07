@@ -5,6 +5,7 @@
 import {parseArgs} from 'node:util';
 import {execFile, spawn} from 'node:child_process';
 import {hostname} from 'node:os';
+import {fileURLToPath} from 'node:url';
 import {defaultHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
@@ -22,13 +23,15 @@ import {runSecrets, PREFERRED_ENTRY} from './secrets/commands.mjs';
 import {fileStore, storeDir} from './secrets/store.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
-import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
+import {addProfile, readRegistry, removeProfile, reasonText} from './profiles/registry.mjs';
 import {bindCommand, openCommand, profileReadiness} from './profiles/commands.mjs';
 import {listLiveBackends} from './profiles/inventory.mjs';
 import {sandboxModeFrom} from './runtime/sandbox.mjs';
 import {PICK_REASONS} from './profiles/bind.mjs';
 import {isPermissionError, mapExtensionDirectories} from './profiles/directory-map.mjs';
-import {registerHost, unregisterHost} from './chrome/registration.mjs';
+import {chooseVendorRoute, registerCuaHost, registerHost, unregisterCuaHost, unregisterHost} from './chrome/registration.mjs';
+import {chromeRoute, effectiveRoute, extensionIdFor} from './chrome/route.mjs';
+import {CUA_EXTENSION_ID, CUA_HOST_NAME} from './chrome/extension.mjs';
 
 // The usage text names this platform's archive kind and default home, and the service manager that runs an installed
 // agent (agent install, uninstall, status): launchd on macOS, the systemd user manager on Linux. The console check is
@@ -68,8 +71,10 @@ export const usageFor = platform => {
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
   profiles bind <key> [--extension-instance-id <id>] [--dry-run] [--json]  bind a key to its live OpenAI extension backend
   profiles open <key> [--json]                                 open a window in that Chrome profile, then report its readiness
-  chrome register [--replace] [--json]                         register cua's Chrome host with the browsers
-  chrome unregister [--json]                                   remove cua's registration, restoring what it replaced
+  chrome register [--replace] [--json]                         register cua's own Chrome host for the cua extension
+  chrome unregister [--json]                                   remove that registration, restoring what it replaced
+  chrome register --vendor [--replace] [--json]                instead register the ChatGPT extension's host (until removal)
+  chrome unregister --vendor [--json]                          remove that registration, restoring what it replaced
   remote enroll [--relay <wss url>] [--rotate] [--json]        enrol this Mac for remote control; shows the client credential once
   remote show [--json]                                         the device id, relay URL and the relay's devices.json line
   agent run [--http <host:port>] [--relay]                     serve MCP to remote clients until a signal; --http 127.0.0.1:7801
@@ -490,10 +495,11 @@ const PROFILES_USAGE = {
   open: 'profiles open takes exactly one key',
 };
 const done = value => { print(value); return 0; };
+// `extension` is the home's route's extension: OpenAI's, or cua's own.
 const ADDED = {
-  installed: ({key}) => `the OpenAI extension is installed there (next: cua profiles bind ${key})`,
-  absent: () => 'the OpenAI extension is not installed there, so it stays not ready until you install it in that profile',
-  unreadable: ({key, chromeDataError}) => `this process cannot read Chrome's data directory (${chromeDataError}), so that profile and its OpenAI extension could not be checked; registered anyway (next: cua profiles bind ${key}, whose live check works without that access; for the file checks, ${PERMISSION_FIX})`,
+  installed: ({key, extension}) => `the ${extension} extension is installed there (next: cua profiles bind ${key})`,
+  absent: ({extension}) => `the ${extension} extension is not installed there, so it stays not ready until you install it in that profile`,
+  unreadable: ({key, chromeDataError, extension}) => `this process cannot read Chrome's data directory (${chromeDataError}), so that profile and its ${extension} extension could not be checked; registered anyway (next: cua profiles bind ${key}, whose live check works without that access; for the file checks, ${PERMISSION_FIX})`,
 };
 // Why the candidates carry no (or only some) profile directories: the mapping of directory-map.mjs, never a failure.
 const MAP_UNAVAILABLE = {
@@ -568,13 +574,14 @@ async function profiles(args) {
     }
   };
   const home = defaultHome();
-  const chrome = chromeFacts();
+  const route = chromeRoute(home);
+  const chrome = chromeFacts({extensionId: extensionIdFor(route)});
   if (command === 'add') {
     const {values, positionals} = parsed({'chrome-profile': {type: 'string'}}, 1);
     if (values['chrome-profile'] === undefined) throw new UsageError(PROFILES_USAGE.add);
     const added = addProfile({home, key: positionals[0], directory: values['chrome-profile'], chrome});
     if (values.json) return done({ok: true, ...added});
-    return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${ADDED[added.extension](added)}`);
+    return done(`registered ${added.key} -> Chrome profile "${added.chromeProfileDirectory}"; ${ADDED[added.extension]({...added, extension: route === 'cua' ? 'cua' : 'OpenAI'})}`);
   }
   // list and bind launch the runtime with the sandbox state CUA_SHIM_SANDBOX picks; a bad value fails the command here,
   // before readiness would fold a listing failure into its report.
@@ -617,7 +624,8 @@ async function profiles(args) {
   if (!values.json) process.stderr.write('listing the live Chrome extension backends through the runtime (one bounded launch)...\n');
   const result = await bindCommand({home, key: positionals[0], chrome, explicitId, dryRun,
     listBackends: () => listLiveBackends({home, runtime}), pick: interactive ? pickBackend : undefined,
-    mapDirectories: () => mapExtensionDirectories({home, chrome, moduleDir: runtime.paths.moduleDir, extensionIds: runtime.manifest.chromePlugin.nativeHost.extensionIds})});
+    mapDirectories: () => mapExtensionDirectories({home, chrome, moduleDir: runtime.paths.moduleDir,
+      extensionIds: route === 'cua' ? [CUA_EXTENSION_ID] : runtime.manifest.chromePlugin.nativeHost.extensionIds})});
   if (values.json) { print(result); return result.ok ? 0 : 1; }
   process.stderr.write(describeUnreadable(result));
   if (result.ok) {
@@ -633,21 +641,35 @@ async function profiles(args) {
   return 1;
 }
 
-// The OpenAI extension's native-messaging registration (src/chrome/registration.mjs). register refuses while another
-// host's manifest is present unless --replace, which backs it up first; unregister removes only cua's manifests and
-// restores what cua replaced. Exit 1 on a refusal or when a restoration is BLOCKED.
-const CHROME_USAGE = {register: 'chrome register takes only --replace and --json', unregister: 'chrome unregister takes only --json'};
+// The browsers' native-messaging registration (src/chrome/registration.mjs), on the home's Chrome route
+// (src/chrome/route.mjs): cua's own host for cua's extension by default, the ChatGPT extension's (OpenAI's host, placed
+// by `cua install`) with --vendor. Whichever ran last is the route. register refuses while another host's manifest is
+// present unless --replace, which backs it up first; unregister removes only this home's manifests and restores what
+// they replaced. Exit 1 on a refusal or when a restoration is BLOCKED. A registration that switched the route names the
+// profile bindings made on the other route, which `cua profiles bind` must make again.
+const CHROME_USAGE = {register: 'chrome register takes only --vendor, --replace and --json', unregister: 'chrome unregister takes only --vendor and --json'};
 const ACTIONS = {placed: 'placed', replaced: 'replaced', updated: 'updated', unchanged: 'unchanged', removed: 'removed', restored: 'restored', not_ours: 'not ours', not_removed: 'kept', unknown: 'unknown'};
+const CHECKOUT = fileURLToPath(new URL('..', import.meta.url));
+
+// The keys bound on the other route than `route` (each needs `cua profiles bind` again); none when the registry cannot
+// be read (profiles list reports that).
+function rebindRequired(home, route) {
+  try {
+    return Object.entries(readRegistry(home).profiles).filter(([, p]) => p.extensionInstanceId && effectiveRoute(p.route) !== route).map(([key]) => key);
+  } catch { return []; }
+}
+const rebindLine = keys => `note: ${keys.join(', ')} ${keys.length === 1 ? 'was' : 'were'} bound on the other Chrome route; bind again: ${keys.map(key => `cua profiles bind ${key}`).join('; ')}`;
 
 async function chrome(args) {
   const [command, ...rest] = args;
   if (!Object.hasOwn(CHROME_USAGE, command)) throw new UsageError('chrome takes register or unregister');
   let values;
-  try { ({values} = parse(rest, command === 'register' ? {replace: {type: 'boolean'}} : {}, 0)); } catch (error) {
+  try { ({values} = parse(rest, command === 'register' ? {replace: {type: 'boolean'}, vendor: {type: 'boolean'}} : {vendor: {type: 'boolean'}}, 0)); } catch (error) {
     if (error instanceof UsageError) throw new UsageError(CHROME_USAGE[command]);
     throw error;
   }
   const home = defaultHome();
+  if (!values.vendor) return command === 'register' ? registerCua(home, values) : unregisterCua(home, values);
   if (command === 'register') {
     const runtime = resolveRuntime({home});
     let consequences;
@@ -655,16 +677,52 @@ async function chrome(args) {
       consequences = lines;
       process.stderr.write(`replacing a registration cua did not write (backed up first). Consequences:\n${lines.map((l, i) => `  ${i + 1}. ${l}`).join('\n')}\n`);
     }});
-    if (values.json) return done({ok: true, host: result.host, browsers: result.browsers, ...(consequences ? {consequences} : {})});
+    chooseVendorRoute(home);
+    const rebind = rebindRequired(home, 'vendor');
+    if (values.json) return done({ok: true, route: 'vendor', host: result.host, browsers: result.browsers, ...(consequences ? {consequences} : {}), rebindRequired: rebind});
     print(`registered cua's Chrome host ${result.host}:`);
     for (const b of result.browsers) print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}${b.backup ? ` (previous manifest backed up to ${b.backup})` : ''}`);
     print('the browser launches the host on the extension\'s next connection; running hosts are not stopped');
+    if (rebind.length) print(rebindLine(rebind));
     return 0;
   }
   const result = unregisterHost({home});
   if (values.json) { print({ok: true, ...result}); return result.blocked ? 1 : 0; }
   for (const line of unregisterLines(result)) print(line);
   return result.blocked ? 1 : 0;
+}
+
+async function registerCua(home, values) {
+  const result = await registerCuaHost({home, checkout: CHECKOUT, nodePath: process.execPath, replace: values.replace});
+  const previous = [...new Set(result.browsers.map(b => b.previous).filter(Boolean))];
+  const rebind = rebindRequired(home, 'cua');
+  if (values.json) return done({ok: true, route: 'cua', launcher: result.launcher, backendsDir: result.backendsDir, browsers: result.browsers, previous, rebindRequired: rebind});
+  print(`registered cua's Chrome host launcher ${result.launcher}:`);
+  for (const b of result.browsers) print(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}${b.backup ? ` (previous manifest backed up to ${b.backup})` : ''}`);
+  print(`previous launcher recorded: ${previous.length ? previous.join(', ') : 'none'}`);
+  print('the browser starts the host when the cua extension next connects; running hosts are not stopped');
+  if (rebind.length) print(rebindLine(rebind));
+  return 0;
+}
+
+function unregisterCua(home, values) {
+  const result = unregisterCuaHost({home});
+  if (values.json) { print({ok: true, ...result}); return result.blocked ? 1 : 0; }
+  for (const line of cuaUnregisterLines(result)) print(line);
+  return result.blocked ? 1 : 0;
+}
+
+export function cuaUnregisterLines(result) {
+  const shown = result.browsers.filter(b => b.action !== 'absent');
+  const lines = shown.every(b => b.action === 'not_ours') ? [`nothing to unregister: no ${CUA_HOST_NAME} manifest names this home's launcher`] : [];
+  for (const b of shown) {
+    const what = b.action === 'not_ours' ? `names ${b.previous ?? 'no host path'}; left unchanged`
+      : b.restoration === 'restored' ? `restored the previous manifest${b.previous ? ` (naming ${b.previous})` : ''}, verified byte-for-byte`
+        : b.restoration === 'not_needed' ? 'nothing to restore (cua placed it in an empty slot)'
+          : `restoration BLOCKED: ${b.reason}. To fix: ${b.userAction}`;
+    lines.push(`  ${b.browser.padEnd(8)} ${ACTIONS[b.action].padEnd(10)} ${b.manifestPath}: ${what}`);
+  }
+  return lines;
 }
 
 // unregister's human-readable report. "nothing to unregister" is said only when every browser is empty or holds another

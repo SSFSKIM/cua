@@ -14,6 +14,7 @@ import {fail} from '../runtime/errors.mjs';
 import {readRegistry, bindProfile, profileStatuses, withLiveness, awaitsLiveEvidence, REASONS} from './registry.mjs';
 import {decideBinding, isChromeBackend, placements, REFUSED} from './bind.mjs';
 import {teardownUnconfirmed} from './inventory.mjs';
+import {chromeRoute} from '../chrome/route.mjs';
 
 function labelOf(backend, name) {
   if (typeof backend.profileName !== 'string') return 'unlabelled';
@@ -54,7 +55,9 @@ export async function profileReadiness({home, chrome, listBackends}) {
 // never a failure.
 // Throws classified errors for an unknown key, a profile that cannot be ready, a refused explicit pick, and a
 // registration that changed while the backends were listed (`profile_changed`; nothing is bound, run bind again).
-export async function bindCommand({home, key, chrome, listBackends, mapDirectories, explicitId, pick, dryRun = false}) {
+// The binding records the home's Chrome `route` (src/chrome/route.mjs); `chrome` and the mapping read that route's
+// extension.
+export async function bindCommand({home, key, chrome, listBackends, mapDirectories, explicitId, pick, dryRun = false, route = chromeRoute(home)}) {
   const entry = readRegistry(home).profiles[key];
   if (!entry) fail('unknown_profile', `no registered profile "${key}"`, {hint: 'cua profiles list shows the registered keys'});
   const directory = entry.chromeProfileDirectory;
@@ -94,7 +97,7 @@ export async function bindCommand({home, key, chrome, listBackends, mapDirectori
     if (decision.outcome === 'refused') fail('bind_refused', `profile "${key}" was not bound: ${REFUSED[decision.reason]}`, {hint: 'cua profiles bind without --extension-instance-id lists the live backends'});
     if (dryRun) return {ok: true, dryRun: true, ...base, key, extensionInstanceId: decision.instanceId, how: decision.how, ...(decision.by ? {by: decision.by} : {})};
     // Recorded only if the registration is still the one discovery started from (compare-and-set).
-    const stored = bindProfile({home, key, extensionInstanceId: decision.instanceId, expected: entry});
+    const stored = bindProfile({home, key, extensionInstanceId: decision.instanceId, expected: entry, route});
     return {ok: true, ...base, key, extensionInstanceId: stored.extensionInstanceId, how: decision.how, ...(decision.by ? {by: decision.by} : {})};
   };
 

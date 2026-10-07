@@ -1,9 +1,12 @@
 // The profile registry: user-chosen keys for existing Chrome profiles, kept in $CUA_HOME/profiles.json, separate from
 // any credential:
-//   {version: 1, profiles: {<key>: {chromeProfileDirectory, extensionInstanceId?, boundAt?}}}
+//   {version: 1, profiles: {<key>: {chromeProfileDirectory, extensionInstanceId?, boundAt?, route?}}}
 // A key names one existing profile directory under Chrome's user-data directory; no two keys share a directory or an
 // extension instance. `extensionInstanceId` is the OpenAI extension instance this profile's backend reports, recorded
 // by `cua profiles bind` (bind.mjs); the vendor API selects a browser by it (cua.getBrowser({extensionInstanceId})).
+// `route` is the Chrome route the binding was made on (src/chrome/route.mjs; absent means `vendor`, so files written
+// before the cua route read unchanged): an instance id belongs to one route's extension, so a binding made on the other
+// route than the home's is rebind_required until `cua profiles bind` runs again.
 // Registering or removing a key never creates, changes or deletes anything in Chrome. Readiness is computed when asked
 // (the user may install the extension later): a profile is ready when its directory exists, the extension is
 // installed there, it is bound, and (where the live backends were listed, withLiveness) its bound instance is live: an
@@ -18,10 +21,12 @@ import {isDeepStrictEqual} from 'node:util';
 import {fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {ACCESS_NOTE} from './chrome.mjs';
+import {chromeRoute, effectiveRoute} from '../chrome/route.mjs';
 
 export const PROFILE_KEY = /^[a-z][a-z0-9-]{0,31}$/;
 const INSTANCE_ID = /^[A-Za-z0-9._:-]{1,128}$/;
-const ENTRY_KEYS = ['chromeProfileDirectory', 'extensionInstanceId', 'boundAt'];
+const ENTRY_KEYS = ['chromeProfileDirectory', 'extensionInstanceId', 'boundAt', 'route'];
+const ROUTES = ['cua', 'vendor'];
 const KEY_RULE = 'a profile key is 1-32 lowercase letters, digits or dashes, starting with a letter';
 
 export const registryFile = home => join(realHome(home), 'profiles.json');
@@ -38,6 +43,7 @@ function parseRegistry(text, file) {
     if (typeof entry.chromeProfileDirectory !== 'string' || !entry.chromeProfileDirectory) invalid(`entry ${key} has no chromeProfileDirectory`);
     if (entry.extensionInstanceId !== undefined && (typeof entry.extensionInstanceId !== 'string' || !INSTANCE_ID.test(entry.extensionInstanceId))) invalid(`entry ${key} has a bad extensionInstanceId`);
     if (entry.boundAt !== undefined && typeof entry.boundAt !== 'string') invalid(`entry ${key} has a bad boundAt`);
+    if (entry.route !== undefined && !ROUTES.includes(entry.route)) invalid(`entry ${key} has a bad route (cua or vendor)`);
   }
   return json;
 }
@@ -97,8 +103,9 @@ export function removeProfile({home, key}) {
 
 // `expected` is the entry as it stood when the instance id was looked for (bind's discovery takes seconds): the id is
 // recorded only if the entry is still exactly that, so an id found for one Chrome profile directory is never stored
-// under a key that was removed, re-added for another directory, or bound by another command meanwhile.
-export function bindProfile({home, key, extensionInstanceId, expected, now = new Date()}) {
+// under a key that was removed, re-added for another directory, or bound by another command meanwhile. `route` is the
+// home's route at bind time; a vendor-route binding is stored without one (absent means vendor).
+export function bindProfile({home, key, extensionInstanceId, expected, route = 'vendor', now = new Date()}) {
   if (typeof extensionInstanceId !== 'string' || !INSTANCE_ID.test(extensionInstanceId)) fail('invalid_instance_id', 'an extension instance id is 1-128 letters, digits or . _ : -');
   const registry = readRegistry(home);
   if (expected !== undefined && !isDeepStrictEqual(registry.profiles[key], expected)) {
@@ -108,24 +115,26 @@ export function bindProfile({home, key, extensionInstanceId, expected, now = new
   const entry = entryOf(registry, key);
   const holder = Object.entries(registry.profiles).find(([other, e]) => other !== key && e.extensionInstanceId === extensionInstanceId)?.[0];
   if (holder) fail('instance_already_bound', `that extension instance is already bound to profile "${holder}"`, {hint: 'each Chrome profile has its own extension instance; check which profile you meant'});
-  registry.profiles[key] = {chromeProfileDirectory: entry.chromeProfileDirectory, extensionInstanceId, boundAt: now.toISOString()};
+  registry.profiles[key] = {chromeProfileDirectory: entry.chromeProfileDirectory, extensionInstanceId, boundAt: now.toISOString(), ...(effectiveRoute(route) === 'cua' ? {route: 'cua'} : {})};
   writeRegistry(home, registry);
   return registry.profiles[key];
 }
 
 // Every registered profile with its readiness from files alone, sorted by key. `reason` names why a profile is not
 // ready: profile_directory_missing, extension_not_installed, chrome_data_unreadable (with `chromeDataError`, the error
-// code) or not_bound (withLiveness adds the live check).
-export function profileStatuses({home, chrome}) {
+// code), not_bound or rebind_required (bound on the other route than the home's `route`; withLiveness adds the live
+// check). `chrome` checks the route's extension (chromeFacts' extensionId).
+export function profileStatuses({home, chrome, route = chromeRoute(home)}) {
   const {profiles} = readRegistry(home);
   return Object.keys(profiles).sort().map(key => {
-    const {chromeProfileDirectory, extensionInstanceId, boundAt} = profiles[key];
+    const {chromeProfileDirectory, extensionInstanceId, boundAt, route: boundOn} = profiles[key];
     const directory = chrome.profileDirectoryExists(chromeProfileDirectory);
     const extension = directory === 'missing' ? 'absent' : directory === 'unreadable' ? 'unreadable' : chrome.extensionInstalled(chromeProfileDirectory);
     const reason = directory === 'missing' ? 'profile_directory_missing'
       : extension === 'absent' ? 'extension_not_installed'
         : extension === 'unreadable' ? 'chrome_data_unreadable'
-          : !extensionInstanceId ? 'not_bound' : null;
+          : !extensionInstanceId ? 'not_bound'
+            : effectiveRoute(boundOn) !== effectiveRoute(route) ? 'rebind_required' : null;
     return {key, chromeProfileDirectory, ready: reason === null, ...(reason ? {reason} : {}),
       ...(extensionInstanceId ? {extensionInstanceId} : {}), ...(boundAt ? {boundAt} : {}), ...unreadableCode(chrome, chromeProfileDirectory, extension)};
   });
@@ -164,6 +173,7 @@ export const REASONS = {
   profile_directory_missing: 'the Chrome profile directory no longer exists',
   extension_not_installed: 'the OpenAI extension is not installed in this Chrome profile (install it there yourself; cua never does)',
   not_bound: 'not bound to an extension instance yet: run cua profiles bind',
+  rebind_required: 'bound on the other Chrome route than this home\'s (cua chrome register switched between cua\'s extension and the ChatGPT extension): bind it again with cua profiles bind <key>',
   host_not_live: `no live OpenAI extension backend serves it (Chrome is closed, or no window of that profile is open): ${WAKE}; turning the extension off and on at chrome://extensions also wakes it but can mint a new instance id, so run cua profiles bind <key> after that`,
   binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (${WAKE}), or the extension was turned off and on or reinstalled, which can mint a new instance id (bind it again with cua profiles bind <key>)`,
   backends_unlistable: 'the live OpenAI extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',

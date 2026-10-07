@@ -24,5 +24,15 @@ export const socketNameFor = instanceId => createHash('sha256').update(String(in
 
 // $CUA_HOME/chrome/b: the hosts' sockets (<name>.sock) and status files (<name>.json), 0700. Short on purpose.
 export const backendDir = home => join(home, 'chrome', 'b');
-// $CUA_HOME/chrome/logs: one log per host (<pid>.log, renamed <name>.log once the extension said hello).
+// $CUA_HOME/chrome/logs: one log per host (<pid>.log, renamed <name>.log once the extension said hello), and the
+// launcher's append-only log of each start and of whatever Node itself writes to stderr (warnings, a crash before main).
 export const logDir = home => join(home, 'chrome', 'logs');
+export const launcherLog = home => join(logDir(home), 'launcher.log');
+// $CUA_HOME/chrome/host: the shell launcher the native-messaging manifest names (`cua chrome register` writes it).
+export const launcherPath = home => join(home, 'chrome', 'host');
+
+// macOS limits a Unix socket path to 103 bytes (sun_path is 104 with its terminator; Linux allows 107). The name is
+// fixed-length, so a home's socket path length is exact: `cua chrome register` refuses a home where it is longer.
+export const MAX_SOCKET_PATH_BYTES = 103;
+export const socketPathFor = (home, name) => join(backendDir(home), `${name}.sock`);
+export const longestSocketPath = home => socketPathFor(home, 'f'.repeat(12));

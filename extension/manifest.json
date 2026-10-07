@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "cua",
+  "version": "0.1.0",
+  "description": "Lets cua's local native host drive this Chrome profile's tabs for your agents.",
+  "minimum_chrome_version": "125",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApCrhXD2s4AbSBxHsJxiAaEHRdamtfTiRhMLNZcbhEuQUS3PgbguhQHOTqwXxOF/GKaFb6LgDtGB9qQBtiZkGbq+KL0QlDAVsgBLYMGkQbS7ceohkyHBHXcwLCPW/bq4U48U3eNy8VK4EMTrMX1Mr/k+BxbttbLJ5LQahM8dhS6a9r+9TMMoaVUHaCC7PNVQiVCaCUTJ9EvgIfy+ijFByg2lBTv0vU8Kjqpkhnta184YbSbSxx4eWGQ+ZBEFlTHI00uardYziUmlbX31n35B4lZ9UOkiFFwKpI7gQ9dddLr/87QWcXK3ZVoWokIM1uW/h7lT8hFy/DATTPXItmuvytQIDAQAB",
+  "permissions": ["debugger", "nativeMessaging", "tabs", "tabGroups", "storage", "alarms"],
+  "background": {"service_worker": "background.js"},
+  "action": {
+    "default_title": "cua",
+    "default_popup": "popup.html",
+    "default_icon": {"16": "icons/16.png", "32": "icons/32.png"}
+  },
+  "icons": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png"}
+}

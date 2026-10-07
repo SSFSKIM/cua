@@ -110,13 +110,13 @@ const at = ns => `globalThis[${js(ns)}]`;
 const ID_OF = 'const idsOf = t => [t?.id, t?.providerTabId].filter(v => v != null).map(String);';
 
 // cua.listBrowsers on the cua route: only cua's own hosts may be listed (the backend paths are set, so the vendor's
-// /tmp/codex-browser-use scan is skipped), the selected instance among them, none asking for agent request headers.
+// /tmp/codex-browser-use scan is skipped), the selected instance among them. (The service's BrowserInfo keeps only two
+// metadata fields, so whether getInfo asks for agent request headers is checked on the host's raw answer instead.)
 export const discoverBackends = instanceId => cellCode(`const list = await cua.listBrowsers({emit: false});
 __out.count = list.length;
 __out.names = list.map(b => (b?.name === "cua" ? "cua" : "other"));
 __out.types = list.map(b => (b?.type === "extension" ? "extension" : "other"));
-__out.selectedListed = list.some(b => b?.metadata?.extensionInstanceId === ${js(instanceId)});
-__out.headerField = list.some(b => "agentRequestHeaderEnabled" in (b ?? {}) || "agentRequestHeaderEnabled" in (b?.metadata ?? {}));`);
+__out.selectedListed = list.some(b => b?.metadata?.extensionInstanceId === ${js(instanceId)});`);
 
 export const selectInto = (ns, instanceId) => cellCode(`const browser = await cua.getBrowser({extensionInstanceId: ${js(instanceId)}});
 ${at(ns)} = {browser, browserId: browser.browserId};

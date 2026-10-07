@@ -40,7 +40,7 @@ test('the page is one self-contained document on its exact loopback Host, with a
   assert.match(ok.body, new RegExp(`<input id="secret" type="password" aria-label="${INPUT_LABEL}"`));
   assert.equal((await get(page.url, `localhost:${new URL(page.url).port}`)).status, 421);
   assert.equal((await get(`${page.origin}/other`)).status, 404);
-  assert.deepEqual(page.requests(), {total: 3, served: 1, refused: 2, frame: {total: 0, served: 0, refused: 0}});
+  assert.deepEqual(page.requests(), {total: 3, served: 1, refused: 2, frame: {total: 0, served: 0, refused: 0}, user: {total: 0, served: 0, refused: 0}});
 });
 
 test('the framed page embeds a cross-site frame (localhost, a second loopback port) that only it may embed; the user page carries its own marker', async t => {
@@ -48,7 +48,6 @@ test('the framed page embeds a cross-site frame (localhost, a second loopback po
   t.after(page.close);
   assert.match(page.frameOrigin, /^http:\/\/localhost:\d+$/);
   assert.notEqual(new URL(page.frameOrigin).port, new URL(page.origin).port);
-  assert.deepEqual(page.origins, [page.origin, page.frameOrigin]);
   const framed = await get(page.framedUrl);
   assert.equal(framed.status, 200);
   assert.equal(framed.headers['content-security-policy'], framedCsp(page.frameOrigin));
@@ -59,11 +58,14 @@ test('the framed page embeds a cross-site frame (localhost, a second loopback po
   assert.equal(frame.headers['content-security-policy'], frameCsp(page.origin));
   assert.ok(frame.body.includes(page.frameMarker));
   assert.equal((await get(`http://127.0.0.1:${new URL(page.frameOrigin).port}/`)).status, 421, 'the frame answers only as localhost');
+  assert.notEqual(page.userOrigin, page.origin, 'the user tab has its own origin, so its claim needs its own approval');
+  assert.deepEqual(page.origins, [page.origin, page.frameOrigin, page.userOrigin]);
+  assert.equal((await get(`${page.origin}/user`)).status, 404);
   const user = await get(page.userUrl);
   assert.equal(user.status, 200);
   assert.ok(user.body.includes(page.userMarker));
   assert.equal(user.headers['content-security-policy'], USER_CSP);
-  assert.deepEqual(page.requests(), {total: 2, served: 2, refused: 0, frame: {total: 2, served: 1, refused: 1}});
+  assert.deepEqual(page.requests(), {total: 2, served: 1, refused: 1, frame: {total: 2, served: 1, refused: 1}, user: {total: 1, served: 1, refused: 0}});
 });
 
 test('the frame\'s button sets its status line; nothing else runs in it', () => {

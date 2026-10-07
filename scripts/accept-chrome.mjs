@@ -15,7 +15,8 @@
 // the live host is the profile's own socket in $CUA_HOME/chrome/b accepting a connection, and the run adds: a discovery
 // cell (cua.listBrowsers lists cua's hosts only), a cross-site iframe cell after C2, goto latency per navigation, and the
 // scenarios of scripts/accept/chrome-cua.mjs: the user-tab claim (with its exception to the user-tab rule below), turn
-// end and handoff, and two `cua serve` clients. `--chrome-restart` runs only acceptance 6, which needs the owner to
+// end and handoff, and two `cua serve` clients. A declined elicitation stops the run's input as below: the scenarios not
+// yet run are recorded BLOCKED. A home with a Codex credential file is refused on the cua route (the no-login control). `--chrome-restart` runs only acceptance 6, which needs the owner to
 // quit and reopen Chrome while the runner waits (it prints an `OWNER STEP:` line; `--restart-wait-min`, default 15).
 // `--only <names>` (comma-separated: c2, user-tab, turn-end, two-clients) narrows a cua-route run.
 //
@@ -61,7 +62,7 @@ import {reportLeaks} from './probe/chrome/original/classify.mjs';
 import {startAcceptancePage} from './accept/chrome-page.mjs';
 import {cellRunner, createStopLatch, elicitationPolicy, newTabRecord, leftoverOf, profilePrecondition, runAgentScript} from './accept/chrome-run.mjs';
 import {discoverBackends} from './accept/chrome-cells.mjs';
-import {chromeRestartScenario, hostStatus, openAsUserArgs, rawSessionCall, routePreconditions, socketAccepts, socketPathOf, turnEndScenario, twoClientScenario,
+import {chromeRestartScenario, hostStatus, openAsUserArgs, rawGetInfo, rawSessionCall, routePreconditions, socketAccepts, socketPathOf, turnEndScenario, twoClientScenario,
   userTabScenario} from './accept/chrome-cua.mjs';
 
 // `--all` (M13) evaluates C1-C7 as a whole and never drives a browser; see scripts/accept/chrome-all.mjs:
@@ -145,8 +146,10 @@ async function closeServe(session, label) {
   channels.push({name: `MCP transport${label} (both directions)`, text: session.transcript.join('\n')}, {name: `serve and runtime stderr${label}`, text: session.stderr});
   facts.serveStderrBytes = (facts.serveStderrBytes ?? 0) + Buffer.byteLength(session.stderr);
 }
-// Every scenario runs whatever an earlier one did; an exception is that scenario's FAIL, not the run's end.
+// Every scenario runs whatever an earlier one did; an exception is that scenario's FAIL, not the run's end. A stop the
+// elicitation policy latched (a declined request) stops further input: the later scenarios are not run (BLOCKED).
 async function scenario(name, body) {
+  if (latch.stopped) { record(`${name}-not-run`, 'BLOCKED', {reason: `the run stopped earlier (${latch.reason})`}); return; }
   try { await body(); } catch (error) { record(`${name}-unexpected`, 'FAIL', `${error.code ?? 'error'}: ${String(error.message).slice(0, 200)}`); }
 }
 try {
@@ -187,8 +190,14 @@ try {
           if (route === 'cua' && !restartOnly) {
             const found = await cellRunner({session, facts})('discoverBackends', discoverBackends(instanceId));
             const r = found.result ?? {};
-            record('discovery-cua-hosts-only', r.count >= 1 && r.selectedListed === true && r.names?.every(n => n === 'cua') && r.types?.every(t => t === 'extension') && r.headerField === false ? 'PASS' : 'FAIL',
-              {class: found.class, count: r.count ?? null, names: r.names ?? null, selectedListed: r.selectedListed ?? null, agentRequestHeaderField: r.headerField ?? null});
+            record('discovery-cua-hosts-only', r.count >= 1 && r.selectedListed === true && r.names?.every(n => n === 'cua') && r.types?.every(t => t === 'extension') ? 'PASS' : 'FAIL',
+              {class: found.class, count: r.count ?? null, names: r.names ?? null, selectedListed: r.selectedListed ?? null});
+            // The login is removed by what getInfo omits; read the host's own answer, as the service receives it.
+            const info = await rawGetInfo(socketPathOf(home, instanceId)).catch(error => ({ok: false, error: error.code ?? error.message}));
+            const i = info.result ?? {};
+            record('host-getinfo-no-header', info.ok && i.type === 'extension' && i.name === 'cua' && !('agentRequestHeaderEnabled' in i) && !('extensionId' in (i.metadata ?? {}))
+              && i.metadata?.extensionInstanceId === instanceId ? 'PASS' : 'FAIL',
+              info.ok ? {type: i.type ?? null, name: i.name ?? null, agentRequestHeaderEnabled: 'agentRequestHeaderEnabled' in i, metadataKeys: Object.keys(i.metadata ?? {}).sort()} : {error: String(info.error).slice(0, 120)});
           }
           if (restartOnly) {
             await scenario('restart', () => chromeRestartScenario({session, page, instanceId, record, facts, statusOf,
@@ -263,7 +272,7 @@ const text = JSON.stringify(report, null, 1);
 // The disposable label is not secret and stays in the report (a failed cleanup names it); the generic guard against
 // URLs, paths and token-like runs judges everything else.
 const reportProblems = [...(leaks(text) ? ['the sentinel'] : []), ...reportLeaks(text.split(label).join('<label>'),
-  page ? [page.url, page.origin, page.documentMarker, page.frameOrigin, page.framedMarker, page.frameMarker, page.userMarker] : [])];
+  page ? [page.url, page.origin, page.documentMarker, page.frameOrigin, page.userOrigin, page.framedMarker, page.frameMarker, page.userMarker] : [])];
 if (reportProblems.length) {
   process.stderr.write(`accept-chrome: refusing to write a report that would disclose ${[...new Set(reportProblems)].join(', ')}\n`);
   process.exit(1);

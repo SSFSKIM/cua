@@ -12,11 +12,12 @@ import {backendDir, socketNameFor} from '../src/chrome/extension.mjs';
 import {createFakeCuaExtension} from './helpers/fake-cua-extension.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 import {
-  hostStatus, ownerOfTab, socketAccepts, openAsUserArgs, rawBackendClient, rawSessionCall, routePreconditions,
+  hostStatus, ownerOfTab, socketAccepts, openAsUserArgs, rawBackendClient, rawSessionCall, rawGetInfo, routePreconditions, RESTART_FAILURE_BOUND_MS,
   userTabScenario, turnEndScenario, twoClientScenario, chromeRestartScenario,
 } from '../scripts/accept/chrome-cua.mjs';
 
-const PAGE = {origin: 'http://127.0.0.1:4567', url: 'http://127.0.0.1:4567/', documentMarker: 'doc-m', userUrl: 'http://127.0.0.1:4567/user', userMarker: 'user-m',
+const PAGE = {origin: 'http://127.0.0.1:4567', url: 'http://127.0.0.1:4567/', documentMarker: 'doc-m', userOrigin: 'http://127.0.0.1:4569', userUrl: 'http://127.0.0.1:4569/user', userMarker: 'user-m',
+  origins: ['http://127.0.0.1:4567', 'http://localhost:4568', 'http://127.0.0.1:4569'],
   framedUrl: 'http://127.0.0.1:4567/framed', framedMarker: 'framed-m', frameMarker: 'frame-m'};
 const marker = out => ({result: {content: [{type: 'text', text: `PROBERESULT ${JSON.stringify(out)}`}]}});
 const ended = {result: {structuredContent: {status: 'ended'}}};
@@ -39,7 +40,7 @@ function fakeSession(answers = {}) {
 
 function harness() {
   const steps = [];
-  return {steps, facts: {cellsSent: [], tabOperations: 0}, record: (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; },
+  return {steps, facts: {cellsSent: [], tabOperations: 0, elicitations: []}, record: (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; },
     status: name => steps.find(s => s.name === name)?.status};
 }
 
@@ -49,15 +50,18 @@ const statusWith = sessions => ({instanceId: 'inst', pid: 1, sessions: Object.en
 const tab = (tabId, origin, mark = 'none', attached = true) => ({tabId, origin, mark, attached});
 const fast = {pollMs: 1, settleMs: 20};
 
+// The runner's elicitation inventory entry for an accepted origin-access request on one of its own origins.
+const accepted = originIndex => ({method: 'elicitation/create', kind: 'origin-access', mode: 'form', ownOrigin: true, answered: 'accept (session)', originIndex});
+
 test('the user-tab claim: found among the user tabs, claimed, read, then released open at end_task and closed by the runner', async () => {
+  const h = harness();
   const session = fakeSession({
     findUserTab: marker({matches: 1, tabId: 41}),
-    claimUserTab: marker({tabId: 41, markerRead: true}),
+    claimUserTab: () => { h.facts.elicitations.push(accepted(2)); return marker({tabId: 41, markerRead: true}); },
     userTabOpen: marker({open: true}),
     closeUserTab: marker({listed: true, closed: true, stillListed: false}),
   });
   const opened = [];
-  const h = harness();
   await userTabScenario({session, page: PAGE, instanceId: 'inst', record: h.record, facts: h.facts, ...fast,
     openAsUser: url => { opened.push(url); return {code: 0}; },
     statusOf: scripted(session, sent => statusWith(sent.includes('end_task') ? {s1: []} : {s1: [tab(41, 'claimed')]}))});
@@ -65,6 +69,20 @@ test('the user-tab claim: found among the user tabs, claimed, read, then release
   assert.deepEqual(session.sent, ['selectUserTask', 'findUserTab', 'claimUserTab', 'end_task', 'selectUserCheck', 'userTabOpen', 'closeUserTab', 'end_task']);
   for (const step of ['user-tab-opened-as-user', 'user-tab-listed', 'user-tab-claimed-and-read', 'user-tab-owned-while-claimed', 'user-tab-released-open', 'user-tab-closed-by-runner'])
     assert.equal(h.status(step), 'PASS', step);
+});
+
+test('a claim read with no origin-access elicitation for the user tab\'s own origin fails: the approval must reach the client', async () => {
+  for (const during of [() => {}, facts => facts.elicitations.push(accepted(0)), facts => facts.elicitations.push({...accepted(2), answered: 'decline'})]) {
+    const h = harness();
+    const session = fakeSession({findUserTab: marker({matches: 1, tabId: 41}),
+      claimUserTab: () => { during(h.facts); return marker({tabId: 41, markerRead: true}); },
+      userTabOpen: marker({open: true}), closeUserTab: marker({listed: true, closed: true, stillListed: false})});
+    h.facts.elicitations.push(accepted(2));      // one before the claim does not count
+    await userTabScenario({session, page: PAGE, instanceId: 'inst', record: h.record, facts: h.facts, ...fast, openAsUser: () => ({code: 0}),
+      statusOf: scripted(session, sent => statusWith(sent.includes('end_task') ? {} : {s1: [tab(41, 'claimed')]}))});
+    assert.equal(h.status('user-tab-claimed-and-read'), 'FAIL');
+    assert.ok(session.sent.includes('closeUserTab'));
+  }
 });
 
 test('a claimed tab still owned after end_task fails the release check, and the runner still closes its page', async () => {
@@ -163,6 +181,29 @@ test('Chrome after serve: waits for the owner\'s restart, the open task fails fa
     assert.equal(h.status(step), 'PASS', `${step}: ${JSON.stringify(h.steps)}`);
 });
 
+test('Chrome after serve: a failure slower than the backend bound fails, and the bound is reported', async () => {
+  const session = fakeSession({createOwnTab: marker({tabId: 31, markerRead: true}), afterRestart: marker({failure: 'Timed out after 30000ms', ms: 30_000}),
+    createOwnTabAfter: marker({tabId: 77, markerRead: true}), closeOwnTabAfter: marker({closed: true, stillListed: false})});
+  let pid = 100;
+  const h = harness();
+  await chromeRestartScenario({session, page: PAGE, instanceId: 'inst', record: h.record, facts: h.facts, ...fast, waitMs: 1000, announce: () => {},
+    statusOf: async () => { const now = {pid, sessions: []}; pid = 200; return now; }, hostLive: async () => true});
+  const step = h.steps.find(s => s.name === 'restart-open-task-fails-classified');
+  assert.equal(step.status, 'FAIL');
+  assert.equal(step.detail.boundMs, RESTART_FAILURE_BOUND_MS);
+});
+
+test('Chrome after serve: a host with no status before the restart fails at once, never waits on a pid it cannot compare', async () => {
+  const session = fakeSession({createOwnTab: marker({tabId: 31, markerRead: true}), closeOwnTab: marker({closed: true, stillListed: false})});
+  const announced = [];
+  const h = harness();
+  await chromeRestartScenario({session, page: PAGE, instanceId: 'inst', record: h.record, facts: h.facts, ...fast, waitMs: 1000, announce: line => announced.push(line),
+    statusOf: async () => null, hostLive: async () => true});
+  assert.equal(h.status('restart-host-status-before'), 'FAIL');
+  assert.deepEqual(announced, [], 'the owner is not asked to restart Chrome');
+  assert.deepEqual(session.sent, ['selectRestartTask', 'createOwnTab', 'closeOwnTab', 'end_task']);
+});
+
 test('Chrome after serve: no restart within the wait is BLOCKED (the owner\'s step), and nothing further is sent but the cleanup', async () => {
   const session = fakeSession({createOwnTab: marker({tabId: 31, markerRead: true}), closeOwnTab: marker({closed: true, stillListed: false})});
   const h = harness();
@@ -208,12 +249,18 @@ test('the raw backend client reaches a live host: another session\'s executeCdp 
   assert.deepEqual(refused, {ok: false, error: 'tab owned by another session'});
   assert.deepEqual(await rawSessionCall({socketPath, sessionId: 'intruder', method: 'getTabs', params: {}}), {ok: true, result: []});
   assert.equal(await socketAccepts(join(scratch.dir, 'nothing.sock'), 200), false);
+  const info = await rawGetInfo(socketPath);
+  assert.equal(info.ok, true);
+  assert.equal(info.result.name, 'cua');
+  assert.equal('agentRequestHeaderEnabled' in info.result, false);
+  assert.equal('extensionId' in info.result.metadata, false);
 });
 
 test('the route\'s preconditions: the cua route needs no Codex login and counts its host by the profile\'s own socket', () => {
   const cua = routePreconditions({route: 'cua', homeRoute: 'cua', socketLive: true, authPresent: false});
   assert.deepEqual(cua, {missing: [], loginGate: false, liveHosts: 1, codexAuthPresent: false});
   assert.deepEqual(routePreconditions({route: 'cua', homeRoute: 'cua', socketLive: false, authPresent: false}).missing, ['no cua host serves this profile\'s socket (is the cua extension loaded and connected in it?)']);
+  assert.match(routePreconditions({route: 'cua', homeRoute: 'cua', socketLive: true, authPresent: true}).missing.join(), /Codex credential file/);
   assert.deepEqual(routePreconditions({route: 'cua', homeRoute: 'vendor', socketLive: true, authPresent: false}).missing, ['the home is on the vendor route, not cua (cua chrome register switches it)']);
   const vendor = routePreconditions({route: 'vendor', homeRoute: 'vendor', liveHosts: 2});
   assert.deepEqual(vendor, {missing: [], loginGate: true, liveHosts: 2});

@@ -10,7 +10,9 @@
 //            `localhost`, so the frame is cross-site as well as cross-origin: Chrome's site isolation puts it in its own
 //            renderer (an out-of-process iframe), which the vendor service reaches only through attachTarget. Its page
 //            carries its own marker, a button and a status line the button sets.
-//   /user    the user-tab page: the runner opens it in Chrome as the user would (acceptance 3), never through the agent.
+//   /user    the user-tab page, on a third loopback port of its own: the runner opens it in Chrome as the user would
+//            (acceptance 3), never through the agent. Its own origin means reading it after the claim needs an
+//            origin-access approval of its own (an approval the C2 page got earlier in the same serve does not cover it).
 import {createServer} from 'node:http';
 import {createHash, randomBytes} from 'node:crypto';
 
@@ -109,16 +111,17 @@ export async function startAcceptancePage() {
   main = await serveDocuments({hostName: '127.0.0.1', documents: () => ({
     '/': {csp: CSP, body: html(documentMarker)},
     '/framed': {csp: framedCsp(frame.origin), body: framedHtml(framedMarker, `${frame.origin}/`)},
-    '/user': {csp: USER_CSP, body: userHtml(userMarker)},
   })});
+  const user = await serveDocuments({hostName: '127.0.0.1', documents: () => ({'/user': {csp: USER_CSP, body: userHtml(userMarker)}})});
   const {origin} = main;
   return {
     origin, url: `${origin}/`, documentMarker,
     framedUrl: `${origin}/framed`, framedMarker, frameOrigin: frame.origin, frameUrl: `${frame.origin}/`, frameMarker,
-    userUrl: `${origin}/user`, userMarker,
-    // The origins the runner owns: the only ones its elicitation policy accepts.
-    origins: [origin, frame.origin],
-    requests: () => ({...main.requests(), frame: frame.requests()}),
-    close: () => Promise.all([main.close(), frame.close()]).then(() => {}),
+    userOrigin: user.origin, userUrl: `${user.origin}/user`, userMarker,
+    // The origins the runner owns, the only ones its elicitation policy accepts; an accepted request is recorded by its
+    // index here (never the URL).
+    origins: [origin, frame.origin, user.origin],
+    requests: () => ({...main.requests(), frame: frame.requests(), user: user.requests()}),
+    close: () => Promise.all([main.close(), frame.close(), user.close()]).then(() => {}),
   };
 }

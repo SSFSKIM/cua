@@ -93,6 +93,8 @@ node bin/cua.mjs profiles bind personal                       # bound (automatic
 node bin/cua.mjs doctor --json | jq '.ok, (.checks[] | select(.id | startswith("chrome") or . == "codex.login"))'
 CUA_SHIM_SURFACES=browser node verify.mjs
 node scripts/accept-chrome.mjs --live --route cua --profile personal --report /tmp/cua-h3.json          # 1, 3, 4, 5
+#   acceptance 3's "Chrome shows the debugger infobar" is the owner's observation while the user tab is claimed
+#   (the runner reads the page and checks the origin-access approval reached it; it cannot see Chrome's own UI)
 node scripts/accept-chrome.mjs --live --route cua --chrome-restart --profile personal --report /tmp/cua-h3-restart.json
 #   prints "OWNER STEP: quit and reopen Chrome now …" and waits up to 15 min                           # 6
 node bin/cua.mjs chrome unregister                            # then re-check the acceptance 2 hashes

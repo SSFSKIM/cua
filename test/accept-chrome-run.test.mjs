@@ -151,6 +151,7 @@ test('on the cua route the script also drives a locator inside the cross-site fr
   assert.deepEqual(session.sent.slice(-3), ['crossOriginFrame', 'closeCreatedTab', 'confirmClosed']);
   assert.equal(h.steps.find(s => s.name === 'cross-origin-frame')?.status, 'PASS');
   assert.deepEqual(h.facts.gotoMs, [420, 380]);
+  assert.deepEqual(h.facts.gotoByScenario, {c2: [420, 380]});
 });
 
 test('a frame whose locator does not resolve fails the cross-origin step; the created tab is still closed', async () => {
@@ -168,4 +169,5 @@ test('the elicitation policy accepts each of the runner\'s own origins, and noth
   assert.equal(policy(elicit(originAccessRequest(frame))).action, 'accept');
   assert.equal(policy(elicit(originAccessRequest(ORIGIN))).action, 'accept');
   assert.equal(policy(elicit(originAccessRequest('http://localhost:9999'))).action, 'decline');
+  assert.deepEqual(h.inventory.map(e => e.originIndex), [1, 0, undefined], 'an accepted request names which own origin (by index, never the URL)');
 });

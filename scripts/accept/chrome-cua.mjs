@@ -1,9 +1,12 @@
 // The cua route's live acceptance scenarios (spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md,
 // Acceptance 3-6), run by scripts/accept-chrome.mjs --route cua against `cua serve` over MCP, with the cua host's
 // <name>.json (beside its socket in $CUA_HOME/chrome/b) as the host-side evidence:
-//   user tab      a page of the runner's own, opened in the profile as a person would (Chrome itself, `open -a`), is
-//                 listed through the vendor's user-tabs API, claimed (the origin-access elicitation is the runner's
-//                 policy's to answer), read, and after end_task is open and owned by no session;
+//   user tab      a page of the runner's own, on a loopback origin of its own, opened in the profile as a person would
+//                 (Chrome itself, `open -a`), is listed through the vendor's user-tabs API, claimed and read; reading it
+//                 must raise the origin-access elicitation for that origin, which reaches the client and the runner's
+//                 policy accepts (claimTab itself is exempt from the vendor's origin gate, so the read is what asks);
+//                 after end_task the tab is open and owned by no session. Chrome's debugger infobar while it is claimed
+//                 is the owner's observation, not the runner's;
 //   turn end      three created tabs, one marked deliverable and one handoff: after end_task the unmarked one is closed,
 //                 the deliverable open and unowned, the handoff owned and detached, and listed by the next task;
 //   two clients   two `cua serve` processes each drive their own tab; neither lists the other's, and an executeCdp on one
@@ -21,7 +24,7 @@ import {join} from 'node:path';
 import {createPeer, frameDecoder} from '../../src/chrome/protocol.mjs';
 import {backendDir, socketNameFor, socketPathFor} from '../../src/chrome/extension.mjs';
 import {classifyError, sanitizeVendorText} from '../probe/chrome/original/classify.mjs';
-import {cellRunner, LIMITS} from './chrome-run.mjs';
+import {cellRunner, LIMITS, noteGoto} from './chrome-run.mjs';
 import * as cells from './chrome-cells.mjs';
 
 export const CUA_LIMITS = {
@@ -76,6 +79,8 @@ export function rawBackendClient(socketPath) {
       call: ({sessionId, turnId = 'accept', method, params = {}}) => peer.request(method, {...params, session_id: sessionId, turn_id: turnId, session_context: 'acceptance'})
         .then(result => ({ok: true, result}), error => ({ok: false, error: String(error?.message ?? error)})),
       end: ({sessionId, turnId = 'accept'}) => peer.request('turnEnded', {session_id: sessionId, turn_id: turnId}).catch(() => {}),
+      // A request outside any session (getInfo).
+      request: (method, params = {}) => peer.request(method, params).then(result => ({ok: true, result}), error => ({ok: false, error: String(error?.message ?? error)})),
       close: () => socket.destroy(),
     }));
   });
@@ -91,6 +96,13 @@ export async function rawSessionCall({socketPath, sessionId, method, params}) {
   } finally { client.close(); }
 }
 
+// The host's own getInfo answer, as the service receives it before normalizing it (the service's BrowserInfo keeps only
+// two metadata fields, so a header field could not be seen through cua.listBrowsers).
+export async function rawGetInfo(socketPath) {
+  const client = await rawBackendClient(socketPath);
+  try { return await client.request('getInfo'); } finally { client.close(); }
+}
+
 // `open` arguments that open a URL in the running Chrome's named profile as a person would (Chrome's own process
 // hands it to the running browser); the agent is not involved.
 export const openAsUserArgs = (url, profileDirectory) => ['-n', '-a', 'Google Chrome', '--args', `--profile-directory=${profileDirectory}`, url];
@@ -103,6 +115,8 @@ export function routePreconditions({route, homeRoute, socketLive, authPresent, l
   if (route === 'cua') {
     if (homeRoute !== 'cua') missing.push(`the home is on the ${homeRoute ?? 'no'} route, not cua (cua chrome register switches it)`);
     if (!socketLive) missing.push('no cua host serves this profile\'s socket (is the cua extension loaded and connected in it?)');
+    // The no-login negative control: an existence check only, never opened.
+    if (authPresent) missing.push('the home has a Codex credential file (state/codex/auth.json): the no-login control fails; use a scratch home that never ran cua login');
     return {missing, loginGate: false, liveHosts: socketLive ? 1 : 0, codexAuthPresent: authPresent};
   }
   if (homeRoute === 'cua') missing.push('the home is on the cua route, not vendor (cua chrome register --vendor switches it)');
@@ -129,7 +143,6 @@ async function settle(statusOf, ready, {pollMs, settleMs}) {
 }
 
 const brief = cell => ({class: cell.class, ...(cell.text ? {text: cell.text} : {})});
-const pushGoto = (facts, scenario, ms) => { facts.gotoMs ??= []; for (const v of [ms].flat()) if (Number.isFinite(v)) { facts.gotoMs.push(v); (facts.gotoByScenario ??= {})[scenario] = [...(facts.gotoByScenario[scenario] ?? []), v]; } };
 
 // ---- acceptance 3: the user-tab claim --------------------------------------------------------------------------------
 
@@ -146,9 +159,16 @@ export async function userTabScenario({session, page, instanceId, record, facts,
     if (!record('user-tab-opened-as-user', opened ? 'PASS' : 'FAIL', {how: 'open -n -a "Google Chrome" --args --profile-directory=<dir> <runner page>', exit: open.code})) return;
     const find = await run('findUserTab', cells.findUserTab(ns, page), limits.findUserTab);
     if (!record('user-tab-listed', find.result?.matches === 1 ? 'PASS' : 'FAIL', {...brief(find), matches: find.result?.matches ?? null, infoKeys: find.result?.keys ?? []})) return;
+    const before = facts.elicitations.length;
     const claim = await run('claimUserTab', cells.claimUserTab(ns, page), limits.goto);
     tabId = Number.isInteger(claim.result?.tabId) ? claim.result.tabId : find.result?.tabId ?? null;
-    if (!record('user-tab-claimed-and-read', claim.result?.markerRead === true ? 'PASS' : 'FAIL', {...brief(claim), markerRead: claim.result?.markerRead ?? null, tabIdsAgree: claim.result?.tabId === find.result?.tabId})) return;
+    // The approval for the user tab's own origin must have reached the client (and been accepted) during the claim and read.
+    const userIndex = page.origins.indexOf(page.userOrigin);
+    const asked = facts.elicitations.slice(before).filter(e => e.kind === 'origin-access');
+    const approved = asked.some(e => e.answered.startsWith('accept') && e.originIndex === userIndex);
+    if (!record('user-tab-claimed-and-read', claim.result?.markerRead === true && approved ? 'PASS' : 'FAIL',
+      {...brief(claim), markerRead: claim.result?.markerRead ?? null, tabIdsAgree: claim.result?.tabId === find.result?.tabId,
+        originAccessAsked: asked.length, approvedForUserOrigin: approved})) return;
     const owner = ownerOfTab(await statusOf(), tabId);
     record('user-tab-owned-while-claimed', owner?.tab.origin === 'claimed' ? 'PASS' : 'FAIL', {owned: Boolean(owner), origin: owner?.tab.origin ?? null, attached: owner?.tab.attached ?? null});
   } finally {
@@ -186,7 +206,7 @@ export async function turnEndScenario({session, page, instanceId, record, facts,
     if (!record('turn-end-select', select.result?.selected ? 'PASS' : 'FAIL', brief(select))) return;
     const made = await run('createMarkedTabs', cells.createMarkedTabs(ns, page), limits.createThree);
     ids = Object.fromEntries(Object.entries(made.result?.ids ?? {}).filter(([, id]) => Number.isInteger(id)));
-    pushGoto(facts, 'turn-end', made.result?.gotoMs ?? []);
+    noteGoto(facts, 'turn-end', made.result?.gotoMs ?? []);
     const before = await statusOf();
     const owners = ROLES.map(role => ownerOfTab(before, ids[role]));
     const oneSession = owners.every(o => o && o.session_id === owners[0]?.session_id);
@@ -232,7 +252,7 @@ export async function twoClientScenario({sessions, page, instanceId, record, fac
     const selected = await Promise.all(runs.map((run, i) => run(`selectClient${names[i]}`, cells.selectInto(ns[i], instanceId), limits.select)));
     if (!selected.every(s => s.result?.selected)) { record('two-clients-own-tabs', 'FAIL', {why: 'a session selected no browser', cells: selected.map(brief)}); return; }
     const created = await Promise.all(runs.map((run, i) => run('createOwnTab', cells.createOwnTab(ns[i], page), limits.create)));
-    created.forEach((c, i) => { if (Number.isInteger(c.result?.tabId)) own[i] = c.result.tabId; pushGoto(facts, `two-clients-${names[i]}`, c.result?.gotoMs); });
+    created.forEach((c, i) => { if (Number.isInteger(c.result?.tabId)) own[i] = c.result.tabId; noteGoto(facts, `two-clients-${names[i]}`, c.result?.gotoMs); });
     if (!record('two-clients-own-tabs', created.every(c => c.result?.markerRead === true) && own.every(Number.isInteger) && own[0] !== own[1] ? 'PASS' : 'FAIL', {cells: created.map(brief), distinct: own[0] !== own[1]})) return;
     const status = await statusOf();
     const owners = own.map(id => ownerOfTab(status, id));
@@ -260,17 +280,31 @@ export async function twoClientScenario({sessions, page, instanceId, record, fac
 
 // ---- acceptance 6: Chrome after serve --------------------------------------------------------------------------------
 
+// How fast the open task's next call must fail once its host is gone. The service's backend requests have no timeout of
+// their own (a closed connection rejects them at once; browser-service.mjs Oi rejectPendingRequests), the extension
+// route bounds a CDP command by 10 s (the vendor extension's default, which the host enforces: DEFAULT_CDP_TIMEOUT_MS),
+// and the service bounds a backend's getInfo by 5 s (BS:67475 dte). The bound is the CDP one plus a 5 s margin.
+export const RESTART_FAILURE_BOUND_MS = 15_000;
+
 export async function chromeRestartScenario({session, page, instanceId, record, facts, statusOf, hostLive, announce, waitMs = 15 * 60_000, pollMs = 1000, limits = CUA_LIMITS}) {
   const run = cellRunner({session, facts, limits});
   const ns = '__accRestart';
   const select = await run('selectRestartTask', cells.selectInto(ns, instanceId), limits.select);
   const created = select.result?.selected ? await run('createOwnTab', cells.createOwnTab(ns, page), limits.create) : null;
-  pushGoto(facts, 'restart-before', created?.result?.gotoMs);
+  noteGoto(facts, 'restart-before', created?.result?.gotoMs);
   if (!record('restart-task-open', created?.result?.markerRead === true ? 'PASS' : 'FAIL', created ? brief(created) : brief(select))) {
     await endTask(session, limits);
     return;
   }
   const pid = (await statusOf())?.pid ?? null;
+  if (pid === null) {
+    // Without the host's pid a restart cannot be told from the host that is there now; the owner is not asked.
+    record('restart-host-status-before', 'FAIL', {why: 'the host\'s status file names no pid before the restart'});
+    const close = await run('closeOwnTab', cells.closeOwnTab(ns));
+    if (!(close.result?.closed === true)) facts.leftoverNotes = [...(facts.leftoverNotes ?? []), 'the restart scenario\'s tab on the runner\'s page may still be open; close it by hand'];
+    await endTask(session, limits);
+    return;
+  }
   announce(`quit and reopen Chrome now: the runner waits up to ${Math.round(waitMs / 60_000)} min for the cua host to restart`);
   const started = Date.now();
   let goneAt = null;
@@ -291,15 +325,15 @@ export async function chromeRestartScenario({session, page, instanceId, record, 
   record('restart-owner-restarted-chrome', 'PASS', {waitedMs: Date.now() - started, newHostPid: true});
   const after = await run('afterRestart', cells.afterRestart(ns));
   const failure = after.result?.failure ?? (after.result ? null : after.text ?? null);
-  const timedOut = /timed out after/.test(after.text ?? '') && !after.result;
-  record('restart-open-task-fails-classified', failure && !after.result?.reached && !timedOut ? 'PASS' : 'FAIL',
-    {class: failure ? classifyError(failure) : 'ok', text: failure ? sanitizeVendorText(failure, 200) : null, failedInMs: after.result?.ms ?? null, cellMs: after.durationMs});
+  const failedInMs = after.result?.ms ?? after.durationMs;
+  record('restart-open-task-fails-classified', failure && !after.result?.reached && failedInMs <= RESTART_FAILURE_BOUND_MS ? 'PASS' : 'FAIL',
+    {class: failure ? classifyError(failure) : 'ok', text: failure ? sanitizeVendorText(failure, 200) : null, failedInMs, boundMs: RESTART_FAILURE_BOUND_MS, cellMs: after.durationMs});
   const ended = await endTask(session, limits);
   record('restart-end-task', endedOk(ended) ? 'PASS' : 'FAIL', {status: ended});
   try {
     const again = await run('selectRestartNext', cells.selectInto(ns, instanceId), limits.select);
     const made = again.result?.selected ? await run('createOwnTabAfter', cells.createOwnTab(ns, page), limits.create) : null;
-    pushGoto(facts, 'restart-after', made?.result?.gotoMs);
+    noteGoto(facts, 'restart-after', made?.result?.gotoMs);
     const close = Number.isInteger(made?.result?.tabId) ? await run('closeOwnTabAfter', cells.closeOwnTab(ns)) : null;
     record('restart-new-task-drives-profile', made?.result?.markerRead === true && close?.result?.closed === true && close.result.stillListed === false ? 'PASS' : 'FAIL',
       {select: brief(again), create: made ? brief(made) : null, closed: close?.result?.closed ?? null});

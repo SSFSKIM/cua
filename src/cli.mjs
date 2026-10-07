@@ -16,7 +16,7 @@ import {clientSecretKey, devicesEntry, enrollDevice, readDevice, relayEndpoint} 
 import {runAgent} from './remote/agent.mjs';
 import * as launchd from './remote/launchd.mjs';
 import * as systemd from './remote/systemd.mjs';
-import {runSecrets} from './secrets/commands.mjs';
+import {runSecrets, PREFERRED_ENTRY} from './secrets/commands.mjs';
 import {isLabel, LABEL_RULE} from './secrets/label.mjs';
 import {chromeFacts, PERMISSION_FIX} from './profiles/chrome.mjs';
 import {addProfile, removeProfile, reasonText} from './profiles/registry.mjs';
@@ -56,9 +56,10 @@ export const usageFor = platform => {
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
   login [--device-auth]                                        sign the server in to Codex, at this terminal
   login --status                                               whether the server has a Codex login (never shows it)
-  secrets set <label>                                          store a secret, typed hidden at this terminal
-  secrets list [--json]                                        stored labels, never values
-  secrets remove <label> [--yes]                               delete one secret (confirmed at the terminal)
+  secrets set <KEY>                                            store a secret in ~/.config/claude-secrets/KEY, typed hidden
+                                                               at this terminal (in Claude Code, /secret KEY is preferred)
+  secrets list [--json]                                        stored keys, never values
+  secrets remove <KEY> [--yes]                                 delete one secret (confirmed at the terminal)
   profiles add <key> --chrome-profile <directory> [--json]     register an existing Chrome profile under a key
   profiles list [--json]                                       registered profiles and whether each is ready
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
@@ -337,18 +338,18 @@ async function agentRun({http, relay}) {
   return code;
 }
 
-// A secret is never an argument: set takes exactly one label and the helper reads the value at the terminal. Usage
+// A secret is never an argument: set takes exactly one key and reads the value at a masked terminal prompt. Usage
 // errors here are fixed messages that never repeat what was passed (an option name or a stray word may be a value
 // typed in the wrong place), so the parser's own messages are not shown.
 const SECRETS_USAGE = {
-  set: 'secrets set takes exactly one label; the secret is typed at the terminal, never passed as an argument',
-  remove: 'secrets remove takes exactly one label and optionally --yes',
+  set: 'secrets set takes exactly one key; the secret is typed at the terminal, never passed as an argument',
+  remove: 'secrets remove takes exactly one key and optionally --yes',
   list: 'secrets list takes only --json',
 };
 
 async function secrets(args) {
   const [command, ...rest] = args;
-  if (!Object.hasOwn(SECRETS_USAGE, command)) throw new UsageError('secrets takes set, list or remove');
+  if (!Object.hasOwn(SECRETS_USAGE, command)) throw new UsageError(`secrets takes set, list or remove; ${PREFERRED_ENTRY}`);
   const fixed = (options, positionals) => {
     try { return parse(rest, options, positionals); } catch (error) {
       if (error instanceof UsageError) throw new UsageError(SECRETS_USAGE[command]);

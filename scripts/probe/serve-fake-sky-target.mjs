@@ -1,28 +1,28 @@
 #!/usr/bin/env node
-// Probe-only `cua serve` for scripts/probe-secrets.mjs: the production server, broker, launcher and trusted sky
+// Probe-only `cua serve` for scripts/probe-secrets.mjs: the production server, launcher, secret store and trusted sky
 // service, except that the sky service delegates to a probe-generated fake target module instead of the vendor's
 // @oai/sky/service. The target's directory is added to the trusted code paths for this connection only. Everything
-// else (runtime, node_repl, trusted worker, nativePipe, Keychain helper broker) is the real thing.
+// else (runtime, node_repl, trusted worker, nativePipe, the store read) is the real thing.
 //
-//   node scripts/probe/serve-fake-sky-target.mjs <absolute fake target module> [--no-helper]   (uses $CUA_HOME)
-// --no-helper serves as if the Keychain helper were not built, so the connection has no broker and secrets are
-// unavailable (the fail-closed path for an unavailable broker).
+//   HOME=<temporary store home> node scripts/probe/serve-fake-sky-target.mjs <absolute fake target module>
+// (uses $CUA_HOME).
+// As under scripts/accept/serve-with-store.mjs, the server resolves its secret store from that $HOME and the runtime's
+// launch gets the account's real home back. CUA_SHIM_SECRETS=off serves with secrets turned off (secrets_disabled).
 import {dirname, isAbsolute} from 'node:path';
 import {realpathSync} from 'node:fs';
 import {serve} from '../../src/mcp/server.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
-import {locateHelper} from '../../src/secrets/helper.mjs';
+import {isAccountHome, withAccountHome} from '../accept/secret-seed.mjs';
 
-const [target, flag] = process.argv.slice(2);
-if (!target || !isAbsolute(target) || (flag !== undefined && flag !== '--no-helper')) {
-  process.stderr.write('serve-fake-sky-target: pass the absolute path of the fake target module, optionally --no-helper\n');
+const [target, ...rest] = process.argv.slice(2);
+if (!target || !isAbsolute(target) || rest.length || !process.env.CUA_HOME || isAccountHome(process.env.HOME)) {
+  process.stderr.write('serve-fake-sky-target: pass the absolute path of the fake target module, with CUA_HOME set and HOME set to a temporary store home\n');
   process.exit(2);
 }
 const real = realpathSync(target);
 const code = await serve({
   home: defaultHome(),
-  keychainHelper: flag === '--no-helper' ? {...locateHelper(), built: false} : locateHelper(),
-  prepareLaunch: launch => ({
+  prepareLaunch: launch => withAccountHome({
     ...launch,
     env: {
       ...launch.env,

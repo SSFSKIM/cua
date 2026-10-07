@@ -21,9 +21,15 @@ import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 
 const supported = installedHomeSupported;
-// The Keychain helper's broker is the macOS secrets backend; on Linux a connection has none (secrets_unsupported_platform).
-const keychain = supported && process.platform === 'darwin';
-const NO_BROKER_REASON = process.platform === 'darwin' ? 'secrets_disabled' : 'secrets_unsupported_platform';
+// A user home of the test's own, holding a secret store with one key: secrets-on servers resolve their store from it.
+function userHomeWithStore(t, entries = {WORK_PASSWORD: 'pw-sentinel-9q'}) {
+  const s = scratch();
+  t.after(s.cleanup);
+  const dir = join(s.dir, '.config', 'claude-secrets');
+  mkdirSync(dir, {recursive: true, mode: 0o700});
+  for (const [key, value] of Object.entries(entries)) writeFileSync(join(dir, key), value, {mode: 0o600});
+  return {home: s.dir, dir};
+}
 // Where the served CLI (HOME=userHome, no XDG overrides: launch drops them) looks for this host's Chrome.
 const chromeDataUnder = userHome => chromeUserData({userHome, env: {}});
 const SCOPED = sandboxState('scoped', '/');
@@ -106,8 +112,8 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE}, 'the trusted sky wrapper is registered, never an ambient override');
   assert.deepEqual(start.env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').slice(1), [dirname(SKY_SERVICE), ...SERVICE_SUPPORT_DIRS]);
   assert.equal(start.env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin');
-  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE'], 'no broker when secrets are off');
-  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, NO_BROKER_REASON);
+  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE'], 'no store when secrets are off');
+  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, 'secrets_disabled');
   const turnEnded = records(home).find(r => r.received?.params?.name === 'turn_ended').received;
   assert.equal(turnEnded.params.arguments.session_id, echoed.turn.session_id);
   const sent = records(home).filter(r => r.received?.method === 'tools/call').map(r => r.received.params);
@@ -525,85 +531,49 @@ test('close is bounded even when the host stops reading the MCP stream', {skip: 
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
 
-test('serve starts the connection\'s broker before the runtime, hands only the runtime its endpoint and token, lists through it and stops it at close', {skip: !keychain}, async t => {
+test('serve resolves the store from its $HOME, hands the runtime only its directory, and lists its keys, never a value', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  const record = join(home, 'helper-record.json');
-  const keychainHelper = {
-    built: true, command: process.execPath, args: [join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs'), 'broker'],
-    env: {FAKE_HELPER_MODE: 'serve', FAKE_HELPER_SECRETS: JSON.stringify({'work-password': 'pw-sentinel-9q'}), FAKE_HELPER_RECORD: record},
-  };
+  const user = userHomeWithStore(t);
   const input = new PassThrough();
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
   const diagnostics = [];
-  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'on'}, input, output, keychainHelper, diagnostics: line => diagnostics.push(line)});
+  const served = serve({home, env: {...process.env, HOME: user.home, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: line => diagnostics.push(line)});
   t.after(async () => { input.end(); await served; });  // a failed assertion must not leave the server (and the suite) running
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   await reply(1);
   input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
   const list = await reply(2);
-  assert.deepEqual(list.result.structuredContent, {status: 'ok', labels: ['work-password']});
-
-  const {config, argv} = JSON.parse(readFileSync(record, 'utf8'));
-  assert.deepEqual(argv, ['broker']);
+  assert.deepEqual(list.result.structuredContent, {status: 'ok', labels: ['WORK_PASSWORD']});
   const [{start}] = records(home);
-  assert.equal(start.env.CUA_SECRETS_BROKER_ENDPOINT, config.socket);
-  assert.equal(start.env.CUA_SECRETS_BROKER_TOKEN, config.token);
-  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, undefined);
+  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_DIR']);
+  assert.equal(start.env.CUA_SECRETS_DIR, user.dir);
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
-  assert.equal(config.socket, join(home, 'run', `${start.cwd.split('/').pop()}.sock`));
-  assert.equal(start.argv.includes(config.token), false);
-  assert.equal(existsSync(config.socket), true);
-  assert.equal(JSON.stringify(frames).includes(config.token), false, 'the token never reaches the MCP stream');
   assert.equal(JSON.stringify(frames).includes('pw-sentinel-9q'), false);
-
+  assert.equal(JSON.stringify(start).includes('pw-sentinel-9q'), false, 'no value reaches the runtime\'s launch');
   input.end();
   assert.equal(await served, 0, diagnostics.join('\n'));
-  assert.equal(existsSync(config.socket), false);
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
 
-test('serve runs the Keychain helper installed in $CUA_HOME/bin when none is passed, as a copy of cua without a build does', {skip: !keychain}, async t => {
+test('serve with no store yet still serves, and secrets_list lists no keys', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  mkdirSync(join(home, 'bin'));
-  const installed = join(home, 'bin', 'cua-keychain');
-  const fake = join(REPO, 'test', 'fixtures', 'fake-keychain-helper.mjs');
-  writeFileSync(installed, `#!/bin/sh\nFAKE_HELPER_SECRETS='{"from-cua-home":"x"}' exec ${JSON.stringify(process.execPath)} ${JSON.stringify(fake)} "$@"\n`);
-  chmodSync(installed, 0o755);
+  const empty = scratch();
+  t.after(empty.cleanup);
   const input = new PassThrough();
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: () => {}});
-  t.after(async () => { input.end(); await served; });
-  input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
-  input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
-  for (let i = 0; i < 400 && !frames.some(f => f.id === 2); i++) await new Promise(r => setTimeout(r, 25));
-  assert.deepEqual(frames.find(f => f.id === 2).result.structuredContent, {status: 'ok', labels: ['from-cua-home']});
-  input.end();
-  assert.equal(await served, 0);
-});
-
-test('serve without a built helper still serves, and secrets_list says how to build it', {skip: !keychain}, async t => {
-  const home = fakeInstalledHome(t);
-  const input = new PassThrough();
-  const output = new PassThrough();
-  const frames = [];
-  createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const served = serve({home, env: {...process.env, CUA_SHIM_SECRETS: 'on'}, input, output, keychainHelper: {built: false, path: '/nowhere/cua-keychain'}, diagnostics: () => {}});
+  const served = serve({home, env: {...process.env, HOME: empty.dir, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: () => {}});
   t.after(async () => { input.end(); await served; });
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
   for (let i = 0; i < 400 && frames.length < 2; i++) await new Promise(r => setTimeout(r, 25));
-  const list = frames.find(f => f.id === 2);
-  assert.deepEqual(list.result.structuredContent, {status: 'unavailable', code: 'helper_not_built'});
-  assert.match(list.result.content[0].text, /npm run build:helper/);
+  assert.deepEqual(frames.find(f => f.id === 2).result.structuredContent, {status: 'ok', labels: []});
   const [{start}] = records(home);
-  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_UNAVAILABLE']);
-  assert.equal(start.env.CUA_SECRETS_UNAVAILABLE, 'helper_not_built', 'a secret reference fails with this reason');
-  assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
+  assert.equal(start.env.CUA_SECRETS_DIR, join(empty.dir, '.config', 'claude-secrets'));
   input.end();
   assert.equal(await served, 0);
 });
@@ -692,7 +662,7 @@ test('a readiness listing that settles during close is answered before the final
   assert.ok(diagnostics.some(l => /did not read the final replies within 1 s/.test(l)), diagnostics.join('\n'));
 });
 
-// Issue #29: a connection's run entries ($CUA_HOME/run/<session>/, its broker socket and its owner record) go on every
+// Issue #29: a connection's run entries ($CUA_HOME/run/<session>/ and its owner record) go on every
 // exit path serve controls, and what a killed server left is swept at the next start.
 const waitFor = async (predicate, ms = 15_000) => {
   for (const until = Date.now() + ms; Date.now() < until; await new Promise(r => setTimeout(r, 25))) if (predicate()) return true;
@@ -719,12 +689,12 @@ test('serve start sweeps the run entries of connections whose process is gone, s
 });
 
 for (const signal of ['SIGINT', 'SIGHUP']) {
-  test(`${signal} closes a secrets-on connection like SIGTERM, removing its run entries and broker socket`, {skip: !keychain}, async t => {
-    const home = fakeInstalledHome(t, {helper: 'serve'});
-    const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on'});
+  test(`${signal} closes a secrets-on connection like SIGTERM, removing its run entries`, {skip: !supported}, async t => {
+    const home = fakeInstalledHome(t);
+    const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on', HOME: userHomeWithStore(t).home});
     await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
     await server.call('js', {code: 'task'});
-    assert.equal(readdirSync(join(home, 'run')).filter(n => n.endsWith('.sock')).length, 1, 'the broker is serving');
+    assert.equal(readdirSync(join(home, 'run')).length, 2, 'directory and owner record while the task is open');
     server.child.kill(signal);
     const {code, stderr} = await server.exit;
     assert.equal(code, 0, stderr);
@@ -732,9 +702,10 @@ for (const signal of ['SIGINT', 'SIGHUP']) {
   });
 }
 
-test('a signal that arrives while the connection is still starting closes it once it exists, leaving no run entries', {skip: !supported}, async t => {
-  const home = fakeInstalledHome(t, {helper: 'silent'});  // the broker never becomes ready: serve waits out its 3 s start
-  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on'});
+// The signal lands as soon as the session is claimed: whatever stage the connection reached, it is handled and closes.
+test('a signal that arrives while the connection is starting closes it, leaving no run entries', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on', HOME: userHomeWithStore(t).home});
   assert.ok(await waitFor(() => existsSync(join(home, 'run')) && readdirSync(join(home, 'run')).some(n => n.endsWith('.pid'))), 'serve claimed its session');
   server.child.kill('SIGTERM');
   const {code, signal, stderr} = await server.exit;
@@ -746,12 +717,12 @@ test('a signal that arrives while the connection is still starting closes it onc
 // A client killed outright closes every pipe it held. Here the runtime needs SIGKILL, so the teardown writes diagnostics
 // to a stderr nobody reads any more: that must neither crash the server nor cut its cleanup short.
 test('a client that closes all its pipes mid-task gets an orderly close: exit 0, runtime gone, no run entries', {skip: !supported}, async t => {
-  const home = fakeInstalledHome(t, {mode: 'ignore-term', helper: 'serve'});
-  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on'});
+  const home = fakeInstalledHome(t, {mode: 'ignore-term'});
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SECRETS: 'on', HOME: userHomeWithStore(t).home});
   await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   await server.call('js', {code: 'task'});
   const [{start}] = records(home);
-  assert.equal(readdirSync(join(home, 'run')).length, keychain ? 3 : 2, 'directory, broker socket (macOS) and owner record while the task is open');
+  assert.equal(readdirSync(join(home, 'run')).length, 2, 'directory and owner record while the task is open');
   server.child.stdout.destroy();
   server.child.stderr.destroy();
   server.child.stdin.end();

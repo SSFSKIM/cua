@@ -1,6 +1,6 @@
 // The launch record for one MCP connection's runtime: the relocated vendor `node` running the relocated `cua-repl`
 // entry, with an allowlisted environment built only from the resolved runtime, owned paths under CUA_HOME and the
-// caller's explicit services/broker settings. Nothing is read from an installed desktop app or its plugin cache.
+// caller's explicit services/secrets settings. Nothing is read from an installed desktop app or its plugin cache.
 //
 // Environment contract (everything else from the caller's environment is dropped, including every NODE_REPL_*,
 // SKY_*, BROWSER_USE_*, CUA_REPL_* and NODE_OPTIONS value, so an ambient override cannot redirect the runtime):
@@ -40,13 +40,13 @@
 //                                            BROWSER_USE_BACKEND_PATHS), and its network and security behaviour is
 //                                            the vendor default (no BROWSER_USE_DISABLE_AMBIENT_NETWORK or
 //                                            BROWSER_USE_SECURITY_MODE)
-//   CUA_SECRETS_BROKER_ENDPOINT, CUA_SECRETS_BROKER_TOKEN   only with a broker (src/secrets/broker.mjs): its socket
-//                                            and capability token, read by src/secrets/client.mjs in the trusted
-//                                            worker; untrusted cells see only the vendor's env allowlist
-//   CUA_SECRETS_UNAVAILABLE                  only without a broker: why (e.g. secrets_disabled), so the trusted sky
-//                                            service fails a {{secret:…}} reference with that reason
-// Deliberately never set: NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS (it would let model cells reach the broker; the
-// trusted wrapper uses nodeRepl.nativePipe instead), NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the
+//   CUA_SECRETS_DIR                          with secrets on: the secret store directory (src/secrets/store.mjs), which
+//                                            the trusted services read a value from; untrusted cells see only the
+//                                            vendor's env allowlist (they can still read the directory: the sandbox
+//                                            that would deny them would deny the trusted worker too)
+//   CUA_SECRETS_UNAVAILABLE                  otherwise: why (e.g. secrets_disabled), so the trusted services fail a
+//                                            {{secret:…}} reference with that reason
+// Deliberately never set: NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the
 // vendor launcher adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH,
 // NODE_REPL_WORKER_WRAPPER, NODE_REPL_DENIED_PATHS.
 //
@@ -57,7 +57,7 @@ import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROKER_ENV} from '../secrets/client.mjs';
+import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
@@ -75,10 +75,11 @@ export const SKY_SERVICE = ownedPath('../services/sky.mjs');
 export const BROWSER_SERVICE = ownedPath('../services/browser.mjs');
 export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, broker, secretsUnavailable, ambient = process.env}) {
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsUnavailable, ambient = process.env}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
+  if (secretsDir !== undefined && (typeof secretsDir !== 'string' || !isAbsolute(secretsDir))) fail('invalid_secrets_dir', 'the secret store directory must be an absolute path');
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
   const linux = runtime.manifest.platform === 'linux';
@@ -108,12 +109,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   });
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
-  if (broker) {
-    env[BROKER_ENV.endpoint] = broker.endpoint;
-    env[BROKER_ENV.token] = broker.token;
-  } else if (secretsUnavailable) {
-    env[BROKER_ENV.unavailable] = secretsUnavailable;
-  }
+  if (secretsDir) env[STORE_ENV.dir] = secretsDir;
+  else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }
 

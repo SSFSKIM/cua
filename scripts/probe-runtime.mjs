@@ -7,8 +7,10 @@
 // Expects the release already extracted at $CUA_HOME/runtimes/<release>/{cua_node,CodexCLI.app} (M2's installer will
 // own that step). For each variant (no sandbox socket allowance, then an explicit one) it launches the runtime as an
 // MCP stdio child, runs initialize, tools/list, one js cell (`cua.getState()` inventory counts only, the probe
-// wrapper's report, and whether untrusted cell code can reach a probe-owned stand-in broker socket), and the hidden
-// turn_ended; snapshots the owned process tree and the native socket's holder; then shuts the child down. Elicitations are declined, never accepted. No GUI actions, no app approvals, no Keychain.
+// wrapper's report, and whether untrusted cell code can reach a probe-owned stand-in socket for the M4 secrets broker,
+// removed since by issue #66), and the hidden turn_ended; snapshots the owned process tree and the native socket's
+// holder; then shuts the child down. Elicitations are declined, never accepted. No GUI actions, no app approvals, no
+// secrets.
 // Writes sanitized JSON evidence to --out (default $CUA_HOME/probe/runtime-probe.json).
 import {spawn, spawnSync} from 'node:child_process';
 import {createServer} from 'node:net';
@@ -64,8 +66,9 @@ function helperSnapshot() {
   return holders.map(h => ({...h, executable: sh('ps', ['-o', 'comm=', '-p', String(h.pid)]).trim()}));
 }
 
-// A stand-in for the M4 broker endpoint: answers `ack:<nonce>` to a known nonce line. Each nonce names the side that
-// used it, so the report shows whether the trusted worker and/or the untrusted kernel reached the socket.
+// A stand-in for the M4 broker endpoint (a unix socket only trusted code should reach; the broker itself is gone since
+// issue #66): answers `ack:<nonce>` to a known nonce line. Each nonce names the side that used it, so the report shows
+// whether the trusted worker and/or the untrusted kernel reached the socket.
 function startEchoBroker(socketPath, nonces) {
   rmSync(socketPath, {force: true});
   const seen = {connections: 0, acknowledged: {}};

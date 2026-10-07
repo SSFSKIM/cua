@@ -1,40 +1,42 @@
 #!/usr/bin/env node
-// Opt-in live sentinel probe of native secret substitution (M5). It needs the installed runtime in $CUA_HOME, the
-// production Keychain helper (`npm run build:helper`) and the test-owned pty driver (`npm run test:helper`). It touches
-// exactly one Keychain item: a uniquely labelled disposable entry holding generated sentinel values, created and
-// replaced through the test-owned pty seeding fixture and deleted in `finally`. It never reads any other item.
+// Opt-in live sentinel probe of native secret substitution (M5). It needs the installed runtime in $CUA_HOME. Its
+// secrets live in a store it owns: a temporary $HOME (scripts/accept/secret-seed.mjs) whose .config/claude-secrets
+// holds one generated key, stored and then replaced with generated sentinel values through `cua secrets set` typed at
+// a pseudo-terminal, and removed with the temporary home in `finally`. Every server it starts resolves its store from
+// that $HOME, so the account's own store (~/.config/claude-secrets) is never read or written.
 //
 //   node scripts/probe-secrets.mjs [--report <file>]
 //
 // Path under test, with no GUI and no native delivery: MCP client -> `cua serve` -> vendor cua-repl -> node_repl ->
-// sandboxed kernel cell -> nodeRepl.rpc("sky") -> trusted worker -> src/services/sky.mjs -> nodeRepl.nativePipe ->
-// node_repl -> the production Swift broker (Keychain) -> substitution -> a CONTROLLED FAKE target module standing in
+// sandboxed kernel cell -> nodeRepl.rpc("sky") -> trusted worker -> src/services/sky.mjs (src/secrets/store.mjs) ->
+// the store file in the temporary $HOME -> substitution -> a CONTROLLED FAKE target module standing in
 // for the vendor sky service. The fake target forwards each request it receives, over nativePipe, to a recorder
 // socket owned by this probe, which is the only place a value is allowed to arrive.
 //   target connections (scripts/probe/serve-fake-sky-target.mjs): paste/type_text/set_value substitution, ordinary
 //     input, a marker in an unsupported method, unknown/invalid label, unsupported shape, a target failure whose error
 //     carries the value (induced substituted-command failure), and a cell timeout while a substituted call is in
-//     flight (node_repl writes the cell source to stderr); then the item is replaced and substitution re-checked.
-//   real `cua serve` with the vendor sky service: a substituted command against a nonexistent app (a real vendor
-//     failure after substitution), an unknown label, and model cells trying to write an importable module into every
-//     trusted code root (and, for comparison, their own working and temporary directories), once under the default
-//     sandbox (`scoped`, the guarantee: no trusted root written, the run directory and $TMPDIR written) and once on a
-//     second connection with CUA_SHIM_SANDBOX=disabled (informational, what a cell could write, accepted under #20).
+//     flight (node_repl writes the cell source to stderr); then the value is replaced and substitution re-checked.
+//   the production server (scripts/accept/serve-with-store.mjs) with the vendor sky service: a substituted command
+//     against a nonexistent app (a real vendor failure after substitution), an unknown label, and model cells trying
+//     to write an importable module into every trusted code root (and, for comparison, their own working and temporary
+//     directories), once under the default sandbox (`scoped`, the guarantee: no trusted root written, the run
+//     directory and $TMPDIR written) and once on a second connection with CUA_SHIM_SANDBOX=disabled (informational,
+//     what a cell could write, accepted under #20).
 //     Every file a cell manages to write is removed and checked gone before the step is recorded
 //     (scripts/probe/trusted-roots.mjs).
-//   fail-closed connections through the fake target: with CUA_SHIM_SECRETS=off (secrets_disabled) and with no broker
-//     (the helper treated as not built: secrets_unavailable), a reference in each of the three methods fails before
-//     anything reaches the target.
-// `node scripts/accept-native.mjs --live-keychain` runs this probe as acceptance 6's live roundtrip.
+//   fail-closed connections through the fake target: with CUA_SHIM_SECRETS=off (secrets_disabled) and with a store
+//     the server cannot read (a second temporary $HOME whose store directory is mode 0000: secret_unreadable), a
+//     reference in each of the three methods fails before anything reaches the target.
+// `node scripts/accept-native.mjs --live-secrets` runs this probe as acceptance 6's live roundtrip.
 // Every observable channel is scanned for both sentinels (raw and as base64 at every alignment): the MCP transport in
-// both directions, serve/anchor/cua-repl/node_repl/kernel/trusted-worker/broker stderr (all inherited by the served
+// both directions, serve/anchor/cua-repl/node_repl/kernel/trusted-worker stderr (all inherited by the served
 // process), every regular file the runtime left under $CUA_HOME/state and run (read whole; an unreadable one fails the
-// scan as incomplete evidence), and this report. Keychain prompts never get answered: a step that stalls is BLOCKED.
+// scan as incomplete evidence), and this report; each `cua secrets set`'s terminal output is checked for its value.
 // Behavioural failures, including cleanup, are FAIL; an informational step is INFO and never decides the verdict.
 // Exit 0 PASS, 1 FAIL, 3 BLOCKED. The report holds metadata only.
 import {spawn} from 'node:child_process';
 import {randomBytes, randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {basename, dirname, join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -43,24 +45,20 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {SKY_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {locateHelper} from '../src/secrets/helper.mjs';
-import {runCaptured} from '../src/secrets/commands.mjs';
-import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
+import {storeDir} from '../src/secrets/store.mjs';
+import {createStoreHome, generatedKey, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {plantCell, trustedRootStep} from './probe/trusted-roots.mjs';
 import {tmpdirRoot} from '../src/runtime/sandbox.mjs';
 
 const {values: options} = parseArgs({options: {report: {type: 'string'}}, strict: true});
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const CLI = join(REPO, 'bin', 'cua.mjs');
+const SERVE = join(REPO, 'scripts', 'accept', 'serve-with-store.mjs');
 const FAKE_SERVE = join(REPO, 'scripts', 'probe', 'serve-fake-sky-target.mjs');
 const STEP_MS = 15_000;
-const PROMPT_ACTION = 'a Keychain prompt may be waiting: dismiss it (do not allow) and re-run when a human can answer Keychain prompts, or sign the helper with a stable identity';
 
 const home = defaultHome();
-// The helper the server under this home runs, so the seeded item and the broker share one code identity.
-const HELPER = locateHelper({home}).path;
-const label = `cua-m5-probe-${randomUUID()}`;
+const label = generatedKey('CUA_PROBE');
 const sentinels = [1, 2].map(() => `cua-m5-sentinel-${randomBytes(18).toString('base64url')}`);
 const REF = `{{secret:${label}}}`;
 const steps = [];
@@ -116,8 +114,9 @@ export async function handleRpc(request) {
 
 // --- an MCP connection to a served process -----------------------------------------------------------------------
 const children = new Set();
+let storeHome = null;         // the probe's own temporary $HOME, whose store every server reads
 function connect(name, args, extraEnv = {}) {
-  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'], env: {...process.env, CUA_HOME: home, ...extraEnv}});
+  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'], env: {...process.env, CUA_HOME: home, HOME: storeHome, ...extraEnv}});
   children.add(child);
   const transcript = [];
   let stderr = '';
@@ -159,7 +158,7 @@ function connect(name, args, extraEnv = {}) {
       const exit = await Promise.race([exited, sleep(20_000).then(() => null)]);
       if (!exit) child.kill('SIGTERM');
       channels.push({name: `${name} MCP transport`, text: transcript.join('\n')});
-      channels.push({name: `${name} stderr (serve, runtime, node_repl, kernel, trusted worker, broker)`, text: stderr});
+      channels.push({name: `${name} stderr (serve, runtime, node_repl, kernel, trusted worker)`, text: stderr});
       return exit;
     },
   };
@@ -179,11 +178,11 @@ const errorCode = out => out?.message?.match(/\[([a-z_]+)\]$/)?.[1] ?? null;
 const exec = (method, input) => ({type: 'execute', method, args: [input]});
 
 async function seed(name, value) {
-  const r = await setThroughTerminal({helper: HELPER, label, value, timeoutMs: STEP_MS});
+  const r = await seedSecret({home: storeHome, key: label, value, timeoutMs: STEP_MS});
   if (r.echoed) return record(name, 'FAIL', 'the value appeared in terminal output');
-  if (r.timedOut) return record(name, 'BLOCKED', `set did not finish within ${STEP_MS} ms; ${PROMPT_ACTION}`);
-  if (r.exit !== 0 || !r.terminalRestored) return record(name, 'FAIL', `set exited ${r.exit ?? r.signal}; terminal restored: ${r.terminalRestored}`);
-  return record(name, 'PASS', 'stored through the test-owned pty fixture');
+  if (r.timedOut) return record(name, 'FAIL', `cua secrets set did not finish within ${STEP_MS} ms (${r.prompts} prompt(s) answered)`);
+  if (r.exit !== 0 || !r.stored) return record(name, 'FAIL', `cua secrets set exited ${r.exit ?? r.signal}, key stored: ${r.stored}: ${r.said}`);
+  return record(name, 'PASS', 'stored by cua secrets set, typed twice at its masked prompt on a pty, in the probe\'s temporary $HOME');
 }
 
 // One connection through the fake target. `value` is the sentinel the item currently holds.
@@ -193,10 +192,6 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
   const since = recorder.received.length;
   const newlyReceived = () => recorder.received.slice(since);
   const lastReceived = () => recorder.received.at(-1);
-  const blockedIfStalled = (name, out) => {
-    if (errorCode(out) === 'secrets_unavailable' && /\(timeout\)/.test(out.message)) { record(name, 'BLOCKED', `the broker read timed out; ${PROMPT_ACTION}`); return true; }
-    return false;
-  };
 
   const substitutions = full ? [
     ['paste', {app: 'probe.record', text: REF, format: 'text'}, r => r.args[0].text],
@@ -207,7 +202,6 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
     const before = recorder.received.length;
     const out = cellOutput(await c.js(rpcCell(exec(method, input))));
     const name = `${tag}: ${method} substitution`;
-    if (blockedIfStalled(name, out)) continue;
     const got = recorder.received.length === before + 1 ? lastReceived() : null;
     const others = object => JSON.stringify(Object.entries(object).filter(([key]) => key !== 'text' && key !== 'value').sort());
     const exact = got && field(got) === value && others(got.args[0]) === others(input);
@@ -226,7 +220,7 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
     record(`${tag}: unsupported method`, out.ok && lastReceived()?.args?.[0]?.key === REF ? 'PASS' : 'FAIL', 'a marker in press_key is delegated literally, not expanded');
   }
   for (const [name, request, expected] of [
-    ['unknown label', exec('type_text', {app: 'probe.record', text: `{{secret:${label}-absent}}`}), 'secret_not_found'],
+    ['unknown label', exec('type_text', {app: 'probe.record', text: `{{secret:${label}_ABSENT}}`}), 'secret_not_found'],
     ['invalid label', exec('paste', {app: 'probe.record', text: '{{secret:not a label}}', format: 'text'}), 'invalid_secret_label'],
     ['unsupported shape', exec('type_text', {app: 'probe.record', text: REF, delay: 1}), 'unsupported_secret_shape'],
   ]) {
@@ -257,19 +251,19 @@ async function targetConnection(tag, value, recorder, targetModule, {full}) {
   return c;
 }
 
-// Real `cua serve`, real vendor sky service: what a model cell can and cannot do around the trusted worker.
+// The production server, real vendor sky service: what a model cell can and cannot do around the trusted worker.
 async function realServeConnection(runtime) {
   // The default (scoped) sandbox, whatever the probe's own environment says.
-  const c = connect('real-serve', [CLI, 'serve'], {CUA_SHIM_SANDBOX: undefined});
+  const c = connect('real-serve', [SERVE], {CUA_SHIM_SANDBOX: undefined});
   await c.open();
   {
     const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: REF})), 60_000));
     const ok = !out.ok && errorCode(out) === 'secret_input_failed';
-    record('real vendor: failure after substitution', ok ? 'PASS' : out.ok ? 'FAIL' : (errorCode(out) === 'secrets_unavailable' && /timeout/.test(out.message) ? 'BLOCKED' : 'FAIL'),
+    record('real vendor: failure after substitution', ok ? 'PASS' : 'FAIL',
       ok ? `value-free diagnostic: ${out.message.replace(/^cua: /, '').slice(0, 160)}` : `got ${out.ok ? 'success' : errorCode(out) ?? out.raw}`);
   }
   {
-    const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: `{{secret:${label}-absent}}`}))));
+    const out = cellOutput(await c.js(rpcCell(exec('type_text', {app: 'com.example.cua-m5-probe-absent', text: `{{secret:${label}_ABSENT}}`}))));
     record('real vendor: unknown label', !out.ok && errorCode(out) === 'secret_not_found' ? 'PASS' : 'FAIL', 'fails before input with secret_not_found');
   }
   await plantModules(c, runtime, 'scoped');
@@ -279,7 +273,7 @@ async function realServeConnection(runtime) {
 
 // The same attempt on a connection that asks for the disabled sandbox, where it only records what a cell could write.
 async function sandboxDisabledConnection(runtime) {
-  const c = connect('real-serve sandbox disabled', [CLI, 'serve'], {CUA_SHIM_SANDBOX: 'disabled'});
+  const c = connect('real-serve sandbox disabled', [SERVE], {CUA_SHIM_SANDBOX: 'disabled'});
   await c.open();
   await plantModules(c, runtime, 'disabled');
   const exit = await c.close();
@@ -310,10 +304,10 @@ async function plantModules(c, runtime, mode) {
   record(step.name, step.status, step.detail);
 }
 
-// Secrets turned off, or no broker at all (the Keychain helper "not built"): an exact reference must fail closed
-// before any input. Run through the fake target, so "before any input" is observed at the target, not inferred.
-async function failClosedConnection(tag, recorder, targetModule, {args = [], env = {}, expected, reason}) {
-  const c = connect(`fail-closed ${tag}`, [FAKE_SERVE, targetModule, ...args], env);
+// Secrets turned off, or a store the server cannot read: an exact reference must fail closed before any input. Run
+// through the fake target, so "before any input" is observed at the target, not inferred.
+async function failClosedConnection(tag, recorder, targetModule, {env = {}, expected, reason}) {
+  const c = connect(`fail-closed ${tag}`, [FAKE_SERVE, targetModule], env);
   await c.open();
   for (const [method, input] of [
     ['type_text', {app: 'probe.record', text: REF}],
@@ -332,47 +326,47 @@ async function failClosedConnection(tag, recorder, targetModule, {args = [], env
   record(`${tag}: close`, exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
 }
 
-let created = false;
 let recorder;
+let unreadableHome = null;
 const scratch = realpathSync(mkdtempSync('/tmp/cm5-'));
 try {
   const runtime = resolveRuntime({home});
-  if (!locateHelper({home}).built || !locateHelper({path: PTY_DRIVER}).built) {
-    record('preconditions', 'BLOCKED', 'build the helper (npm run build:helper) and the test products (npm run test:helper) first');
-  } else {
-    record('preconditions', 'PASS', `runtime ${runtime.release}; label ${label}`);
-    recorder = await startRecorder(join(scratch, 'r.sock'));
-    const targetModule = join(scratch, 'target', 'sky-target.mjs');
-    mkdirSync(dirname(targetModule));
-    writeFileSync(targetModule, FAKE_TARGET(join(scratch, 'r.sock')));
-    created = true;
-    if (await seed('create', sentinels[0])) {
-      const first = await targetConnection('first value', sentinels[0], recorder, targetModule, {full: true});
-      const exit = await first.close();
-      record('first value: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
-      if (await seed('replace', sentinels[1])) {
-        const second = await targetConnection('replaced value', sentinels[1], recorder, targetModule, {full: false});
-        const exit2 = await second.close();
-        record('replaced value: close', exit2?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit2?.code ?? 'timeout'}`);
-        await realServeConnection(runtime);
-        await sandboxDisabledConnection(runtime);
-      }
-      await failClosedConnection('secrets off', recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
-      await failClosedConnection('broker unavailable', recorder, targetModule, {args: ['--no-helper'], expected: 'secrets_unavailable', reason: 'helper_not_built'});
+  storeHome = createStoreHome('cua-probe-secrets-');
+  record('preconditions', 'PASS', `runtime ${runtime.release}; key ${label} in a temporary $HOME`);
+  recorder = await startRecorder(join(scratch, 'r.sock'));
+  const targetModule = join(scratch, 'target', 'sky-target.mjs');
+  mkdirSync(dirname(targetModule));
+  writeFileSync(targetModule, FAKE_TARGET(join(scratch, 'r.sock')));
+  if (await seed('create', sentinels[0])) {
+    const first = await targetConnection('first value', sentinels[0], recorder, targetModule, {full: true});
+    const exit = await first.close();
+    record('first value: close', exit?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit?.code ?? 'timeout'}`);
+    if (await seed('replace', sentinels[1])) {
+      const second = await targetConnection('replaced value', sentinels[1], recorder, targetModule, {full: false});
+      const exit2 = await second.close();
+      record('replaced value: close', exit2?.code === 0 ? 'PASS' : 'FAIL', `exit ${exit2?.code ?? 'timeout'}`);
+      await realServeConnection(runtime);
+      await sandboxDisabledConnection(runtime);
     }
+    await failClosedConnection('secrets off', recorder, targetModule, {env: {CUA_SHIM_SECRETS: 'off'}, expected: 'secrets_disabled'});
+    // A second temporary home whose store directory this user cannot enter: the read fails, classified.
+    unreadableHome = createStoreHome('cua-probe-unreadable-');
+    mkdirSync(storeDir({HOME: unreadableHome}), {recursive: true, mode: 0o700});
+    chmodSync(storeDir({HOME: unreadableHome}), 0o000);
+    await failClosedConnection('store unreadable', recorder, targetModule, {env: {HOME: unreadableHome}, expected: 'secret_unreadable'});
   }
 } catch (error) {
   record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${error.message}`);
 } finally {
   for (const child of children) child.kill('SIGTERM');
-  if (created) {
-    const removed = await runCaptured(HELPER, ['remove', label, '--yes']);
-    const after = await runCaptured(HELPER, ['list']);
-    let gone = false;
-    try { gone = !JSON.parse(after.stdout).labels.includes(label); } catch {}
-    const notFound = /\[not_found\]/.test(removed.stderr ?? '');
-    record('cleanup', gone && (removed.code === 0 || notFound) ? 'PASS' : 'FAIL',
-      gone ? 'the scenario-owned item was removed' : `CLEANUP FAILED for ${label}: remove with node bin/cua.mjs secrets remove ${label}`);
+  if (storeHome) {
+    if (unreadableHome) { try { chmodSync(storeDir({HOME: unreadableHome}), 0o700); } catch {} }
+    const remove = async target => { try { return await removeStoreHome(target); } catch { return {keyGone: false, homeGone: false}; } };
+    const removed = await remove({home: storeHome, key: label});
+    const extra = unreadableHome ? await remove({home: unreadableHome}) : {homeGone: true};
+    const ok = removed.keyGone && removed.homeGone && extra.homeGone;
+    record('cleanup', ok ? 'PASS' : 'FAIL', ok ? 'the probe\'s key file and its temporary homes were removed'
+      : `CLEANUP FAILED: remove ${storeHome}${unreadableHome ? ` and ${unreadableHome}` : ''} by hand (key ${label})`);
   }
   await recorder?.close();
   rmSync(scratch, {recursive: true, force: true});

@@ -31,11 +31,11 @@ const DESKTOP_ROWS = [
   {name: 'sandbox.userns', status: 'blocked', detail: 'fixture'},
 ];
 
-test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and signatures not applicable, secrets skip', async t => {
+test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and signatures not applicable, the secret store', async t => {
   const {home, pin} = await linuxHome(t);
   let asked = 0;
   const report = await inspectRuntime({home, env: {}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
-    inspectHelper: never('the native socket helper inspection'), inspectSecrets: never('the Keychain helper inspection'),
+    inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
     inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS; },
     inspectLogin: async () => { asked++; return {state: 'logged-in'}; }, inspectChrome: async () => [], inspectAgent: async () => []});
   const rows = byName(report);
@@ -50,8 +50,8 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   assert.deepEqual(['display', 'accessibility.bus'].map(n => rows[n].status), ['pass', 'pass']);
   assert.match(rows.sandbox.detail, /^CUA_SHIM_SANDBOX unset: on linux with the computer surface the default is disabled/);
   assert.equal(rows['sandbox.userns'].status, 'skip', 'no sandbox runs under the Linux default, so a refusing bubblewrap blocks nothing');
-  assert.equal(rows['secrets.helper'].status, 'skip');
-  assert.match(rows['secrets.helper'].detail, /secrets_unsupported_platform/);
+  assert.equal(rows['secrets.helper'], undefined);
+  assert.equal(rows['secrets.store'].status, 'pass', 'Linux has the same file store');
   assert.equal(asked, 1, 'the bundled CLI is asked about the login: the release is trusted by its hash');
   assert.equal(summarize(report), 'passive runtime checks pass');
 });
@@ -62,7 +62,7 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
 test('the sandbox row on Linux says what the mode does there: scoped breaks the computer surface, and confines nothing without user namespaces', async t => {
   const {home, pin} = await linuxHome(t);
   const doctor = (env, userns) => inspectRuntime({home, env, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
-    inspectHelper: never('the native socket helper inspection'), inspectSecrets: never('the Keychain helper inspection'),
+    inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
     inspectLinux: async () => [DESKTOP_ROWS[0], DESKTOP_ROWS[1], {name: 'sandbox.userns', status: userns, detail: 'fixture'}],
     inspectLogin: async () => ({state: 'logged-in'}), inspectChrome: async () => [], inspectAgent: async () => []}).then(byName);
 
@@ -115,7 +115,7 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
 });
 
 test('skip is neither a failure nor blocked: ok stays true and the verdict does not list it', () => {
-  const report = {ok: true, checks: [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'secrets.helper', status: 'skip', detail: ''}]};
+  const report = {ok: true, checks: [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'secrets.store', status: 'skip', detail: ''}]};
   assert.equal(summarize(report), 'passive runtime checks pass');
 });
 

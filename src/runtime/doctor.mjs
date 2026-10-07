@@ -5,10 +5,8 @@
 // `skip` marks a check that does not apply on this host (neither a failure nor blocked evidence).
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
-// The Keychain helper (secrets) cua would run for this home ($CUA_HOME/bin/cua-keychain, else the checkout's build
-// output; secrets.helper names which) is inspected from its file and signature, never run: not built or without a
-// stable signing identity is `blocked` (secrets, or their stable Keychain trust, are not available yet); a helper that
-// is present but speaks another broker protocol or whose signature does not verify is `fail`.
+// `secrets.store` (src/secrets/check.mjs) describes the secret store, $HOME/.config/claude-secrets, from metadata only:
+// absent is `blocked` (nothing stored yet), a directory or key file the trusted services would refuse is `fail`.
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
 // a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
 // capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
@@ -26,8 +24,7 @@
 // Another mode is the user's choice and only described.
 // On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
 // not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
-// sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted), and secrets.helper
-// reads `skip`: there is no Linux secrets backend (secrets_unsupported_platform).
+// sandbox.userns (linux-desktop.mjs; the group-container socket, lsof and plutil are never consulted).
 // `run.stale` sweeps $CUA_HOME/run as `cua serve` does at start (src/runtime/run-dir.mjs), the one thing doctor
 // changes: the leftovers of sessions whose owning cua process is gone are removed and named. It is cua's own
 // housekeeping, never runtime health: `pass`, or `fail` when a stale session could not be removed.
@@ -49,7 +46,7 @@ import {BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SKY_SERVICE} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
-import {inspectKeychainHelper, classifyKeychainHelper} from '../secrets/helper.mjs';
+import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
 import {loginStatus, LOGIN_STATES} from './login.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
@@ -67,7 +64,7 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectKeychainHelper, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -123,17 +120,15 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(runSweepCheck(home, sweep));
 
   if (linuxRows) checks.push(...linuxRows.map(row => (row.name === 'sandbox.userns' ? usernsRow(row, {env, sandbox}) : row)));
-  if (linuxRows) {
-    checks.push(result('secrets.helper', 'skip', 'secrets_unsupported_platform: cua has no secrets backend on linux, so secrets_list reports it and a {{secret:…}} reference is refused before anything is entered'));
-  } else {
+  if (!linuxRows) {
     const expectedIpc = (runtime?.manifest ?? pin).runtime.ipc;
     const helper = classifyHelper(await inspectHelper({expectedIpc}), {expectedIpc, runtimeRoot: runtime?.root});
     checks.push(result('helper.live', helper.status, helper.detail));
     checks.push(result('helper.permissions', 'blocked',
       'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
       + `Confirm with a live probe (${LIVE_PROBE}).`));
-    checks.push(...classifyKeychainHelper(await inspectSecrets({home})));
   }
+  checks.push(classifyStore(await inspectSecrets({env}), {enabled: (env.CUA_SHIM_SECRETS ?? 'on') !== 'off'}));
   checks.push(await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));

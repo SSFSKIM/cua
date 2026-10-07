@@ -6,7 +6,7 @@ loads it only where `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` is set and ignores it
 elsewhere; the shell hook beside this folder (`cua-approve.sh`) runs everywhere.
 
 The store, `~/.config/claude-secrets/<KEY>`, is cua's: the mod writes it, and
-issue #66 moves the server's `{{secret:…}}` substitution onto it. A
+since issue #66 the server's `{{secret:…}}` substitution reads it. A
 remote client keeps a device's client credential there under the key
 `cua remote enroll --json` names (`clientSecretKey`), and registers the device
 with the `$(cat …)` command it prints (`clientRegisterCommand`), the form the

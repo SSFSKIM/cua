@@ -8,8 +8,8 @@
 // the connection's own run entries are gone afterwards: the session is the one whose $CUA_HOME/run record names the
 // server's pid (src/runtime/run-dir.mjs), so other connections in the same home are never mistaken for leftovers.
 // Elicitations are declined; nothing is registered anywhere.
-// secrets_list is checked for shape only (labels, or a value-free unavailable/error status): with a built Keychain
-// helper the server runs that connection's broker as its second child, which must be gone after close too.
+// secrets_list is checked for shape only (the keys of the file store under $HOME/.config/claude-secrets, or a
+// value-free unavailable/error status); it lists file names and never reads a value.
 //
 // profiles_list (browser surface) is checked for shape only and never opens a tab.
 //
@@ -30,7 +30,6 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome} from './src/runtime/layout.mjs';
 import {resolveRuntime} from './src/runtime/manifest.mjs';
 import {descendants, classifyProcesses, socketHolders, nativeSocketStep, procTable, outsideAnchorGroup, survivors} from './scripts/probe/lib.mjs';
-import {locateHelper} from './src/secrets/helper.mjs';
 import {settingsFrom} from './src/mcp/server.mjs';
 
 const CLI = fileURLToPath(new URL('./bin/cua.mjs', import.meta.url));
@@ -142,15 +141,8 @@ try {
   report.task = {first: taskId, sameTaskAcrossCalls: taskId !== null && taskOf(second) === taskId};
   check(report.task.sameTaskAcrossCalls, 'two js calls in one task carried different task IDs');
 
-  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime;
-  // beside it, the connection's secrets broker when the Keychain helper is built.
-  const helperPath = locateHelper({home}).path;
-  const helper = existsSync(helperPath) ? realpathSync(helperPath) : null;
-  const all = descendants(processTable(), server.pid).filter(p => p.pid !== server.pid);
-  const brokers = all.filter(p => p.ppid === server.pid && helper && [helperPath, helper].includes(p.executable));
-  const tree = all.filter(p => !brokers.includes(p));
-  report.secretsBroker = brokers.map(p => ({pid: p.pid, executable: p.executable.replace(homedir(), '~')}));
-  check(secrets?.status !== 'ok' || brokers.length === 1, 'secrets_list answered but no broker helper runs under the server');
+  // Below the server: its group-lifetime anchor (this Node, running src/mcp/anchor.mjs), then the relocated runtime.
+  const tree = descendants(processTable(), server.pid).filter(p => p.pid !== server.pid);
   const hostNode = realpathSync(process.execPath);
   const anchor = tree.find(p => p.ppid === server.pid);
   runtimeTree = tree.filter(p => p !== anchor);
@@ -203,11 +195,6 @@ try {
   // Informational: entries that appeared while verify ran belong to other connections in this home, not to this one.
   const others = runEntries().filter(name => !runBefore.includes(name) && !leftover.includes(name));
   if (others.length) report.runNote = `${others.length} other entr${others.length === 1 ? 'y' : 'ies'} appeared under ${runDir} while verify ran (another cua serve or listing in this home; not counted): ${others.join(', ')}`;
-  for (const broker of report.secretsBroker ?? []) {
-    let gone = false;
-    try { process.kill(broker.pid, 0); } catch { gone = true; }
-    check(gone, `the secrets broker (pid ${broker.pid}) outlived the connection`);
-  }
 }
 
 console.log(JSON.stringify(report, null, 1));

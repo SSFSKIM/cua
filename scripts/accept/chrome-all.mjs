@@ -22,8 +22,8 @@
 //           manifests fingerprinted before and after; both are N/A (stated, not skipped) where no browser holds a
 //           registration cua did not write (no desktop app); the live gate only from a supplied report (--c6-report): the
 //           --replace gate, or on a machine without the desktop app the desktop-absent gate (issue #9)
-//   C7      a clean clone of this branch's HEAD in /tmp: npm test, build:helper and test:helper inside the clone (this
-//           checkout's helper is never rebuilt), npm pack --dry-run; the clone is deleted
+//   C7      a clean clone of this branch's HEAD in /tmp: npm test and npm pack --dry-run inside the clone; the clone is
+//           deleted
 // Exit 0 PASS, 1 FAIL, 3 BLOCKED, 2 usage.
 //
 // `node scripts/accept-chrome.mjs --c6-slots` prints each browser's native-messaging slot (absent, ours or foreign with
@@ -46,7 +46,7 @@ import {hostSuffixes, readRecord} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
-  C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
+  C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
   matrixChecks, packChecks, profilesListCheck, registrationGuard, SCRATCH_PROFILES, slotStates, scratchAddCheck, scratchHumanCheck, scratchListCheck,
   tapTestStatus, verifyCheck, writeScratchChrome,
 } from './chrome-all-lib.mjs';
@@ -353,14 +353,6 @@ export async function runAll(argv) {
         const test = await run('npm', ['test'], {cwd: dir, env: testReporterEnv(cleanEnv()), timeoutMs: 300_000});
         const verdict = suiteVerdict({code: test.code, ...testSummary(test.stdout)});
         checks.push(check('clean clone: npm test', verdict.status, `${verdict.reason} in ${seconds(test.ms)}`));
-        // build:helper installs what it built into $CUA_HOME/bin: here a home inside the clone directory, never the user's.
-        const build = await run('npm', ['run', 'build:helper'], {cwd: dir, env: cleanEnv({CUA_HOME: join(parent, 'home')}), timeoutMs: 900_000});
-        checks.push(check('clean clone: npm run build:helper', build.code === 0 ? 'PASS' : 'FAIL', `${ended(build)} in ${seconds(build.ms)} (built inside the clone and installed into a home there; this checkout's helper and the installed one are untouched)`));
-        if (build.code === 0) {
-          const helper = await run('npm', ['run', 'test:helper'], {cwd: dir, env: testReporterEnv(cleanEnv()), timeoutMs: 900_000});
-          const h = helperSuiteVerdict({code: helper.code, text: helper.stdout + helper.stderr});
-          checks.push(check('clean clone: npm run test:helper', h.status, `${h.detail} in ${seconds(helper.ms)}`));
-        } else checks.push(check('clean clone: npm run test:helper', 'FAIL', 'not run: build:helper failed'));
         const pack = await run('npm', ['pack', '--dry-run', '--json'], {cwd: dir, env: cleanEnv(), timeoutMs: 120_000});
         const packed = parseJson(pack.stdout);
         const entry = Array.isArray(packed) ? packed[0] : packed && Object.values(packed)[0];
@@ -369,7 +361,7 @@ export async function runAll(argv) {
         checks.push(...packChecks({files, tracked, read: path => readFileSync(join(dir, path)), userHome}).map(c => ({...c, name: `clean clone: npm pack --dry-run: ${c.name}`})));
       }
     } finally { rmSync(parent, {recursive: true, force: true}); }
-    addItem('C7', 'Clean clone: npm test, the helper suites, npm pack contents', checks, {head, branch, workingTreeDirty: dirty, cloneRemoved: !existsSync(parent)});
+    addItem('C7', 'Clean clone: npm test, npm pack contents', checks, {head, branch, workingTreeDirty: dirty, cloneRemoved: !existsSync(parent)});
   }
 
   // ---- report -------------------------------------------------------------------------------------------------------

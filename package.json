@@ -2,17 +2,14 @@
   "name": "cua",
   "version": "0.1.0",
   "private": true,
-  "description": "Standalone MCP server for OpenAI's computer-use runtime on macOS.",
+  "description": "Standalone MCP server for OpenAI's computer-use runtime on macOS and Linux.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
-    "test:mods": "bash tests/mods/run-mods-tests.sh",
-    "build:helper": "node scripts/build-helper.mjs",
-    "test:helper": "node scripts/test-helper.mjs",
-    "test:keychain-live": "node native/keychain/live/keychain-roundtrip.mjs"
+    "test:mods": "bash tests/mods/run-mods-tests.sh"
   },
   "bin": {
     "cua": "bin/cua.mjs"
@@ -21,10 +18,6 @@
     "bin/",
     "src/",
     "runtime/releases/",
-    "native/keychain/Package.swift",
-    "native/keychain/Sources/",
-    "native/keychain/Tests/",
-    "scripts/build-helper.mjs",
     "scripts/probe/lib.mjs",
     "cua-shim.mjs",
     "verify.mjs",

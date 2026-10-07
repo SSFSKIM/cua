@@ -86,16 +86,17 @@ test('services must be existing absolute modules for a known service name', t =>
   assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, services: {browser: '/x.mjs'}}), expect('invalid_service'));
 });
 
-test('a broker endpoint reaches the launch environment only as explicit values, never as a sandbox socket allowance', t => {
+test('the secret store directory reaches the launch environment only as an explicit value', t => {
   const {home, runtime} = fixtureRuntime(t);
-  const broker = {endpoint: join(home, 'run', SESSION, 'broker.sock'), token: 'capability-token-for-test'};
-  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, broker});
-  assert.equal(env.CUA_SECRETS_BROKER_ENDPOINT, broker.endpoint);
-  assert.equal(env.CUA_SECRETS_BROKER_TOKEN, broker.token);
+  const dir = '/Users/u/.config/claude-secrets';
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsDir: dir});
+  assert.equal(env.CUA_SECRETS_DIR, dir);
+  assert.equal(env.CUA_SECRETS_UNAVAILABLE, undefined);
   assert.equal(env.NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, undefined);
-  assert.equal(env.NODE_REPL_UNTRUSTED_ENV_ALLOWLIST, undefined, 'cells must not be granted the broker variables');
+  assert.equal(env.NODE_REPL_UNTRUSTED_ENV_ALLOWLIST, undefined, 'cells must not be granted the secrets variables');
   const without = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT}).env;
   assert.equal(Object.keys(without).some(k => k.startsWith('CUA_SECRETS_')), false);
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsDir: 'relative/dir'}), err => err.code === 'invalid_secrets_dir');
 });
 
 test('the session id becomes a path segment, so only plain identifiers are accepted', t => {
@@ -124,14 +125,13 @@ test('trusted code is only the vendor modules and owned source, never a director
   assert.equal(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES).sky, join(repo, 'src', 'services', 'sky.mjs'));
 });
 
-test('without a broker the launch tells the trusted worker why, so a secret reference fails with that reason', t => {
+test('without a store the launch tells the trusted worker why, so a secret reference fails with that reason', t => {
   const {home, runtime} = fixtureRuntime(t);
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsUnavailable: 'secrets_disabled'});
   assert.equal(env.CUA_SECRETS_UNAVAILABLE, 'secrets_disabled');
-  assert.equal(env.CUA_SECRETS_BROKER_ENDPOINT, undefined);
-  const broker = {endpoint: join(home, 'run', 'b.sock'), token: 'capability-token-for-test'};
-  const withBroker = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, broker, secretsUnavailable: 'secrets_disabled'}).env;
-  assert.equal(withBroker.CUA_SECRETS_UNAVAILABLE, undefined, 'a running broker wins');
+  assert.equal(env.CUA_SECRETS_DIR, undefined);
+  const both = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsDir: '/h/.config/claude-secrets', secretsUnavailable: 'secrets_disabled'}).env;
+  assert.equal(both.CUA_SECRETS_UNAVAILABLE, undefined, 'a store wins');
   assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsUnavailable: 'Bad Reason!'}), err => err.code === 'invalid_secrets_reason');
 });
 

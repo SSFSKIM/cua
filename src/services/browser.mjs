@@ -18,10 +18,10 @@
 // client_timeout_ms (a positive integer, or absent/undefined): the vendor client's transport adds it to each command
 // it sends (FunctionAgentTransport.send in browser-client.mjs). Everything else is delegated untouched:
 // other commands and fields, values that merely contain a marker, and playwright_evaluate/CDP/script strings, which
-// are never scanned. The stored value is read from this connection's private broker and placed in a copy of the
+// are never scanned. The stored value is read from the connection's secret store (src/secrets/store.mjs) and placed in a copy of the
 // request handed to the vendor.
 //
-// Failing closed: an invalid or unknown label, a denied or locked Keychain, secrets off or unavailable, a reference in
+// Failing closed: an invalid or unknown label, an unsafe or unreadable store file, secrets off or unavailable, a reference in
 // any other shape of an eligible command, or a vendor browser service other than the pinned version fails before
 // anything is entered. After substitution the vendor can fail on two channels: a rejected promise, and the resolved
 // envelope {ok:false, error} that executeWithRecovery returns for recovery errors (browser-service.mjs X2). A
@@ -33,7 +33,7 @@ import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
   SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, invalidLabel, unavailable, readFailure,
-  inputFailed, secretsFromEnv, refusedOnThisPlatform,
+  inputFailed, secretsFromEnv,
 } from './secret-input.mjs';
 
 export const PINNED_VENDOR_VERSION = '0.1.1';
@@ -128,7 +128,7 @@ function rejectionKind(error) {
 const envelopeKind = details => RECOVERY_REASONS.has(details?.reason) ? `recovery:${details.reason}` : 'recovery';
 
 // `loadVendor` resolves the vendor service module; `vendorVersion` its package version (or null); `secrets` reads a
-// label's value (a broker client); `secretsUnavailable`, when set, is the launch's reason there is no broker.
+// label's value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store.
 export function createBrowserService({loadVendor, vendorVersion, secrets, secretsUnavailable = null}) {
   let vendor = null;
   const vendorService = () => (vendor ??= loadVendor());
@@ -138,7 +138,6 @@ export function createBrowserService({loadVendor, vendorVersion, secrets, secret
     if (!plan) return (await vendorService()).handleRpc(request);
 
     const {reference} = plan;
-    if (refusedOnThisPlatform(secretsUnavailable)) throw unavailable(secretsUnavailable);
     if (reference.invalid) throw invalidLabel();
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);

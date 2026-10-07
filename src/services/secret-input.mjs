@@ -1,21 +1,26 @@
 // What the trusted sky and browser services share about substituting a `{{secret:<label>}}` reference: the error they
-// raise, the fixed sentences for every failure before input, and how the launch says that secrets are unavailable.
+// raise, the fixed sentences for every failure before input, and how the launch names the store or says that secrets
+// are unavailable.
 // Every error here is built fresh from a fixed sentence, a code and at most a label (labels are not secret); none
 // carries a cause, a vendor payload or anything derived from a value. The trusted worker returns a rejection's message
 // to model code, so nothing here logs either.
-import {BROKER_ENV, BrokerError, brokerClientFromEnv, UNSUPPORTED_PLATFORM} from '../secrets/client.mjs';
+import {isAbsolute} from 'node:path';
+import {SecretStoreError, STORE_ENV, fileStore} from '../secrets/store.mjs';
+import {LABEL_RULE} from '../secrets/label.mjs';
 
 export const NOTHING_ENTERED = 'nothing was entered';
 const LAUNCH_CODE = /^[a-z][a-z_]{0,63}$/;
 
-// Broker client codes -> what the caller is told. Codes absent here (transport and protocol failures) mean secrets
-// are unavailable on this connection.
-const BROKER_OUTCOMES = {
+// Store refusals -> what the caller is told. Codes absent here (an unreadable store) mean secrets are unavailable.
+const STORE_OUTCOMES = {
   not_found: 'secret_not_found',
-  denied: 'secret_denied',
-  locked: 'secret_locked',
+  not_regular_file: 'secret_not_regular_file',
+  wrong_owner: 'secret_wrong_owner',
+  insecure_mode: 'secret_insecure_mode',
+  too_large: 'secret_too_large',
   unsupported_value: 'secret_unsupported_value',
-  invalid_label: 'invalid_secret_label',
+  empty: 'secret_empty',
+  unreadable: 'secret_unreadable',
 };
 
 export class SecretInputError extends Error {
@@ -44,40 +49,33 @@ export function matchesShape(object, fields, optional = []) {
     && keys.every(key => Object.hasOwn(object, key) && object[key] !== undefined ? fields[key](object[key]) : optional.includes(key));
 }
 
-export const invalidLabel = () => new SecretInputError('invalid_secret_label', `a {{secret:…}} reference must name a label of 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit; ${NOTHING_ENTERED}`);
-
-// The launch reason a platform without a secrets backend gives (src/secrets/broker.mjs). It outranks every other check
-// of a reference: no label, shape or value matters where nothing could ever be substituted (the Linux sky client's
-// type_text shape, {window, text}, is refused with it rather than as an unknown shape).
-export const refusedOnThisPlatform = secretsUnavailable => secretsUnavailable === UNSUPPORTED_PLATFORM;
+export const invalidLabel = () => new SecretInputError('invalid_secret_label', `a {{secret:…}} reference must name a key: ${LABEL_RULE}; ${NOTHING_ENTERED}`);
 
 export function unavailable(reason) {
   if (reason === 'secrets_disabled') return new SecretInputError('secrets_disabled', `secrets are turned off for this server (CUA_SHIM_SECRETS=off); ${NOTHING_ENTERED}`);
-  if (reason === UNSUPPORTED_PLATFORM) return new SecretInputError(UNSUPPORTED_PLATFORM, `cua has no secrets backend on this platform, so a {{secret:…}} reference cannot be entered; ${NOTHING_ENTERED}`);
   return new SecretInputError('secrets_unavailable', `secrets are unavailable on this connection (${reason}); ${NOTHING_ENTERED}`);
 }
 
+// The store's own sentence names at most the key and its file, never a value.
 export function readFailure(error, label) {
-  const code = error instanceof BrokerError ? error.code : 'error';
-  switch (BROKER_OUTCOMES[code]) {
-    case 'secret_not_found': return new SecretInputError('secret_not_found', `no secret named "${label}" (secrets_list shows the stored labels); ${NOTHING_ENTERED}`);
-    case 'secret_denied': return new SecretInputError('secret_denied', `Keychain access to secret "${label}" was denied; ${NOTHING_ENTERED}`);
-    case 'secret_locked': return new SecretInputError('secret_locked', `the Keychain is locked, so secret "${label}" could not be read; ${NOTHING_ENTERED}`);
-    case 'secret_unsupported_value': return new SecretInputError('secret_unsupported_value', `secret "${label}" is not valid UTF-8 text; ${NOTHING_ENTERED}`);
-    case 'invalid_secret_label': return invalidLabel();
-    default: return unavailable(code);
-  }
+  if (!(error instanceof SecretStoreError)) return unavailable('error');
+  if (error.code === 'invalid_label') return invalidLabel();
+  if (error.code === 'not_found') return new SecretInputError('secret_not_found', `no secret named "${label}" (secrets_list shows the stored keys); ${NOTHING_ENTERED}`);
+  const code = STORE_OUTCOMES[error.code];
+  return code ? new SecretInputError(code, `${error.message}; ${NOTHING_ENTERED}`) : unavailable(error.code);
 }
 
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text.
 export const inputFailed = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. The runtime's error is withheld because it can contain the secret`);
 
-// The broker client and the launch's reason there is none, as the trusted worker's environment configures them.
+// The store reader and the launch's reason there is none, as the trusted worker's environment configures them.
 export function secretsFromEnv(env) {
-  const configured = env[BROKER_ENV.endpoint] && env[BROKER_ENV.token];
-  const reason = env[BROKER_ENV.unavailable];
+  const dir = env[STORE_ENV.dir];
+  const reason = env[STORE_ENV.unavailable];
+  if (typeof dir === 'string' && isAbsolute(dir) && !reason) return {secrets: fileStore({dir}), secretsUnavailable: null};
+  const unconfigured = async () => { throw new SecretStoreError('not_configured'); };
   return {
-    secrets: brokerClientFromEnv({env}),
-    secretsUnavailable: configured ? null : (LAUNCH_CODE.test(reason ?? '') ? reason : 'secrets_not_configured'),
+    secrets: {read: unconfigured, list: unconfigured},
+    secretsUnavailable: LAUNCH_CODE.test(reason ?? '') ? reason : 'secrets_not_configured',
   };
 }

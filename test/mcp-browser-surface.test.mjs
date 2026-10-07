@@ -98,6 +98,7 @@ const GENERAL_RULES = {
   'observe, act, verify': /Observe, act, verify: a call returning is not success/,
   'stop after an unchanged state': /If the state is unchanged, stop and find out why rather than repeat/,
   'readiness waits, not fixed delays': /Wait for a visible readiness condition in a bounded poll, not a fixed delay/,
+  'never read the secret store; type references': /Never read ~\/\.config\/claude-secrets; type secrets as \{\{secret:KEY\}\}/,
 };
 const BROWSER_RULES = {
   'getBrowser only with an id from profiles_list, which is asked again on failure': /cua\.getBrowser\(\{extensionInstanceId\}\) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again/,
@@ -223,15 +224,17 @@ test('search hints say linux on Linux and keep their macOS wording on macOS, on 
 });
 
 // On Linux there is no secrets backend: secrets_list says so instead of teaching references Linux refuses.
-test('secrets_list tells the model on Linux that secrets are unavailable there; macOS keeps its description', async () => {
+test('secrets_list teaches the reference on both platforms; on Linux without setValue, which does not exist there', async () => {
   const {modelTools} = await import('../src/mcp/surface.mjs');
   const secretsTool = (surfaces, platform) => modelTools(UPSTREAM_TOOLS, {surfaces, platform}).find(t => t.name === 'secrets_list');
   assert.deepEqual(secretsTool(['computer'], 'darwin'), SECRETS_LIST_TOOL);
-  assert.match(secretsTool(['computer', 'browser'], 'darwin').description, /or of a Chrome tab's locator\.fill/);
+  assert.match(SECRETS_LIST_TOOL.description, /\/secret KEY in Claude Code or `cua secrets set KEY`/);
+  assert.match(secretsTool(['computer', 'browser'], 'darwin').description, /whole value of setValue or of a Chrome tab's locator\.fill/);
   for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
     const tool = secretsTool(surfaces, 'linux');
-    assert.match(tool.description, /secrets_unsupported_platform/, surfaces.join());
-    assert.doesNotMatch(tool.description, /typeText|paste|setValue|locator\.fill|\{\{secret:/, surfaces.join());
+    assert.match(tool.description, /"\{\{secret:<label>\}\}" as the whole text of typeText or paste/, surfaces.join());
+    assert.doesNotMatch(tool.description, /setValue|unsupported_platform/, surfaces.join());
+    assert.equal(/locator\.fill/.test(tool.description), surfaces.includes('browser'), surfaces.join());
     assert.deepEqual(tool.inputSchema, SECRETS_LIST_TOOL.inputSchema);
     assert.deepEqual(tool.annotations, SECRETS_LIST_TOOL.annotations);
   }

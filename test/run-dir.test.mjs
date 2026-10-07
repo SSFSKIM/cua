@@ -1,5 +1,6 @@
 // Ownership of $CUA_HOME/run (src/runtime/run-dir.mjs): the owner record, release, the exit hook and the sweep. Real
-// sockets are made by a process that binds one and is killed before it can remove it, as a killed broker leaves it.
+// sockets are made by a process that binds one and is killed before it can remove it, as a killed broker (a cua before
+// issue #66) left it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn, spawnSync} from 'node:child_process';
@@ -18,7 +19,7 @@ function home(t) {
   return s.dir;
 }
 
-// Leaves a socket at `path` the way a killed broker does.
+// Leaves a socket at `path` the way a killed broker (a cua before issue #66) did.
 function leftoverSocket(path) {
   spawnSync(process.execPath, ['-e', `require('net').createServer().listen(${JSON.stringify(path)}, () => process.kill(process.pid, 'SIGKILL'))`]);
   assert.ok(lstatSync(path).isSocket());
@@ -46,17 +47,13 @@ test('a claim records this process first; release removes the working directory 
   assert.deepEqual(readdirSync(run), []);
 });
 
-test('release leaves a remaining socket to its broker and keeps the record, so the sweep takes both once the owner is gone', async t => {
+test('release removes the session entirely, a socket left by a cua from before the file store included', async t => {
   const dir = home(t);
   const run = join(dir, 'run');
   const claim = claimRunSession(dir, ID(1));
   mkdirSync(join(run, ID(1)));
   leftoverSocket(join(run, `${ID(1)}.sock`));
-  claim.release();
-  assert.deepEqual(readdirSync(run).sort(), [`${ID(1)}.pid`, `${ID(1)}.sock`]);
-  assert.equal(sweepRun(dir).live.length, 1, 'still this live process\'s');
-  const found = sweepRun(dir, {alive: () => false});
-  assert.deepEqual(found.swept, [{session: ID(1), pid: process.pid}]);
+  assert.deepEqual(claim.release(), []);
   assert.deepEqual(readdirSync(run), []);
 });
 
@@ -65,8 +62,8 @@ test('the sweep removes sessions whose owner is gone, leaves live ones, and repo
   const run = join(dir, 'run');
   mkdirSync(run);
   const dead = 999_999;
-  session(run, ID(1), dead);                    // killed with its broker: directory, socket, record
-  session(run, ID(2), dead, {socket: false});   // killed after its broker removed its socket
+  session(run, ID(1), dead);                    // killed by a cua before #66, with its broker: directory, socket, record
+  session(run, ID(2), dead, {socket: false});   // killed: directory and record
   session(run, ID(3), process.pid);             // live
   session(run, ID(4), undefined);               // no record: a cua from before records, or not cua's
   writeFileSync(join(run, `${ID(5)}.pid`), ''); // a record still being written

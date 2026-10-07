@@ -104,7 +104,7 @@ test('the runners\' reporter options replace any reporter in NODE_OPTIONS and ke
 });
 
 test('the runners\' test environment makes nested node:test runs report TAP on stdout', () => {
-  // As scripts/test-helper.mjs does: a node process that starts `node --test` with the environment it inherited.
+  // A wrapper script would do this: a node process that starts `node --test` with the environment it inherited.
   const nested = `require('node:child_process').spawnSync(process.execPath, ['--test', ${JSON.stringify(SUMMARY_SUITE)}], {stdio: 'inherit'})`;
   const r = spawnSync(process.execPath, ['-e', nested], {encoding: 'utf8', env: {...outsideRunner(), ...testReporterEnv({}), FORCE_COLOR: '1'}});
   assert.match(r.stdout, /^# tests 2$/m);
@@ -185,16 +185,17 @@ test('a tree snapshot notices added, removed and rewritten entries, and an untou
 });
 
 test('archives, runtime trees, build output, credentials, logs, sockets and pointers are never tracked or packed', () => {
-  const bad = ['ChatGPT-darwin-arm64.zip', 'runtimes/x/node', 'native/keychain/.build/release/cua-keychain', 'node_modules/x/index.js',
+  const bad = ['ChatGPT-darwin-arm64.zip', 'runtimes/x/node', 'native/x/.build/release/x', 'node_modules/x/index.js',
     'state/codex/auth.json', '.env', 'server.log', 'run/abc.sock', 'current.json'];
   assert.equal(forbiddenPaths(bad).length, bad.length);
   assert.deepEqual(forbiddenPaths(['src/runtime/install.mjs', 'runtime/releases/26.928.40906-darwin-arm64.json', 'README.md']), []);
 });
 
-test('the package must carry what runs, diagnoses and builds the helper', () => {
+test('the package must carry what runs and diagnoses, and nothing of the removed Keychain helper is required', () => {
   const complete = [...PACKAGE_REQUIRED, 'runtime/releases/26.928.40906-darwin-arm64.json'];
   assert.deepEqual(missingFromPackage(complete), []);
-  assert.deepEqual(missingFromPackage(complete.filter(p => p !== 'native/keychain/Package.swift')), ['native/keychain/Package.swift']);
+  assert.deepEqual(missingFromPackage(complete.filter(p => p !== 'src/secrets/store.mjs')), ['src/secrets/store.mjs']);
+  assert.ok(!PACKAGE_REQUIRED.some(p => p.startsWith('native/') || p === 'scripts/build-helper.mjs'));
   assert.deepEqual(missingFromPackage(PACKAGE_REQUIRED), ['runtime/releases/<release>.json']);
 });
 
@@ -291,7 +292,7 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   const agent = await agentChecks({home, env: {}, host: {platform: 'darwin', arch: 'arm64'}, launchd: {userHome, uid: UID, launchctl: fakeLaunchctl().run, settleMs: 1},
     checkConsole: async () => ({onConsole: true, locked: true})});
   assert.equal(agent.find(c => c.name === 'agent.console').status, 'fail', 'the fixture reproduces the locked console');
-  const runtime = ['platform', 'runtime.installed', 'runtime.files', 'sandbox', 'helper.live', 'secrets.helper'].map(name => ({name, status: name === 'helper.live' ? 'blocked' : 'pass', detail: ''}));
+  const runtime = ['platform', 'runtime.installed', 'runtime.files', 'sandbox', 'helper.live', 'secrets.store'].map(name => ({name, status: name === 'helper.live' ? 'blocked' : 'pass', detail: ''}));
   const report = (rows, ok = !rows.some(c => c.status === 'fail')) => ({ok, checks: rows});
 
   const locked = doctorHealth({code: 1, doctor: report([...runtime, ...agent])});
@@ -300,7 +301,7 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   assert.doesNotMatch(locked.detail, /failing:/);
 
   const plain = doctorHealth({code: 0, doctor: report(runtime)});
-  assert.deepEqual(plain, {healthy: true, detail: 'exit 0; ok true'}, 'nothing informational to print when no agent row applies');
+  assert.deepEqual(plain, {healthy: true, detail: 'exit 0; ok true; informational, not gating: secrets.store pass'}, 'only the store row is informational when no agent row applies');
 
   const broken = runtime.map(c => (c.name === 'runtime.files' ? {...c, status: 'fail'} : c));
   const both = doctorHealth({code: 1, doctor: report([...broken, ...agent])});
@@ -311,4 +312,20 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   assert.equal(doctorHealth({code: 0, doctor: report([...runtime, ...agent])}).healthy, false, 'an exit code that contradicts ok');
   assert.equal(doctorHealth({code: 1, doctor: report(runtime)}).healthy, false, 'nonzero exit from a healthy report');
   assert.deepEqual(doctorHealth({code: 1, doctor: null}), {healthy: false, detail: 'exit 1; no report'});
+});
+
+test('the account\'s own secret store is informational by default: a failing secrets.store row never gates runtime health', () => {
+  const rows = [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'secrets.store', status: 'fail', detail: ''}];
+  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}),
+    {healthy: true, detail: 'exit 1; ok false; informational, not gating: secrets.store fail'});
+  assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}}).healthy, false, 'ok that contradicts its rows');
+});
+
+test('a caller may make more doctor rows informational: reported, never gating, and the report must still agree with itself', () => {
+  const rows = [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'helper.live', status: 'fail', detail: ''}];
+  const helper = row => row.name === 'helper.live';
+  assert.equal(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}).healthy, false);
+  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}, informational: helper}),
+    {healthy: true, detail: 'exit 1; ok false; informational, not gating: helper.live fail'});
+  assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}, informational: helper}).healthy, false, 'ok that contradicts its rows');
 });

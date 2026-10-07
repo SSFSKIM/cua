@@ -5,8 +5,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
-import {dirname} from 'node:path';
+import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {dirname, join} from 'node:path';
 import {registerHooks} from 'node:module';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
@@ -40,14 +41,16 @@ const [name, setup, reference] = JSON.parse(process.env.TRUST_TEST_REQUESTS);
 try {
   const service = await import(pathToFileURL(JSON.parse(process.env.NODE_REPL_TRUSTED_SERVICES)[name]).href);
   out.push(await service.handleRpc(setup));
-  try { await service.handleRpc(reference); }
+  try { out.push(await service.handleRpc(reference)); }
   catch (error) { out.push({error: error.message}); }
 } catch (error) { out.push({loadError: error.message}); }
 process.stdout.write(JSON.stringify(out));
 `;
 
-const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{app: 'a', text: '{{secret:work-password}}'}]}];
-const BROWSER_REQUESTS = ['browser', {method: 'setup', params: {}}, {method: 'executeWithRecovery', params: {type: 'playwright_locator_fill', browser_id: '1', tab_id: '2', selector: 's', value: '{{secret:work-password}}', replace: true}}];
+// The production service runs in a child of this platform, so the reference uses this platform's pinned shape.
+const SKY_INPUT = process.platform === 'linux' ? {window: {id: 7, app: 'Gedit', title: 't'}} : {app: 'a'};
+const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{...SKY_INPUT, text: '{{secret:WORK_PASSWORD}}'}]}];
+const BROWSER_REQUESTS = ['browser', {method: 'setup', params: {}}, {method: 'executeWithRecovery', params: {type: 'playwright_locator_fill', browser_id: '1', tab_id: '2', selector: 's', value: '{{secret:WORK_PASSWORD}}', replace: true}}];
 
 function runWorker(env, requests = SKY_REQUESTS) {
   return new Promise((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', WORKER], {env: {...env, TRUST_TEST_REQUESTS: JSON.stringify(requests)}, encoding: 'utf8'}, (error, stdout, stderr) => {
@@ -62,7 +65,7 @@ function launchWithFakeVendor(t, options = {}) {
   const home = realpathSync(s.dir);
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
   mkdirSync(dirname(runtime.paths.skyVendorService), {recursive: true});
-  writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type}; }\n');
+  writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type, text: request.args?.[0]?.text}; }\n');
   mkdirSync(dirname(runtime.paths.browserVendorService), {recursive: true});
   writeFileSync(runtime.paths.browserVendorService, 'export async function handleRpc(request) { return {vendor: request.method}; }\n');
   return buildLaunch({runtime, home, sessionId: SESSION, ambient: {}, services: {sky: SKY_SERVICE}, ...options});
@@ -73,6 +76,17 @@ test('the production sky service and everything it imports load under exactly th
   const [setup, reference] = await runWorker(env);
   assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the vendor module named by CUA_SKY_VENDOR_SERVICE');
   assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
+});
+
+// The whole trusted path with the real store: the launch names the directory, the production service reads the file.
+test('the production sky service reads a stored value from the launch\'s CUA_SECRETS_DIR and hands it to the vendor', {skip: typeof registerHooks !== 'function'}, async t => {
+  const store = mkdtempSync(join(tmpdir(), 'cua-trust-store-'));
+  t.after(() => rmSync(store, {recursive: true, force: true}));
+  writeFileSync(join(store, 'WORK_PASSWORD'), 'trusted-path-value\n', {mode: 0o600});
+  const {env} = launchWithFakeVendor(t, {secretsDir: store});
+  assert.equal(env.CUA_SECRETS_DIR, store);
+  const [, delivered] = await runWorker(env, ['sky', {type: 'setup'}, SKY_REQUESTS[2]]);
+  assert.deepEqual(delivered, {vendor: 'execute', text: 'trusted-path-value'});
 });
 
 test('the hook copy is effective: without the owned secrets modules trusted, the service cannot load', {skip: typeof registerHooks !== 'function'}, async t => {

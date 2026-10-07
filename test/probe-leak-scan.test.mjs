@@ -5,7 +5,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chmodSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {fingerprints, scanFiles, textLeaks} from '../scripts/probe/leak-scan.mjs';
+import {fingerprintable, fingerprints, scanFiles, textLeaks} from '../scripts/probe/leak-scan.mjs';
 import {scratch} from './fixtures/runtime-fixture.mjs';
 
 const SENTINEL = 'cua-m5-sentinel-Zq9_x-7Hk2LmNo4PqRsTuVwXy';
@@ -18,6 +18,16 @@ test('a value is found raw and as base64 at every byte offset of a framed reply'
   }
   assert.ok(textLeaks(`x${SENTINEL}y`, PRINTS) > 0);
   assert.equal(textLeaks('nothing here', PRINTS), 0);
+});
+
+test('a caller\'s value is scanned for only when its fingerprints are meaningful: 8 characters or more, one line', () => {
+  assert.ok(fingerprints('abcde').includes(''), 'a short value yields an empty fingerprint');
+  assert.ok(textLeaks('any text at all', fingerprints('abcde')) > 0, 'which matches every text');
+  for (const value of ['abcde', 'abcdefg', 'abcdefgh\n', 'abc\tdefgh', '', null, undefined]) assert.equal(fingerprintable(value), false, JSON.stringify(value));
+  for (const value of ['abcdefgh', SENTINEL, 'pässwörd ✓']) {
+    assert.equal(fingerprintable(value), true, value);
+    assert.equal(textLeaks('nothing here', fingerprints(value)), 0, value);
+  }
 });
 
 test('files of any size are scanned completely, including fingerprints that straddle read chunks', async t => {

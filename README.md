@@ -70,9 +70,9 @@ picks up a new version). The plugin runs `node cua-shim.mjs`, which is `cua serv
 `plugin:cua:cua_repl` with `CUA_SHIM_SURFACES=computer,browser`; its tools are `mcp__plugin_cua_cua_repl__*`. The
 installed copy needs no `npm ci`: `ws`, the one dependency, is loaded only on the relay path of `cua agent`, never by
 `serve` (the suite checks that; a copy without `node_modules` reaches the runtime check). The plugin cannot install the runtime: run
-`cua install` from a checkout once (Install, above), into the same `CUA_HOME`. If you registered `cua_repl` yourself
-before (Plain MCP server, below), remove that registration (`claude mcp remove cua_repl -s user`), or two servers drive
-the same Mac. The app-approval hook's matcher (next section) covers both names.
+`cua install` from a checkout once (Install, above), into the same `CUA_HOME`. If you registered `cua serve` yourself
+before (Plain MCP server, below), remove that registration under the name you gave it (`claude mcp remove cua -s user`
+for the example there, or `cua_repl`), or two servers drive the same Mac.
 
 The plugin also carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
 (Remote control), and, where function hooks are enabled (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY`
@@ -498,7 +498,8 @@ once, the **client credential** (what a client presents as its bearer), the `cla
 (on the relay's endpoint when a relay is enrolled, else on this Mac's address; see 4) and the line for the relay's
 `devices.json` (SHA-256 hashes only); `--json` prints `{deviceId, clientCredential, devicesEntry, relayUrl,
 relayEndpoint, clientSecretKey, clientRegisterCommand}`, the last two being the `/secret` key a client keeps the
-credential under and the registration that reads it from there (see 4; `remote show --json` prints both again). Nothing
+credential under and the registration that reads it from there (see 4; `remote show --json` prints both again; the
+command is `null` without a relay, since the address a direct client uses is one only you know). Nothing
 prints the client credential again: keep it where the client will use it. Both legs get their
 own credential derived from the secret, so the copy a client holds cannot be used to pose as the Mac to the relay.
 
@@ -586,8 +587,10 @@ claude mcp add --transport http cua_repl http://<the Mac's address>:7801/mcp --h
 To keep the credential out of shell history and the transcript, store it on the client with `/secret <clientSecretKey>`
 (the key `enroll --json` names: `CUA_DEVICE_` and the device id, `-` as `_`) and register with the
 `clientRegisterCommand` it printed, which reads it in place:
-`--header "Authorization: Bearer $(cat ~/.config/claude-secrets/<clientSecretKey>)"`. The shell expands it once, at
-registration, so after a `--rotate` store the new value and register again.
+`--header "Authorization: Bearer $(cat ~/.config/claude-secrets/<clientSecretKey>)"` (for direct `--http`, write that
+header into the second line above yourself). The shell expands it once, at registration, so after a `--rotate` store
+the new value, `claude mcp remove cua_repl` in the scope it was added to (`claude mcp add` refuses a name that
+exists), and register again.
 
 The name matters: permission rules (`"mcp__cua_repl__*"` under `permissions.allow`) and the app-approval hook above
 (matcher `cua_repl`) match the server name; under another name the hook does not answer, and every first use of an

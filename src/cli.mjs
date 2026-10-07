@@ -167,10 +167,11 @@ function remote(args) {
   const home = defaultHome();
   const register = (endpoint, credential) => `  ${mcpAdd(endpoint, credential)}`;
   // --json also names where a client keeps the credential, the /secret store, and the registration that reads it there,
-  // so the client's setup is a printed command whose output never holds the credential.
+  // so the client's setup is a printed command whose output never holds the credential. Without a relay the client's URL
+  // is an address only its owner knows, so there is no command to print (null).
   const clientSetup = (deviceId, endpoint) => {
     const key = clientSecretKey(deviceId);
-    return {clientSecretKey: key, clientRegisterCommand: mcpAdd(endpoint, `$(cat ~/.config/claude-secrets/${key})`)};
+    return {clientSecretKey: key, clientRegisterCommand: endpoint ? mcpAdd(endpoint, `$(cat ~/.config/claude-secrets/${key})`) : null};
   };
   if (command === 'show') {
     const record = readDevice(home);

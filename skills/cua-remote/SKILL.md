@@ -22,14 +22,15 @@ client's `/secret` field themselves.
    cache is replaced on every plugin update. Node 22 or newer.
 2. **The runtime.** `cua install`, then `cua doctor`. On Linux first meet the README's Linux requirements (an X11
    session, the apt packages; keep a copy of the deb for `--archive`).
-3. **Enrol.**
+3. **Enrol.** First `cua remote show --json`. If it succeeds, the device already has an identity: it gives the same
+   fields as below without the credential, which was shown only once, to whoever enrolled it. `enroll --relay <url>`
+   there only moves the device to another relay (no credential); `--rotate` mints a new one, so use it only when nobody
+   holds the old one, and say what it breaks: every client registration and the relay's line for this device. Only
+   when `show` answers `remote_not_enrolled`, enrol (noclobber, so an earlier run's file is never overwritten):
    ```sh
-   (umask 077; cua remote enroll --relay wss://<relay>/ws --json > ~/cua-enroll.json)
+   (umask 077; set -C; cua remote enroll --relay wss://<relay>/ws --json > ~/cua-enroll.json)
    jq -r '.deviceId, .relayEndpoint, .clientSecretKey, .clientRegisterCommand, .devicesEntry' ~/cua-enroll.json
    ```
-   `remote_already_enrolled` means the device has an identity: `cua remote show --json` gives the same fields without
-   the credential, which was shown only once. Rotate (`--rotate`) only when nobody holds the credential any more, and
-   say what it breaks: every client registration and the relay's line for this device.
 4. **The relay's table.** Give `devicesEntry` (hashes only, safe to show) to whoever operates the relay. On the
    project's hosted relay, `relay/deploy/update.sh --devices <file>` **replaces the whole table**: fetch the current
    one (`relay/README.md`, Hosting), merge this device's line in (replacing one with the same device id), send that.
@@ -65,8 +66,9 @@ decide it.
    the shell expands the credential at registration, and that scope writes it into the repository's `.mcp.json`.
 3. **Reconnect.** A running session does not pick up a server added under it: reconnect through `/mcp`, or start a
    new session.
-4. **Drive.** Use the tools as the server's instructions say; they arrive on connect and teach the API, the
-   approvals and `end_task`.
+4. **Drive.** The device's tools are `mcp__cua_repl__*`; `mcp__plugin_cua_cua_repl__*`, where present, drive this
+   machine's own screen, so do not mix them up. Use the tools as the server's instructions say; they arrive on
+   connect and teach the API, the approvals and `end_task`.
 
 | The client sees | Meaning | Next |
 |---|---|---|
@@ -75,5 +77,6 @@ decide it.
 | `401` | wrong credential, or the relay's table lacks the device's line | check the stored key and the relay's table (Part A, 4) |
 | `503 session limit reached` | another client holds the device (one session at a time) | wait a minute, or end the other task |
 
-After a `--rotate` on the device, store the new credential under the same key and run the registration again: the
-old value was expanded into the registration, not read at each connection.
+After a `--rotate` on the device, store the new credential under the same key, `claude mcp remove cua_repl` (same
+scope; `add` refuses an existing name), and register again: the old value was expanded into the registration, not
+read at each connection.

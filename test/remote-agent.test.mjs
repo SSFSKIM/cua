@@ -79,6 +79,8 @@ test('remote enroll prints the client credential once; show, a refused re-enrol 
   assert.match(enrolled.clientCredential, /^[0-9a-f]{64}$/);
   assert.equal(enrolled.relayUrl, null);
   assert.equal(enrolled.relayEndpoint, null);
+  assert.equal(enrolled.clientSecretKey, `CUA_DEVICE_${enrolled.deviceId.replaceAll('-', '_')}`);
+  assert.equal(enrolled.clientRegisterCommand, null, 'no relay: the client\'s address is not known here');
   const secret = JSON.parse(readFileSync(join(home, 'remote', 'device.json'), 'utf8')).secret;
 
   const outputs = [];

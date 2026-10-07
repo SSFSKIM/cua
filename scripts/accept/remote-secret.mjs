@@ -15,7 +15,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {parseArgs} from 'node:util';
-import {fingerprints, textLeaks} from '../probe/leak-scan.mjs';
+import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval} from './lib.mjs';
 
 const {values: options} = parseArgs({options: {config: {type: 'string'}, key: {type: 'string'}, 'value-file': {type: 'string'}, doc: {type: 'string'}, 'close-only': {type: 'boolean'}}, strict: true});
@@ -23,6 +23,7 @@ for (const name of ['config', 'key', 'value-file', 'doc']) if (!options[name]) {
 const servers = JSON.parse(readFileSync(options.config, 'utf8')).mcpServers;
 const server = Object.values(servers)[0];
 const value = readFileSync(options['value-file'], 'utf8').replace(/\n$/, '');
+if (!fingerprintable(value)) { console.error(`remote-secret: the value in --value-file ${UNFINGERPRINTABLE}`); process.exit(2); }
 const prints = fingerprints(value);
 const transcript = [];
 const steps = [];

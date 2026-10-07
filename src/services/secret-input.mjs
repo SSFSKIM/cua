@@ -19,6 +19,7 @@ const STORE_OUTCOMES = {
   insecure_mode: 'secret_insecure_mode',
   too_large: 'secret_too_large',
   unsupported_value: 'secret_unsupported_value',
+  empty: 'secret_empty',
   unreadable: 'secret_unreadable',
 };
 

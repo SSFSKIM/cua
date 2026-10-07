@@ -7,8 +7,10 @@
 // symlink and without blocking (a FIFO is refused, never waited on), checked on the open descriptor, bounded in size
 // and decoded as UTF-8; exactly one trailing newline is dropped (a file written by `echo`). Every refusal is a
 // SecretStoreError with a stable code and a fixed sentence naming at most the key and its file; none carries a cause,
-// file bytes or anything derived from a value. Keys are not secret. The store has no lock: a write replaces a file by
-// rename, so a reader sees the old value or the new one.
+// file bytes or anything derived from a value. Keys are not secret. A value that is empty once the newline is dropped
+// is refused: neither writer stores one, so such a file is a partial write. The store has no lock. cua's own write
+// replaces a file by rename, so a reader racing it sees the old value or the new one; the mod rewrites the file in
+// place, so a reader racing it can see a truncated (refused as empty) or partly written file.
 import {constants} from 'node:fs';
 import {chmod, mkdir, open, readdir, rename, rm, unlink} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
@@ -33,6 +35,7 @@ const SENTENCES = {
   insecure_mode: (key, path) => `the secret file for "${key}" (${path}) is not mode 0600, so it was not read (chmod 600 it)`,
   too_large: key => `secret "${key}" is larger than ${MAX_VALUE_BYTES} bytes`,
   unsupported_value: key => `secret "${key}" is not valid UTF-8 text`,
+  empty: key => `secret "${key}" is empty`,
   unreadable: (key, path, errno) => `the secret store could not be read${key ? ` for "${key}"` : ''} (${errno ?? 'error'})`,
   not_configured: () => 'no secret store is configured for this connection',
 };
@@ -81,7 +84,9 @@ export function fileStore({dir}) {
         if (bytes.length > MAX_VALUE_BYTES) throw new SecretStoreError('too_large', {key});
         let text;
         try { text = utf8.decode(bytes); } catch { throw new SecretStoreError('unsupported_value', {key}); }
-        return text.endsWith('\n') ? text.slice(0, -1) : text;
+        const value = text.endsWith('\n') ? text.slice(0, -1) : text;
+        if (!value) throw new SecretStoreError('empty', {key});
+        return value;
       } finally {
         bytes?.fill(0);
         await handle.close().catch(() => {});

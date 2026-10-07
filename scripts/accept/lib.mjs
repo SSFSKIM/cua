@@ -24,9 +24,10 @@ export function rollup(statuses) {
 // Doctor's runtime health as an acceptance runner needs it. Doctor's own `ok` also counts the remote-control rows
 // (agent.*), which describe this Mac's launchd agent and console, not the runtime: an enrolled Mac whose screen is
 // locked fails agent.console with nothing native wrong (#56). Those rows are informational here: reported, never
-// gating. Every other failing row still fails, and the exit code and `ok` must agree with the rows (a report that
-// contradicts itself is not health). A caller may name more informational rows. -> {healthy, detail}
-export const DOCTOR_INFORMATIONAL = row => row.name.startsWith('agent.');
+// gating. So is secrets.store, which describes the account's own store (~/.config/claude-secrets: a stray 0644 file
+// there fails it), not the runtime. Every other failing row still fails, and the exit code and `ok` must agree with the
+// rows (a report that contradicts itself is not health). A caller may name more informational rows. -> {healthy, detail}
+export const DOCTOR_INFORMATIONAL = row => row.name.startsWith('agent.') || row.name === 'secrets.store';
 export function doctorHealth({code, doctor, informational = DOCTOR_INFORMATIONAL}) {
   if (!doctor || !Array.isArray(doctor.checks)) return {healthy: false, detail: `exit ${code}; no report`};
   const anyFail = doctor.checks.some(c => c.status === 'fail');

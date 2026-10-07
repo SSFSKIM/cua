@@ -301,7 +301,7 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   assert.doesNotMatch(locked.detail, /failing:/);
 
   const plain = doctorHealth({code: 0, doctor: report(runtime)});
-  assert.deepEqual(plain, {healthy: true, detail: 'exit 0; ok true'}, 'nothing informational to print when no agent row applies');
+  assert.deepEqual(plain, {healthy: true, detail: 'exit 0; ok true; informational, not gating: secrets.store pass'}, 'only the store row is informational when no agent row applies');
 
   const broken = runtime.map(c => (c.name === 'runtime.files' ? {...c, status: 'fail'} : c));
   const both = doctorHealth({code: 1, doctor: report([...broken, ...agent])});
@@ -314,11 +314,18 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   assert.deepEqual(doctorHealth({code: 1, doctor: null}), {healthy: false, detail: 'exit 1; no report'});
 });
 
-test('a caller may make more doctor rows informational: reported, never gating, and the report must still agree with itself', () => {
+test('the account\'s own secret store is informational by default: a failing secrets.store row never gates runtime health', () => {
   const rows = [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'secrets.store', status: 'fail', detail: ''}];
-  const store = row => row.name === 'secrets.store';
-  assert.equal(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}).healthy, false);
-  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}, informational: store}),
+  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}),
     {healthy: true, detail: 'exit 1; ok false; informational, not gating: secrets.store fail'});
-  assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}, informational: store}).healthy, false, 'ok that contradicts its rows');
+  assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}}).healthy, false, 'ok that contradicts its rows');
+});
+
+test('a caller may make more doctor rows informational: reported, never gating, and the report must still agree with itself', () => {
+  const rows = [{name: 'runtime.files', status: 'pass', detail: ''}, {name: 'helper.live', status: 'fail', detail: ''}];
+  const helper = row => row.name === 'helper.live';
+  assert.equal(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}).healthy, false);
+  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}, informational: helper}),
+    {healthy: true, detail: 'exit 1; ok false; informational, not gating: helper.live fail'});
+  assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}, informational: helper}).healthy, false, 'ok that contradicts its rows');
 });

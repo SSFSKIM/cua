@@ -182,7 +182,8 @@ node bin/cua.mjs secrets remove WORK_PASSWORD  # asks for confirmation; --yes sk
 ```
 
 A value is only ever typed at a terminal: `set` refuses arguments, flags and piped input, and nothing prints or
-exports a value. `secrets_list` lists the keys (the names of the store's 0600 files that follow the KEY rule).
+exports a value. `secrets_list` lists the keys: the names of the store's regular files that follow the KEY rule, whatever their mode
+(a key whose file is not 0600 is listed, then refused with `secret_insecure_mode` when used).
 
 To have the agent enter a stored secret, authorize it to use the key; it then passes the exact reference
 `{{secret:<KEY>}}` as an input argument:
@@ -204,7 +205,8 @@ any other method or field, and JavaScript strings in general are left alone. A r
 entered, with a value-free error code, when its key is invalid (`invalid_secret_label`) or unknown
 (`secret_not_found`), its file is not a regular file owned by you with mode 0600 (`secret_not_regular_file`,
 `secret_wrong_owner`, `secret_insecure_mode`: cua never reads such a file; `chmod 600` it), is over 256 KiB or not
-UTF-8 text (`secret_too_large`, `secret_unsupported_value`) or cannot be read (`secret_unreadable`), secrets are off
+UTF-8 text (`secret_too_large`, `secret_unsupported_value`), is empty (`secret_empty`: neither writer stores an empty
+value, so it is an interrupted write) or cannot be read (`secret_unreadable`), secrets are off
 (`CUA_SHIM_SECRETS=off`: `secrets_disabled`), or the command is not in its pinned shape (`unsupported_secret_shape`).
 Exactly one trailing newline is dropped from a file's contents, so a file written with `echo` works. If the native command fails after substitution, the error is a fixed diagnostic
 (`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is

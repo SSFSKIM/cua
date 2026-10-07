@@ -22,7 +22,7 @@ import {parseArgs} from 'node:util';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
 import {fileStore, storeDir} from '../../src/secrets/store.mjs';
-import {fingerprints, textLeaks} from '../probe/leak-scan.mjs';
+import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 const {values: options} = parseArgs({options: {key: {type: 'string'}, app: {type: 'string', default: 'gedit'}}, strict: true});
@@ -43,8 +43,11 @@ let value = null;
 try {
   const tool = ['gedit', 'zenity'].includes(options.app) ? findTool(options.app, process.env.PATH) : null;
   try { value = options.key ? await fileStore({dir: storeDir()}).read(options.key) : null; } catch (error) { report.storeError = error.code; }
-  if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && !!tool && typeof value === 'string' && value.length > 0,
-    {platform: process.platform, display: process.env.DISPLAY ?? null, app: tool ?? null, stored: typeof value === 'string', store: storeDir()})) throw new Error('preconditions');
+  // The value becomes a leak fingerprint, so it must be one that can be scanned for (fingerprintable).
+  const usable = fingerprintable(value);
+  if (!step('preconditions', process.platform === 'linux' && !!process.env.DISPLAY && !!tool && usable,
+    {platform: process.platform, display: process.env.DISPLAY ?? null, app: tool ?? null, stored: typeof value === 'string', store: storeDir(),
+      ...(typeof value === 'string' && !usable ? {value: `the stored value ${UNFINGERPRINTABLE}`} : {})})) throw new Error('preconditions');
   const prints = fingerprints(value);
   if (options.app === 'gedit') {
     const file = join(dir, `${title}.txt`);

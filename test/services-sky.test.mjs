@@ -120,8 +120,8 @@ test('a reference-shaped argument with an invalid label fails before input and i
 test('store refusals fail before input with a value-free classified error', async () => {
   const cases = [
     ['insecure_mode', 'secret_insecure_mode'], ['not_regular_file', 'secret_not_regular_file'], ['wrong_owner', 'secret_wrong_owner'],
-    ['too_large', 'secret_too_large'], ['unsupported_value', 'secret_unsupported_value'], ['unreadable', 'secret_unreadable'],
-    ['not_configured', 'secrets_unavailable'],
+    ['too_large', 'secret_too_large'], ['unsupported_value', 'secret_unsupported_value'], ['empty', 'secret_empty'],
+    ['unreadable', 'secret_unreadable'], ['not_configured', 'secrets_unavailable'],
   ];
   for (const [storeCode, expected] of cases) {
     const {service, received} = harness({read: async key => { throw new SecretStoreError(storeCode, {key, path: `/h/.config/claude-secrets/${key}`, errno: 'EACCES'}); }});

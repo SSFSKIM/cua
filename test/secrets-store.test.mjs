@@ -42,18 +42,18 @@ test('read returns the value with exactly one trailing newline dropped', async t
   put('PLAIN', 'abc');
   put('ECHOED', 'abc\n');
   put('TWO', 'abc\n\n');
+  put('NEWLINES', '\n\n');
   put('CRLF', 'abc\r\n');
   put('UNICODE', 'pässwörd ✓');
-  put('EMPTY', '');
   assert.equal(await store.read('PLAIN'), 'abc');
   assert.equal(await store.read('ECHOED'), 'abc');
   assert.equal(await store.read('TWO'), 'abc\n');
   assert.equal(await store.read('CRLF'), 'abc\r');
   assert.equal(await store.read('UNICODE'), 'pässwörd ✓');
-  assert.equal(await store.read('EMPTY'), '');
+  assert.equal(await store.read('NEWLINES'), '\n', 'only one newline is dropped');
 });
 
-test('read refuses, classified and value-free: unknown, invalid key, wrong mode, not a regular file, too large, not UTF-8', async t => {
+test('read refuses, classified and value-free: unknown, invalid key, wrong mode, not a regular file, too large, not UTF-8, empty', async t => {
   const {dir, store, put} = scratch(t);
   put('OPEN', SENTINEL, 0o644);
   put('GROUP', SENTINEL, 0o640);
@@ -65,9 +65,12 @@ test('read refuses, classified and value-free: unknown, invalid key, wrong mode,
   execFileSync('/usr/bin/mkfifo', ['-m', '600', join(dir, 'FIFO')]);
   put('BIG', 'x'.repeat(MAX_VALUE_BYTES + 1));
   put('BINARY', Buffer.from([0x41, 0xff, 0xfe, 0x42]));
+  put('EMPTY', '');
+  put('NEWLINE', '\n');
   const cases = {
     MISSING: 'not_found', OPEN: 'insecure_mode', GROUP: 'insecure_mode', EXEC: 'insecure_mode', READONLY: 'insecure_mode',
     ADIR: 'not_regular_file', LINK: 'not_regular_file', FIFO: 'not_regular_file', BIG: 'too_large', BINARY: 'unsupported_value',
+    EMPTY: 'empty', NEWLINE: 'empty',
     'bad-key': 'invalid_label', '../TARGET': 'invalid_label',
   };
   for (const [key, code] of Object.entries(cases)) {
@@ -79,6 +82,7 @@ test('read refuses, classified and value-free: unknown, invalid key, wrong mode,
   }
   assert.equal(await store.read('TARGET'), SENTINEL, 'the link target itself is fine');
   assert.match((await refusal(store.read('OPEN'))).message, /not mode 0600.*chmod 600/);
+  assert.equal((await refusal(store.read('NEWLINE'))).message, 'secret "NEWLINE" is empty');
 });
 
 test('a file owned by another user is refused before its bytes are read', async t => {

@@ -33,7 +33,7 @@ import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {NATIVE_SOCKET} from '../../src/runtime/doctor.mjs';
 import {fileStore, storeDir} from '../../src/secrets/store.mjs';
 import {socketHolders} from '../probe/lib.mjs';
-import {fingerprints, textLeaks} from '../probe/leak-scan.mjs';
+import {fingerprintable, fingerprints, textLeaks, UNFINGERPRINTABLE} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
@@ -185,11 +185,10 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
       try { value = await fileStore({dir: storeDir({HOME: storeHome})}).read(label); } catch (error) {
         return record(STEP.secretCreate, 'BLOCKED', `the caller's key could not be read from the store home given (${error.code ?? 'error'}: ${error.message})`);
       }
-      // Checked before it becomes a leak fingerprint: a very short value's base64 fingerprints are empty and would match
-      // every text, so nothing could be reported.
-      if (value.length < 8 || /[\u0000-\u001f\u007f]/.test(value)) {
+      // Checked before it becomes a leak fingerprint (fingerprintable).
+      if (!fingerprintable(value)) {
         value = null;
-        return record(STEP.secretCreate, 'BLOCKED', 'the caller\'s value is shorter than 8 characters or holds a control character; store a longer one-line value');
+        return record(STEP.secretCreate, 'BLOCKED', `the caller's value ${UNFINGERPRINTABLE}`);
       }
       forbid(value);
       prints = fingerprints(value);

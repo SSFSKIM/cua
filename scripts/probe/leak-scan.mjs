@@ -16,6 +16,11 @@ export function fingerprints(value) {
   return out;
 }
 
+// Whether a value someone else chose can be scanned for: a short value's base64 fingerprints are empty and would match
+// every text, and a control character (a newline) makes it more than the one line the fixtures enter.
+export const fingerprintable = value => typeof value === 'string' && value.length >= 8 && !/[\u0000-\u001f\u007f]/.test(value);
+export const UNFINGERPRINTABLE = 'is shorter than 8 characters or holds a control character; store a longer one-line value';
+
 export const textLeaks = (text, prints) => prints.filter(print => text.includes(print)).length;
 
 async function fileLeaks(path, prints, chunkBytes) {

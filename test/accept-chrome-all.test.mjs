@@ -561,6 +561,9 @@ test('C5 passes on this Mac\'s expected doctor; environment gaps are BLOCKED and
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 0, doctor: missing}))), 'FAIL');
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf(), ok: false}}))), 'FAIL');
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf({'agent.console': ['fail', 'the screen is locked']}), ok: false}}))), 'PASS', 'remote-control rows never gate it (#56)');
+  const looseStore = doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf({'secrets.store': ['fail', '1 secret file is not 0600: LOOSE (mode 0644, not 0600)']}), ok: false}});
+  assert.equal(rollup(statuses(looseStore)), 'PASS', 'the account\'s own secret store never gates it');
+  assert.match(looseStore[0].detail, /informational, not gating: secrets\.store fail/);
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: {...doctorOf({'chrome.host.config': ['fail', 'unsigned']}), ok: false}}))), 'FAIL');
   assert.equal(rollup(statuses(doctorChromeChecks({slotsNow, code: 1, doctor: null}))), 'FAIL');
 });

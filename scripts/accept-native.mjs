@@ -48,7 +48,7 @@ import {fileStore, storeDir} from '../src/secrets/store.mjs';
 import {socketHolders} from './probe/lib.mjs';
 import {fingerprints, textLeaks} from './probe/leak-scan.mjs';
 import {
-  approvalObservation, diffSnapshots, doctorHealth, DOCTOR_INFORMATIONAL, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
+  approvalObservation, diffSnapshots, doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, PROBE_SECRETS_PHASES, probePhasesFor, rollup, scenarioVerdict,
   snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike,
 } from './accept/lib.mjs';
 import {OWN_STEPS, runTextEdit, SECRET_STEPS} from './accept/textedit.mjs';
@@ -195,8 +195,8 @@ async function item3() {
   const status = name => doctor?.checks?.find(c => c.name === name)?.status ?? 'missing';
   const required = ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures'];
   const live = ['helper.live', 'helper.permissions', 'secrets.store'];
-  // secrets.store describes the account's own store (~/.config/claude-secrets), not the runtime: reported, not gating.
-  const health = doctorHealth({code: r.code, doctor, informational: row => DOCTOR_INFORMATIONAL(row) || row.name === 'secrets.store'});
+  // secrets.store, like agent.*, is reported, not gating (DOCTOR_INFORMATIONAL).
+  const health = doctorHealth({code: r.code, doctor});
   const healthy = health.healthy && doctor.runtime?.release && required.every(n => status(n) === 'pass');
   checks.push(check('doctor --json on the installed home', healthy && live.every(n => status(n) !== 'missing') ? 'PASS' : 'FAIL',
     `${health.detail}; release ${doctor?.runtime?.release ?? 'none'}; ${[...required, ...live].map(n => `${n} ${status(n)}`).join(', ')}`,

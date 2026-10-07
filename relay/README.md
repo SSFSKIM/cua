@@ -88,12 +88,17 @@ SHA-256 hashes of the two credentials, never the credentials themselves. `device
 
 The relay reads it at start: restart the relay after editing it (the agents reconnect by themselves). Then, on the Mac,
 `cua agent install` if its launchd job does not dial a relay yet (it adds `--relay`; `enroll` says when this is
-needed), and on the client the line `enroll` printed:
-`claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"`.
+needed). A client with the cua plugin adds the device once, its credential stored under `clientSecretKey`
+(`/secret <key>`), with the `devicesAddCommand` that `enroll --json` printed
+(`cua devices add <name> --relay https://<relay> --device=<deviceId>`, or `cua devices import <client config>`), and
+switches to it in any session with `devices_use <name>`; a client without the plugin registers the endpoint itself:
+`claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"`
+(the cua README, "Remote control", 4 and 5).
 The agent follows the Mac's `device.json` while it runs, so moving a device to another relay (`cua remote enroll
 --relay <new url>`) needs no restart: the agent redials the new URL by itself. A `cua remote enroll --rotate` changes
 both hashes: replace the line and restart the relay (the agent, which already refuses the old client credential and
-has ended the sessions opened with it, reconnects with the new device credential), and re-register the client.
+has ended the sessions opened with it, reconnects with the new device credential), and give clients the new
+credential (stored under the same key on the plugin route, registered again on the standalone one).
 
 ## What the answers mean
 

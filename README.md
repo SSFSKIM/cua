@@ -896,7 +896,9 @@ Chrome (browser surface):
 - **Never pick or bind a profile for the user.** Use only an instance id `profiles_list` returned, for the profile the
   user named; if selection fails, call `profiles_list` again; if the profile is not ready or which one is meant is
   unclear, ask. Binding is the user's act (`cua profiles bind`, see Profiles). The run above bound a profile itself
-  by matching tab contents, which proved nothing about the profile and broke this rule.
+  by matching tab contents, which proved nothing about the profile and broke this rule. For a profile that is not
+  ready, `profiles_list` returns the reason and the step to pass on to the user in its `guidance` field, in the
+  structured result Claude Code shows the model as well as in the text.
 - **Browser actions stop at 3 s.** Locator actions, waits and `playwright.evaluate` are capped at 3 s by OpenAI's
   browser service, whatever their `timeoutMs` or the `js` call's `timeout_ms` say: a per-call `timeoutMs` can only
   shorten the cap, and there is no session setting (spike, issue #25; `pressSequentially` gets 5 s, downloads and

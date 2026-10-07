@@ -1,6 +1,7 @@
 // Deterministic harness for the MCP server: an in-process fake upstream (standing in for the vendor cua_repl runtime)
 // and a client speaking newline-delimited JSON-RPC over in-memory streams. Nothing here spawns a process; the fake
 // answers only when a test tells it to, so ordering is explicit rather than timing-dependent.
+import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {createServer} from '../../src/mcp/server.mjs';
@@ -123,6 +124,28 @@ export async function initialized(h, {clientInfo = {name: 'test-client', version
 
 export const textOf = response => (response.result?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('\n');
 export const structured = response => response.result?.structuredContent;
+
+// Claude Code (2.1.292) shows the model only the structured content of a successful result that has one, as JSON,
+// dropping its text blocks; an error result, or one without structured content, keeps its text
+// (docs/evidence/2026-10-07-device-multiplexing-acceptance.md). So guidance meant for the model in such a result has to
+// be in its structured content: this asserts that every line of the text is there, a JSON line as fields of it and any
+// other line inside one of its strings.
+export function assertModelSeesText(response) {
+  const {result} = response;
+  if (result.isError || result.structuredContent == null) return;
+  const strings = [];
+  (function collect(value) {
+    if (typeof value === 'string') strings.push(value);
+    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+  })(result.structuredContent);
+  for (const line of textOf(response).split('\n').filter(Boolean)) {
+    let fields = null;
+    try { fields = JSON.parse(line); } catch {}
+    if (fields && typeof fields === 'object') {
+      for (const [key, value] of Object.entries(fields)) assert.deepEqual(result.structuredContent[key], value, `the structured content carries ${key}`);
+    } else assert.ok(strings.some(s => s.includes(line)), `a text line the model never sees: ${line}`);
+  }
+}
 export const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
 
 // A connection opener for the HTTP handler (createMcpHttp's `open`) serving in-process connections: each session's

@@ -1,22 +1,28 @@
 // Live native fixture for acceptance 5 (and, with a secret, the optional UI delivery of acceptance 6), run only by
-// `node scripts/accept-native.mjs --live-textedit [--live-keychain]`. Its whole GUI footprint:
+// `node scripts/accept-native.mjs --live-textedit [--live-secrets [--secret-key KEY]]`. Its whole GUI footprint:
 //   - it creates one empty temporary document in a directory it creates exclusively under $CUA_HOME and opens it in
 //     TextEdit (`open -a TextEdit <file>`);
 //   - through `cua serve` it binds TextEdit and, inside every cell that types or closes, first checks that TextEdit's
 //     front window IS that document; if it is not, that cell does nothing and the fixture sends no further input;
-//   - it types a benign marker (and, with a secret, the reference {{secret:<label>}} of a disposable generated value),
+//   - it types a benign marker (and, with a secret, the reference {{secret:<KEY>}}),
 //     reads it back through CUA (accessibility text and a screenshot, recorded as metadata), and closes only that
 //     window (super+w; TextEdit autosaves a file-backed document into the temporary file, never a user location),
 //     counting the close as confirmed only when TextEdit then reports no window at all;
-//   - it removes its own directory, and the disposable Keychain item, in `finally`, and ends every server it started.
+//   - it removes its own directory (and a store it created) in `finally`, and ends every server it started.
 // It never touches another TextEdit window or document and never quits TextEdit (whether it was running before or
 // was started by the `open`). The vendor asks before CUA first uses an app; the fixture accepts that elicitation only
 // when it is exactly the pinned request for com.apple.TextEdit (scripts/accept/lib.mjs isTextEditApproval), for the
 // session only (CUA_SHIM_PERSIST=session in this scratch home, never "always"), and declines every other request.
 // That auto-answer lives only in this test harness; `cua serve` forwards approvals to its client unchanged. Two
 // connections bind TextEdit in turn, so per-connection approval and the session files it leaves are observed.
-// Anything that waits on a human (a macOS permission or Keychain prompt) is never answered: the step times out and is
-// BLOCKED with the action needed.
+// Anything that waits on a human (a macOS permission prompt) is never answered: the step times out and is BLOCKED with
+// the action needed.
+// With a secret, every server it starts reads a store outside the account's own (~/.config/claude-secrets is never
+// read or written): it runs scripts/accept/serve-with-store.mjs with HOME set to a store home, which by default is a
+// temporary $HOME this fixture creates, seeds with a generated value under a generated KEY through `cua secrets set` at
+// a pty (scripts/accept/secret-seed.mjs) and removes in `finally`. Given a caller's key ({key, home}), it uses that
+// home's store as it is, reads the expected value from the key's file in this process (never printed), and leaves
+// both in place.
 import {execFile, execFileSync} from 'node:child_process';
 import {randomBytes, randomUUID} from 'node:crypto';
 import {existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
@@ -25,17 +31,17 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {NATIVE_SOCKET} from '../../src/runtime/doctor.mjs';
-import {locateHelper} from '../../src/secrets/helper.mjs';
-import {runCaptured} from '../../src/secrets/commands.mjs';
-import {PTY_DRIVER, setThroughTerminal} from '../../native/keychain/fixtures/seed.mjs';
+import {fileStore, storeDir} from '../../src/secrets/store.mjs';
 import {socketHolders} from '../probe/lib.mjs';
 import {fingerprints, textLeaks} from '../probe/leak-scan.mjs';
 import {isTextEditApproval, TEXTEDIT_BUNDLE} from './lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
+import {createStoreHome, generatedKey, isAccountHome, removeStoreHome, seedSecret} from './secret-seed.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
+const SERVE_WITH_STORE = fileURLToPath(new URL('./serve-with-store.mjs', import.meta.url));
 const TEXTEDIT_APP = '/System/Applications/TextEdit.app';
-const PROMPT_ACTION = 'a macOS permission (Accessibility/Screen Recording) or Keychain prompt may be waiting; the fixture never answers one: a human must decide it, then re-run';
+const PROMPT_ACTION = 'a macOS permission (Accessibility/Screen Recording) prompt may be waiting; the fixture never answers one: a human must decide it, then re-run';
 
 // Every step a complete run records, so a caller can tell a step that never ran from one that passed.
 export const STEP = {
@@ -49,7 +55,7 @@ export const STEP = {
   closeB: 'connection B: close',
   removeDoc: 'remove the fixture document',
   teardown: 'every server the fixture started has exited',
-  secretCreate: 'secret: create disposable item',
+  secretCreate: 'secret: the value in a fixture store',
   secretType: 'secret: type the reference',
   secretReadback: 'secret: target observation (plaintext readback, not confidentiality evidence)',
   secretCleanup: 'secret: cleanup',
@@ -84,21 +90,24 @@ if (__front !== ${JSON.stringify(docName)}) { ${out('{identityLost: true}')}; } 
 ${action}
 }`;
 
+// `secret`: false, true (a generated key and value in a temporary $HOME), or {key, home} (the caller's stored key).
 export async function runTextEdit({home, secret = false, forbid = () => {}, stepMs = 60_000}) {
-  // The helper the server under this home runs, so the seeded item and the broker share one code identity.
-  const helper = locateHelper({home});
+  const callerKey = secret && typeof secret === 'object' ? secret : null;
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
   const observations = {elicitations: [], connections: []};
   // Like the value below, one unbroken upper-case token: TextEdit's autocorrect otherwise offers to capitalize a
   // lower-case first word and applies it when typing continues, rewriting text that was already observed.
   const marker = `CUAMARKER${randomBytes(6).toString('hex').toUpperCase()}`;
-  const label = `cua-accept-ui-${randomUUID()}`;
+  const label = callerKey ? callerKey.key : generatedKey('CUA_ACCEPT_UI');
   // One unbroken upper-case token (no separators, no words): the target's own text substitutions (autocorrect at a word
-  // boundary, smart dashes for "--", capitalization) act on typed text in an ordinary text view.
-  const value = secret ? `CUAUI${randomBytes(16).toString('hex').toUpperCase()}` : null;
+  // boundary, smart dashes for "--", capitalization) act on typed text in an ordinary text view. A caller's value is
+  // read from its file once the preconditions hold.
+  let value = secret && !callerKey ? `CUAUI${randomBytes(16).toString('hex').toUpperCase()}` : null;
   if (value) forbid(value);
-  const prints = value ? fingerprints(value) : [];
+  let prints = value ? fingerprints(value) : [];
+  let storeHome = callerKey ? callerKey.home : null;  // created by this invocation only without a caller's key
+  let storeCreated = false;
   const docName = `cua-accept-${randomUUID()}.txt`;
   const own = `__window === ${JSON.stringify(docName)}`;
   let docDir = null;      // created exclusively by this invocation
@@ -128,8 +137,8 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   const connect = async name => {
     connection(name);
     const session = openSession({
-      args: [CLI, 'serve'], clientName: 'cua-accept-textedit', onServerRequest: onServerRequest(name),
-      env: {...process.env, CUA_HOME: home, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: secret ? 'on' : 'off'},
+      args: secret ? [SERVE_WITH_STORE] : [CLI, 'serve'], clientName: 'cua-accept-textedit', onServerRequest: onServerRequest(name),
+      env: {...process.env, CUA_HOME: home, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: secret ? 'on' : 'off', ...(secret ? {HOME: storeHome} : {})},
     });
     sessions.push({name, session});
     await session.initialize();
@@ -163,22 +172,31 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   const helpersBefore = nativeHelpers();
   const sessionsBefore = sessionFiles(home);
   observations.textEdit = {runningBefore: textEditBefore.length > 0};
-  let itemCreated = false;
   // Returns early when a step cannot continue; cleanup and the result follow in any case.
   async function main() {
     const runtime = resolveRuntime({home});
     if (process.platform !== 'darwin' || !existsSync(TEXTEDIT_APP)) return record(STEP.preconditions, 'BLOCKED', `needs macOS with ${TEXTEDIT_APP}`);
-    if (secret && (!helper.built || !locateHelper({path: PTY_DRIVER}).built))
-      return record(STEP.preconditions, 'BLOCKED', 'build the helper (npm run build:helper) and its test products (npm run test:helper) first');
+    if (callerKey && isAccountHome(storeHome))
+      return record(STEP.preconditions, 'FAIL', 'refused: the caller\'s store home is this account\'s own home; store the key under a temporary $HOME');
     record(STEP.preconditions, 'PASS', `runtime ${runtime.release}; TextEdit ${textEditBefore.length ? 'already running (left as it is)' : 'not running'}`);
 
-    if (secret) {
-      itemCreated = true;  // cleanup runs even if creation is only partly confirmed
-      const seeded = await setThroughTerminal({helper: helper.path, label, value, timeoutMs: 15_000});
+    if (callerKey) {
+      // The caller's value, read here only to compare the readback with; it is never printed or reported.
+      try { value = await fileStore({dir: storeDir({HOME: storeHome})}).read(label); } catch (error) {
+        return record(STEP.secretCreate, 'BLOCKED', `the caller's key could not be read from the store home given (${error.code ?? 'error'}: ${error.message})`);
+      }
+      forbid(value);
+      prints = fingerprints(value);
+      if (!value || /[\u0000-\u001f\u007f]/.test(value)) return record(STEP.secretCreate, 'BLOCKED', 'the caller\'s value is empty or holds a control character, which typeText cannot deliver as one line');
+      record(STEP.secretCreate, 'PASS', `the caller's key ${label}, stored before this run in the store home given (left in place)`);
+    } else if (secret) {
+      storeHome = createStoreHome('cua-accept-textedit-');
+      storeCreated = true;  // cleanup runs even if the seed is only partly confirmed
+      const seeded = await seedSecret({home: storeHome, key: label, value, timeoutMs: 15_000});
       if (seeded.echoed) record(STEP.secretCreate, 'FAIL', 'the value appeared in terminal output');
-      else if (seeded.timedOut) record(STEP.secretCreate, 'BLOCKED', `set did not finish within 15 s; ${PROMPT_ACTION}`);
-      else if (seeded.exit !== 0 || !seeded.terminalRestored) record(STEP.secretCreate, 'FAIL', `set exited ${seeded.exit ?? seeded.signal}`);
-      else record(STEP.secretCreate, 'PASS', 'a generated value stored under a unique label through the test-owned pty fixture');
+      else if (seeded.timedOut) record(STEP.secretCreate, 'FAIL', `cua secrets set did not finish within 15 s (${seeded.prompts} prompt(s) answered)`);
+      else if (seeded.exit !== 0 || !seeded.stored) record(STEP.secretCreate, 'FAIL', `cua secrets set exited ${seeded.exit ?? seeded.signal}, key stored: ${seeded.stored}: ${seeded.said}`);
+      else record(STEP.secretCreate, 'PASS', 'a generated value stored under a generated key by cua secrets set at a pty, in a temporary $HOME');
       if (steps.at(-1).status !== 'PASS') return;
     }
 
@@ -217,7 +235,7 @@ ${out(`{own: ${own}, valueIsMarker: ${own} && __value === ${JSON.stringify(marke
         if (delivered.timedOut) record(STEP.secretType, 'BLOCKED', `no answer within ${stepMs} ms; ${PROMPT_ACTION}`);
         else if (delivered.identityLost) lost(STEP.secretType, 'type the reference');
         else record(STEP.secretType, !delivered.isError && delivered.done && !leakedBefore ? 'PASS' : 'FAIL', delivered.isError
-          ? `failed: ${String(delivered.error).replace(value, '<value>')}` : leakedBefore ? 'the value appeared in the MCP transport or stderr before any readback' : 'typeText({{secret:<label>}}) returned; nothing so far carried the value (MCP transport, server/runtime stderr)');
+          ? `failed: ${String(delivered.error).split(value).join('<value>')}` : leakedBefore ? 'the value appeared in the MCP transport or stderr before any readback' : 'typeText({{secret:<KEY>}}) returned; nothing so far carried the value (MCP transport, server/runtime stderr)');
         if (!guiStopped && steps.at(-1).status === 'PASS') {
           // Intentional plaintext readback from the target: target observation, not confidentiality evidence.
           const readback = cellJson(await b.js(`${OBSERVE}\n${out(`{own: ${own}, value: ${own} ? __value : null}`)}`, stepMs));
@@ -268,13 +286,12 @@ ${out(`{ownStillFront: __after === ${JSON.stringify(docName)}, otherFront: __aft
       rmSync(docDir, {recursive: true, force: true});  // created exclusively by this invocation (mkdtemp)
       record(STEP.removeDoc, existsSync(docDir) ? 'FAIL' : 'PASS', docOpen ? 'the file and its directory are gone, but its window may still be open in TextEdit' : 'the temporary file and the directory created for it are gone');
     }
-    if (itemCreated) {
-      const removed = await runCaptured(helper.path, ['remove', label, '--yes']);
-      const after = await runCaptured(helper.path, ['list']);
-      let gone = false;
-      try { gone = !JSON.parse(after.stdout).labels.includes(label); } catch {}
-      record(STEP.secretCleanup, gone && (removed.code === 0 || /\[not_found\]/.test(removed.stderr)) ? 'PASS' : 'FAIL',
-        gone ? 'the disposable item was removed' : `CLEANUP FAILED: remove it with node bin/cua.mjs secrets remove ${label}`);
+    if (storeCreated) {
+      const removed = await removeStoreHome({home: storeHome, key: label});
+      record(STEP.secretCleanup, removed.keyGone && removed.homeGone ? 'PASS' : 'FAIL', removed.keyGone && removed.homeGone
+        ? 'the generated key file and its temporary $HOME were removed' : `CLEANUP FAILED: remove the temporary home ${storeHome} by hand`);
+    } else if (callerKey && steps.some(s => s.name === STEP.secretCreate)) {
+      record(STEP.secretCleanup, 'PASS', 'nothing to remove: the caller owns the key and its store home, left as they were');
     }
   }
 

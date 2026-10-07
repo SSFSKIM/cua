@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Phase C acceptance runner (M11: C2's live round trip). Opt-in and live: it drives the user's existing Chrome through
-// `cua serve` over MCP and touches exactly one Keychain item, a uniquely labelled disposable entry holding a generated
-// sentinel, created through the test-owned pty seeding fixture and deleted in `finally`.
+// `cua serve` over MCP. Its secret lives in a store it owns: a temporary $HOME (scripts/accept/secret-seed.mjs) holding
+// one generated key with a generated sentinel, stored through `cua secrets set` typed at a pseudo-terminal and removed
+// with the temporary home in `finally`. The server resolves its store from that $HOME
+// (scripts/accept/serve-with-store.mjs), so the account's own store (~/.config/claude-secrets) is never touched.
 //
 //   node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accept-chrome.json
 //
 // Path under test: a fixed agent script (not a model) -> MCP -> `cua serve` (CUA_SHIM_SURFACES=browser) -> vendor
 // cua-repl -> node_repl -> cell -> nodeRepl.rpc("browser") -> trusted worker -> src/services/browser.mjs -> the
-// connection's broker (Keychain) -> substitution -> the vendor @oai/browser-desktop service -> the original OpenAI
+// store file in the temporary $HOME -> substitution -> the vendor @oai/browser-desktop service -> the original OpenAI
 // extension/host -> the profile's Chrome. The script selects the registered profile's backend by its stored instance
 // id (cua.getBrowser({extensionInstanceId})), creates one tab, navigates it to the runner's own loopback page, fills
 // its password field with `{{secret:<label>}}`, clicks; the page computes SHA-256 of what it received and shows only
@@ -19,26 +21,23 @@
 // backend is the registry's stored instance id, never a guess; the only accepted elicitation is the structured
 // origin-access request for the page's exact origin, answered persist "session"; everything else is declined, recorded
 // by kind, and stops further input. User tabs are never bound, read, screenshotted or closed. createBrowserTab gets a
-// 60 s limit; a tab that cannot be closed while authorized is reported for the user, never reconnected to. A Keychain
-// prompt makes the seeding step time out: BLOCKED, never answered.
+// 60 s limit; a tab that cannot be closed while authorized is reported for the user, never reconnected to.
 // Every observable channel is scanned for the sentinel (raw and base64 at every alignment): the MCP transport both
 // ways, serve and runtime stderr, the screenshot bytes, every regular file under $CUA_HOME/state and run (read whole;
 // the server's Codex credential file is excluded by name and never opened), and the report. Exit 0 PASS, 1 FAIL,
 // 3 BLOCKED. The report holds metadata only; the screenshot path is printed, not reported.
-import {randomBytes, randomUUID} from 'node:crypto';
+import {randomBytes} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {defaultHome, realHome} from '../src/runtime/layout.mjs';
 import {resolveRuntime} from '../src/runtime/manifest.mjs';
 import {loginStatus, LOGIN_STATES} from '../src/runtime/login.mjs';
-import {locateHelper} from '../src/secrets/helper.mjs';
-import {runCaptured} from '../src/secrets/commands.mjs';
 import {chromeFacts, countLiveHosts} from '../src/profiles/chrome.mjs';
 import {profileStatuses} from '../src/profiles/registry.mjs';
 import {processTable} from '../src/profiles/checks.mjs';
-import {PTY_DRIVER, setThroughTerminal} from '../native/keychain/fixtures/seed.mjs';
+import {createStoreHome, generatedKey, removeStoreHome, seedSecret} from './accept/secret-seed.mjs';
 import {fingerprints, scanFiles, textLeaks} from './probe/leak-scan.mjs';
 import {openSession} from './accept/mcp-session.mjs';
 import {reportLeaks} from './probe/chrome/original/classify.mjs';
@@ -64,14 +63,11 @@ if (!options.live || !options.profile || !options.report) {
 }
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const CLI = join(REPO, 'bin', 'cua.mjs');
+const SERVE = join(REPO, 'scripts', 'accept', 'serve-with-store.mjs');
 const SEED_MS = 15_000;
-const PROMPT_ACTION = 'a Keychain prompt may be waiting: dismiss it (do not allow) and re-run when a human can answer it';
 
 const home = realHome(defaultHome());
-// The helper the server under this home runs, so the seeded item and the broker share one code identity.
-const HELPER = locateHelper({home}).path;
-const label = `cua-m11-accept-${randomUUID()}`;
+const label = generatedKey('CUA_M11_ACCEPT');
 const sentinel = `cua-m11-sentinel-${randomBytes(18).toString('base64url')}`;
 const reference = `{{secret:${label}}}`;
 const PRINTS = fingerprints(sentinel);
@@ -84,7 +80,6 @@ function preconditions() {
   const missing = [];
   let runtime;
   try { runtime = resolveRuntime({home}); facts.release = runtime.release; } catch (error) { missing.push(`runtime: ${error.code}`); }
-  if (!locateHelper({home}).built || !locateHelper({path: PTY_DRIVER}).built) missing.push('Keychain helper or pty driver not built (npm run build:helper, npm run test:helper)');
   let profile;
   try { profile = profileStatuses({home, chrome: chromeFacts()}).find(p => p.key === options.profile); } catch (error) { missing.push(`profiles: ${error.code}`); }
   const gate = profilePrecondition(profile, options.profile);
@@ -100,7 +95,7 @@ const channels = [];
 const shots = {};
 const latch = createStopLatch();
 const tab = newTabRecord();
-let seeded = false;
+let storeHome = null;      // the run's own temporary $HOME, whose store the server reads
 let page;
 try {
   const {runtime, profile, missing} = preconditions();
@@ -113,16 +108,16 @@ try {
     else {
       record('preconditions', 'PASS', {release: runtime.release, liveHosts: facts.liveHosts, login: login.state, ...(profile.ready ? {profileReady: true}
         : {profileReady: 'pending the live check', chromeData: facts.chromeData, why: 'this process may not read Chrome\'s data directory; the profile is bound, so profiles_list decides on live evidence'})});
-      const seed = await setThroughTerminal({helper: HELPER, label, value: sentinel, timeoutMs: SEED_MS});
-      seeded = true;
+      storeHome = createStoreHome('cua-accept-chrome-');
+      const seed = await seedSecret({home: storeHome, key: label, value: sentinel, timeoutMs: SEED_MS});
       if (seed.echoed) record('seed-disposable-secret', 'FAIL', 'the value appeared in terminal output');
-      else if (seed.timedOut) record('seed-disposable-secret', 'BLOCKED', `set did not finish within ${SEED_MS} ms; ${PROMPT_ACTION}`);
-      else if (seed.exit !== 0 || !seed.terminalRestored) record('seed-disposable-secret', 'FAIL', `set exited ${seed.exit ?? seed.signal}; terminal restored: ${seed.terminalRestored}`);
+      else if (seed.timedOut) record('seed-disposable-secret', 'FAIL', `cua secrets set did not finish within ${SEED_MS} ms (${seed.prompts} prompt(s) answered)`);
+      else if (seed.exit !== 0 || !seed.stored) record('seed-disposable-secret', 'FAIL', `cua secrets set exited ${seed.exit ?? seed.signal}, key stored: ${seed.stored}`);
       else {
-        record('seed-disposable-secret', 'PASS', 'a generated sentinel stored under a disposable label through the test-owned pty fixture');
+        record('seed-disposable-secret', 'PASS', 'a generated sentinel stored under a disposable key by cua secrets set at a pty, in a temporary $HOME');
         page = await startAcceptancePage();
         const session = openSession({
-          args: [CLI, 'serve'], env: {...process.env, CUA_HOME: home, CUA_SHIM_SURFACES: 'browser'}, clientName: 'cua-accept-chrome',
+          args: [SERVE], env: {...process.env, CUA_HOME: home, HOME: storeHome, CUA_SHIM_SURFACES: 'browser'}, clientName: 'cua-accept-chrome',
           onServerRequest: elicitationPolicy({origin: page.origin, latch, inventory: facts.elicitations}),
         });
         try {
@@ -156,13 +151,10 @@ try {
   record('unexpected', 'FAIL', `${error.code ?? 'error'}: ${String(error.message).slice(0, 200)}`);
 } finally {
   if (page) { facts.testPage = page.requests(); await page.close(); }
-  if (seeded) {
-    const removed = await runCaptured(HELPER, ['remove', label, '--yes']);
-    const after = await runCaptured(HELPER, ['list']);
-    let gone = false;
-    try { gone = !JSON.parse(after.stdout).labels.includes(label); } catch {}
-    record('cleanup-disposable-secret', gone && (removed.code === 0 || /\[not_found\]/.test(removed.stderr ?? '')) ? 'PASS' : 'FAIL',
-      gone ? 'the run-owned item was removed' : `CLEANUP FAILED for ${label}: remove it with node bin/cua.mjs secrets remove ${label}`);
+  if (storeHome) {
+    const removed = await removeStoreHome({home: storeHome, key: label});
+    record('cleanup-disposable-secret', removed.keyGone && removed.homeGone ? 'PASS' : 'FAIL',
+      removed.keyGone && removed.homeGone ? 'the run-owned key file and its temporary home were removed' : `CLEANUP FAILED: remove the temporary home ${basename(storeHome)} in the system temporary directory by hand`);
   }
 }
 
@@ -175,7 +167,7 @@ if (els.length || facts.cellsSent.length) {
   record('elicitations-own-origin-only', stray ? 'FAIL' : declined.length ? 'BLOCKED' : 'PASS', {count: els.length, accepted: accepted.length, declinedByKind: Object.fromEntries([...new Set(declined.map(e => e.kind))].map(k => [k, declined.filter(e => e.kind === k).length]))});
 }
 const leaks = text => textLeaks(text, PRINTS);
-if (seeded) {
+if (storeHome) {
   const authFile = join(home, 'state', 'codex', 'auth.json');
   const files = await scanFiles([join(home, 'state'), join(home, 'run')], PRINTS, {exclude: path => path === authFile});
   const leaked = [...channels.filter(c => leaks(c.text)).map(c => c.name), ...(shots.bytes && leaks(shots.bytes.toString('latin1')) ? ['screenshot bytes'] : []), ...files.leaked.map(f => `file ${f.replace(home, '$CUA_HOME')}`)];

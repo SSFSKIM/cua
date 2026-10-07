@@ -83,7 +83,7 @@ export function testSummary(text) {
   return {totals: last, problem: null};
 }
 
-// The environment for a spawned test command (`npm test`, `npm run test:helper`): node:test's default reporter differs
+// The environment for a spawned test command (`npm test`): node:test's default reporter differs
 // by Node version and terminal, so every node process in the run, nested runners included, is told through
 // NODE_OPTIONS to report TAP on stdout. Reporter and destination options already there (either spelling, `=value` or
 // separate value) are removed with their values; every other option is kept as written, quoting included.
@@ -166,7 +166,7 @@ export function diffSnapshots(before, after) {
 }
 
 // Acceptance 10: what must never be tracked or packed (runtime archives and trees, build output, credentials, logs,
-// sockets), and what the package needs to run, diagnose and build its helper.
+// sockets), and what the package needs to run and diagnose.
 const FORBIDDEN = [
   [/\.zip$/i, 'a runtime archive'],
   [/(^|\/)runtimes\//, 'an extracted runtime'],
@@ -181,9 +181,8 @@ export function forbiddenPaths(paths) {
 }
 
 export const PACKAGE_REQUIRED = [
-  'bin/cua.mjs', 'cua-shim.mjs', 'verify.mjs', 'scripts/probe/lib.mjs', 'scripts/build-helper.mjs', 'README.md',
-  '.claude-plugin/plugin.json', 'src/cli.mjs', 'src/mcp/server.mjs', 'src/services/sky.mjs', 'src/secrets/client.mjs',
-  'native/keychain/Package.swift', 'native/keychain/Sources/cua-keychain/main.swift',
+  'bin/cua.mjs', 'cua-shim.mjs', 'verify.mjs', 'scripts/probe/lib.mjs', 'README.md', '.claude-plugin/plugin.json',
+  'src/cli.mjs', 'src/mcp/server.mjs', 'src/services/sky.mjs', 'src/secrets/store.mjs',
 ];
 export function missingFromPackage(files) {
   const packed = new Set(files);
@@ -209,17 +208,17 @@ export const tokenLike = text => TOKEN_PATTERNS.some(pattern => pattern.test(tex
 const FIRST = 'first value: ';
 const failClosed = tag => [...['type_text', 'paste', 'set_value'].map(m => `${tag}: ${m} reference fails closed`), `${tag}: close`];
 export const PROBE_SECRETS_PHASES = [
-  {items: [6], name: 'live: preconditions and create (generated sentinel, test-owned pty fixture)', steps: ['preconditions', 'create']},
-  {items: [6, 7], name: 'live: first substitution through helper → broker → trusted wrapper → controlled target', steps: ['paste', 'type_text', 'set_value'].map(m => `${FIRST}${m} substitution`)},
+  {items: [6], name: 'live: preconditions and create (generated sentinel, cua secrets set at a pty, temporary $HOME)', steps: ['preconditions', 'create']},
+  {items: [6, 7], name: 'live: first substitution through store file → trusted wrapper → controlled target', steps: ['paste', 'type_text', 'set_value'].map(m => `${FIRST}${m} substitution`)},
   {items: [7], name: 'live: ordinary input, unsupported method, unknown/invalid label, unsupported shape', steps: ['ordinary input', 'unsupported method', 'unknown label', 'invalid label', 'unsupported shape', 'target saw only what it should'].map(s => FIRST + s)},
   {items: [6], name: 'live: replace with a second generated sentinel and substitute it', steps: ['replace', 'replaced value: type_text substitution']},
   {items: [6], name: 'live: failure output stays value-free (induced and real vendor failures)', steps: [`${FIRST}induced substituted-command failure`, `${FIRST}cell timeout during a substituted call`, 'real vendor: failure after substitution', 'real vendor: unknown label']},
   {items: [7], name: 'live: sandbox scoped (default): trusted roots unwritable, run directory and $TMPDIR writable', steps: [SANDBOX_SCOPED_STEP]},
   {items: [7], name: 'live (informational): sandbox disabled (CUA_SHIM_SANDBOX=disabled): trusted roots a cell could write, accepted under the trust model (#20)', steps: [SANDBOX_DISABLED_STEP]},
-  {items: [6, 7], name: 'live: fail closed before any input (secrets off, broker unavailable)', steps: [...failClosed('secrets off'), ...failClosed('broker unavailable')]},
+  {items: [6, 7], name: 'live: fail closed before any input (secrets off, store unreadable)', steps: [...failClosed('secrets off'), ...failClosed('store unreadable')]},
   {items: [6], name: 'live: every connection closed cleanly', steps: [`${FIRST}close`, 'replaced value: close', 'real serve: close', 'real serve (sandbox disabled): close']},
   {items: [6], name: 'live: no value in any observed channel or report', steps: ['scanner self-check', 'sentinel scan']},
-  {items: [6], name: 'live: finally cleanup of only the scenario-owned item', steps: ['cleanup']},
+  {items: [6], name: 'live: finally cleanup of the scenario-owned key and temporary homes', steps: ['cleanup']},
 ];
 export const probePhasesFor = item => PROBE_SECRETS_PHASES.filter(phase => phase.items.includes(item));
 

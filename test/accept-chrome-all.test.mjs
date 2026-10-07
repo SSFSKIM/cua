@@ -8,7 +8,7 @@ import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {
   binaryKind, C2_LIVE_STEPS, C2_MATRIX, C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, classifySlot, defaultRegistryChecks, desktopAbsentGateBlocked,
-  desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, helperSuiteVerdict, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
+  desktopAbsentGateChecks, desktopAbsentState, doctorChromeChecks, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks, packChecks,
   PHASE_C_MODULES, profilesListCheck, registrationGuard, replaceGateBlocked, replaceGateChecks, SCRATCH_PROFILES, scratchAddCheck, scratchHumanCheck,
   scratchListCheck, slotStates, tapTestStatus, matrixChecks, verifyCheck, writeScratchChrome,
 } from '../scripts/accept/chrome-all-lib.mjs';
@@ -720,8 +720,8 @@ test('binary sniffing finds Mach-O executables and archives by their magic', () 
   assert.equal(binaryKind(Buffer.alloc(0)), null);
 });
 
-const BASE_PACK = ['bin/cua.mjs', 'cua-shim.mjs', 'verify.mjs', 'scripts/probe/lib.mjs', 'scripts/build-helper.mjs', 'README.md', '.claude-plugin/plugin.json',
-  'src/cli.mjs', 'src/mcp/server.mjs', 'src/services/sky.mjs', 'src/secrets/client.mjs', 'native/keychain/Package.swift', 'native/keychain/Sources/cua-keychain/main.swift',
+const BASE_PACK = ['bin/cua.mjs', 'cua-shim.mjs', 'verify.mjs', 'scripts/probe/lib.mjs', 'README.md', '.claude-plugin/plugin.json',
+  'src/cli.mjs', 'src/mcp/server.mjs', 'src/services/sky.mjs', 'src/secrets/store.mjs',
   'runtime/releases/26.928.40906-darwin-arm64.json', ...PHASE_C_MODULES];
 
 test('the pack passes with the Phase C modules and only tracked, text, non-machine files', () => {
@@ -748,25 +748,6 @@ test('the pack fails without a new module, with an untracked file, a host binary
   const untracked = [...BASE_PACK, 'notes.txt'];
   assert.equal(rollup(statuses(packChecks({files: untracked, tracked: BASE_PACK, read, userHome: '/Users/u'}))), 'FAIL');
   assert.equal(rollup(statuses(packChecks({files: [], tracked: BASE_PACK, read, userHome: '/Users/u'}))), 'FAIL');
-});
-
-test('the helper suite passes only when both the Swift and the Node-driven tests ran and passed', () => {
-  const node = '# tests 7\n# suites 0\n# pass 7\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n';
-  assert.equal(helperSuiteVerdict({code: 0, text: `Test run with 55 tests in 9 suites passed after 1.2 seconds.\n${node}`}).status, 'PASS');
-  assert.equal(helperSuiteVerdict({code: 1, text: `Test run with 55 tests in 9 suites failed after 1.2 seconds.\n${node}`}).status, 'FAIL');
-  assert.equal(helperSuiteVerdict({code: 0, text: node}).status, 'FAIL', 'no Swift summary');
-  assert.equal(helperSuiteVerdict({code: 0, text: 'Test run with 55 tests in 9 suites passed after 1 s.\n'}).status, 'FAIL', 'no Node summary');
-  assert.equal(helperSuiteVerdict({code: 0, text: `Test run with 0 tests in 0 suites passed after 0 s.\n${node}`}).status, 'BLOCKED');
-  // The Node summary must be one coherent block: a partial TAP block after a passing spec block, or counters spread over
-  // a truncated block and a complete one, are not a pass.
-  const swiftPassed = 'Test run with 55 tests in 9 suites passed after 1.2 seconds.\n';
-  const spec = node.replaceAll('# ', 'ℹ ');
-  for (const tail of [`${spec}# tests 7\n# pass 6\n# skipped 1\n`, `ℹ tests 7\nℹ pass 7\nℹ fail 0\n--\n${spec.replace('pass 7', 'pass 6').replace('skipped 0', 'skipped 1')}`]) {
-    const verdict = helperSuiteVerdict({code: 0, text: swiftPassed + tail});
-    assert.equal(verdict.status, 'FAIL');
-    assert.match(verdict.detail, /incomplete test summary/);
-  }
-  assert.match(helperSuiteVerdict({code: 0, text: `${swiftPassed}${spec}${node.replace('pass 7', 'pass 6').replace('skipped 0', 'skipped 1')}`}).detail, /conflicting test summaries/);
 });
 
 // ---- Chrome data this process may not read (macOS privacy protection) ---------------------------------------------

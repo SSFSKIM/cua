@@ -10,7 +10,7 @@ import {profileView} from '../../src/mcp/surface.mjs';
 import {chromeUserData, hostPathClass, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../../src/profiles/chrome.mjs';
 import {awaitsLiveEvidence, REASONS} from '../../src/profiles/registry.mjs';
 import {browsersFor, isOwnHostPath} from '../../src/chrome/registration.mjs';
-import {doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, suiteVerdict, testSummary, tokenLike} from './lib.mjs';
+import {doctorHealth, forbiddenPaths, inventoryCheck, missingFromPackage, rollup, scenarioVerdict, tokenLike} from './lib.mjs';
 
 const check = (name, status, detail) => ({name, status, detail});
 
@@ -588,15 +588,4 @@ export function packChecks({files, tracked, read, userHome}) {
     check('no packed file holds a token-like string or names this user\'s home', files.length && !personal.length ? 'PASS' : 'FAIL', personal.join(', ') || 'none'),
     check('every packed file is tracked', files.length && !untracked.length ? 'PASS' : 'FAIL', untracked.join(', ') || 'all tracked'),
   ];
-}
-
-// `npm run test:helper`: swift-testing's summary line and the Node-driven executable tests' node:test summary must both show
-// executed, passing coverage.
-export function helperSuiteVerdict({code, text}) {
-  const swift = text.match(/Test run with (\d+) tests? in \d+ suites? (passed|failed)/);
-  const nodeVerdict = suiteVerdict({code, ...testSummary(text)});
-  const swiftSkipped = /^\S*\s*Test .* skipped/m.test(text);
-  const swiftStatus = code !== 0 || !swift || swift[2] !== 'passed' ? 'FAIL' : Number(swift[1]) === 0 || swiftSkipped ? 'BLOCKED' : 'PASS';
-  return {status: rollup([swiftStatus, nodeVerdict.status]),
-    detail: `exit ${code}; Swift ${swift ? `${swift[1]} tests ${swift[2]}${swiftSkipped ? ', some skipped' : ''}` : 'summary not found'}; Node-driven executable tests: ${nodeVerdict.reason}`};
 }

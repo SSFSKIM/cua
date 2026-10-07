@@ -104,7 +104,7 @@ test('the runners\' reporter options replace any reporter in NODE_OPTIONS and ke
 });
 
 test('the runners\' test environment makes nested node:test runs report TAP on stdout', () => {
-  // As scripts/test-helper.mjs does: a node process that starts `node --test` with the environment it inherited.
+  // A wrapper script would do this: a node process that starts `node --test` with the environment it inherited.
   const nested = `require('node:child_process').spawnSync(process.execPath, ['--test', ${JSON.stringify(SUMMARY_SUITE)}], {stdio: 'inherit'})`;
   const r = spawnSync(process.execPath, ['-e', nested], {encoding: 'utf8', env: {...outsideRunner(), ...testReporterEnv({}), FORCE_COLOR: '1'}});
   assert.match(r.stdout, /^# tests 2$/m);
@@ -185,16 +185,17 @@ test('a tree snapshot notices added, removed and rewritten entries, and an untou
 });
 
 test('archives, runtime trees, build output, credentials, logs, sockets and pointers are never tracked or packed', () => {
-  const bad = ['ChatGPT-darwin-arm64.zip', 'runtimes/x/node', 'native/keychain/.build/release/cua-keychain', 'node_modules/x/index.js',
+  const bad = ['ChatGPT-darwin-arm64.zip', 'runtimes/x/node', 'native/x/.build/release/x', 'node_modules/x/index.js',
     'state/codex/auth.json', '.env', 'server.log', 'run/abc.sock', 'current.json'];
   assert.equal(forbiddenPaths(bad).length, bad.length);
   assert.deepEqual(forbiddenPaths(['src/runtime/install.mjs', 'runtime/releases/26.928.40906-darwin-arm64.json', 'README.md']), []);
 });
 
-test('the package must carry what runs, diagnoses and builds the helper', () => {
+test('the package must carry what runs and diagnoses, and nothing of the removed Keychain helper is required', () => {
   const complete = [...PACKAGE_REQUIRED, 'runtime/releases/26.928.40906-darwin-arm64.json'];
   assert.deepEqual(missingFromPackage(complete), []);
-  assert.deepEqual(missingFromPackage(complete.filter(p => p !== 'native/keychain/Package.swift')), ['native/keychain/Package.swift']);
+  assert.deepEqual(missingFromPackage(complete.filter(p => p !== 'src/secrets/store.mjs')), ['src/secrets/store.mjs']);
+  assert.ok(!PACKAGE_REQUIRED.some(p => p.startsWith('native/') || p === 'scripts/build-helper.mjs'));
   assert.deepEqual(missingFromPackage(PACKAGE_REQUIRED), ['runtime/releases/<release>.json']);
 });
 
@@ -291,7 +292,7 @@ test('doctor health for acceptance: the remote-control rows are reported but nev
   const agent = await agentChecks({home, env: {}, host: {platform: 'darwin', arch: 'arm64'}, launchd: {userHome, uid: UID, launchctl: fakeLaunchctl().run, settleMs: 1},
     checkConsole: async () => ({onConsole: true, locked: true})});
   assert.equal(agent.find(c => c.name === 'agent.console').status, 'fail', 'the fixture reproduces the locked console');
-  const runtime = ['platform', 'runtime.installed', 'runtime.files', 'sandbox', 'helper.live', 'secrets.helper'].map(name => ({name, status: name === 'helper.live' ? 'blocked' : 'pass', detail: ''}));
+  const runtime = ['platform', 'runtime.installed', 'runtime.files', 'sandbox', 'helper.live', 'secrets.store'].map(name => ({name, status: name === 'helper.live' ? 'blocked' : 'pass', detail: ''}));
   const report = (rows, ok = !rows.some(c => c.status === 'fail')) => ({ok, checks: rows});
 
   const locked = doctorHealth({code: 1, doctor: report([...runtime, ...agent])});

@@ -95,17 +95,17 @@
   is resolved. Make the individual attach error equally accurate at the next relevant prototype/production edit;
   do not treat this text as evidence of successful release.
 
-- **2026-10-03 — Two copies of the helper-suite verdict and the step runner in the acceptance runners (minor, M13).**
-  `scripts/accept/chrome-all-lib.mjs` (`helperSuiteVerdict`) and `scripts/accept/chrome-all.mjs` (`run`) repeat the
-  logic of `scripts/accept-native.mjs` (`helperSuite`, `run`) rather than sharing it, to leave the M6 runner untouched
-  during M13. Move both into `scripts/accept/lib.mjs` and have both runners import them at the next edit of either.
-
 - **2026-10-04 — `accept-chrome --all` cannot bind a supplied live report to a commit (minor, M13).** The `--live`
   report records its time but no commit or runtime-tree identity, and the `--c6-report` is assembled by hand, so
   `--all` records each supplied file's length and sha256 and trusts its contents. Have `--live` record `git rev-parse
   HEAD` and the release, and have `--all` report (or refuse) a report from another commit.
 
 ## Resolved
+
+- **2026-10-03 — Two copies of the helper-suite verdict and the step runner in the acceptance runners (minor, M13; obsolete 2026-10-07).** Obsolete: issue #66 removed the Swift helper and its suites, so `helperSuiteVerdict` and `helperSuite` are gone; the duplicated step runner, if it remains, is ordinary duplication.
+  `scripts/accept/chrome-all-lib.mjs` (`helperSuiteVerdict`) and `scripts/accept/chrome-all.mjs` (`run`) repeat the
+  logic of `scripts/accept-native.mjs` (`helperSuite`, `run`) rather than sharing it, to leave the M6 runner untouched
+  during M13. Move both into `scripts/accept/lib.mjs` and have both runners import them at the next edit of either.
 
 - **2026-10-04 — `verify.mjs`'s leftover check saw other connections in the same home (minor, M13; resolved
   2026-10-05).** Resolved: verify identifies its connection as the session whose `run/<session>.pid` record names the
@@ -114,7 +114,7 @@
   meanwhile go to an informational `runNote`.
 
 - **2026-10-02 — Wall-clock bounds in lifecycle/broker tests flaked under heavy load (minor, M3/M4; resolved
-  2026-10-05).** Resolved: the three named bounds (`a stalled group enumeration…`, `a helper that refuses…`, `close is
+  2026-10-05; the broker tests themselves went with the broker in issue #66).** Resolved: the three named bounds (`a stalled group enumeration…`, `a helper that refuses…`, `close is
   bounded against a helper that ignores EOF and SIGTERM…`) and `a runtime that ignores EOF and SIGTERM…` now assert
   against their injected budget × 3 instead of absolute times (see the next entry for the budgets themselves).
 

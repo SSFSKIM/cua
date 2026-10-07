@@ -10,7 +10,7 @@ the clean-machine gate (`docs/evidence/clean-machine-acceptance.md`); the comman
 | Step | Command or action | Needs a person at the console? | Verified by |
 |---|---|---|---|
 | 1 Install cua | `git clone`, `npm install`, `cua install` | no (network, ~690 MB download) | `cua doctor`: `runtime.*` PASS |
-| 2 Keychain helper (secrets only) | `npm run build:helper` | no (Command Line Tools) | `secrets.helper` PASS |
+| 2 Secrets (only if secret substitution will be used) | `/secret KEY` in Claude Code, or `cua secrets set KEY` | yes: the value is typed (masked) | `secrets.store` PASS |
 | 3 Codex login | `cua login` (or `--device-auth`) | yes, once: browser sign-in | `codex.login` PASS |
 | 4 Extension in each Chrome profile | install OpenAI's extension from the Web Store, in that profile | yes | `chrome.extension.<key>` PASS |
 | 5 Native host registration | nothing when ChatGPT.app is installed; else `cua chrome register` | no | `chrome.host.registered` PASS |
@@ -33,14 +33,14 @@ Requirements: Apple silicon, Node 22 or newer. `install` refuses an archive whos
 differ from the pinned record, and never modifies vendor files. Doctor's `runtime.*` and `sandbox` rows should PASS;
 `helper.live` and `helper.permissions` stay BLOCKED until step 7.
 
-### 2. Keychain helper (only if secret substitution will be used)
+### 2. Secrets (only if secret substitution will be used)
 
 ```sh
-npm run build:helper && npm run test:helper
+node bin/cua.mjs secrets set WORK_PASSWORD   # or /secret WORK_PASSWORD in Claude Code with the doperpowers secrets mod
 ```
 
-Needs Swift from the Command Line Tools. The helper is ad-hoc signed; a release for other people needs Developer ID
-(issue #14). Skip this on a browser-only machine.
+Each secret is a file `~/.config/claude-secrets/<KEY>` (mode 0600), the store the doperpowers `secrets` mod writes, so
+there is nothing to build or sign (issue #66). This works over SSH too (`ssh -t` for the masked prompt).
 
 ### 3. Codex login for the server
 
@@ -97,8 +97,8 @@ has no backend.
 
 The first native call (the `computer` surface) starts the pinned helper through LaunchServices; it shows its own
 "Enable ChatGPT Computer Use" window and then macOS asks for Accessibility and Screen Recording, attributed to the
-helper, not to the terminal. A person allows them once in System Settings. Over SSH these prompts cannot be shown and
-the login Keychain is not available, so steps 2, 3 and 7 happen at the console. A browser-only machine still needs
+helper, not to the terminal. A person allows them once in System Settings. Over SSH these prompts cannot be shown, so
+steps 3 and 7 happen at the console. A browser-only machine still needs
 the runtime to start for the listing launch, but the Chrome acceptance ran without granting the native permissions
 first.
 

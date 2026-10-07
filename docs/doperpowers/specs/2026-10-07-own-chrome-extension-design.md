@@ -531,6 +531,19 @@ No new npm dependencies.
 - Observation: the vendor host binary is content-blind; the ChatGPT extension implements the backend protocol itself.
   Evidence: `strings` on `extension-host/macos/arm64/ChatGPT for Chrome` has no `getInfo`/`executeCdp`/`tabId`;
   `background.js` L8:C63748 registers every `Kf` method as an RPC handler (2026-10-07 research).
+- Observation (S0, 2026-10-07): omitting `agentRequestHeaderEnabled` removes the login on the default network. With no
+  login, session requests (`getTabs`, `createTab`, `attach`, `turnEnded`) reached the backend 6–29 ms after the call
+  that issued them (3 runs; network off: 2 runs, same). Control: the same backend with the field present
+  (`agentRequestHeaderEnabled:false`) got only `getInfo` through and failed with `Codex auth token is unavailable`.
+  Discovery: with one live socket, one absent path and one stale socket file listed, `listBrowsers` returned the live
+  one in 228–353 ms and found listeners that later appeared at the dead paths on the next call.
+  Evidence: `docs/evidence/2026-10-07-s0-no-header-spike.md`; `node scripts/probe-chrome-contract.mjs --vendor --network default|off`.
+- Observation (S0): a listener that accepts but never answers `getInfo` costs every `listBrowsers` ~5 s (5 005–5 026 ms,
+  the service's request timeout), not the 1 s connect bound; a dead path fails immediately. So the host answers
+  `getInfo` from its own state without waiting on the extension, and does not listen before it can answer (it listens
+  after `hello`).
+- Observation (S0): `CUA_EXTENSION_ID` = `jkejaaijdfpohkdhankllbekkhmnippb`, from the key generated at
+  `~/.config/cua/extension-key.pem` (0600); the manifest `key` value (public) is in the S0 evidence file.
 
 ## Decision Log
 
@@ -558,6 +571,11 @@ No new npm dependencies.
   with the sandbox off can drive Chrome by other means; the 0700 directory is the boundary. Revisit with the trust
   model. Alternative rejected: `/proc`/`lsof` peer lookups (platform-specific, racy, and not a boundary against the
   process class that matters).
+
+- Decision (S0, 2026-10-07): `probe-chrome-contract.mjs --vendor --network default|off` runs the S0 scenario set
+  (`scripts/probe/chrome/no-header.mjs`, a recording stub backend answering `getInfo` as the host will); `--vendor`
+  alone keeps M7's checks. The spike launched the vendor service with the M7 harness environment plus
+  `BROWSER_USE_AVAILABLE_BACKENDS=chrome`, not through cua's browser wrapper (a pass-through); H3b covers that path live.
 
 ## Outcomes & Retrospective
 

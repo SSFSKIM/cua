@@ -705,4 +705,35 @@ No new npm dependencies.
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+Written 2026-10-07 at the PR; **pending H3b live** for acceptance 1 (after registration), 3, 4, 5 and 6, which wait on
+the owner loading `extension/` unpacked in `Default` and, later, quitting and reopening Chrome. The PR is not merged
+until those run (the dispatching session's call); the commands are under "To finish" in
+`docs/evidence/2026-10-07-own-extension-acceptance.md`.
+
+**Outcome so far.** The purpose — Chrome driven with no ChatGPT or OpenAI account — is met everywhere it has been run
+live: S0 showed the pinned vendor service sends session requests to a backend whose `getInfo` omits
+`agentRequestHeaderEnabled`, with no login, on the default network (the control with the field present failed on the
+missing Codex token); on Linux, acceptance 7 passed unattended on the Tart VM and a throwaway Hetzner VM (3 m 45 s from
+nothing to doctor `ok:true`, `chrome.hosts.live` 1, `verify.mjs` clean, `linux-chrome.mjs` PASS, no sign-in step),
+with the self-hosted CRX force-installed over HTTPS by branded Chrome 154/155. On this Mac, acceptance 2 passed live
+(vendor manifests byte-identical, cua manifests gone after `unregister`) and an empty `BROWSER_USE_BACKEND_PATHS`
+hides the owner's live ChatGPT sockets as designed. Acceptance 8's zip/CRX half and 10 pass (`npm test` 945: 944
+pass, 1 skip; `probe-chrome-contract --fixtures` 15/15; the host suite's pins). Acceptance 8's Store half waits on
+#78; the vendor route's removal is #79 (blocked by #78). The whole-branch review (opus, reviewer-high brief) found
+nothing material.
+
+**What the loop caught.** Every milestone review found something real: an exiting host deleting its successor's socket,
+a late `turnEnded` stranding a handoff tab (H1); the vendor route's hints sending users to the new default route and
+record rewrites flipping a home's route (H2); a stub that agreed with the code instead of Chrome on "Another debugger
+is already attached" — Chromium raises it only for the same extension, so the design's "refusal otherwise" was wrong
+(H3a, design revised); an acceptance-3 cell that would pass without the origin-access elicitation it is meant to prove
+(H3b). The lesson that generalizes: a stubbed proof is only as good as the stub's fidelity to the real platform, and
+reviewers checking stubs against the platform's source (Chromium's `debugger_api.cc`) were the most valuable reads.
+
+**Process.** Two milestones whose inputs were already reviewed ran in parallel worktrees (H3a beside H2, H4 beside
+H3b, H5 beside H3b's fixes) and rebased cleanly; the early, throwaway measurement of H4's gate (off-store force-install
+on branded Linux Chrome) removed the plan's only product fork before H4 began. The owner dependency was the critical
+path: everything not needing the loaded extension was finished and reviewed around it.
+
+**Left open.** H3b's live items (above); the Store listing (#78, owner); the minors in `tech-debt-tracker.md`
+("cua's own Chrome extension and host"); placeholder icons (needed for the listing).

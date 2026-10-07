@@ -9,14 +9,16 @@
 // never printed. The value file holds the value the caller stored on the target (`cua secrets set <KEY>` there); it is
 // read only to hash and to scan for. TextEdit's app approval is accepted only when it is exactly the pinned request for
 // TextEdit (scripts/accept/lib.mjs), for the session; anything else is declined. The cell types only while the named
-// document is TextEdit's front window, and the caller closes the document and removes the key afterwards.
+// document is TextEdit's front window. Afterwards it closes that document (super+w while it is in front; TextEdit has
+// autosaved it into the caller's file) and checks no window of that name is left; the caller removes the file and the
+// key. --close-only does only the closing, for a document a failed run left open.
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {parseArgs} from 'node:util';
 import {fingerprints, textLeaks} from '../probe/leak-scan.mjs';
 import {isTextEditApproval} from './lib.mjs';
 
-const {values: options} = parseArgs({options: {config: {type: 'string'}, key: {type: 'string'}, 'value-file': {type: 'string'}, doc: {type: 'string'}}, strict: true});
+const {values: options} = parseArgs({options: {config: {type: 'string'}, key: {type: 'string'}, 'value-file': {type: 'string'}, doc: {type: 'string'}, 'close-only': {type: 'boolean'}}, strict: true});
 for (const name of ['config', 'key', 'value-file', 'doc']) if (!options[name]) { console.error(`remote-secret: --${name} is required`); process.exit(2); }
 const servers = JSON.parse(readFileSync(options.config, 'utf8')).mcpServers;
 const server = Object.values(servers)[0];
@@ -81,11 +83,24 @@ const text = reply => (reply.result?.content ?? []).filter(c => c.type === 'text
 const js = (code, timeoutMs = 120_000) => request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs - 5000}}, timeoutMs);
 const lastJson = (reply, key) => { const line = text(reply).split('\n').reverse().find(l => l.startsWith(`{"${key}"`)); try { return line ? JSON.parse(line) : null; } catch { return null; } };
 
+async function closeDocument() {
+  const doc = JSON.stringify(options.doc);
+  const closed = lastJson(await js(`globalThis.app ??= await cua.getApp("com.apple.TextEdit");
+    const __front = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null;
+    if (__front !== ${doc}) { nodeRepl.write(JSON.stringify({closed: false, front: __front})); } else {
+      await app.pressKey("super+w"); await new Promise(r => setTimeout(r, 1500));
+      const __after = (await app.getAXState({emit: false, disableDiffing: true})).match(/^Window: "([^"]*)"/m)?.[1] ?? null;
+      nodeRepl.write(JSON.stringify({closed: __after !== ${doc}, front: __after}));
+    }`), 'closed');
+  step('close only the fixture document on the target', closed?.closed === true, closed);
+}
+
 const report = {url: server.url.replace(/\/d\/([^/]{4})[^/]*\//, '/d/$1…/'), key: options.key, doc: options.doc, steps, elicitations};
 try {
   const init = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-remote-secret', version: '0'}});
   if (!step('initialize through the relay', !!init.result && !!sessionId, {serverInfo: init.result?.serverInfo, session: !!sessionId})) throw new Error('initialize');
   await post({jsonrpc: '2.0', method: 'notifications/initialized'}).then(r => r.text());
+  if (options['close-only']) { await js('1'); await closeDocument(); throw new Error('close-only'); }
   const listed = await request('tools/call', {name: 'secrets_list', arguments: {}});
   const keys = listed.result?.structuredContent?.labels ?? [];
   step('secrets_list on the target lists the key (keys only)', keys.includes(options.key), {status: listed.result?.structuredContent?.status, hasKey: keys.includes(options.key), count: keys.length});
@@ -108,18 +123,25 @@ try {
       front: __ax.match(/^Window: "([^"]*)"/m)?.[1] ?? null}));`), 'hash');
   step('the document holds exactly the stored value (SHA-256 compared inside the cell)', seen?.hash === expected && seen?.front === options.doc,
     {exact: seen?.hash === expected, chars: seen?.chars ?? null, expectedChars: [...value].length, front: seen?.front ?? null});
+  await closeDocument();
   const ended = await request('tools/call', {name: 'end_task', arguments: {}});
   step('end_task', ended.result?.structuredContent?.status === 'ended', ended.result?.structuredContent);
 } catch (error) {
-  if (!steps.some(s => s.status === 'FAIL')) step('fixture', false, String(error.message).split(value).join('<value>'));
+  if (error.message === 'close-only') {
+    const ended = await request('tools/call', {name: 'end_task', arguments: {}});
+    step('end_task', ended.result?.structuredContent?.status === 'ended', ended.result?.structuredContent);
+  } else if (!steps.some(s => s.status === 'FAIL')) step('fixture', false, String(error.message).split(value).join('<value>'));
 } finally {
   if (sessionId) {
     const closed = await fetch(server.url, {method: 'DELETE', headers: headers()}).catch(error => ({status: error.message}));
     report.deleteStatus = closed.status;
   }
 }
+// --close-only binds TextEdit while the document already holds the value, and the vendor's getApp emits the app's
+// accessibility text, the document's included: there the value is expected in the traffic, so the scan applies only to
+// a full run, where TextEdit is bound before anything is typed.
 const leaks = textLeaks(transcript.join('\n'), prints);
-step('the value appears nowhere in the MCP traffic through the relay (requests and SSE events, raw or base64)', leaks === 0, {fingerprints: prints.length, found: leaks, events: transcript.length});
+if (!options['close-only']) step('the value appears nowhere in the MCP traffic through the relay (requests and SSE events, raw or base64)', leaks === 0, {fingerprints: prints.length, found: leaks, events: transcript.length});
 report.status = steps.every(s => s.status === 'PASS') ? 'PASS' : 'FAIL';
 const out = JSON.stringify(report, null, 1);
 const bearer = String(server.headers?.Authorization ?? '').replace(/^Bearer\s+/i, '');

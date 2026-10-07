@@ -47,7 +47,9 @@ try {
 process.stdout.write(JSON.stringify(out));
 `;
 
-const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{app: 'a', text: '{{secret:WORK_PASSWORD}}'}]}];
+// The production service runs in a child of this platform, so the reference uses this platform's pinned shape.
+const SKY_INPUT = process.platform === 'linux' ? {window: {id: 7, app: 'Gedit', title: 't'}} : {app: 'a'};
+const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{...SKY_INPUT, text: '{{secret:WORK_PASSWORD}}'}]}];
 const BROWSER_REQUESTS = ['browser', {method: 'setup', params: {}}, {method: 'executeWithRecovery', params: {type: 'playwright_locator_fill', browser_id: '1', tab_id: '2', selector: 's', value: '{{secret:WORK_PASSWORD}}', replace: true}}];
 
 function runWorker(env, requests = SKY_REQUESTS) {

@@ -220,11 +220,11 @@ test('the wrapper never writes to the console or standard streams, on success or
 
 test('the vendor service loads once, and a load failure is reported without a value', async () => {
   let loads = 0;
-  const service = createSkyService({loadVendor: async () => { loads++; return {handleRpc: async () => 'ok'}; }, secrets: {read: async () => 'v'}});
+  const service = createSkyService({platform: 'darwin', loadVendor: async () => { loads++; return {handleRpc: async () => 'ok'}; }, secrets: {read: async () => 'v'}});
   await service.handleRpc({type: 'setup'});
   await service.handleRpc(typeText(REF('WORK_PASSWORD')));
   assert.equal(loads, 1);
-  const broken = createSkyService({loadVendor: async () => { throw new Error('cannot import'); }, secrets: {read: async () => VALUES['WORK_PASSWORD']}});
+  const broken = createSkyService({platform: 'darwin', loadVendor: async () => { throw new Error('cannot import'); }, secrets: {read: async () => VALUES['WORK_PASSWORD']}});
   const error = await rejection(broken.handleRpc(typeText(REF('WORK_PASSWORD'))));
   assertValueFree(error);
 });

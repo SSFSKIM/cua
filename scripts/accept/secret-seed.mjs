@@ -44,8 +44,13 @@ const shellQuote = word => `'${String(word).replaceAll("'", `'\\''`)}'`;
 // arguments; util-linux takes it as one shell command after -c, with -e to return the command's exit status. bash
 // execs it with its stdin a real pipe fed by `cat` from ours: Node's stdio pipes are sockets on macOS, on which BSD
 // `script` fails its terminal query, and a process substitution leaves `script` itself as the child to wait for.
+// util-linux `script` (2.39) keeps running after its command exits until its stdin reaches EOF, so on Linux the command
+// prints EXIT_MARKER and its status last; the seeder ends stdin when it sees it and takes the status from it.
+export const EXIT_MARKER = '__CUA_SEED_EXIT__';
 export function ptyCommand(argv, platform = process.platform) {
-  const script = platform === 'linux' ? ['script', '-q', '-e', '-c', argv.map(shellQuote).join(' '), '/dev/null'] : ['/usr/bin/script', '-q', '/dev/null', ...argv];
+  const script = platform === 'linux'
+    ? ['script', '-q', '-e', '-c', `${argv.map(shellQuote).join(' ')}; printf '\\n${EXIT_MARKER}%s\\n' "$?"`, '/dev/null']
+    : ['/usr/bin/script', '-q', '/dev/null', ...argv];
   return {command: '/bin/bash', args: ['-c', 'exec "$0" "$@" < <(exec cat)', ...script]};
 }
 
@@ -65,8 +70,11 @@ export function seedSecret({home, key, value, timeoutMs = 15_000, cli = CLI, pla
     let searchFrom = 0;
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
+    let markedExit = null;
     const onOutput = chunk => {
       output += chunk.toString('utf8');
+      const marked = new RegExp(`${EXIT_MARKER}(\\d+)`).exec(output);
+      if (marked && markedExit === null) { markedExit = Number(marked[1]); child.stdin.end(); }
       // Answer each prompt once, after it appeared; a short pause lets the prompt's raw-mode switch land first.
       for (let at; prompts < SET_PROMPTS.length && (at = output.indexOf(SET_PROMPTS[prompts], searchFrom)) >= 0;) {
         searchFrom = at + SET_PROMPTS[prompts].length;
@@ -82,7 +90,8 @@ export function seedSecret({home, key, value, timeoutMs = 15_000, cli = CLI, pla
       child.stdin.end();
       let stored = false;
       try { stored = (await fileStore({dir: storeDir({HOME: home})}).list()).includes(key); } catch {}
-      const said = output.split(value).join('<value>').split(/\r?\n/).map(line => line.trim()).filter(Boolean).at(-1) ?? '';
+      const said = output.split(value).join('<value>').split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith(EXIT_MARKER)).at(-1) ?? '';
+      if (markedExit !== null && !timedOut) exit = markedExit;
       resolve({exit, signal, timedOut, prompts, echoed: output.includes(value), stored, said: said.slice(0, 200)});
     };
     child.on('error', error => finish(null, error.code ?? 'error'));

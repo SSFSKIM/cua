@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {existsSync, mkdirSync, statSync} from 'node:fs';
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
-import {createStoreHome, generatedKey, isAccountHome, ptyCommand, removeStoreHome, seedSecret} from '../scripts/accept/secret-seed.mjs';
+import {createStoreHome, EXIT_MARKER, generatedKey, isAccountHome, ptyCommand, removeStoreHome, seedSecret} from '../scripts/accept/secret-seed.mjs';
 import {isLabel} from '../src/secrets/label.mjs';
 import {fileStore, storeDir} from '../src/secrets/store.mjs';
 
@@ -23,7 +23,7 @@ test('the pty command keeps the value out of argv and quotes the Linux command l
   const mac = ptyCommand(['/n/node', '/c/cua.mjs', 'secrets', 'set', 'KEY'], 'darwin');
   assert.deepEqual(mac.args.slice(2), ['/usr/bin/script', '-q', '/dev/null', '/n/node', '/c/cua.mjs', 'secrets', 'set', 'KEY']);
   const linux = ptyCommand(["/o'dd/node", '/c/cua.mjs', 'secrets', 'set', 'KEY'], 'linux');
-  assert.deepEqual(linux.args.slice(2), ['script', '-q', '-e', '-c', `'/o'\\''dd/node' '/c/cua.mjs' 'secrets' 'set' 'KEY'`, '/dev/null']);
+  assert.deepEqual(linux.args.slice(2), ['script', '-q', '-e', '-c', `'/o'\\''dd/node' '/c/cua.mjs' 'secrets' 'set' 'KEY'; printf '\\n${EXIT_MARKER}%s\\n' "$?"`, '/dev/null']);
   assert.equal(linux.command, '/bin/bash');
 });
 

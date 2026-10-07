@@ -21,8 +21,13 @@ client's `/secret` field themselves.
    optionally `npm link`. Not the plugin's cache copy: the agent job runs the checkout it was installed from, and the
    cache is replaced on every plugin update. Node 22 or newer.
 2. **The runtime.** `cua install`, then `cua doctor`. On Linux first meet the README's Linux requirements (an X11
-   session, the apt packages; keep a copy of the deb for `--archive`).
-3. **Enrol.** First `cua remote show --json`. If it succeeds, the device already has an identity: it gives the same
+   session, the apt packages; keep a copy of the deb for `--archive`). This gives the GUI surface. For the browser
+   surface too, follow the README's Chrome section on the device before enrolling: the OpenAI extension installed in
+   the Chrome profile to drive, `cua chrome register`, `cua login` (needs the owner at the screen once), then
+   `cua profiles add <key>` and `cua profiles bind <key>`; `cua doctor` must show `codex.login`, `chrome.*` and the
+   profile ready. A client cannot do any of this remotely.
+3. **Enrol.** The relay must already exist: the project's hosted one, or `relay/deploy/create-server.sh`
+   (`relay/README.md`, Hosting) when there is none. Then run `cua remote show --json`. If it succeeds, the device already has an identity: it gives the same
    fields as below without the credential, which was shown only once, to whoever enrolled it. `enroll --relay <url>`
    there only moves the device to another relay (no credential); `--rotate` mints a new one, so use it only when nobody
    holds the old one, and say what it breaks: every client registration and the relay's line for this device. Only

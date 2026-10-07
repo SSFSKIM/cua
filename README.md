@@ -655,7 +655,7 @@ The credential is read by the server itself at each session open and probe, neve
 starting `CUA_DEVICE_` (any letter case) are reserved for device credentials: `secrets_list` leaves them out and a
 `{{secret:CUA_DEVICE_…}}` reference is refused `secret_reserved` with nothing typed, on this machine and on a device
 running this version or later (`cua secrets list` in your terminal still shows them). On this route the credential sits only in the secret store's file (mode 0600),
-not in Claude Code's configuration or the shell history.
+not in Claude Code's configuration or the shell history; the exception is `cua devices import <file>`, which copies it from a client config and leaves that file untouched, so after `import` the config still holds the credential in plaintext: delete it unless the standalone route still uses it.
 
 ### 5. Connect a client without the plugin: register the endpoint
 

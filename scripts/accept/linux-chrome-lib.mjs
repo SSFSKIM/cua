@@ -11,7 +11,7 @@ export function cuaHostStep({home, instanceId, psLines, exists, readJson}) {
   const status = readJson(join(backendDir(home), `${name}.json`));
   const process = psLines.find(line => Number(line.trim().split(/\s+/)[0]) === status?.pid && /\/src\/chrome\/host\.mjs\b/.test(line));
   const ok = exists(socket) && status?.instanceId === instanceId && Boolean(process);
-  return {ok, detail: {socket, pid: status?.pid ?? null, extensionVersion: status?.extensionVersion ?? null, process: process ?? null}};
+  return {ok, detail: {socket, pid: status?.pid ?? null, extensionVersion: status?.extensionVersion ?? null, process: process?.trim() ?? null}};
 }
 
 export function vendorHostStep({home, psLines}) {

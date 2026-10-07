@@ -5,16 +5,18 @@
 # /usr/local/sbin/cua-provision.sh on it instead).
 #
 #   deploy/cloud-vm/create-hetzner.sh [--name cua-vm] [--arch x64|arm64] [--type <server type>] [--location nbg1]
-#       [--ssh-key macbook] [--user cua] [--ref main] [--deb pin|<https URL>|<local file>] [--relay wss://<relay>/ws]
+#       [--ssh-key macbook] [--user cua] [--ref main] [--repo <https URL>|<git bundle>] [--deb pin|<https URL>|<local file>]
+#       [--relay wss://<relay>/ws] [--extension hosted|store] [--extension-url <https URL>]
 #
 # --arch picks the type: cx23 (x64) or cax11 (arm64). --deb <local file> copies that deb (checked here against this
 # checkout's pin for --arch, as a quick precheck; the VM checks it against its own) to the server's
-# /var/cache/cua/upload.deb while cloud-init runs, instead of the server downloading it. The hcloud context is
-# $HCLOUD_CONTEXT, cua when unset; never devbox.
+# /var/cache/cua/upload.deb while cloud-init runs, instead of the server downloading it. --repo <git bundle> copies the
+# bundle (it must hold --ref) to /var/cache/cua/cua.bundle the same way, for a ref that is not pushed. --extension and
+# --extension-url: render.sh. The hcloud context is $HCLOUD_CONTEXT, cua when unset; never devbox.
 set -euo pipefail
 
-name=cua-vm arch=x64 type='' location=nbg1 ssh_key=macbook render_args=() deb=''
-usage() { echo "usage: $0 [--name <name>] [--arch x64|arm64] [--type <server type>] [--location <location>] [--ssh-key <name>] [--user <name>] [--ref <git ref>] [--deb pin|<https URL>|<file>] [--relay <wss url>]" >&2; exit 2; }
+name=cua-vm arch=x64 type='' location=nbg1 ssh_key=macbook render_args=() deb='' repo=''
+usage() { echo "usage: $0 [--name <name>] [--arch x64|arm64] [--type <server type>] [--location <location>] [--ssh-key <name>] [--user <name>] [--ref <git ref>] [--repo <https URL>|<git bundle>] [--deb pin|<https URL>|<file>] [--relay <wss url>] [--extension hosted|store] [--extension-url <https URL>]" >&2; exit 2; }
 while (($#)); do
   (($# >= 2)) || usage
   case "$1" in
@@ -24,7 +26,8 @@ while (($#)); do
     --location) location="$2" ;;
     --ssh-key) ssh_key="$2" ;;
     --deb) deb="$2"; render_args+=("$1" "$2") ;;
-    --user|--ref|--relay) render_args+=("$1" "$2") ;;
+    --repo) repo="$2"; render_args+=("$1" "$2") ;;
+    --user|--ref|--relay|--extension|--extension-url) render_args+=("$1" "$2") ;;
     *) usage ;;
   esac
   shift 2
@@ -37,8 +40,16 @@ here="$(cd "$(dirname "$0")" && pwd)"
 t0=$SECONDS
 elapsed() { printf '%dm%02ds' "$(((SECONDS - t0) / 60))" "$(((SECONDS - t0) % 60))"; }
 
+# Files copied to the VM's /var/cache/cua while cloud-init runs: "<local path> <name there>" each.
+uploads=()
+# A local git bundle must hold the ref the VM checks out.
+if [[ -n "$repo" && "$repo" != https://* ]]; then
+  ref=main
+  for ((i = 0; i < ${#render_args[@]}; i += 2)); do [[ "${render_args[i]}" == --ref ]] && ref="${render_args[i + 1]}"; done
+  git bundle list-heads "$repo" | grep -q " refs/heads/$ref\$" || { echo "$repo holds no branch $ref (git bundle create <file> $ref)" >&2; exit 1; }
+  uploads+=("$repo cua.bundle")
+fi
 # A local deb must be the pinned one for this architecture: check it here rather than after a 10-minute upload.
-upload=''
 if [[ -n "$deb" && "$deb" != pin && "$deb" != https://* ]]; then
   read -r file want < <(node -e '
     const fs = require("fs"), dir = process.argv[1];
@@ -48,7 +59,7 @@ if [[ -n "$deb" && "$deb" != pin && "$deb" != https://* ]]; then
   [[ "$file" == *_"$deb_arch".deb ]] || { echo "the $arch pin does not name an $deb_arch deb ($file)" >&2; exit 1; }
   echo "checking $deb against the $arch pin ($file)"
   [[ "$(shasum -a 256 "$deb" | cut -d' ' -f1)" == "$want" ]] || { echo "$deb does not match the pin's sha256 ($want)" >&2; exit 1; }
-  upload="$file"
+  uploads+=("$deb upload.deb")
 fi
 
 if hcloud server describe "$name" >/dev/null 2>&1; then
@@ -90,15 +101,19 @@ for try in $(seq 60); do
 done
 echo "ssh up ($(elapsed))"
 
-# The upload runs beside cloud-init, to a fixed name the VM watches (/var/cache/cua/upload.deb); the VM checks it
-# against its own checkout's pin. A failed copy leaves upload.failed there, which ends the VM's wait at once.
-if [[ -n "$upload" ]]; then
-  echo "copying $deb ($upload) to /var/cache/cua/upload.deb in the background"
-  ( { ssh "${ssh_opts[@]}" "root@$ip" 'mkdir -p /var/cache/cua' \
-      && scp "${ssh_opts[@]}" -q "$deb" "root@$ip:/var/cache/cua/upload.deb.part" \
-      && ssh "${ssh_opts[@]}" "root@$ip" 'mv /var/cache/cua/upload.deb.part /var/cache/cua/upload.deb' \
-      && echo "deb copied ($(elapsed))"; } \
-    || { ssh "${ssh_opts[@]}" "root@$ip" 'touch /var/cache/cua/upload.deb.failed' 2>/dev/null; echo "the deb copy failed" >&2; exit 1; } ) &
+# The uploads run beside cloud-init, in order (the bundle first: the checkout comes before the deb), each to a fixed
+# name the VM watches (/var/cache/cua/cua.bundle, upload.deb); the VM checks the deb against its own checkout's pin. A
+# failed copy leaves <name>.failed there, which ends the VM's wait at once.
+if ((${#uploads[@]})); then
+  ( for upload in "${uploads[@]}"; do
+      read -r src there <<<"$upload"
+      echo "copying $src to /var/cache/cua/$there in the background"
+      { ssh "${ssh_opts[@]}" "root@$ip" 'mkdir -p /var/cache/cua' \
+          && scp "${ssh_opts[@]}" -q "$src" "root@$ip:/var/cache/cua/$there.part" \
+          && ssh "${ssh_opts[@]}" "root@$ip" "mv /var/cache/cua/$there.part /var/cache/cua/$there" \
+          && echo "$there copied ($(elapsed))"; } \
+        || { ssh "${ssh_opts[@]}" "root@$ip" "touch /var/cache/cua/$there.failed" 2>/dev/null; echo "the copy of $there failed" >&2; exit 1; }
+    done ) &
   scp_pid=$!
 fi
 
@@ -106,7 +121,7 @@ echo "waiting for cloud-init (provisioning log: ssh root@$ip tail -f /var/log/cu
 status=0
 ssh "${ssh_opts[@]}" "root@$ip" 'cloud-init status --wait >/dev/null' || status=$?
 if [[ -n "$scp_pid" ]]; then
-  wait "$scp_pid" || echo "copy the deb to /var/cache/cua/upload.deb and run /usr/local/sbin/cua-provision.sh again" >&2
+  wait "$scp_pid" || echo "copy the missing file to /var/cache/cua and run /usr/local/sbin/cua-provision.sh again" >&2
   scp_pid=''
 fi
 # cloud-init status: 0 done, 2 done with recoverable warnings; anything else (1 error, 255 ssh lost) is not done.

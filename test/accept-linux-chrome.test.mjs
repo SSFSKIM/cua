@@ -14,13 +14,13 @@ const name = socketNameFor(id);
 const sock = join(home, 'chrome', 'b', `${name}.sock`);
 const statusPath = join(home, 'chrome', 'b', `${name}.json`);
 const status = {instanceId: id, extensionVersion: '0.1.0', protocolVersion: 1, pid: 4242, sessions: []};
-const ps = ['4242 /usr/bin/node /opt/cua/src/chrome/host.mjs', '77 /opt/google/chrome/chrome --profile-directory=Default'];
+const ps = [' 4242 /usr/bin/node /opt/cua/src/chrome/host.mjs', '77 /opt/google/chrome/chrome --profile-directory=Default'];
 const files = (map) => ({exists: path => path in map, readJson: path => (path in map ? map[path] : null)});
 
 test('cua route: the bound profile\'s host serves at its pre-listed socket, its status names the id, its pid runs host.mjs', () => {
   const ok = cuaHostStep({home, instanceId: id, psLines: ps, ...files({[sock]: true, [statusPath]: status})});
   assert.equal(ok.ok, true);
-  assert.deepEqual(ok.detail, {socket: sock, pid: 4242, extensionVersion: '0.1.0', process: ps[0]});
+  assert.deepEqual(ok.detail, {socket: sock, pid: 4242, extensionVersion: '0.1.0', process: ps[0].trim()});
 
   for (const [why, input] of [
     ['no socket', files({[statusPath]: status})],

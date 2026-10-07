@@ -263,3 +263,19 @@ test('the transport field client_timeout_ms the vendor client adds to every comm
     assert.deepEqual(h.reads, []);
   }
 });
+
+test('a reference to a reserved CUA_DEVICE_ key is refused secret_reserved before the store or the vendor is touched', async () => {
+  const device = 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ';
+  for (const secretsUnavailable of [null, 'secrets_disabled']) {
+    const reads = [];
+    const {service, received} = harness({secretsUnavailable, read: async label => { reads.push(label); return 'sentinel-Device-cred'; }});
+    for (const request of [fill(REF(device)), axPaste(REF(device)), axType(REF(device)), axSet(REF(device))]) {
+      const error = await rejection(service.handleRpc(request));
+      assert.equal(error.code, 'secret_reserved', request.params.action?.kind ?? request.params.type);
+      assert.match(error.message, /nothing was entered/);
+      assertValueFree(error, 'sentinel-Device-cred');
+    }
+    assert.deepEqual(received, []);
+    assert.deepEqual(reads, []);
+  }
+});

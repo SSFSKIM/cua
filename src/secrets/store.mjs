@@ -16,7 +16,7 @@ import {chmod, mkdir, open, readdir, rename, rm, unlink} from 'node:fs/promises'
 import {randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
-import {isLabel, LABEL_RULE} from './label.mjs';
+import {isLabel, isReserved, LABEL_RULE} from './label.mjs';
 
 export const STORE_RELATIVE = join('.config', 'claude-secrets');
 // The trusted worker's launch variables (src/runtime/launch.mjs): the store directory `cua serve` resolved, or why the
@@ -135,9 +135,10 @@ export function fileStore({dir}) {
 }
 
 // The secrets side of one connection in `cua serve`: the store's directory (handed to the trusted worker) and its key
-// listing for secrets_list, or why the connection has none.
+// listing for secrets_list, or why the connection has none. The listing is the model's, so reserved keys (device
+// credentials, label.mjs) are left out of it.
 export function connectionSecrets({enabled, env = process.env}) {
   if (!enabled) return {unavailable: {code: 'secrets_disabled', message: 'secret storage is turned off for this server (CUA_SHIM_SECRETS=off)'}};
   const store = fileStore({dir: storeDir(env)});
-  return {dir: store.dir, list: () => store.list()};
+  return {dir: store.dir, list: async () => (await store.list()).filter(key => !isReserved(key))};
 }

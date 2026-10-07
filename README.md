@@ -69,7 +69,9 @@ installed copy needs no `npm ci`: `ws`, the one dependency, is loaded only on th
 before (Plain MCP server, below), remove that registration under the name you gave it (`claude mcp remove cua -s user`
 for the example there, or `cua_repl`), or two servers drive the same Mac.
 
-The plugin also carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
+The same server drives other machines too: `devices_list` and `devices_use` switch its tools to a device you
+registered with `cua devices` (Remote control, 4), with no registration in Claude Code per device. The plugin also
+carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
 (Remote control), and, where function hooks are enabled (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY`
 command: a value typed into a masked field and stored as `~/.config/claude-secrets/KEY` (mode 600), which the model
 sees only by its key (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
@@ -136,6 +138,9 @@ hooks for this; if completion cannot be confirmed, the connection fails closed a
 cleanup of what was already submitted is unconfirmed. In this pinned runtime a forwarded MCP cancellation does not stop
 a running cell and `js_reset` waits behind it, so a cell's `timeout_ms` is what bounds runaway work; cancelling never
 means control has been handed back.
+
+`cua serve` (the plugin's server) adds two more: `devices_list` and `devices_use`, which switch every other tool to a
+remote machine and back (Remote control, 4). The agent's HTTP sessions never list them.
 
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.
@@ -476,10 +481,17 @@ exactly the tools and host notes it would have locally (`js`, `js_reset`, `end_t
 browser surface, `profiles_list`), one runtime per session, cleaned up the same way. The Mac runs a resident agent in
 your GUI login session (a launchd job; on Linux a systemd user unit, see "Linux"), and the client reaches it over MCP Streamable HTTP in one of two ways: directly
 on an address of the Mac (`--http`, for a LAN or a tailnet), or through a small relay you host that the Mac dials out
-to (`--relay`), so the Mac needs no open port. The design is
-`docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`; the live proof (Mac mini driven from a MacBook, LAN
-and relay) is `docs/evidence/2026-10-06-phase-e-remote-acceptance.md`. An agent asked to set up a device or drive one follows the
-plugin's `cua-remote` skill (`skills/cua-remote/SKILL.md`), which runs these steps in order.
+to (`--relay`), so the Mac needs no open port. Sections 1 to 3 set up the machine to be driven (the device).
+
+A client then reaches it in one of two ways. **With the plugin** (or any `cua serve`), nothing is registered per
+device: you add the device once to cua's device list (`cua devices`), and the plugin's own `cua_repl` switches its tools
+to it with `devices_use` and back to this machine with `devices_use local`, in any session, without a reconnect (4).
+**Without the plugin**, the client registers the device's endpoint as an HTTP MCP server named `cua_repl` (5). The
+design is `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`; the live proofs are
+`docs/evidence/2026-10-06-phase-e-remote-acceptance.md` (Mac mini driven from a MacBook, LAN and relay) and
+`docs/evidence/2026-10-07-device-multiplexing-acceptance.md` (the plugin route, each Mac driving the other). An agent
+asked to set up a device or drive one follows the plugin's `cua-remote` skill (`skills/cua-remote/SKILL.md`), which
+runs these steps in order.
 
 **While a remote agent drives it, the Mac must be unlocked and awake.** A locked screen or a session that is not the
 one on the screen cannot receive input or render screenshots, so the agent refuses `js` and `js_reset` there with the
@@ -497,11 +509,12 @@ node bin/cua.mjs remote show                                     # device id, re
 
 `enroll` writes `$CUA_HOME/remote/device.json` (mode 0600) holding a random device id and a secret, and prints, this
 once, the **client credential** (what a client presents as its bearer), the `claude mcp add` line that registers it
-(on the relay's endpoint when a relay is enrolled, else on this Mac's address; see 4) and the line for the relay's
+(on the relay's endpoint when a relay is enrolled, else on this Mac's address; see 5) and the line for the relay's
 `devices.json` (SHA-256 hashes only); `--json` prints `{deviceId, clientCredential, devicesEntry, relayUrl,
-relayEndpoint, clientSecretKey, clientRegisterCommand}`, the last two being the `/secret` key a client keeps the
-credential under and the registration that reads it from there (see 4; `remote show --json` prints both again; the
-command is `null` without a relay, since the address a direct client uses is one only you know). Nothing
+relayEndpoint, clientSecretKey, clientRegisterCommand, devicesAddCommand}`: the `/secret` key a client keeps the
+credential under, the standalone registration that reads it from there (5) and the `cua devices add` line for a
+client with the plugin (4) (`remote show --json` prints the last three again; both commands are `null` without a
+relay, since the address a direct client uses is one only you know). Nothing
 prints the client credential again: keep it where the client will use it. Both legs get their
 own credential derived from the secret, so the copy a client holds cannot be used to pose as the Mac to the relay.
 
@@ -576,10 +589,79 @@ For a standing relay, `relay/deploy/` creates a Hetzner Cloud server with Caddy 
 `relay/deploy/update.sh --devices devices.json` installs the device lines; `relay/README.md` (Hosting) has the details
 and `docs/evidence/2026-10-06-hosted-relay-acceptance.md` the acceptance run through it.
 
-### 4. Register the client
+### 4. Connect a client with the plugin: `cua devices`
 
-On the client machine, under the name **`cua_repl`** (`enroll` prints the line with the URL filled in, and `remote
-show` prints the relay one again):
+On the client machine, register the device once in cua's device list, `~/.config/cua/devices.json` (mode 0600; one
+entry per device, `{"<name>": {"deviceId": "…", "relayUrl": "https://<relay>"}}`), and keep its client credential in
+the secret store under the device's key, `CUA_DEVICE_` and the device id with `-` as `_` (`clientSecretKey` in
+`enroll --json`). There are two ways, and neither prints the credential: from a client config you already have, or
+by storing the credential with the plugin's `/secret <clientSecretKey>` (typed into its masked field) and then adding
+the entry with the `devicesAddCommand` that `enroll --json` printed.
+
+```sh
+cua devices import ~/.config/cua-relay/mini.mcp.json    # registers "mini" and stores the credential from the config
+cua devices add mini --relay https://<relay> --device=<deviceId>     # or, after /secret: the entry alone
+cua devices list                                        # name, device id, relay, whether the credential is stored
+cua devices remove mini                                 # the entry only; cua secrets remove <key> drops the credential
+```
+
+`import` reads a client config of the shape the standalone route uses (5): `mcpServers.cua_repl` (or its one server)
+with `type: http`, the URL `https://<relay>/d/<deviceId>/mcp` and an `Authorization: Bearer` header; it takes the
+device id and the relay from the URL, the name from `--name` or the file's name less `.mcp.json`, and reports the
+credential `stored`, `unchanged` or `replaced`. `add` takes the relay as its origin or as the agent's `wss://<relay>/ws`
+and warns when the credential is not stored yet. Names are lower-case letters, digits, `-` and `_` (`local` is this
+machine); `--replace` overwrites an existing name. The list and the credential are read at every `devices_list` and
+`devices_use`, so a device added under a running session is usable at once. The route goes through a relay (an
+`http://` one only on a local network); a device served only on its own address (`--http`) is reached the standalone
+way (5).
+
+Then, in any session of the plugin's server (`mcp__plugin_cua_cua_repl__*`):
+
+- `devices_list` probes every device at once (3 s each) and shows which one the tools drive now:
+  `{"current": "local", "devices": [{"name": "local", "status": "online"}, {"name": "mini", "deviceId": "…", "relay":
+  "https://<relay>", "status": "online"}]}`. A status is `online`, `offline`, `locked` (the device's screen) or
+  `unauthorized`, with a `code` where it says more (`credential_missing`, `relay_unreachable`, `timeout`). A probe is
+  one authenticated `ping` without a session; it never starts the device's runtime or evicts its client.
+- `devices_use {"device": "mini"}` opens a session on the device and answers with the device's own host notes (a
+  Linux device's differ), which apply while it is the target. From then on `js`, `js_reset`, `end_task`,
+  `secrets_list` and `profiles_list` run there; their results come back as the device produced them, tagged
+  `_meta["cua/device"]`. The device's approvals reach this client as elicitations, which the plugin's hook answers as
+  it does local ones (App approvals).
+- `end_task` there also ends the device session, so the device's runtime is free for its other clients the moment a
+  task ends; the next `js` opens a new session, and its result says the device's REPL state is new (apps and tabs are
+  bound again).
+- `devices_use local` (or another device) while a task is open is refused `task_open`: `end_task` first. Closing the
+  session or the connection ends the device session too (`DELETE`), so this route leaves no session behind on the
+  device, unlike a standalone client (Sessions, below).
+
+A call in flight across a relay restart or a dropped connection is resumed from the device's kept events
+(`Last-Event-ID`, retried from 1 s doubling to 15 s for up to 90 s); a request that failed before the device could
+have received it is never sent again, so a `js` cell never runs twice. What a device tool can answer instead of a
+result:
+
+| Code | Meaning | Next |
+|---|---|---|
+| `task_open` | a task is open on the current target | `end_task`, then `devices_use` |
+| `device_unknown` | no device of that name in `~/.config/cua/devices.json` | `cua devices list`; `devices_list` |
+| `credential_missing` | the device's key is not in the secret store | `/secret <key>`, or `cua devices import` |
+| `device_unauthorized` | the relay or the device refused the credential (`401`) | store the current credential; check the relay's line |
+| `device_offline` | the relay reports the device offline, the relay is unreachable, or a resumed call ran out of its 90 s | on the device: `cua agent status`, `cua doctor` |
+| `session_limit` | another client holds the device (one session at a time) | wait, or end the task there |
+| `device_session_ended` | the device ended the session while a task was open there; its REPL state is gone | bind again; the next call opens a new session |
+| `device_failed` | the device could not open a session (for example, no runtime installed there) | `cua doctor` on the device |
+| `console_locked` | the device's screen is locked (passed through from the device) | unlock it and retry |
+
+The credential is read by the server itself at each session open and probe, never by a JavaScript cell, and keys
+starting `CUA_DEVICE_` (any letter case) are reserved for device credentials: `secrets_list` leaves them out and a
+`{{secret:CUA_DEVICE_…}}` reference is refused `secret_reserved` with nothing typed, on this machine and on a device
+running this version or later (`cua secrets list` in your terminal still shows them). On this route the credential sits only in the secret store's file (mode 0600),
+not in Claude Code's configuration or the shell history; the exception is `cua devices import <file>`, which copies it from a client config and leaves that file untouched, so after `import` the config still holds the credential in plaintext: delete it unless the standalone route still uses it.
+
+### 5. Connect a client without the plugin: register the endpoint
+
+For an MCP client without cua (a cloud VM's Claude Code, any other host), or a device served on its own address,
+register the device's endpoint under the name **`cua_repl`** (`enroll` prints the line with the URL filled in, and
+`remote show` prints the relay one again):
 
 ```sh
 claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"
@@ -596,8 +678,10 @@ exists), and register again.
 
 The name matters: permission rules (`"mcp__cua_repl__*"` under `permissions.allow`) and the app-approval hook above
 (matcher `cua_repl`) match the server name; under another name the hook does not answer, and every first use of an
-app waits on a dialog that a headless `claude -p` session has nobody to answer. On a machine that already has a local `cua_repl`, register the
-remote one in another scope, or start Claude Code with `--strict-mcp-config --mcp-config <file>` naming it. Approvals
+app waits on a dialog that a headless `claude -p` session has nobody to answer. On a machine that has the plugin, use
+4 instead: a second server whose tools differ from the plugin's only by name is easy for an agent to mix up. On a
+machine that already has a local `cua_repl` registered by hand, register the remote one in another scope, or start
+Claude Code with `--strict-mcp-config --mcp-config <file>` naming it. Approvals
 remembered per session (`CUA_SHIM_PERSIST=session`) are asked again by each new remote session.
 
 **Where the client credential can be seen.** In plaintext in the client's Claude Code configuration (`~/.claude.json`
@@ -622,7 +706,8 @@ Each `initialize` opens a session, which is one runtime on the Mac. Two numbers 
   client is connected; an approval left pending after its call ended, or by a client that went away, does not hold the
   session.
 
-Neither Claude Code mode ends its session: headless `claude -p` sends no `DELETE` when it exits, and interactive
+A client of the plugin route (4) ends its device session itself, at `end_task`, at `devices_use` away and when it
+closes. A standalone Claude Code client (5) never does: headless `claude -p` sends no `DELETE` when it exits, and interactive
 Claude Code none on `/exit` (seen with 2.1.287 and 2.1.291). Their sessions end by the idle close or when the next
 client's `initialize` evicts them: at once when the task was ended, and a minute after the client left when it was
 not, so a client that stopped without `end_task` holds a one-session Mac for that minute (newcomers get `503`
@@ -641,6 +726,8 @@ those set into the job; an `install` without them leaves them out, back to the d
 bounds: a request body over 4 MB is `413`; a session whose undelivered server messages would pass 16 MB is closed.
 
 ### When the relay or the Mac is offline
+
+What a standalone client (5) sees; through the plugin (4) the same conditions arrive as the codes in 4's table.
 
 | What the client sees | Why | What happens next |
 |---|---|---|

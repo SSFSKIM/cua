@@ -278,7 +278,7 @@ const TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list'];
 
 export function verifyCheck(name, {code, report}, {browser}) {
   if (!isObject(report)) return check(name, 'FAIL', `exit ${code}; no report`);
-  const tools = [...TOOLS, ...(browser ? ['profiles_list'] : [])];
+  const tools = [...TOOLS, ...(browser ? ['profiles_list'] : []), 'devices_list', 'devices_use'];
   const surfaces = browser ? ['computer', 'browser'] : ['computer'];
   const ok = code === 0 && Array.isArray(report.problems) && !report.problems.length && isDeepStrictEqual(report.tools, tools)
     && isDeepStrictEqual(report.surfaces, surfaces) && report.browserApiDocumented === browser;

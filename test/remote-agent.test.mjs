@@ -17,6 +17,8 @@ import {inProcessConnections, tick} from './fixtures/mcp-harness.mjs';
 import {connectRelay, runAgent} from '../src/remote/agent.mjs';
 import {checkConsole} from '../src/remote/console.mjs';
 import {credentialsOf, readDevice} from '../src/remote/device.mjs';
+import {readDevices, suggestedDeviceName} from '../src/remote/devices.mjs';
+import {hostname} from 'node:os';
 import {createMcpHttp} from '../src/mcp/http.mjs';
 
 const ws = await import('ws').catch(() => null);
@@ -74,7 +76,8 @@ const sseMessages = text => text.split('\n\n').filter(block => block && !block.s
 test('remote enroll prints the client credential once; show, a refused re-enrol and a relay update never print it', t => {
   const home = emptyHome(t);
   const enrolled = enroll(home);
-  assert.deepEqual(Object.keys(enrolled).sort(), ['clientCredential', 'clientRegisterCommand', 'clientSecretKey', 'deviceId', 'devicesEntry', 'ok', 'relayEndpoint', 'relayUrl']);
+  assert.deepEqual(Object.keys(enrolled).sort(), ['clientCredential', 'clientRegisterCommand', 'clientSecretKey', 'deviceId', 'devicesAddCommand', 'devicesEntry', 'ok', 'relayEndpoint', 'relayUrl']);
+  assert.equal(enrolled.devicesAddCommand, null, 'no relay: the client has nothing to register');
   assert.equal(enrolled.ok, true);
   assert.match(enrolled.clientCredential, /^[0-9a-f]{64}$/);
   assert.equal(enrolled.relayUrl, null);
@@ -99,6 +102,7 @@ test('remote enroll prints the client credential once; show, a refused re-enrol 
   assert.deepEqual({...shown, enrolledAt: undefined}, {
     ok: true, deviceId: enrolled.deviceId, relayUrl: 'wss://relay.example/ws', relayEndpoint: `https://relay.example/d/${enrolled.deviceId}/mcp`, enrolledAt: undefined, devicesEntry: enrolled.devicesEntry,
     clientSecretKey: key,
+    devicesAddCommand: `cua devices add ${suggestedDeviceName(hostname())} --relay https://relay.example --device=${enrolled.deviceId}`,
     clientRegisterCommand: `claude mcp add --transport http cua_repl https://relay.example/d/${enrolled.deviceId}/mcp --header "Authorization: Bearer $(cat ~/.config/claude-secrets/${key})"`,
   });
   for (const r of outputs) for (const value of [enrolled.clientCredential, secret]) assert.ok(!(r.stdout + r.stderr).includes(value), 'no credential after the enrolment');
@@ -127,8 +131,15 @@ test('enroll and show suggest the client registration: on the relay\'s endpoint 
   const shown = cua(['remote', 'show'], home, env).stdout;
   assert.ok(shown.includes(`claude mcp add --transport http cua_repl ${endpoint} --header "Authorization: Bearer <client credential>"`), shown);
   const rotated = cua(['remote', 'enroll', '--rotate', '--json'], home, env);
-  const {clientCredential, relayEndpoint} = JSON.parse(rotated.stdout);
+  const {clientCredential, relayEndpoint, devicesAddCommand} = JSON.parse(rotated.stdout);
   assert.equal(relayEndpoint, endpoint);
+  // The plugin route's line registers the device on a client as printed (a client with its own $HOME).
+  const [program, ...addArgs] = devicesAddCommand.split(' ');
+  assert.equal(program, 'cua');
+  const client = emptyHome(t);
+  const added = cua(addArgs, home, {HOME: client});
+  assert.equal(added.status, 0, added.stderr);
+  assert.deepEqual(Object.values(readDevices({env: {HOME: client}})), [{deviceId, relayUrl: 'https://relay.example:8443'}]);
   const text = cua(['remote', 'enroll', '--rotate'], home, env).stdout;
   assert.match(text, new RegExp(`claude mcp add --transport http cua_repl ${endpoint.replace(/[.]/g, '\\.')} --header "Authorization: Bearer [0-9a-f]{64}"`));
   assert.doesNotMatch(text, /<this Mac's address>/);

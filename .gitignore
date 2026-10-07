@@ -15,3 +15,6 @@ current.json
 
 # Written by Claude Code when it loads the hooks module from this folder (hooks/mods/tsconfig.json reads it)
 .claude/
+
+# doperpowers execution ledgers and review packages (local only)
+.doperpowers/sde/

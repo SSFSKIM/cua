@@ -305,3 +305,37 @@ test('macOS: the Linux window shape is not pinned there', async () => {
   assert.equal((await rejection(service.handleRpc(linuxType(REF('WORK_PASSWORD'))))).code, 'unsupported_secret_shape');
   assert.deepEqual([received, reads], [[], []]);
 });
+
+test('a reference to a reserved CUA_DEVICE_ key is refused secret_reserved before the store or the vendor is touched', async () => {
+  const device = 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ';
+  for (const [platform, requests] of [
+    ['darwin', [paste(REF(device)), typeText(REF(device)), setValue(REF(device))]],
+    ['linux', [{type: 'execute', method: 'type_text', args: [{window: {id: 7, title: 'gedit'}, text: REF(device)}]}]],
+  ]) {
+    for (const secretsUnavailable of [null, 'secrets_disabled']) {
+      const {service, received, reads} = harness({platform, secretsUnavailable, read: async label => { reads.push(label); return 'sentinel-Device-cred'; }});
+      for (const request of requests) {
+        const error = await rejection(service.handleRpc(request));
+        assert.equal(error.code, 'secret_reserved', `${platform} ${request.method}`);
+        assert.match(error.message, /nothing was entered/);
+        assert.match(error.message, /\[secret_reserved\]$/);
+        assertValueFree(error, 'sentinel-Device-cred');
+      }
+      assert.deepEqual(received, []);
+      assert.deepEqual(reads, []);
+    }
+  }
+});
+
+test('a reserved key in lower or mixed case is refused too: the store\'s file system may be case-insensitive', async () => {
+  for (const device of ['cua_device_nuadM_MUKSbSN4L59EffLQ', 'Cua_Device_nuadM_MUKSbSN4L59EffLQ']) {
+    const {service, received, reads} = harness({read: async label => { reads.push(label); return 'sentinel-Device-cred'; }});
+    for (const request of [paste(REF(device)), typeText(REF(device)), setValue(REF(device))]) {
+      const error = await rejection(service.handleRpc(request));
+      assert.equal(error.code, 'secret_reserved', `${device} ${request.method}`);
+      assertValueFree(error, 'sentinel-Device-cred');
+    }
+    assert.deepEqual(received, []);
+    assert.deepEqual(reads, []);
+  }
+});

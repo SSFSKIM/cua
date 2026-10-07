@@ -328,7 +328,7 @@ test('an unreadable slot keeps the refusal, the no-op and the gate choice BLOCKE
 // ---- C1 ---------------------------------------------------------------------------------------------------------------
 
 const verifyReport = browser => ({surfaces: browser ? ['computer', 'browser'] : ['computer'], problems: [], browserApiDocumented: browser,
-  tools: ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ? ['profiles_list'] : [])]});
+  tools: ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ? ['profiles_list'] : []), 'devices_list', 'devices_use']});
 
 test('verify passes C1 only with the surface\'s exact tools and browser documentation', () => {
   assert.equal(verifyCheck('default', {code: 0, report: verifyReport(false)}, {browser: false}).status, 'PASS');
@@ -478,7 +478,9 @@ test('C5 reads the live profile\'s extension check: a second Mac passes with --p
 });
 
 test('an invalid --profile is a usage error before anything runs', async () => {
-  assert.equal(await runAll(['--all', '--report', '/nonexistent/report.json', '--profile', 'Not A Key']), 2);
+  let said = '';
+  assert.equal(await runAll(['--all', '--report', '/nonexistent/report.json', '--profile', 'Not A Key'], {stderr: {write: text => { said += text; }}}), 2);
+  assert.match(said, /^usage: /);
 });
 
 // ---- C3's scratch scenario: a fixture Chrome, never this Mac's ------------------------------------------------------

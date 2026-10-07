@@ -21,7 +21,7 @@
 // are never scanned. The stored value is read from the connection's secret store (src/secrets/store.mjs) and placed in a copy of the
 // request handed to the vendor.
 //
-// Failing closed: an invalid or unknown label, an unsafe or unreadable store file, secrets off or unavailable, a reference in
+// Failing closed: an invalid, reserved (a device credential, secret_reserved) or unknown label, an unsafe or unreadable store file, secrets off or unavailable, a reference in
 // any other shape of an eligible command, or a vendor browser service other than the pinned version fails before
 // anything is entered. After substitution the vendor can fail on two channels: a rejected promise, and the resolved
 // envelope {ok:false, error} that executeWithRecovery returns for recovery errors (browser-service.mjs X2). A
@@ -32,7 +32,7 @@ import {dirname, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
-  SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, invalidLabel, unavailable, readFailure,
+  SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure,
   inputFailed, secretsFromEnv,
 } from './secret-input.mjs';
 
@@ -138,7 +138,7 @@ export function createBrowserService({loadVendor, vendorVersion, secrets, secret
     if (!plan) return (await vendorService()).handleRpc(request);
 
     const {reference} = plan;
-    if (reference.invalid) throw invalidLabel();
+    refuseUnusable(reference);
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
     const service = await vendorService();

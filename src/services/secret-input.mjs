@@ -6,7 +6,7 @@
 // to model code, so nothing here logs either.
 import {isAbsolute} from 'node:path';
 import {SecretStoreError, STORE_ENV, fileStore} from '../secrets/store.mjs';
-import {LABEL_RULE} from '../secrets/label.mjs';
+import {LABEL_RULE, RESERVED_PREFIX, isReserved} from '../secrets/label.mjs';
 
 export const NOTHING_ENTERED = 'nothing was entered';
 const LAUNCH_CODE = /^[a-z][a-z_]{0,63}$/;
@@ -50,6 +50,13 @@ export function matchesShape(object, fields, optional = []) {
 }
 
 export const invalidLabel = () => new SecretInputError('invalid_secret_label', `a {{secret:…}} reference must name a key: ${LABEL_RULE}; ${NOTHING_ENTERED}`);
+
+// A reference is refused before anything is read when its label breaks the key rule, or when the key is reserved for a
+// device credential (label.mjs), which the model never enters anywhere.
+export function refuseUnusable(reference) {
+  if (reference.invalid) throw invalidLabel();
+  if (isReserved(reference.label)) throw new SecretInputError('secret_reserved', `keys starting ${RESERVED_PREFIX} are device credentials, which are never entered; ${NOTHING_ENTERED}`);
+}
 
 export function unavailable(reason) {
   if (reason === 'secrets_disabled') return new SecretInputError('secrets_disabled', `secrets are turned off for this server (CUA_SHIM_SECRETS=off); ${NOTHING_ENTERED}`);

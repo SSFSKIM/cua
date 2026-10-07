@@ -18,16 +18,16 @@
 // names) and placed in a copy of the request handed to the vendor. Everything else is delegated untouched: other methods,
 // other fields, text that merely contains a marker, and arbitrary JavaScript, which is never scanned.
 //
-// Failing closed: a reference with an invalid label, an unknown label, a store file that is unsafe or unreadable,
-// secrets turned off or unavailable, or a reference in any other shape of an eligible command fails before anything is
-// delivered. If the vendor fails after substitution, the rejection is a fixed, bounded diagnostic instead of the vendor's error, whose
+// Failing closed: a reference with an invalid label, a reserved one (a device credential: secret_reserved) or an unknown
+// one, a store file that is unsafe or unreadable, secrets turned off or unavailable, or a reference in any other shape
+// of an eligible command fails before anything is delivered. If the vendor fails after substitution, the rejection is a fixed, bounded diagnostic instead of the vendor's error, whose
 // message, stack or properties may carry the value (SkyComputerUseError keeps the request it sent). The trusted worker
 // returns a rejection's message to model code and console output to the model, so this module never logs, and no
 // error it raises carries a cause, a vendor payload or anything derived from the value. Labels are not secret.
 import {pathToFileURL} from 'node:url';
 import {parseReference} from '../secrets/reference.mjs';
 import {
-  SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, invalidLabel, unavailable, readFailure, inputFailed, secretsFromEnv,
+  SecretInputError, NOTHING_ENTERED, isPlainObject, propertyKey, matchesShape, refuseUnusable, unavailable, readFailure, inputFailed, secretsFromEnv,
 } from './secret-input.mjs';
 
 export {SecretInputError};
@@ -114,7 +114,7 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     if (!plan) return (await vendorService()).handleRpc(request);
 
     const {method, field, input, reference} = plan;
-    if (reference.invalid) throw invalidLabel();
+    refuseUnusable(reference);
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
     const service = await vendorService();

@@ -48,7 +48,9 @@
 // such call reads `console()` ({onConsole, locked}, possibly a promise; the agent passes src/remote/console.mjs) and,
 // unless the session is on the console and unlocked, is answered with the tool error `console_locked` instead of
 // reaching the runtime. A console that cannot be read lets the call through (logged): the check names a known state,
-// it never blocks on its own failure. Messages reach a session's connection in the order their POSTs arrived, also
+// it never blocks on its own failure. The 400 answering a request on no session (a client's probe) carries
+// `Cua-Console: locked` in that state, so a client can tell a locked device from an online one without opening a
+// session. Messages reach a session's connection in the order their POSTs arrived, also
 // when one waits for this check.
 //
 // `open` is the connection opener, a seam for tests.
@@ -74,8 +76,8 @@ const needsConsole = m => isRequest(m) && m.method === 'tools/call' && WORK_TOOL
 const CONSOLE_LOCKED = statusResult({status: 'error', code: 'console_locked'},
   {isError: true, message: 'cua: the Mac\'s screen is locked or the session is not on the console; unlock it and retry'});
 
-function rpcError(res, status, code, message, id = null) {
-  res.writeHead(status, {'Content-Type': 'application/json'});
+function rpcError(res, status, code, message, id = null, headers = {}) {
+  res.writeHead(status, {'Content-Type': 'application/json', ...headers});
   res.end(JSON.stringify({jsonrpc: '2.0', id, error: {code, message}}));
 }
 
@@ -299,11 +301,12 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     session.inbound = session.inbound.then(step).catch(error => diagnostics(`session ${session.id}: a message could not be delivered: ${error.stack ?? error}`));
   };
 
-  // Whether the console refuses js now: off the console or locked. Unreadable is not a refusal.
-  async function consoleRefusal(session) {
+  // Whether the console refuses js now: off the console or locked. Unreadable is not a refusal. `who` names the asker
+  // in the log.
+  async function consoleRefusal(who, consequence = 'the call goes through') {
     let state;
     try { state = await consoleState(); } catch (error) {
-      diagnostics(`session ${session.id}: the console state could not be read (${error.code ?? error.message}); the call goes through`);
+      diagnostics(`${who}: the console state could not be read (${error.code ?? error.message}); ${consequence}`);
       return null;
     }
     if (!state.onConsole) return 'this user\'s session is not on the console';
@@ -314,7 +317,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   // The POSTed messages, less any js or js_reset the console refuses, which are answered here.
   async function deliver(session, messages) {
     const consoleBound = messages.filter(needsConsole);
-    const refusal = consoleBound.length ? await consoleRefusal(session) : null;
+    const refusal = consoleBound.length ? await consoleRefusal(`session ${session.id}`) : null;
     const forwarded = refusal ? messages.filter(m => !consoleBound.includes(m)) : messages;
     if (forwarded.length) send(session, forwarded);
     if (!refusal) return;
@@ -324,6 +327,14 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
   }
 
   // ---- requests ----
+
+  // A request on no session (other than initialize) is 400. It is also how a client probes the device without opening a
+  // session (src/remote/client.mjs probeDevice: a POST of ping), so the answer says whether js would be refused now:
+  // `Cua-Console: locked` while the console refuses it. Only an authorized caller gets here.
+  async function sessionless(res) {
+    const refusal = await consoleRefusal('a request without a session', 'no Cua-Console header');
+    rpcError(res, 400, -32000, 'cua: the Mcp-Session-Id header is required (initialize opens a session)', null, refusal ? {'Cua-Console': 'locked'} : {});
+  }
 
   async function initialize(message, req, res) {
     await Promise.allSettled([...ending]);
@@ -406,7 +417,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
       if (Array.isArray(parsed) || !isRequest(messages[0])) return rpcError(res, 400, -32600, 'cua: initialize is sent alone, as a request');
       return initialize(messages[0], req, res);
     }
-    if (sessionId === undefined) return rpcError(res, 400, -32000, 'cua: the Mcp-Session-Id header is required (initialize opens a session)');
+    if (sessionId === undefined) return sessionless(res);
     const session = sessions.get(sessionId);
     if (!session) return rpcError(res, 404, -32001, 'cua: no such session; initialize a new one');
     const requests = messages.filter(isRequest);
@@ -489,7 +500,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     if (version !== undefined && !PROTOCOL_VERSIONS.has(version) && sessions.get(sessionId)?.protocolVersion !== version)
       return rpcError(res, 400, -32000, `cua: unsupported MCP-Protocol-Version (supported: ${[...PROTOCOL_VERSIONS].join(', ')} and the version a session negotiated)`);
     if (req.method === 'POST') return post(req, res, sessionId);
-    if (sessionId === undefined) return rpcError(res, 400, -32000, 'cua: the Mcp-Session-Id header is required');
+    if (sessionId === undefined) return sessionless(res);
     const session = sessions.get(sessionId);
     if (!session) return rpcError(res, 404, -32001, 'cua: no such session; initialize a new one');
     return req.method === 'GET' ? get(req, res, session) : remove(res, session);

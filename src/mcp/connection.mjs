@@ -22,7 +22,9 @@
 // arch}, the process's by default: which pin resolves and the host notes) and
 // `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
 // only. `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
-// case in which a request is never answered (the HTTP layer ends the stream that waits for it).
+// case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
+// directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
+// passes one; the HTTP agent never does, so a device never drives a third one through itself.
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
@@ -39,8 +41,9 @@ import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFo
 const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
-  settings = settingsFrom(env, {platform: host.platform}), diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
-  prepareLaunch = launch => launch, chrome = chromeFacts({host, env}), listBackends, onWithdrawn, probeUserns}) {
+  devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
+  listBackends, onWithdrawn, probeUserns}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
@@ -90,7 +93,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       return list;
     }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, launch.cwd), onWithdrawn, ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, launch.cwd), onWithdrawn, devices, ...serverSettings});
   } catch (error) {
     await release();
     throw error;

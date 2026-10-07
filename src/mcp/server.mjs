@@ -36,8 +36,10 @@ import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {TaskLifecycle} from './task.mjs';
 import {openConnection} from './connection.mjs';
+import {connectionTarget} from './target.mjs';
+import {deviceDirectory} from '../remote/directory.mjs';
 import {
-  LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
+  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
 } from './surface.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -53,8 +55,8 @@ const NO_PROFILES = {list: () => []};
 
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
-  platform = process.platform, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform}), model, sandboxState = null,
-  completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
+  platform = process.platform, devices = null, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null}),
+  model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {},
 }) {
   let nextUpstreamId = 0;
@@ -109,6 +111,11 @@ export function createServer({
   function abandonUpstream(code) {
     for (const id of [...upstreamPending.keys()]) settleUpstream(id, {error: {code: -32000, message: `cua: ${code}: the runtime is no longer available`}});
   }
+
+  // The connection's target (src/mcp/target.mjs), with the device tools, when a device directory is given (stdio).
+  let clientInitialize = null;
+  const target = devices && connectionTarget({devices, write, diagnostics, onWithdrawn,
+    initializeParams: () => clientInitialize, localTaskOpen: () => lifecycle.state !== 'idle'});
 
   const lifecycle = new TaskLifecycle({
     sessionId, completionDeadlineMs, newId,
@@ -196,6 +203,20 @@ export function createServer({
   // sends `server/discover` first) is answered here as method-not-found and never forwarded; the connection stays usable.
   let initializeSeen = false;
 
+  const noMoreWork = () => rejectionResult({code: lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing', message: 'this connection accepts no more work'});
+  const pendingReply = reply => {
+    localReplies.add(reply);
+    return reply.finally(() => localReplies.delete(reply));
+  };
+
+  // A tool call on this machine.
+  function localTool(msg, name) {
+    if (WORK_TOOLS.has(name)) return runWork(msg);
+    if (name === 'end_task') return endTask(msg);
+    if (terminal()) return respond(msg.id, noMoreWork());
+    return pendingReply(name === 'profiles_list' ? profilesList(msg) : secretsList(msg));
+  }
+
   function onRequest(msg) {
     if (!initializeSeen) {
       if (msg.method !== 'initialize') return respondError(msg.id, -32601, `cua: ${msg.method} is not available before initialize`);
@@ -203,27 +224,30 @@ export function createServer({
     }
     if (msg.method === 'tools/call') {
       const name = msg.params?.name;
-      if (WORK_TOOLS.has(name)) return runWork(msg);
-      if (name === 'end_task') return endTask(msg);
+      if (target && DEVICE_TOOLS.has(name)) {
+        if (terminal()) return respond(msg.id, noMoreWork());
+        return pendingReply(name === 'devices_list' ? target.list(msg) : target.use(msg));
+      }
       const browserOnly = name === 'profiles_list' && !surfaces.includes('browser');
-      if (!LOCAL_TOOLS.has(name) || browserOnly) return respondError(msg.id, -32602, `Unknown tool: ${name}`);
-      if (terminal()) return respond(msg.id, rejectionResult({code: lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing', message: 'this connection accepts no more work'}));
-      const reply = name === 'profiles_list' ? profilesList(msg) : secretsList(msg);
-      localReplies.add(reply);
-      return reply.finally(() => localReplies.delete(reply));
+      if (!(WORK_TOOLS.has(name) || LOCAL_TOOLS.has(name)) || browserOnly) return respondError(msg.id, -32602, `Unknown tool: ${name}`);
+      // A terminal connection refuses everything, as the local tools do.
+      if (target && !terminal()) return target.route(msg, () => localTool(msg, name));
+      return localTool(msg, name);
     }
     if (terminal()) return respondError(msg.id, -32000, `cua: ${lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing'}: this connection accepts no more requests`);
     if (msg.method === 'initialize') {
       clientModel ??= typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined;
+      clientInitialize ??= msg.params;
       return passThrough(msg, result => ({...result, instructions: withHostNotes(result?.instructions, hostNotes)}));
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform})}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target)})}));
     return passThrough(msg);
   }
 
   function onNotification(msg) {
     if (lifecycle.state === 'failed') return;
     if (msg.method === 'notifications/cancelled') {
+      if (target?.cancel(msg.params)) return;                // a call routed to a device
       const key = idKey(msg.params?.requestId);
       if (queuedWork.get(key)?.cancel()) return onWithdrawn(msg.params.requestId);   // withdrawn before it reached the runtime: never answered
       const upstreamId = upstreamIdOf.get(key);
@@ -235,6 +259,7 @@ export function createServer({
 
   // The client answering a request the runtime sent it (an elicitation, typically).
   function onClientResponse(msg) {
+    if (target?.answer(msg)) return;                          // a device's request (cua-device-<n>)
     if (lifecycle.state === 'failed') return;
     const key = idKey(msg.id);
     if (elicitations.delete(key) && msg.result) msg = {...msg, result: persistAccepted(msg.result, persist)};
@@ -290,6 +315,8 @@ export function createServer({
   function close(reason = 'eof') {
     shutdown ??= (async () => {
       const failed = reason === 'failed';
+      // The device session ends beside the local teardown (DELETE, bounded), before the final flush.
+      const deviceClosed = target ? target.close() : Promise.resolve();
       const {completion} = failed ? {completion: 'failed'} : await lifecycle.close();
       lifecycle.abandon();
       tearingDown = true;
@@ -301,6 +328,7 @@ export function createServer({
       // A local reply still being computed is written before the final flush, so the flush's bound covers it too; after
       // it, nothing would drop it from a stream the client stopped reading. A readiness listing is bounded and always
       // tears its own runtime down.
+      await deviceClosed;
       await Promise.allSettled([...localReplies]);
       await flush();
       input.destroy?.();
@@ -315,12 +343,13 @@ export function createServer({
   return {sessionId, closed, close, get state() { return lifecycle.state; }};
 }
 
-// `platform` picks the host notes and search hints (src/mcp/surface.mjs); the process's own by default.
-export function settingsFrom(env, {platform = process.platform} = {}) {
+// `platform` picks the host notes and search hints (src/mcp/surface.mjs); the process's own by default. `devices`: the
+// connection has the device tools (stdio), whose rule joins the notes.
+export function settingsFrom(env, {platform = process.platform, devices = false} = {}) {
   const persist = env.CUA_SHIM_PERSIST ?? 'session';
   if (!PERSIST_MODES.includes(persist)) fail('invalid_setting', `CUA_SHIM_PERSIST must be one of ${PERSIST_MODES.join(', ')}`);
   const surfaces = surfacesFrom(env.CUA_SHIM_SURFACES);
-  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform}));
+  const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices}));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
   return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform};
@@ -328,7 +357,8 @@ export function settingsFrom(env, {platform = process.platform} = {}) {
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 
-// `cua serve`: one connection (src/mcp/connection.mjs) on stdin/stdout. The settings are read first, so an invalid one
+// `cua serve`: one connection (src/mcp/connection.mjs) on stdin/stdout, with the device tools (its target can be any
+// device in $HOME's registry, src/remote/directory.mjs). The settings are read first, so an invalid one
 // fails before anything else; then $CUA_HOME/run is swept of sessions whose owning process is gone, the signal handlers
 // go in, and the connection opens and serves until EOF or a signal. The connection's close waits for a readiness
 // listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime
@@ -336,7 +366,7 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // are openConnection's seams, forwarded unchanged.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
   prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends}) {
-  const settings = settingsFrom(env);
+  const settings = settingsFrom(env, {devices: true});
   try {
     const swept = describeSweep(sweepRun(home));
     if (swept) diagnostics(`$CUA_HOME/run: ${swept}`);
@@ -352,7 +382,7 @@ export async function serve({home, env = process.env, input = process.stdin, out
   let result;
   try {
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
-      prepareLaunch, chrome, listBackends});
+      prepareLaunch, chrome, listBackends, devices: deviceDirectory({env})});
     if (signalled) connection.close('signal');
     result = await connection.closed;
   } finally {

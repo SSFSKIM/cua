@@ -3,7 +3,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {harness, initialized, UPSTREAM_TOOLS, textOf, structured, tick} from './fixtures/mcp-harness.mjs';
-import {SecretStoreError} from '../src/secrets/store.mjs';
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {SecretStoreError, connectionSecrets} from '../src/secrets/store.mjs';
 
 const PNG_AS_JPEG = '/9j/4AAQSkZJRgABAQAAAQABAAD';
 
@@ -78,6 +81,20 @@ test('secrets_list returns the provider\'s labels and nothing else', async () =>
   assert.deepEqual(structured(response), {status: 'ok', labels: ['a', 'b']});
   assert.deepEqual(JSON.parse(textOf(response)), {status: 'ok', labels: ['a', 'b']});
   assert.equal(h.upstream.calls('secrets_list').length, 0);
+});
+
+test('secrets_list over the connection\'s store omits reserved CUA_DEVICE_ keys (device credentials) and keeps the rest', async t => {
+  const home = mkdtempSync(join(tmpdir(), 'cua-home-'));
+  t.after(() => rmSync(home, {recursive: true, force: true}));
+  const dir = join(home, '.config', 'claude-secrets');
+  mkdirSync(dir, {recursive: true, mode: 0o700});
+  for (const key of ['WORK_PASSWORD', 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ', 'CUA_DEVICE_', 'Cua_Device_jMTkLnzn_rsbzoZAHJ8EbQ', 'CUA_DEVICES', 'A_CUA_DEVICE_x'])
+    writeFileSync(join(dir, key), 'sentinel-value', {mode: 0o600});
+  const h = harness({server: {secrets: connectionSecrets({enabled: true, env: {HOME: home}})}});
+  await initialized(h);
+  const response = await h.client.call('secrets_list').response;
+  assert.deepEqual(structured(response), {status: 'ok', labels: ['A_CUA_DEVICE_x', 'CUA_DEVICES', 'WORK_PASSWORD']});
+  assert.ok(!JSON.stringify(response).includes('sentinel-value'));
 });
 
 test('secrets_list reports an unavailable provider and a failed listing by code, value-free', async () => {

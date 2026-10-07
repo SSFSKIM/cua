@@ -4,3 +4,11 @@ export const LABEL_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const LABEL_RULE = "keys are letters, digits and '_', not starting with a digit (as /secret KEY takes them)";
 
 export const isLabel = label => typeof label === 'string' && LABEL_PATTERN.test(label);
+
+// Keys starting CUA_DEVICE_ hold device credentials (src/remote/devices.mjs: the client credential of a registered
+// device, which the server process reads to reach it). They are the owner's, never the model's: secrets_list omits them
+// and a {{secret:…}} reference to one is refused (secret_reserved). The owner's `cua secrets list` still shows them.
+// The prefix matches in any case: macOS's default file system is case-insensitive, so the store opens CUA_DEVICE_<id>
+// for cua_device_<id>.
+export const RESERVED_PREFIX = 'CUA_DEVICE_';
+export const isReserved = label => typeof label === 'string' && label.toUpperCase().startsWith(RESERVED_PREFIX);

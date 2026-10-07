@@ -74,7 +74,7 @@ const sseMessages = text => text.split('\n\n').filter(block => block && !block.s
 test('remote enroll prints the client credential once; show, a refused re-enrol and a relay update never print it', t => {
   const home = emptyHome(t);
   const enrolled = enroll(home);
-  assert.deepEqual(Object.keys(enrolled).sort(), ['clientCredential', 'deviceId', 'devicesEntry', 'ok', 'relayEndpoint', 'relayUrl']);
+  assert.deepEqual(Object.keys(enrolled).sort(), ['clientCredential', 'clientRegisterCommand', 'clientSecretKey', 'deviceId', 'devicesEntry', 'ok', 'relayEndpoint', 'relayUrl']);
   assert.equal(enrolled.ok, true);
   assert.match(enrolled.clientCredential, /^[0-9a-f]{64}$/);
   assert.equal(enrolled.relayUrl, null);
@@ -93,7 +93,12 @@ test('remote enroll prints the client credential once; show, a refused re-enrol 
     outputs.push(r);
   }
   const shown = JSON.parse(cua(['remote', 'show', '--json'], home).stdout);
-  assert.deepEqual({...shown, enrolledAt: undefined}, {ok: true, deviceId: enrolled.deviceId, relayUrl: 'wss://relay.example/ws', relayEndpoint: `https://relay.example/d/${enrolled.deviceId}/mcp`, enrolledAt: undefined, devicesEntry: enrolled.devicesEntry});
+  const key = `CUA_DEVICE_${enrolled.deviceId.replaceAll('-', '_')}`;
+  assert.deepEqual({...shown, enrolledAt: undefined}, {
+    ok: true, deviceId: enrolled.deviceId, relayUrl: 'wss://relay.example/ws', relayEndpoint: `https://relay.example/d/${enrolled.deviceId}/mcp`, enrolledAt: undefined, devicesEntry: enrolled.devicesEntry,
+    clientSecretKey: key,
+    clientRegisterCommand: `claude mcp add --transport http cua_repl https://relay.example/d/${enrolled.deviceId}/mcp --header "Authorization: Bearer $(cat ~/.config/claude-secrets/${key})"`,
+  });
   for (const r of outputs) for (const value of [enrolled.clientCredential, secret]) assert.ok(!(r.stdout + r.stderr).includes(value), 'no credential after the enrolment');
 
   const text = cua(['remote', 'enroll', '--rotate'], home);

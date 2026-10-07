@@ -1,11 +1,11 @@
 // The enrolled device record ($CUA_HOME/remote/device.json) and the two leg credentials derived from its secret.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash, createHmac} from 'node:crypto';
+import {createHash, createHmac, randomBytes} from 'node:crypto';
 import {readFileSync, rmSync, statSync, utimesSync, writeFileSync, mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {scratch} from './fixtures/runtime-fixture.mjs';
-import {checkRelayUrl, credentialMatches, credentialsOf, devicesEntry, enrollDevice, followDevice, readDevice, relayEndpoint} from '../src/remote/device.mjs';
+import {checkRelayUrl, clientSecretKey, credentialMatches, credentialsOf, devicesEntry, enrollDevice, followDevice, readDevice, relayEndpoint} from '../src/remote/device.mjs';
 
 const home = t => { const s = scratch(); t.after(s.cleanup); return s.dir; };
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -143,4 +143,9 @@ test('credentialMatches compares the whole credential and nothing else', () => {
   assert.equal(credentialMatches(credential, credential + 'a'), false);
   assert.equal(credentialMatches(credential, undefined), false);
   assert.equal(credentialMatches(credential, ''), false);
+});
+
+test('clientSecretKey is a /secret key for the device: CUA_DEVICE_ and the id, base64url\'s - as _', () => {
+  assert.equal(clientSecretKey('nuadM-MUKSbSN4L59EffLQ'), 'CUA_DEVICE_nuadM_MUKSbSN4L59EffLQ');
+  for (let i = 0; i < 200; i++) assert.match(clientSecretKey(randomBytes(16).toString('base64url')), /^[A-Za-z_][A-Za-z0-9_]*$/);
 });

@@ -65,7 +65,10 @@ claude plugin marketplace add SSFSKIM/cua
 claude plugin install cua@cua
 ```
 
-The plugin runs `node cua-shim.mjs`, which is `cua serve`. Then allow the tools in your settings so each call does not
+The plugin runs `node cua-shim.mjs`, which is `cua serve`. It also carries the `cua-remote` skill, the procedure for
+setting up or driving another computer through cua (Remote control), and, where function hooks are enabled
+(`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY` command: a value typed into a masked field and stored as
+`~/.config/claude-secrets/KEY` (mode 600), which the model sees only by its key (`hooks/mods/README.md`). Then allow the tools in your settings so each call does not
 prompt: `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next
 section. This repository is the plugin's source of truth.
 
@@ -475,7 +478,8 @@ your GUI login session (a launchd job; on Linux a systemd user unit, see "Linux"
 on an address of the Mac (`--http`, for a LAN or a tailnet), or through a small relay you host that the Mac dials out
 to (`--relay`), so the Mac needs no open port. The design is
 `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`; the live proof (Mac mini driven from a MacBook, LAN
-and relay) is `docs/evidence/2026-10-06-phase-e-remote-acceptance.md`.
+and relay) is `docs/evidence/2026-10-06-phase-e-remote-acceptance.md`. An agent asked to set up a device or drive one follows the
+plugin's `cua-remote` skill (`skills/cua-remote/SKILL.md`), which runs these steps in order.
 
 **While a remote agent drives it, the Mac must be unlocked and awake.** A locked screen or a session that is not the
 one on the screen cannot receive input or render screenshots, so the agent refuses `js` and `js_reset` there with the
@@ -496,7 +500,9 @@ node bin/cua.mjs remote show                                     # device id, re
 once, the **client credential** (what a client presents as its bearer), the `claude mcp add` line that registers it
 (on the relay's endpoint when a relay is enrolled, else on this Mac's address; see 4) and the line for the relay's
 `devices.json` (SHA-256 hashes only); `--json` prints `{deviceId, clientCredential, devicesEntry, relayUrl,
-relayEndpoint}`. Nothing prints the client credential again: keep it where the client will use it. Both legs get their
+relayEndpoint, clientSecretKey, clientRegisterCommand}`, the last two being the `/secret` key a client keeps the
+credential under and the registration that reads it from there (see 4; `remote show --json` prints both again). Nothing
+prints the client credential again: keep it where the client will use it. Both legs get their
 own credential derived from the secret, so the copy a client holds cannot be used to pose as the Mac to the relay.
 
 The relay URL is `wss://` (the relay behind TLS), or `ws://` only to a loopback address such as a relay on the same
@@ -579,6 +585,12 @@ show` prints the relay one again):
 claude mcp add --transport http cua_repl https://<relay>/d/<deviceId>/mcp --header "Authorization: Bearer <client credential>"
 claude mcp add --transport http cua_repl http://<the Mac's address>:7801/mcp --header "Authorization: Bearer <client credential>"   # direct
 ```
+
+To keep the credential out of shell history and the transcript, store it on the client with `/secret <clientSecretKey>`
+(the key `enroll --json` names: `CUA_DEVICE_` and the device id, `-` as `_`) and register with the
+`clientRegisterCommand` it printed, which reads it in place:
+`--header "Authorization: Bearer $(cat ~/.config/claude-secrets/<clientSecretKey>)"`. The shell expands it once, at
+registration, so after a `--rotate` store the new value and register again.
 
 The name matters: permission rules (`"mcp__cua_repl__*"` under `permissions.allow`) and the app-approval hook above
 (matcher `cua_repl`) match the server name; under another name the hook does not answer, and every first use of an

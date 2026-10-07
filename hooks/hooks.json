@@ -1,0 +1,6 @@
+{
+  "description": "mods (function hooks, under CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1): /secret KEY, a secret typed into a pane's field, masked, stored in a 600 file under ~/.config/claude-secrets that the model sees only by its key; a tool call that would read the store is refused, and a stored value a tool prints is replaced by [secret:KEY]",
+  "modules": [
+    "./mods/register.tsx"
+  ]
+}

@@ -36,6 +36,10 @@ export function relayEndpoint(record) {
   return `${url.protocol === 'wss:' ? 'https:' : 'http:'}//${url.host}/d/${record.deviceId}/mcp`;
 }
 
+// The key a client stores this device's client credential under with the cua plugin's `/secret` (hooks/mods/secrets.tsx,
+// ~/.config/claude-secrets/<KEY>). Keys are [A-Za-z_][A-Za-z0-9_]* and a device id is base64url, so '-' becomes '_'.
+export const clientSecretKey = deviceId => `CUA_DEVICE_${deviceId.replaceAll('-', '_')}`;
+
 export function readDevice(home) {
   let text;
   try { text = readFileSync(deviceFile(home), 'utf8'); } catch (error) {

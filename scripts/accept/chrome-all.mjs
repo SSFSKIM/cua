@@ -94,13 +94,14 @@ function readReport(path, judge, label) {
   return [check(`${label}: supplied report`, report ? 'PASS' : 'FAIL', `read ${text.length} bytes, sha256 ${digest}…${report ? '' : '; not JSON'}`), ...(report ? judge(report) : [])];
 }
 
-export async function runAll(argv) {
+// `stderr` is where the usage goes (a seam for the test).
+export async function runAll(argv, {stderr = process.stderr} = {}) {
   let options;
   try {
     ({values: options} = parseArgs({args: argv, options: {all: {type: 'boolean'}, report: {type: 'string'}, profile: {type: 'string', default: 'personal'},
       'c2-report': {type: 'string'}, 'c6-report': {type: 'string'}}, strict: true}));
   } catch { options = {}; }
-  if (!options.all || !options.report || !PROFILE_KEY.test(options.profile)) { process.stderr.write(`${USAGE}\n`); return 2; }
+  if (!options.all || !options.report || !PROFILE_KEY.test(options.profile)) { stderr.write(`${USAGE}\n`); return 2; }
   const {profile} = options;
 
   const home = realHome(defaultHome());
@@ -237,7 +238,7 @@ export async function runAll(argv) {
         const elicitations = messages.filter(m => m.method === 'elicitation/create').length;
         const cells = messages.filter(m => m.method === 'tools/call' && m.params?.name === 'js').length;
         const left = (existsSync(homeLayout(home).run) ? readdirSync(homeLayout(home).run) : []).filter(n => !runBefore.includes(n));
-        checks.push(check('the connection: five tools, no js cell, clean exit', JSON.stringify(tools) === JSON.stringify(['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list']) && cells === 0 && exit.code === 0 && endTask === 'noop' && !left.length ? 'PASS' : 'FAIL',
+        checks.push(check('the connection: seven tools, no js cell, clean exit', JSON.stringify(tools) === JSON.stringify(['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list', 'devices_list', 'devices_use']) && cells === 0 && exit.code === 0 && endTask === 'noop' && !left.length ? 'PASS' : 'FAIL',
           `tools ${tools?.join(', ')}; js cells sent ${cells}; end_task ${endTask}; serve exit ${exit.code}${exit.forced ? ' (forced)' : ''}; elicitations ${elicitations}; connection directories left ${left.length}`));
       }
       checks.push(hostNotesCheck(init?.instructions));

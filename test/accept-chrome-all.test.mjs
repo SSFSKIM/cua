@@ -478,7 +478,9 @@ test('C5 reads the live profile\'s extension check: a second Mac passes with --p
 });
 
 test('an invalid --profile is a usage error before anything runs', async () => {
-  assert.equal(await runAll(['--all', '--report', '/nonexistent/report.json', '--profile', 'Not A Key']), 2);
+  let said = '';
+  assert.equal(await runAll(['--all', '--report', '/nonexistent/report.json', '--profile', 'Not A Key'], {stderr: {write: text => { said += text; }}}), 2);
+  assert.match(said, /^usage: /);
 });
 
 // ---- C3's scratch scenario: a fixture Chrome, never this Mac's ------------------------------------------------------

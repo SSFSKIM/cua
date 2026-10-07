@@ -2,6 +2,19 @@
 
 ## Open
 
+- **2026-10-07 — cua's own Chrome extension and host: review minors left (minor, issue #10).** (a) The host does not
+  serialize `attach`/`detach` per tab as the vendor extension does; a `detach` racing an `attach` leaves the debuggee
+  held until turn end (`src/chrome/host.mjs`). (b) A refused host (`already_served`, `protocol_mismatch`,
+  `hello_invalid`, `listen_failed`) keeps its `chrome/logs/<pid>.log`; `already_served`/`listen_failed` are not lasting
+  refusals, so the extension retries them every 5 s, one log each — a doctor or startup sweep would bound it. (c)
+  `chooseVendorRoute` can set the vendor record's mtime into the future under clock skew; a re-register after a blocked
+  unregister, or over a vanished manifest, orphans that browser's backup (`src/chrome/registration.mjs`). (d) Doctor's
+  `agent.*` rows fail for a non-default home on a machine whose agent unit belongs to another home. (e) An extension
+  update through the CRX's `update_url` (a version bump served by the relay) is untested. (f) Cosmetic: a failed title
+  on a new tab group is silent (`extension/background.js`); the `chrome.*` stub's `runtime.sendMessage` also delivers
+  to the sender; `test/extension-pack.test.mjs` needs the `unzip` binary; the acceptance runner's restart-bound comment
+  names the CDP timeout rather than the real worst path (connect + getInfo + locator, ~9 s).
+
 - **2026-10-07 — `deploy/cloud-vm` checks two things only by hand (minor, issue #76 review).** (a) The owner's
   checklist that `cua-provision.sh` prints names CLI commands and flags (`cua login --device-auth`, `cua profiles bind`,
   `cua remote show`, `relay/deploy/update.sh --devices`) that no test compares against `src/cli.mjs`, so a renamed flag

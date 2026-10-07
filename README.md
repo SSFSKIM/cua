@@ -471,7 +471,7 @@ configuration) and `codex.login`.
 `cua agent` lets an MCP client on another machine, typically a Claude Code session in a cloud VM, drive this Mac with
 exactly the tools and host notes it would have locally (`js`, `js_reset`, `end_task`, `secrets_list` and, with the
 browser surface, `profiles_list`), one runtime per session, cleaned up the same way. The Mac runs a resident agent in
-your GUI login session (a launchd job), and the client reaches it over MCP Streamable HTTP in one of two ways: directly
+your GUI login session (a launchd job; on Linux a systemd user unit, see "Linux"), and the client reaches it over MCP Streamable HTTP in one of two ways: directly
 on an address of the Mac (`--http`, for a LAN or a tailnet), or through a small relay you host that the Mac dials out
 to (`--relay`), so the Mac needs no open port. The design is
 `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`; the live proof (Mac mini driven from a MacBook, LAN
@@ -648,8 +648,9 @@ cua runs on Linux from OpenAI's official Linux package of the same ChatGPT relea
 arm64 (pins `26.928.40906-linux-x64` and `26.928.40906-linux-arm64`). The `@oai/*` JavaScript is the macOS release's
 byte for byte; the platform binaries are Linux ones: `node_repl`, the computer-use helper `sky_linux`, the Chrome
 native host and `codex`. It has been shown on an Ubuntu 24.04 arm64 VM with Xorg and Openbox
-(`docs/evidence/2026-10-06-linux-acceptance.md`). There, install, doctor, `verify.mjs`, a native action in gedit and
-the Chrome host and profile binding all worked; the browser round trip waits on a signed-in extension and a Codex login.
+(`docs/evidence/2026-10-06-linux-acceptance.md`): install, doctor, `verify.mjs`, a native action in gedit, and the
+Chrome host, profile binding and a browser round trip. The x64 pin and the agent as a systemd user unit, driven
+through the hosted relay, are shown in `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 
 What it needs:
 
@@ -716,21 +717,46 @@ printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile bwrap /usr/bin/bwrap 
 A profile on the release's `codex` instead also sandboxes the runtime, but cua's own check runs bubblewrap outside
 it, so cua still refuses.
 
+**Remote control (the agent as a systemd user unit).** Enrol and pick a relay or an address as in "Remote control"
+above, then, in the user's own login (SSH is fine):
+
+```sh
+node bin/cua.mjs agent install                       # relay (enrolled with --relay); or --http <address>:7801
+node bin/cua.mjs agent status                        # the unit, the node it runs, running (pid), linger
+sudo loginctl enable-linger "$USER"                  # once: run the unit from boot and keep it after logout
+node bin/cua.mjs agent uninstall                     # stop and disable the unit and remove it
+```
+
+`agent install` writes `~/.config/systemd/user/cua-agent.service` and runs `systemctl --user daemon-reload`, `enable`
+and `restart`. The unit runs the same `<node> <checkout>/bin/cua.mjs agent run --relay|--http …` as the macOS job,
+with the same environment plus the X display: `DISPLAY` from `--display`, else the installing session's, else `:0`,
+and `XAUTHORITY` from `--xauthority` or the session's (unset, X clients read `~/.Xauthority`). The session bus is
+derived from the `XDG_RUNTIME_DIR` the user manager gives every unit. `Restart=on-failure` restarts a crash or a
+refusal after 10 s, never a deliberate stop, as `KeepAlive` does on macOS; its log is `$CUA_HOME/state/agent.log`.
+`WantedBy=default.target` starts it with the user's systemd manager: at login, or at boot once linger is on (cua does
+not turn linger on, because logind may ask for a password; `agent status` and doctor's `agent.running` say whether it
+is). Apps the agent starts live in the unit's cgroup and stop with it. Doctor reads the unit as it reads the launchd
+job: `agent.installed`, `agent.running` (with linger), `agent.enrolled`, and `agent.console`, which checks the
+unit's own `DISPLAY` and `XAUTHORITY`, so it is meaningful from an SSH session where doctor's `display` row fails for
+lack of `DISPLAY`.
+
 **What differs from macOS:**
 
 - **Apps are bound by window.** Use `cua.getApp({windowId})` with an id from `listWindows()`. No app asks for
   approval, so one connection can drive every window of the session. `DISPLAY` and `XAUTHORITY` reach the runtime, so
   a model cell can talk to X directly. The trusted wrapper is not a boundary on Linux. The host notes say so.
 - **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
-  they crashed the app. `pressKey`, one X keysym per character, types there. In GTK4 they inserted the text and then
-  threw.
+  they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
+  `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
 - **No secrets.** Linux has no secrets backend. `secrets_list` reports `secrets_unsupported_platform`, a
   `{{secret:…}}` reference is refused with that code before anything is typed, and `cua secrets` exits 1.
 - **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows, and
   `secrets.helper` reads `skip`.
-- **Remote control.** `cua agent install`, `uninstall` and `status` manage a launchd job and refuse on Linux with
-  `unsupported_platform`. `cua agent run` and the relay are plain Node and expected to work, but are untested on Linux,
-  and the agent reads no console state there (`console_locked` is never answered; doctor's `agent.*` rows read `skip`).
+- **Remote control.** `cua remote enroll`, `cua agent run` and the relay work as on macOS, and `cua agent install`
+  runs the agent as a systemd user unit (below). The agent reads no console state on Linux: there is no portable
+  screen-lock signal, so `console_locked` is never answered, and doctor's `agent.console` checks instead that the
+  agent's X display answers with the extensions the helper needs.
+
 - **Chrome's own window.** Read through the native route, it exposes no accessibility tree by default. Chrome joins
   AT-SPI when toolkit accessibility is on (`gsettings set org.gnome.desktop.interface toolkit-accessibility true`).
   Web content appears only when Chrome is also started with `--force-renderer-accessibility`. The browser surface

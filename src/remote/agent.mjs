@@ -18,9 +18,10 @@
 // same mouse, keyboard and Chrome), CUA_AGENT_IDLE_MINUTES (default 15) and CUA_AGENT_ALLOWED_ORIGINS (browser origins
 // allowed to call, comma-separated, none by default). CUA_AGENT_CONSOLE_CHECK (on by default; off stops it) makes js
 // and js_reset answer console_locked while this user's session is off the console or its screen is locked
-// (src/remote/console.mjs). The console is read on macOS only; elsewhere (the agent is untested off macOS) the setting
-// is validated and nothing is refused.
-// Diagnostics go to stderr (under launchd, $CUA_HOME/state/agent.log); no credential ever appears in them.
+// (src/remote/console.mjs). The console is read on macOS only; elsewhere the setting is validated and nothing is
+// refused (Linux has no portable screen-lock signal; doctor's agent.console checks the agent's X display instead).
+// Diagnostics go to stderr (under launchd or the systemd user unit, $CUA_HOME/state/agent.log); no credential ever
+// appears in them.
 import {createServer as createHttpServer} from 'node:http';
 import {linkSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';

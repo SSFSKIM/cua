@@ -3,17 +3,13 @@
 // `launchctl bootstrap gui/<uid>`. A GUI-session job is the point: TCC prompts, the login Keychain and the screen belong
 // to that session, and bootstrap puts a process there without a terminal (an SSH session cannot).
 //
-// The job runs the node that ran `install` (process.execPath, recorded and shown, because a Homebrew or nvm upgrade
-// that moves it breaks the job until `install` runs again; it is also the binary macOS's firewall judges for an --http
-// listener) with this checkout's bin/cua.mjs `agent run`, plus `--relay` when the device has a relay URL and
-// `--http <host:port>` when given. RunAtLoad is on and KeepAlive is {SuccessfulExit: false}: launchd restarts a crash
+// The job runs what src/remote/job.mjs describes: the node that ran `install` (process.execPath, recorded and shown,
+// because a Homebrew or nvm upgrade that moves it breaks the job until `install` runs again; it is also the binary
+// macOS's firewall judges for an --http listener) with this checkout's bin/cua.mjs `agent run`, `--relay` and
+// `--http`, in the environment job.mjs names. RunAtLoad is on and KeepAlive is {SuccessfulExit: false}: launchd restarts a crash
 // or a refusal (agent_already_running: the job takes over once a terminal agent stops), never the agent's deliberate
-// stops (a signal shutdown, relay close codes 4001/4003), which exit 0. `--relay` is refused (relay_unavailable) when
-// this checkout cannot load the ws package the relay path needs. launchd appends stdout and stderr to
-// $CUA_HOME/state/agent.log (the agent writes its diagnostics to stderr). The environment carries CUA_HOME when it is
-// set, CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser as much as the desktop) and each of
-// the agent's own settings (CUA_AGENT_MAX_SESSIONS, _IDLE_MINUTES, _ALLOWED_ORIGINS, _CONSOLE_CHECK) set in the
-// environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it.
+// stops (a signal shutdown, relay close codes 4001/4003), which exit 0. launchd appends stdout and stderr to
+// $CUA_HOME/state/agent.log (the agent writes its diagnostics to stderr).
 //
 // The plist is written by templating with XML escaping and checked by reading it back with cua's own reader before it
 // replaces anything; `install` on an installed job replaces the plist, boots the old job out, waits until launchd has
@@ -23,24 +19,17 @@ import {execFile} from 'node:child_process';
 import {chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {randomUUID} from 'node:crypto';
 import {escapeXml, isDict, parsePlist, representable} from './plist.mjs';
-import {checkRelayUrl, readDevice} from './device.mjs';
-import {AGENT_SETTINGS, limitsFrom} from './limits.mjs';
-import {consoleCheckFrom} from './console.mjs';
-import {parseFixedAddress} from './address.mjs';
-import {surfacesFrom} from '../mcp/surface.mjs';
-import {loadWebSocket} from './relay-link.mjs';
+import {CLI, DEFAULT_SURFACES, agentJobSpec, agentLogPath} from './job.mjs';
 import {CuaError, fail} from '../runtime/errors.mjs';
 
+export {DEFAULT_SURFACES, agentLogPath};
+
 export const AGENT_LABEL = 'com.ssfskim.cua.agent';
-export const DEFAULT_SURFACES = 'computer,browser';
-const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const SETTLE_TIMEOUT_MS = 20_000;
 
 export const agentPlistPath = (userHome = homedir()) => join(userHome, 'Library', 'LaunchAgents', `${AGENT_LABEL}.plist`);
-export const agentLogPath = home => join(resolve(home), 'state', 'agent.log');
 
 export const runLaunchctl = args => new Promise(done => {
   execFile('/bin/launchctl', args, {encoding: 'utf8', timeout: 30_000}, (error, stdout, stderr) => done({
@@ -170,23 +159,8 @@ function writePlist(path, text) {
 }
 
 export async function installAgent({home, env = process.env, http, surfaces = DEFAULT_SURFACES, node = process.execPath, cli = CLI,
-  userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl, settleMs = 250, loadRelay = loadWebSocket}) {
-  if (http !== undefined && http !== null) parseFixedAddress(http);
-  const named = surfacesFrom(surfaces).join(',');
-  limitsFrom(env);
-  consoleCheckFrom(env);
-  const device = readDevice(home);
-  if (!device) fail('remote_not_enrolled', 'this Mac is not enrolled for remote control', {hint: 'run cua remote enroll first'});
-  if (device.relayUrl) checkRelayUrl(device.relayUrl);
-  // A --relay job whose checkout cannot load ws would refuse at every start and be restarted every 10 s.
-  if (device.relayUrl) await loadRelay();
-  const args = [...(device.relayUrl ? ['--relay'] : []), ...(http ? ['--http', http] : [])];
-  if (!args.length)
-    fail('agent_nothing_to_serve', 'the agent would have nothing to serve: no relay is enrolled and no --http address was given', {hint: 'give --http <this Mac\'s LAN address>:7801, or enrol a relay with cua remote enroll --relay <wss url>'});
-  const log = agentLogPath(home);
-  const settings = Object.fromEntries(AGENT_SETTINGS.filter(key => env[key] !== undefined).map(key => [key, env[key]]));
-  const environment = {...(env.CUA_HOME ? {CUA_HOME: resolve(env.CUA_HOME)} : {}), CUA_SHIM_SURFACES: named, ...settings};
-  const programArguments = [node, cli, 'agent', 'run', ...args];
+  userHome = homedir(), uid = process.getuid(), launchctl = runLaunchctl, settleMs = 250, loadRelay}) {
+  const {programArguments, environment, log} = await agentJobSpec({home, env, http, surfaces, node, cli, ...(loadRelay ? {loadRelay} : {})});
   const unrepresentable = [...programArguments, log, ...Object.values(environment)].find(text => !representable(text));
   if (unrepresentable !== undefined)
     fail('agent_path_unsupported', `${JSON.stringify(unrepresentable)} has a control character a launchd plist cannot hold`, {hint: 'install cua and node at paths without control characters'});

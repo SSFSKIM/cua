@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-10-07 — Linux agent unit: what doctor reads is the unit file (minor, issue #58).** (a) A `systemctl --user
+  edit cua-agent` drop-in or an unreloaded edit can change what runs while `agent.installed` describes the file; showing
+  `DropInPaths` and `NeedDaemonReload` in doctor's rows would close it (`agent status` already shows a pending reload).
+  (b) `agent status` and doctor read "not installed" for an agent still running after its file was deleted and the
+  manager reloaded (`uninstall` stops it). (c) `agent install` pins the installing session's `DISPLAY` and `XAUTHORITY`:
+  under `ssh -X` that is a forwarded display that dies with the session, and under XWayland the cookie path changes at
+  each login; a warning for a display with a host part, and a README line, would cover both.
+
 - **2026-10-06 — The hosted relay's Caddy advertises HTTP/3 with UDP 443 closed (minor, issue #53).** Caddy's default
   `Alt-Svc: h3` points browsers at UDP 443, which the `cua-relay` firewall does not admit; MCP clients and agents use
   HTTP/1.1 or 2 and are unaffected. Either `servers { protocols h1 h2 }` in `relay/deploy/Caddyfile` or a UDP 443 rule
@@ -16,8 +24,10 @@
 - **2026-10-06 — The vendor helper's text input crashes GTK3 text views on Linux (vendor, Phase F, issue #51).** On
   the pinned 26.928.40906 arm64 runtime, `typeText` and `paste` SIGSEGV gedit 46.2 and mousepad 0.6.1 (in
   `gtk_text_buffer_get_iter_at_offset`); in GTK4 they insert and then throw `SetCaretOffset NotSupported`. Nothing cua
-  can fix without patching the vendor runtime; the Linux host notes steer the model to `pressKey`. Revisit at the next
-  pin bump (and check x64), evidence `docs/evidence/2026-10-06-linux-acceptance.md`.
+  can fix without patching the vendor runtime; the Linux host notes steer the model to `pressKey`. On x64 (#58, same
+  gedit and GTK builds) `typeText` does not crash but throws "editable Paste did not insert text", so the notes' word
+  "crash" is exact for arm64 only; their advice holds on both. Revisit at the next pin bump, evidence
+  `docs/evidence/2026-10-06-linux-acceptance.md` and `docs/evidence/2026-10-06-linux-agent-and-x64.md`.
 
 - **2026-10-06 — Two F1 review leftovers on Linux (minor, Phase F, issue #51).** (a) `countLiveHosts` on Linux
   (`src/profiles/chrome.mjs`) reads `ps -eo pid=,args=` with no parent check, as the spec specified, so a wrapper

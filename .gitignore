@@ -1,6 +1,5 @@
 # Dependencies and build output
 node_modules/
-native/keychain/.build/
 
 # Vendor runtime archives and extracted runtimes never enter git; tests and probes use a scratch CUA_HOME outside
 # the repository.

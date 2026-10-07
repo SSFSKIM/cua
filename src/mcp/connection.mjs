@@ -3,25 +3,23 @@
 //
 // `openConnection` resolves the installed runtime (per connection, so a `cua runtime use` or a first `cua install`
 // takes effect on the next connection without restarting an agent), claims run/<sessionId> (src/runtime/run-dir.mjs),
-// starts the connection's secrets broker (unless secrets are off or the Keychain helper is not built), builds the
+// resolves the secret store (src/secrets/store.mjs: $HOME/.config/claude-secrets, unless secrets are off), builds the
 // launch for the enabled surfaces (CUA_SHIM_SURFACES) with their trusted services registered (src/services/sky.mjs for
-// computer use, src/services/browser.mjs for the browser) and the broker's endpoint and token (or the reason there is
-// no broker) in its environment, spawns the runtime in an owned working directory, and serves `input`/`output` through
+// computer use, src/services/browser.mjs for the browser) and the store's directory (or the reason there is none) in
+// its environment, spawns the runtime in an owned working directory, and serves `input`/`output` through
 // `createServer` until EOF, a transport loss, a failure or `close(reason)`. With the browser surface, profiles_list
 // reads $CUA_HOME's profile registry and, when a profile is bound, checks it against the live backends with one bounded
 // listing launch (inventory.mjs, no tab counts); the connection's close waits for such a listing.
 //
-// Before `closed` settles, everything the connection created is released: the broker, the session's app-approval file
-// the runtime wrote, and its run entries. `closed` resolves (never rejects) {code, reason, completion, teardown, secrets,
-// listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed or a release step
+// Before `closed` settles, everything the connection created is released: the session's app-approval file the runtime
+// wrote, and its run entries. `closed` resolves (never rejects) {code, reason, completion, teardown, listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed or a release step
 // failed), and `listingLeftover`
 // says a readiness listing's runtime could not be confirmed stopped. An open that fails rejects with the error (its
 // `code` classified) after releasing whatever it had taken.
 //
-// `keychainHelper` is the located helper and `prepareLaunch` may adjust the launch record; both exist for tests and the
-// opt-in live probes (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and are not
-// reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
-// arch}, the process's by default: which pin resolves, the host notes, and on Linux no secrets backend) and
+// `prepareLaunch` may adjust the launch record; it exists for tests and the opt-in live probes
+// (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and is not reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
+// arch}, the process's by default: which pin resolves and the host notes) and
 // `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
 // only. `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it).
@@ -32,25 +30,22 @@ import {spawnUpstream} from './upstream.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
-import {locateHelper} from '../secrets/helper.mjs';
-import {openSecrets} from '../secrets/broker.mjs';
+import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
 
 const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
-const NO_BROKER = {close: async () => ({confirmed: true, steps: []})};
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   settings = settingsFrom(env, {platform: host.platform}), diagnostics = line => process.stderr.write(`cua serve: ${line}\n`),
-  keychainHelper = locateHelper({home}), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}), listBackends, onWithdrawn, probeUserns}) {
+  prepareLaunch = launch => launch, chrome = chromeFacts({host, env}), listBackends, onWithdrawn, probeUserns}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
   listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns});
   const claim = claimRunSession(home, sessionId);
-  let secrets = NO_BROKER;
   let launch;
   let listingLeftover = false;
 
@@ -67,7 +62,6 @@ export async function openConnection({home, env = process.env, sessionId, input,
         diagnostics(`${what} failed at close (${error.code ?? error.message}); left in place`);
       }
     };
-    await step('stopping the secrets broker', () => secrets.close());
     if (launch) await step('removing the session\'s approval file', () => rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true}));
     await step('removing the run entries', () => {
       const leftovers = claim.release();
@@ -78,11 +72,11 @@ export async function openConnection({home, env = process.env, sessionId, input,
 
   let server;
   try {
-    secrets = await openSecrets({enabled: secretsEnabled, helper: keychainHelper, home, sessionId, ambient: env, diagnostics, host});
+    const secrets = connectionSecrets({enabled: secretsEnabled, env});
     launch = prepareLaunch(buildLaunch({
       runtime, home, sessionId, ambient: env, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
-      broker: secrets.broker, secretsUnavailable: secrets.unavailable?.code,
+      secretsDir: secrets.dir, secretsUnavailable: secrets.unavailable?.code,
     }));
     assertSandboxFits(sandbox, launch);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});

@@ -4,7 +4,7 @@
 //
 // `createServer` is the connection over any newline-delimited stream pair: stdio for `cua serve` below, a stream pair
 // fed from HTTP for the agent (src/mcp/http.mjs). What a connection takes and releases around it (runtime, run entries,
-// broker) is src/mcp/connection.mjs, which imports this module as this module imports it; every use either way is
+// secrets store directory) is src/mcp/connection.mjs, which imports this module as this module imports it; every use either way is
 // inside a function body, so the cycle is evaluation-order safe.
 //
 // Routing rules:
@@ -23,13 +23,13 @@
 //   is the gate before profile selection: only a ready profile's instance id is handed out, and a profile with no live
 //   host reads host_not_live with the wake step. A selection that fails later (the host exited after profiles_list)
 //   fails closed inside the REPL with the vendor's own error; the host notes send the agent back to profiles_list.
-// - secrets_list asks the connection's secrets provider (its private broker, src/secrets/broker.mjs) for labels; it
-//   never sees a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
+// - secrets_list asks the connection's secrets provider (the file store, src/secrets/store.mjs) for its keys; it never
+//   reads a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
 //   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
 // On EOF or a signal the connection becomes terminal (Closing), makes a bounded best-effort completion, then tears
-// down the owned runtime and the secrets broker, concurrently and within the teardown budget, and writes any local
+// down the owned runtime within the teardown budget, and writes any local
 // reply still being computed (a profiles_list listing) before the MCP stream's final bounded flush. A failure
 // (completion uncertainty, runtime exit) does the same without the completion attempt.
 import {randomUUID} from 'node:crypto';
@@ -47,11 +47,8 @@ import {sandboxModeFrom, withSandbox} from '../runtime/sandbox.mjs';
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
 const COMPLETION_CODES = new Set(['completion_timeout', 'completion_failed']);
-const NOT_CONFIGURED = {
-  unavailable: {code: 'secrets_not_configured', message: 'secret storage is not configured for this server'},
-  close: async () => ({confirmed: true, steps: []}),
-};
-const LIST_CODES = new Set(['not_configured', 'disconnected', 'timeout', 'protocol', 'unauthorized', 'denied', 'locked', 'unavailable']);
+const NOT_CONFIGURED = {unavailable: {code: 'secrets_not_configured', message: 'secret storage is not configured for this server'}};
+const LIST_CODES = new Set(['unreadable']);
 const NO_PROFILES = {list: () => []};
 
 export function createServer({
@@ -296,14 +293,10 @@ export function createServer({
       const {completion} = failed ? {completion: 'failed'} : await lifecycle.close();
       lifecycle.abandon();
       tearingDown = true;
-      const [teardown, secretsTeardown] = await Promise.all([
-        upstream.terminate({budgetMs: teardownBudgetMs}),
-        secrets.close({budgetMs: teardownBudgetMs}),
-      ]);
+      const teardown = await upstream.terminate({budgetMs: teardownBudgetMs});
       abandonUpstream(lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing');
       if (!teardown.confirmed) diagnostics(`runtime teardown unconfirmed after ${teardown.steps.join(', ')}: ${teardown.reason ?? 'no reason given'}; owned processes may remain`);
       else if (teardown.steps.length > 1) diagnostics(`runtime teardown needed ${teardown.steps.slice(1).join(' then ')}; every owned process is gone`);
-      if (!secretsTeardown.confirmed) diagnostics(`secrets broker teardown unconfirmed after ${secretsTeardown.steps.join(', ')}: ${secretsTeardown.reason ?? 'no reason given'}`);
       if (completion !== 'none' && completion !== 'ended' && !failed) diagnostics(`task completion at close: ${completion}; native cleanup unconfirmed`);
       // A local reply still being computed is written before the final flush, so the flush's bound covers it too; after
       // it, nothing would drop it from a stream the client stopped reading. A readiness listing is bounded and always
@@ -311,8 +304,8 @@ export function createServer({
       await Promise.allSettled([...localReplies]);
       await flush();
       input.destroy?.();
-      const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && secretsTeardown.confirmed && (completion === 'none' || completion === 'ended');
-      const result = {code: clean ? 0 : 1, reason, completion, teardown, secrets: secretsTeardown};
+      const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && (completion === 'none' || completion === 'ended');
+      const result = {code: clean ? 0 : 1, reason, completion, teardown};
       resolveClosed(result);
       return result;
     })();
@@ -339,9 +332,9 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // fails before anything else; then $CUA_HOME/run is swept of sessions whose owning process is gone, the signal handlers
 // go in, and the connection opens and serves until EOF or a signal. The connection's close waits for a readiness
 // listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime
-// teardown, or a listing's, could not be confirmed. Returns the exit code. `keychainHelper`, `prepareLaunch`, `chrome`
-// and `listBackends` are openConnection's seams, forwarded unchanged.
-export async function serve({home, env = process.env, input = process.stdin, output = process.stdout, keychainHelper,
+// teardown, or a listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome` and `listBackends`
+// are openConnection's seams, forwarded unchanged.
+export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
   prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends}) {
   const settings = settingsFrom(env);
   try {
@@ -359,7 +352,7 @@ export async function serve({home, env = process.env, input = process.stdin, out
   let result;
   try {
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
-      keychainHelper, prepareLaunch, chrome, listBackends});
+      prepareLaunch, chrome, listBackends});
     if (signalled) connection.close('signal');
     result = await connection.closed;
   } finally {

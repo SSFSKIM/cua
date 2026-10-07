@@ -1,6 +1,6 @@
-// Secret labels: [A-Za-z0-9][A-Za-z0-9._-]{0,127}, the same rule the Keychain helper enforces (native/keychain,
-// Label.swift). A label names a stored secret; it is metadata, never a value.
-export const LABEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-export const LABEL_RULE = "labels are 1-128 letters, digits, '.', '_' or '-', starting with a letter or digit";
+// Secret keys: [A-Za-z_][A-Za-z0-9_]*, the grammar of the doperpowers `secrets` mod (hooks/mods/secrets.tsx), whose
+// store this is (src/secrets/store.mjs). A key names a stored secret and its file; it is metadata, never a value.
+export const LABEL_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const LABEL_RULE = "keys are letters, digits and '_', not starting with a digit (as /secret KEY takes them)";
 
 export const isLabel = label => typeof label === 'string' && LABEL_PATTERN.test(label);

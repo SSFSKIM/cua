@@ -43,9 +43,9 @@ const LINUX_END_TASK_TOOL = {...END_TASK_TOOL, _meta: {'anthropic/searchHint': '
 
 export const SECRETS_LIST_TOOL = {
   name: 'secrets_list',
-  description: 'List the labels of the secrets the user stored for computer-use input (with `cua secrets set`), never '
-    + 'their values. Returns status "ok" with labels, or status "unavailable"/"error" with a code when secret storage '
-    + 'cannot be used on this connection. To enter a secret the user has authorized, pass exactly "{{secret:<label>}}" '
+  description: 'List the keys of the secrets the user stored for computer-use input (with /secret KEY in Claude Code or '
+    + '`cua secrets set KEY`), never their values. Returns status "ok" with labels (the keys), or status "unavailable"/"error" '
+    + 'with a code when secret storage cannot be used on this connection. To enter a secret the user has authorized, pass exactly "{{secret:<label>}}" '
     + 'as the whole text of typeText or paste, or the whole value of setValue: the stored value is substituted outside '
     + 'your code and never returned. Anywhere else the marker is not expanded.',
   inputSchema: NO_ARGUMENTS,
@@ -59,14 +59,11 @@ const SECRETS_LIST_BROWSER_TOOL = {
   description: SECRETS_LIST_TOOL.description.replace('or the whole value of setValue:', 'or the whole value of setValue or of a Chrome tab\'s locator.fill:'),
 };
 
-// On Linux there is no secrets backend (src/secrets/broker.mjs): the tool stays, so the surface is the same everywhere,
-// but says that secrets are unavailable rather than teaching references the platform refuses.
-const LINUX_SECRETS_LIST_TOOL = {
-  ...SECRETS_LIST_TOOL,
-  description: 'List the labels of stored secrets for computer-use input. On this platform cua has no secrets backend, so '
-    + 'it returns status "unavailable" with code "secrets_unsupported_platform", and secret references in input are '
-    + 'refused; ask the user to type such values themselves.',
-};
+// On Linux setValue does not exist (the vendor's Linux client sends paste as type_text), so the reference is taught
+// for typeText and paste only.
+const withoutSetValue = tool => ({...tool, description: tool.description.replace('the whole value of setValue or of', 'the whole value of').replace(', or the whole value of setValue', '')});
+const LINUX_SECRETS_LIST_TOOL = withoutSetValue(SECRETS_LIST_TOOL);
+const LINUX_SECRETS_LIST_BROWSER_TOOL = withoutSetValue(SECRETS_LIST_BROWSER_TOOL);
 
 export const PROFILES_LIST_TOOL = {
   name: 'profiles_list',
@@ -89,19 +86,23 @@ export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
 const TITLE = 'Host notes:';
 const COMPUTER_HEAD = '- Use this when a macOS app\'s GUI is the only way; the first js call returns the API document.';
 const BROWSER_HEAD = '- Use this for the user\'s existing Chrome profiles when no API or skill fits; the first js call returns the API document.';
+// The store is a plain directory any cell can read under every sandbox mode (the vendor's read-deny would bind the
+// trusted worker too); the rule keeps the agent on the reference.
+const SECRETS_NOTE = '- Never read ~/.config/claude-secrets; type secrets as {{secret:KEY}}.';
 const GENERAL_NOTES = [
   '- Call end_task as soon as the task is done, before your final reply. If it errors, report it; the connection is spent.',
   '- One controller per task, one js call at a time.',
   '- Observe, act, verify: a call returning is not success. If the state is unchanged, stop and find out why rather than repeat.',
   '- Batch deterministic steps. Wait for a visible readiness condition in a bounded poll, not a fixed delay.',
-  '- Cancelling does not stop a running cell; its timeout_ms does.',
+  '- Cancelling never stops a running cell; its timeout_ms does.',
+  SECRETS_NOTE,
 ];
 const COMPUTER_NOTES = [
   '- Apps ask the user for approval once per connection; report a declined app, do not retry.',
-  '- Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier); role names are in the system language.',
-  '- After quitting an app, drop its handle: getAXState() on it relaunches it.',
+  '- Prefer element indexes from accessibility text; coordinates are screenshot pixels (apply the host\'s downscale); role names are in the system language.',
+  '- Drop a quit app\'s handle: getAXState() on it relaunches it.',
   '- typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
-  '- If REPL state is confused, js_reset and rebind the app; never also drive it via osascript.',
+  '- If REPL state is confused, js_reset and rebind the app; never also use osascript.',
 ];
 // The Chrome rules. A failed selection sends the agent back to profiles_list: the vendor's own error for an id that is
 // not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
@@ -110,11 +111,11 @@ const COMPUTER_NOTES = [
 // waits and playwright.evaluate at 3 s (a per-call timeoutMs can only shorten it), and a cell timeout resets the
 // kernel, losing the tab handle.
 const BROWSER_NOTES = [
-  '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user: ask.',
-  '- Chrome tabs are DOM-only: act through tab.playwright locators, not native typeText/click. Press keys on a focusable element, never a frame body; tab.cua.type pastes, sending no keys.',
+  '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user.',
+  '- Chrome tabs are DOM-only: use tab.playwright locators, not native typeText/click. Press keys on a focusable element, never a frame body; tab.cua.type pastes.',
   '- Locator actions, waits and evaluate stop at 3 s (timeoutMs can only shorten it); to wait longer, loop short waits to your own deadline under a larger js timeout_ms.',
   '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
-  '- createBrowserTab can take 60 s: give that js call timeout_ms of at least 60000; after a timeout a tab may still have opened: tell the user, do not retry. If the profile had no other window, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
+  '- createBrowserTab can take 60 s: give its js call timeout_ms of at least 60000; after a timeout a tab may still have opened: tell the user, don\'t retry. In a profile with no other window, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
 ];
 
 // The computer surface on Linux (Phase F) differs where the vendor's Linux target does: apps are bound by X11 window,
@@ -131,9 +132,9 @@ const LINUX_COMPUTER_HEAD = '- Use this when a Linux app\'s GUI is the only way;
 const LINUX_COMPUTER_NOTES = [
   '- Bind by window: cua.getApp({windowId}) with an id from listWindows().',
   '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
-  '- Prefer element indexes from the accessibility text; coordinates are screenshot pixels (apply the host\'s downscale multiplier).',
+  '- Prefer element indexes from accessibility text; coordinates are screenshot pixels (apply the host\'s downscale).',
   '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
-  '- If REPL state is confused, js_reset and rebind the window from listWindows().',
+  '- If REPL state is confused, js_reset and rebind the window.',
 ];
 
 export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
@@ -165,7 +166,7 @@ export function modelTools(upstreamTools, {surfaces = ['computer'], platform = p
   const linux = platform === 'linux';
   const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   return surfaces.includes('browser')
-    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
+    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_BROWSER_TOOL : SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
     : [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_TOOL];
 }
 

@@ -2,7 +2,7 @@
 // there, under a fresh random session ID:
 //   run/<session>.pid    the claiming process's pid: written first, removed last
 //   run/<session>/       the runtime's working directory; its JavaScript cells may write in it, so the record sits beside it
-//   run/<session>.sock   the connection's secrets broker endpoint (src/secrets/broker.mjs), when it has one
+//   run/<session>.sock   only from a cua before issue #66 (its secrets broker endpoint): removed with its session
 // The owner removes them when it closes, and a process exit cua does not handle in order (an uncaught error, a crash)
 // still removes them through an exit hook. A process killed outright (SIGKILL, a client killing its process group)
 // cannot; the sweep removes every session whose recorded owner is no longer alive, at `cua serve` start and in
@@ -25,12 +25,12 @@ function exists(path) {
 }
 
 // Removes a session's entries, the record last and only once nothing else of the session remains (a later sweep
-// retries what is left). `socket: false` leaves the endpoint to its broker, which removes only the socket it created.
-function removeSession(run, sessionId, {socket = true} = {}) {
+// retries what is left).
+function removeSession(run, sessionId) {
   const errors = [];
   const sock = join(run, `${sessionId}.sock`);
   const dir = join(run, sessionId);
-  if (socket && isSocket(sock)) try { rmSync(sock, {force: true}); } catch (error) { errors.push(`${sock}: ${error.code ?? 'error'}`); }
+  if (isSocket(sock)) try { rmSync(sock, {force: true}); } catch (error) { errors.push(`${sock}: ${error.code ?? 'error'}`); }
   try { rmSync(dir, {recursive: true, force: true}); } catch (error) { errors.push(`${dir}: ${error.code ?? 'error'}`); }
   if (!exists(sock) && !exists(dir)) try { rmSync(join(run, `${sessionId}.pid`), {force: true}); } catch (error) { errors.push(`${sessionId}.pid: ${error.code ?? 'error'}`); }
   return errors;
@@ -44,8 +44,7 @@ function hookExit() {
 }
 
 // Claims `sessionId` for this process, creating run/ if needed. `release()` removes the session's working directory
-// and then its record, leaving the socket to the broker's own close (a socket still there keeps the record, so the
-// sweep removes both once this process is gone).
+// and then its record.
 export function claimRunSession(home, sessionId) {
   const {run} = homeLayout(realHome(home));
   mkdirSync(run, {recursive: true, mode: 0o700});
@@ -55,7 +54,7 @@ export function claimRunSession(home, sessionId) {
   return {
     release: () => {
       claims.delete(sessionId);
-      return removeSession(run, sessionId, {socket: false});
+      return removeSession(run, sessionId);
     },
   };
 }

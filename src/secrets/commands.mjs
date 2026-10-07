@@ -1,61 +1,76 @@
-// `cua secrets set|list|remove`: thin routes to the Keychain helper. set and remove give the helper the user's
-// terminal (it reads the hidden value, or the removal confirmation, itself); only the label, and --yes for remove, is
-// ever passed. list reads the helper's label JSON. No route takes, prints or returns a value.
-import {spawn, execFile} from 'node:child_process';
-import {constants} from 'node:os';
+// `cua secrets set|list|remove` on the secret store (src/secrets/store.mjs), the directory `/secret KEY` in Claude Code
+// writes. set reads the value at a masked prompt on this terminal (nothing is echoed; typed twice) and writes the file
+// 0600; remove asks for confirmation at the terminal unless --yes. Only the key is ever an argument. No route takes,
+// prints or returns a value, and a value read at the prompt is never put in an error.
 import {CuaError, fail} from '../runtime/errors.mjs';
-import {locateHelper, BUILD_HINT} from './helper.mjs';
-import {UNSUPPORTED_PLATFORM} from './client.mjs';
+import {fileStore, storeDir, SecretStoreError} from './store.mjs';
 
-const HELPER_ENV_KEYS = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TERM'];
-const helperEnv = (ambient = process.env) => {
-  const env = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin'};
-  for (const key of HELPER_ENV_KEYS) if (typeof ambient[key] === 'string') env[key] = ambient[key];
-  return env;
-};
+export const PREFERRED_ENTRY = 'in Claude Code with the doperpowers secrets mod, /secret KEY stores a secret in the same file (preferred)';
 
-// The helper on this terminal. While it runs, terminal signals are its to handle: this process ignores them so it
-// cannot exit and leave the helper holding the terminal.
-export function runInteractive(path, args) {
-  const ignored = ['SIGINT', 'SIGQUIT', 'SIGTSTP'];
-  const ignore = () => {};
-  for (const signal of ignored) process.on(signal, ignore);
+// Reads one line from a terminal without echo. Resolves the line, or null when the user cancels (Ctrl-C, Ctrl-D on an
+// empty line, Escape). Backspace edits; any other control character is ignored, so the value is printable text.
+export function readHidden({input = process.stdin, output = process.stderr, prompt}) {
+  output.write(prompt);
   return new Promise(resolve => {
-    const child = spawn(path, args, {stdio: 'inherit', env: helperEnv()});
-    child.once('error', () => resolve(1));
-    child.once('exit', (code, signal) => resolve(code ?? 128 + (constants.signals[signal] ?? 0)));
-  }).finally(() => { for (const signal of ignored) process.off(signal, ignore); });
+    const wasRaw = input.isRaw;
+    input.setRawMode(true);
+    input.setEncoding('utf8');
+    input.resume();
+    let value = '';
+    const finish = result => {
+      input.off('data', onData);
+      input.setRawMode(wasRaw ?? false);
+      input.pause();
+      output.write('\n');
+      resolve(result);
+    };
+    const onData = chunk => {
+      for (const char of chunk) {
+        if (char === '\r' || char === '\n') return finish(value);
+        if (char === '\u0003' || char === '\u001b' || (char === '\u0004' && value === '')) return finish(null);
+        if (char === '\u007f' || char === '\b') { value = [...value].slice(0, -1).join(''); continue; }
+        if (char < ' ') continue;
+        value += char;
+      }
+    };
+    input.on('data', onData);
+  });
 }
 
-export function runCaptured(path, args) {
-  return new Promise(resolve => execFile(path, args, {env: helperEnv(), encoding: 'utf8', timeout: 30_000}, (error, stdout, stderr) =>
-    resolve({code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: stdout ?? '', stderr: stderr ?? ''})));
-}
+const storeErrorToCua = error => (error instanceof SecretStoreError ? new CuaError(error.code === 'not_found' ? 'secret_not_found' : `secret_${error.code}`, error.message) : error);
 
-function builtHelper(helper) {
-  if (!helper.built) fail('helper_not_built', `the Keychain helper is not built (${helper.path})`, {hint: BUILD_HINT});
-  return helper.path;
-}
-
-export async function runSecrets({command, label, yes = false, json = false, host = {platform: process.platform}}, {
-  helper = locateHelper(), interactive = runInteractive, captured = runCaptured,
+export async function runSecrets({command, label, yes = false, json = false}, {
+  store = fileStore({dir: storeDir()}), terminal = {input: process.stdin, output: process.stderr}, readLine = readHidden,
   print = value => process.stdout.write(typeof value === 'string' ? value + '\n' : JSON.stringify(value, null, 2) + '\n'),
   note = line => process.stderr.write(line + '\n'),
 } = {}) {
-  if (host.platform !== 'darwin') fail(UNSUPPORTED_PLATFORM, `cua has no secrets backend on ${host.platform}: the Keychain helper is macOS only`, {hint: 'secret references are refused on this platform; type such values yourself'});
-  const path = builtHelper(helper);
-  if (command === 'set') return interactive(path, ['set', label]);
-  if (command === 'remove') return interactive(path, ['remove', label, ...(yes ? ['--yes'] : [])]);
-  const result = await captured(path, ['list']);
-  if (result.code !== 0) {
-    const [, message, code] = result.stderr.trim().split('\n').pop()?.match(/^cua-keychain: (.*) \[([a-z_]+)\]$/) ?? [];
-    throw new CuaError(code ?? 'helper_failed', message ?? `the Keychain helper failed (exit ${result.code})`);
+  if (command === 'set') {
+    if (!terminal.input.isTTY || typeof terminal.input.setRawMode !== 'function')
+      fail('no_terminal', 'secrets set reads the secret at a terminal, and standard input is not one; nothing was stored', {hint: `run it in a terminal; ${PREFERRED_ENTRY}`});
+    const first = await readLine({...terminal, prompt: `secret for ${label} (not shown): `});
+    if (first === null) { note('cancelled; nothing was stored'); return 130; }
+    if (first === '') fail('empty_secret', 'the secret was empty; nothing was stored');
+    const second = await readLine({...terminal, prompt: 'again, to confirm: '});
+    if (second === null) { note('cancelled; nothing was stored'); return 130; }
+    if (second !== first) fail('secret_mismatch', 'the two entries differ; nothing was stored');
+    const path = await store.write(label, first);
+    note(`stored ${label} in ${path} (mode 0600)`);
+    return 0;
+  }
+  if (command === 'remove') {
+    if (!yes) {
+      if (!terminal.input.isTTY || typeof terminal.input.setRawMode !== 'function')
+        fail('no_terminal', 'secrets remove confirms at a terminal, and standard input is not one; pass --yes to remove without asking; nothing was removed');
+      const answer = await readLine({...terminal, prompt: `remove secret ${label}? [y/N] `});
+      if (!['y', 'yes'].includes(answer?.toLowerCase())) { note('not confirmed; nothing was removed'); return 1; }
+    }
+    try { note(`removed ${label} (${await store.remove(label)})`); } catch (error) { throw storeErrorToCua(error); }
+    return 0;
   }
   let labels;
-  try { labels = JSON.parse(result.stdout).labels; } catch {}
-  if (!Array.isArray(labels)) fail('helper_failed', 'the Keychain helper printed an unreadable label list');
+  try { labels = await store.list(); } catch (error) { throw storeErrorToCua(error); }
   if (json) print({ok: true, labels});
   else if (labels.length) print(labels.join('\n'));
-  else note('no secrets are stored');
+  else note(`no secrets are stored in ${store.dir}`);
   return 0;
 }

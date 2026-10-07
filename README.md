@@ -22,9 +22,7 @@ remote control in `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`
   runtime through LaunchServices). macOS asks on first use; `cua doctor` cannot see these grants and reports them as
   `blocked` until a live run shows them. Where ChatGPT's Computer Use already runs, its compatible helper serves this
   runtime too and is reused as it is, never stopped or replaced.
-- For secrets only: Swift (Xcode or its command-line tools) to build the Keychain helper with `npm run build:helper`
-  from a checkout; the build installs it into `CUA_HOME`, where the plugin finds it too.
-  Native control needs no account: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read
+- Native control needs no account: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read
   from ChatGPT.app or `~/.codex`.
 - For Chrome only: Google Chrome with OpenAI's Chrome extension (`hehggadaopoacecdllhhajmbjkdcmajg`) installed and
   enabled in each profile you want to use, and a Codex login of the server's own (`cua login`, once). cua never installs
@@ -34,19 +32,16 @@ A clean Mac without ChatGPT installed has been shown, in a macOS 27 VM (`docs/ev
 There, the pinned helper started from cua's release tree, macOS asked for Accessibility and Screen Recording on the
 helper's behalf once, the native slice passed (`accept-native` items 1 and 3–8, with item 2 shown by the download
 installs and item 9 BLOCKED by design), and the Chrome acceptance passed C1–C7. The helper first shows its own "Enable
-ChatGPT Computer Use" window, which lists the permissions. Not yet shown, and a release gate rather than a defect:
-stable Developer ID signing of the Keychain helper (see Acceptance).
+ChatGPT Computer Use" window, which lists the permissions.
 
 ## Install
 
 From a checkout (or after `npm link`, the same commands as `cua`):
 
 ```sh
-npm test                                   # Node only; no Swift, runtime, GUI, network or credentials
+npm test                                   # Node only; no runtime, GUI, network or credentials
 node bin/cua.mjs install                   # or: install --archive <ChatGPT-darwin-arm64-26.928.40906.zip>
 node bin/cua.mjs doctor                    # --json for the structured checks; exit 1 when one fails
-npm run build:helper && npm run test:helper    # only for secrets: build the Swift Keychain helper (installed as
-                                               # $CUA_HOME/bin/cua-keychain), then test it
 ```
 
 `cua install` is idempotent for a verified release and never repairs one in place; `cua runtime use <release>`
@@ -69,11 +64,8 @@ The plugin runs `node cua-shim.mjs`, which is `cua serve`. Then allow the tools 
 prompt: `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next
 section. This repository is the plugin's source of truth.
 
-The plugin's copy of cua has no Keychain helper build of its own, so for secrets build it once from a checkout with
-`npm run build:helper` (Swift needed). The build installs the helper as `$CUA_HOME/bin/cua-keychain`, and every copy
-of cua using that `CUA_HOME` (the plugin's included) runs it from there. Use the same `CUA_HOME` for the build as the
-plugin's server (both default to `~/Library/Application Support/cua`), and run the build again after the helper's
-sources change. `cua doctor`'s `secrets.helper` row names the helper it found and where.
+Secrets need nothing extra: every copy of cua, the plugin's included, reads the same store in your home directory
+(see Secrets).
 
 ### As a plain MCP server (any host)
 
@@ -137,7 +129,7 @@ API. The server adds host notes to the server instructions covering what that do
 task (see Operating guidance for agents) and the native quirks (one approval per app, index-first addressing,
 dropping an app handle after quitting it, `typeText` and emoji, and so on).
 
-The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (the labels of your
+The model sees four tools: `js` and `js_reset` (OpenAI's own), `end_task`, and `secrets_list` (the keys of your
 stored secrets, never values; see Secrets). Calls on one connection form a task until the model calls `end_task`, which waits for
 running JavaScript and then has the runtime complete the task. The plugin no longer installs `Stop`/`SubagentStop`
 hooks for this; if completion cannot be confirmed, the connection fails closed and stops its runtime, and native
@@ -170,45 +162,51 @@ any other shape (a cookie value, a header, a token in page text, a password type
 in an image, and JSON-RPC error replies pass unchanged, and nothing the agent sends is rewritten. In the other
 direction, URL-like text that is not a URL (`x?key=1` in code or prose; a `&` or `?` after a space starts no
 parameter) is rewritten too. Keep secrets out of
-results with `{{secret:<label>}}` (see Secrets) and by asking for focused reads.
+results with `{{secret:<KEY>}}` (see Secrets) and by asking for focused reads.
 
 ## Secrets
 
-Credentials live in your login Keychain (service `cua.secrets`, one item per label), managed by a small Swift helper
-built from `native/keychain`:
+Secrets are plain files, one value per file, in the directory the doperpowers `secrets` mod uses:
+`~/.config/claude-secrets/<KEY>` (file mode 0600, directory 0700; `$HOME` decides where `~` is). A KEY is letters,
+digits and `_`, not starting with a digit. One store serves cua on macOS and Linux, locally and through the remote
+agent, and any other tool that reads that directory.
+
+The preferred way to store one is `/secret KEY` in Claude Code with the doperpowers `secrets` mod: it opens a masked
+field, writes the file, and keeps the value out of the model's view of tool output. Without the mod, cua does the same
+at a terminal:
 
 ```sh
-npm run build:helper                 # needs Swift (Xcode or its command-line tools)
-node bin/cua.mjs secrets set work-password     # typed hidden, twice, at your terminal
-node bin/cua.mjs secrets list                  # labels only
-node bin/cua.mjs secrets remove work-password  # asks for confirmation; --yes skips it
+node bin/cua.mjs secrets set WORK_PASSWORD     # typed twice at a masked prompt, nothing echoed
+node bin/cua.mjs secrets list                  # keys only
+node bin/cua.mjs secrets remove WORK_PASSWORD  # asks for confirmation; --yes skips it
 ```
 
-A value is only ever typed at the terminal: `set` refuses arguments, flags, environment and piped input, and nothing
-prints or exports a value. Labels are 1-128 letters, digits, `.`, `_` or `-`, starting with a letter or digit. Each
-server connection runs its own private broker (`cua-keychain broker`) that hands values only to trusted code holding
-that connection's random token; `secrets_list` lists labels through it.
+A value is only ever typed at a terminal: `set` refuses arguments, flags and piped input, and nothing prints or
+exports a value. `secrets_list` lists the keys (the names of the store's 0600 files that follow the KEY rule).
 
-To have the agent enter a stored secret, authorize it to use the label; it then passes the exact reference
-`{{secret:<label>}}` as an input argument:
+To have the agent enter a stored secret, authorize it to use the key; it then passes the exact reference
+`{{secret:<KEY>}}` as an input argument:
 
 | `cua` API call | runtime command | expanded field |
 |---|---|---|
 | `app.paste(text)` (text format) | `paste` | the whole `text` |
-| `app.typeText(text)` | `type_text` | the whole `text` |
+| `app.typeText(text)` | `type_text` | the whole `text` (on Linux also `app.paste`, which the vendor sends as `type_text {window, text}`) |
 | `app.setValue(index, value)` | `set_value` | the whole `value` |
 | Chrome tab `tab.playwright.<locator>.fill(value)` | `playwright_locator_fill` | the whole `value` |
 | Chrome tab accessibility paste/type/set-value action | `tab_ax_action` | the whole `text` (paste, type_text) or `value` (set_value) |
 
 The substitution happens inside the runtime's trusted service process (`src/services/sky.mjs`, and
 `src/services/browser.mjs` for Chrome), after the agent's
-code and the MCP call have passed: the value comes from the connection's broker and goes only to the native input
-command, never into the agent's code, the tool result or an error. Only an argument that is entirely one reference
-expands; text that merely contains `{{secret:…}}`, any other method or field, and JavaScript strings in general are
-left alone. A reference fails before anything is entered, with a value-free error code, when its label is invalid or
-unknown, the Keychain is locked or denies access, secrets are off (`CUA_SHIM_SECRETS=off`: `secrets_disabled`) or
-unavailable (helper not built, broker gone: `secrets_unavailable`), or the command is not in its pinned shape
-(`unsupported_secret_shape`). If the native command fails after substitution, the error is a fixed diagnostic
+code and the MCP call have passed: the trusted service reads the file (from the store directory `cua serve` resolved
+from its own `$HOME`) and hands the value only to the native input command, never to the agent's code, the tool
+result or an error. Only an argument that is entirely one reference expands; text that merely contains `{{secret:…}}`,
+any other method or field, and JavaScript strings in general are left alone. A reference fails before anything is
+entered, with a value-free error code, when its key is invalid (`invalid_secret_label`) or unknown
+(`secret_not_found`), its file is not a regular file owned by you with mode 0600 (`secret_not_regular_file`,
+`secret_wrong_owner`, `secret_insecure_mode`: cua never reads such a file; `chmod 600` it), is over 256 KiB or not
+UTF-8 text (`secret_too_large`, `secret_unsupported_value`) or cannot be read (`secret_unreadable`), secrets are off
+(`CUA_SHIM_SECRETS=off`: `secrets_disabled`), or the command is not in its pinned shape (`unsupported_secret_shape`).
+Exactly one trailing newline is dropped from a file's contents, so a file written with `echo` works. If the native command fails after substitution, the error is a fixed diagnostic
 (`secret_input_failed`, with the runtime's error name when it is one of its fixed codes); the runtime's own message is
 withheld because it can contain the value, and the input may have been partly entered.
 
@@ -222,15 +220,18 @@ OpenAI's pinned browser service version (`unsupported_browser_runtime` otherwise
 every other browser command are never scanned. A failed `locator.fill` makes the vendor's client read back
 diagnostics of the matched elements (tag, role, type, label, text; not the input's value).
 
-cua runs the helper installed at `$CUA_HOME/bin/cua-keychain` when there is one, else this checkout's build output,
-`native/keychain/.build/release/cua-keychain`; `npm run build:helper` writes both, the installed one being a copy of the
-build with the same signature. Nothing else (in particular not the generic `security` tool) is ever used in its place.
-A locally built helper is ad-hoc signed, and Keychain items trust the exact helper that created them: after a rebuild,
-macOS may ask whether the new helper may use them. Signing with a stable identity avoids that on one machine (`npm run
-build:helper -- --sign "Apple Development: …"`); a distributable release needs a Developer ID Application signature,
-which is not set up yet. `cua doctor` reports the helper's build and signature as `secrets.helper` (which also names
-where it found the helper) and `secrets.signing`: not built, ad-hoc or Apple Development is `blocked`, a stale protocol
-or broken signature `fail`, Developer ID `pass`.
+**What the store does not protect against.** The store is as private as your account: any process running as you can
+read it, and that includes the agent's JavaScript cells. Under every sandbox mode cells read everywhere your account
+can (the vendor's sandbox can deny a directory, but the same profile binds the trusted service that must read the
+value, so cua cannot deny the store to cells alone; measured, Decision Log 2026-10-07). This is the same exposure as
+Bash in Claude Code, where the mod's guard (not a sandbox) keeps the model from reading the directory; cua's host
+notes tell the agent never to read it. The guarantee is narrower and holds: the agent works with keys, and trusted
+code fills the value in.
+
+`cua doctor`'s `secrets.store` row reports the store from metadata only: `blocked` while nothing is stored, `fail`
+for a directory open to others or a key file cua would refuse (named by key), `pass` with the number of keys.
+Until issue #66 the store was the macOS login Keychain behind a Swift helper and a per-connection broker; both are
+gone, and Keychain items stored by older versions are not read (store them again with `/secret` or `cua secrets set`).
 
 ## Chrome (browser surface)
 
@@ -481,8 +482,7 @@ and relay) is `docs/evidence/2026-10-06-phase-e-remote-acceptance.md`.
 one on the screen cannot receive input or render screenshots, so the agent refuses `js` and `js_reset` there with the
 tool error `console_locked` ("the Mac's screen is locked or the session is not on the console; unlock it and retry"),
 and `cua doctor`'s `agent.console` row reads `fail`. A sleeping Mac drops its relay connection (clients get
-`503 device offline`) or stops answering on its address. Secrets need the same, since the login Keychain locks with
-the screen. Whether to leave a Mac unlocked and unattended is your call; cua only names the state.
+`503 device offline`) or stops answering on its address. Whether to leave a Mac unlocked and unattended is your call; cua only names the state.
 
 ### 1. Enrol the Mac
 
@@ -528,7 +528,7 @@ Mac is enrolled with a relay and `--http <host:port>` when given; with neither i
 It starts at login, is restarted after a crash but not after a deliberate stop, logs to `$CUA_HOME/state/agent.log`,
 and its environment carries `CUA_HOME` (when set), `CUA_SHIM_SURFACES` (default `computer,browser`) and each of the
 agent's settings (`CUA_AGENT_*`, below) set in the environment `install` runs in. Running `install` again replaces the
-job. A GUI-session job is the point: TCC grants, the login Keychain and the screen belong
+job. A GUI-session job is the point: TCC grants and the screen belong
 to that session. It can be installed over SSH while you are logged in at the Mac (the job still runs in your GUI
 session), but a first-use permission prompt needs someone at the screen. The relay path needs the `ws` package: run `npm ci` in the checkout,
 or `install` refuses with `relay_unavailable`.
@@ -748,10 +748,10 @@ lack of `DISPLAY`.
 - **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
   they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
   `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
-- **No secrets.** Linux has no secrets backend. `secrets_list` reports `secrets_unsupported_platform`, a
-  `{{secret:…}}` reference is refused with that code before anything is typed, and `cua secrets` exits 1.
-- **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows, and
-  `secrets.helper` reads `skip`.
+- **Secrets.** The same file store as on macOS (see Secrets): `secrets_list` lists `~/.config/claude-secrets`, and a
+  `{{secret:KEY}}` reference is substituted as the whole text of `typeText` or `paste` (both arrive as `type_text
+  {window, text}`). The typing caveat above applies: in a GTK3 text view the substituted `type_text` is what crashes.
+- **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows.
 - **Remote control.** `cua remote enroll`, `cua agent run` and the relay work as on macOS, and `cua agent install`
   runs the agent as a systemd user unit (below). The agent reads no console state on Linux: there is no portable
   screen-lock signal, so `console_locked` is never answered, and doctor's `agent.console` checks instead that the
@@ -932,7 +932,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
-| `CUA_SHIM_SECRETS` | `on` | `off` starts no secrets broker; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
+| `CUA_SHIM_SECRETS` | `on` | `off` hands the runtime no secret store; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
 | `CUA_SHIM_SANDBOX` | `scoped`; on Linux with the computer surface `disabled` (see Linux) | the sandbox node_repl applies to the runtime's JavaScript: `scoped` lets it write only its connection's run directory and `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
 
 cua sends node_repl a sandbox state, in the field Codex uses for it (`_meta["codex/sandbox-state-meta"]`), on every call
@@ -948,7 +948,8 @@ runtime's files under `$CUA_HOME` and cua's own trusted code (`src/services` and
 serves, where the trusted secret-substitution code lives), so model cells cannot plant code in a trusted root. Cells
 also have **no network**: `fetch`, sockets and DNS lookups fail (node_repl denies every connection from the kernel
 under this kind of profile, whatever the profile says about the network). cua's own channels do not need it: the
-native helper, the secrets broker and the Chrome extension are reached through node_repl's pipes.
+native helper and the Chrome extension are reached through node_repl's pipes. Reading everywhere includes the secret
+store (see Secrets).
 
 `scoped` places one requirement on where things live: `CUA_HOME` and the cua checkout must not be inside `$TMPDIR`
 (the per-user `/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of cua's

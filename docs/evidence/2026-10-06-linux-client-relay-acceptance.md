@@ -11,6 +11,9 @@ typed into TextEdit on the mini and read the text back, opened, read and closed 
 profile, and got a 45 s `js` result that was still running when the relay restarted. The mini's `run/` was clean after
 each session, and the client credential appears 0 times in the VM's transcripts.
 
+The steps below follow #53's run; each heading names the spec acceptance item it re-proves. Spec item 4 (an
+elicitation shown to a person, hook disabled) was not part of it.
+
 ## The client
 
 | | |
@@ -26,12 +29,12 @@ each session, and the client credential appears 0 times in the VM's transcripts.
 matching `cua_repl|plugin:cua:cua_repl` that runs `bash $HOME/.claude/hooks/cua-approve.sh`, a one-line `jq` that
 prints `{"hookSpecificOutput":{"hookEventName":"Elicitation","action":"accept","content":{}}}`. The VM got the same
 matcher and the same script (`jq` 1.7 was already installed); without it a headless `claude -p` cannot answer the
-first app approval. Proof it fired is on the mini (item 2).
+first app approval. Proof it fired is on the mini (step 2).
 
-Both legs went over the internet: the client to Caddy from the VM through the MacBook's NAT (Caddy saw it as
-`128.54.129.17`), the mini's WebSocket from its own address (`128.54.162.190`).
+Both legs went over the internet: Caddy saw the client (the VM, through the MacBook's NAT) and the mini's WebSocket
+arrive from two distinct public addresses, neither through the LAN.
 
-## Item 1: lifecycle by curl from the VM through Caddy — PASS (23:55:07 to 23:55:17)
+## Step 1 (spec item 1): lifecycle by curl from the VM through Caddy — PASS (23:55:07 to 23:55:17)
 
 A script on the VM read the URL and bearer from the 0600 file into a 0600 header file for `curl -H @file`, never
 printing it (curl 8.5.0):
@@ -65,10 +68,12 @@ HTTP 200
 HTTP 404
 ```
 
+The `initialize`-with-a-session-header `400` case of spec item 1 was not re-run (#53 did not run it either).
+
 During a 5 s hold the mini's `run/` held `513d0b65…` (directory, `.pid`, `.sock`) beside the owner's unrelated stdio
 `cua serve` `8dea2c54…`; after the `DELETE` only `8dea2c54…` remained, agent log `session 513d0b65…: closed (eof, code 0)`.
 
-## Items 2 and 3: native action and Chrome on the mini — PASS (23:57:58 to 23:58:48)
+## Steps 2 and 3 (spec item 6): native action and Chrome on the mini — PASS (23:57:58 to 23:58:48)
 
 One `claude -p` run (47.1 s, 12 turns, `claude-opus-5-5[1m]`); init `mcp_servers: [{"name":"cua_repl","status":"connected"}]`;
 11 tool calls, all on `cua_repl` (`js` ×9, `profiles_list`, `end_task`).
@@ -90,8 +95,10 @@ One `claude -p` run (47.1 s, 12 turns, `claude-opus-5-5[1m]`); init `mcp_servers
   session 512a14fe-…: elicitation/create 1 sent to the client
   session 512a14fe-…: elicitation/create 1 answered accept after 459 ms
   ```
+  The agent logs the count, not the question, and the client's stream-json does not carry elicitations, so which
+  approval each was (TextEdit's app approval, Chrome's, or the `github.com` origin) is not recorded.
 
-## Item 4: relay restart during a long `js` call — PASS (23:59:14 to 00:00:17)
+## Step 4 (spec item 6): relay restart during a long `js` call — PASS (23:59:14 to 00:00:17)
 
 `claude -p` made four calls on one session: a quick `js`, a `js` waiting 45 s (`timeout_ms` 120000), another quick
 `js`, `end_task`, each cell writing its timestamps with `nodeRepl.write`. A watcher on the MacBook polled the VM's
@@ -116,20 +123,20 @@ the cells' own timestamps:
 The client's stderr was empty and its init again showed `cua_repl` `connected`. As in #53 the model, seeing only
 results, reported that nothing showed a restart: the resume is invisible to it.
 
-## Item 5: `run/` clean on the mini after `end_task` — PASS
+## Step 5 (spec item 7's clean-up): `run/` clean on the mini after `end_task` — PASS
 
 `claude -p` sends no `DELETE` (Phase E Findings 3), so each run's ended session stayed in `run/` until deleted by hand
 from the VM, the same way #53 did:
 
 ```
-23:58:59 DELETE 512a14fe-5cd0-4b07-823f-3456107cf5d7 HTTP 200     # items 2–3; agent: closed (eof, code 0)
-00:01:07 DELETE 6a364fea-5337-44f2-9ee6-97a6502acfb2 HTTP 200     # item 4;   agent: closed (eof, code 0)
+23:58:59 DELETE 512a14fe-5cd0-4b07-823f-3456107cf5d7 HTTP 200     # steps 2–3; agent: closed (eof, code 0)
+00:01:07 DELETE 6a364fea-5337-44f2-9ee6-97a6502acfb2 HTTP 200     # step 4;   agent: closed (eof, code 0)
 ```
 
 After each, `run/` on the mini held only `8dea2c54…`, the owner's unrelated stdio `cua serve` from the main checkout
 (pid 65275, running 21 h 42 min).
 
-## Item 6: credential exposure on the client — PASS
+## Step 6 (spec item 2's exposure clause): credential exposure on the client — PASS
 
 Counted on the VM by a script that loaded each secret into a variable and printed only counts:
 
@@ -171,4 +178,6 @@ Caddy's log carries `Authorization: ["REDACTED"]` for every client and agent req
   uplink and its model access went through the MacBook's gateway. The MCP leg (VM → Caddy → relay → mini) did not use
   the LAN or the tunnel.
 - A relay behind nginx: the standing relay uses Caddy, and the nginx block in `relay/README.md` is still not exercised.
+- The README's example hook (app approvals only) as the client's only answerer: the VM used the owner's hook, which
+  accepts site approvals too, and the questions behind the two approvals were not recorded.
 - An x64 Linux client (the VM is arm64; the client is Node and Claude Code, so nothing architecture-specific is expected).

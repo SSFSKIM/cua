@@ -2,7 +2,8 @@
 // Checks the standalone server end to end through the actual launcher: `cua serve` on the installed runtime in
 // $CUA_HOME (default ~/Library/Application Support/cua; on Linux ${XDG_DATA_HOME:-~/.local/share}/cua). It runs the MCP handshake, checks the tool surface (four
 // tools; five with the browser surface of CUA_SHIM_SURFACES, which adds profiles_list and documents the browser API
-// in the js description, while the default documents none) and instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
+// in the js description, while the default documents none; then devices_list and devices_use, which stdio serve always
+// lists) and instructions, and exercises task identity with trivial cells that touch no app: the first cell loads the vendor API
 // (its banner), which reaches the native helper read-only. Then end_task, a second task, and EOF. It records which
 // executables served (none may come from an installed desktop app), which helper held the native socket, and that
 // the connection's own run entries are gone afterwards: the session is the one whose $CUA_HOME/run record names the
@@ -38,7 +39,7 @@ const home = defaultHome();
 const problems = [];
 const {surfaces} = settingsFrom(process.env);
 const browser = surfaces.includes('browser');
-const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ? ['profiles_list'] : [])];
+const MODEL_TOOLS = ['js', 'js_reset', 'end_task', 'secrets_list', ...(browser ? ['profiles_list'] : []), 'devices_list', 'devices_use'];
 const report = {home, surfaces, problems};
 const check = (ok, problem) => { if (!ok) problems.push(problem); return ok; };
 const sh = (cmd, args) => spawnSync(cmd, args, {encoding: 'utf8'}).stdout ?? '';

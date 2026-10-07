@@ -19,6 +19,9 @@ import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '
 import {LIVENESS_CELL} from '../src/profiles/inventory.mjs';
 import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
+import {addDevice} from '../src/remote/devices.mjs';
+import {clientSecretKey} from '../src/remote/device.mjs';
+import {fileStore, storeDir} from '../src/secrets/store.mjs';
 
 const supported = installedHomeSupported;
 // A user home of the test's own, holding a secret store with one key: secrets-on servers resolve their store from it.
@@ -94,7 +97,8 @@ test('cua serve runs the resolved runtime with an allowlisted environment in an 
   assert.equal(init.result.serverInfo.name, 'fake-upstream');
   assert.match(init.result.instructions, /Host notes/);
   const list = await server.request('tools/list');
-  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list']);
+  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'devices_list', 'devices_use']);
+  assert.match(init.result.instructions, /devices_use moves every tool to that machine/, 'stdio serve has the device tools and their rule');
   const js = await server.call('js', {code: 'hello'});
   const echoed = JSON.parse(js.result.content[0].text);
   assert.equal(echoed.code, 'hello');
@@ -142,7 +146,7 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   const init = await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   assert.match(init.result.instructions, /cua\.getBrowser\(\{extensionInstanceId\}\)/);
   const list = await server.request('tools/list');
-  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list']);
+  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list', 'devices_list', 'devices_use']);
   const profiles = await server.call('profiles_list');
   assert.deepEqual(profiles.result.structuredContent, {status: 'ok', profiles: [
     {key: 'personal', ready: false, reason: 'extension_not_installed'},
@@ -477,13 +481,37 @@ test('a connection\'s own session approval file is removed at close; other sessi
   assert.equal(existsSync(other), true);
 });
 
+test('stdio serve reads the device registry and credentials under its $HOME: devices_list probes a registered device, devices_use classifies a failed open', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const user = scratch();
+  t.after(user.cleanup);
+  const env = {HOME: user.dir};
+  const deviceId = 'AAAAAAAAAAAAAAAAAAAAAA';
+  addDevice({env, name: 'mini', relayUrl: 'http://127.0.0.1:1', deviceId});
+  await fileStore({dir: storeDir(env)}).write(clientSecretKey(deviceId), 'c'.repeat(64));
+  const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], env);
+  await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
+  const listed = await server.call('devices_list');
+  assert.deepEqual(listed.result.structuredContent, {status: 'ok', current: 'local', devices: [
+    {name: 'local', status: 'online'},
+    {name: 'mini', deviceId, relay: 'http://127.0.0.1:1', status: 'offline', code: 'relay_unreachable'},
+  ]});
+  const used = await server.call('devices_use', {device: 'mini'});
+  assert.equal(used.result.structuredContent.code, 'device_offline');
+  assert.doesNotMatch(JSON.stringify(server.frames), /c{64}/, 'the credential never reaches the client');
+  server.child.stdin.end();
+  const {code, stderr} = await server.exit;
+  assert.equal(code, 0, stderr);
+  assert.doesNotMatch(stderr, /c{64}/);
+});
+
 test('the plugin entry cua-shim.mjs is the same server', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const server = launch(join(REPO, 'cua-shim.mjs'), home);
   const init = await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   assert.equal(init.result.serverInfo.name, 'fake-upstream');
   const list = await server.request('tools/list');
-  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list']);
+  assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'devices_list', 'devices_use']);
   server.child.stdin.end();
   assert.equal((await server.exit).code, 0);
 });

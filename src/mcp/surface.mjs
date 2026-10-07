@@ -75,8 +75,32 @@ export const PROFILES_LIST_TOOL = {
   _meta: {'anthropic/searchHint': 'list registered chrome browser profiles for browser use'},
 };
 
+// The device tools (Phase G, stdio connections only): the connection's target, `local` or a registered device
+// (src/remote/devices.mjs), which every other tool then drives (src/mcp/target.mjs).
+export const DEVICES_LIST_TOOL = {
+  name: 'devices_list',
+  description: 'List the machines this server can drive: "local" (this one) and each registered remote device, with its '
+    + 'status (online, offline, locked or unauthorized; a code says more) and which one the tools drive now (current). '
+    + 'Asking never opens a session on a device.',
+  inputSchema: NO_ARGUMENTS,
+  annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true},
+  _meta: {'anthropic/searchHint': 'list remote devices: other macs or linux machines this computer use can control'},
+};
+
+export const DEVICES_USE_TOOL = {
+  name: 'devices_use',
+  description: 'Switch every tool of this server (js, js_reset, end_task, secrets_list, profiles_list) to another machine: '
+    + 'a device name from devices_list, or "local" for this one. Refused with task_open while a task is open: call '
+    + 'end_task first. Switching to a device opens a session there and returns that machine\'s host notes, which apply '
+    + 'while it is the target; its REPL starts empty. Switching away ends the device\'s session.',
+  inputSchema: {type: 'object', properties: {device: {type: 'string', description: 'A device name from devices_list, or "local".'}}, required: ['device'], additionalProperties: false},
+  annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true},
+  _meta: {'anthropic/searchHint': 'switch computer use to a remote device: another mac or linux machine'},
+};
+
 export const LOCAL_TOOLS = new Set([END_TASK_TOOL.name, SECRETS_LIST_TOOL.name, PROFILES_LIST_TOOL.name]);
 export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
+export const DEVICE_TOOLS = new Set([DEVICES_LIST_TOOL.name, DEVICES_USE_TOOL.name]);
 
 // Host notes: what the vendor's API document leaves out, in rules an agent can follow. The general rules apply to every
 // surface; several come from the first real-use run (docs/evidence/2026-10-05-homework-1b-dogfooding.md, issue #23):
@@ -84,25 +108,24 @@ export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
 // stood in for readiness checks. Claude Code caps the server instructions, the vendor's own included, at 2,048
 // characters, so every line has to earn its place.
 const TITLE = 'Host notes:';
-const COMPUTER_HEAD = '- Use this when a macOS app\'s GUI is the only way; the first js call returns the API document.';
-const BROWSER_HEAD = '- Use this for the user\'s existing Chrome profiles when no API or skill fits; the first js call returns the API document.';
+const COMPUTER_HEAD = '- Use when a macOS app\'s GUI is the only way; the first js call returns the API docs.';
+const BROWSER_HEAD = '- Use for the user\'s existing Chrome profiles when no API or skill fits; the first js call returns the API docs.';
 // The store is a plain directory any cell can read under every sandbox mode (the vendor's read-deny would bind the
 // trusted worker too); the rule keeps the agent on the reference.
 const SECRETS_NOTE = '- Never read ~/.config/claude-secrets; type secrets as {{secret:KEY}}.';
 const GENERAL_NOTES = [
-  '- Call end_task as soon as the task is done, before your final reply. If it errors, report it; the connection is spent.',
-  '- One controller per task, one js call at a time.',
+  '- Call end_task as soon as the task is done, before your final reply. An error spends the connection: report it.',
+  '- One controller per task, one js call at a time. Only timeout_ms stops a running cell, not cancelling.',
   '- Observe, act, verify: a call returning is not success. If the state is unchanged, stop and find out why rather than repeat.',
   '- Batch deterministic steps. Wait for a visible readiness condition in a bounded poll, not a fixed delay.',
-  '- Cancelling never stops a running cell; its timeout_ms does.',
   SECRETS_NOTE,
 ];
 const COMPUTER_NOTES = [
-  '- Apps ask the user for approval once per connection; report a declined app, do not retry.',
-  '- Prefer element indexes from accessibility text; coordinates are screenshot pixels (apply the host\'s downscale); role names are in the system language.',
-  '- Drop a quit app\'s handle: getAXState() on it relaunches it.',
+  '- Apps ask for approval once per connection; report a declined app, don\'t retry.',
+  '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale); role names are in the system language.',
+  '- Drop a quit app\'s handle: getAXState() relaunches it.',
   '- typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
-  '- If REPL state is confused, js_reset and rebind the app; never also use osascript.',
+  '- If REPL state is confused, js_reset and rebind; never also use osascript.',
 ];
 // The Chrome rules. A failed selection sends the agent back to profiles_list: the vendor's own error for an id that is
 // not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
@@ -112,10 +135,10 @@ const COMPUTER_NOTES = [
 // kernel, losing the tab handle.
 const BROWSER_NOTES = [
   '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user.',
-  '- Chrome tabs are DOM-only: use tab.playwright locators, not native typeText/click. Press keys on a focusable element, never a frame body; tab.cua.type pastes.',
+  '- Chrome tabs are DOM-only: tab.playwright locators, not native input; press keys on a focusable element, never a frame body; tab.cua.type pastes.',
   '- Locator actions, waits and evaluate stop at 3 s (timeoutMs can only shorten it); to wait longer, loop short waits to your own deadline under a larger js timeout_ms.',
   '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
-  '- createBrowserTab can take 60 s: give its js call timeout_ms of at least 60000; after a timeout a tab may still have opened: tell the user, don\'t retry. In a profile with no other window, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
+  '- createBrowserTab can take 60 s (js timeout_ms of at least 60000); after a timeout a tab may still have opened: tell the user, don\'t retry. In a one-window profile, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
 ];
 
 // The computer surface on Linux (Phase F) differs where the vendor's Linux target does: apps are bound by X11 window,
@@ -128,24 +151,28 @@ const BROWSER_NOTES = [
 // (#58, Ubuntu 24.04, the same gedit and GTK builds) typeText did not crash gedit but threw "editable Paste did not insert
 // text"; pressKey typed on both, so the note's advice holds on both architectures. The vendor's
 // own document already says that setValue and selectText do not exist on Linux.
-const LINUX_COMPUTER_HEAD = '- Use this when a Linux app\'s GUI is the only way; the first js call returns the API document.';
+const LINUX_COMPUTER_HEAD = '- Use when a Linux app\'s GUI is the only way; the first js call returns the API docs.';
 const LINUX_COMPUTER_NOTES = [
-  '- Bind by window: cua.getApp({windowId}) with an id from listWindows().',
+  '- Bind by window: cua.getApp({windowId}) with an id from listWindows(); if REPL state is confused, js_reset and rebind.',
   '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
-  '- Prefer element indexes from accessibility text; coordinates are screenshot pixels (apply the host\'s downscale).',
+  '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale).',
   '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
-  '- If REPL state is confused, js_reset and rebind the window.',
 ];
+
+// With the device tools (a stdio connection), last: the device's own notes come in devices_use's result.
+const DEVICES_NOTE = '- devices_use moves every tool to that machine, under its notes; end_task first.';
 
 export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
 export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, ...LINUX_COMPUTER_NOTES].join('\n');
 
-// The notes for the enabled surfaces on `platform` (the host's by default). The Chrome notes are the same everywhere.
-export function hostNotesFor(surfaces, {platform = process.platform} = {}) {
+// The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
+// tools exist. The Chrome notes are the same everywhere.
+export function hostNotesFor(surfaces, {platform = process.platform, devices = false} = {}) {
   const computer = platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
-  if (!surfaces.includes('browser')) return computer;
-  if (surfaces.includes('computer')) return [computer, ...BROWSER_NOTES].join('\n');
-  return [TITLE, BROWSER_HEAD, ...GENERAL_NOTES, ...BROWSER_NOTES].join('\n');
+  const notes = !surfaces.includes('browser') ? [computer]
+    : surfaces.includes('computer') ? [computer, ...BROWSER_NOTES]
+      : [TITLE, BROWSER_HEAD, ...GENERAL_NOTES, ...BROWSER_NOTES];
+  return [...notes, ...(devices ? [DEVICES_NOTE] : [])].join('\n');
 }
 
 // A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
@@ -159,15 +186,16 @@ export function withHostNotes(instructions, hostNotes) {
 const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)
   : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
-export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform} = {}) {
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false} = {}) {
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
     .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)}}));
   const linux = platform === 'linux';
   const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
-  return surfaces.includes('browser')
+  const local = surfaces.includes('browser')
     ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_BROWSER_TOOL : SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
     : [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_TOOL];
+  return devices ? [...local, DEVICES_LIST_TOOL, DEVICES_USE_TOOL] : local;
 }
 
 // node_repl labels JPEG screenshots image/png; the bytes say what they are.

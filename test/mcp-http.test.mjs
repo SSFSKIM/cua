@@ -992,7 +992,7 @@ test('an unauthorized probe learns nothing of the console, and requests on a ses
 });
 
 // Real connections: openConnection on a scratch home whose runtime is the fake upstream process.
-test('over real connections, DELETE answers only after the session\'s run entries are released', {skip: !installedHomeSupported}, async t => {
+test('over real connections, a session lists no device tools, and DELETE answers only after its run entries are released', {skip: !installedHomeSupported}, async t => {
   const home = fakeInstalledHome(t);
   const http = createMcpHttp({home, env: {...process.env, CUA_SHIM_SECRETS: 'off'}, clientCredential: CREDENTIAL, diagnostics: () => {}});
   t.after(() => http.close('eof'));
@@ -1009,7 +1009,9 @@ test('over real connections, DELETE answers only after the session\'s run entrie
   assert.equal(init.res.json().result.serverInfo.name, 'fake-upstream');
   const list = send('POST', session, {jsonrpc: '2.0', id: 1, method: 'tools/list'});
   await until(() => list.res.ended, 'tools/list', 10_000);
+  // The agent's sessions never get the device tools (Phase G): a device never drives a third one through itself.
   assert.deepEqual(list.res.messages()[0].result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list']);
+  assert.doesNotMatch(init.res.json().result.instructions, /devices_use/, 'nor their host-notes rule');
   assert.ok(existsSync(join(home, 'run', session)) && existsSync(join(home, 'run', `${session}.pid`)));
   const del = send('DELETE', session);
   await del.done;

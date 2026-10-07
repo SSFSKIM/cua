@@ -239,3 +239,28 @@ test('secrets_list teaches the reference on both platforms; on Linux without set
     assert.deepEqual(tool.annotations, SECRETS_LIST_TOOL.annotations);
   }
 });
+
+// Phase G: a stdio connection carries the device tools, and one rule joins its notes on every platform and surface,
+// within the same budget measured with the vendor's 63-character first line. Without the device tools (the agent's
+// HTTP sessions) the rule is absent.
+const DEVICES_RULE = /devices_use moves every tool to that machine, under its notes; end_task first\./;
+const VENDOR_LINE = 63;
+
+test('with the device tools the notes add the devices_use rule, keep every other rule and fit 2048 characters', async () => {
+  for (const platform of ['darwin', 'linux']) {
+    for (const surfaces of [['computer'], ['browser'], ['computer', 'browser']]) {
+      const label = `${platform} ${surfaces.join()}`;
+      const without = hostNotesFor(surfaces, {platform});
+      const notes = hostNotesFor(surfaces, {platform, devices: true});
+      assert.doesNotMatch(without, /devices_use/, `${label}: no rule without the device tools`);
+      assert.match(notes, DEVICES_RULE, label);
+      assert.equal(notes, `${without}\n${notes.split('\n').at(-1)}`, `${label}: the notes without the device tools, plus the rule`);
+      for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(notes, pattern, `${label}: ${rule}`);
+      if (surfaces.includes('browser')) for (const [rule, pattern] of Object.entries(BROWSER_RULES)) assert.match(notes, pattern, `${label}: ${rule}`);
+      if (platform === 'linux' && surfaces.includes('computer')) for (const [rule, pattern] of Object.entries(LINUX_RULES)) assert.match(notes, pattern, `${label}: ${rule}`);
+      assert.ok(VENDOR_LINE + 2 + notes.length <= 2048, `${label}: ${VENDOR_LINE + 2 + notes.length} characters`);
+    }
+  }
+  assert.equal(settingsFrom({}, {platform: 'darwin', devices: true}).hostNotes, hostNotesFor(['computer'], {platform: 'darwin', devices: true}));
+  assert.equal(settingsFrom({}, {platform: 'darwin'}).hostNotes, DEFAULT_HOST_NOTES);
+});

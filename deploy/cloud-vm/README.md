@@ -49,7 +49,8 @@ that file as the server's user data (it stays under the 32 KiB most providers al
   Linux default is `disabled` (README, "Linux": the runtime's sandbox refuses every socket, X's included).
 - **cua.** Node 22 (NodeSource), a checkout of `--ref` at `/opt/cua` owned by the user, `npm ci`, `cua` on `PATH`, the
   pinned runtime installed in `~/.local/share/cua`, the Chrome host registered, and the profile `me` registered for
-  `Default`.
+  `Default` and bound. The extension starts cua's host without a ChatGPT sign-in, so the bind needs no one; if it
+  fails (Chrome not up yet), the checklist keeps it.
 - **The deb.** By default the VM downloads the pin's official URL (about 450 MB); `--deb <https URL>` downloads a
   mirror instead; `--deb <file>` makes `create-hetzner.sh` copy your copy while cloud-init runs, and the VM waits for it
   (with `render.sh` alone, copy it to `/var/cache/cua/<its file name>` yourself). Either way the bytes are checked
@@ -66,14 +67,14 @@ Printed at the end as a checklist with the VM's address filled in, because each 
 
 1. Sign in to ChatGPT in the VM's Chrome. The screen is reachable through an SSH tunnel to `x11vnc` with a one-time
    password (the checklist has the command; macOS: open `vnc://localhost:5900`), or the provider's web console.
-2. `cua login --device-auth` over SSH (the server's Codex login).
-3. `cua profiles bind me`.
-4. With a relay: add the device's `devices.json` line (`cua remote show`) to the relay's table with
+2. `cua login --device-auth` over SSH (the server's Codex login, which the browser route needs).
+3. With a relay: add the device's `devices.json` line (`cua remote show`) to the relay's table with
    `relay/deploy/update.sh --devices` (the file replaces the whole table), and give the client its credential
    (`/secret <clientSecretKey>`, then the `devicesAddCommand`, both in `/root/cua-enrollment.json`).
 
-Before step 1 doctor reads `codex.login` blocked and `chrome.profiles` not ready; everything else passes, including
-`chrome.hosts.live`, because the extension starts cua's host without a sign-in.
+Before these, doctor reads `ok: true` with `codex.login` blocked (step 2) and `secrets.store` blocked (no secret has
+been stored on the VM; cua's file store works on Linux, `cua secrets set KEY` at the VM's terminal). Every other row
+passes, `chrome.hosts.live` included, and the `agent.*` rows read `skip` without a relay or `pass` with one.
 
 ## Re-running and upgrading
 

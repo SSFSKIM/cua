@@ -200,25 +200,28 @@ fi
 ln -sfn /opt/cua/bin/cua.mjs /usr/local/bin/cua
 
 checklist() { # the owner's steps, written for create-hetzner.sh and printed
-  local ip; ip="$(curl -fsS --max-time 3 http://169.254.169.254/hetzner/v1/metadata/public-ipv4 2>/dev/null || hostname -I | cut -d' ' -f1)"
+  local ip n=0; ip="$(curl -fsS --max-time 3 http://169.254.169.254/hetzner/v1/metadata/public-ipv4 2>/dev/null || hostname -I | cut -d' ' -f1)"
+  step() { n=$((n + 1)); echo "  $n. $1"; }
   {
     echo "cua device $(hostname) ($ip): the owner's steps"
     if [[ -n "${1:-}" ]]; then echo "  !! provisioning stopped early: $1"; fi
-    echo "  1. Sign in to ChatGPT in the VM's Chrome (profile Default). See the screen through an SSH tunnel:"
+    step "Sign in to ChatGPT in the VM's Chrome (profile Default). See the screen through an SSH tunnel:"
     echo "       ssh -t -L 5900:localhost:5900 $CUA_USER@$ip 'p=\$(head -c6 /dev/urandom | base64); echo \"VNC password: \$p\"; x11vnc -display :0 -localhost -once -quiet -passwd \"\$p\"'"
     echo "     then open vnc://localhost:5900 with that one-time password (or use the provider's web console)."
-    echo "     In Chrome sign in at https://chatgpt.com,"
-    echo "     then open the ChatGPT extension (puzzle icon) and sign in there if it asks."
-    echo "  2. Sign the cua server in to Codex:  ssh -t $CUA_USER@$ip cua login --device-auth   (the URL and code open on any machine)"
-    echo "  3. Bind the profile:  ssh $CUA_USER@$ip cua profiles bind me   (then cua profiles list shows me ready)"
+    echo "     In Chrome sign in at https://chatgpt.com, then open the ChatGPT extension (puzzle icon) and sign in"
+    echo "     there if it asks."
+    step "Sign the cua server in to Codex:  ssh -t $CUA_USER@$ip cua login --device-auth   (the URL and code open on any machine)"
+    if ((${bound:-0} == 0)); then
+      step "Bind the profile once Chrome runs with the extension:  ssh $CUA_USER@$ip cua profiles bind me   (cua profiles list: me ready)"
+    fi
     if [[ -n "$CUA_RELAY" ]]; then
-      echo "  4. Add the device to the relay's table. Its devices.json line:  ssh $CUA_USER@$ip cua remote show"
+      step "Add the device to the relay's table. Its devices.json line:  ssh $CUA_USER@$ip cua remote show"
       echo "     Merge it into the relay's current table (ssh root@<relay> cat /etc/cua-relay/devices.json) and run"
       echo "     relay/deploy/update.sh --devices <merged file>: the file replaces the whole table, so keep every device."
-      echo "  5. On the client: store the credential with /secret <clientSecretKey> (the value is clientCredential in"
+      step "On the client: store the credential with /secret <clientSecretKey> (the value is clientCredential in"
       echo "     ssh root@$ip cat /root/cua-enrollment.json), then run its devicesAddCommand (both in that file)."
     fi
-    echo "  Check: ssh $CUA_USER@$ip cua doctor   (codex.login passes after 2; chrome.profiles after 3)"
+    echo "  Check: ssh $CUA_USER@$ip cua doctor   (codex.login passes once the server is signed in)"
   } >"$state/checklist.txt"
 }
 doctor() {
@@ -274,6 +277,12 @@ if [[ -d "$home/.config/google-chrome/Default" ]]; then
 else
   log "Chrome's Default profile does not exist yet (is the desktop up?); cua profiles add me waits for a re-run"
 fi
+# The extension starts cua's host by itself, signed in or not (F2), a little after the registration. Binding `me` needs
+# that live host and nothing from the owner; where it fails, the checklist keeps it.
+log "waiting for the extension's host, then cua profiles bind me"
+for _ in $(seq 45); do pgrep -u "$CUA_USER" -f "/chrome-plugin/extension-host/linux/" >/dev/null && break; sleep 2; done
+bound=0
+if as_user cua profiles bind me; then bound=1; fi
 
 # 10. Optional remote control: enrol with the relay once (the client credential to a root-only file, never printed),
 # move an existing enrolment to a changed relay URL, and run the agent as the user's systemd unit.

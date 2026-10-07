@@ -8,7 +8,7 @@ tests). C ran `main` at `eeef390`, because nothing on the branch changes the run
 
 | Part | Result |
 |---|---|
-| A. systemd user unit | **PASS**. `cua agent install|uninstall|status` on Linux manage `~/.config/systemd/user/cua-agent.service`; doctor's `agent.*` rows read it. Crash restart, deliberate stop, linger and uninstall were checked on the VM. Suite: macOS 716 tests (715 pass, 1 Linux-only skip); VM 716 tests (673 pass, 43 darwin-only skips), 0 fail on either |
+| A. systemd user unit | **PASS**. `cua agent install|uninstall|status` on Linux manage `~/.config/systemd/user/cua-agent.service`; doctor's `agent.*` rows read it. Crash restart, deliberate stop, linger and uninstall were checked on the VM. Suite at the branch head: macOS 717 tests (716 pass, 1 Linux-only skip); VM 717 tests (674 pass, 43 darwin-only skips), 0 fail on either |
 | B. relay path from Linux | **PASS**. The VM was enrolled with the hosted relay, its agent ran as the user unit, and a `claude -p` session on the MacBook typed into gedit in the VM with `pressKey`, read the text back through AT-SPI and opened an `example.com` tab in the VM's Chrome profile `me`, all through `https://178-104-102-73.sslip.io` |
 | C. x64 runtime | **PASS** on a throwaway Hetzner `cx23` (AMD EPYC, x86_64): install from the mirror deb and by download, doctor `ok: true`, `scripts/accept/linux-native.mjs` PASS, `verify.mjs` exit 0, `npm test` 0 fail. The server was then deleted |
 
@@ -81,7 +81,9 @@ the SSH session, so the unit has none. Doctor's `agent.console` then passed: it 
 user's `HOME`, so `~/.Xauthority` is found as the agent finds it. Next, the unit file was deleted and the manager
 reloaded, which left `LoadState=not-found` with `ActiveState=active`. `agent uninstall` stopped that orphan (`not-found
 inactive` afterwards, no agent process left). The review found that the earlier uninstall would have reported "nothing
-changed" there.
+changed" there. That run left a dangling `default.target.wants/cua-agent.service` link. Measured on systemd 255,
+`systemctl --user disable` refuses once the file is gone ("Unit file cua-agent.service does not exist", exit 1), so
+`uninstall` now removes that link itself (`b61e0c4`). On the VM it did, leaving no `cua*` unit known to the manager.
 
 **Tests.** `test/remote-systemd.test.mjs` covers the unit text and its read-back, the refusals, an unreachable
 manager, reinstall, a failed start, status, linger and uninstall. It runs against a fake `systemctl --user` and a fake

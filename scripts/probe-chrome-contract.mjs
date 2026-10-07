@@ -14,6 +14,10 @@
 //             cua's own host (getInfo without agentRequestHeaderEnabled), no Codex login, the vendor network at its
 //             default or switched off; judges whether session requests reach the backend and the backend-path
 //             discovery rules (scripts/probe/chrome/no-header.mjs). Without --network, --vendor is M7's layer.
+// --vendor --backend host
+//             H1 (own Chrome extension spec): the same relocated runtime against cua's real host (src/chrome/host.mjs)
+//             spawned with the fake cua extension on its stdio; getInfo kept as chrome, createTab+attach, a relayed
+//             Runtime.evaluate, turn-end cleanup, no identity check (scripts/probe/chrome/host-layer.mjs).
 // Reports carry PASS/FAIL/BLOCKED per scenario, chromeAttached:false and a sentinel scan; stdout is a summary.
 import {mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync} from 'node:fs';
 import {tmpdir, homedir} from 'node:os';
@@ -29,10 +33,12 @@ const {values: opts} = parseArgs({options: {
   report: {type: 'string'},
   home: {type: 'string', default: process.env.CUA_HOME},
   network: {type: 'string'},
+  backend: {type: 'string'},
 }});
 if (opts.fixtures === opts.vendor) usage('choose exactly one of --fixtures or --vendor');
 if (!opts.report) usage('--report FILE is required');
 if (opts.network !== undefined && (!opts.vendor || !['default', 'off'].includes(opts.network))) usage('--network default|off goes with --vendor');
+if (opts.backend !== undefined && (!opts.vendor || opts.backend !== 'host' || opts.network !== undefined)) usage('--backend host goes with --vendor (and without --network)');
 
 function usage(message) { process.stderr.write(`probe-chrome-contract: ${message}\n`); process.exit(2); }
 
@@ -40,12 +46,12 @@ const sentinels = fakeSentinels();
 const prints = [sentinels.token, sentinels.capability].flatMap(fingerprints);
 const base = {
   probe: 'scripts/probe-chrome-contract.mjs',
-  milestone: opts.network ? 'S0 (own Chrome extension)' : 'M7',
+  milestone: opts.backend ? 'H1 (own Chrome extension)' : opts.network ? 'S0 (own Chrome extension)' : 'M7',
   at: new Date().toISOString(),
   chromeAttached: false,
   facts: {
     real: 'none: no Chrome process, extension, profile, token or account was used',
-    synthetic: opts.network ? 'every backend answer came from the recording stub backend (no CDP served)' : 'every tab, debugger session, CDP answer and extension message came from the fake peer',
+    synthetic: opts.backend ? 'every tab, window, debuggee and CDP answer came from the fake cua extension behind the real host' : opts.network ? 'every backend answer came from the recording stub backend (no CDP served)' : 'every tab, debugger session, CDP answer and extension message came from the fake peer',
     sourceOnly: 'citations name the pinned vendor and installed-extension source lines each scenario reproduces',
   },
   sentinels: 'generated fake token and relay-capability markers; values never written here',
@@ -64,6 +70,10 @@ async function runFixtures() {
 }
 
 async function runVendor() {
+  if (opts.backend) {
+    const {runHostLayer} = await import('./probe/chrome/host-layer.mjs');
+    return await runHostLayer({home: opts.home, sentinels});
+  }
   if (opts.network) {
     const {runNoHeaderLayer} = await import('./probe/chrome/no-header.mjs');
     return await runNoHeaderLayer({home: opts.home, network: opts.network, sentinels});

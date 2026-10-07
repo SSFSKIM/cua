@@ -29,7 +29,7 @@ import {performance} from 'node:perf_hooks';
 import {resolveRuntime} from '../../../src/runtime/manifest.mjs';
 import {startBackend} from './backend-server.mjs';
 import {NO_HANDLER} from './adapter.mjs';
-import {AMBIENT_ALLOWLIST, vendorEnv, mcpClient, cell, stopVendor} from './vendor-layer.mjs';
+import {AMBIENT_ALLOWLIST, vendorEnv, cell, launchVendor} from './vendor-layer.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const SESSION_EXEMPT = new Set(['getInfo', 'turnEnded', 'ping']);
@@ -188,43 +188,26 @@ async function runConfig({runtime, home, label, network, ambient, backends, cell
   }
   const env = vendorEnv({ambient, paths: runtime.paths, codexHome, backendPath: backends.map(b => b.path).join(':'), network, availableBackends: 'chrome'});
   const out = {label, network, envKeys: Object.keys(env).sort(), authJsonPresent: existsSync(join(codexHome, 'auth.json')), authJsonPresentAfter: null, cells: {}, elicitations: [], timing: {}};
-  const transcript = [];
-  let stderr = '';
   t0 = performance.now();
-  const child = spawn(runtime.paths.node, [runtime.paths.cuaRepl], {env, cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: true});
-  child.stderr.on('data', d => { stderr += d; if (stderr.length > 1 << 20) stderr = stderr.slice(-(1 << 20)); });
-  let exitInfo = null;
-  const exited = new Promise(resolve => child.on('exit', (code, signal) => { exitInfo = {code, signal}; resolve(exitInfo); }));
-  const client = mcpClient(child, transcript, {elicitations: out.elicitations});
-  const sessionId = randomUUID(), turnId = randomUUID();
-  const meta = () => { const callId = randomUUID(); return {callId, threadId: sessionId, sessionId, 'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: turnId, call_id: callId, model: 's0-probe'}}; };
+  const vendor = launchVendor({runtime, env, cwd, label: 's0', elicitations: out.elicitations});
   const extra = [];
   try {
-    await client.request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-s0-probe', version: '0'}}, 120_000);
-    client.notify('notifications/initialized', {});
-    await client.request('tools/list', {}, 30_000);
+    await vendor.handshake();
     out.timing.spawnToHandshakeMs = now();
     for (const {name, code, before} of cells) {
       if (before) extra.push(...(await before()));
       const startedAt = now();
-      try {
-        const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: 45_000}, _meta: meta()}, 90_000);
-        const text = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('\n');
-        const marker = text.match(/M7RESULT (\{.*\})/);
-        out.cells[name] = {startedAt, isError: result.isError === true, result: marker ? JSON.parse(marker[1]) : null, ...(marker ? {} : {unmarkedChars: text.length})};
-      } catch (e) { out.cells[name] = {startedAt, probeError: e.message}; }
+      try { out.cells[name] = {startedAt, ...(await vendor.callCell(code))}; } catch (e) { out.cells[name] = {startedAt, probeError: e.message}; }
       out.cells[name].endedAt = now();
     }
-    try {
-      const ended = await client.request('tools/call', {name: 'turn_ended', arguments: {hook_event_name: 'Stop', session_id: sessionId, turn_id: turnId}, _meta: meta()}, 30_000);
-      out.turnEnded = {isError: ended.isError === true};
-    } catch (e) { out.turnEnded = {probeError: e.message}; }
+    try { out.turnEnded = await vendor.endTurn(); } catch (e) { out.turnEnded = {probeError: e.message}; }
     await sleep(300);
-    out.group = groupSnapshot(child.pid);
+    out.group = groupSnapshot(vendor.child.pid);
   } catch (e) {
     out.error = e.message;
   } finally {
-    Object.assign(out, await stopVendor(child, exited, () => exitInfo));
+    Object.assign(out, await vendor.stop());
+    const stderr = vendor.stderr();
     out.stderrBytes = Buffer.byteLength(stderr);
     out.stderrIdentityMarkers = (stderr.match(new RegExp(IDENTITY.source, 'gi')) ?? []).map(s => s.toLowerCase()).filter((s, i, a) => a.indexOf(s) === i);
     out.authJsonPresentAfter = existsSync(join(codexHome, 'auth.json'));
@@ -232,7 +215,7 @@ async function runConfig({runtime, home, label, network, ambient, backends, cell
     out.backendLog = stubs.live?.log ?? [];
     for (const s of [...started, ...extra]) await s.close();
   }
-  return {out, scanTexts: [stderr, transcript.join('\n')], scanRoots: [codexHome, cwd]};
+  return {out, scanTexts: [vendor.stderr(), vendor.transcript.join('\n')], scanRoots: [codexHome, cwd]};
 }
 
 export async function runNoHeaderLayer({home, network, sentinels}) {

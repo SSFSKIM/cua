@@ -144,9 +144,10 @@ test('with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, co
   writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: '2026-10-03T00:00:00.000Z'}, school: {chromeProfileDirectory: 'Profile 6'}}}));
   const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], {CUA_SHIM_SURFACES: 'computer,browser', HOME: userHome, BROWSER_USE_BACKEND_PATHS: '/tmp/evil.sock'});
   const init = await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
-  assert.match(init.result.instructions, /cua\.getBrowser\(\{extensionInstanceId\}\)/);
+  assert.match(init.result.instructions, /Each tool's description carries the rules for its surface/);
   const list = await server.request('tools/list');
   assert.deepEqual(list.result.tools.map(tool => tool.name), ['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list', 'devices_list', 'devices_use']);
+  assert.match(list.result.tools.find(tool => tool.name === 'profiles_list').description, /cua\.getBrowser\(\{extensionInstanceId\}\)/, 'the Chrome rules');
   const profiles = await server.call('profiles_list');
   const {guidance, ...fields} = profiles.result.structuredContent;
   assert.deepEqual(fields, {status: 'ok', profiles: [

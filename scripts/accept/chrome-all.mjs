@@ -46,7 +46,7 @@ import {hostSuffixes, readRecord} from '../../src/chrome/registration.mjs';
 import {openSession} from './mcp-session.mjs';
 import {diffSnapshots, rollup, snapshotTree, suiteVerdict, testReporterEnv, testSummary, tokenLike} from './lib.mjs';
 import {
-  C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, hostNotesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
+  C6_BROWSERS, c2LiveBlocked, c6GateBlocked, c6GateChecks, defaultRegistryChecks, doctorChromeChecks, browserRulesCheck, launchEnvCheck, liveProfileCheck, liveRoundTripChecks,
   matrixChecks, packChecks, profilesListCheck, registrationGuard, SCRATCH_PROFILES, slotStates, scratchAddCheck, scratchHumanCheck, scratchListCheck,
   tapTestStatus, verifyCheck, writeScratchChrome,
 } from './chrome-all-lib.mjs';
@@ -226,10 +226,11 @@ export async function runAll(argv, {stderr = process.stderr} = {}) {
     else {
       const runBefore = existsSync(homeLayout(home).run) ? readdirSync(homeLayout(home).run) : [];
       const session = openSession({args: [CLI, 'serve'], env: cleanEnv({CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off'}), clientName: 'cua-accept-chrome-all'});
-      let init, tools, listed, endTask;
+      let init, listedTools, tools, listed, endTask;
       try {
         init = await session.initialize().catch(error => ({error: error.message}));
-        tools = (await session.request('tools/list', {})).result?.tools?.map(t => t.name);
+        listedTools = (await session.request('tools/list', {})).result?.tools;
+        tools = listedTools?.map(t => t.name);
         listed = (await session.call('profiles_list', {}, 150_000)).result?.structuredContent;
         endTask = (await session.call('end_task')).result?.structuredContent?.status;
       } finally {
@@ -241,16 +242,16 @@ export async function runAll(argv, {stderr = process.stderr} = {}) {
         checks.push(check('the connection: seven tools, no js cell, clean exit', JSON.stringify(tools) === JSON.stringify(['js', 'js_reset', 'end_task', 'secrets_list', 'profiles_list', 'devices_list', 'devices_use']) && cells === 0 && exit.code === 0 && endTask === 'noop' && !left.length ? 'PASS' : 'FAIL',
           `tools ${tools?.join(', ')}; js cells sent ${cells}; end_task ${endTask}; serve exit ${exit.code}${exit.forced ? ' (forced)' : ''}; elicitations ${elicitations}; connection directories left ${left.length}`));
       }
-      checks.push(hostNotesCheck(init?.instructions));
+      checks.push(browserRulesCheck(init?.instructions, listedTools));
       let statuses = null;
       try { statuses = profileStatuses({home, chrome}); } catch (error) { checks.push(check('the registry profiles_list reads', 'FAIL', error.code)); }
       if (statuses) checks.push(profilesListCheck(listed, statuses));
     }
-    checks.push(suiteClaims('npm test: profiles_list and the host notes', tap, [
+    checks.push(suiteClaims('npm test: profiles_list and the browser rules', tap, [
       'with the browser surface, profiles_list is the fifth tool and returns keys, readiness and instance ids only',
-      'the host notes carry every operating rule for their surfaces and keep the instructions within 2048 characters',
+      'each surface\'s rules are in the description of its tool, ahead of the 2,048-character cut, and none is lost',
     ]));
-    addItem('C4', 'profiles_list and the browser host notes', checks);
+    addItem('C4', 'profiles_list and the browser rules in its description', checks);
   }
 
   // ---- C5 -----------------------------------------------------------------------------------------------------------

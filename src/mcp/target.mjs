@@ -5,7 +5,9 @@
 //
 // - devices_use: refused with task_open while a task is open on the current target (local: the task lifecycle is not
 //   idle; a device: a js/js_reset went there since its session's last end_task). Switching to a device opens its
-//   session first, so a failure leaves the target unchanged; switching away ends the previous device's session.
+//   session and lists its tools first, so a failure leaves the target unchanged; the answer carries the device's host
+//   notes and its js and profiles_list descriptions, where its surface rules are. Switching away ends the previous
+//   device's session.
 //   Calls that arrive while a switch is under way wait for it, so each runs on the target its arrival order implies.
 // - On a device, a call is a tools/call with the client's own params; its result is relayed unchanged (the device
 //   corrected images and redacted tokens) and tagged `_meta["cua/device"]`; a JSON-RPC error is relayed as an error;
@@ -35,6 +37,7 @@ const DEVICE_REQUEST = 'cua-device-';     // the local ids of the device's own r
 const NEVER = new AbortController().signal;
 const ENDING_CODES = new Set(['connection_closing', 'connection_failed']);
 const ENDING_ERROR = /^cua: connection_(?:closing|failed)\b/;
+const RULED_TOOLS = ['js', 'profiles_list'];  // the tools whose descriptions carry a surface's rules (surface.mjs)
 
 const lost = () => new DeviceError('device_session_ended', 'the device session ended while a task was open there: its REPL state is gone, and the next call opens a new session (rebind apps and tabs)');
 const unsure = () => new DeviceError('device_session_ended', 'the device session ended as this call reached it, so whether it ran there is unknown and it was not resent; the next call opens a new session (rebind apps and tabs)');
@@ -92,9 +95,10 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
   }
 
   // A devices_use answer: the note (and a device's host notes) in the text for clients that read it, and in the
-  // structured content for Claude Code, which reads only that; the text's JSON line repeats neither.
-  function switched({device, previous, note, hostNotes}) {
-    const fields = {status: 'ok', device, previous};
+  // structured content for Claude Code, which reads only that; the text's JSON line repeats neither. A device's surface
+  // rules, its own js and profiles_list descriptions (`tools`), are fields of both.
+  function switched({device, previous, note, hostNotes, tools}) {
+    const fields = {status: 'ok', device, previous, ...(tools === undefined ? {} : {tools})};
     const text = [note, ...(hostNotes === undefined ? [] : ['', hostNotes, '']), JSON.stringify(fields)].join('\n');
     return {content: [{type: 'text', text}], structuredContent: {...fields, note, ...(hostNotes === undefined ? {} : {hostNotes})}, isError: false};
   }
@@ -308,6 +312,21 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
         note: 'cua: every tool now drives this machine (local) again, under the host notes in this server\'s instructions.'}));
     }
     const link = await openLink(wanted, signal, {announced: true});
+    // The device's own tool descriptions carry its surface rules; a session that cannot list them cannot be driven.
+    let listed;
+    try { listed = await link.session.request('tools/list', {}, {signal}); } catch (error) {
+      await endLink(link).catch(() => {});
+      throw error;
+    }
+    if (!Array.isArray(listed.result?.tools)) {
+      await endLink(link).catch(() => {});
+      throw new DeviceError('device_protocol', 'the device did not list its tools');
+    }
+    // The device may answer a list this devices_use's cancellation already withdrew: the client has stopped waiting.
+    if (signal.aborted) {
+      await endLink(link).catch(() => {});
+      throw new DeviceError('cancelled', 'devices_use was cancelled while the device listed its tools');
+    }
     if (closing) {
       await endLink(link).catch(() => {});
       throw closingError();
@@ -321,9 +340,13 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     current = {name: wanted, link, opening: null, taskOpen: false, pendingWork: 0, inflight: new Set(), ended: false};
     const notes = link.session.initializeResult?.instructions;
     const note = `cua: every tool (js, js_reset, end_task, secrets_list, profiles_list) now drives ${wanted}, in a new session `
-      + 'there (its REPL state is fresh). Its host notes (hostNotes) apply until devices_use switches again.';
+      + 'there (its REPL state is fresh). Its host notes (hostNotes) and its js and profiles_list descriptions (tools) apply '
+      + 'until devices_use switches again, in place of this server\'s.';
     const hostNotes = typeof notes === 'string' && notes ? notes : '(the device sent none)';
-    respond(msg.id, {...switched({device: wanted, previous, note, hostNotes}), _meta: {'cua/device': wanted}});
+    const tools = Object.fromEntries(listed.result.tools
+      .filter(tool => RULED_TOOLS.includes(tool?.name) && typeof tool.description === 'string')
+      .map(tool => [tool.name, tool.description]));
+    respond(msg.id, {...switched({device: wanted, previous, note, hostNotes, tools}), _meta: {'cua/device': wanted}});
   }
 
   function use(msg) {

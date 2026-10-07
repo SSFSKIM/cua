@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-10-07 — With the browser surface the model sees a cut `js` description (minor, issue #73).** Claude Code
+  2.1.292 keeps a tool description's first 2,048 characters, and OpenAI's `js` text with the browser surface is 2,847
+  (browser) or 2,952 (`computer,browser`, the plugin's default) on the current pin, so its tail never reached the model
+  even before #73 put cua's rules ahead of it: with both surfaces that includes the `cua.getApp(...)` entry point,
+  `nodeRepl.write`/`emitImage` and `rewriteDocumentation` (the first `js` call returns the whole document, so nothing
+  is unreachable). Dropping the vendor's in-app, MCP Apps and @-mention options from cua's copy (unused on cua's
+  route) would bring the rest back into view, at the cost of editing a vendor description.
+
 - **2026-10-07 — `assertModelSeesText` is opt-in and has two latent false-fail shapes (minor, issue #72 review).**
   It runs at eight call sites (`test/mcp-*.test.mjs`), so a new successful result with text-only guidance is caught
   only where a test calls it, and a routed `profiles_list` with guidance on a fresh device session (`guidance` plus
@@ -15,8 +23,7 @@
   device `end_task` that fails because the session was lost reads both "the next call opens a new session" and "the
   device session is closed; devices_use still works" (redundant, accurate). (d) A connection that closes while a
   `devices_use` re-awaits in-flight calls answers that switch `task_open` rather than `connection_closing` (the client
-  is leaving). (e) The Linux `computer,browser` host notes measure 2,045 of the 2,048-character budget with the vendor's
-  63-character first line, so the next rule needs another tightening.
+  is leaving). ((e), the host-notes budget, was closed by issue #73.)
 
 - **2026-10-07 — Secret fixtures leave their temporary store home behind when interrupted (minor, issue #66).**
   `scripts/accept/secret-seed.mjs` users (`textedit.mjs`, `probe-secrets.mjs`, `accept-chrome.mjs`) remove the temporary

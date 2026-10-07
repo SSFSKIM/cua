@@ -65,11 +65,33 @@ const withoutSetValue = tool => ({...tool, description: tool.description.replace
 const LINUX_SECRETS_LIST_TOOL = withoutSetValue(SECRETS_LIST_TOOL);
 const LINUX_SECRETS_LIST_BROWSER_TOOL = withoutSetValue(SECRETS_LIST_BROWSER_TOOL);
 
+// The rules: what the vendor's API document leaves out, in rules an agent can follow. Several come from the first
+// real-use run (docs/evidence/2026-10-05-homework-1b-dogfooding.md, issue #23): end_task was never called, calls ran in
+// parallel, inputs were repeated against an unchanged state, and fixed waits stood in for readiness checks. Claude Code
+// caps the server instructions, the vendor's own included, at 2,048 characters, so they carry only the rules for every
+// call on every surface (issue #73). A surface's own rules live in the description of the tool they govern: the Chrome
+// rules in profiles_list's (the call before any Chrome work), the computer rules in js's, the device rule in
+// devices_use's. Claude Code caps each description at 2,048 characters too, keeping the head, so cua's go first.
+
+// The Chrome rules. A failed selection sends the agent back to profiles_list: the vendor's own error for an id that is
+// not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
+// profiles_list names a stale binding. Which profile is meant stays the user's call (the dogfood agent bound one
+// itself from tab contents). The 3 s line is spike #25's finding: the vendor browser service caps locator actions,
+// waits and playwright.evaluate at 3 s (a per-call timeoutMs can only shorten it), and a cell timeout resets the
+// kernel, losing the tab handle.
+const BROWSER_RULES = [
+  '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user.',
+  '- Chrome tabs are DOM-only: tab.playwright locators, not native input; press keys on a focusable element, never a frame body; tab.cua.type pastes.',
+  '- Locator actions, waits and evaluate stop at 3 s (timeoutMs can only shorten it); to wait longer, loop short waits to your own deadline under a larger js timeout_ms.',
+  '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
+  '- createBrowserTab can take 60 s (js timeout_ms of at least 60000); after a timeout a tab may still have opened: tell the user, don\'t retry. In a one-window profile, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
+];
+
 export const PROFILES_LIST_TOOL = {
   name: 'profiles_list',
-  description: 'List the Chrome profiles the user registered for browser use, by key, with whether each is ready and, '
-    + 'when ready, its extensionInstanceId. Select the profile the user means with '
-    + 'cua.getBrowser({extensionInstanceId}); a profile that is not ready says why, and no other profile stands in for it.',
+  description: ['List the Chrome profiles the user registered for browser use, by key, with whether each is ready and, '
+    + 'when ready, its extensionInstanceId; a profile that is not ready says why, and no other profile stands in for it. '
+    + 'Call it before any Chrome work, and drive Chrome by these rules:', ...BROWSER_RULES].join('\n'),
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list registered chrome browser profiles for browser use'},
@@ -87,12 +109,15 @@ export const DEVICES_LIST_TOOL = {
   _meta: {'anthropic/searchHint': 'list remote devices: other macs or linux machines this computer use can control'},
 };
 
+// A device's surface rules are in its own tool descriptions, which the client never lists (it lists this server's), so
+// switching returns them beside the device's host notes.
 export const DEVICES_USE_TOOL = {
   name: 'devices_use',
   description: 'Switch every tool of this server (js, js_reset, end_task, secrets_list, profiles_list) to another machine: '
     + 'a device name from devices_list, or "local" for this one. Refused with task_open while a task is open: call '
-    + 'end_task first. Switching to a device opens a session there and returns that machine\'s host notes, which apply '
-    + 'while it is the target; its REPL starts empty. Switching away ends the device\'s session.',
+    + 'end_task first. Switching to a device opens a session there and returns that machine\'s host notes (hostNotes) '
+    + 'and its own js and profiles_list descriptions (tools): while it is the target, follow those instead of this '
+    + 'server\'s. Its REPL starts empty. Switching away ends the device\'s session.',
   inputSchema: {type: 'object', properties: {device: {type: 'string', description: 'A device name from devices_list, or "local".'}}, required: ['device'], additionalProperties: false},
   annotations: {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true},
   _meta: {'anthropic/searchHint': 'switch computer use to a remote device: another mac or linux machine'},
@@ -102,13 +127,10 @@ export const LOCAL_TOOLS = new Set([END_TASK_TOOL.name, SECRETS_LIST_TOOL.name, 
 export const WORK_TOOLS = new Set(PASSED_THROUGH.keys());
 export const DEVICE_TOOLS = new Set([DEVICES_LIST_TOOL.name, DEVICES_USE_TOOL.name]);
 
-// Host notes: what the vendor's API document leaves out, in rules an agent can follow. The general rules apply to every
-// surface; several come from the first real-use run (docs/evidence/2026-10-05-homework-1b-dogfooding.md, issue #23):
-// end_task was never called, calls ran in parallel, inputs were repeated against an unchanged state, and fixed waits
-// stood in for readiness checks. Claude Code caps the server instructions, the vendor's own included, at 2,048
-// characters, so every line has to earn its place.
+// The server instructions' notes: the rules for every call on every surface.
 const TITLE = 'Host notes:';
 const COMPUTER_HEAD = '- Use when a macOS app\'s GUI is the only way; the first js call returns the API docs.';
+const LINUX_COMPUTER_HEAD = '- Use when a Linux app\'s GUI is the only way; the first js call returns the API docs.';
 const BROWSER_HEAD = '- Use for the user\'s existing Chrome profiles when no API or skill fits; the first js call returns the API docs.';
 // The store is a plain directory any cell can read under every sandbox mode (the vendor's read-deny would bind the
 // trusted worker too); the rule keeps the agent on the reference.
@@ -119,60 +141,56 @@ const GENERAL_NOTES = [
   '- Observe, act, verify: a call returning is not success. If the state is unchanged, stop and find out why rather than repeat.',
   '- Batch deterministic steps. Wait for a visible readiness condition in a bounded poll, not a fixed delay.',
   SECRETS_NOTE,
+  '- Each tool\'s description carries the rules for its surface: follow them as these.',
 ];
-const COMPUTER_NOTES = [
-  '- Apps ask for approval once per connection; report a declined app, don\'t retry.',
+// macOS asks per app; on Linux nothing asks (the Linux js rules say so).
+const APPROVAL_NOTE = '- Apps ask for approval once per connection; report a declined app, don\'t retry.';
+// With the device tools (a stdio connection), last.
+const DEVICES_NOTE = '- devices_use moves every tool to that machine, under the notes and descriptions it returns; end_task first.';
+
+export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE].join('\n');
+export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES].join('\n');
+
+// The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
+// tools exist.
+export function hostNotesFor(surfaces, {platform = process.platform, devices = false} = {}) {
+  const notes = !surfaces.includes('computer') ? [TITLE, BROWSER_HEAD, ...GENERAL_NOTES].join('\n')
+    : platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
+  return [notes, ...(devices ? [DEVICES_NOTE] : [])].join('\n');
+}
+
+// cua's rules for js, ahead of the vendor's description (whose tail Claude Code may cut at 2,048 characters): the
+// computer rules by platform and, with the browser surface, a pointer to profiles_list's rules, which the agent has
+// read by then (only that tool hands out a profile's id).
+//
+// On Linux (Phase F) they differ where the vendor's Linux target does: apps are bound by X11 window, key names are X
+// keysyms, setValue and selectText do not exist and paste types, and nothing asks the user per app (the owner's
+// allow-all decision; cua adds no allowlist). DISPLAY and XAUTHORITY reach the runtime, so a model cell can talk to X
+// directly: the trusted wrapper is not a boundary there. Text input is F2's measurement on Ubuntu 24.04 arm64
+// (docs/evidence/2026-10-06-linux-acceptance.md): the helper's typeText and paste insert through AT-SPI and crashed the
+// GTK3 editors gedit and mousepad (SIGSEGV in gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in
+// GTK4's gnome-text-editor they inserted the text and then threw (Text.SetCaretOffset unsupported), which the general
+// "observe, act, verify" rule covers. On x64 (#58, Ubuntu 24.04, the same gedit and GTK builds) typeText did not crash
+// gedit but threw "editable Paste did not insert text"; pressKey typed on both, so the rule holds on both architectures.
+const JS_TITLE = 'Host rules (cua), before the documentation below:';
+const COMPUTER_RULES = [
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale); role names are in the system language.',
   '- Drop a quit app\'s handle: getAXState() relaunches it.',
   '- typeText drops characters the layout cannot key (emoji); paste those and multiline text.',
   '- If REPL state is confused, js_reset and rebind; never also use osascript.',
 ];
-// The Chrome rules. A failed selection sends the agent back to profiles_list: the vendor's own error for an id that is
-// not live ("The Chrome instance is unavailable.") is raised inside the REPL, where cua cannot see it, while
-// profiles_list names a stale binding. Which profile is meant stays the user's call (the dogfood agent bound one
-// itself from tab contents). The 3 s line is spike #25's finding: the vendor browser service caps locator actions,
-// waits and playwright.evaluate at 3 s (a per-call timeoutMs can only shorten it), and a cell timeout resets the
-// kernel, losing the tab handle.
-const BROWSER_NOTES = [
-  '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again. Never pick or bind a profile for the user.',
-  '- Chrome tabs are DOM-only: tab.playwright locators, not native input; press keys on a focusable element, never a frame body; tab.cua.type pastes.',
-  '- Locator actions, waits and evaluate stop at 3 s (timeoutMs can only shorten it); to wait longer, loop short waits to your own deadline under a larger js timeout_ms.',
-  '- evaluate is read-only: no fetch, no require, objects are non-extensible.',
-  '- createBrowserTab can take 60 s (js timeout_ms of at least 60000); after a timeout a tab may still have opened: tell the user, don\'t retry. In a one-window profile, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
-];
-
-// The computer surface on Linux (Phase F) differs where the vendor's Linux target does: apps are bound by X11 window,
-// key names are X keysyms, and nothing asks the user per app (the owner's allow-all decision; cua adds no allowlist).
-// DISPLAY and XAUTHORITY reach the runtime, so a model cell can talk to X directly: the trusted wrapper is not a boundary
-// there. Text input is F2's measurement on Ubuntu 24.04 arm64 (docs/evidence/2026-10-06-linux-acceptance.md): the
-// helper's typeText and paste insert through AT-SPI and crashed the GTK3 editors gedit and mousepad (SIGSEGV in
-// gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in GTK4's gnome-text-editor they inserted the
-// text and then threw (Text.SetCaretOffset unsupported), which the general "observe, act, verify" rule covers. On x64
-// (#58, Ubuntu 24.04, the same gedit and GTK builds) typeText did not crash gedit but threw "editable Paste did not insert
-// text"; pressKey typed on both, so the note's advice holds on both architectures. The vendor's
-// own document already says that setValue and selectText do not exist on Linux.
-const LINUX_COMPUTER_HEAD = '- Use when a Linux app\'s GUI is the only way; the first js call returns the API docs.';
-const LINUX_COMPUTER_NOTES = [
+const LINUX_COMPUTER_RULES = [
   '- Bind by window: cua.getApp({windowId}) with an id from listWindows(); if REPL state is confused, js_reset and rebind.',
+  '- setValue and selectText do not exist; paste types like typeText.',
   '- typeText and paste crash GTK3 text views: type there with pressKey, one X keysym per call (minus, space).',
   '- Prefer accessibility element indexes; coordinates are screenshot pixels (apply the host\'s downscale).',
   '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
 ];
+const BROWSER_POINTER = '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab).';
 
-// With the device tools (a stdio connection), last: the device's own notes come in devices_use's result.
-const DEVICES_NOTE = '- devices_use moves every tool to that machine, under its notes; end_task first.';
-
-export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, ...COMPUTER_NOTES].join('\n');
-export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, ...LINUX_COMPUTER_NOTES].join('\n');
-
-// The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
-// tools exist. The Chrome notes are the same everywhere.
-export function hostNotesFor(surfaces, {platform = process.platform, devices = false} = {}) {
-  const computer = platform === 'linux' ? LINUX_HOST_NOTES : DEFAULT_HOST_NOTES;
-  const notes = !surfaces.includes('browser') ? [computer]
-    : surfaces.includes('computer') ? [computer, ...BROWSER_NOTES]
-      : [TITLE, BROWSER_HEAD, ...GENERAL_NOTES, ...BROWSER_NOTES];
-  return [...notes, ...(devices ? [DEVICES_NOTE] : [])].join('\n');
+export function jsRulesFor(surfaces, {platform = process.platform} = {}) {
+  const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
+  return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [BROWSER_POINTER] : [])].join('\n');
 }
 
 // A model-visible profile entry: key and readiness, the instance id when bound, the reason when not ready. Never the
@@ -187,9 +205,14 @@ const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? P
   : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
 export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false} = {}) {
+  const jsRules = jsRulesFor(surfaces, {platform});
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
-    .map(tool => ({...tool, _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)}}));
+    .map(tool => ({
+      ...tool,
+      ...(tool.name === 'js' ? {description: [jsRules, tool.description].filter(Boolean).join('\n\n')} : {}),
+      _meta: {...(tool._meta ?? {}), 'anthropic/searchHint': hintFor(tool.name, surfaces, platform)},
+    }));
   const linux = platform === 'linux';
   const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   const local = surfaces.includes('browser')

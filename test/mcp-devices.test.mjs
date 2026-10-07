@@ -92,8 +92,9 @@ async function local(t, home, server = {}) {
 }
 
 const use = async (h, name) => (await h.client.call('devices_use', {device: name}).response);
-// A devices_use answer's fields, less its note and the device's host notes (asserted where they are the subject).
-const switchFields = response => { const {note, hostNotes, ...fields} = structured(response); return fields; };
+// A devices_use answer's fields, less its note and the device's host notes and tool descriptions (asserted where they
+// are the subject).
+const switchFields = response => { const {note, hostNotes, tools, ...fields} = structured(response); return fields; };
 const code = response => structured(response)?.code;
 
 const credentialFree = (h, ...devices) => {
@@ -159,7 +160,7 @@ test('devices_use opens a session with the local client\'s own initialize params
 
   const switched = await use(h, 'mini');
   assert.equal(switched.result.isError, false);
-  const {note, hostNotes, ...fields} = structured(switched);
+  const {note, hostNotes, tools, ...fields} = structured(switched);
   assert.deepEqual(fields, {status: 'ok', device: 'mini', previous: 'local'});
   assert.match(textOf(switched), /every tool .* now drives mini/);
   assert.match(textOf(switched), /Upstream\.\n\nHost notes:/, 'the device\'s own instructions, its host notes included');
@@ -168,6 +169,12 @@ test('devices_use opens a session with the local client\'s own initialize params
   assert.match(note, /every tool .* now drives mini/);
   assert.match(hostNotes, /^Upstream\.\n\nHost notes:/);
   assert.equal(textOf(switched).split('Host notes:').length, 2, 'the text carries the notes once');
+  // The device's surface rules are in its own js description (issue #73), which the client never lists: the answer
+  // carries it (this device has no browser surface, so no profiles_list).
+  assert.deepEqual(Object.keys(tools), ['js']);
+  assert.match(tools.js, /^Host rules \(cua\), before the documentation below:\n- [\s\S]*\n\nUpstream js description\.$/);
+  assert.deepEqual(JSON.parse(textOf(switched).split('\n').at(-1)).tools, tools, 'the text\'s JSON line carries them');
+  assert.match(note, /its js and profiles_list descriptions \(tools\) apply until devices_use switches again/);
   assertModelSeesText(switched);
   const deviceUp = mini.upstreamOf(0);
   assert.deepEqual((await deviceUp.nextRequest('initialize')).params, CLIENT_INIT, 'the device\'s runtime sees the real client');
@@ -422,6 +429,25 @@ test('a call cancelled while its lazy open is under way is never answered, and t
   assert.equal((await next.response).result._meta['cua/deviceSession'], 'new');
 });
 
+test('a devices_use cancelled while the device lists its tools is withdrawn, even when the device answers the list anyway', async t => {
+  const home = userHome(t);
+  const mini = await device(t);
+  await register(home, 'mini', mini);
+  const h = await local(t, home);
+  let held = null;
+  mini.front = entry => entry.message?.method === 'tools/list' && (held = entry, true);
+  const switching = h.client.call('devices_use', {device: 'mini'});
+  await until(() => held, 'the held tools/list');
+  h.client.notify('notifications/cancelled', {requestId: switching.id});
+  await tick(50);
+  held.res.writeHead(200, {'Content-Type': 'application/json'});
+  held.res.end(JSON.stringify({jsonrpc: '2.0', id: held.message.id, result: {tools: UPSTREAM_TOOLS}}));
+  await until(() => mini.deletes().length, 'the new session ended');
+  assert.deepEqual(h.client.responsesFor(switching.id), [], 'a withdrawn request is never answered');
+  mini.front = null;
+  assert.equal(structured(await h.client.call('devices_list').response).current, 'local', 'the target is unchanged');
+});
+
 test('a POST stream cut mid-call is resumed by Last-Event-ID and the result delivered in the same call, with no new initialize', async t => {
   const home = userHome(t);
   const mini = await device(t);
@@ -449,7 +475,9 @@ test('devices_use failures are classified and leave the target unchanged', async
   const bare = await device(t);
   const busy = await device(t);
   const broken = await device(t);
+  const unlisted = await device(t);
   await register(home, 'mini', mini);
+  await register(home, 'unlisted', unlisted);
   await register(home, 'wrong', wrong, {credential: 'f'.repeat(64)});
   await register(home, 'bare', bare, {credential: null});
   await register(home, 'busy', busy);
@@ -457,6 +485,13 @@ test('devices_use failures are classified and leave the target unchanged', async
   addDevice({env: home.env, name: 'gone', relayUrl: 'http://127.0.0.1:1', deviceId: randomBytes(16).toString('base64url')});
   await home.store.write(clientSecretKey((await import('../src/remote/devices.mjs')).readDevices({env: home.env}).gone.deviceId), 'a'.repeat(64));
   broken.open.failWith = 'runtime_not_installed';
+  // A device whose session cannot list its tools (where its surface rules are) is not switched to.
+  unlisted.front = entry => {
+    if (entry.message?.method !== 'tools/list') return false;
+    entry.res.writeHead(200, {'Content-Type': 'application/json'});
+    entry.res.end(JSON.stringify({jsonrpc: '2.0', id: entry.message.id, error: {code: -32603, message: 'no tools'}}));
+    return true;
+  };
   // Another client holds the busy device's only session with a call running.
   const other = await openDeviceSession({endpoint: `${busy.relayUrl}/d/${busy.deviceId}/mcp`, credential: busy.credential, initializeParams: CLIENT_INIT});
   t.after(() => other.close());
@@ -467,7 +502,7 @@ test('devices_use failures are classified and leave the target unchanged', async
 
   const cases = {
     nowhere: 'device_unknown', bare: 'credential_missing', wrong: 'device_unauthorized', gone: 'device_offline',
-    busy: 'session_limit', broken: 'device_failed',
+    busy: 'session_limit', broken: 'device_failed', unlisted: 'device_protocol',
   };
   for (const [name, expected] of Object.entries(cases)) {
     const response = await use(h, name);
@@ -478,9 +513,10 @@ test('devices_use failures are classified and leave the target unchanged', async
   assert.match(textOf(await use(h, 'bare')), new RegExp(`/secret ${clientSecretKey(bare.deviceId)}`), 'the user\'s step is named');
   assert.match(textOf(await use(h, 'broken')), /runtime_not_installed/);
   assert.equal(mini.http.sessions.size, 1, 'the current device session is kept');
+  assert.equal(unlisted.http.sessions.size, 0, 'the session that could not list its tools is ended');
   const invalid = await h.client.call('devices_use', {}).response;
   assert.equal(invalid.error.code, -32602);
-  credentialFree(h, mini, wrong, busy, broken);
+  credentialFree(h, mini, wrong, busy, broken, unlisted);
 });
 
 test('switching from one device to another ends the first device\'s session; the local connection\'s close ends the current one before closed settles', async t => {

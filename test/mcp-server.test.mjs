@@ -28,7 +28,7 @@ test('host notes can be replaced or disabled', async () => {
   assert.equal((await initialized(none)).result.instructions, 'UI automation through cua_repl using the initialized cua API.');
 });
 
-test('tools/list exposes exactly js, js_reset, end_task and secrets_list, preserving upstream js/js_reset schemas', async () => {
+test('tools/list exposes exactly js, js_reset, end_task and secrets_list, preserving upstream js/js_reset descriptions and schemas', async () => {
   const h = harness();
   await initialized(h);
   const list = h.client.request('tools/list', {});
@@ -38,7 +38,9 @@ test('tools/list exposes exactly js, js_reset, end_task and secrets_list, preser
   const byName = Object.fromEntries(result.tools.map(t => [t.name, t]));
   for (const name of ['js', 'js_reset']) {
     const upstream = UPSTREAM_TOOLS.find(t => t.name === name);
-    assert.equal(byName[name].description, upstream.description);
+    // js carries cua's rules ahead of the vendor's own description (issue #73).
+    assert.ok(byName[name].description.endsWith(name === 'js' ? `\n\n${upstream.description}` : upstream.description), name);
+    if (name === 'js_reset') assert.equal(byName[name].description, upstream.description);
     assert.deepEqual(byName[name].inputSchema, upstream.inputSchema);
   }
   for (const tool of result.tools) {

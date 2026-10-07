@@ -10,6 +10,15 @@
   the reason code but not the instruction. Moving each such message into the structured content (or a `note` field in
   `statusResult` itself) would close it.
 
+- **2026-10-07 — Phase G task-review minors left (minor, issue #70).** (a) `src/cli.mjs` is past 700 lines with the
+  `devices` handler; a split by command family (as `src/secrets/commands.mjs` did) would keep it readable. (b)
+  `test/remote-devices.test.mjs`: the test named "unsafe or unreadable" exercises only an insecure-mode file. (c) A
+  device `end_task` that fails because the session was lost reads both "the next call opens a new session" and "the
+  device session is closed; devices_use still works" (redundant, accurate). (d) A connection that closes while a
+  `devices_use` re-awaits in-flight calls answers that switch `task_open` rather than `connection_closing` (the client
+  is leaving). (e) The Linux `computer,browser` host notes measure 2,045 of the 2,048-character budget with the vendor's
+  63-character first line, so the next rule needs another tightening.
+
 - **2026-10-07 — Secret fixtures leave their temporary store home behind when interrupted (minor, issue #66).**
   `scripts/accept/secret-seed.mjs` users (`textedit.mjs`, `probe-secrets.mjs`, `accept-chrome.mjs`) remove the temporary
   `$HOME` holding a generated sentinel in `finally`, which a SIGINT or SIGTERM skips: the 0600 file stays under

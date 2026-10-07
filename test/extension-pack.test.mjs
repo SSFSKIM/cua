@@ -1,7 +1,8 @@
-// scripts/extension-pack.mjs: the self-hosted CRX3 (signed with the owner's key, so its id is the manifest key's id)
-// and the Chrome update manifest naming it. A Linux VM force-installs that CRX from the relay's /ext/ route (spec
-// docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "Distribution", H4). These tests sign with a key
-// generated here; the owner's key never enters a test.
+// scripts/extension-pack.mjs (`npm run extension:pack`): the Chrome Web Store zip (extension/ without the manifest's
+// `key`), and with the owner's key the self-hosted CRX3 (signed with that key, so its id is the manifest key's id) and
+// the Chrome update manifest naming it. A Linux VM force-installs that CRX from the relay's /ext/ route (spec
+// docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "Distribution", H4 and H5). These tests sign with a
+// key generated here; the owner's key never enters a test.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
@@ -11,7 +12,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {CUA_EXTENSION_ID, extensionIdFromKey} from '../src/chrome/extension.mjs';
-import {DEFAULT_BASE_URL, packExtension, updateManifestXml} from '../scripts/extension-pack.mjs';
+import {DEFAULT_BASE_URL, packExtension, packStoreZip, updateManifestXml} from '../scripts/extension-pack.mjs';
 
 const EXTENSION = fileURLToPath(new URL('../extension/', import.meta.url));
 const SCRIPT = fileURLToPath(new URL('../scripts/extension-pack.mjs', import.meta.url));
@@ -65,6 +66,7 @@ function parseCrx(crx) {
   return {proofs, signedHeaderData, crxId, zip: crx.subarray(12 + headerSize), header};
 }
 const unzip = (zipPath, ...args) => spawnSync('unzip', [...args, zipPath], {encoding: 'buffer'});
+const sourceFiles = extensionDir => ['background.js', 'manifest.json', 'popup.html', 'popup.js', ...readdirSync(join(extensionDir, 'icons')).map(n => `icons/${n}`)].sort();
 
 test('the CRX is a CRX3 signed by the given key over the CRX3 signed data and the zip, its crx_id the key\'s id', t => {
   const f = fixture(t);
@@ -93,7 +95,7 @@ test('the CRX\'s zip holds extension/ byte for byte (no dotfiles) with update_ur
   const tested = unzip(zipPath, '-t');
   assert.equal(tested.status, 0, tested.stdout.toString() + tested.stderr.toString());
   const listed = unzip(zipPath, '-Z1').stdout.toString().trim().split('\n').sort();
-  const expected = ['background.js', 'manifest.json', 'popup.html', 'popup.js', ...readdirSync(join(f.extensionDir, 'icons')).map(n => `icons/${n}`)].sort();
+  const expected = sourceFiles(f.extensionDir);
   assert.deepEqual(listed, expected);
   for (const name of expected.filter(n => n !== 'manifest.json'))
     assert.deepEqual(spawnSync('unzip', ['-p', zipPath, name]).stdout, readFileSync(join(f.extensionDir, name)), name);
@@ -119,6 +121,24 @@ test('update.xml names the id, the version and the CRX URL; packing twice gives 
   assert.deepEqual(readFileSync(a.crxPath), readFileSync(b.crxPath));
 });
 
+test('the Store zip holds extension/ byte for byte (no dotfiles) with the manifest\'s key removed and nothing added', t => {
+  const f = fixture(t);
+  const out = join(f.dir, 'dist');
+  const result = packStoreZip({extensionDir: f.extensionDir, outDir: out});
+  assert.deepEqual(result, {version: f.version, zipPath: join(out, `cua-extension-${f.version}.zip`)});
+  const tested = unzip(result.zipPath, '-t');
+  assert.equal(tested.status, 0, tested.stdout.toString() + tested.stderr.toString());
+  const expected = sourceFiles(f.extensionDir);
+  assert.deepEqual(unzip(result.zipPath, '-Z1').stdout.toString().trim().split('\n').sort(), expected);
+  for (const name of expected.filter(n => n !== 'manifest.json'))
+    assert.deepEqual(spawnSync('unzip', ['-p', result.zipPath, name]).stdout, readFileSync(join(f.extensionDir, name)), name);
+  const packed = JSON.parse(spawnSync('unzip', ['-p', result.zipPath, 'manifest.json']).stdout.toString());
+  const {key, ...source} = JSON.parse(readFileSync(join(f.extensionDir, 'manifest.json'), 'utf8'));
+  assert.ok(key, 'the fixture manifest carries a key');
+  assert.deepEqual(packed, source, 'the Store refuses a manifest with `key`; update_url is the Store\'s own');
+  assert.deepEqual(readFileSync(packStoreZip({extensionDir: f.extensionDir, outDir: join(f.dir, 'again')}).zipPath), readFileSync(result.zipPath), 'deterministic');
+});
+
 test('a key that is not the manifest key\'s is refused before anything is written', t => {
   const f = fixture(t);
   const other = generateKeyPairSync('rsa', {modulusLength: 2048}).privateKey.export({type: 'pkcs8', format: 'pem'});
@@ -127,24 +147,30 @@ test('a key that is not the manifest key\'s is refused before anything is writte
   assert.deepEqual(readdirSync(f.dir).sort(), ['extension', 'key.pem']);
 });
 
-test('the CLI: the relay\'s /ext/ by default, --out and --base-url, and refusals that never echo the key', t => {
+test('the CLI: the zip always, the CRX with a key, the relay\'s /ext/ by default, --out and --base-url, and refusals that never echo the key', t => {
   const f = fixture(t);
   const run = (env, ...args) => spawnSync(process.execPath, [SCRIPT, ...args], {encoding: 'utf8', env: {...process.env, CUA_EXTENSION_KEY: '', ...env}});
   assert.equal(DEFAULT_BASE_URL, 'https://178-104-102-73.sslip.io/ext/');
 
-  const missing = run({}, '--out', join(f.dir, 'x'));
-  assert.equal(missing.status, 2);
-  assert.match(missing.stderr, /CUA_EXTENSION_KEY/);
+  // Without a key: the Store zip of the real extension/, and no CRX (it needs the owner's key).
+  const zipOnly = run({}, '--out', join(f.dir, 'z'));
+  assert.equal(zipOnly.status, 0, zipOnly.stderr);
+  const manifest = JSON.parse(readFileSync(join(EXTENSION, 'manifest.json'), 'utf8'));
+  assert.deepEqual(readdirSync(join(f.dir, 'z')), [`cua-extension-${manifest.version}.zip`]);
+  assert.match(zipOnly.stdout, new RegExp(`cua-extension-${manifest.version}\\.zip`));
+  assert.match(zipOnly.stdout, /CUA_EXTENSION_KEY is not set: no CRX/);
 
   // The real extension/ with a key that is not the owner's: refused, and the PEM is not echoed.
   const wrong = run({CUA_EXTENSION_KEY: f.keyPath}, '--out', join(f.dir, 'x'));
   assert.equal(wrong.status, 1);
   assert.match(wrong.stderr, new RegExp(`key_mismatch: .*${CUA_EXTENSION_ID}`));
   assert.doesNotMatch(wrong.stderr + wrong.stdout, /PRIVATE KEY/);
+  assert.throws(() => readdirSync(join(f.dir, 'x')), {code: 'ENOENT'}, 'a refused key writes nothing, the zip included');
 
   const out = join(f.dir, 'dist');
   const ok = run({CUA_EXTENSION_KEY: f.keyPath}, '--extension', f.extensionDir, '--out', out);
   assert.equal(ok.status, 0, ok.stderr);
+  assert.deepEqual(readdirSync(out).sort(), [`cua-extension-${f.version}.crx`, `cua-extension-${f.version}.zip`, 'update.xml']);
   assert.match(readFileSync(join(out, 'update.xml'), 'utf8'), /codebase='https:\/\/178-104-102-73\.sslip\.io\/ext\/cua-extension-/);
   assert.match(ok.stdout, new RegExp(`id ${f.id}`));
   assert.doesNotMatch(ok.stdout, /PRIVATE KEY/);
@@ -156,4 +182,20 @@ test('the CLI: the relay\'s /ext/ by default, --out and --base-url, and refusals
     const refused = run({CUA_EXTENSION_KEY: f.keyPath}, '--extension', f.extensionDir, '--out', join(f.dir, 'r'), '--base-url', bad);
     assert.equal(refused.status, 2, bad);
   }
+});
+
+test('npm run extension:pack runs the packer, and the npm package carries extension/ (never the key or dist/)', t => {
+  const out = join(scratch(t), 'dist');
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const npm = (...args) => spawnSync('npm', args, {cwd: root, encoding: 'utf8', env: {...process.env, CUA_EXTENSION_KEY: ''}});
+  const packed = npm('run', '--silent', 'extension:pack', '--', '--out', out);
+  assert.equal(packed.status, 0, packed.stderr);
+  const {version} = JSON.parse(readFileSync(join(EXTENSION, 'manifest.json'), 'utf8'));
+  assert.deepEqual(readdirSync(out), [`cua-extension-${version}.zip`]);
+  const listing = npm('pack', '--dry-run', '--json');
+  assert.equal(listing.status, 0, listing.stderr);
+  const listed = JSON.parse(listing.stdout);  // an array before npm 12, an object keyed by package name since
+  const files = (Array.isArray(listed) ? listed[0] : Object.values(listed)[0]).files.map(f => f.path);
+  for (const name of sourceFiles(EXTENSION)) assert.ok(files.includes(`extension/${name}`), name);
+  assert.deepEqual(files.filter(p => /^dist\/|\.pem$|\.crx$/.test(p)), []);
 });

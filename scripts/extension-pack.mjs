@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-// Pack the cua extension for self-hosting: dist/cua-extension-<version>.crx, a CRX3 signed with the owner's key (so
-// its id is the manifest key's, CUA_EXTENSION_ID), and dist/update.xml, the Chrome update manifest naming that CRX. A
-// Linux VM force-installs it through ExtensionInstallForcelist "<id>;<base>update.xml"; relay/deploy/update.sh --ext
-// dist copies both to the relay's /ext/ route. Spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md,
-// "Distribution".
+// Pack the cua extension (`npm run extension:pack`). Always dist/cua-extension-<version>.zip, the Chrome Web Store
+// upload: extension/ with the manifest's `key` removed (the Store refuses a manifest that has one; the first upload
+// keeps the id by carrying the private key as key.pem instead, which the owner adds by hand and nothing here does).
+// With CUA_EXTENSION_KEY also the self-hosted build: dist/cua-extension-<version>.crx, a CRX3 signed with the owner's
+// key (so its id is the manifest key's, CUA_EXTENSION_ID), and dist/update.xml, the Chrome update manifest naming that
+// CRX. A Linux VM force-installs it through ExtensionInstallForcelist "<id>;<base>update.xml";
+// relay/deploy/update.sh --ext dist copies both to the relay's /ext/ route. Spec
+// docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "Distribution".
 //
-//   CUA_EXTENSION_KEY=<pem path> node scripts/extension-pack.mjs [--out dist] [--base-url https://<host>/ext/]
+//   [CUA_EXTENSION_KEY=<pem path>] node scripts/extension-pack.mjs [--out dist] [--base-url https://<host>/ext/]
 //       [--extension <dir>]
 //
 // The key is read from the file and used only to sign; nothing here prints or copies it. The CRX's manifest gains
@@ -111,18 +114,31 @@ export const updateManifestXml = ({id, version, crxUrl}) => [
   '',
 ].join('\n');
 
+const readManifest = extensionDir => JSON.parse(readFileSync(join(extensionDir, 'manifest.json'), 'utf8'));
+// The extension's files for a zip, the manifest's entry being `manifest` serialized.
+const entriesOf = (extensionDir, manifest) => filesOf(extensionDir).map(name => ({
+  name,
+  data: name === 'manifest.json' ? Buffer.from(JSON.stringify(manifest, null, 2) + '\n') : readFileSync(join(extensionDir, name)),
+}));
+
+// Writes <outDir>/cua-extension-<version>.zip, the Store upload: the manifest without `key` and nothing added (the
+// Store serves its own updates, so no update_url).
+export function packStoreZip({extensionDir, outDir}) {
+  const {key, ...manifest} = readManifest(extensionDir);
+  mkdirSync(outDir, {recursive: true});
+  const zipPath = join(outDir, `cua-extension-${manifest.version}.zip`);
+  writeFileSync(zipPath, zipOf(entriesOf(extensionDir, manifest)));
+  return {version: manifest.version, zipPath};
+}
+
 // Writes <outDir>/cua-extension-<version>.crx and <outDir>/update.xml. Refuses a key whose id is not the manifest
 // key's (a CRX under another id would never match the force-list entry), before writing anything.
 export function packExtension({extensionDir, privateKeyPem, outDir, baseUrl}) {
-  const manifest = JSON.parse(readFileSync(join(extensionDir, 'manifest.json'), 'utf8'));
+  const manifest = readManifest(extensionDir);
   const privateKey = createPrivateKey(privateKeyPem);
   const expected = extensionIdFromKey(manifest.key);
   const updateUrl = `${baseUrl}update.xml`;
-  const entries = filesOf(extensionDir).map(name => ({
-    name,
-    data: name === 'manifest.json' ? Buffer.from(JSON.stringify({...manifest, update_url: updateUrl}, null, 2) + '\n') : readFileSync(join(extensionDir, name)),
-  }));
-  const {crx, id} = crx3(zipOf(entries), privateKey);
+  const {crx, id} = crx3(zipOf(entriesOf(extensionDir, {...manifest, update_url: updateUrl})), privateKey);
   if (id !== expected) throw new Error(`key_mismatch: the signing key gives id ${id}, not the key of the manifest's id ${expected}`);
   const crxName = `cua-extension-${manifest.version}.crx`;
   mkdirSync(outDir, {recursive: true});
@@ -134,7 +150,7 @@ export function packExtension({extensionDir, privateKeyPem, outDir, baseUrl}) {
 
 function main(argv) {
   const options = {out: join(ROOT, 'dist'), 'base-url': DEFAULT_BASE_URL, extension: join(ROOT, 'extension')};
-  const usage = message => { console.error(`${message}\nusage: CUA_EXTENSION_KEY=<pem path> node scripts/extension-pack.mjs [--out <dir>] [--base-url https://<host>/<path>/] [--extension <dir>]`); return 2; };
+  const usage = message => { console.error(`${message}\nusage: [CUA_EXTENSION_KEY=<pem path>] node scripts/extension-pack.mjs [--out <dir>] [--base-url https://<host>/<path>/] [--extension <dir>]`); return 2; };
   for (let i = 0; i < argv.length; i += 2) {
     const name = argv[i]?.replace(/^--/, '');
     if (!(name in options) || argv[i + 1] === undefined) return usage(`unknown or incomplete option: ${argv[i]}`);
@@ -143,11 +159,16 @@ function main(argv) {
   // The base URL lands in XML attributes and in Chrome's policy: plain characters only, a directory (trailing /).
   if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/([A-Za-z0-9._~-]+\/)*$/.test(options['base-url']))
     return usage(`--base-url must be a plain https:// URL ending in /: ${options['base-url']}`);
+  const extensionDir = resolve(options.extension), outDir = resolve(options.out);
   const keyPath = process.env.CUA_EXTENSION_KEY;
-  if (!keyPath) return usage('CUA_EXTENSION_KEY is not set: the CRX is signed with the owner\'s key (a PEM file path)');
   try {
-    const packed = packExtension({extensionDir: resolve(options.extension), privateKeyPem: readFileSync(keyPath, 'utf8'), outDir: resolve(options.out), baseUrl: options['base-url']});
-    console.log(`cua extension ${packed.version}, id ${packed.id}\n  ${packed.crxPath}\n  ${packed.updateXmlPath} (force-list: ${packed.id};${packed.updateUrl})`);
+    // The CRX first: a refused key leaves nothing written, the zip included.
+    const packed = keyPath ? packExtension({extensionDir, privateKeyPem: readFileSync(keyPath, 'utf8'), outDir, baseUrl: options['base-url']}) : null;
+    const store = packStoreZip({extensionDir, outDir});
+    console.log(`cua extension ${store.version}\n  ${store.zipPath} (the Chrome Web Store upload, without the manifest's key)`);
+    console.log(packed
+      ? `  ${packed.crxPath} (id ${packed.id})\n  ${packed.updateXmlPath} (force-list: ${packed.id};${packed.updateUrl})`
+      : '  CUA_EXTENSION_KEY is not set: no CRX or update.xml (they are signed with the owner\'s key, a PEM file path)');
     return 0;
   } catch (error) {
     // Messages from node:crypto name the failure, never the key's bytes.

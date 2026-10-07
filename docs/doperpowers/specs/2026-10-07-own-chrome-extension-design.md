@@ -30,7 +30,7 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-07 09:40) H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
 - [x] (2026-10-07 09:40) H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
 - [ ] H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
-- [ ] H4 — Linux: the Tart VM and the cloud VM template, unattended, with a self-hosted CRX.
+- [x] (2026-10-07 14:10) H4 — Linux: the Tart VM and the cloud VM template, unattended, with a self-hosted CRX.
 - [ ] H5 — packaging, docs, the Store listing (owner action) and the acceptance section as written.
 
 ## Facts this design rests on
@@ -563,6 +563,14 @@ No new npm dependencies.
   installed per profile when that profile loads (a fresh instance at startup); removal from the list uninstalls (~45 s).
   Several files in `policies/managed/` setting the same policy are **not merged** (the last file alphabetically wins), so
   provisioning writes one combined force-list. A remote HTTPS update URL was not tested (H4 does).
+- Observation (H4, 2026-10-07): branded Chrome 154 (Tart VM) and 155 (Hetzner, fsn1) force-install the self-hosted CRX
+  from the relay's HTTPS `update.xml` ~6 s after the policy is written, no restart. `create-hetzner.sh --extension
+  hosted` reaches doctor `ok:true` with `chrome.hosts.live` pass (1) in 3 m 45 s from nothing; the CRX3 header matches
+  Chrome's own packer byte for byte outside the signature. Evidence: `docs/evidence/2026-10-07-own-extension-linux.md`.
+- Observation (H3b prep, 2026-10-07): on the cua route with nothing bound, an empty `BROWSER_USE_BACKEND_PATHS` reaches
+  the service through node_repl: `listBrowsers` returned nothing while the owner's live ChatGPT-extension hosts had
+  sockets in `/tmp/codex-browser-use`. Same host on another port is same-site, so the cross-origin iframe cell serves
+  its frame from `localhost:<port2>` (not `127.0.0.1`) to get an OOPIF.
 
 ## Decision Log
 
@@ -667,6 +675,21 @@ No new npm dependencies.
 - Hand-off to H3b (H2 review): confirm live that an empty `BROWSER_USE_BACKEND_PATHS` survives node_repl to the
   service (a fixture socket in `/tmp/codex-browser-use` must not be listed on the cua route with nothing bound), and
   that node_repl reaches `$CUA_HOME/chrome/b/*.sock` under the scoped sandbox.
+
+- Decision (H4, 2026-10-07): `scripts/extension-pack.mjs` writes the CRX3 (with an `update_url` added to the packed
+  manifest, so installs find later versions) and `update.xml`, refusing a key whose id differs from the manifest's
+  (`key_mismatch`); the Store zip and the npm script are H5's. `relay/deploy/update.sh --ext` keeps the live site
+  address, validates the Caddyfile before installing it and never restarts the relay. A cua-route template's force-list
+  names only cua's extension: a re-run on an older template VM is the migration (Chrome uninstalls the ChatGPT
+  extension; owner-confirmed); the Tart VM keeps both entries in its one file. `CUA_EXTENSION` defaults to `hosted`
+  until the Store listing, then `store`. `create-hetzner.sh --repo <bundle>` uploads an unpushed branch. Debt: doctor's
+  `agent.*` rows fail for a non-default home on a machine whose agent belongs to another home; an update through
+  `update_url` to a later version is untested.
+- Decision (H3b, 2026-10-07): `accept-chrome --route` defaults to the home's route and a mismatch blocks; acceptance 5's
+  `tab owned by another session` is checked with a raw client on the host socket under a fresh session id (the vendor
+  API cannot send `executeCdp` for another session's tab); the user-tab exception covers exactly the runner's own page
+  (found by its per-run URL, claimed, read, closed); the Chrome-restart runner waits for the host's pid to change and
+  its socket to answer, else BLOCKED with cleanup; `serve-with-store.mjs` passes the route to `chromeFacts()`.
 
 ## Outcomes & Retrospective
 

@@ -123,7 +123,9 @@ const BROWSER_NOTES = [
 // there. Text input is F2's measurement on Ubuntu 24.04 arm64 (docs/evidence/2026-10-06-linux-acceptance.md): the
 // helper's typeText and paste insert through AT-SPI and crashed the GTK3 editors gedit and mousepad (SIGSEGV in
 // gtk_text_buffer_get_iter_at_offset), while pressKey typed into gedit; in GTK4's gnome-text-editor they inserted the
-// text and then threw (Text.SetCaretOffset unsupported), which the general "observe, act, verify" rule covers. The vendor's
+// text and then threw (Text.SetCaretOffset unsupported), which the general "observe, act, verify" rule covers. On x64
+// (#58, Ubuntu 24.04, the same gedit and GTK builds) typeText did not crash gedit but threw "editable Paste did not insert
+// text"; pressKey typed on both, so the note's advice holds on both architectures. The vendor's
 // own document already says that setValue and selectText do not exist on Linux.
 const LINUX_COMPUTER_HEAD = '- Use this when a Linux app\'s GUI is the only way; the first js call returns the API document.';
 const LINUX_COMPUTER_NOTES = [

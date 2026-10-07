@@ -187,7 +187,7 @@ async function runConfig({runtime, home, label, network, ambient, backends, cell
     started.push(await startBackend({socketPath: b.path, adapter: stubs[b.key], label: `${label}-${b.key}`}));
   }
   const env = vendorEnv({ambient, paths: runtime.paths, codexHome, backendPath: backends.map(b => b.path).join(':'), network, availableBackends: 'chrome'});
-  const out = {label, network, envKeys: Object.keys(env).sort(), authJsonPresent: existsSync(join(codexHome, 'auth.json')), cells: {}, elicitations: [], timing: {}};
+  const out = {label, network, envKeys: Object.keys(env).sort(), authJsonPresent: existsSync(join(codexHome, 'auth.json')), authJsonPresentAfter: null, cells: {}, elicitations: [], timing: {}};
   const transcript = [];
   let stderr = '';
   t0 = performance.now();
@@ -254,8 +254,10 @@ export async function runNoHeaderLayer({home, network, sentinels}) {
     {label: 'header-control', backends: [{key: 'live', path: sock('hc'), listen: true, info: cuaInfo({instanceId: randomUUID(), agentRequestHeaderEnabled: false})}], cells: SESSION_CELLS},
   ];
   const deadPaths = {absent: sock('absent'), stale: sock('stale'), mute: sock('mute')};
-  for (const p of Object.values(deadPaths)) rmSync(p, {force: true});
-  await staleSocket(deadPaths.stale);
+  // Every socket path this run may create, removed however the run ends (a throwing runConfig included).
+  const socketPaths = [...Object.values(deadPaths), sock('nh'), sock('hc'), sock('live')];
+  const removeSockets = () => { for (const p of socketPaths) rmSync(p, {force: true}); };
+  removeSockets();
   const late = key => async () => { rmSync(deadPaths[key], {force: true}); const stub = createStubBackend({info: cuaInfo({instanceId: ids[key]})}); return [await startBackend({socketPath: deadPaths[key], adapter: stub, label: `discovery-${key}`})]; };
   configs.push({label: 'discovery', instanceIds: ids,
     // Dead paths first, so a slow dead path would delay the live one's listing.
@@ -268,13 +270,17 @@ export async function runNoHeaderLayer({home, network, sentinels}) {
 
   const runs = {};
   const scanTexts = [], scanRoots = [];
-  for (const config of configs) {
-    const r = await runConfig({runtime, home: realHome, label: config.label, network, ambient, backends: config.backends, cells: config.cells});
-    runs[config.label] = {...r.out, ...(config.instanceIds ? {instanceIds: config.instanceIds} : {}), firstArrival: firstArrival(r.out)};
-    scanTexts.push(...r.scanTexts);
-    scanRoots.push(...r.scanRoots);
+  try {
+    await staleSocket(deadPaths.stale);
+    for (const config of configs) {
+      const r = await runConfig({runtime, home: realHome, label: config.label, network, ambient, backends: config.backends, cells: config.cells});
+      runs[config.label] = {...r.out, ...(config.instanceIds ? {instanceIds: config.instanceIds} : {}), firstArrival: firstArrival(r.out)};
+      scanTexts.push(...r.scanTexts);
+      scanRoots.push(...r.scanRoots);
+    }
+  } finally {
+    removeSockets();
   }
-  for (const p of Object.values(deadPaths)) rmSync(p, {force: true});
 
   const launchChecks = Object.values(runs).flatMap(r => [
     check(`${r.label}: no token or security-mode override reached the child`, !r.envKeys.some(k => k === 'PLAYWRIGHT_MCP_EXTENSION_TOKEN' || k === 'BROWSER_USE_SECURITY_MODE')),

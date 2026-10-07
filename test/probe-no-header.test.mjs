@@ -40,7 +40,7 @@ test('the stub backend answers the session methods, records arrivals, and answer
 
 // A run as the harness records it: per-cell results and the stub's arrival log (ms since the child was spawned).
 function run({label, network = 'default', log = [], cells = {}, extra = {}}) {
-  return {label, network, backendLog: log, cells, turnEnded: {backendArrived: log.some(l => l.method === 'turnEnded')}, timing: {spawnToHandshakeMs: 900}, ...extra};
+  return {label, network, backendLog: log, cells, timing: {spawnToHandshakeMs: 900}, ...extra};
 }
 const reached = ['getInfo', 'getTabs', 'getUserTabs', 'createTab', 'attach', 'executeCdp', 'turnEnded'].map((method, i) => ({method, at: 1000 + i}));
 const goodNoHeader = network => run({label: 'no-header', network, log: reached, cells: {listBrowsers: {result: {browsers: [{id: '1', type: 'extension'}]}}, listTabs: {result: {tabs: []}}, createBrowserTab: {result: {error: 's0 stub serves no CDP'}}}});

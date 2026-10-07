@@ -361,7 +361,8 @@ test('close sends DELETE, which ends the device session; closed settles closed; 
   assert.deepEqual(await session.closed, {code: 'closed'});
   await session.close();
   assert.equal(d.requests.filter(r => r.method === 'DELETE').length, 1, 'close is idempotent');
-  await rejectsWith(session.request('ping', {}), 'device_session_ended');
+  const after = await rejectsWith(session.request('ping', {}), 'device_session_ended');
+  assert.equal(after.sent, false, 'a request after the end certainly never reached the device');
   await tick(60);
   assert.equal(d.gets().length, 1);
 });
@@ -395,7 +396,8 @@ test('a session the device ended answers device_session_ended, and closed settle
   const session = await d.session({backoff: {firstMs: 2000, maxMs: 2000, budgetMs: 400}});
   await until(() => d.http.sessions.get(session.sessionId)?.get, 'the standing GET');
   await d.http.endSessions('eof');
-  await rejectsWith(session.request(...call('js', {code: '1'})), 'device_session_ended');
+  const refused = await rejectsWith(session.request(...call('js', {code: '1'})), 'device_session_ended');
+  assert.equal(refused.sent, false, 'the device refused the POST with 404: the request never reached a session');
   assert.deepEqual(await session.closed, {code: 'device_session_ended'});
   assert.equal(d.posts('tools/call').length, 1);
 });
@@ -413,7 +415,8 @@ test('a session ended by the device while a request was out: the resume is 404 a
   await until(() => d.gets().some(g => g.headers['last-event-id']), 'a refused resume');
   await d.http.endSessions('eof');
   away = false;
-  await rejectsWith(ran, 'device_session_ended');
+  const lost = await rejectsWith(ran, 'device_session_ended');
+  assert.notEqual(lost.sent, false, 'the device had the request: whether it ran is unknown');
   assert.deepEqual(await session.closed, {code: 'device_session_ended'});
 });
 
@@ -531,7 +534,9 @@ test('the waits for a response head are bounded: an open and a request that get 
   d.front = null;
   const session = await d.session({headTimeoutMs: 150});
   d.front = entry => entry.message?.method === 'tools/call';
-  await rejectsWith(session.request(...call('js', {code: '1'})), 'device_offline');
+  const unanswered = await rejectsWith(session.request(...call('js', {code: '1'})), 'device_offline');
+  // One sentence for the model, which reads it: no reason nested inside another.
+  assert.equal(unanswered.message, 'the device is offline or unreachable (no answer within 0.15 s; the request is not resent)');
   await tick(50);
   assert.equal(d.posts('tools/call').length, 1, 'never resent');
   d.front = null;

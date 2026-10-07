@@ -24,16 +24,20 @@
 
 const CLOSE_MS = 2000;
 
+// `reason` is what the message's parenthesis says; `sent: false` marks a request that certainly never reached the
+// device's session (refused 404, or asked after the session ended), so a caller may send it again on a new session.
 export class DeviceError extends Error {
-  constructor(code, message) {
+  constructor(code, message, {reason, sent} = {}) {
     super(message);
     this.name = 'DeviceError';
     this.code = code;
+    if (reason !== undefined) this.reason = reason;
+    if (sent !== undefined) this.sent = sent;
   }
 }
 
-const offline = why => new DeviceError('device_offline', `the device is offline or unreachable (${why})`);
-const ended = () => new DeviceError('device_session_ended', 'the device session has ended');
+const offline = why => new DeviceError('device_offline', `the device is offline or unreachable (${why})`, {reason: why});
+const ended = options => new DeviceError('device_session_ended', 'the device session has ended', options);
 const protocol = why => new DeviceError('device_protocol', `the device answered in a way this client cannot read (${why})`);
 const why = error => error?.cause?.code ?? error?.code ?? error?.name ?? 'error';
 const mediaType = response => (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
@@ -334,12 +338,16 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
     try { answer = await postWithin(message); } catch (error) {
       entry.headed(false);
       if (end) throw ended();
-      throw offline(`the request could not be sent or got no answer (${error instanceof DeviceError ? error.message : why(error)}); it is not resent`);
+      throw offline(`${error instanceof DeviceError ? error.reason : `the request could not be sent: ${why(error)}`}; the request is not resent`);
     }
     entry.headed(answer.ok);
     if (!answer.ok) {
       const error = await refusal(answer, {onSession: true});
-      if (error.code === 'device_session_ended') finish(error.code);
+      if (error.code === 'device_session_ended') {
+        error.sent = false;     // the device knows no such session, so no session ever saw the request
+        entry.reject(error);    // before finish, which rejects every other request with the plain end
+        finish(error.code);
+      }
       throw error;
     }
     const track = await readAnswer(answer);
@@ -369,7 +377,7 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
   }
 
   async function request(method, params, {signal} = {}) {
-    if (end) throw ended();
+    if (end) throw ended({sent: false});
     // Cancelled before it was sent (while the session was opening, typically): never sent, so nothing to cancel.
     if (signal?.aborted) throw new DeviceError('cancelled', 'the request was cancelled before it was sent');
     const id = ++nextId;

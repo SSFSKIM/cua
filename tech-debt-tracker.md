@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-10-07 — `deploy/cloud-vm` checks two things only by hand (minor, issue #76 review).** (a) The owner's
+  checklist that `cua-provision.sh` prints names CLI commands and flags (`cua login --device-auth`, `cua profiles bind`,
+  `cua remote show`, `relay/deploy/update.sh --devices`) that no test compares against `src/cli.mjs`, so a renamed flag
+  would only show at the next live run. (b) The Xorg dummy-driver branch for a VM without a GPU was proven by forcing
+  its config on a Hetzner VM that has one (`docs/evidence/2026-10-07-cloud-vm-provisioning.md`), not on a provider
+  without `/dev/dri`. A test that runs each checklist command's `--help` or USAGE match, and one run on a GPU-less
+  provider, would close both.
+
 - **2026-10-07 — With the browser surface the model sees a cut `js` description (minor, issue #73).** Claude Code
   2.1.292 keeps a tool description's first 2,048 characters, and OpenAI's `js` text with the browser surface is 2,847
   (browser) or 2,952 (`computer,browser`, the plugin's default) on the current pin, so its tail never reached the model

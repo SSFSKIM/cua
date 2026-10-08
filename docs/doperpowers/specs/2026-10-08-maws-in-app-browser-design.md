@@ -993,6 +993,19 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   another tab the behaviour is E4c's. Implemented in the MAWS final fix wave with an e2e assertion through the seam.
   Date/Author: 2026-10-08, the plan executor, on the owner's decision.
 
+- Decision (2026-10-08, MAWS final fix wave, MAWS 38d4df7f..a47603a4): refinements measured live. Only a screencast
+  start bounded to the viewport counts as the agent's screenshot (cursor hidden, one row): after each cell the vendor
+  takes one more, unbounded screencast for its own response metadata, which the model never sees, and counting it would
+  add a "Screenshot" row and hide the cursor at every cell's end; `tab.screenshot()` and the AX-state screenshot send
+  bounded starts (pinned to the 0.1.1 vendor's sizing; a vendor bump re-checks it). Measured (spike S3): a parked tab
+  yields screencast frames only under focus emulation, which the vendor turns on at every attach; with it frames arrive
+  in about 20 ms placed or parked, and an agent screenshot through cua on a parked tab took 64-82 ms, so no tab pays
+  the 2 s fallback. The vendor's own code never sends the cookie-jar methods; only its opt-in raw-CDP passthrough (off
+  by default) would forward an agent's request, now refused (A-51's note). `browser.agent.acting` is restored (A-54
+  amended): emitted once per lease before the takeover gate (E4c's order), never for a close; the renderer handler is
+  E4c's, so the panel opens once per turn and never over an open Browser tool, the tab unselected.
+  Date/Author: 2026-10-08, the plan executor (final fix report).
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

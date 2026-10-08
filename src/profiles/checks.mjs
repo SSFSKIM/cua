@@ -16,6 +16,11 @@
 //   chrome.hosts.live        the sockets in $CUA_HOME/chrome/b that accept a connection within 500 ms: the one Chrome
 //                            row that connects (to cua's own hosts only). A socket refused with ECONNREFUSED is a dead
 //                            host's and is removed; one that does not answer in time is reported and kept.
+// On either route, the MAWS row (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md):
+//   maws.hosts               the client-mode hosts cua processes run for MAWS backends (src/chrome/client-mode.mjs),
+//                            from their status files in chrome/b (instance maws:…) and sockets in chrome/m: pass with
+//                            each one's instance and process, skip when there is none. A record whose process is gone
+//                            is stale and removed (status file and socket).
 import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, rmSync, statSync} from 'node:fs';
 import {connect} from 'node:net';
@@ -25,7 +30,7 @@ import {CuaError} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {NATIVE_HOST_NAME, PERMISSION_FIX, PERMISSION_HINT, countLiveHosts} from './chrome.mjs';
 import {profileStatuses, REASONS, reasonFor} from './registry.mjs';
-import {backendDir, CUA_HOST_NAME, launcherPath} from '../chrome/extension.mjs';
+import {backendDir, clientModeDir, CUA_HOST_NAME, isMawsInstance, launcherPath} from '../chrome/extension.mjs';
 import {parseLauncher} from '../chrome/registration.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -86,6 +91,32 @@ export async function cuaChromeChecks({home, chrome, userHome = homedir(), probe
 }
 
 const fileAt = path => { try { return statSync(path).isFile(); } catch { return false; } };
+
+// Signal 0 checks that a process exists; EPERM means it does, under another user.
+const processAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
+
+export function mawsHostCheck({home, alive = processAlive}) {
+  const root = realHome(home);
+  let names = [];
+  try { names = readdirSync(backendDir(root)).filter(name => name.endsWith('.json')); } catch {}
+  const hosts = [];
+  for (const file of names) {
+    let status;
+    try { status = JSON.parse(readFileSync(join(backendDir(root), file), 'utf8')); } catch { continue; }
+    if (!isMawsInstance(status?.instanceId) || !Number.isInteger(status.pid)) continue;
+    hosts.push({name: file.slice(0, -'.json'.length), instanceId: status.instanceId, pid: status.pid});
+  }
+  const live = hosts.filter(h => alive(h.pid));
+  const stale = hosts.filter(h => !alive(h.pid));
+  for (const h of stale) {
+    rmSync(join(backendDir(root), `${h.name}.json`), {force: true});
+    rmSync(join(clientModeDir(root), `${h.name}.sock`), {force: true});
+  }
+  const note = stale.length ? `; removed ${stale.length} stale host record(s) of processes that are gone` : '';
+  return live.length
+    ? result('maws.hosts', 'pass', `${live.length} MAWS client-mode host(s) connected: ${live.map(h => `${h.instanceId} (pid ${h.pid})`).join(', ')}${note}`)
+    : result('maws.hosts', 'skip', `no cua process is connected to a MAWS backend (MAWS passes CUA_BROWSER_BACKENDS to its sessions' engines; cua serve connects then)${note}`);
+}
 
 function cuaRegistration({home, chrome, userHome}) {
   const cuaHome = realHome(home);

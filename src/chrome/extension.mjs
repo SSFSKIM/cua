@@ -17,6 +17,10 @@ export function extensionIdFromKey(base64PublicKey) {
   return [...hex].map(c => String.fromCharCode(97 + parseInt(c, 16))).join('');
 }
 
+// MAWS's in-app browser backends are told from Chrome's by their instance id (maws:<appSessionId>), never by profile
+// name (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md).
+export const isMawsInstance = id => typeof id === 'string' && id.startsWith('maws:');
+
 // A host's socket and status file are named by the profile's extension instance id, so `cua serve` can pre-list the
 // path of every bound profile before its Chrome runs. Twelve hex characters keep the path under the macOS sun_path
 // limit (104 bytes) at the default home.
@@ -24,6 +28,10 @@ export const socketNameFor = instanceId => createHash('sha256').update(String(in
 
 // $CUA_HOME/chrome/b: the hosts' sockets (<name>.sock) and status files (<name>.json), 0700. Short on purpose.
 export const backendDir = home => join(home, 'chrome', 'b');
+// $CUA_HOME/chrome/m: the sockets of client-mode hosts, which `cua serve` (and `cua profiles list`) run in-process for
+// each configured MAWS backend (src/chrome/client-mode.mjs), 0700. Nothing scans it: a process lists exactly the
+// client-mode hosts it opened, so one MAWS session's backend never reaches another process's vendor service.
+export const clientModeDir = home => join(home, 'chrome', 'm');
 // $CUA_HOME/chrome/logs: one log per host (<pid>.log, renamed <name>.log once the extension said hello), and the
 // launcher's append-only log of each start and of whatever Node itself writes to stderr (warnings, a crash before main).
 export const logDir = home => join(home, 'chrome', 'logs');

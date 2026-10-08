@@ -87,14 +87,23 @@ const BROWSER_RULES = [
   '- createBrowserTab can take 60 s (js timeout_ms of at least 60000); after a timeout a tab may still have opened: tell the user, don\'t retry. In a one-window profile, closing your tab or end_task unloads it; mark a tab handoff to keep it.',
 ];
 
+const PROFILES_LIST_HEAD = 'List the Chrome profiles the user registered for browser use, by key, with whether each is ready and, '
+  + 'when ready, its extensionInstanceId; a profile that is not ready says why, and no other profile stands in for it. '
+  + 'Call it before any Chrome work, and drive Chrome by these rules:';
 export const PROFILES_LIST_TOOL = {
   name: 'profiles_list',
-  description: ['List the Chrome profiles the user registered for browser use, by key, with whether each is ready and, '
-    + 'when ready, its extensionInstanceId; a profile that is not ready says why, and no other profile stands in for it. '
-    + 'Call it before any Chrome work, and drive Chrome by these rules:', ...BROWSER_RULES].join('\n'),
+  description: [PROFILES_LIST_HEAD, ...BROWSER_RULES].join('\n'),
   inputSchema: NO_ARGUMENTS,
   annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false},
   _meta: {'anthropic/searchHint': 'list registered chrome browser profiles for browser use'},
+};
+// Inside MAWS (a MAWS backend configured, docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md): the in-app
+// browser (key maws, listed first) is what cua.getBrowser() with no id selects, so the first rule's "never pick" gives
+// way to the owner's default: the in-app browser, a Chrome profile only when the user names one.
+const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
+const PROFILES_LIST_MAWS_TOOL = {
+  ...PROFILES_LIST_TOOL,
+  description: [PROFILES_LIST_HEAD, BROWSER_RULES[0].replace(' Never pick or bind a profile for the user.', ''), MAWS_RULE, ...BROWSER_RULES.slice(1)].join('\n'),
 };
 
 // The device tools (Phase G, stdio connections only): the connection's target, `local` or a registered device
@@ -204,7 +213,8 @@ export function withHostNotes(instructions, hostNotes) {
 const hintFor = (name, surfaces, platform) => (!surfaces.includes('browser') ? PASSED_THROUGH.get(name)
   : BROWSER_HINTS[surfaces.includes('computer') ? 'both' : 'browser'][name])(hintOs(platform));
 
-export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false} = {}) {
+// `inAppBrowser`: a MAWS backend is configured (profiles_list's description says so).
+export function modelTools(upstreamTools, {surfaces = ['computer'], platform = process.platform, devices = false, inAppBrowser = false} = {}) {
   const jsRules = jsRulesFor(surfaces, {platform});
   const passed = (Array.isArray(upstreamTools) ? upstreamTools : [])
     .filter(tool => PASSED_THROUGH.has(tool.name))
@@ -216,7 +226,7 @@ export function modelTools(upstreamTools, {surfaces = ['computer'], platform = p
   const linux = platform === 'linux';
   const endTask = linux ? LINUX_END_TASK_TOOL : END_TASK_TOOL;
   const local = surfaces.includes('browser')
-    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_BROWSER_TOOL : SECRETS_LIST_BROWSER_TOOL, PROFILES_LIST_TOOL]
+    ? [...passed, endTask, linux ? LINUX_SECRETS_LIST_BROWSER_TOOL : SECRETS_LIST_BROWSER_TOOL, inAppBrowser ? PROFILES_LIST_MAWS_TOOL : PROFILES_LIST_TOOL]
     : [...passed, endTask, linux ? LINUX_SECRETS_LIST_TOOL : SECRETS_LIST_TOOL];
   return devices ? [...local, DEVICES_LIST_TOOL, DEVICES_USE_TOOL] : local;
 }

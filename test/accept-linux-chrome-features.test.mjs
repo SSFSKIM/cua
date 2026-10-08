@@ -74,7 +74,7 @@ test('lookalike Host values, unknown paths and non-GET requests cannot serve eit
 
 test('dialogs run after the click returns and the file input reports the actual selected file', () => {
   const handlers = {}, timers = [], calls = [];
-  const elements = Object.fromEntries(['alert', 'confirm', 'state', 'file', 'picked'].map(id => [id, {
+  const elements = Object.fromEntries(['alert', 'confirm', 'state', 'file', 'picked', 'name', 'submit', 'popup'].map(id => [id, {
     textContent: 'waiting', addEventListener: (event, fn) => { handlers[`${id}:${event}`] = fn; },
   }]));
   const window = {__alerted: 'not called'};
@@ -412,3 +412,30 @@ for (const [option, name] of [['profilesReply', 'profiles_list reports me ready'
     assertSerializedDetails(report);
   });
 }
+
+// The MAWS harness's additions (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, acceptance 3 and 7).
+test('#submit writes submitted:<#name\'s value> to #state; #popup opens /popup, a document of its own with the page\'s marker', async t => {
+  const handlers = {}, opened = [];
+  const elements = Object.fromEntries(['alert', 'confirm', 'state', 'file', 'picked', 'name', 'submit', 'popup'].map(id => [id, {
+    textContent: 'waiting', value: '', addEventListener: (event, fn) => { handlers[`${id}:${event}`] = fn; },
+  }]));
+  vm.runInNewContext(SCRIPT, {document: {getElementById: id => elements[id]}, window: {open: (...args) => { opened.push(args); return null; }}, setTimeout: () => {}});
+  elements.name.value = 'x';
+  handlers['submit:click']();
+  assert.equal(elements.state.textContent, 'submitted:x');
+  handlers['popup:click']();
+  assert.deepEqual(opened, [['/popup']]);
+
+  const page = await startFeaturesPage();
+  t.after(() => page.close());
+  const html = (await get(page.url)).body.toString('utf8');
+  assert.match(html, /<input id="name" type="text">/);
+  assert.match(html, /<button id="submit" type="button">Submit<\/button>/);
+  assert.match(html, /<button id="popup" type="button">Popup<\/button>/);
+  const popup = await get(`${page.origin}/popup`);
+  assert.equal(popup.status, 200);
+  assert.equal(popup.headers['content-type'], 'text/html; charset=utf-8');
+  assert.equal(popup.headers['cache-control'], 'no-store');
+  assert.match(popup.headers['content-security-policy'], /default-src 'none'/);
+  assert.ok(popup.body.toString('utf8').includes(`<p id="marker">${page.documentMarker}-popup</p>`));
+});

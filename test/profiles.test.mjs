@@ -9,7 +9,7 @@ import {scratch} from './fixtures/runtime-fixture.mjs';
 import {readRegistry, addProfile, removeProfile, bindProfile, profileStatuses, withLiveness, reasonText, PROFILE_KEY} from '../src/profiles/registry.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
 import {chromeFacts, OPENAI_EXTENSION_ID, hostPathClass, countLiveHosts, PERMISSION_FIX, ACCESS_NOTE} from '../src/profiles/chrome.mjs';
-import {decideBinding} from '../src/profiles/bind.mjs';
+import {decideBinding, isChromeBackend} from '../src/profiles/bind.mjs';
 
 // A Chrome user-data directory with `profiles` ({dir: {name, extension}}) and a Local State naming them.
 function fakeChrome(t, profiles = {}, {localState} = {}) {
@@ -344,4 +344,27 @@ test('add registers a profile in each extension state and never refuses an unrea
   assert.deepEqual(addProfile({home, key: 'spare', directory: 'Profile 7', chrome}), {key: 'spare', chromeProfileDirectory: 'Profile 7', extension: 'unreadable', chromeDataError: 'EPERM'});
   assert.throws(() => addProfile({home, key: 'gone', directory: 'Profile 99', chrome}), error => error.code === 'chrome_profile_not_found');
   assert.deepEqual(Object.keys(readRegistry(home).profiles), ['personal', 'work', 'school', 'spare']);
+});
+
+// ---- MAWS (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "profiles_list") ----------------------
+
+test('the keys profiles_list gives MAWS backends (maws, maws-<n>) are reserved: add refuses them with reserved_key', t => {
+  const {home, chrome} = fakeChrome(t, THREE);
+  for (const key of ['maws', 'maws-2', 'maws-10'])
+    assert.throws(() => addProfile({home, key, directory: 'Default', chrome}), error => error.code === 'reserved_key' && error.message.includes(key), key);
+  assert.equal(addProfile({home, key: 'mawson', directory: 'Default', chrome}).key, 'mawson');
+  assert.deepEqual(Object.keys(readRegistry(home).profiles), ['mawson']);
+});
+
+test('maws_unreachable says MAWS is down or the session\'s socket is gone, and what to do', () => {
+  assert.equal(reasonText({key: 'maws', reason: 'maws_unreachable'}),
+    'MAWS is not running or this session\'s browser socket is gone; start MAWS, then call profiles_list again');
+});
+
+test('a MAWS backend (instance maws:…) is never a Chrome profile\'s backend, whatever family it reports', () => {
+  assert.equal(isChromeBackend({instanceId: 'maws:app-1', family: 'chrome'}), false);
+  assert.equal(isChromeBackend({instanceId: 'inst-1', family: 'chrome'}), true);
+  const decision = decideBinding({directory: 'Default', displayNames: new Map([['Default', 'Person 1']]),
+    backends: [{instanceId: 'maws:app-1', family: 'chrome', profileName: 'Person 1'}]});
+  assert.notEqual(decision.outcome, 'bound');
 });

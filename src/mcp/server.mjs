@@ -46,6 +46,8 @@ import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {reasonText} from '../profiles/registry.mjs';
 import {sandboxModeFrom, withSandbox} from '../runtime/sandbox.mjs';
+import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs';
+import {realHome} from '../runtime/layout.mjs';
 
 const idKey = id => JSON.stringify(id);
 const PERSIST_MODES = ['session', 'always', 'none'];
@@ -57,7 +59,7 @@ const NO_PROFILES = {list: () => []};
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
   platform = process.platform, devices = null, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null}),
-  model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID,
+  model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {},
 }) {
   let nextUpstreamId = 0;
@@ -245,7 +247,7 @@ export function createServer({
       clientInitialize ??= msg.params;
       return passThrough(msg, result => ({...result, instructions: withHostNotes(result?.instructions, hostNotes)}));
     }
-    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target)})}));
+    if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser})}));
     return passThrough(msg);
   }
 
@@ -365,13 +367,17 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // `cua serve`: one connection (src/mcp/connection.mjs) on stdin/stdout, with the device tools (its target can be any
 // device in $HOME's registry, src/remote/directory.mjs). The settings are read first, so an invalid one
 // fails before anything else; then $CUA_HOME/run is swept of sessions whose owning process is gone, the signal handlers
-// go in, and the connection opens and serves until EOF or a signal. The connection's close waits for a readiness
+// go in, and the connection opens and serves until EOF or a signal. With the browser surface and CUA_BROWSER_BACKENDS
+// (MAWS's in-app browser, src/chrome/client-mode.mjs), this process connects to each configured backend and runs its own
+// host for it, waiting up to 5 s for each hello before the connection launches the runtime (so the first listBrowsers
+// finds it); the hosts close with the connection. The connection's close waits for a readiness
 // listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime
 // teardown, or a listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome` and `listBackends`
 // are openConnection's seams, forwarded unchanged.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
   prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends}) {
   const settings = settingsFrom(env, {devices: true});
+  const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
   try {
     const swept = describeSweep(sweepRun(home));
     if (swept) diagnostics(`$CUA_HOME/run: ${swept}`);
@@ -385,12 +391,15 @@ export async function serve({home, env = process.env, input = process.stdin, out
   const onSignal = () => { if (connection) connection.close('signal'); else signalled = true; };
   for (const signal of SIGNALS) process.on(signal, onSignal);
   let result;
+  const browserBackends = mawsPaths.length ? startClientBackends({home: realHome(home), paths: mawsPaths, log: diagnostics}) : null;
   try {
+    await browserBackends?.waitForHellos();
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
-      prepareLaunch, chrome, listBackends, devices: deviceDirectory({env})});
+      prepareLaunch, chrome, listBackends, devices: deviceDirectory({env}), browserBackends});
     if (signalled) connection.close('signal');
     result = await connection.closed;
   } finally {
+    await browserBackends?.close();
     for (const signal of SIGNALS) process.off(signal, onSignal);
   }
   if (!result.listingLeftover) return result.code;

@@ -77,8 +77,13 @@ function entryOf(registry, key) {
   return registry.profiles[key];
 }
 
+// profiles_list names MAWS's in-app browser backends maws, maws-2, … (src/chrome/client-mode.mjs mawsKey); a registered
+// profile never takes one of those keys.
+export const RESERVED_KEY = /^maws(-\d+)?$/;
+
 export function addProfile({home, key, directory, chrome}) {
   if (typeof key !== 'string' || !PROFILE_KEY.test(key)) fail('invalid_profile_key', KEY_RULE);
+  if (RESERVED_KEY.test(key)) fail('reserved_key', `the key "${key}" is reserved for MAWS's in-app browser in profiles_list`, {hint: 'choose another key'});
   const registry = readRegistry(home);
   const found = chrome.profileDirectoryExists(directory);
   if (found !== 'exists' && found !== 'unreadable') fail('chrome_profile_not_found', `no Chrome profile directory named ${JSON.stringify(directory)} in ${chrome.userData}`, {hint: 'name an existing directory such as "Default" or "Profile 1" (chrome://version shows a profile\'s directory as the last part of its Profile Path)'});
@@ -184,6 +189,8 @@ export const REASONS = {
   binding_stale: `its bound extension instance is not among the live backends (other backends are live), and cua cannot tell which of two causes it is: this profile is not loaded or its host is not running (${WAKE}), or the extension was turned off and on or reinstalled, which can mint a new instance id (bind it again with cua profiles bind <key>)`,
   backends_unlistable: 'the live OpenAI extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',
   chrome_data_unreadable: `this process cannot read Chrome's data directory (${ACCESS_NOTE}, or run from a process that has it); the live check still works`,
+  // A MAWS backend's entry (never a registered profile's).
+  maws_unreachable: 'MAWS is not running or this session\'s browser socket is gone; start MAWS, then call profiles_list again',
 };
 
 // The cua route's wording where the vendor route's names the ChatGPT extension (H2's hand-off; codes unchanged).

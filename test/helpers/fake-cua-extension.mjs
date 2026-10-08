@@ -26,8 +26,10 @@ export function defaultCdp({method, params}) {
   return {};
 }
 
+// `extraPrimitives` adds primitives another peer serves (the fake MAWS peer's cursor.move); `helloFields` adds fields to
+// its hello (profileName, a peer's own extensionId).
 export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.1.0', protocolVersion = 1,
-  windows = [{id: 1, focused: true, type: 'normal'}], tabs = [], cdp = defaultCdp} = {}) {
+  windows = [{id: 1, focused: true, type: 'normal'}], tabs = [], cdp = defaultCdp, extraPrimitives = {}, helloFields = {}} = {}) {
   let nextTabId = 100;
   let nextWindowId = 50;
   let nextGroupId = 900;
@@ -130,6 +132,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     },
     'debugger.getTargets': () => [...state.tabs.values()].map(t => ({type: 'page', id: `T-${t.id}`, tabId: t.id, attached: state.held.has(`tab:${t.id}`), title: t.title, url: t.url})),
     held: () => [...state.held].map(debuggeeOf),
+    ...extraPrimitives,
   };
 
   function removeTab(tabId) {
@@ -154,11 +157,13 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     return await primitive(params);
   }
 
-  const hello = () => ({extensionId: 'jkejaaijdfpohkdhankllbekkhmnippb', extensionInstanceId: instanceId, version, protocolVersion});
+  const hello = () => ({extensionId: 'jkejaaijdfpohkdhankllbekkhmnippb', extensionInstanceId: instanceId, version, protocolVersion, ...helloFields});
 
   return {
     instanceId, version, state, calls, hello,
     api: {request: handle},
+    // A notification of the extension's own, as a peer built on this fake sends it (tabs.adopted, say).
+    emit,
     set onNotify(fn) { onNotify = fn; },
     addTab,
     addWindow({focused = false, type = 'normal'} = {}) { const id = nextWindowId++; state.windows.set(id, {id, focused, type}); return id; },

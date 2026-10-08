@@ -8,8 +8,8 @@ import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {buildLaunch, BROWSER_SERVICE, SKY_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
-import {backendDir, socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
-import {backendPaths} from '../src/chrome/discovery.mjs';
+import {backendDir, clientModeDir, socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
+import {backendPaths, launchBackendPaths, UNKNOWN_DEFAULT_INSTANCE, VENDOR_SOCKET_DIR} from '../src/chrome/discovery.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
@@ -79,4 +79,53 @@ test('a profile registry that does not parse still lists the present sockets; co
   assert.deepEqual(backendPaths(f.home), [join(backendDir(f.home), 'bbbbbbbbbbbb.sock')]);
   const computer = buildLaunch({runtime: f.runtime, home: f.home, sessionId: SESSION, ambient: {}, surfaces: ['computer'], services: {sky: SKY_SERVICE}});
   assert.equal('BROWSER_USE_BACKEND_PATHS' in computer.env, false);
+});
+
+// ---- MAWS backends (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "Discovery") -------------------
+
+const mawsLaunch = ({home, runtime}, browserBackends, extra = {}) => buildLaunch({runtime, home, sessionId: SESSION, ambient: {}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, browserBackends, ...extra});
+
+test('with MAWS backends the paths are set on every route: this process\'s client-mode hosts first, then the cua route\'s Chrome sockets', t => {
+  const f = fixture(t);
+  onCuaRoute(f.home);
+  writeFileSync(join(backendDir(f.home), 'cccccccccccc.sock'), '');
+  const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-11.sock')];
+  const {env} = mawsLaunch(f, {hostPaths, defaultInstance: 'maws:app-1'});
+  assert.equal(env.BROWSER_USE_BACKEND_PATHS, [...hostPaths, join(backendDir(f.home), 'cccccccccccc.sock')].join(':'));
+  assert.equal(env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, 'maws:app-1');
+  assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, 'maws:app-1');
+  assert.equal(env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome');
+});
+
+test('on the vendor route (or with no registration) the sockets in the vendor\'s own directory at launch join the list, since setting the variable skips its scan', t => {
+  const f = fixture(t);
+  const vendorDir = join(f.home, 'codex-browser-use');
+  mkdirSync(vendorDir);
+  writeFileSync(join(vendorDir, 'openai-1.sock'), '');
+  writeFileSync(join(vendorDir, 'notes.txt'), '');
+  const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-12.sock')];
+  assert.deepEqual(launchBackendPaths(f.home, {clientHosts: hostPaths, vendorDir}), [...hostPaths, join(vendorDir, 'openai-1.sock')]);
+  assert.deepEqual(launchBackendPaths(f.home, {clientHosts: hostPaths, vendorDir: join(f.home, 'absent')}), hostPaths);
+  assert.equal(VENDOR_SOCKET_DIR, '/tmp/codex-browser-use');
+});
+
+test('a MAWS backend that has not said hello yet is still listed; the default fails closed instead of falling back to Chrome', t => {
+  const f = fixture(t);
+  const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-13.sock')];
+  const {env} = mawsLaunch(f, {hostPaths, defaultInstance: null});
+  assert.ok(env.BROWSER_USE_BACKEND_PATHS.split(':').includes(hostPaths[0]));
+  assert.equal(env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, undefined);
+  assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, UNKNOWN_DEFAULT_INSTANCE);
+});
+
+test('a process without MAWS backends never lists another process\'s client-mode host, even on the cua route', t => {
+  const f = fixture(t);
+  onCuaRoute(f.home);
+  mkdirSync(clientModeDir(f.home), {recursive: true});
+  writeFileSync(join(clientModeDir(f.home), 'aaaaaaaaaaaa-14.sock'), '');
+  assert.deepEqual(backendPaths(f.home), []);
+  const {env} = browserLaunch(f);
+  assert.equal(env.BROWSER_USE_BACKEND_PATHS, '');
+  assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, undefined);
+  assert.equal(env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, undefined);
 });

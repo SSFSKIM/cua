@@ -41,7 +41,14 @@
 //   BROWSER_USE_BACKEND_PATHS                browser surface on the cua route only: cua's host sockets
 //                                            (src/chrome/discovery.mjs), so the vendor's /tmp scan is skipped; on the
 //                                            vendor route (or with no Chrome registration) unset, and the vendor's own
-//                                            discovery finds OpenAI's hosts
+//                                            discovery finds OpenAI's hosts. With `browserBackends` (MAWS backends, from
+//                                            CUA_BROWSER_BACKENDS: src/chrome/client-mode.mjs) set on every route,
+//                                            this process's client-mode hosts first (discovery.mjs launchBackendPaths)
+//   BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID   with `browserBackends`, the first MAWS backend's instance id once it
+//                                            said hello
+//   CUA_BROWSER_DEFAULT_INSTANCE             with `browserBackends`: the instance the trusted browser wrapper rewrites
+//                                            an unqualified selection to (src/services/browser.mjs); the first MAWS
+//                                            backend's, or one no browser has when it has not said hello
 //   CUA_SECRETS_DIR                          with secrets on: the secret store directory (src/secrets/store.mjs), which
 //                                            the trusted services read a value from; untrusted cells see only the
 //                                            vendor's env allowlist (they can still read the directory: the sandbox
@@ -61,7 +68,7 @@ import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
-import {backendPaths} from '../chrome/discovery.mjs';
+import {launchBackendPaths, UNKNOWN_DEFAULT_INSTANCE} from '../chrome/discovery.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -78,7 +85,9 @@ export const SKY_SERVICE = ownedPath('../services/sky.mjs');
 export const BROWSER_SERVICE = ownedPath('../services/browser.mjs');
 export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsUnavailable, ambient = process.env}) {
+// `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
+// CUA_BROWSER_BACKENDS configured any.
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsUnavailable, ambient = process.env, browserBackends = null}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
@@ -113,8 +122,12 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) {
     Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
-    const paths = backendPaths(home);
+    const paths = launchBackendPaths(home, {clientHosts: browserBackends?.hostPaths ?? null});
     if (paths) env.BROWSER_USE_BACKEND_PATHS = paths.join(':');
+    if (browserBackends) {
+      if (browserBackends.defaultInstance) env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID = browserBackends.defaultInstance;
+      env.CUA_BROWSER_DEFAULT_INSTANCE = browserBackends.defaultInstance ?? UNKNOWN_DEFAULT_INSTANCE;
+    }
   }
   if (secretsDir) env[STORE_ENV.dir] = secretsDir;
   else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;

@@ -54,7 +54,7 @@ import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
 import {loginStatus, LOGIN_STATES} from './login.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
-import {chromeChecks, cuaChromeChecks, processTable} from '../profiles/checks.mjs';
+import {chromeChecks, cuaChromeChecks, mawsHostCheck, processTable} from '../profiles/checks.mjs';
 import {chromeRoute, extensionIdFor} from '../chrome/route.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
@@ -204,9 +204,9 @@ function runSweepCheck(home, sweep) {
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
-const defaultInspectChrome = async ({home, host, env, route}) => (route === 'cua'
-  ? cuaChromeChecks({home, chrome: chromeFacts({host, env, extensionId: extensionIdFor(route)})})
-  : chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})}));
+const defaultInspectChrome = async ({home, host, env, route}) => [...(route === 'cua'
+  ? await cuaChromeChecks({home, chrome: chromeFacts({host, env, extensionId: extensionIdFor(route)})})
+  : chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})})), mawsHostCheck({home})];
 const defaultInspectAgent = ({home, env, host}) => agentChecks({home, env, host});
 
 async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {

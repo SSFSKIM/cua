@@ -43,6 +43,13 @@
 //   items (downloads.created, downloads.changed) while it holds a debuggee; the host maps them to that shape and tells
 //   every connected client, without session_id, as the ChatGPT extension does (the service matches by URL and id).
 //   allowDownload is never asked of an `extension` backend (BS 61001-61010), so it stays unhandled.
+// - A peer whose hello carries `profileName` is MAWS's in-app browser (docs/doperpowers/specs/2026-10-08-maws-in-app-
+//   browser-design.md, "Host changes for a MAWS peer"): getInfo names that profile (metadata.profileName, what the vendor
+//   lists as the backend's profile name), moveMouse becomes the cursor.move primitive (the agent's cursor in the page;
+//   for the Chrome extension, which draws none, it stays a no-op), and a leased tab's honoured window.open arrives as
+//   tabs.adopted (the child already exists: it is owned as the opener's turn's created tab, never opened a second time).
+//   Every peer gets executeCdp's limit as debugger.sendCommand's timeoutMs (the Chrome extension ignores it), so a peer
+//   can bound what it holds by the command's own deadline.
 // Vendor references (@oai/browser-desktop 0.1.1 in ChatGPT 26.928.40906): the backend client browser-service.mjs
 // 67808-68110; the ChatGPT extension's session model (hehggadaopoacecdllhhajmbjkdcmajg 1.26.901.11451, background.js):
 // endTurnUnlocked, resumeHandoffIfPresent, executeCdp/mg (timeout), Os/Zf (attach, "Another debugger" as success).
@@ -51,7 +58,7 @@ import {connect, createServer} from 'node:net';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createPeer, frameDecoder, NO_HANDLER} from './protocol.mjs';
-import {backendDir, logDir, PROTOCOL_VERSION, socketNameFor} from './extension.mjs';
+import {backendDir, clientModeDir, logDir, PROTOCOL_VERSION, socketNameFor} from './extension.mjs';
 
 export const DEFAULT_CDP_TIMEOUT_MS = 10_000;
 // How long an attach waits for the page guard's sweep before attaching anyway.
@@ -92,12 +99,15 @@ function describe(method, params) {
 
 // `extension` is {request(method, params)}; a client is {notify(method, params)}; `hello` is the extension's hello.
 // With a `home`, the status (<name>.json beside the socket) is rewritten on every change.
-export function createHost({extension: port, hello, home = null, now = () => new Date(), log = () => {}, pid = process.pid}) {
+// `statusName` names the status file (the client-mode host's per-process name); by default the instance id's.
+export function createHost({extension: port, hello, home = null, now = () => new Date(), log = () => {}, pid = process.pid, statusName = null}) {
   const sessions = new Map();           // session_id -> session
   const owners = new Map();             // tabId -> {session, tab}
   const targets = new Map();            // attached OOPIF targetId -> owning tabId
   const downloads = new Map();          // Chrome download id -> {filename, url} of a download still in progress
-  const statusPath = home ? join(backendDir(home), `${socketNameFor(hello.extensionInstanceId)}.json`) : null;
+  const statusPath = home ? join(backendDir(home), `${statusName ?? socketNameFor(hello.extensionInstanceId)}.json`) : null;
+  // A peer that names its profile (MAWS) draws the agent's cursor; the Chrome extension's hello names none.
+  const cursorPeer = typeof hello.profileName === 'string' && hello.profileName !== '';
   let closed = false;
   // The extension's primitives, every refusal logged (the log is how a refused attach is diagnosed after the fact).
   const extension = {request: (method, params) => port.request(method, params).catch(error => {
@@ -307,11 +317,18 @@ export function createHost({extension: port, hello, home = null, now = () => new
 
   const handlers = {
     getInfo: () => ({type: 'extension', family: 'chrome', name: 'cua', version: hello.version, capabilities: {browser: [VIEWPORT_CAPABILITY], tab: []},
-      metadata: {extensionInstanceId: hello.extensionInstanceId}}),
+      metadata: {extensionInstanceId: hello.extensionInstanceId, ...(cursorPeer ? {profileName: hello.profileName} : {})}}),
 
     ping: () => 'pong',
 
-    moveMouse: () => ({}),
+    // The vendor aims the cursor before a locator action (and swallows any failure of it).
+    async moveMouse({tabId, x, y}, s, turn) {
+      if (!cursorPeer) return {};
+      const tab = ownedTab(s, tabId, 'moveMouse');
+      touch(s, tab, turn);
+      await extension.request('cursor.move', {tabId, x, y});
+      return {};
+    },
 
     async getTabs(params, s) {
       const live = new Map((await extension.request('tabs.query', {})).map(t => [t.id, t]));
@@ -418,7 +435,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       const limit = typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_CDP_TIMEOUT_MS;
       const command = method === 'Target.getTargets'
         ? extension.request('debugger.getTargets', {}).then(targetInfos => ({targetInfos}))
-        : extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}});
+        : extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}, timeoutMs: limit});
       let timer;
       const timeout = new Promise((resolve, reject) => { timer = setTimeout(() => reject(TIMED_OUT), limit); });
       try {
@@ -592,6 +609,23 @@ export function createHost({extension: port, hello, home = null, now = () => new
       changed();
       log(`session ${s.id} took popup tab ${created.id} from tab ${openerTabId}`);
     },
+    // A MAWS peer honoured a leased tab's window.open: the child is a tab already (about:blank included), announced by
+    // id. The session whose current turn owns the opener owns it as a tab that turn created, its active one; otherwise it
+    // stays the person's.
+    'tabs.adopted'({openerTabId, tabId, url}) {
+      const owner = owners.get(openerTabId);
+      const s = owner?.session, turn = owner?.tab.turnId;
+      const live = owner && owner.tab.state === 'active' && !s.closed && turn === s.turn && !s.ended.has(turn);
+      if (!live || !Number.isInteger(tabId)) {
+        log(`adopted tab ${tabId} from tab ${openerTabId} left to the person: no current turn owns the opener`);
+        return;
+      }
+      if (owners.has(tabId)) { log(`adopted tab ${tabId} from tab ${openerTabId} is owned already`); return; }
+      own(s, newTab(tabId, owner.tab.windowId, turn, 'created'));
+      s.activeTabId = tabId;
+      changed();
+      log(`session ${s.id} adopted tab ${tabId} from tab ${openerTabId}`);
+    },
   };
 
   changed();
@@ -658,13 +692,20 @@ const listen = (server, path) => new Promise((resolve, reject) => {
 // serves socket clients until the native port closes, then cleans up and resolves {code, reason}. It refuses (code 1,
 // a `hostRefused {code, message}` notification to the extension) a hello of another protocol major
 // (protocol_mismatch), one without an instance id (hello_invalid), and a socket another host serves (already_served).
-export async function runHost({stdin, stdout, env = process.env, home = env.CUA_HOME, pid = process.pid, captureProcessErrors = false}) {
+// A client-mode host (`socketName`, src/chrome/client-mode.mjs: the stream pair is a socket cua connected to a MAWS
+// backend) has its name before any hello: it listens at $CUA_HOME/chrome/m/<socketName>.sock, and its status file
+// (chrome/b) and log (chrome/logs, appended across reconnects) take the same name. `onListening({hello, socketPath})` is
+// told once the socket accepts clients.
+export async function runHost({stdin, stdout, env = process.env, home = env.CUA_HOME, pid = process.pid, captureProcessErrors = false,
+  socketName = null, onListening = () => {}}) {
   if (!home) return {code: 2, reason: 'home_missing', message: 'CUA_HOME is not set; the launcher `cua chrome register` writes sets it'};
   const backends = backendDir(home), logs = logDir(home);
+  const listenDir = socketName ? clientModeDir(home) : backends;
   mkdirSync(backends, {recursive: true, mode: 0o700});
+  mkdirSync(listenDir, {recursive: true, mode: 0o700});
   mkdirSync(logs, {recursive: true, mode: 0o700});
-  let logPath = join(logs, `${pid}.log`);
-  const logFd = openSync(logPath, 'w', 0o600);
+  let logPath = join(logs, `${socketName ?? pid}.log`);
+  const logFd = openSync(logPath, socketName ? 'a' : 'w', 0o600);
   const log = line => { try { writeSync(logFd, `${new Date().toISOString()} ${line}\n`); } catch {} };
   log(`start pid=${pid} node=${process.version}`);
   if (captureProcessErrors) {
@@ -684,7 +725,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     maxFrameBytes: MAX_TO_EXTENSION_BYTES,
     onError: (error, method) => log(`extension notification ${method} failed: ${error?.stack ?? error}`),
     handlers: {hello: params => gotHello(params), 'debugger.event': forward('debugger.event'), 'debugger.detached': forward('debugger.detached'),
-      'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup'),
+      'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup'), 'tabs.adopted': forward('tabs.adopted'),
       'downloads.created': forward('downloads.created'), 'downloads.changed': forward('downloads.changed')},
   });
   const push = frameDecoder(MAX_FROM_EXTENSION_BYTES);
@@ -713,9 +754,9 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   if (Math.trunc(Number(hello.protocolVersion)) !== PROTOCOL_VERSION)
     return await refuseExtension('protocol_mismatch', `the extension speaks protocol ${hello.protocolVersion}; this host speaks ${PROTOCOL_VERSION}`);
 
-  const name = socketNameFor(hello.extensionInstanceId);
+  const name = socketName ?? socketNameFor(hello.extensionInstanceId);
   log(`hello instance=${hello.extensionInstanceId} version=${hello.version} protocol=${hello.protocolVersion} socket=${name}`);
-  const socketPath = join(backends, `${name}.sock`);
+  const socketPath = join(listenDir, `${name}.sock`);
   if (await socketIsLive(socketPath)) return await refuseExtension('already_served', `another host serves ${socketPath}`);
 
   const sockets = new Set();
@@ -746,11 +787,14 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   }
   chmodSync(socketPath, 0o600);
   // Connections are accepted from the next turn on; the host exists before the first one arrives.
-  host = createHost({extension, hello, home, log, pid});
+  host = createHost({extension, hello, home, log, pid, statusName: name});
   // The log takes the profile's name only now: a host refused above never replaces the serving host's log.
-  const named = join(logs, `${name}.log`);
-  try { renameSync(logPath, named); logPath = named; } catch (error) { log(`log rename failed: ${error.message}`); }
+  if (!socketName) {
+    const named = join(logs, `${name}.log`);
+    try { renameSync(logPath, named); logPath = named; } catch (error) { log(`log rename failed: ${error.message}`); }
+  }
   log(`listening ${socketPath}`);
+  onListening({hello, socketPath});
 
   const reason = await closedPort;
   log(`native port closed (${reason})`);

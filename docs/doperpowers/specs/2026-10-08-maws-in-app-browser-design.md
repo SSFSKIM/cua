@@ -478,13 +478,16 @@ session's socket, which exercises the same backend without the engine.
 7. After `locator('#popup').click()` (the page's `window.open('/popup')`), `cua.listTabs` for the browser shows one
    new tab whose URL ends in `/popup`, in the session's panel, with exactly one tab opened (no duplicate); `end_task`
    closes it with the agent's other tabs.
-8. Takeover: with the person clicking in the tab, a `locator('#submit').click()` in the same second fails with `A
-   person is using this tab; wait and retry` within 2 s; 3 s after the person's last input the same click succeeds; the
-   tab chrome shows the control states. Proven by a MAWS e2e case (the seam's `sendInput`) and by hand in M5.
-9. During `locator('#submit').hover()` the agent cursor is visible in the page; after `end_task` it is hidden. Proven
+8. Takeover: with the person clicking in the tab, a `locator('#submit').click()` in the same second fails within the
+   vendor's locator deadline (about 3 s; the vendor retries the refused command, `A person is using this tab; wait and
+   retry`, and reports its own deadline error), and the page is not clicked; 3 s after the person's last input the same
+   click succeeds; the tab chrome shows the control states (wording revised after M5, Decision Log). Proven by a MAWS e2e case (the seam's `sendInput`) and by hand in M5.
+9. During an agent's pointer move over `#submit` (the vendor's `moveMouse` before a click; its locator has no `hover()`)
+   the agent cursor is visible in the page; after `end_task` it is hidden. Proven
    by a MAWS e2e case (the seam's `cursorMessages`) and by hand in M5.
 10. The transcript shows, under the `js` call's row: "Navigated to <host>", "Clicked button <label>", "Typed 1
-    character", "Screenshot", "Downloaded cua-report.pdf".
+    character" (for a keyboard `type`; `fill` sets the value by script and is no row), "Screenshot", "Downloaded
+    cua-report.pdf".
 11. `end_task` closes the agent's unmarked tabs; a tab marked handoff stays open and listed. Two sessions inside MAWS
     each create a tab; each session's `listTabs` shows only its own.
 12. `tools/list` of the `maws` server has no `browser_*` entry; a journal from before the change (fixture
@@ -973,6 +976,16 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   Rationale: (1) restores what M3 and M4 meant (screenshot row, reading class, no overlay) on the vendor's default path;
   (2) keeps A-19/A-51's boundary; (3) makes the three attribution rules agree.
   Date/Author: 2026-10-08, the plan executor (final review findings).
+
+- Decision (2026-10-08, M5): acceptance wording measured against the pinned vendor. A takeover refusal reaches the
+  agent's locator as the vendor's own deadline error after about 3 s, not as MAWS's refusal text within 2 s: the
+  vendor retries the refused acting command until its locator deadline. The person is protected as designed; the
+  README's "For MAWS" says what the agent sees. `fill` sets the value through `Runtime.evaluate`, so it yields no
+  "Typed" row (a keyboard `type` does), and the vendor's locator has no `hover()` (its `moveMouse` before a click is
+  what draws the cursor). Items 8, 9 and 10 are revised to these facts. A session can load the 0.5.0 cua_repl from a
+  checkout with the engine's `--plugin-dir`, leaving the installed plugin and its cache alone (MAWS reaches it by
+  setting Settings › Engine to a wrapper); the owner's manual sitting uses that route.
+  Date/Author: 2026-10-08, the plan executor (M5 executor's report, task-5).
 
 ## Outcomes & Retrospective
 

@@ -78,6 +78,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
   const ev = {
     tabsRemoved: event(), tabsUpdated: event(), debuggerEvent: event(), debuggerDetach: event(),
     startup: event(), installed: event(), message: event(), alarm: event(), groupRemoved: event(),
+    downloadsCreated: event(), downloadsChanged: event(),
   };
 
   const pages = new Map();       // tabId -> its fake page
@@ -284,6 +285,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       }),
       onRemoved: ev.groupRemoved,
     },
+    downloads: {onCreated: ev.downloadsCreated, onChanged: ev.downloadsChanged},
     debugger: {
       attach: call(`debugger.attach`, (debuggee, version) => {
         if (version !== '1.3') return fail(`Requested protocol version is not supported: ${version}.`);

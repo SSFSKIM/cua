@@ -8,7 +8,8 @@
 // the checkout, so this is a copy of the half it needs): an error reply is {code, message} with Chrome's own message
 // verbatim, an unknown method answers code -1 "No handler registered for method: <m>", a failing handler code 1. The
 // extension sends no requests, only notifications: hello (first), debugger.event, debugger.detached, tabs.removed,
-// tabs.updated, tabs.popup. Native messaging frames each message; the host refuses to send one over Chrome's 1 MB limit.
+// tabs.updated, tabs.popup, downloads.created, downloads.changed. Native messaging frames each message; the host refuses
+// to send one over Chrome's 1 MB limit.
 //
 // Page guards (the only code cua runs in pages, and only in tabs the host owns): Chrome detaches chrome.debugger from a
 // tab, and refuses to attach it again, while a frame of another extension is in the tab ("Cannot access a
@@ -470,6 +471,21 @@ chrome.debugger.onDetach.addListener((source, reason) => {
 chrome.tabs.onRemoved.addListener(tabId => {
   guarded.delete(tabId);
   tell('tabs.removed', {tabId});
+});
+
+// Downloads, while this extension holds a debuggee (an agent is driving a tab; the ChatGPT extension reports them
+// under the same condition): each download Chrome creates and each change of its filename, state or error, with the
+// item's fields as Chrome gives them. The host turns them into the service's onDownloadChange, which is how the agent's
+// waitForEvent("download") learns that a download the service approved has landed and where. Nothing is kept here;
+// when no debuggee is held the user's own downloads are not reported.
+const DOWNLOAD_FIELDS = ['url', 'finalUrl', 'filename', 'state', 'error'];
+chrome.downloads.onCreated.addListener(item => {
+  if (held.size === 0) return;
+  tell('downloads.created', {id: item.id, ...Object.fromEntries(DOWNLOAD_FIELDS.filter(k => item[k] != null).map(k => [k, item[k]]))});
+});
+chrome.downloads.onChanged.addListener(delta => {
+  if (held.size === 0) return;
+  tell('downloads.changed', {id: delta.id, ...Object.fromEntries(DOWNLOAD_FIELDS.filter(k => delta[k]?.current != null).map(k => [k, delta[k].current]))});
 });
 
 // A guarded tab's new document is guarded as its URL commits, and every frame again when it has loaded (frames that

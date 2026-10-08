@@ -724,3 +724,56 @@ test('executeUnhandledCommand: a malformed size is refused; a command cua does n
     e => e.message === 'cua does not support command "browser_management_call".' && e.code !== -1);
   assert.equal(emulation(ext).length, 0);
 });
+
+// --- downloads ------------------------------------------------------------------------------------------------------
+
+test('a download Chrome reports while a session drives a tab reaches every client with a session as onDownloadChange: started by URL, then the filename, then complete', async () => {
+  const {ext, client, session} = setup();
+  const c1 = client(), c2 = client(), idle = client();
+  const s1 = session(c1, 'A'), s2 = session(c2, 'B');
+  const tab = await s1.call('createTab');
+  await s2.call('createTab');
+  await s1.call('attach', {tabId: tab.id});
+  const notes = c => c.notes.filter(n => n.method === 'onDownloadChange').map(n => n.params);
+
+  ext.downloadCreated({id: 7, url: 'https://files.invalid/r', finalUrl: 'https://cdn.invalid/report.pdf', filename: '', state: 'in_progress'});
+  await settle();
+  assert.deepEqual(notes(c1), [{id: '7', filename: '', url: 'https://cdn.invalid/report.pdf', status: 'started'}]);
+  assert.deepEqual(notes(c2), notes(c1), 'no session_id: every client with a session is told, as the ChatGPT extension does');
+  assert.deepEqual(notes(idle), [], 'a client with no session is not');
+
+  ext.downloadChanged(7, {filename: '/home/u/Downloads/cua-report.pdf'});
+  ext.downloadChanged(7, {state: 'complete'});
+  await settle();
+  assert.deepEqual(notes(c1).slice(1), [
+    {id: '7', filename: '/home/u/Downloads/cua-report.pdf', url: 'https://cdn.invalid/report.pdf', status: 'in_progress'},
+    {id: '7', filename: '/home/u/Downloads/cua-report.pdf', url: 'https://cdn.invalid/report.pdf', status: 'complete'},
+  ]);
+  // Done downloads are forgotten: a later change of the same id is dropped, and so is one the host never saw start.
+  ext.downloadChanged(7, {state: 'complete'});
+  ext.downloadChanged(8, {filename: '/x', state: 'complete'});
+  await settle();
+  assert.equal(notes(c1).length, 3);
+});
+
+test('an interrupted download is canceled when the user canceled it and failed otherwise; nothing is reported while no debuggee is held', async () => {
+  const {ext, client, session} = setup();
+  const c = client();
+  const s = session(c, 'A');
+  const notes = () => c.notes.filter(n => n.method === 'onDownloadChange').map(n => n.params);
+  const tab = await s.call('createTab');
+  ext.downloadCreated({id: 1, url: 'https://a.invalid/1', filename: ''});
+  await settle();
+  assert.deepEqual(notes(), [], 'before any attach the extension holds no debuggee and reports nothing');
+
+  await s.call('attach', {tabId: tab.id});
+  ext.downloadCreated({id: 1, url: 'https://a.invalid/1', filename: '/d/1'});
+  ext.downloadChanged(1, {state: 'interrupted', error: 'USER_CANCELED'});
+  ext.downloadCreated({id: 2, url: 'https://a.invalid/2', filename: '/d/2'});
+  ext.downloadChanged(2, {state: 'interrupted', error: 'NETWORK_FAILED'});
+  await settle();
+  assert.deepEqual(notes().map(n => [n.id, n.status, n.url, n.filename]), [
+    ['1', 'started', 'https://a.invalid/1', '/d/1'], ['1', 'canceled', 'https://a.invalid/1', '/d/1'],
+    ['2', 'started', 'https://a.invalid/2', '/d/2'], ['2', 'failed', 'https://a.invalid/2', '/d/2'],
+  ]);
+});

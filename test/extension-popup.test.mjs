@@ -19,7 +19,7 @@ test('the manifest is MV3 "cua" with exactly the needed permissions, no declared
   assert.equal(MANIFEST.manifest_version, 3);
   assert.equal(MANIFEST.name, 'cua');
   assert.match(MANIFEST.version, /^\d+\.\d+\.\d+$/);
-  assert.deepEqual([...MANIFEST.permissions].sort(), ['alarms', 'debugger', 'nativeMessaging', 'scripting', 'storage', 'tabGroups', 'tabs']);
+  assert.deepEqual([...MANIFEST.permissions].sort(), ['alarms', 'debugger', 'downloads', 'nativeMessaging', 'scripting', 'storage', 'tabGroups', 'tabs']);
   // Page guards are injected into owned tabs only (chrome.scripting), which needs every host; nothing runs in a page
   // by declaration.
   assert.deepEqual(MANIFEST.host_permissions, ['<all_urls>']);

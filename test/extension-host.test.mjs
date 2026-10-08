@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {existsSync, readFileSync} from 'node:fs';
 import {connect} from 'node:net';
 import {join} from 'node:path';
+import {VIEWPORT_CAPABILITY} from '../src/chrome/host.mjs';
 import {createPeer, frameDecoder} from '../src/chrome/protocol.mjs';
 import {backendDir, CUA_EXTENSION_ID, CUA_HOST_NAME, PROTOCOL_VERSION, socketNameFor} from '../src/chrome/extension.mjs';
 import {CdpError, createChromeStub, MANIFEST} from './helpers/chrome-stub.mjs';
@@ -73,7 +74,7 @@ test('at load the worker connects to the cua host, says hello first with a minte
 
   const c = await backendClient(t, socketPath);
   assert.deepEqual(await c.request('getInfo', {}), {type: 'extension', family: 'chrome', name: 'cua', version: MANIFEST.version,
-    capabilities: {browser: [], tab: []}, metadata: {extensionInstanceId: id}});
+    capabilities: {browser: [VIEWPORT_CAPABILITY], tab: []}, metadata: {extensionInstanceId: id}});
 
   // The lifecycle wake-ups and the alarm do nothing while the port is up.
   stub.events.startup.dispatch();

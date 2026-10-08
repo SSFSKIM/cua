@@ -13,7 +13,8 @@
 // OpenAI's host) the run is C2 as below and needs the server's Codex login. On the cua route (cua's own extension and
 // host) there is no login gate (`codex.login` is not needed; the run records only whether a credential file exists),
 // the live host is the profile's own socket in $CUA_HOME/chrome/b accepting a connection, and the run adds: a discovery
-// cell (cua.listBrowsers lists cua's hosts only), a cross-site iframe cell after C2, goto latency per navigation, and the
+// cell (cua.listBrowsers lists cua's hosts only), a cross-site iframe cell after C2, a viewport cell (800x600 set through
+// the browser's viewport capability, the screenshot's pixel size checked, then reset), goto latency per navigation, and the
 // scenarios of scripts/accept/chrome-cua.mjs: the user-tab claim (with its exception to the user-tab rule below), turn
 // end and handoff, and two `cua serve` clients. A declined elicitation stops the run's input as below: the scenarios not
 // yet run are recorded BLOCKED. A home with a Codex credential file is refused on the cua route (the no-login control). `--chrome-restart` runs only acceptance 6, which needs the owner to
@@ -209,7 +210,7 @@ try {
           } else {
             if (route === 'vendor' || runs('c2')) {
               try {
-                await runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots, crossOriginFrame: route === 'cua'});
+                await runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots, crossOriginFrame: route === 'cua', viewport: route === 'cua'});
               } finally {
                 if (tab.createAttempted) record('close-created-tab', leftoverOf(tab).status === 'none' ? 'PASS' : 'FAIL', {leftover: leftoverOf(tab).status, closeAttempted: tab.closeAttempted});
               }

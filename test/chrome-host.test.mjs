@@ -9,6 +9,9 @@ import {NO_HANDLER} from '../src/chrome/protocol.mjs';
 import {createFakeCuaExtension} from './helpers/fake-cua-extension.mjs';
 
 const OTHER = 'tab owned by another session';
+// The ChatGPT extension's browser capability (background.js `rh`), byte for byte: the service lists capabilities whose
+// id it knows and validates {id, description} (browser-service.mjs `iE`, `DN`).
+const VIEWPORT_CAPABILITY = {id: 'viewport', description: 'Controls an explicit browser viewport override for responsive or device-size testing. Use it when a task calls for specific dimensions or breakpoint validation; otherwise leave it unset so the browser uses its normal viewport. Reset temporary overrides before finishing unless the user asked to keep them.'};
 const settle = () => new Promise(r => setImmediate(r));
 
 function setup(options = {}) {
@@ -34,7 +37,7 @@ function setup(options = {}) {
 test('getInfo is answered from the host\'s own state: extension type, no header field, no extensionId', async () => {
   const {ext, call, client} = setup({version: '1.2.3'});
   const info = await call(client(), 'getInfo', {session_id: 's', turn_id: 't', session_context: 'live'});
-  assert.deepEqual(info, {type: 'extension', family: 'chrome', name: 'cua', version: '1.2.3', capabilities: {browser: [], tab: []}, metadata: {extensionInstanceId: ext.instanceId}});
+  assert.deepEqual(info, {type: 'extension', family: 'chrome', name: 'cua', version: '1.2.3', capabilities: {browser: [VIEWPORT_CAPABILITY], tab: []}, metadata: {extensionInstanceId: ext.instanceId}});
   assert.equal('agentRequestHeaderEnabled' in info, false);
   assert.equal(ext.calls.length, 0, 'getInfo never waits on the extension');
 });
@@ -42,7 +45,7 @@ test('getInfo is answered from the host\'s own state: extension type, no header 
 test('fallback methods and unknown ones answer the vendor\'s exact No-handler string with code -1', async () => {
   const {call, client} = setup();
   const c = client();
-  for (const method of ['executeCdpWithCachedExpression', 'executeTabRead', 'followSessionTab', 'allowDownload', 'browserAuthNewTargetProtection', 'executeUnhandledCommand', 'getUserHistory', 'getBookmarks', 'finalizeTabs']) {
+  for (const method of ['executeCdpWithCachedExpression', 'executeTabRead', 'followSessionTab', 'allowDownload', 'browserAuthNewTargetProtection', 'getUserHistory', 'getBookmarks', 'finalizeTabs']) {
     await assert.rejects(call(c, method, {session_id: 's', turn_id: 't'}), e => e.message === NO_HANDLER(method) && e.code === -1, method);
   }
 });
@@ -567,4 +570,157 @@ test('status() is the <name>.json shape', async () => {
   assert.equal(status.pid, process.pid);
   assert.ok(!Number.isNaN(Date.parse(status.updatedAt)));
   assert.deepEqual(status.sessions, [{session_id: 'sA', turn_id: 't1', tabs: [{tabId: tab.id, origin: 'created', mark: 'none', attached: true}]}]);
+});
+
+// ---- the viewport capability (executeUnhandledCommand browser_viewport_set / browser_viewport_reset) ------------------
+
+// The service's payload: {type, browser_id, height?, width?} plus the session fields (browser-service.mjs `aI`, `sI`).
+const viewportSet = (s, width, height) => s.call('executeUnhandledCommand', {type: 'browser_viewport_set', browser_id: 'b1', height, width});
+const viewportReset = s => s.call('executeUnhandledCommand', {type: 'browser_viewport_reset', browser_id: 'b1'});
+// Every Emulation command the extension was asked for, in order: [debuggee, method, params].
+const emulation = ext => ext.calls.filter(c => c.method === 'debugger.sendCommand' && c.params.method.startsWith('Emulation.'))
+  .map(c => [c.params.debuggee, c.params.method, c.params.params]);
+const override = (tabId, width, height) => [{tabId}, 'Emulation.setDeviceMetricsOverride', {width, height, deviceScaleFactor: 1, mobile: false}];
+const cleared = tabId => [{tabId}, 'Emulation.clearDeviceMetricsOverride', {}];
+
+test('viewport set on an attached tab applies the override at once and answers {} (the service parses an empty object)', async () => {
+  const {ext, client, session} = setup();
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(await viewportSet(a, 800, 600), {});
+  assert.deepEqual(emulation(ext), [override(tab.id, 800, 600)]);
+});
+
+test('viewport set before the attach is kept on the tab and applied by the attach; re-attaches apply it again', async () => {
+  const {ext, host, client, session, sent} = setup();
+  const c = client();
+  const a = session(c, 'sA');
+  const tab = await a.call('createTab', {});
+  await viewportSet(a, 800, 600);
+  assert.deepEqual(emulation(ext), [], 'nothing to apply to before the debugger is attached');
+  await a.call('attach', {tabId: tab.id});
+  const order = ext.calls.filter(x => x.method === 'debugger.attach' || x.params?.method?.startsWith?.('Emulation.')).map(x => x.method);
+  assert.deepEqual(order, ['debugger.attach', 'debugger.sendCommand'], 'applied after the attach, before it answers');
+  assert.deepEqual(emulation(ext), [override(tab.id, 800, 600)]);
+
+  // An attach of a tab already attached re-applies it (the ChatGPT extension's Os), with no second debugger.attach.
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(sent('debugger.attach').length, 1);
+  assert.deepEqual(emulation(ext).length, 2);
+
+  // Chrome detaches the tab (another extension's frame): the service's re-attach applies it to the new debugger session.
+  ext.addForeignFrame(tab.id);
+  await settle();
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(sent('debugger.attach').length, 2);
+  assert.deepEqual(emulation(ext).at(-1), override(tab.id, 800, 600));
+
+  // Chrome lost the debuggee without telling the host: the re-apply finds it and the attach is real.
+  ext.state.held.delete(`tab:${tab.id}`);
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(sent('debugger.attach').length, 3);
+  assert.equal(ext.state.held.has(`tab:${tab.id}`), true);
+  assert.deepEqual(emulation(ext).at(-1), override(tab.id, 800, 600));
+  assert.equal(host.status().sessions[0].tabs[0].attached, true);
+});
+
+test('viewport reset clears the override on an attached tab, and later attaches send nothing', async () => {
+  const {ext, client, session} = setup();
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  await viewportSet(a, 1024, 768);
+  assert.deepEqual(await viewportReset(a), {});
+  assert.deepEqual(emulation(ext), [override(tab.id, 1024, 768), cleared(tab.id)]);
+  await a.call('detach', {tabId: tab.id});
+  await a.call('attach', {tabId: tab.id});
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(emulation(ext).length, 2);
+});
+
+test('viewport set goes to the session\'s active tab only; frame targets never get it', async () => {
+  const {ext, client, session} = setup();
+  const a = session(client(), 'sA'), b = session(client(), 'sB');
+  const first = await a.call('createTab', {}), second = await a.call('createTab', {});
+  const others = await b.call('createTab', {});
+  for (const t of [first, second]) await a.call('attach', {tabId: t.id});
+  await b.call('attach', {tabId: others.id});
+  await viewportSet(a, 800, 600);
+  assert.deepEqual(emulation(ext), [override(second.id, 800, 600)], 'the last created tab, as getTabs reports it active');
+  await a.call('attach', {tabId: first.id});
+  await b.call('attach', {tabId: others.id});
+  await a.call('attachTarget', {tabId: second.id, targetId: `T-${second.id}-1`});
+  assert.equal(emulation(ext).length, 1);
+});
+
+test('viewport set with no tab yet waits for the turn\'s first attach; a turn\'s end drops it unused', async () => {
+  const {ext, client, session} = setup();
+  const a = session(client(), 'sA');
+  await viewportSet(a, 800, 600);
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(emulation(ext), [override(tab.id, 800, 600)]);
+
+  const b = session(client(), 'sB');
+  await viewportSet(b, 640, 480);
+  await b.end();
+  b.turn = 't2';
+  const later = await b.call('createTab', {});
+  await b.call('attach', {tabId: later.id});
+  assert.equal(emulation(ext).length, 1, 'the ended turn\'s size is not applied');
+  b.turn = 't1';
+  await assert.rejects(viewportSet(b, 1, 1), e => e.message === 'Browser session sB turn t1 has ended', 'an ended turn sets nothing');
+  await b.call('detach', {tabId: later.id});
+  await b.call('attach', {tabId: later.id});
+  assert.equal(emulation(ext).length, 1, 'a late attach of the ended turn does not find its size either');
+});
+
+test('viewport at turn end: a released tab loses it; a handoff tab keeps it and gets it back on the next turn\'s attach', async () => {
+  const {ext, client, session} = setup();
+  const user = ext.addTab({url: 'https://user.fixture.invalid/'});
+  const a = session(client(), 'sA');
+  await a.call('claimUserTab', {tabId: user.id});
+  await a.call('attach', {tabId: user.id});
+  await viewportSet(a, 800, 600);
+  await a.end();
+  assert.equal(ext.state.held.has(`tab:${user.id}`), false, 'detached: Chrome drops the override with the debugger');
+  a.turn = 't2';
+  await a.call('claimUserTab', {tabId: user.id});
+  await a.call('attach', {tabId: user.id});
+  assert.equal(emulation(ext).length, 1, 'claimed again, it has no viewport');
+
+  const handoff = await a.call('createTab', {});
+  await a.call('attach', {tabId: handoff.id});
+  await viewportSet(a, 390, 844);
+  await a.call('markTab', {tabId: handoff.id, status: 'handoff'});
+  await a.end();
+  assert.equal(ext.state.held.has(`tab:${handoff.id}`), false);
+  a.turn = 't3';
+  await a.call('attach', {tabId: handoff.id});
+  assert.deepEqual(emulation(ext).at(-1), override(handoff.id, 390, 844));
+});
+
+test('viewport set on a debuggee Chrome lost forgets the attachment, so the service\'s re-attach is real and applies it', async () => {
+  const {ext, host, client, session} = setup();
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  ext.state.held.delete(`tab:${tab.id}`);
+  assert.deepEqual(await viewportSet(a, 800, 600), {});
+  assert.equal(host.status().sessions[0].tabs[0].attached, false);
+  await assert.rejects(a.call('executeCdp', {target: {tabId: tab.id}, method: 'Page.enable'}), e => e.message === 'Debugger unattached');
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(emulation(ext).at(-1), override(tab.id, 800, 600));
+});
+
+test('executeUnhandledCommand: a malformed size is refused; a command cua does not know answers the extension\'s wording', async () => {
+  const {ext, client, session} = setup();
+  const a = session(client(), 'sA');
+  await a.call('createTab', {});
+  for (const [width, height] of [[0, 600], [800, -1], [800.5, 600], ['800', 600], [undefined, 600]])
+    await assert.rejects(viewportSet(a, width, height), /browser_viewport_set requires positive integer width and height/);
+  await assert.rejects(a.call('executeUnhandledCommand', {type: 'browser_management_call', browser_id: 'b1'}),
+    e => e.message === 'cua does not support command "browser_management_call".' && e.code !== -1);
+  assert.equal(emulation(ext).length, 0);
 });

@@ -101,6 +101,44 @@ for (let i = 0; i < 20 && out !== ${js(FRAME_CLICKED)}; i++) {
 }
 __out.frameClicked = out === ${js(FRAME_CLICKED)};`);
 
+// ---- #82: the browser's viewport capability --------------------------------------------------------------------------
+
+export const VIEWPORT_SIZE = {width: 800, height: 600};
+
+// The pixel size of a PNG (IHDR) or JPEG (first start-of-frame) image: -> {format, width, height} | null. Runs inside the
+// REPL (the cell carries its source), so it uses no Node API.
+export function imageSize(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? []);
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (b.length >= 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return {format: 'png', width: v.getUint32(16), height: v.getUint32(20)};
+  if (b.length < 4 || b[0] !== 0xff || b[1] !== 0xd8) return null;
+  for (let i = 2; i + 9 <= b.length;) {
+    if (b[i] !== 0xff) return null;
+    const marker = b[i + 1];
+    if (marker === 0xff) { i++; continue; }
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return {format: 'jpeg', width: v.getUint16(i + 7), height: v.getUint16(i + 5)};
+    i += 2 + v.getUint16(i + 2);
+  }
+  return null;
+}
+
+// The created tab (on the runner's own page) under an explicit viewport: set, one screenshot whose pixel size is read in
+// the REPL (not emitted), then reset whatever happened and one more screenshot to compare. The agent's own route to the
+// capability: browser.capabilities.get("viewport").
+export const VIEWPORT_SCREENSHOT = cellCode(`${created}
+const imageSize = ${imageSize.toString()};
+const browser = await cua.getBrowser({id: m.browserId});
+__out.offered = (await browser.capabilities.list()).some(c => c.id === "viewport");
+const viewport = await browser.capabilities.get("viewport");
+await viewport.set(${js(VIEWPORT_SIZE)});
+try {
+  __out.set = imageSize(await m.tab.getScreenshot({emit: false}));
+} finally {
+  await viewport.reset();
+  __out.reset = true;
+}
+__out.afterReset = imageSize(await m.tab.getScreenshot({emit: false}));`);
+
 // ---- H3b: the cua route's scenario cells ----------------------------------------------------------------------------
 // Each scenario keeps its REPL state in its own global, so the scenarios never read each other's handles. Tab ids the
 // runner compares with the host's <name>.json are emitted as numbers (Chrome tab ids of tabs the runner created or

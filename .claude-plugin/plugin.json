@@ -1,7 +1,7 @@
 {
   "name": "cua",
   "description": "Computer use for Claude Code on macOS (Apple silicon) and Linux (X11) through OpenAI's computer-use runtime: a stdio MCP server running the pinned runtime that `cua install` places under CUA_HOME, whose devices_list and devices_use tools switch it to a remote device added with `cua devices` (a cua agent behind a relay) and back; an Elicitation hook that accepts cua_repl's app and site approvals, so none shows a dialog; the cua-remote skill, to set up a device or connect to one; and /secret KEY (function hooks, under CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1), a secret stored in ~/.config/claude-secrets that the model sees only by its key.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "author": {
     "name": "SSFSKIM"
   },

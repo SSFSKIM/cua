@@ -11,6 +11,8 @@
 //   createBrowserTab = createTab + attach reaching the host (the extension is asked for tabs.create in the session's
 //     group, inactive, then debugger.attach of that tab);
 //   a Runtime.evaluate the service issues is relayed to the extension and its answer reaches the agent's cell;
+//   the browser `viewport` capability is offered to the agent, and its set/reset reach the host as
+//     executeUnhandledCommand and the created tab as Emulation.setDeviceMetricsOverride/clearDeviceMetricsOverride;
 //   turnEnded closes the created tab (tabs.remove) and the host's status file then lists no tab;
 //   the header policy is skipped: no cell failed on caller identity, no auth.json in the run's CODEX_HOME.
 // No Chrome, no real extension, no account: tabs, debuggees and CDP answers are the fake's.
@@ -86,6 +88,12 @@ __out.browsers = list.map(b => ({type: b.type, name: b.name, metadata: {extensio
   {name: 'listTabsBefore', code: cell(`const tabs = await cua.listTabs({browser: __m7.id, emit: false}); __out.tabs = tabs.length;`)},
   {name: 'createBrowserTab', code: cell(`const tab = await cua.createBrowserTab(__m7.id); __m7.tab = tab; __out.created = tab.id; __out.keys = Object.keys(tab).sort();`)},
   {name: 'evaluate', code: cell(`const v = await __m7.tab.playwright.evaluate(${JSON.stringify(`"${EVAL_MARKER}-cell"`)}); __out.value = String(v).slice(0, 40);`)},
+  {name: 'viewport', code: cell(`const browser = await cua.getBrowser({id: __m7.id});
+__out.capabilities = (await browser.capabilities.list()).map(c => c.id);
+const viewport = await browser.capabilities.get("viewport");
+await viewport.set({width: 800, height: 600});
+await viewport.reset();
+__out.done = true;`)},
   {name: 'listTabsAfter', code: cell(`const tabs = await cua.listTabs({browser: __m7.id, emit: false}); __out.tabs = tabs.length;`)},
 ];
 
@@ -108,6 +116,9 @@ export function judgeHost(run) {
   const listed = run.cells?.listBrowsers?.result?.browsers ?? [];
   const identityErrors = Object.entries(run.cells ?? {}).map(([n, c]) => [n, c.result?.error ?? c.probeError ?? null]).filter(([, e]) => e && IDENTITY.test(e));
   const removed = calls.some(c => c.method === 'tabs.remove' && c.params?.tabId === createdId);
+  const emulation = calls.filter(c => c.method === 'debugger.sendCommand' && /^Emulation\.(set|clear)DeviceMetricsOverride$/.test(c.params?.method))
+    .map(c => ({debuggee: c.params.debuggee, method: c.params.method, params: c.params.params}));
+  const viewportCell = run.cells?.viewport;
   return [
     scenario('h1-launch', 'vendor launch against the host: browser surface, fresh CODEX_HOME, no login, network default, no bypass switch', [
       check('the host listened at $CUA_HOME/chrome/b/<name>.sock after hello', run.hostListening, run.socketPath),
@@ -129,6 +140,13 @@ export function judgeHost(run) {
       check('Runtime.evaluate reached the extension through the host', evaluations.length > 0, evaluations.length),
       check('the cell received the extension\'s answer', typeof run.cells?.evaluate?.result?.value === 'string' && run.cells.evaluate.result.value.startsWith(EVAL_MARKER), run.cells?.evaluate?.result ?? run.cells?.evaluate),
     ], ['src/chrome/host.mjs executeCdp']),
+    scenario('h1-viewport', 'the viewport capability: offered to the agent, set and reset reach the created tab as Emulation overrides', [
+      check('browser.capabilities lists viewport', viewportCell?.result?.capabilities?.includes('viewport'), viewportCell?.result ?? viewportCell),
+      check('set and reset returned', viewportCell?.result?.done === true, viewportCell?.result ?? viewportCell),
+      check('the tab got setDeviceMetricsOverride 800x600 at scale 1, then clearDeviceMetricsOverride', JSON.stringify(emulation) === JSON.stringify([
+        {debuggee: {tabId: createdId}, method: 'Emulation.setDeviceMetricsOverride', params: {width: 800, height: 600, deviceScaleFactor: 1, mobile: false}},
+        {debuggee: {tabId: createdId}, method: 'Emulation.clearDeviceMetricsOverride', params: {}}]), emulation),
+    ], ['browser-service.mjs:35697-35760 (browser_viewport_*, the viewport capability)', 'src/chrome/host.mjs executeUnhandledCommand']),
     scenario('h1-turn-end', 'turnEnded closes the created tab and the status file lists no tab', [
       check('turn_ended completed', run.turnEnded && !run.turnEnded.isError && !run.turnEnded.probeError, run.turnEnded),
       check('the host closed the created tab', removed && run.fakeTabsAfter?.includes(createdId) === false),
@@ -201,7 +219,9 @@ export async function runHostLayer({home, sentinels}) {
     try { logText = readFileSync(join(logDir(realHome), `${name}.log`), 'utf8'); } catch (e) { run.hostLogError = e.code; }
     run.hostLog = logText.split('\n').filter(Boolean).map(l => l.split(realHome).join('$CUA_HOME'));
     run.hostStderrBytes = Buffer.byteLength(hostStderr);
-    run.extensionCalls = ext.calls.map(c => ({method: c.method, params: c.method === 'debugger.sendCommand' ? {debuggee: c.params.debuggee, method: c.params.method, ...(c.params.sessionId ? {sessionId: c.params.sessionId} : {})} : c.params}));
+    // CDP params are dropped (they can carry what the agent typed), except the viewport's, which the judge reads.
+    run.extensionCalls = ext.calls.map(c => ({method: c.method, params: c.method === 'debugger.sendCommand' ? {debuggee: c.params.debuggee, method: c.params.method, ...(c.params.sessionId ? {sessionId: c.params.sessionId} : {}),
+      ...(/^Emulation\.(set|clear)DeviceMetricsOverride$/.test(c.params.method) ? {params: c.params.params} : {})} : c.params}));
   }
   const scenarios = judgeHost(run);
   return {layer: 'vendor-host', release: runtime.release ?? null, runs: {host: run}, scenarios,

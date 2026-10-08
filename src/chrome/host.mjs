@@ -30,6 +30,12 @@
 //   window.open in an owned tab of the session's current turn (tabs.popup) opens as the session's tab, active.
 // - Every request the extension refuses is logged with its method, debuggee or tab and Chrome's message (never CDP
 //   params, which can carry substituted secrets).
+// - The browser `viewport` capability (getInfo) arrives as executeUnhandledCommand browser_viewport_set/_reset. The size
+//   is kept on the session's active tab (or, with no tab yet, for the next tab the turn attaches) and applied with
+//   Emulation.setDeviceMetricsOverride when set on an attached tab, at every attach of the tab and again on an attach of
+//   a tab already attached; reset clears it. Chrome drops the override with the debugger, so a released tab loses it
+//   and a handoff tab gets it back when the next turn attaches it (the ChatGPT extension's setViewport, Os/Ps and
+//   takeViewportSizeForAttach). Frame targets get none: an out-of-process frame is sized by its parent page.
 // Vendor references (@oai/browser-desktop 0.1.1 in ChatGPT 26.928.40906): the backend client browser-service.mjs
 // 67808-68110; the ChatGPT extension's session model (hehggadaopoacecdllhhajmbjkdcmajg 1.26.901.11451, background.js):
 // endTurnUnlocked, resumeHandoffIfPresent, executeCdp/mg (timeout), Os/Zf (attach, "Another debugger" as success).
@@ -48,6 +54,8 @@ export const MAX_TO_EXTENSION_BYTES = 1024 * 1024;
 export const MAX_FROM_EXTENSION_BYTES = 64 * 1024 * 1024;
 const LIVE_PROBE_MS = 500;
 const SESSION_EXEMPT = new Set(['getInfo', 'turnEnded', 'ping']);
+// The vendor's browser capability, as the ChatGPT extension advertises it (the service validates {id, description}).
+export const VIEWPORT_CAPABILITY = {id: 'viewport', description: 'Controls an explicit browser viewport override for responsive or device-size testing. Use it when a task calls for specific dimensions or breakpoint validation; otherwise leave it unset so the browser uses its normal viewport. Reset temporary overrides before finishing unless the user asked to keep them.'};
 const MARKS = new Set(['handoff', 'deliverable']);
 const OTHER_SESSION = 'tab owned by another session';
 const TIMED_OUT = Symbol('timed out');
@@ -113,7 +121,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
   function sessionFor(client, sessionId, turn) {
     let s = sessions.get(sessionId);
     if (!s) {
-      s = {id: sessionId, client, turn: null, seen: new Set(), ended: new Set(), title: 'cua', activeTabId: null, tabs: new Map(), closed: false};
+      s = {id: sessionId, client, turn: null, seen: new Set(), ended: new Set(), title: 'cua', activeTabId: null, tabs: new Map(), closed: false, pendingViewport: null};
       sessions.set(sessionId, s);
       log(`session ${sessionId} opened`);
     }
@@ -131,7 +139,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
     return s;
   }
 
-  const newTab = (tabId, windowId, turnId, origin) => ({tabId, windowId, turnId, origin, mark: 'none', state: 'active', attached: false, targets: new Set(), canceledByUser: false});
+  const newTab = (tabId, windowId, turnId, origin) => ({tabId, windowId, turnId, origin, mark: 'none', state: 'active', attached: false, targets: new Set(), canceledByUser: false, viewport: null});
 
   function own(s, tab) {
     s.tabs.set(tab.tabId, tab);
@@ -176,6 +184,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
   }
 
   async function endTurn(s, turn) {
+    if (s.pendingViewport?.turn === turn) s.pendingViewport = null;
     const work = [];
     for (const tab of [...s.tabs.values()]) {
       if (tab.state !== 'active' || tab.turnId !== turn) continue;
@@ -236,6 +245,49 @@ export function createHost({extension: port, hello, home = null, now = () => new
     }
   }
 
+  // The session's logical active tab, as getTabs reports it (live tabs aside): the last created or claimed, else the first.
+  function activeTabOf(s) {
+    const tabs = [...s.tabs.values()].filter(t => t.state === 'active');
+    return tabs.find(t => t.tabId === s.activeTabId) ?? tabs[0] ?? null;
+  }
+
+  // Sends the tab's viewport override (or its clearing) to the attached tab debuggee.
+  const sendViewport = tab => extension.request('debugger.sendCommand', {debuggee: {tabId: tab.tabId},
+    ...(tab.viewport ? {method: 'Emulation.setDeviceMetricsOverride', params: {...tab.viewport, deviceScaleFactor: 1, mobile: false}}
+      : {method: 'Emulation.clearDeviceMetricsOverride', params: {}})});
+
+  // browser_viewport_set ({width, height}) and browser_viewport_reset (null): applied at once to an attached tab; a tab
+  // Chrome detached behind the host's back is forgotten as detached, so the service's re-attach applies it.
+  async function setViewport(s, turn, size) {
+    if (s.ended.has(turn)) refuse(turnOver(s, turn));
+    const tab = activeTabOf(s);
+    if (!tab) {
+      s.pendingViewport = size ? {turn, size} : null;
+      return {};
+    }
+    touch(s, tab, turn);
+    tab.viewport = size;
+    s.pendingViewport = null;
+    if (tab.attached) await sendViewport(tab).catch(error => forgetLostDebugger(tab, error));
+    return {};
+  }
+
+  // Chrome answering "Debugger is not attached" for a tab the host holds: the host forgets the attachment (the next
+  // attach is real and applies the viewport); anything else is the caller's error.
+  function forgetLostDebugger(tab, error) {
+    if (!/Debugger is not attached/.test(error?.message ?? '')) throw error;
+    if (tab.attached) { tab.attached = false; changed(); }
+  }
+
+  const positiveInt = v => Number.isSafeInteger(v) && v > 0;
+  const unhandled = {
+    browser_viewport_set: ({width, height}, s, turn) => {
+      if (!positiveInt(width) || !positiveInt(height)) refuse('browser_viewport_set requires positive integer width and height');
+      return setViewport(s, turn, {width, height});
+    },
+    browser_viewport_reset: (params, s, turn) => setViewport(s, turn, null),
+  };
+
   async function pickWindow(preferred) {
     const normal = (await extension.request('windows.query', {})).filter(w => w.type === 'normal');
     const chosen = normal.find(w => w.id === preferred) ?? normal.find(w => w.focused) ?? normal[0];
@@ -246,7 +298,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
   // --- the backend methods ------------------------------------------------------------------------------------------
 
   const handlers = {
-    getInfo: () => ({type: 'extension', family: 'chrome', name: 'cua', version: hello.version, capabilities: {browser: [], tab: []},
+    getInfo: () => ({type: 'extension', family: 'chrome', name: 'cua', version: hello.version, capabilities: {browser: [VIEWPORT_CAPABILITY], tab: []},
       metadata: {extensionInstanceId: hello.extensionInstanceId}}),
 
     ping: () => 'pong',
@@ -287,7 +339,16 @@ export function createHost({extension: port, hello, home = null, now = () => new
       const tab = ownedTab(s, tabId, 'attach');
       if (tab.canceledByUser) refuse(`Tab ${tabId}: the user canceled debugging; cua does not attach it again`);
       touch(s, tab, turn);
-      if (tab.attached) return {};
+      // A size set before the turn had a tab goes to the first tab it attaches (another turn's is never applied).
+      if (s.pendingViewport?.turn === turn && !tab.viewport) {
+        tab.viewport = s.pendingViewport.size;
+        s.pendingViewport = null;
+      }
+      if (tab.attached) {
+        if (!tab.viewport) return {};
+        // Re-applied, as the ChatGPT extension does; a debuggee Chrome lost without telling us is attached again.
+        try { await sendViewport(tab); return {}; } catch (error) { forgetLostDebugger(tab, error); }
+      }
       await attachGuarded(tabId, {tabId});
       if (!stillOwned(s, tab)) {
         await quiet(extension.request('debugger.detach', {tabId}).catch(tolerateNotAttached));
@@ -295,6 +356,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       }
       tab.attached = true;
       changed();
+      if (tab.viewport) await sendViewport(tab);
       return {};
     },
 
@@ -368,6 +430,14 @@ export function createHost({extension: port, hello, home = null, now = () => new
       } finally {
         clearTimeout(timer);
       }
+    },
+
+    // The service's commands without a handler of its own (browser-service.mjs executeUnhandledCommand); the ChatGPT
+    // extension's wording for one it does not know.
+    executeUnhandledCommand(params, s, turn) {
+      const handler = Object.hasOwn(unhandled, params.type) ? unhandled[params.type] : null;
+      if (!handler) refuse(`cua does not support command "${params.type}".`);
+      return handler(params, s, turn);
     },
 
     async getUserTabs() {

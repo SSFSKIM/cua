@@ -499,8 +499,10 @@ security override) and claims no control over it. The browser surface is opt-in 
   not given (above).
 - Downloads land where Chrome puts them (the profile's download directory) and the agent's wait for a download
   answers that path; Chrome's "Ask where to save each file" setting would stop the agent at the Save dialog. JavaScript
-  dialogs and the file chooser (paths on the computer running Chrome) work through the relay as on the ChatGPT
-  extension (`docs/evidence/2026-10-08-downloads-dialogs-chooser.md`).
+  dialogs work through the relay as on the ChatGPT extension. So does the file chooser (paths on the computer running
+  Chrome), once "Allow access to file URLs" is on for the cua extension at `chrome://extensions` → Details: Chrome
+  refuses the upload to an extension without it, and the agent's error says so
+  (`docs/evidence/2026-10-08-downloads-dialogs-chooser.md`).
 - The browser service's own limits stay: the 3 s cap on locator actions and waits, and read-only page evaluation
   (Operating guidance for agents). Lifting them needs a service of cua's own, which this extension is built to serve.
 - Any process of your user that can open `$CUA_HOME/chrome/b` (0700) can talk to the host. The ChatGPT extension's host

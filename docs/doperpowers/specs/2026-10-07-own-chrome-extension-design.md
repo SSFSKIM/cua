@@ -45,6 +45,10 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-08) #82 — the browser `viewport` capability in the host (Decision Log 2026-10-08). Host tests and the
       H1 probe (`--vendor --backend host`, the pinned service offering `viewport` to the agent and its set/reset reaching
       the tab as Emulation overrides) pass; the `accept-chrome --route cua` viewport cell is added, not yet run live.
+- [x] (2026-10-08 10:30 UTC) #15 — downloads in the extension (`downloads`, 0.3.0) and host (`onDownloadChange`);
+      dialogs and the file chooser measured as relay pass-through (Decision Log 2026-10-08, #15). Live on the Tart VM
+      through the relay-updated CRX: download, alert, confirm PASS; the file chooser PASS once the extension has file
+      access (`docs/evidence/2026-10-08-downloads-dialogs-chooser.md`). Store 0.3.0 upload waits for #78.
 
 ## Facts this design rests on
 
@@ -868,6 +872,11 @@ No new npm dependencies.
   pending 0.2.0 review (#78), and the "Manage your downloads" install warning. Proof: host and extension unit tests,
   and the Linux live fixture `scripts/accept/linux-chrome-features.mjs` on the Tart VM (download to the real download
   directory with a sha256 check, alert and confirm handled, a file chosen), `docs/evidence/2026-10-08-downloads-dialogs-chooser.md`.
+  Measured there: the download, alert and confirm pass as designed; the file chooser needs the extension's "Allow
+  access to file URLs" (Chrome refuses `DOM.setFileInputFiles` to a debugger client without it; no policy grants it;
+  with the check disabled the chooser passes), so it is documented, not coded; and the rejected CDP alternative is
+  refused outright (`Browser.setDownloadBehavior` "wasn't found", `Page.setDownloadBehavior` "Cannot not access
+  browser-level commands").
 
 ## Outcomes & Retrospective
 

@@ -713,7 +713,13 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
 
 ## Surprises & Discoveries
 
-- (none yet)
+- (2026-10-08, M1) The vendor's `cua.getBrowser()` with no argument sends `get_default_browser {}`, `getBrowser({url})`
+  sends `get_browser_for_url`, and `getBrowser({extensionInstanceId})` resolves client-side (`list_browsers` +
+  `get_browser {id}`). Browser ids are sequential per pipe and a browser leaves the vendor's cache when its connection
+  closes; a listed path is redialled at the next refresh, so a returning peer was listed again 3-5 s later without a
+  runtime restart. The vendor shows `getInfo.metadata.profileName` as the profile name as is. `/tmp/codex-browser-use`
+  on this Mac holds about 333 socket files, nearly all stale; the vendor route lists them all, as the vendor's own scan
+  would.
 
 ## Decision Log
 
@@ -762,6 +768,26 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   Rationale: the brief forbids merging and touching the main checkouts; overwriting the owner's live plugin with an
   unreviewed branch would change every other session on this Mac.
   Date/Author: 2026-10-08, the plan executor.
+
+- Decision (2026-10-08, M1): how the client mode landed. Client-mode hosts run inside the `cua serve` / `cua profiles
+  list` process itself (one host per configured backend per process). The 5 s hello wait ends per backend at its first
+  hello or at its first attempt that ends without one, so a MAWS that is down costs no fixed 5 s. The default-selection
+  rewrite turns an unqualified `get_default_browser` / `get_browser_for_url` into the vendor's own `list_browsers` then
+  `get_browser {id}`; an unlisted default asks `get_browser {id: <default>}` so the error is the vendor's own. Before a
+  first hello the configured default is not known; the rewrite then takes the first listed browser whose instance id
+  starts with `maws:` (only this process's client-mode hosts can carry that prefix: nothing scans `chrome/m/`), so a
+  `cua serve` started while MAWS was down picks up the session's backend when MAWS returns, and still fails closed
+  instead of reaching Chrome. The vendor-route `/tmp/codex-browser-use` scan also runs on a cua home with no
+  registration (both are cases where the vendor scans today). Status files are `chrome/b/<name>-<pid>.json`. The keys
+  `maws` and `maws-<n>` are all reserved. `moveMouse` to a MAWS peer is refused for a tab the session does not own.
+  Doctor's MAWS heading is one row, `maws.hosts`. `CUA_BROWSER_BACKENDS` is read only when the browser surface is on.
+  The default-selection pin is proven by a separate probe (`scripts/accept/maws-selection.mjs`, which has to stop and
+  restart the peer) rather than a harness step; it configures the Chrome-shaped fake as a second backend.
+  Rationale: each is the narrowest reading of the design that keeps the Chrome route unchanged; the prefix fallback
+  replaces the executor's fixed placeholder default, which left a `cua serve` started during a MAWS outage unable to
+  select the in-app browser until restarted, against "the MAWS peer reconnecting restores the default without
+  restarting the runtime".
+  Date/Author: 2026-10-08, the plan executor (M1 executor's report, task-1).
 
 ## Outcomes & Retrospective
 

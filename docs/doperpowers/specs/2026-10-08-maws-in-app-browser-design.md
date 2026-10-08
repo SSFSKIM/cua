@@ -919,6 +919,17 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   entry. The design's "Action rows" paragraph and Interfaces are revised to say so.
   Date/Author: 2026-10-08, the plan executor, on the dispatching session's decision.
 
+- Decision (2026-10-08, M3 review): who a leased tab's dialog and navigation belong to. The held (vendor) dialog route
+  applies where A-42's agent route applied: control `agent`, or an `idle` tab under a lease on which control's
+  `personHolds` is false (the agent's own deferred page work, e.g. a timer its click armed, still reaches the vendor's
+  `getJsDialog`). A tab the person holds (control `human`, or `personHolds` true on an `idle` tab) keeps A-42's human
+  rows: the placed tab's native box, the never-placed defaults. The same rule decides `navigated` activity: a
+  navigation while `personHolds` is true or control is `human` is the person's and is not reported.
+  Rationale: A-53 keeps "the placed human-held tab's native dialog" unchanged; routing it to the vendor froze the
+  person's page for 30 s (the vendor's answer is an acting command held by the takeover gate). `personHolds` is the
+  takeover gate's own test, so dialogs, navigations and acting commands agree on who holds the tab.
+  Date/Author: 2026-10-08, the plan executor (M3 review findings P2, P3).
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

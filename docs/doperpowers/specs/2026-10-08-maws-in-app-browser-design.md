@@ -337,9 +337,15 @@ The click label is the clicked node's tag and accessible text: `DOM.getNodeForLo
 is not retried. Typed text never leaves main (a cell can type a substituted secret); only its length does. The
 renderer attaches each activity to the session's cua_repl `js` call in flight when it arrives, else to the most recent
 one of the turn, else as a standalone row; rows reuse `BrowserActionRow`'s line ("Navigated to example.com", "Clicked
-button Submit", "Typed 12 characters", "Screenshot", "Downloaded cua-report.pdf"). The derive layer's `browser_action`
-presentation keeps classifying historical `mcp__maws__browser_*` tool uses, so old journals and X8 fixtures still
-render.
+button Submit", "Typed 12 characters", "Screenshot", "Downloaded cua-report.pdf"). The activity rows are persistent
+rows of their own kind, not part of the `js` cell: attached under the `js` call while it runs, they stay in view when
+the turn folds, in the position the old `browser_action` rows took, while the `js` cell keeps its own classification,
+folds with the turn's work and keeps counting in the divider (M3 fix wave, the dispatching session's decision under
+the owner's "action rows retained"). Main keeps the activities for the app's life in a per-session ring buffer (the
+last 500 per session), and the renderer lists a session's activities when its transcript mounts, so a window reload
+or a second window shows them again; persistence across an app restart is out of scope. The derive layer's
+`browser_action` presentation keeps classifying historical `mcp__maws__browser_*` tool uses, so old journals and X8
+fixtures still render.
 
 **Downloads.** A `will-download` whose webContents is a tab under a lease is the agent's: saved without a dialog to
 `~/Downloads` under its suggested name, suffixed ` (1)`, ` (2)`… on collision (Chrome's rule on macOS; revised in M3, Decision Log), reported as
@@ -703,7 +709,11 @@ the first lease, detaches on the last release; `attach()`/`detach()` become one 
 (see "Debugger leases"). Owner: M2; consumers M3 (control, parking, cursor by lease).
 
 **`browser.agent.activity`** (MAWS IPC, main → renderer): `{appSessionId, tabId, at: ISO string, activity}` with
-`activity` as listed under "Action rows". Owner: M3.
+`activity` as listed under "Action rows". Owner: M3. Main also keeps each session's activities in a ring buffer of the
+last 500 for the app's life, and a renderer → main IPC command `browser.agent.activities.list {appSessionId} →
+{activities: Array<{appSessionId, tabId, at, activity}>}` (oldest first) returns them; the renderer calls it when a
+session's transcript mounts and merges the live events after it (de-duplicated by `at`, `tabId` and kind). Owner: M3
+(fix wave addition).
 
 **MAWS primitive server module** (`src/main/browser/cua/index.ts`): `startCuaBackend({store, windows, reaches,
 userData, version}) → {socketPathFor(appSessionId): string, holds(tabId): boolean, dispose(): void}`; `socketPathFor`
@@ -899,6 +909,15 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   live only (a window reload loses them; persisting them needs a main-side buffer and a list command outside this
   spec's interface). Both are carried to the dispatching session and the pull request.
   Date/Author: 2026-10-08, the plan executor (M3 executor's report, task-3).
+
+- Decision (2026-10-08, M3 fix wave, the dispatching session's decision): activity rows stay in view after a turn
+  folds, as the old `browser_action` rows did, which the owner asked to keep. They are persistent rows of their own
+  kind, attached under the `js` call while it runs, in the old rows' position; the `js` cell keeps its classification,
+  folds and counts in the divider. Activities persist for the app's life: a per-session ring buffer of 500 in main and
+  the list command `browser.agent.activities.list`, called when a session's transcript mounts, so a reload shows them
+  again. Persistence across an app restart is out of scope (residue). This resolves the two open points of the M3
+  entry. The design's "Action rows" paragraph and Interfaces are revised to say so.
+  Date/Author: 2026-10-08, the plan executor, on the dispatching session's decision.
 
 ## Outcomes & Retrospective
 

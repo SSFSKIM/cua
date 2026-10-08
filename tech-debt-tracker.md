@@ -5,14 +5,13 @@
 - **2026-10-08 — Page guards: what the live run left (minor, issue #81).** (a) A detach can still happen right at a
   navigation: the input-helper draws its frame into the new document before the guard is injected at commit
   (`tabs.onUpdated` url), so Chrome answers `Detached while handling command.` once and the service re-attaches (4
-  times in two probe runs, every fill still passed; the vendor route shows the same). Closing the window would need
+  times in the first two probe runs, none in the rerun on the branch head; every fill still passed; the vendor route
+  shows the same). Closing the window would need
   code at `document_start` in owned tabs only, which `chrome.scripting.registerContentScripts` cannot scope to tabs.
-  (b) The review fixes (`d7970a5`: bounded pre-attach sweep, top-frame-only popup interceptor, `_blank`-only targets,
-  unguard-wins race) are proven under the stub, not live; the next unpacked reload (or #78's Store build) should rerun
-  `pm-probe/fix-81/probe.mjs`. (c) A sized `window.open` (sign-in popups) is left to Chrome, so it still opens as a user
+  (b) A sized `window.open` (sign-in popups) is left to Chrome, so it still opens as a user
   tab the agent must claim and can take the user's focus; adopting it by `openerTabId` would keep `window.opener`
-  (vendor: `handleCreatedNavigationTarget`). (d) In the live probe the password field's value after a successful fill
-  was not the probe's in 8/8 trials (something in the profile replaced it; not read); worth one look at which extension
+  (vendor: `handleCreatedNavigationTarget`). (c) In the live probe the password field's value after a successful fill
+  was not the probe's in every password trial (12 across three runs; something in the profile replaced it; not read); worth one look at which extension
   rewrites it before an agent relies on password fills in that profile.
 
 - **2026-10-07 — cua's own Chrome extension and host: review minors left (minor, issue #10).** (a) The host does not

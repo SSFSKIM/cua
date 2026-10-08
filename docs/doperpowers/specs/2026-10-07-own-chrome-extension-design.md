@@ -40,8 +40,8 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-08 02:53 UTC) #81 — page guards (other extensions' frames, popups) and the host's refusal log; Decision
       Log 2026-10-07 (#81). Live on this Mac with the input-helper enabled: pm-probe 8/8 fills twice (was 0/8), the
       popup listed in the session without a claim, `accept-chrome --route cua` 40/40, vendor manifests unchanged
-      (`docs/evidence/2026-10-07-foreign-frames-acceptance.md`). The review fixes (`d7970a5`) are proven under the
-      stub only; they need the extension reloaded to be live.
+      (`docs/evidence/2026-10-07-foreign-frames-acceptance.md`). Rerun on the branch head with the review fixes
+      (`d7970a5`) after an extension reload: 8/8, no detach, popup in the session, runner 40/40.
 
 ## Facts this design rests on
 

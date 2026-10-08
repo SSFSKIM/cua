@@ -10,7 +10,7 @@ in profile `Default` ("personal"): id `jkejaaijdfpohkdhankllbekkhmnippb`, versio
 **What was measured:** the extension and host of commit `59bbcf5` (the host ran from a detached checkout of that commit,
 so the review fixes landing meanwhile could not change it mid-run). The review fixes in `d7970a5` (a 1.5 s bound on
 the pre-attach sweep, unguard not awaited at turn end, the popup interceptor in the top frame only and for new-context
-opens only) were proven under the stub, not live; they need the extension reloaded.
+opens only) were proven under the stub first; the rerun below measures them live after the owner reloaded the extension.
 
 **Result: fixed.** The pm-probe page went from 0/8 fills (before, same Chrome, same helper) to 8/8, twice, and the tab
 never wedged. A page's `window.open` from an agent tab appeared in the session's tabs without a claim. The cua-route
@@ -74,3 +74,22 @@ while handling command.` and the commands racing it (`Debugger is not attached t
 harmless); and `tabs.guard {"tabId":N}: Cannot access contents of url "about:blank". Extension manifest must request
 permission to access this host.` (the pre-attach sweep of a just-created tab; expected, ignored). Chrome's wording for
 the last one is now the stub's.
+
+## Rerun on the branch head (`fb0c945`, review fixes included)
+
+The owner pressed Reload on the cua card, so the loaded extension and the host (now spawned from this worktree) are
+the branch head, including `d7970a5`. Run 2026-10-08 02:56–03:00 UTC, same Chrome, scratch home and helper.
+
+- `chrome register --replace`: `placed` ×5. New host pid 14412 from this worktree's `src/chrome/host.mjs`, socket
+  `cde28f0485f4.sock` (same instance `ef1e8c42-…`: a reload keeps the extension's storage). `profiles bind personal`
+  bound it by directory.
+- pm-probe: **8/8 fills**, text read-back 4/4, the helper's frame blanked (`srcdoc=""`) after every focus, **no cell
+  error and no `Detached while handling command.` at all** in the host log. Tab creation 407 ms, `goto` 107–135 ms.
+  Password read-back as before: 8/8 fills, the value then replaced by something in the profile (not read).
+- Popup: listed by `cua.listTabs()` 9 ms after the click, bound and read (`popup-pmdoc-…`), in the session as
+  `origin: created`, attached; the host logged `took popup tab`.
+- `accept-chrome --live --route cua`: PASS, 40/40, `codexAuthPresent: false`, `goto` 116–385 ms, leftover none.
+- `chrome unregister`: `removed` ×5. Vendor manifests (8): sha256 identical before and after. `auth.json` absent.
+- Host log: 16 refusal lines, all expected: `Page.removeScriptToEvaluateOnNewDocument` "Script not found" (8, the
+  service's cleanup), the pre-attach sweep of a fresh tab's `about:blank` (7), and one `Runtime.evaluate` on a probe
+  tab that had just been detached. No attach refusal, no retry, and the 1.5 s guard bound never hit.

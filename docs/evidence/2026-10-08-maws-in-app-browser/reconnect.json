@@ -1,0 +1,37 @@
+{
+ "before": {
+  "key": "maws",
+  "ready": true,
+  "extensionInstanceId": "maws:m5-A"
+ },
+ "selectBefore": {
+  "selected": "maws:m5-A",
+  "error": null,
+  "heap": "mv05oc99-6avhz8fx8d3"
+ },
+ "stoppedPids": [
+  68605
+ ],
+ "down": {
+  "key": "maws",
+  "ready": false,
+  "reason": "maws_unreachable",
+  "afterMs": 253
+ },
+ "back": {
+  "key": "maws",
+  "ready": true,
+  "extensionInstanceId": "maws:m5-A",
+  "afterMs": 2022
+ },
+ "selectAfter": {
+  "selected": "maws:m5-A",
+  "error": null,
+  "heap": "mv05oc99-6avhz8fx8d3"
+ },
+ "servePid": 95304,
+ "serveExit": {
+  "code": 0,
+  "signal": null
+ }
+}

@@ -2,6 +2,17 @@
 
 ## Open
 
+- **2026-10-08 — MAWS in-app browser: what the live acceptance left (minor, issue #13).** (a) A refused action on a
+  tab the person holds reaches the agent's locator as the vendor's `Playwright selector deadline exceeded … action_failed`
+  at its 3 s budget, never as MAWS's "A person is using this tab; wait and retry": the vendor retries the refused step
+  until its own deadline (README "For MAWS" says so). Making the cause visible would take a MAWS hint the vendor
+  surfaces (none found in the pinned service) or a shorter vendor budget. (b) The vendor's `fill` sets the value by
+  `Runtime.evaluate`, so MAWS's transcript shows no "Typed" row for a filled field (only keyboard input yields one);
+  telling a fill from any other evaluate would need page-script inspection, which the activity design avoids. (c) The
+  inside-MAWS half of the acceptance (items 1, 2's badge, 4's deliverable, 8-10 by hand, 11 with two app sessions,
+  13 with a real engine, 14 with a real Chrome profile) awaits the owner's sitting:
+  `docs/evidence/2026-10-08-maws-in-app-browser.md`, "The inside-MAWS sitting".
+
 - **2026-10-08 — MAWS client mode: small leftovers (minor, issue #13).** (a) Each `cua serve` with
   `CUA_BROWSER_BACKENDS` appends to its own `chrome/logs/<name>-<pid>.log`, one file per process lifetime; nothing
   prunes them (the Chrome route's logs are per profile and bounded in number). (b) When `profiles.json` does not parse,

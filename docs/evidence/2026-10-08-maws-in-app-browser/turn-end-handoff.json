@@ -1,0 +1,23 @@
+{
+ "made": {
+  "unmarked": "1",
+  "deliverable": "2",
+  "handoff": "3"
+ },
+ "end1": false,
+ "next": {
+  "agent": {
+   "unmarked": false,
+   "deliverable": false,
+   "handoff": true
+  },
+  "user": {
+   "unmarked": false,
+   "deliverable": true,
+   "handoff": false
+  },
+  "closeErrors": [],
+  "leftover": []
+ },
+ "end2": false
+}

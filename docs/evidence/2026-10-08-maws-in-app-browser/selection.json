@@ -1,0 +1,107 @@
+{
+ "status": "PASS",
+ "steps": [
+  {
+   "name": "default-is-maws",
+   "status": "PASS",
+   "detail": {
+    "selected": "maws:app-sel",
+    "error": null,
+    "heap": "mv05mp1g-d41dtrh1jeq"
+   }
+  },
+  {
+   "name": "maws-down-unreachable",
+   "status": "PASS",
+   "detail": {
+    "key": "maws",
+    "ready": false,
+    "reason": "maws_unreachable"
+   }
+  },
+  {
+   "name": "default-fails-closed",
+   "status": "PASS",
+   "detail": {
+    "selected": null,
+    "error": "Browser is not available: maws:app-sel",
+    "heap": "mv05mp1g-d41dtrh1jeq"
+   }
+  },
+  {
+   "name": "explicit-chrome",
+   "status": "PASS",
+   "detail": {
+    "tabId": "100",
+    "closed": true,
+    "chromePeer": {
+     "created": 1,
+     "gone": true
+    }
+   }
+  },
+  {
+   "name": "reconnect-ready",
+   "status": "PASS",
+   "detail": {
+    "key": "maws",
+    "ready": true,
+    "extensionInstanceId": "maws:app-sel",
+    "afterMs": 5076
+   }
+  },
+  {
+   "name": "default-restored",
+   "status": "PASS",
+   "detail": {
+    "selected": "maws:app-sel",
+    "error": null,
+    "heap": "mv05mp1g-d41dtrh1jeq"
+   }
+  },
+  {
+   "name": "late-start-fails-closed",
+   "status": "PASS",
+   "detail": {
+    "selected": null,
+    "error": "Browser is not available: maws:",
+    "heap": "mv05mthm-voyke5s86x"
+   }
+  },
+  {
+   "name": "late-start-ready",
+   "status": "PASS",
+   "detail": {
+    "key": "maws",
+    "ready": true,
+    "extensionInstanceId": "maws:app-sel",
+    "afterMs": 4553
+   }
+  },
+  {
+   "name": "late-start-default",
+   "status": "PASS",
+   "detail": {
+    "selected": "maws:app-sel",
+    "error": null,
+    "heap": "mv05mthm-voyke5s86x"
+   }
+  },
+  {
+   "name": "serve-exited-cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "late-serve-exited-cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  }
+ ]
+}

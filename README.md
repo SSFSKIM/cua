@@ -1310,6 +1310,15 @@ with a Chrome profile's id still drives that profile. MAWS's tabs show the agent
 `cursor.move`) and a page's `window.open` arrives as a tab the agent already owns (`tabs.adopted`). `cua doctor` lists the
 connected MAWS hosts in its `maws.hosts` row.
 
+The person can take a MAWS tab over by touching it: from their input until 3 s after their last one, MAWS refuses the
+agent's actions on that tab (clicks, typing, scripts) and lets reads through. A locator action retries a refused step
+until its own 3 s budget, so the agent sees the vendor's `Playwright selector deadline exceeded` rather than MAWS's
+"A person is using this tab; wait and retry"; waiting a few seconds and retrying is the answer to both.
+
+To try a cua checkout inside MAWS without replacing the installed plugin, point MAWS's Settings › Engine binary at a
+wrapper that runs `claude --plugin-dir <checkout> "$@"`: a `--plugin-dir` copy overrides the installed plugin of the
+same name for that process only, and the plugin cache is untouched.
+
 Checks, from a terminal, against a running MAWS session (or, for everything but the page steps, the fake peer
 `node test/helpers/fake-maws-peer.mjs --listen <socket>`):
 

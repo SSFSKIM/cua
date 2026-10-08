@@ -32,7 +32,8 @@ extensions bar, profile avatar, profile settings as a widget or sidebar tab) are
   (file chooser), both promoted (MAWS b5dec4aa..d1d9d910, fix e33bf014; cua 602391b; reviewed clean).
 - [x] (2026-10-08 23:40) M3 — MAWS: takeover, cursor, action rows, downloads, dialogs and file chooser per the spikes
   (MAWS 46fdc6b9..3bdad848, fix 9be49224..be8e257b; cua 4ae0f10; reviewed clean).
-- [ ] M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs.
+- [x] (2026-10-09 02:30) M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs
+  (MAWS ef3256b3..a04c83b5, fix 2e08cd75..82bdf2be; reviewed clean).
 - [ ] M5 — Live acceptance as written; plugin release; evidence.
 
 ## Facts this design rests on

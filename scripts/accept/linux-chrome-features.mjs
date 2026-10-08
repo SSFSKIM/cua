@@ -171,8 +171,13 @@ export async function runAcceptance(key = 'me') {
     if (!step('the browser uses the cua route', route === 'cua', route)) throw new Error('requires cua chrome register (not --vendor)');
     page = await startFeaturesPage();
     const ORIGIN = page.origin;
+    // The shared policy accepts origin access for the served page only; this fixture also accepts the service's
+    // download and upload requests (download_browser_files / upload_browser_files) when they name that origin, for the
+    // session: the download and the file chooser are what it measures. Everything else stays declined.
     const answer = msg => {
-      const decision = decideElicitation(msg, {origin: ORIGIN});
+      const strict = decideElicitation(msg, {origin: ORIGIN});
+      const decision = !strict.accept && strict.kind === 'file-transfer' && strict.ownOrigin && msg?.params?._meta?.origin === ORIGIN
+        ? {...strict, accept: true, reason: 'file transfer with the served page'} : strict;
       elicitations.push(inventoryEntry(msg, decision));
       return answerFor(decision);
     };

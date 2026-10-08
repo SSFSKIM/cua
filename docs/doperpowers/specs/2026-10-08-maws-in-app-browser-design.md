@@ -176,8 +176,9 @@ so no owner's detach can end an attachment another owner still uses. Leases coun
 (Fetch interception, auto-attach, device metrics, enabled domains) belongs to the one attachment, so automation
 ownership is exclusive. One automation owner per tab: a cua connection's lease, or, until M4 removes it, the old
 driver; the server refuses `debugger.attach` on a tab the old driver holds (`Tab is driven by the maws tools`) and the
-old driver refuses a tab under a cua lease with its `tabInUse` error, and the old driver's idle teardown sends
-`Target.setAutoAttach {autoAttach: false}` only when it holds the last lease. Focus emulation (`visibility.ts`,
+old driver refuses a tab under a cua lease with its `tabInUse` error. The old driver's teardown keeps its own rule
+(`driver.ts`): auto-attach is reset before its bridge closes whatever leases remain, so a frame or worker paused by
+its `waitForDebuggerOnStart` is never left with nobody to resume it; only its physical detach follows the lease count. Focus emulation (`visibility.ts`,
 MAWS's own, default off) may keep the attachment alive after the agent lets go; so the server, on `debugger.detach`,
 on the host's timeout detach, on turn end and on disconnect, resets the agent's state before releasing its lease:
 `Fetch.disable`, `Target.setAutoAttach {autoAttach: false, flatten: true}`, `Emulation.clearDeviceMetricsOverride`,
@@ -229,8 +230,14 @@ runtime so the first `listBrowsers` finds it, and a backend that answers later i
 client-mode host sockets, plus the cua route's Chrome sockets as today, plus, on the vendor route, every `*.sock` present in
 `/tmp/codex-browser-use` at launch (the OpenAI hosts the vendor would have scanned; sockets appearing later are found at
 the next `cua serve`, the same limit the cua route has for unbound profiles). `BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID`
-is set to the first configured backend's instance id, so `cua.getBrowser()` with no argument is the in-app browser
-(the owner's choice: in MAWS the in-app browser is the default; a Chrome profile is used when the user names it).
+is set to the first configured backend's instance id, and, because the vendor's selector falls back from a missing
+preferred instance to any extension (BS:68229-68235), the default is also enforced in cua's trusted browser wrapper
+(`src/services/browser.mjs`, which already intercepts every browser RPC): with `CUA_BROWSER_DEFAULT_INSTANCE=<that
+id>` in the launch env, a selection request that names no browser, kind, family or instance is rewritten to
+`{extensionInstanceId: <id>}` before it reaches the vendor, so `cua.getBrowser()` with no argument is the in-app
+browser or fails with the vendor's own unavailable error while MAWS is down; it never lands in the owner's Chrome. A
+selection that names a Chrome profile's instance id passes untouched (the owner's choice: in MAWS the in-app browser
+is the default; a Chrome profile is used when the user names it).
 
 **`profiles_list`.** Its result gains one entry per configured backend ahead of the registered profiles:
 `{key: 'maws', ready: true, extensionInstanceId: 'maws:<id>'}` when the host is connected and listening, else
@@ -485,8 +492,11 @@ client-mode paths, the vendor-route `/tmp` sockets, the preferred instance), `sr
 (connect, wait for hello, retry; doctor's MAWS heading), `src/profiles/` (`maws` entries, the reserved key,
 `maws_unreachable`), `src/mcp/surface.mjs` (the MAWS line), `scripts/accept/features-page.mjs` (`#name`, `#submit`
 writing `submitted:<value>` to `#state`, `#popup` calling `window.open('/popup')` and a `/popup` document),
-`scripts/accept/maws-features.mjs` (the terminal harness: against any configured backend it runs profiles, createTab,
-locator, viewport, popup and cleanup, reporting JSON; M3 adds download, alert, confirm and chooser), `test/helpers/fake-maws-peer.mjs` (a fake MAWS
+`src/services/browser.mjs` (the default-selection rewrite), `scripts/accept/maws-features.mjs` (the terminal
+harness: against any configured backend it runs profiles, createTab, locator, viewport, popup and cleanup, reporting
+JSON; with `--other <second socket>` it also starts a second client on that socket and checks isolation: each client's
+`listBrowsers` shows one `maws` with its own instance id, and `getBrowser({extensionInstanceId: <the other's>})` fails
+in each; M3 adds download, alert, confirm and chooser), `test/helpers/fake-maws-peer.mjs` (a fake MAWS
 peer built on `test/helpers/fake-cua-extension.mjs`, which already models the extension's side: it listens on a
 socket, sends hello with `profileName` on connect, and runs as a script for manual checks), README "For MAWS" and "Profiles", plugin 0.5.0.
 
@@ -502,7 +512,9 @@ Proves: acceptance 1 and 14's cua half, 13's reconnect (with the fake peer resta
 `profileName` keeps `moveMouse` a no-op; `profiles_list` under a dead socket; two `cua serve` processes and an
 inventory launch on one fake peer at once, the first exiting while the second keeps working; a process without
 `CUA_BROWSER_BACKENDS` never lists another process's client-mode host; `tabs.adopted` owns the announced tab and
-creates none; `timeoutMs` reaches the peer; a MAWS → host frame over 1 MiB is accepted and a host → MAWS frame over
+creates none; `timeoutMs` reaches the peer; with the MAWS peer disconnected and a Chrome-shaped fake peer listed, an
+unqualified selection fails with the vendor's unavailable error while an explicit Chrome selection succeeds, and the
+MAWS peer reconnecting restores the default without restarting the runtime; a MAWS → host frame over 1 MiB is accepted and a host → MAWS frame over
 1 MiB fails without closing the connection; the description's length under 2,048.
 
 ### M2 — MAWS: the primitive server, with the two spikes
@@ -535,10 +547,11 @@ Does not touch: control transitions, cursor, dialogs, downloads, the badge (M3);
 driver (M4), which keep working beside the server on tabs the server holds no lease on (one automation owner per tab;
 overlap on one tab is refused, never arbitrated).
 
-Proves: acceptance 2 (all but the badge), 3, 7, 11, 13's MAWS half, through M1's terminal harness against a running
-session; pins: a tab of another session is refused; a refused CDP method's error text; the lease count across two
+Proves: acceptance 2 (all but the badge), 3, 7, 11 (two app sessions opened in the app, the harness run with
+`--other`), 13's MAWS half, through M1's terminal harness against a running session; pins: a tab of another session is refused; a refused CDP method's error text; the lease count across two
 connections; the old driver retiring on one tab while a cua connection keeps navigating another with cross-origin
-frames; the state reset on detach with focus emulation on; `Target.closeTarget` on the owned tab and on a foreign
+frames; the old driver retiring on a tab with focus emulation on, then a new cross-origin frame loading in that tab
+and running (nothing left paused); the state reset on detach with focus emulation on; `Target.closeTarget` on the owned tab and on a foreign
 target id; a held command cancelled by disconnect.
 
 ### M3 — MAWS: what the person sees and keeps
@@ -592,8 +605,8 @@ Proves: acceptance 12 and 15's MAWS half.
 At the end, the acceptance section has run against the real MAWS build and the real vendor runtime, the evidence is
 recorded, the plugin is released, and #13 closes.
 
-Touches: `scripts/accept/maws-features.mjs` (complete since M3; run here against the real build for items 2-7 and
-11), `docs/evidence/2026-10-08-maws-in-app-browser.md`,
+Touches: `scripts/accept/maws-features.mjs` (complete since M3; run here against the real build for items 2-7 and,
+with `--other` and two app sessions opened in the app, 11), `docs/evidence/2026-10-08-maws-in-app-browser.md`,
 README, `tech-debt-tracker.md`, the plugin cache on this Mac (`claude plugin update` or the marketplace path the owner
 uses).
 
@@ -622,9 +635,11 @@ Working directories: cua `/Users/new/Developer/GitHub/cua-wt-13`, MAWS `/Users/n
     # terminal-driven backend check against a running MAWS session (M2, M5)
     ls "$HOME/Library/Application Support/MAWS/browser/cua/"      # <appSessionId>.sock
     CUA_BROWSER_BACKENDS="$HOME/Library/Application Support/MAWS/browser/cua/<id>.sock" \
-      node scripts/accept/maws-features.mjs --report /tmp/maws-features.json
+      node scripts/accept/maws-features.mjs --report /tmp/maws-features.json \
+      --other "$HOME/Library/Application Support/MAWS/browser/cua/<id of a second session>.sock" 
     #   {"profiles": "PASS", "createTab": "PASS", "locator": "PASS", "viewport": "PASS", "popup": "PASS",
-    #    "download": "PASS", "alert": "PASS", "confirm": "PASS", "chooser": "PASS|BLOCKED", "cleanup": "PASS"}
+    #    "download": "PASS", "alert": "PASS", "confirm": "PASS", "chooser": "PASS|BLOCKED", "cleanup": "PASS",
+    #    "isolation": "PASS"}
     #   (M2 runs it before M3 adds the download, alert, confirm and chooser steps: those read "SKIP" then)
 
 The MAWS userData path above is the packaged app's; the dev build's is printed by `pnpm dev` at start.
@@ -633,7 +648,8 @@ The MAWS userData path above is the packaged app's; the dev build's is printed b
 
 **`CUA_BROWSER_BACKENDS`** (environment of `cua serve` and `cua profiles list`): absolute Unix socket paths,
 `:`-separated. Each is a peer speaking the extension protocol (version 1) that sends `hello` on connect. Owner: M1
-(reader), M2 (writer, through `extraSettings.env`).
+(reader), M2 (writer, through `extraSettings.env`). **`CUA_BROWSER_DEFAULT_INSTANCE`** (cua's launch env, set by
+`cua serve` for the trusted worker): the instance id an unqualified browser selection is rewritten to. Owner: M1.
 
 **hello** (peer → host, notification, first message):
 `{extensionId: string, extensionInstanceId: string, version: string, protocolVersion: 1, profileName?: string}`.
@@ -695,7 +711,10 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   forwards; `Target.closeTarget` is emulated; A-42 joins the amendments and A-19/A-43 move ahead of M2's code;
   parking by lease and the terminal harness move to M2/M1; acceptance uses the pinned vendor's API names
   (`createBrowserTab`, `getJsDialog`, `waitForEvent('filechooser')`, `listTabs`); the download deliverable goes through a
-  host command; the frame limits read in the host's direction.
+  host command; the frame limits read in the host's direction. Second round (same day): the old driver's teardown
+  resets auto-attach whatever leases remain; an unqualified selection is rewritten to the MAWS instance in the trusted
+  wrapper so a missing backend fails instead of falling back to Chrome; the harness proves two-session isolation with
+  `--other`.
   Rationale: both reviews (design and buildability) reproduced the defects against the code; none contradicts the
   approved design, each is a wire or lifecycle rule the design had left to the executor.
   Alternatives rejected then: a shared host per session with reuse rules (more state than per-process hosts, and

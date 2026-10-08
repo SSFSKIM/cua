@@ -448,7 +448,7 @@ session's socket, which exercises the same backend without the engine.
    listed in the session's Browser panel, not selected, with an "agent" badge (the badge is M3's; M2 proves the rest).
 3. On the features page (`scripts/accept/features-page.mjs`, extended in M1 with `#name`, `#submit`, `#popup`),
    `locator('#name').fill('x')` then `locator('#submit').click()` makes `#state` read `submitted:x`;
-   `browser_viewport_set` 800×600 then `tab.screenshot()` returns a PNG of 800×600; reset returns the pane's size.
+   `browser_viewport_set` 800×600 then `tab.screenshot()` returns an image (the vendor answers JPEG) of 800×600; reset returns the pane's size.
 4. `tab.playwright.waitForEvent('download')` around `locator('#dl').click()` resolves and `download.path()` is under
    `~/Downloads/`, the file's sha256 equal to the fixture's (`a3030829e7251330d53ac0d0a803039b8f82f6fa53d294b66e76d8fe3d8c6ec5`),
    no save dialog shown, the tab's download line showing the file, and the session's deliverables listing it.
@@ -732,6 +732,32 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   fails in the live runtime. The vendor's browser matcher treats an id as a kind or family only when it is one of those
   names, else matches the browser id exactly, so the `maws:` marker can never select a Chrome backend.
 
+- (2026-10-08, M2) Spike S1 (dialogs): PROMOTE. On Electron 44.4.5 (Chrome 152.0.7977.130), with the `-run-dialog`
+  wrap holding Electron's callback, `Page.javascriptDialogOpening` arrives on `webContents.debugger` (before
+  `-run-dialog` fires) for alert and confirm, on a view in a hidden window and on one never placed;
+  `Page.handleJavaScriptDialog` answers the page (`accept:false` on confirm → `false`, `accept:true` → `true`) and
+  `Page.javascriptDialogClosed` follows; no native box, main never froze. Afterwards the held callback called once is a
+  silent no-op, a second call throws a catchable `One-time callback was called more than once`, and dropping or
+  collecting it is harmless (and answers nothing). Whichever side answers first wins; a dialog nobody answers stays
+  open for good, so M3's 30 s default must answer through the held callback. `hasBrowserHandler` reads `true` although
+  nothing is shown. Evidence: MAWS `spikes/cua-backend/s1-dialogs.mjs`, `findings.txt`.
+- (2026-10-08, M2) Spike S2 (file chooser): PROMOTE. `Page.setInterceptFileChooserDialog {enabled:true}` passes through,
+  a dispatched click on `<input type=file>` emits `Page.fileChooserOpened {backendNodeId, frameId, mode}` about 10 ms
+  later with no native panel, and `DOM.setFileInputFiles` fills the input (the page's `change` handler saw the file).
+  A hidden or never-placed page reads `visibilityState: hidden` and takes no clicks until
+  `Emulation.setFocusEmulationEnabled {enabled:true}`, which the vendor sends (BS:48115-48131), so the reset of that
+  toggle on release is load-bearing; on a never-placed view a press/release needs a `mouseMoved` first. Evidence: MAWS
+  `spikes/cua-backend/s2-file-chooser.mjs`, `findings.txt`.
+- (2026-10-08, M2) The vendor's `tab.screenshot()` and `getScreenshot()` answer JPEG on the extension route; acceptance 3
+  is revised to "an image of 800×600" and M1's harness reads PNG or JPEG (cua 602391b). The vendor's `closeTab` sends
+  `Target.getTargets` before `ensureAttachedTab` (BS:47991-48024). The first live run against real MAWS (dev build,
+  own userData under `/tmp`) passed profiles, createTab, locator, viewport, popup, cleanup and isolation with no MAWS
+  change; after a MAWS relaunch `cua serve` saw `maws` ready again in 2.6 s at the same socket path.
+- (2026-10-08, M2) A Unix socket path is limited to 103 bytes on macOS; the packaged default
+  (`~/Library/Application Support/MAWS/browser/cua/<appSessionId>.sock`) fits for a username of 12 characters or less.
+  The tab cap (`TabStore.capVictim`, the memory cap) can suspend a leased, idle, unplaced tab, which ends the agent's
+  attachment (`target_closed`).
+
 ## Decision Log
 
 - Decision (2026-10-08, authoring): verification. Spec review by the `doperpowers:adversarial-reviewer` agent (the
@@ -811,6 +837,31 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   `maws:`, else the vendor's unavailable error; it never falls back to Chrome. The variable carries the known id or the
   marker `maws:`. The design section and Interfaces are revised to say so.
   Date/Author: 2026-10-08, the plan executor.
+
+- Decision (2026-10-08, M2): how the primitive server landed (MAWS b5dec4aa..d1d9d910). The A-19 and A-43 amendments
+  are new dated rows A-51 and A-52 with a pointer in each old row (the table is append-only in practice).
+  `TabDebugger` leases carry an owner (`shared` for the old `attach()`/`detach()`, `driver`, `focus`) and a store-only
+  `end()` that ends every lease when the page goes; the old driver always releases its lease at teardown, even under
+  focus emulation `on` (else the server would answer "driven by the maws tools" for good); "the old driver holds the
+  tab" is `heldBy('driver')`; its refusal is a new `tabInUse` tool error. `Page.close` is treated like
+  `Target.closeTarget` (owner only, closed through the store), since passed raw it would let a connection close a
+  person's tab. Child targets: events go as `{debuggee:{tabId}, sessionId}` and, once attached by `targetId`, also as
+  `{debuggee:{targetId}}`; an unannounced `sessionId` answers `No session with given id`; `attachToTarget` is forced
+  flat and limited to the tab's children. The page target id is the main frame id while attached, else
+  `maws-page-<b_id>`. The pre-release undo runs auto-attach first and is bounded to 1 s; held commands default to a
+  10 s deadline. Tab removal is learned through the view-destroy hook; attaching to a suspended tab loads it; only a
+  tab's first view counts as an adopted popup; the session's first tab is still selected by the store when nothing
+  else is (nothing else to show). A socket path over 103 bytes is refused and logged (no variable in the launch); only
+  sessions known to the index with a live engine get a socket. `CuaBackend` gains `onChange`, `closeSession`,
+  `inspect`.
+  M3 additions from M2's findings: `TabStore.capVictim` and the memory cap spare a tab under a cua lease (the tab cap
+  must not end an agent's attachment; the agent-idle timer returning control to `idle` does not cover it).
+  Accepted as is: the two "old driver retiring" pins are proven at the fake level plus the e2e's concurrent operation,
+  not by a live frame after a retire; the old driver's `drop` path closes its bridge without releasing its lease
+  (the store's `end()` covers a destroyed page). Both concern the old driver that M4 removes on the same branch,
+  before either pull request merges, so no build ships the interim state.
+  Rationale: each follows the design's ownership and lifecycle rules where the spec left the mechanism open.
+  Date/Author: 2026-10-08, the plan executor (M2 executor's report, task-2).
 
 ## Outcomes & Retrospective
 

@@ -2,7 +2,7 @@
 // profiles_list rule, the PNG size read, and its cells run against a fake `cua` API (the live run is the script).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {AFTER_END, FEATURE_STEPS, ISOLATION, PROFILES_ENTRY, STEPS, cell, pngSize} from '../scripts/accept/maws-features.mjs';
+import {AFTER_END, FEATURE_STEPS, ISOLATION, PROFILES_ENTRY, STEPS, cell, VIEWPORT} from '../scripts/accept/maws-features.mjs';
 import {parseFeatureResult} from '../scripts/accept/linux-chrome-features.mjs';
 
 const runCell = async (code, cua) => {
@@ -26,12 +26,9 @@ test('profiles passes only for a first entry keyed maws, ready, with a maws: ins
     assert.equal(PROFILES_ENTRY(list).ok, false, JSON.stringify(list));
 });
 
-test('pngSize reads a PNG\'s IHDR and refuses anything else', () => {
-  const png = new Uint8Array(24);
-  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 3, 0x20, 0, 0, 2, 0x58]);
-  assert.deepEqual(pngSize(png), {width: 800, height: 600});
-  assert.equal(pngSize(new Uint8Array([0xff, 0xd8, 0xff])), null);
-  assert.equal(pngSize(null), null);
+test('the viewport cell reads the screenshot\'s size whether the vendor answers PNG or JPEG', () => {
+  assert.match(VIEWPORT, /const imageSize = function imageSize/);
+  assert.doesNotMatch(VIEWPORT, /pngSize/);
 });
 
 test('the cells report what they saw: a thrown error is the step\'s error; isolation and cleanup reduce to ids and booleans', async () => {

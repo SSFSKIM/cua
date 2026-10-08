@@ -10,7 +10,7 @@
 //   profiles   profiles_list lists key maws first, ready, with a maws:… instance
 //   createTab  cua.getBrowser() selects that instance; createBrowserTab(page) shows the page's document marker
 //   locator    #name filled with "x", #submit clicked: #state reads submitted:x
-//   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is a PNG of 800×600; reset
+//   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset
 //              gives the pane's size back (reported)
 //   popup      #popup (window.open('/popup')) adds exactly one tab, whose URL ends in /popup
 //   download, alert, confirm, chooser   M3's (SKIP until then: FEATURE_STEPS below)
@@ -27,6 +27,7 @@ import {openSession} from './mcp-session.mjs';
 import {parseFeatureResult} from './linux-chrome-features.mjs';
 import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/original/elicitation.mjs';
 import {startFeaturesPage} from './features-page.mjs';
+import {imageSize} from './chrome-cells.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const RESULT_TAG = 'CUA_FEATURES_RESULT ';
@@ -40,15 +41,9 @@ export const cell = body => `
     catch (error) { return {error: String(error?.message ?? error)}; }
   })()));`;
 
-// A PNG's width and height from its IHDR (bytes 16..23, big-endian), or null for anything else.
-export function pngSize(bytes) {
-  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes ?? []);
-  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  if (b.length < 24 || signature.some((v, i) => b[i] !== v)) return null;
-  const u32 = at => ((b[at] << 24) >>> 0) + (b[at + 1] << 16) + (b[at + 2] << 8) + b[at + 3];
-  return {width: u32(16), height: u32(20)};
-}
-const PNG_SIZE = `const pngSize = ${pngSize.toString()};`;
+// The screenshot's pixel size: the vendor's tab.screenshot() answers JPEG bytes on this route (as on Chrome's), so the
+// size is read as chrome-cells.mjs reads it, PNG or JPEG (its source runs inside the cell).
+const IMAGE_SIZE = `const imageSize = ${imageSize.toString()};`;
 const poll = (expression, expected, ms = 5000) => `
   let value; const deadline = Date.now() + ${ms};
   for (;;) {
@@ -80,13 +75,13 @@ export const LOCATOR = cell(`${created}
   ${poll('m.tab.playwright.locator("#state").textContent({timeoutMs: 1000})', 'submitted:x')}
   return {state: value};`);
 
-export const VIEWPORT = cell(`${created} ${PNG_SIZE}
+export const VIEWPORT = cell(`${created} ${IMAGE_SIZE}
   const browser = await cua.getBrowser({id: m.browserId});
   const viewport = await browser.capabilities.get("viewport");
   await viewport.set({width: 800, height: 600});
   let during;
-  try { during = pngSize(await m.tab.screenshot({})); } finally { await viewport.reset(); }
-  const after = pngSize(await m.tab.screenshot({}));
+  try { during = imageSize(await m.tab.screenshot({})); } finally { await viewport.reset(); }
+  const after = imageSize(await m.tab.screenshot({}));
   return {during, after};`);
 
 export const POPUP = cell(`${created}

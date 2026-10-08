@@ -20,6 +20,16 @@ Run 3's full report is the fixture's JSON (VM `/tmp/features-run3.json`); the th
 elicitation policy (run 1 declined file transfers, which the service reported as "the user declined permission")
 and the file-access switch.
 
+## The owner's Mac (2026-10-08 16:05 UTC), Default profile, unpacked extension reloaded from the main checkout
+
+Scratch home `/tmp/cua-h3.qCqI8E` registered on the cua route for the run and unregistered after; `personal` rebound
+to the fresh instance (the reload from a new path re-minted it). `accept-chrome --route cua`: **41/41**, the #82
+viewport cell now run live (800×600 set → the screenshot is 800×600 jpeg; reset → 1512×779). The same fixture
+(`linux-chrome-features.mjs personal`): alert, confirm **PASS**; file chooser **PASS** (this unpacked load has file
+access); download **timed out (30 s)** because this Chrome has "Ask where to save each file" on — Chrome's Save
+dialog appeared and the agent cannot pass it (the README limitation, seen); the owner saved it afterwards and the
+fixture's file (sha256 verified) was removed by hand.
+
 ## What follows
 
 - Users who want agents to upload files turn on "Allow access to file URLs" for the cua extension (README, Chrome

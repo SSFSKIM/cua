@@ -342,7 +342,7 @@ presentation keeps classifying historical `mcp__maws__browser_*` tool uses, so o
 render.
 
 **Downloads.** A `will-download` whose webContents is a tab under a lease is the agent's: saved without a dialog to
-`~/Downloads` under its suggested name, suffixed ` (2)`, ` (3)`… on collision (Chrome's rule), reported as
+`~/Downloads` under its suggested name, suffixed ` (1)`, ` (2)`… on collision (Chrome's rule on macOS; revised in M3, Decision Log), reported as
 `downloads.created {id, url, finalUrl, filename, state: 'in_progress'}` and `downloads.changed {id, filename, state,
 error}` with `state: 'complete'` or `'interrupted'` (`error: 'USER_CANCELED'` for a cancel), the shape the host maps
 (`src/chrome/host.mjs`, "Downloads"). The tab's download line and Reveal in Finder work as for a human download. A completed file becomes a session
@@ -761,6 +761,15 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   The tab cap (`TabStore.capVictim`, the memory cap) can suspend a leased, idle, unplaced tab, which ends the agent's
   attachment (`target_closed`).
 
+- (2026-10-08, M3) Playwright's Electron driver attaches its own CDP client to every page of an app it launches and
+  dismisses any JavaScript dialog it has no listener for: under `serve-dev.mjs` or any e2e a held dialog closed 1 ms
+  after opening while MAWS's held callback was never called. The held route is therefore observable only on a MAWS
+  launched without Playwright (`spikes/cua-backend/serve-plain.cjs`); dialog pins are unit tests plus that live run.
+  The agent cursor's overlay is hit-testable by `DOM.getNodeForLocation` with `ignorePointerEventsNone: true`; the
+  label lookup uses `false`, as the press does. A person's `sendInput` click on a parked, unplaced view lands on the
+  page. Live (bare Electron on its own userData, real vendor runtime): all eleven harness steps PASS, and an
+  unanswered `confirm` closed at 30 s with `false`.
+
 ## Decision Log
 
 - Decision (2026-10-08, authoring): verification. Spec review by the `doperpowers:adversarial-reviewer` agent (the
@@ -865,6 +874,31 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   before either pull request merges, so no build ships the interim state.
   Rationale: each follows the design's ownership and lifecycle rules where the spec left the mechanism open.
   Date/Author: 2026-10-08, the plan executor (M2 executor's report, task-2).
+
+- Decision (2026-10-08, M3): how the retained semantics landed (MAWS 46fdc6b9..3bdad848, cua 4ae0f10). A-53 is a new
+  row amending A-42. The badge reads "agent" while the group keeps the host's default title `cua`, else the session
+  name the agent gave (`group.title`, cut to 40 characters); it clears on `tabs.ungroup` and when the connection
+  closes, and an adopted popup inherits its opener's. Activity: `navigated` carries `title: ''` (the title at commit
+  is the old page's), the initial `about:blank` and navigations during `human` are not reported, a double click's
+  second press is no row, `download` is emitted once at the end (`complete | interrupted | cancelled`) and `dialog` at
+  close (`answered: accepted | dismissed | default`); a per-tab promise chain keeps order. The click label is looked up
+  before the press with the press's hit-test rule; tag by `DOM.describeNode`, name by `getPartialAXTree`, no page
+  script. `Target.closeTarget`/`Page.close` check ownership before the takeover gate. `cursor.move` draws only on a
+  tab this connection leases and not while the person holds it. Held dialogs live in the cua server
+  (`cua/dialogs.ts`); PageDialogs only routes; the 30 s default runs from `-run-dialog` and outlives a lease release.
+  Agent downloads: the extension is the last one only, a failure reports `NETWORK_FAILED`, the deliverable goes to
+  the leasing connection's session, `sourceUrl` only for http(s) up to 2048 characters. `TabControls` and
+  `AgentCursor` are made in `startBrowser` (partial re-homing ahead of M4). The tab cap consults
+  `TabStoreDeps.driven` (late-bound to `cua.holds`). Renderer: activities are live state outside TranscriptState;
+  cua_repl `js` calls are standalone `mcp` cells (an X3 additive entry); a standalone `browser_activity` row is placed
+  by time; a subagent's activity shows in the child transcript.
+  Revised by this executor: the duplicate-name suffix is Chrome's macOS rule, ` (1)`, ` (2)`…, as the spec's
+  "(Chrome's rule)" intends (the spec's literal ` (2)` was wrong about Chrome); fixed in M3's fix wave.
+  Open to the owner (taste, not blocking): the `js` cell folds with its turn's work, so a finished turn's activity
+  lines show only when "Worked for…" is opened (the old `browser_action` rows stayed in view); and activity rows are
+  live only (a window reload loses them; persisting them needs a main-side buffer and a list command outside this
+  spec's interface). Both are carried to the dispatching session and the pull request.
+  Date/Author: 2026-10-08, the plan executor (M3 executor's report, task-3).
 
 ## Outcomes & Retrospective
 

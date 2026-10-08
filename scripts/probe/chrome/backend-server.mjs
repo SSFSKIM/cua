@@ -1,9 +1,10 @@
-// An owned CUA browser-backend Unix socket for the M7 spike: length-prefixed JSON-RPC (frame.mjs) in front of an
-// adapter's handleRequest, with every frame recorded as metadata (method, id, error code/message, parameter shape).
+// An owned CUA browser-backend Unix socket for the M7 spike: length-prefixed JSON-RPC (src/chrome/protocol.mjs) in
+// front of an adapter's handleRequest, with every frame recorded as metadata (method, id, error code/message, parameter
+// shape).
 // Only synthetic data crosses it; the capture still keeps shapes, not arbitrary values.
 import {createServer} from 'node:net';
 import {rmSync} from 'node:fs';
-import {encodeFrame, frameDecoder} from './frame.mjs';
+import {encodeFrame, frameDecoder} from '../../../src/chrome/protocol.mjs';
 
 // Literal values worth keeping in a shape: protocol vocabulary and synthetic ids, never free text.
 const KEEP = new Set(['method', 'session_context', 'reason', 'type', 'jsonrpc', 'tabId', 'sessionId', 'targetId', 'status', 'family', 'name']);

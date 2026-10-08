@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
-    "test:mods": "bash tests/mods/run-mods-tests.sh"
+    "test:mods": "bash tests/mods/run-mods-tests.sh",
+    "extension:pack": "node scripts/extension-pack.mjs"
   },
   "bin": {
     "cua": "bin/cua.mjs"
@@ -17,6 +18,7 @@
   "files": [
     "bin/",
     "src/",
+    "extension/",
     "runtime/releases/",
     "scripts/probe/lib.mjs",
     "cua-shim.mjs",

@@ -4,10 +4,12 @@ Lets Claude Code read and operate macOS apps (accessibility tree, screenshots, c
 OpenAI's Codex computer-use stack. `cua serve` (the plugin runs it through `cua-shim.mjs`) is a stdio MCP server: it
 launches a pinned copy of OpenAI's `cua_repl` runtime that `cua install` verified and placed under `CUA_HOME`, not the
 copy inside an installed ChatGPT.app, and nothing in ChatGPT.app or `~/.codex` is read or modified. With the browser
-surface turned on it also drives your existing Chrome profiles, signed-in sessions included, through OpenAI's own
-Chrome extension and native host (see Chrome), and with `cua agent` it serves a client on another machine (see Remote
-control). The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, and for
-remote control in `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`.
+surface turned on it also drives your existing Chrome profiles, signed-in sessions included, through cua's own Chrome
+extension and native host, with no ChatGPT account or Codex login (see Chrome), and with `cua agent` it serves a client
+on another machine (see Remote control). The design and its status are in
+`docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`, for remote control in
+`docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`, and for the Chrome extension in
+`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`.
 
 ## Requirements
 
@@ -24,9 +26,10 @@ remote control in `docs/doperpowers/specs/2026-10-06-remote-and-linux-design.md`
   runtime too and is reused as it is, never stopped or replaced.
 - Native control needs no account: the runtime gets its own empty `CODEX_HOME` under `CUA_HOME`, and nothing is read
   from ChatGPT.app or `~/.codex`.
-- For Chrome only: Google Chrome with OpenAI's Chrome extension (`hehggadaopoacecdllhhajmbjkdcmajg`) installed and
-  enabled in each profile you want to use, and a Codex login of the server's own (`cua login`, once). cua never installs
-  the extension or signs anything in for you.
+- For Chrome only: Google Chrome with the cua extension in each profile you want to use (from the Chrome Web Store once
+  it is listed, or loaded unpacked from the checkout's `extension/`) and `cua chrome register` run once (see Chrome).
+  No account or login is needed. cua never installs the extension for you. (The ChatGPT extension route, until its
+  removal, needs OpenAI's extension and a Codex login of the server's own instead.)
 
 A clean Mac without ChatGPT installed has been shown, in a macOS 27 VM (`docs/evidence/clean-machine-acceptance.md`).
 There, the pinned helper started from cua's release tree, macOS asked for Accessibility and Screen Recording on the
@@ -50,8 +53,9 @@ placed. A release that no longer verifies is reported with its offline recovery:
 directory, install again.
 
 `cua install` also places the pinned archive's Chrome plugin (OpenAI's signed native host and its scripts) in the
-release, with the host's configuration beside it; it is used only if you register it (see Chrome). An installed
-release without it gains it on the next `cua install`, and nothing already installed changes.
+release, with the host's configuration beside it; it is used only on the ChatGPT extension route, after `cua chrome
+register --vendor` (plain `cua chrome register` registers cua's own host instead; see Chrome). An installed release
+without it gains it on the next `cua install`, and nothing already installed changes.
 
 ### As a Claude Code plugin
 
@@ -243,30 +247,100 @@ gone, and Keychain items stored by older versions are not read (store them again
 ## Chrome (browser surface)
 
 With `CUA_SHIM_SURFACES=computer,browser` (or `browser` alone) in the server's environment, `cua serve` also hosts
-OpenAI's browser service. It reaches your running Chrome through OpenAI's Chrome extension and its native host, so the
-agent works in your real profiles: their cookies, signed-in sessions, settings and password manager stay where they
-are, and nothing is copied or migrated. The default (`computer`) is unchanged: no browser API, no browser environment.
+OpenAI's browser service, the agent-facing browser API pinned in the runtime. It reaches your running Chrome through
+cua's own Chrome extension, named "cua", and a native host cua runs itself, so the agent works in your real profiles:
+their cookies, signed-in sessions, settings and password manager stay where they are, and nothing is copied or
+migrated. This route needs no ChatGPT or OpenAI account and no Codex login. The default (`computer`) is unchanged: no
+browser API, no browser environment.
 
 With the browser surface the model gets a fifth tool, `profiles_list`, whose description carries the Chrome rules:
 select only a profile `profiles_list` returned and never pick one for you, use Playwright locators for input, loop
 short waits past the 3 s browser action cap, treat page evaluation as read-only, give tab creation a long limit (see
 Operating guidance for agents). OpenAI's browser API is in the `js` description.
 
-### The server's Codex login
-
-OpenAI's browser service only serves an identified session, so the server needs a Codex login of its own, made once at
-a terminal:
+Setting it up, once per machine and once per Chrome profile:
 
 ```sh
-node bin/cua.mjs login                 # opens the browser sign-in; --device-auth for the device-code flow
-node bin/cua.mjs login --status        # whether the server has a login (never shows it)
+# the cua extension in each Chrome profile you want to use (below), then:
+node bin/cua.mjs chrome register                     # cua's native host, for this CUA_HOME
+node bin/cua.mjs profiles add personal --chrome-profile Default
+node bin/cua.mjs profiles bind personal              # Chrome open on that profile with the extension
+node bin/cua.mjs doctor                              # chrome.* rows pass; codex.login reads skip (not needed)
 ```
 
-It runs the bundled Codex CLI with `CODEX_HOME=$CUA_HOME/state/codex`, so the login lives there, never in or from your
-desktop `~/.codex`. cua never reads, prints or copies the login file; `cua login --status` and the doctor's
-`codex.login` check report only whether it exists. Native control does not need it. The doctor asks the CLI only when
-the same run found the release's vendor signatures valid; otherwise `codex.login` is `blocked` naming
-`runtime.signatures`, and nothing from the release is executed.
+Until the cua extension is listed on the Chrome Web Store, the route cua used before stays available: OpenAI's
+ChatGPT extension and its native host, which need a Codex login (see "ChatGPT extension route (until removal)"); a
+later version removes it. A `CUA_HOME` uses one route at a time, whichever `cua chrome register` ran last; a home
+where neither ran is on the ChatGPT extension route, so run `cua chrome register` once.
+
+### The cua extension
+
+- **From the Chrome Web Store:** not listed yet; the link goes here once it is.
+- **Until then, load it unpacked:** in each Chrome profile you want to use, open `chrome://extensions`, turn on
+  Developer mode, click "Load unpacked" and choose the `extension` directory of your cua checkout. Chrome keeps loading
+  it from there, so use a checkout at a stable path (not the plugin's cache, which every plugin update replaces), and
+  after an update that changes `extension/`, click the extension's reload button on that page. Branded Google Chrome
+  137 and later ignore `--load-extension`, so this is a step in Chrome's own UI, once per profile.
+- **On a Linux VM:** the template in `deploy/cloud-vm/` force-installs it by policy, from a self-hosted CRX until the
+  Store listing exists, then from the Store.
+
+Every form has the same id, `jkejaaijdfpohkdhankllbekkhmnippb` (the manifest carries the public key), so registration,
+binding and doctor do not care which one is installed. It asks for `debugger`, `nativeMessaging`, `tabs`, `tabGroups`,
+`storage` and `alarms` and has no host permissions. It adds no scripts to web pages; the agent acts in a tab only
+through Chrome's debugger, while Chrome shows its debugging bar. Its toolbar popup shows whether its host is connected
+(`host: connected io.github.ssfskim.cua`, or why not), the first 8 characters of its instance id (to match against `cua
+profiles bind`'s output) and how many tabs or frames it holds a debugger on. While the agent drives a tab, Chrome shows
+its own "cua started debugging this browser" bar; that is the consent surface, and cancelling it detaches the agent from
+that tab for good.
+
+`npm run extension:pack` builds `dist/cua-extension-<version>.zip`, the Store upload (`extension/` without the
+manifest's `key`, which the Store refuses). With `CUA_EXTENSION_KEY=<path of the owner's private key>` it also writes
+the CRX signed with that key and the `update.xml` that names it, which Linux VMs install from
+(`relay/deploy/update.sh --ext dist` publishes both). The key is only read to sign; `dist/` is not in git.
+
+### Registering cua's host
+
+```sh
+node bin/cua.mjs chrome register             # writes the launcher and the browsers' manifests
+node bin/cua.mjs chrome register --replace   # also takes over manifests another cua home wrote, after backing them up
+node bin/cua.mjs chrome unregister           # removes this home's manifests and restores what --replace replaced
+```
+
+`register` writes `$CUA_HOME/chrome/host`, a launcher that runs this checkout's `src/chrome/host.mjs` with the current
+`node` and with this `CUA_HOME` baked in (Chrome starts a native host with its own environment), and the
+native-messaging manifest `io.github.ssfskim.cua.json`, which names that launcher and admits only the cua extension's
+id, into the `NativeMessagingHosts` directory of every browser whose user-data directory exists (Chrome, Edge, Brave,
+Opera and Vivaldi). It prints each browser's manifest and, on `--replace`, the launcher each replaced one named. The
+ChatGPT extension's manifest (`com.openai.codexextension.json`) has another name and is never touched.
+
+- **One home per browser.** A manifest of this name that names another home's launcher (or does not parse) makes
+  `register` refuse as a whole with `other_home`, writing nothing. `--replace` backs each one up byte for byte and
+  records it; `unregister` removes only manifests that name this home's launcher and puts each backup back, verified
+  byte for byte. Both hold `$CUA_HOME/chrome/registration.lock`, and a manifest another program writes at the same
+  moment is never clobbered.
+- **Run it again after the checkout moves or `node` is upgraded.** The launcher names both by path; doctor's
+  `chrome.host.registered` blocks, naming the missing one, when either is gone.
+- **The home's path.** A host socket path must fit the 103-byte Unix limit: the default home does for a username of up
+  to 37 characters, and a longer home is refused with `socket_path_too_long`. A home containing `:` is refused with
+  `home_path_unsupported`.
+- **Switching routes.** `register` (and `register --vendor`) sets the home's route. Profiles bound on the other route
+  read `rebind_required` until `cua profiles bind <key>` runs again; `register` names them.
+
+Chrome starts the host when the cua extension connects: when its profile loads, again every 5 s while no host answers,
+and from a one-minute alarm. The host exits when that connection closes (the profile unloads, the extension is disabled
+or reloaded), so there is one host per loaded profile; `register` and `unregister` never stop a running one. The host
+listens on `$CUA_HOME/chrome/b/<12 hex digits>.sock` (named for the profile's extension instance; the directory is
+0700) and keeps `<name>.json` beside it: the instance id, the extension's version, its pid and, per agent session, the
+tabs it holds, so doctor, the acceptance runner and you can see its state without the popup. It logs to
+`$CUA_HOME/chrome/logs/`. `cua serve` gives the browser service the socket paths of every bound profile and of every
+socket present when it starts, so a Chrome that opens after `cua serve` started (or restarts) is found at its socket on
+the next browser call. Nothing is shared under `/tmp`, so several users of one machine each have their own.
+
+`cua doctor` reports this route as `chrome.extension.<key>` (the extension in each registered profile: installed, or
+loaded unpacked, by file presence only), `chrome.host.registered` (`cua: io.github.ssfskim.cua names this home's
+launcher …`, and whether its `node` and host files are still there), `chrome.hosts.live` (how many host sockets accept
+a connection within 500 ms; a socket file whose host is gone is removed) and `codex.login` `skip` ("not needed: the cua
+extension route needs no Codex login").
 
 ### Profiles
 
@@ -283,14 +357,15 @@ node bin/cua.mjs profiles open personal          # open a window in that profile
 node bin/cua.mjs profiles remove work
 ```
 
-The registry is `$CUA_HOME/profiles.json`. A profile is ready when its directory exists, the extension is installed
-there (file presence only), it is bound, and its bound extension instance is live now; otherwise `list` says why:
-`profile_directory_missing`, `extension_not_installed` (install it in that profile yourself), `not_bound`,
-`host_not_live` (no Chrome extension backend is live at all: wake it, below), `binding_stale` (the bound instance is
-not among the live backends while others are: wake it or bind again, below), `backends_unlistable` (the listing launch
-itself failed, so whether the binding is live cannot be told) or `chrome_data_unreadable` (below). The live part is
-checked on every request: when some profile is bound, `list` and the agent's `profiles_list` each make the same
-bounded launch as `bind` (below), without tab counts.
+The registry is `$CUA_HOME/profiles.json`. A profile is ready when its directory exists, the route's extension is
+installed there (file presence only; for the cua extension a profile where it was loaded unpacked counts), it is bound,
+and its bound extension instance is live now; otherwise `list` says why: `profile_directory_missing`,
+`extension_not_installed` (install it in that profile yourself), `not_bound`, `host_not_live` (no Chrome extension
+backend is live at all: wake it, below), `binding_stale` (the bound instance is not among the live backends while others
+are: wake it or bind again, below), `backends_unlistable` (the listing launch itself failed, so whether the binding is
+live cannot be told) or `chrome_data_unreadable` (below). The live part is checked on every request: when some profile
+is bound, `list` and the agent's `profiles_list` each make the same bounded launch as `bind` (below), without tab
+counts.
 
 On macOS 26 and later, Chrome's data directory (`~/Library/Application Support/Google/Chrome`) can be behind privacy
 protection: a terminal without Full Disk Access, and everything started from it (`cua serve` included), gets
@@ -303,17 +378,20 @@ the file checks back, grant your terminal Full Disk Access (System Settings → 
 `bind` records which live extension instance is this profile, because the browser service selects a browser by that id
 (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
 extension backends with their tab counts. Only Google Chrome's backends are candidates: another browser's (Edge with
-the OpenAI extension, say, or a backend that reports no browser family) is never offered or bound, and the listing
+the extension, say, or a backend that reports no browser family) is never offered or bound, and the listing
 says only how many it left out. Beside each candidate it shows two things:
 
 - the Chrome profile directory it belongs to (`Profile 12`, say) and that directory's display name, and whether that
   is this profile's directory or another's. cua works this out itself: for each profile in Chrome's `Local State` that
-  has the OpenAI extension's settings store, it copies the store to a temporary directory under `$CUA_HOME/staging`,
+  has the route's extension's settings store (`Local Extension Settings/<id>`, where the extension keeps its instance
+  id), it copies the store to a temporary directory under `$CUA_HOME/staging`,
   reads the extension's instance id from the copy with the installed runtime's own `classic-level`, and removes the
   copy. Chrome's own files are only read, never opened as a database or written. A candidate no store accounts for
   shows `profile directory unknown`;
 - the profile label OpenAI's browser service gives it (the Chrome profile's display name, such as an account's name
-  or domain), or `unlabelled` when there is none, and whether that is this profile's name or another's.
+  or domain), or `unlabelled` when there is none, and whether that is this profile's name or another's. On the cua
+  route every candidate is unlabelled: the service labels a backend only from the extension id that cua's host does not
+  give it, so the directory decides.
 
 `bind` binds automatically in two cases. When this profile directory's own store records exactly one live backend,
 that backend is this profile, even if another Chrome profile has the same display name. Otherwise (this profile's
@@ -342,24 +420,25 @@ the label rule applies as before; it never fails `bind`. The label is the vendor
 runtime, so it also needs a sandbox that lets the runtime write a temporary directory (`CUA_SHIM_SANDBOX` `scoped`,
 the default, or `disabled`); without one every candidate is unlabelled, silently.
 
-A binding lasts only as long as the extension instance. Turning the OpenAI extension off and on again at
-`chrome://extensions`, or reinstalling it, can give it a new instance id: the stored binding then points at an instance
-that no longer exists, `cua.getBrowser({extensionInstanceId})` reports "The Chrome instance is unavailable.", and
-`list` and `profiles_list` report the profile `binding_stale` (the agent is told to ask you to rebind). Run
-`cua profiles bind <key>` again: it names the stale id beside the live backends and applies the rules above, so the
-new instance is bound automatically when this profile's store records it, and otherwise the pick stays yours, even
-when exactly one new unlabelled backend appeared.
+A binding lasts only as long as the extension instance. The cua extension keeps its instance id in its own storage:
+turning it off and on keeps the id, while reinstalling it (or removing an unpacked load and loading it again) mints a
+new one. The ChatGPT extension can get a new id from merely being turned off and on at `chrome://extensions`. Either way
+the stored binding then points at an instance that no longer exists, `cua.getBrowser({extensionInstanceId})` reports
+"The Chrome instance is unavailable.", and `list` and `profiles_list` report the profile `binding_stale` (the agent is
+told to ask you to rebind). Run `cua profiles bind <key>` again: it names the stale id beside the live backends and
+applies the rules above, so the new instance is bound automatically when this profile's store records it, and otherwise
+the pick stays yours, even when exactly one new unlabelled backend appeared.
 
-A binding also needs its extension host to be running. Chrome starts the OpenAI host when the extension connects and
-ends it when the profile unloads, which happens when the profile's last window closes; with Chrome closed there is
-none. When no
-Chrome backend is live at all, `list` and `profiles_list` report the profile `host_not_live` and name the step, with
-the profile's Chrome directory: open a window in that Chrome profile, click the OpenAI (ChatGPT) extension's icon if
-it still has no backend, then retry. Chrome unloads a profile, and with it the extension and its host, when the
-profile's last window closes; a cua task in a profile that had no window opens one for its tab, so closing that tab, or
-ending the task without marking the tab handoff, unloads the profile again (issue #41). Turning the extension off and
-on at `chrome://extensions` wakes it too, but can mint a new instance id, so run `cua profiles bind <key>` afterwards.
-cua never opens a window or wakes the extension on its own; it does not drive Chrome.
+A binding also needs its extension host to be running. Chrome starts the host when the extension connects and ends it
+when the profile unloads, which happens when the profile's last window closes; with Chrome closed there is none. When no
+Chrome backend is live at all, `list` and `profiles_list` report the profile `host_not_live` and name the step, with the
+profile's Chrome directory: open a window in that Chrome profile, open the cua extension's popup if it still has no
+backend (that wakes it and shows whether its host is connected, and if not why; on the ChatGPT extension route, click
+that extension's icon), then retry. Chrome unloads a profile, and with it the extension and its host, when the profile's
+last window closes; a cua task in a profile that had no window opens one for its tab, so closing that tab, or ending the
+task without marking the tab handoff, unloads the profile again (issue #41). Turning the ChatGPT extension off and on at
+`chrome://extensions` wakes it too, but can mint a new instance id, so run `cua profiles bind <key>` afterwards. cua
+never opens a window or wakes the extension on its own; it does not drive Chrome.
 
 `cua profiles open <key>` opens that window for you when you ask, which saves a trip to the screen on a Mac whose
 Chrome runs without a window (started with `--no-startup-window`, say). It runs
@@ -392,30 +471,89 @@ agent's next `profiles_list` then names the cause. Three rules, also in `profile
   close a leftover tab yourself.
 
 OpenAI's service asks you for access to each new website origin, as a dialog (an MCP elicitation), like an app
-approval. `end_task` completes the task as for native work; what the service then does with the tabs it opened is its
-own behaviour (by its source, it detaches from them) and has not been verified separately.
+approval. `end_task` completes the task as for native work, and on the cua route cua's host then settles the task's
+tabs as the browser API teaches the agent: a tab the agent created and did not mark is closed, a tab marked
+`deliverable` stays open and is let go, and a tab marked `handoff` stays with the same agent session, debugger
+detached, and is listed again in its next task (unless another session claimed it). The agent's tabs open in the
+background, without taking focus, in a tab group named for its session, so you can tell which tabs not to touch;
+several Claude Code sessions each own their own tabs, and one is refused another's. The agent can also list tabs you
+opened and claim one, after the same origin approval; a claimed tab is never closed, only let go at the end.
+On the ChatGPT extension route the extension itself does this, by its own rules.
 
 ### What the browser service does on the network and on disk
 
 This is OpenAI's own browser service, run as Codex runs it, and it behaves as it does there: with the browser surface
-it makes its identity and telemetry calls to OpenAI's endpoints, and identity initialization starts `codex app-server`
-inside the server's own `CODEX_HOME` (`$CUA_HOME/state/codex`), which writes its sqlite, skills and cache state there
-and contacts port-443 endpoints. cua does not switch any of this off (no ambient-network or security override) and
-claims no control over it. The browser surface is opt-in for that reason.
+it makes its telemetry calls to OpenAI's endpoints, and the runtime starts `codex app-server` inside the server's own
+`CODEX_HOME` (`$CUA_HOME/state/codex`), which writes its sqlite, skills and cache state there and contacts port-443
+endpoints. On the ChatGPT extension route it also looks up the signed-in caller's identity before every browser
+request. On the cua route there is no login and no such lookup: the service asks for an identity only from a backend
+that says it adds agent request headers, which cua's host does not say
+(`docs/evidence/2026-10-07-s0-no-header-spike.md`). cua does not switch any of this off (no ambient-network or
+security override) and claims no control over it. The browser surface is opt-in for that reason.
 
-### The native host: placement and registration
+### Limitations
 
-The extension connects to one native-messaging name, `com.openai.codexextension`. Each browser holds one manifest for
-that name, naming one host executable. Where the ChatGPT desktop app is installed, its manifest is already there, and
-`cua serve` works with the desktop's host as it is: you need not register anything.
+- cua's host leaves out what the browser service treats as optional and answers it as unsupported, so the service
+  takes its own fallbacks: downloads, file choosers, page events, WebMCP, browser management, history, bookmarks and
+  top sites. There is no cursor overlay or favicon badge, and the profile label is not given (above).
+- The browser service's own limits stay: the 3 s cap on locator actions and waits, and read-only page evaluation
+  (Operating guidance for agents). Lifting them needs a service of cua's own, which this extension is built to serve.
+- Any process of your user that can open `$CUA_HOME/chrome/b` (0700) can talk to the host. The ChatGPT extension's host
+  checks its peer's code signature; cua's does not, the same trust cua gives your user's processes elsewhere
+  (allow-all approvals, a 0600 secret store).
+- When Chrome's directory cannot be read (see above), `bind` cannot tell the profile from the extension's store and
+  needs your explicit pick.
+- A profile without the extension stays not ready; cua never installs it, except by policy on a VM the cloud template
+  provisions.
+- Shown on Linux, unattended, on a Tart VM and a throwaway Hetzner VM with the force-installed CRX and no sign-in
+  (`docs/evidence/2026-10-07-own-extension-linux.md`); the live acceptance on a Mac is recorded in
+  `docs/evidence/2026-10-07-own-extension-acceptance.md`.
+- The Playwright-extension route explored earlier is parked, not shipped.
 
-To have Chrome launch cua's own placed host instead (for a machine without the desktop app, or to test it):
+### ChatGPT extension route (until removal)
+
+Before cua had its own extension, it drove Chrome through OpenAI's ChatGPT extension
+(`hehggadaopoacecdllhhajmbjkdcmajg`) and its signed native host, and that route stays available until the cua extension
+is listed on the Chrome Web Store; a later version removes it. It needs the ChatGPT extension installed and enabled in
+each profile you want to use and a Codex login of the server's own (below); cua never installs the extension or signs
+anything in for you. A home is on this route after `cua chrome register --vendor`, or when no registration of either
+route ever ran in it. The profile commands, `profiles_list` and the agent's API are the same on both routes; bindings
+made on one route must be made again on the other.
+
+#### The server's Codex login (optional)
+
+Only the ChatGPT extension route needs it: with that extension, OpenAI's browser service serves only an identified
+session, so the server needs a Codex login of its own, made once at a terminal:
 
 ```sh
-node bin/cua.mjs chrome register             # writes cua's manifest where none exists
-node bin/cua.mjs chrome register --replace   # replaces another host's manifest, after backing it up
-node bin/cua.mjs chrome unregister           # removes cua's manifests and restores what they replaced
+node bin/cua.mjs login                 # opens the browser sign-in; --device-auth for the device-code flow
+node bin/cua.mjs login --status        # whether the server has a login (never shows it)
 ```
+
+It runs the bundled Codex CLI with `CODEX_HOME=$CUA_HOME/state/codex`, so the login lives there, never in or from your
+desktop `~/.codex`. cua never reads, prints or copies the login file; `cua login --status` and the doctor's
+`codex.login` check report only whether it exists. Native control and the cua extension route do not need it (on the
+cua route doctor's `codex.login` reads `skip`). The doctor asks the CLI only when the same run found the release's
+vendor signatures valid; otherwise `codex.login` is `blocked` naming `runtime.signatures`, and nothing from the
+release is executed.
+
+#### The native host: placement and registration
+
+The ChatGPT extension connects to one native-messaging name, `com.openai.codexextension`. Each browser holds one
+manifest for that name, naming one host executable. Where the ChatGPT desktop app is installed, its manifest is already
+there, and `cua serve` works with the desktop's host as it is, though the home must still be on this route (a home with
+no registration is; once `cua chrome register` ran, `cua chrome unregister` takes it off the cua route).
+
+To have Chrome launch the copy of OpenAI's host that `cua install` placed in the release instead (for a machine
+without the desktop app, or to test it):
+
+```sh
+node bin/cua.mjs chrome register --vendor             # writes cua's manifest where none exists
+node bin/cua.mjs chrome register --vendor --replace   # replaces another host's manifest, after backing it up
+node bin/cua.mjs chrome unregister --vendor           # removes cua's manifests and restores what they replaced
+```
+
+In this subsection `register`, `unregister` and `--replace` mean these `--vendor` commands.
 
 - Coexistence rule: `register` writes only into empty slots or over a manifest that already names cua's host in this
   `CUA_HOME`. If any browser holds a manifest cua did not write (the desktop's, another host's, or one that does not parse),
@@ -424,7 +562,7 @@ node bin/cua.mjs chrome unregister           # removes cua's manifests and resto
   appears, or anything else fails, partway through a run, `register` undoes what it already wrote in that run (putting
   back the bytes that were there, newest first) so that "Nothing was changed." stays true; if it cannot finish that
   undo (another program wrote the slot meanwhile, say), it fails with `registration_partial`, names each unfinished
-  path, keeps the backup and record, and tells you to run `cua chrome unregister`.
+  path, keeps the backup and record, and tells you to run `cua chrome unregister --vendor`.
 - A browser directory this process may not read (a terminal without Full Disk Access on macOS 26 and later; see
   Profiles) makes `register` and `unregister` refuse as a whole with `chrome_data_unreadable`, naming each browser's
   directory, its error code and the Full Disk Access fix, before anything is written. What such a slot holds is
@@ -456,23 +594,21 @@ node bin/cua.mjs chrome unregister           # removes cua's manifests and resto
   likewise keeps serving until the next reconnection launches the desktop's again. cua never launches, stops or
   signals a host or a browser.
 
-`cua doctor` reports the Chrome side passively, beside runtime health: `chrome.extension.<key>` (extension present per
-registered profile), `chrome.host.registered` (whether the manifest exists and whose host it names: `desktop`, `cua`
-or `other`), `chrome.hosts.live` (hosts running under Chrome), `chrome.host.config` (the placed host and its
-configuration) and `codex.login`.
+On this route `cua doctor` reports the Chrome side passively, beside runtime health: `chrome.extension.<key>`
+(extension present per registered profile), `chrome.host.registered` (whether the manifest exists and whose host it
+names: `desktop`, `cua` or `other`), `chrome.hosts.live` (hosts running under Chrome), `chrome.host.config` (the placed
+host and its configuration) and `codex.login`.
 
-### Limitations
+#### Limitations of this route
 
-- Without the desktop app, `cua chrome register` is required: the extension needs a manifest to launch any host, and
-  until one exists it reports that the ChatGPT app is required. This has been shown on a clean VM
+- Without the desktop app, `cua chrome register --vendor` is required: the extension needs a manifest to launch any
+  host, and until one exists it reports that the ChatGPT app is required. This has been shown on a clean VM
   (`docs/evidence/clean-machine-acceptance.md`). There, cua's placed host served the live round trip, and C1–C7 passed
   with it registered.
-- Only tabs the agent creates have been exercised. Operations on your existing tabs, downloads, file choosers,
-  dialogs, frames, saved-password autofill and Chrome tab-group side effects are untested.
+- Only tabs the agent creates have been exercised on this route. Operations on your existing tabs, downloads, file
+  choosers, dialogs, frames, saved-password autofill and Chrome tab-group side effects are untested.
 - When the vendor's profile label is absent (Chrome's directory unreadable, or `CUA_SHIM_SANDBOX=default`) or shared
   by two profiles, `bind` needs your explicit pick (above).
-- A profile without the extension stays not ready; cua never installs it.
-- The Playwright-extension route explored earlier is parked, not shipped.
 
 ## Remote control
 
@@ -757,8 +893,8 @@ through the hosted relay, are shown in `docs/evidence/2026-10-06-linux-agent-and
 **A cloud VM in one step.** `deploy/cloud-vm/` turns a fresh Ubuntu 24.04 cloud VM into such a machine from user data:
 the X11 desktop with autologin, deb Chrome with the extension by policy and AT-SPI on, Node 22, a checkout with the
 pinned runtime installed, the host registered and a profile `me` bound, the user-namespace sysctl, and with a relay the
-enrolment and the agent unit; it prints doctor's summary and the steps left to you (the ChatGPT sign-in in Chrome,
-`cua login`, the relay's table). `deploy/cloud-vm/create-hetzner.sh` does it on Hetzner Cloud in about four minutes;
+enrolment and the agent unit; it prints doctor's summary and the steps left to you (with a relay, the relay's table;
+nobody signs in to anything). `deploy/cloud-vm/create-hetzner.sh` does it on Hetzner Cloud in about four minutes;
 `deploy/cloud-vm/render.sh` prints the user data for any other provider. See `deploy/cloud-vm/README.md` and
 `docs/evidence/2026-10-07-cloud-vm-provisioning.md`.
 
@@ -779,16 +915,20 @@ What it needs:
   `ar`, `tar` and `xz` unpack the deb, `xdpyinfo` and `dbus-send` are doctor's probes, and `bwrap` is the sandbox.
   `cua install` refuses with `missing_tool`, naming the package, when one is absent.
 - **Google Chrome as a deb or rpm, never Flatpak or snap.** A Flatpak or snap Chrome cannot start a native host outside
-  its own sandbox. Install OpenAI's extension in each profile you want to use, as on macOS.
+  its own sandbox. Put the cua extension in each profile you want to use: loaded unpacked as on macOS, or by policy
+  as the cloud template does (`ExtensionInstallForcelist` naming its id and an update URL, in one file under
+  `/etc/opt/chrome/policies/managed/`: Chrome does not merge that policy across files there).
 
 Install and register from a checkout. The default `CUA_HOME` is `${XDG_DATA_HOME:-~/.local/share}/cua`:
 
 ```sh
 node bin/cua.mjs install --archive ~/mirror/chatgpt_26.928.40906_arm64.deb   # or no --archive: download the pinned deb
 node bin/cua.mjs doctor
-node bin/cua.mjs chrome register         # writes ~/.config/google-chrome/NativeMessagingHosts/com.openai.codexextension.json
-node bin/cua.mjs login                   # in the X session (it opens the browser through xdg-open); over SSH: --device-auth
+node bin/cua.mjs chrome register    # writes ~/.config/google-chrome/NativeMessagingHosts/io.github.ssfskim.cua.json
 ```
+
+On the ChatGPT extension route (until its removal) it is `chrome register --vendor` instead, then `node bin/cua.mjs
+login` in the X session (it opens the browser through xdg-open; over SSH, `--device-auth`).
 
 **Keep a copy of the deb.** The repository's signed `Packages` index lists only the newest version, and keeping old
 pool files is not promised (the pinned file still downloaded on 2026-10-06). `--archive` takes the copy and checks it
@@ -1008,12 +1148,19 @@ A macOS permission prompt is never answered by these scripts: the step stops and
 action needed. Release gates that need another environment (a clean Mac without ChatGPT, the pinned helper's own cold
 start, first-run permission prompts) are always reported BLOCKED here.
 
-The Chrome acceptance (spec C1-C7) has its own runner, against `$CUA_HOME` (by default your real home: it needs the
-server's login and your registered profiles):
+The Chrome acceptance (spec C1-C7) has its own runner, against `$CUA_HOME`. On the ChatGPT extension route that is by
+default your real home (it needs your registered profiles and the server's login). `--live` runs on the home's route
+(`--route cua|vendor` must match it). On the cua route it needs a home that never ran `cua login`, and refuses one
+holding a Codex credential: a scratch home (`CUA_HOME=$(mktemp -d …)`, `cua install`, `cua chrome register`, the profile
+added and bound), as acceptance 1 of the spec does. There it adds the cells of
+`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md` (user-tab claim, turn end and handoff, two clients, a
+cross-site frame; `--chrome-restart` for a Chrome restart under a running server), listed in
+`scripts/accept-chrome.mjs`. The rest of this section describes the ChatGPT extension route's gates.
 
 ```sh
 node scripts/accept-chrome.mjs --all --report /tmp/cua-accept-chrome-all.json
 node scripts/accept-chrome.mjs --live --profile personal --report /tmp/cua-accept-chrome.json
+node scripts/accept-chrome.mjs --live --route cua --profile personal --report /tmp/cua-accept-chrome-cua.json
 node scripts/accept-chrome.mjs --all --c2-report /tmp/cua-accept-chrome.json --report /tmp/cua-accept-chrome-all.json
 ```
 
@@ -1022,28 +1169,27 @@ registered and bound in your home, be ready, and be the `profile` of the `--c2-r
 else assumes a key or a Chrome directory: the scratch profile commands run against a fixture Chrome user-data
 directory the runner creates (and deletes), and your home's registry is checked key by key against `cua doctor`.
 
-`--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface,
-the profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for
-`profiles_list` and the Chrome rules in its description, `cua doctor` (C5 expects the desktop's registration, or, on a Mac without the desktop app, cua's own or none), a no-op
-`cua install`, `cua chrome register` without `--replace`
-(which must refuse) and `cua chrome unregister` (which must change nothing; both are skipped while cua's own host is
+`--all` never opens a tab, binds a profile or registers a host. It runs `npm test`, `verify.mjs` with each surface, the
+profile commands in a scratch home (and reads your home's registry), one `cua serve` connection for `profiles_list` and
+the Chrome rules in its description, `cua doctor` (C5 expects the desktop's registration, or, on a Mac without the
+desktop app, cua's own or none), a no-op `cua install`, `cua chrome register --vendor` without `--replace` (which must
+refuse) and `cua chrome unregister --vendor` (which must change nothing; both are skipped while cua's own host is
 registered for the `--replace` gate, and reported `N/A` on a Mac without the desktop app, where nothing else is
-registered), and
-a clean clone running the suites and `npm pack --dry-run`. The live parts enter only as reports: `--c2-report` takes a
-`--live` run's report, and `--c6-report` the record of the live registration gate run with you. Where the desktop's
-(or another host's) registration is present, that is the `--replace` gate (its shape and steps are in
-`scripts/accept/chrome-all-lib.mjs` and `docs/evidence/m12-host-placement.md`). Without the desktop app it is the
-desktop-absent gate: `cua chrome register` writes cua's manifests into empty slots with nothing backed up, Chrome
-launches cua's placed host when the extension wakes, the `--live` round trip passes through it, and `cua chrome
-unregister` leaves every slot absent again; `node scripts/accept-chrome.mjs --c6-slots` prints the slots for the
-before, registered and after snapshots the report carries. Without a report those parts are BLOCKED with the exact
+registered), and a clean clone running the suites and `npm pack --dry-run`. The live parts enter only as reports:
+`--c2-report` takes a `--live` run's report, and `--c6-report` the record of the live registration gate run with you.
+Where the desktop's (or another host's) registration is present, that is the `--replace` gate (its shape and steps are
+in `scripts/accept/chrome-all-lib.mjs` and `docs/evidence/m12-host-placement.md`). Without the desktop app it is the
+desktop-absent gate: `cua chrome register --vendor` writes cua's manifests into empty slots with nothing backed up,
+Chrome launches cua's placed host when the extension wakes, the `--live` round trip passes through it, and `cua chrome
+unregister --vendor` leaves every slot absent again; `node scripts/accept-chrome.mjs --c6-slots` prints the slots for
+the before, registered and after snapshots the report carries. Without a report those parts are BLOCKED with the exact
 steps for the machine they run on, never passed.
 
-On a Mac without the desktop app, cua's own registration is the steady state: the extension needs a manifest to
-launch any host, and there is nothing else to defer to. The flow there is the desktop-absent gate (ending with every
-slot absent), then `node bin/cua.mjs chrome register` again, then `--all` with the gate's report while registered. C5
-then reports class `cua` as expected (or no manifest, saying which it saw), and the refusal and no-op are `N/A`. cua's
-record that it replaced nothing (`$CUA_HOME/chrome/registration.json`) is what tells this state from a `--replace`
+On a Mac without the desktop app, cua's own registration is the steady state: the extension needs a manifest to launch
+any host, and there is nothing else to defer to. The flow there is the desktop-absent gate (ending with every slot
+absent), then `node bin/cua.mjs chrome register --vendor` again, then `--all` with the gate's report while registered.
+C5 then reports class `cua` as expected (or no manifest, saying which it saw), and the refusal and no-op are `N/A`.
+cua's record that it replaced nothing (`$CUA_HOME/chrome/registration.json`) is what tells this state from a `--replace`
 gate left mid-run, which stays BLOCKED.
 
 `--live` is the browser secret round trip: through `cua serve` it selects the registered profile by its instance id,
@@ -1058,7 +1204,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | variable | default | meaning |
 |---|---|---|
 | `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
-| `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through the original OpenAI extension and host, with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
+| `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through cua's own extension and host, no login needed; or, until its removal, the ChatGPT extension route with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |

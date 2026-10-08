@@ -42,12 +42,33 @@ export function createStopLatch() {
   return latch;
 }
 
-// The session's answer to every server request; each one is recorded in `inventory`.
-export function elicitationPolicy({origin, latch, inventory}) {
+// The decision for a request against the runner's own origins (the page's, and on the cua route the cross-site
+// frame's): accepted when it is exactly one of them; otherwise the decline that says most about why.
+// An accepted decision carries `originIndex`, the position of the origin it matched.
+export function decideAmong(msg, origins) {
+  const decisions = origins.map((origin, originIndex) => ({...decideElicitation(msg, {origin}), originIndex}));
+  const chosen = decisions.find(d => d.accept) ?? decisions.find(d => d.refusedOwnOrigin || d.unstructuredOwnOrigin) ?? decisions[0];
+  const {originIndex, ...decision} = chosen;
+  return decision.accept ? {...decision, originIndex} : decision;
+}
+
+// Navigation latency, measured inside a cell around goto: every value goes to facts.gotoMs and, per scenario, to
+// facts.gotoByScenario.
+export function noteGoto(facts, scenario, ms) {
+  for (const v of [ms].flat()) {
+    if (!Number.isFinite(v)) continue;
+    (facts.gotoMs ??= []).push(v);
+    ((facts.gotoByScenario ??= {})[scenario] ??= []).push(v);
+  }
+}
+
+// The session's answer to every server request; each one is recorded in `inventory`. `origins` (or the single `origin`)
+// are the runner's own.
+export function elicitationPolicy({origin, origins = [origin], latch, inventory}) {
   return msg => {
-    const decided = decideElicitation(msg, {origin});
+    const decided = decideAmong(msg, origins);
     const decision = latch.stopped && decided.accept ? {...decided, accept: false, reason: `the run stopped earlier (${latch.reason})`} : decided;
-    inventory.push(inventoryEntry(msg, decision));
+    inventory.push({...inventoryEntry(msg, decision), ...(decision.accept ? {originIndex: decision.originIndex} : {})});
     if (!decision.accept) latch.stop(`declined ${decision.kind}`);
     return answerFor(decision);
   };
@@ -72,10 +93,10 @@ export function keepScreenshot(bytes) {
   return file;
 }
 
-// Runs the script; `record(name, status, detail)` collects steps, `facts` gets cellsSent/tabOperations, `shots` the
-// screenshot bytes, file and metadata. Throws whatever failed unexpectedly, after the finally's cleanup attempt.
-export async function runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots = {}, saveScreenshot = keepScreenshot, limits = LIMITS}) {
-  const run = async (name, code, limit = limits.default) => {
+// Sends one fixed cell to the session's js tool and reads its marker line: -> {class, text?, durationMs, result, images}.
+// Every cell sent is named in facts.cellsSent.
+export function cellRunner({session, facts, limits = LIMITS}) {
+  return async (name, code, limit = limits.default) => {
     facts.cellsSent.push(name);
     const started = Date.now();
     const reply = await session.request('tools/call', {name: 'js', arguments: {code, title: `cua accept ${name}`, timeout_ms: limit.cellMs}}, limit.callMs);
@@ -87,6 +108,14 @@ export async function runAgentScript({session, page, instanceId, reference, sent
       : {isError: reply.result?.isError === true, result, images: content.filter(c => c.type === 'image'), ...(result ? {} : {unmarked: text.slice(0, 600)})};
     return {...cellOutcome(cell), durationMs: Date.now() - started, result, images: cell.images};
   };
+}
+
+// Runs the script; `record(name, status, detail)` collects steps, `facts` gets cellsSent/tabOperations, `shots` the
+// screenshot bytes, file and metadata. Throws whatever failed unexpectedly, after the finally's cleanup attempt.
+// With `crossOriginFrame` (the cua route) the tab then navigates to the framed page and drives a locator inside its
+// cross-site iframe. Every navigation's latency (measured inside the cell, around goto) goes to facts.gotoMs.
+export async function runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots = {}, saveScreenshot = keepScreenshot, limits = LIMITS, crossOriginFrame = false}) {
+  const run = cellRunner({session, facts, limits});
   const stoppedBefore = names => { record('input-stopped', 'BLOCKED', {reason: latch.reason, notSent: names}); };
   const withText = c => (c.text ? {text: c.text} : {});
 
@@ -106,6 +135,7 @@ export async function runAgentScript({session, page, instanceId, reference, sent
     const steps = [
       ['gotoOwnedPage', async () => {
         const go = await run('gotoOwnedPage', cells.gotoPage(page), limits.goto);
+        noteGoto(facts, 'c2', go.result?.gotoMs);
         const verified = go.result?.markerFound === true;
         return record('owned-page', verified ? 'PASS' : 'FAIL', {class: go.class, markerFound: verified, ...withText(go)});
       }],
@@ -133,6 +163,13 @@ export async function runAgentScript({session, page, instanceId, reference, sent
         }
         return record('screenshot', shots.meta?.sizeMatches ? 'PASS' : 'FAIL', {class: shot.class, ...(shots.meta ?? {images: shot.images.length})});
       }],
+      ...(crossOriginFrame ? [['crossOriginFrame', async () => {
+        const frame = await run('crossOriginFrame', cells.crossOriginFrame(page), limits.goto);
+        noteGoto(facts, 'c2', frame.result?.gotoMs);
+        const r = frame.result ?? {};
+        return record('cross-origin-frame', r.parentMarker === true && r.frameMarker === true && r.frameClicked === true ? 'PASS' : 'FAIL',
+          {class: frame.class, parentMarker: r.parentMarker ?? null, frameMarkerRead: r.frameMarker ?? null, frameButtonClicked: r.frameClicked ?? null, ...withText(frame)});
+      }]] : []),
     ];
     for (let i = 0; i < steps.length; i++) {
       if (latch.stopped) return stoppedBefore(steps.slice(i).map(([name]) => name));

@@ -36,10 +36,12 @@
 //   CUA_BROWSER_VENDOR_SERVICE               browser surface: vendor @oai/browser-desktop service module, for the
 //                                            trusted browser wrapper (src/services/browser.mjs) to delegate to
 //   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the vendor service considers Chrome backends only. Its
-//                                            backend sockets are left to the vendor's own discovery (no
-//                                            BROWSER_USE_BACKEND_PATHS), and its network and security behaviour is
-//                                            the vendor default (no BROWSER_USE_DISABLE_AMBIENT_NETWORK or
-//                                            BROWSER_USE_SECURITY_MODE)
+//                                            network and security behaviour is the vendor default (no
+//                                            BROWSER_USE_DISABLE_AMBIENT_NETWORK or BROWSER_USE_SECURITY_MODE)
+//   BROWSER_USE_BACKEND_PATHS                browser surface on the cua route only: cua's host sockets
+//                                            (src/chrome/discovery.mjs), so the vendor's /tmp scan is skipped; on the
+//                                            vendor route (or with no Chrome registration) unset, and the vendor's own
+//                                            discovery finds OpenAI's hosts
 //   CUA_SECRETS_DIR                          with secrets on: the secret store directory (src/secrets/store.mjs), which
 //                                            the trusted services read a value from; untrusted cells see only the
 //                                            vendor's env allowlist (they can still read the directory: the sandbox
@@ -59,6 +61,7 @@ import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
+import {backendPaths} from '../chrome/discovery.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -108,7 +111,11 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     CODEX_CLI_PATH: p.codexCli,
   });
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
-  if (enabled.includes('browser')) Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
+  if (enabled.includes('browser')) {
+    Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
+    const paths = backendPaths(home);
+    if (paths) env.BROWSER_USE_BACKEND_PATHS = paths.join(':');
+  }
   if (secretsDir) env[STORE_ENV.dir] = secretsDir;
   else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};

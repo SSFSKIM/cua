@@ -4,9 +4,11 @@
 // are read from Chrome's `Local State` for the bind rule and for showing beside bind's candidates only; nothing stores
 // them (they can be the account holder's name).
 //   - a registered profile directory exists (a direct child of the user-data directory);
-//   - the OpenAI extension is installed there: some Extensions/<id>/<version>/manifest.json exists (file presence
-//     only; it says nothing about the extension being enabled or connected);
-//   - the native-messaging manifest for com.openai.codexextension, and which host it names (desktop's or cua's);
+//   - the route's extension is installed there (file presence only; it says nothing about the extension being enabled
+//     or connected): for the OpenAI extension (the vendor route) some Extensions/<id>/<version>/manifest.json exists;
+//     for cua's own extension (the cua route, `extensionId` CUA_EXTENSION_ID) that, or Local Extension Settings/<id>/,
+//     which is all an unpacked load has (Chrome loads it from its source directory; the store appears on first run);
+//   - a native-messaging manifest (com.openai.codexextension by default), and which host it names (desktop's or cua's);
 //   - how many OpenAI hosts are running, each started by the user's Chrome.
 // Each file fact is three-valued: a path that is not there (ENOENT/ENOTDIR) is absent, but a read this process is not
 // allowed to make (or any other failure) is `unreadable` with its error code, never absence. macOS 26+ can put
@@ -18,6 +20,9 @@ import {readdirSync, readFileSync, statSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {isAbsolute, join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
+import {CUA_EXTENSION_ID} from '../chrome/extension.mjs';
+
+export {CUA_EXTENSION_ID};
 
 const hostTarget = () => ({platform: process.platform, arch: process.arch});
 
@@ -64,8 +69,8 @@ function directoryState(path) {
   }
 }
 // -> 'installed' | 'absent' | {unreadable: code}
-function extensionState(profile) {
-  const root = join(profile, 'Extensions', OPENAI_EXTENSION_ID);
+function installedCopyState(profile, extensionId) {
+  const root = join(profile, 'Extensions', extensionId);
   let versions;
   try { versions = readdirSync(root); } catch (error) {
     const code = readFailure(error);
@@ -76,6 +81,14 @@ function extensionState(profile) {
     try { statSync(join(root, version, 'manifest.json')); return 'installed'; } catch (error) { unreadable ??= readFailure(error); }
   }
   return unreadable ? {unreadable} : 'absent';
+}
+// cua's extension is present when installed (Store or CRX) or loaded unpacked (only its extension store exists).
+function extensionState(profile, extensionId) {
+  const installed = installedCopyState(profile, extensionId);
+  if (installed === 'installed' || extensionId !== CUA_EXTENSION_ID) return installed;
+  const unpacked = directoryState(join(profile, 'Local Extension Settings', extensionId));
+  if (unpacked === 'exists') return 'installed';
+  return installed.unreadable ? installed : unpacked.unreadable ? unpacked : 'absent';
 }
 const stateName = state => typeof state === 'string' ? state : 'unreadable';
 const within = (path, root) => root && (path === root || path.startsWith(root.replace(/\/+$/, '') + '/'));
@@ -103,20 +116,23 @@ export function countLiveHosts(psText, {host = hostTarget()} = {}) {
   return rows.filter(row => row.executable.endsWith(`/${HOST_BASENAME}`) && CHROME_EXECUTABLE.test(byPid.get(row.ppid)?.executable ?? '')).length;
 }
 
-export function chromeFacts({host = hostTarget(), env = process.env, userHome = homedir(), userData = chromeUserData({host, env, userHome})} = {}) {
+// `extensionId` is the route's extension (route.mjs extensionIdFor): the OpenAI extension unless the home is on the cua
+// route.
+export function chromeFacts({host = hostTarget(), env = process.env, userHome = homedir(), userData = chromeUserData({host, env, userHome}), extensionId = OPENAI_EXTENSION_ID} = {}) {
   return {
     userData,
+    extensionId,
     isDirectoryName,
     // -> 'exists' | 'missing' | 'unreadable'
     profileDirectoryExists: name => isDirectoryName(name) ? stateName(directoryState(join(userData, name))) : 'missing',
     // -> 'installed' | 'absent' | 'unreadable'
-    extensionInstalled: name => isDirectoryName(name) ? stateName(extensionState(join(userData, name))) : 'absent',
+    extensionInstalled: name => isDirectoryName(name) ? stateName(extensionState(join(userData, name), extensionId)) : 'absent',
     // The error code behind an unreadable profile directory or extension directory, or undefined.
     readError(name) {
       if (!isDirectoryName(name)) return undefined;
       const directory = directoryState(join(userData, name));
       if (directory === 'missing') return undefined;
-      return directory.unreadable ?? extensionState(join(userData, name)).unreadable;
+      return directory.unreadable ?? extensionState(join(userData, name), extensionId).unreadable;
     },
     // Profile directory -> display name, from Local State's profile.info_cache. A Local State this process may not
     // read fails with the permission cause and its code (`readError` on the error), not as a malformed file.
@@ -138,10 +154,10 @@ export function chromeFacts({host = hostTarget(), env = process.env, userHome = 
         fail('chrome_local_state_unreadable', `Chrome's Local State in ${userData} could not be read as a profile list`);
       return new Map(Object.entries(cache).filter(([, info]) => typeof info?.name === 'string').map(([dir, info]) => [dir, info.name]));
     },
-    // The native-messaging manifest the OpenAI extension connects to, and the class of the host it names; `readError`
-    // when this process may not read it (so whether it exists is unknown).
-    nativeHost({cuaHome, userHome}) {
-      const file = join(userData, 'NativeMessagingHosts', `${NATIVE_HOST_NAME}.json`);
+    // The native-messaging manifest of `name` (by default the one the OpenAI extension connects to), and the class of
+    // the host it names; `readError` when this process may not read it (so whether it exists is unknown).
+    nativeHost({cuaHome, userHome, name = NATIVE_HOST_NAME}) {
+      const file = join(userData, 'NativeMessagingHosts', `${name}.json`);
       let text;
       try { text = readFileSync(file, 'utf8'); } catch (error) {
         const code = readFailure(error);

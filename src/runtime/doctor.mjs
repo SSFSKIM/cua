@@ -1,15 +1,15 @@
 // Passive diagnosis. Reports the installed runtime's health (platform, active release, files, vendor manifest, IPC
 // version, vendor signatures) separately from live-helper and permission evidence, which a passive check can only
 // observe from outside: it never opens an app, starts or signals the helper, connects to its socket or requests a
-// grant. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively;
+// grant. The one connection doctor makes is chrome.hosts.live on the cua route, to cua's own host sockets. Live behavior is the job of explicit probe scripts. `blocked` marks evidence that is unavailable passively;
 // `skip` marks a check that does not apply on this host (neither a failure nor blocked evidence).
 // `ok` means runtime health only: no check failed. It does not mean the live helper, permissions or a release
 // acceptance gate were proven, and it must never be reported as release acceptance.
 // `secrets.store` (src/secrets/check.mjs) describes the secret store, $HOME/.config/claude-secrets, from metadata only:
 // absent is `blocked` (nothing stored yet), a directory or key file the trusted services would refuse is `fail`.
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
-// a Codex login, which the browser route needs; only the exit code is kept and no auth file is opened. It is
-// capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
+// a Codex login, which the ChatGPT extension route needs (on the cua route the row is skip); only the exit code is kept
+// and no auth file is opened. It is capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
 // executes a release binary, so it runs only when this same run found the release's files present and its vendor
 // signatures valid (`runtime.signatures` pass); otherwise it is `blocked` naming the failed check.
 // `chrome.host.config` (chrome-component.mjs) is installed-runtime health: the Chrome host component cua placed in the
@@ -18,6 +18,10 @@
 // The Chrome checks (src/profiles/checks.mjs) are capability evidence the same way as codex.login: each registered profile's
 // extension, the com.openai.codexextension native-messaging registration and which host it names, and the running
 // OpenAI hosts, read from files and the process table only.
+// On the cua route (`cua chrome register`, src/chrome/route.mjs) the Chrome rows are cua's own (cuaChromeChecks: cua's
+// extension, the io.github.ssfskim.cua registration and this home's launcher, the sockets of cua's hosts that accept a
+// connection), codex.login is `skip` (that route needs no Codex login) and chrome.host.config, the OpenAI host's
+// configuration, is not reported. On the vendor route and with no registration they are as before.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
@@ -50,7 +54,8 @@ import {inspectSecretStore, classifyStore} from '../secrets/check.mjs';
 import {loginStatus, LOGIN_STATES} from './login.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
-import {chromeChecks, processTable} from '../profiles/checks.mjs';
+import {chromeChecks, cuaChromeChecks, processTable} from '../profiles/checks.mjs';
+import {chromeRoute, extensionIdFor} from '../chrome/route.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
@@ -67,6 +72,7 @@ const result = (name, status, detail) => ({name, status, detail});
 export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
+  const route = chromeRoute(home);
   const checks = [];
   let pin;
   try {
@@ -110,8 +116,8 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
     }
     if (layout.ok && signed) untrusted = null;
     else if (layout.ok) untrusted = 'not asked: runtime.signatures failed in this run, and doctor never executes a release binary it found untrusted; fix the release first (see runtime.signatures), then run cua login';
-    checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
-  } else {
+    if (route !== 'cua') checks.push(await inspectChromeHostConfig({runtime, verifySignatures}));
+  } else if (route !== 'cua') {
     checks.push(result('chrome.host.config', 'blocked', 'needs an installed runtime; run cua install, which also places the Chrome host'));
   }
   const linuxRows = host.platform === 'linux' ? await inspectLinux({env}) : null;
@@ -129,8 +135,9 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
       + `Confirm with a live probe (${LIVE_PROBE}).`));
   }
   checks.push(classifyStore(await inspectSecrets({env}), {enabled: (env.CUA_SHIM_SECRETS ?? 'on') !== 'off'}));
-  checks.push(await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
-  checks.push(...await inspectChrome({home, host, env}));
+  checks.push(route === 'cua' ? result('codex.login', 'skip', 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)')
+    : await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
+  checks.push(...await inspectChrome({home, host, env, route}));
   checks.push(...await inspectAgent({home, env, host}));
 
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
@@ -197,7 +204,9 @@ function runSweepCheck(home, sweep) {
 }
 
 const defaultInspectLogin = ({home, runtime}) => loginStatus({home, runtime});
-const defaultInspectChrome = async ({home, host, env}) => chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})});
+const defaultInspectChrome = async ({home, host, env, route}) => (route === 'cua'
+  ? cuaChromeChecks({home, chrome: chromeFacts({host, env, extensionId: extensionIdFor(route)})})
+  : chromeChecks({home, host, chrome: chromeFacts({host, env}), psText: processTable({host})}));
 const defaultInspectAgent = ({home, env, host}) => agentChecks({home, env, host});
 
 async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
@@ -208,8 +217,8 @@ async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
     return result('codex.login', 'blocked', `${error.message}; run cua login once CUA_HOME is fixed`);
   }
   return status.state === LOGIN_STATES.loggedIn
-    ? result('codex.login', 'pass', 'the server has a Codex login in its own CODEX_HOME (needed by the browser route)')
-    : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the browser route needs one: run cua login`);
+    ? result('codex.login', 'pass', 'the server has a Codex login in its own CODEX_HOME (needed by the ChatGPT extension route)')
+    : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the ChatGPT extension route needs one: run cua login`);
 }
 
 const AGENT_ROWS = ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'];

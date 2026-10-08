@@ -6,6 +6,8 @@ node_modules/
 *.zip
 runtimes/
 staging/
+# npm run extension:pack output (the Store zip; with the owner's key the CRX and update.xml)
+dist/
 current.json
 
 # Local secrets and machine state

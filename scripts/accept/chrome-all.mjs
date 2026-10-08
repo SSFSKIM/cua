@@ -303,7 +303,7 @@ export async function runAll(argv, {stderr = process.stderr} = {}) {
     if (!guard.refusal.run) checks.push(check('cua chrome register refuses without --replace', notRun(guard.refusal), `${guard.refusal.reason} (slots: ${where})`));
     else {
       const before = fingerprint();
-      const r = await cua(['chrome', 'register', '--json']);
+      const r = await cua(['chrome', 'register', '--vendor', '--json']);
       const out = parseJson(r.stdout);
       const unchanged = fingerprint() === before;
       const allDesktop = slotsNow.filter(s => s.state === 'foreign').every(s => s.pathClass === 'desktop');
@@ -316,7 +316,7 @@ export async function runAll(argv, {stderr = process.stderr} = {}) {
     if (!guard.noop.run) checks.push(check('cua chrome unregister is a no-op when the manifest is not ours', notRun(guard.noop), guard.noop.reason));
     else {
       const before = fingerprint();
-      const r = await cua(['chrome', 'unregister', '--json']);
+      const r = await cua(['chrome', 'unregister', '--vendor', '--json']);
       const out = parseJson(r.stdout);
       const unchanged = fingerprint() === before;
       const ok = r.code === 0 && out?.ok === true && out.blocked === false && out.browsers?.every(b => ['not_ours', 'absent'].includes(b.action)) && unchanged;

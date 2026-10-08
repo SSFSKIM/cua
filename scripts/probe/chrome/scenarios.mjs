@@ -1,7 +1,7 @@
 // Layer (a) of the M7 spike: deterministic wire scenarios over a real owned Unix socket, the prototype adapter and
 // the fake extension. Each scenario cites the source it reproduces and returns PASS/FAIL with metadata-only checks.
 import {join} from 'node:path';
-import {encodeFrame, frameDecoder, hostEndianness, HEADER_BYTES} from './frame.mjs';
+import {encodeFrame, frameDecoder, hostEndianness, HEADER_BYTES} from '../../../src/chrome/protocol.mjs';
 import {NO_HANDLER, backendInfo} from './adapter.mjs';
 import {startFixture, connectClient, settle} from './fixture.mjs';
 

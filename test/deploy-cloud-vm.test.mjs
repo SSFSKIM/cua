@@ -4,9 +4,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {readFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
+import {CUA_EXTENSION_ID} from '../src/chrome/extension.mjs';
+import {DEFAULT_BASE_URL} from '../scripts/extension-pack.mjs';
 
 const dir = fileURLToPath(new URL('../deploy/cloud-vm/', import.meta.url));
 const render = (...args) => spawnSync('bash', [`${dir}render.sh`, ...args], {encoding: 'utf8'});
@@ -23,7 +27,8 @@ test('render.sh fills the conf and embeds cua-provision.sh (gzipped) byte for by
   assert.doesNotMatch(run.stdout, /^ *# /m);
   assert.doesNotMatch(run.stdout, /@[A-Z_]+@/);
   assert.equal(contentOf(run.stdout, '/etc/cua-provision.conf').toString(),
-    "CUA_USER='agent'\nCUA_REF='feat/x-1'\nCUA_REPO='https://github.com/SSFSKIM/cua'\nCUA_DEB='pin'\nCUA_RELAY='wss://1-2-3-4.sslip.io/ws'\n");
+    "CUA_USER='agent'\nCUA_REF='feat/x-1'\nCUA_REPO='https://github.com/SSFSKIM/cua'\nCUA_DEB='pin'\nCUA_RELAY='wss://1-2-3-4.sslip.io/ws'\n" +
+    `CUA_EXTENSION='hosted'\nCUA_EXTENSION_URL='${DEFAULT_BASE_URL}update.xml'\n`);
   assert.match(run.stdout, /- path: \/usr\/local\/sbin\/cua-provision\.sh\n {4}encoding: gz\+b64\n/);
   assert.deepEqual(gunzipSync(contentOf(run.stdout, '/usr/local/sbin/cua-provision.sh')), readFileSync(`${dir}cua-provision.sh`));
   assert.match(run.stdout, /runcmd:\n {2}- \[\/usr\/local\/sbin\/cua-provision\.sh\]\n/);
@@ -35,9 +40,24 @@ test('render.sh: defaults, a mirror URL, and a local deb meaning the operator up
   const conf = run => contentOf(run.stdout, '/etc/cua-provision.conf').toString();
   const plain = render();
   assert.equal(plain.status, 0, plain.stderr);
-  assert.match(conf(plain), /^CUA_USER='cua'\nCUA_REF='main'\n.*CUA_DEB='pin'\nCUA_RELAY=''\n$/s);
+  assert.match(conf(plain), /^CUA_USER='cua'\nCUA_REF='main'\nCUA_REPO='https:\/\/github\.com\/SSFSKIM\/cua'\nCUA_DEB='pin'\nCUA_RELAY=''\nCUA_EXTENSION='hosted'\nCUA_EXTENSION_URL='https:\/\/178-104-102-73\.sslip\.io\/ext\/update\.xml'\n$/);
   assert.match(conf(render('--deb', 'https://mirror.example/chatgpt_26.928.40906_amd64.deb')), /CUA_DEB='https:\/\/mirror\.example\/chatgpt_26\.928\.40906_amd64\.deb'/);
   assert.match(conf(render('--deb', `${dir}cloud-init.yaml`)), /CUA_DEB='upload'/);
+});
+
+test('render.sh: the cua extension from the Store or a self-hosted update URL; the repository from a URL or an uploaded bundle', () => {
+  const conf = (...args) => { const run = render(...args); assert.equal(run.status, 0, run.stderr); return contentOf(run.stdout, '/etc/cua-provision.conf').toString(); };
+  assert.match(conf('--extension', 'store'), /CUA_EXTENSION='store'\n/);
+  assert.match(conf('--extension-url', 'https://other.example/ext/update.xml'), /CUA_EXTENSION='hosted'\nCUA_EXTENSION_URL='https:\/\/other\.example\/ext\/update\.xml'\n/);
+  assert.match(conf('--repo', 'https://git.example/me/cua.git'), /CUA_REPO='https:\/\/git\.example\/me\/cua\.git'\n/);
+  // A local file is a git bundle the operator copies to the VM (create-hetzner.sh --repo does); the VM waits for it.
+  assert.match(conf('--repo', `${dir}cloud-init.yaml`), /CUA_REPO='upload'\n/);
+});
+
+test('cua-provision.sh force-installs cua\'s own extension: its id is CUA_EXTENSION_ID', () => {
+  const script = readFileSync(`${dir}cua-provision.sh`, 'utf8');
+  assert.equal(script.match(/^EXTENSION_ID=([a-p]{32})\b/m)?.[1], CUA_EXTENSION_ID);
+  assert.doesNotMatch(script, /hehggadaopoacecdllhhajmbjkdcmajg|cua login|Sign in to ChatGPT/);
 });
 
 test('render.sh refuses anything that is not plain (it lands in a shell-sourced file)', () => {
@@ -45,6 +65,8 @@ test('render.sh refuses anything that is not plain (it lands in a shell-sourced 
     ['--user', 'root'], ['--user', "a'b"], ['--ref', 'main; rm -rf /'], ['--ref', "x'y"], ['--ref', '-x'], ['--ref', '--upload-pack=x'],
     ['--relay', 'ws://relay.example/ws'], ['--relay', "wss://r.example/ws'"], ['--deb', 'http://mirror.example/x.deb'],
     ['--deb', "https://m.example/a'b.deb"], ['--deb', '/nonexistent/chatgpt.deb'], ['--user'], ['--colour', 'x'],
+    ['--extension', 'vendor'], ['--extension-url', 'http://plain.example/update.xml'], ['--extension-url', "https://q.example/a'b.xml"],
+    ['--repo', 'git@github.com:SSFSKIM/cua'], ['--repo', '/nonexistent/cua.bundle'], ['--repo', "https://g.example/a'b"],
   ]) {
     const run = render(...args);
     assert.equal(run.status, 2, `${args.join(' ')}: ${run.stdout}`);
@@ -57,4 +79,31 @@ test('the deploy scripts parse', () => {
     const run = spawnSync('bash', ['-n', `${dir}${script}`], {encoding: 'utf8'});
     assert.equal(run.status, 0, `${script}: ${run.stderr}`);
   }
+});
+
+test('create-hetzner.sh copies an upload whose local path has a space to the name the VM watches', t => {
+  const scratch = mkdtempSync(join(tmpdir(), 'cua hetzner '));
+  t.after(() => rmSync(scratch, {recursive: true, force: true}));
+  const bin = join(scratch, 'bin'), remote = join(scratch, 'remote'), log = join(scratch, 'calls.log');
+  mkdirSync(bin); mkdirSync(remote);
+  // A git bundle holding the ref, at a path with a space.
+  const repo = join(scratch, 'repo');
+  const git = (...args) => { const run = spawnSync('git', args, {cwd: repo, encoding: 'utf8'}); assert.equal(run.status, 0, run.stderr); };
+  mkdirSync(repo);
+  git('init', '-q', '-b', 'my-branch'); git('-c', 'user.name=t', '-c', 'user.email=t@x', 'commit', '-q', '--allow-empty', '-m', 'x');
+  const bundle = join(scratch, 'my bundle.bundle');
+  git('bundle', 'create', '-q', bundle, 'my-branch');
+  // Stand-ins: hcloud knows no server of that name and creates it; ssh succeeds; scp copies into remote/.
+  const stub = (name, body) => { writeFileSync(join(bin, name), `#!/usr/bin/env bash\nprintf '${name} %s\\n' "$*" >>'${log}'\n${body}\n`); chmodSync(join(bin, name), 0o755); };
+  stub('hcloud', 'case "$*" in *"server describe"*-o*) echo 1;; *"server describe"*) exit 1;; *"server ip"*) echo 203.0.113.9;; esac; exit 0');
+  stub('ssh', 'exit 0');
+  stub('ssh-keygen', 'exit 0');
+  stub('scp', `cp "\${@: -2:1}" '${remote}/'"$(basename "\${@: -1}")"`);
+  const run = spawnSync('bash', [`${dir}create-hetzner.sh`, '--name', 'cua-test', '--ref', 'my-branch', '--repo', bundle],
+    {encoding: 'utf8', env: {...process.env, PATH: `${bin}:${process.env.PATH}`, HCLOUD_CONTEXT: 'cua'}});
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(readFileSync(join(remote, 'cua.bundle.part')), readFileSync(bundle));
+  const calls = readFileSync(log, 'utf8');
+  assert.match(calls, /mv \/var\/cache\/cua\/cua\.bundle\.part \/var\/cache\/cua\/cua\.bundle/);
+  assert.doesNotMatch(calls, /\.failed/);
 });

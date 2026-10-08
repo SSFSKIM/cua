@@ -59,7 +59,15 @@ server named `cua-relay` exists. Then:
 ```
 relay/deploy/update.sh --devices devices.json   # install a devices.json and restart the relay
 relay/deploy/update.sh --ref main               # run another ref (git fetch, npm ci, restart)
+relay/deploy/update.sh --ext dist               # publish the self-hosted cua extension at https://<host>/ext/ (no restart)
 ```
+
+`--ext` takes what `CUA_EXTENSION_KEY=<owner's key> npm run extension:pack` wrote (`update.xml` and the CRX it names;
+the Store zip beside them is not published): it copies the CRX, then `update.xml`, to `/var/lib/cua-relay/ext`, and
+replaces the server's live `/etc/caddy/Caddyfile` with this checkout's `Caddyfile` (its `/ext/` file server) when they
+differ: only the site line is kept from the live file (so a moved domain survives), any other hand edit there is
+overwritten. It prints the diff first, installs only after `caddy validate` accepts the new file, and reloads Caddy.
+Linux VMs force-install the extension from `https://<host>/ext/update.xml` (`deploy/cloud-vm/`).
 
 `--devices` replaces the server's whole table, so keep every device's line in the file you send (the current one:
 `ssh root@<ip> cat /etc/cua-relay/devices.json`). To rebuild (or after a failed cloud-init), `hcloud server delete

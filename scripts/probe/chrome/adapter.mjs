@@ -13,7 +13,8 @@
 //   47585-47595  "Debugger unattached" / "...Debugger is not attached..." from executeCdp triggers one re-attach
 //   48392-48410  a target names at most one of sessionId/targetId
 //   48485-48517  child sessions come from Target.attachedToTarget (flatten) and keep {tabId, sessionId}
-export const NO_HANDLER = method => `No handler registered for method: ${method}`;
+import {NO_HANDLER} from '../../../src/chrome/protocol.mjs';
+export {NO_HANDLER};
 const SESSION_EXEMPT = new Set(['getInfo', 'turnEnded', 'ping']);
 
 export class BackendError extends Error {

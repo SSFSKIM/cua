@@ -58,7 +58,7 @@ const componentSigning = pin => ({release: pin.release, signing: {team: pin.sign
 // How the doctor line names the host's trust: its signing team, or the archive hash where nothing is signed.
 const hostTrust = pin => pin.chromePlugin.signing.length ? `signed by team ${pin.signing.team}` : `trusted by the archive hash (${pin.platform})`;
 
-export const componentRecoveryHint = root => `if cua's host is registered run \`cua chrome unregister\` first; stop any \`cua serve\`, remove ${root}, then run \`cua install\``;
+export const componentRecoveryHint = root => `if cua's host is registered run \`cua chrome unregister --vendor\` first; stop any \`cua serve\`, remove ${root}, then run \`cua install\``;
 
 // What occupies a release's component path: nothing, a component this tool placed (its record), or something else.
 export function componentState(root, pin) {

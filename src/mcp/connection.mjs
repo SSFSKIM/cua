@@ -34,6 +34,7 @@ import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
+import {chromeRoute, extensionIdFor} from '../chrome/route.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
@@ -42,7 +43,7 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env, extensionId: extensionIdFor(chromeRoute(home))}),
   listBackends, onWithdrawn, probeUserns}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
@@ -86,7 +87,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);
-    const profiles = {list: async () => {
+    // `route` words a missing extension as the home's route's (registry.mjs reasonText).
+    const profiles = {route: chromeRoute(home), list: async () => {
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;

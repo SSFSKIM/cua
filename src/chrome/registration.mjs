@@ -29,17 +29,26 @@
 // home's registration lock for their whole run (see `acquireLock`).
 // No chrome-native-hosts-v2.json entry is written: the browser-use socket does not need one (only the desktop's
 // side-panel app-server does, which is not cua's feature). Nothing here launches or signals a host or a browser.
-import {linkSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
+//
+// The functions above are the vendor route (`cua chrome register --vendor`). The cua route (`cua chrome register`,
+// registerCuaHost/unregisterCuaHost at the end of this file) registers cua's own host, io.github.ssfskim.cua, for
+// cua's own extension, with the same lock, the same manifest format and the same no-clobber writes, but its own record
+// (route.mjs) and backups, so neither route overwrites the other's.
+import {chmodSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, utimesSync, writeFileSync} from 'node:fs';
 import {createHash, randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
 import {setTimeout as delay} from 'node:timers/promises';
-import {basename, dirname, isAbsolute, join, normalize} from 'node:path';
+import {basename, dirname, isAbsolute, join, normalize, resolve} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
 import {realHome} from '../runtime/layout.mjs';
 import {verifyCodeSignatures} from '../runtime/checks.mjs';
 import {locateChromeComponent, verifyPlacedChromeComponent} from '../runtime/chrome-component.mjs';
 import {loadPins} from '../runtime/manifest.mjs';
 import {hostPathClass, linuxConfigHome, PERMISSION_FIX, readFailure} from '../profiles/chrome.mjs';
+import {CUA_EXTENSION_ID, CUA_HOST_NAME, MAX_SOCKET_PATH_BYTES, backendDir, launcherLog, launcherPath, logDir, longestSocketPath} from './extension.mjs';
+import {cuaRecordFile, readCuaRecord} from './route.mjs';
+
+export {readCuaRecord};
 
 // macOS user-data directories, relative to the user's home (the vendor's chromium-family manifest directories).
 const DARWIN_BROWSERS = [
@@ -82,7 +91,7 @@ function searched(browsers) {
 
 export const REPLACE_CONSEQUENCES = [
   'While cua\'s host is registered, the ChatGPT desktop app\'s Codex side panel and other app-server features in the browser stop working: no chrome-native-hosts-v2.json entry names cua\'s host, and that registry gates the app-server.',
-  'The ChatGPT desktop app rewrites its own com.openai.codexextension manifest when it next runs, which replaces cua\'s registration again; `cua chrome unregister` restores the backed-up manifest now.',
+  'The ChatGPT desktop app rewrites its own com.openai.codexextension manifest when it next runs, which replaces cua\'s registration again; `cua chrome unregister --vendor` restores the backed-up manifest now.',
 ];
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -359,11 +368,11 @@ async function registerLocked({cuaHome, runtime, replace, userHome, browsers: ta
   const context = {home: cuaHome, userHome, suffixes: hostSuffixes([...pins, runtime.manifest])};
   const planned = slots({browsers: table, nativeHost: native.name, onlyPresent: true}).map(s => ({...s, slot: readSlot(s.manifestPath, context)}));
   if (!planned.length)
-    fail('no_supported_browser', `no ${searched(table)}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
+    fail('no_supported_browser', `no ${searched(table)}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register --vendor` again'});
   const refused = planned.filter(s => s.slot.state === 'unreadable');
-  if (refused.length) unreadable(refused, native.name, 'register');
+  if (refused.length) unreadable(refused, native.name, 'register --vendor');
   const foreign = planned.filter(s => s.slot.state === 'foreign');
-  const replaceHint = `\`cua chrome register --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister\` restores it`;
+  const replaceHint = `\`cua chrome register --vendor --replace\` backs each one up under ${join(chromeDir(cuaHome), 'manifest-backup')} and replaces it, after printing what stops working; \`cua chrome unregister --vendor\` restores it`;
   if (foreign.length && !replace) fail('registration_in_use', refusal(foreign, native.name), {hint: replaceHint});
   // The host must be cua's verified host, with the configuration it reads, before any browser is pointed at it.
   await verifyPlacedChromeComponent(runtime, {verifySignatures});
@@ -384,7 +393,7 @@ async function registerLocked({cuaHome, runtime, replace, userHome, browsers: ta
         unsettled = false;
         // Read again right before writing; a write by anyone else after this read is detected, never overwritten.
         const slot = readSlot(s.manifestPath, context);
-        if (slot.state === 'unreadable') unreadable([{...s, slot}], native.name, 'register');
+        if (slot.state === 'unreadable') unreadable([{...s, slot}], native.name, 'register --vendor');
         if (slot.state === 'absent') {
           record.browsers[s.browser] = {manifest: s.manifestPath, replaced: false};
           writeRecord(cuaHome, record);
@@ -487,7 +496,7 @@ function undoRun(error, applied, {cuaHome, record, desired, io, onStep, context}
   const access = error.code === 'chrome_data_unreadable' ? [PERMISSION_FIX] : [];
   return new CuaError('registration_partial',
     `${base} (${error.code ?? 'error'}). cua had already registered ${applied.map(c => c.browser).join(', ')} in this run${undone.length ? ` and undid ${undone.join(', ')}` : ''}${note}, but could not finish ${unfinished}`,
-    {hint: [...new Set([...access, ...left.filter(l => l.hint).map(l => l.hint)])].concat('then run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)').join('; '), cause: error});
+    {hint: [...new Set([...access, ...left.filter(l => l.hint).map(l => l.hint)])].concat('then run `cua chrome unregister --vendor` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)').join('; '), cause: error});
 }
 
 // One change's undo: `restored` (cua's write is gone and the earlier bytes, if any, are back), `superseded` (another
@@ -542,7 +551,7 @@ function unregisterLocked({cuaHome, userHome, browsers: table, nativeHost, pins,
   const forget = browser => { if (record.browsers[browser]) { delete record.browsers[browser]; recordChanged = true; } };
   const all = slots({browsers: table, nativeHost, onlyPresent: false});
   const refused = all.map(s => ({...s, slot: readSlot(s.manifestPath, context)})).filter(s => s.slot.state === 'unreadable');
-  if (refused.length) unreadable(refused, nativeHost, 'unregister');
+  if (refused.length) unreadable(refused, nativeHost, 'unregister --vendor');
   const browsers = all.map(s => {
     const row = {browser: s.browser, manifestPath: s.manifestPath};
     try {
@@ -555,11 +564,11 @@ function unregisterLocked({cuaHome, userHome, browsers: table, nativeHost, pins,
         : now.state === 'unreadable' ? ['unknown', `whether cua's registration is still there is unknown (this process cannot read it: ${now.code})`]
         : ['removed', 'cua\'s registration is no longer there'];
       // Every recovery step touches the slot, so for one this process cannot read the access comes first.
-      const recovery = error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again`
-        : now.state === 'unreadable' ? 'run `cua chrome unregister` again'
+      const recovery = error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister --vendor\` again`
+        : now.state === 'unreadable' ? 'run `cua chrome unregister --vendor` again'
         : record.browsers[s.browser]?.replaced
-        ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
-        : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister\` again, or ${restoreYourself(s.name, s.manifestPath)}`;
+        ? `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister --vendor\` again, or by hand: copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}"), then run \`cua doctor\``
+        : `fix the cause (${error.code ?? 'see above'}) and run \`cua chrome unregister --vendor\` again, or ${restoreYourself(s.name, s.manifestPath)}`;
       return {...row, action, restoration: 'blocked',
         reason: `${['manifest_rollback_failed', 'manifest_write_failed', 'chrome_data_unreadable'].includes(error.code) ? error.message : error.code ?? error.message} while unregistering ${s.manifestPath}; ${state}, and the backup and its record were kept`,
         userAction: now.state === 'unreadable' ? `${PERMISSION_FIX}; then ${recovery}` : recovery};
@@ -614,4 +623,308 @@ function unregisterSlot(s, row, {context, record, cuaHome, forget, io, step}) {
     return {...row, action: 'restored', restoration: 'restored', backup};
   }
   return contended(s.manifestPath);
+}
+
+// ---- the cua route ----------------------------------------------------------------------------------------------
+//
+// `cua chrome register` points every present browser's io.github.ssfskim.cua manifest at this home's launcher,
+// $CUA_HOME/chrome/host: a shell script that bakes CUA_HOME (Chrome spawns hosts with its own environment) and execs
+// this node on the checkout's src/chrome/host.mjs (real paths: an `npm link` checkout is a symlink). The rule:
+//   - a manifest naming this home's launcher is cua's (rewritten when its bytes differ); none is placed; any other
+//     (another home's launcher, or one that does not parse) refuses the whole run with other_home before anything is
+//     written, unless --replace, which backs it up byte for byte under chrome/cua-manifest-backup/<browser>.json and
+//     records the launcher it named (`previous`) so `cua chrome unregister` restores it;
+//   - the home must fit a host socket: its longest socket path is at most 103 bytes (macOS sun_path), else
+//     socket_path_too_long before anything is written;
+//   - the launcher, chrome/b and chrome/logs (0700) and the record are written before any manifest, so a manifest never
+//     names a launcher that is not there and a run that stops midway leaves what unregister needs. A failure midway
+//     undoes this run's manifest writes (or reports registration_partial naming what it could not undo).
+// `cua chrome unregister` removes only manifests naming this home's launcher, restoring a recorded backup whose hash
+// matches (else BLOCKED with the user action, the backup and record kept); with nothing blocked the record and the
+// launcher go too, so the home is off the cua route.
+export const CUA_NATIVE_HOST = {name: CUA_HOST_NAME, description: 'cua browser native messaging host', extensionIds: [CUA_EXTENSION_ID]};
+const cuaBackupDir = home => join(chromeDir(home), 'cua-manifest-backup');
+const cuaBackupFile = (home, browser) => join(cuaBackupDir(home), `${browser}.json`);
+
+// Single-quoted for sh; parseLauncher reads the assignments back for doctor.
+const shellQuote = text => `'${text.replaceAll("'", "'\\''")}'`;
+export function launcherText({home, nodePath, host}) {
+  return [
+    '#!/bin/sh',
+    '# cua\'s Chrome native-messaging host launcher, written by `cua chrome register`. Chrome starts it with its own',
+    '# environment, so the home is baked in; Node\'s own stderr (warnings, a crash before main) goes to the launcher log',
+    '# (the host writes its own lines to chrome/logs/<name>.log; Chrome discards a host\'s stderr).',
+    `CUA_HOME=${shellQuote(home)}`,
+    'export CUA_HOME',
+    `node=${shellQuote(nodePath)}`,
+    `host=${shellQuote(host)}`,
+    `logs=${shellQuote(logDir(home))}`,
+    `log=${shellQuote(launcherLog(home))}`,
+    'mkdir -p -m 700 "$logs" 2>/dev/null',
+    'printf \'%s start pid %s\\n\' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" >>"$log"',
+    'exec "$node" "$host" "$@" 2>>"$log"',
+    '',
+  ].join('\n');
+}
+
+// -> {home, node, host} as a launcher written by launcherText assigns them; a missing assignment is null.
+export function parseLauncher(text) {
+  const value = name => {
+    const match = text.match(new RegExp(`^${name}='((?:[^']|'\\\\'')*)'$`, 'm'));
+    return match ? match[1].replaceAll("'\\''", "'") : null;
+  };
+  return {home: value('CUA_HOME'), node: value('node'), host: value('host')};
+}
+
+// What a browser's io.github.ssfskim.cua slot holds: nothing, cua's manifest naming this home's launcher, another
+// (with the launcher it names, or null when it names none), or `unreadable` with the code.
+function readCuaSlot(path, launcher) {
+  let bytes;
+  try { bytes = readFileSync(path); } catch (error) {
+    const code = readFailure(error);
+    return code ? {state: 'unreadable', code} : {state: 'absent'};
+  }
+  let manifest;
+  try { manifest = JSON.parse(bytes.toString('utf8')); } catch { manifest = null; }
+  const named = typeof manifest?.path === 'string' ? manifest.path : null;
+  return named === launcher ? {state: 'ours', bytes} : {state: 'foreign', bytes, previous: named};
+}
+
+function otherHome(foreign) {
+  const where = foreign.map(s => `${s.browser} (${s.slot.previous ? `names ${s.slot.previous}` : 'names no host path'})`).join(', ');
+  fail('other_home', `${CUA_HOST_NAME} is already registered for another host in ${where}: cua does not overwrite a registration this home did not write. Nothing was changed.`,
+    {hint: '`cua chrome register --replace` backs each one up and records the launcher it named; `cua chrome unregister` restores it'});
+}
+
+function fileAt(path) {
+  try { return statSync(path).isFile(); } catch { return false; }
+}
+
+// The real path a directory has, or will have once created: its deepest existing ancestor resolved, the rest appended
+// (so a home under a symlinked parent, such as macOS /tmp, is baked as the path doctor later resolves it to).
+function eventualRealPath(path) {
+  const rest = [];
+  for (let dir = resolve(path); ; dir = dirname(dir)) {
+    try { return join(realpathSync(dir), ...rest); } catch (error) {
+      if (dirname(dir) === dir) throw error;
+      rest.unshift(basename(dir));
+    }
+  }
+}
+
+// Registers cua's own host for this home. `checkout` is the cua checkout whose src/chrome/host.mjs the launcher runs;
+// `nodePath` the node that runs it; `browsers` this host's table (browsersFor); `io` and `lockTiming` are test seams.
+// -> {launcher, backendsDir, browsers: [{browser, manifestPath, action: placed|replaced|updated|unchanged, previous, backup?}]}
+export async function registerCuaHost({home, checkout, nodePath = process.execPath, replace = false, browsers = browsersFor(), io = FS, lockTiming = LOCK_TIMING}) {
+  const cuaHome = eventualRealPath(home);
+  const longest = longestSocketPath(cuaHome);
+  const bytes = Buffer.byteLength(longest);
+  if (bytes > MAX_SOCKET_PATH_BYTES)
+    fail('socket_path_too_long', `a host socket in this home would be ${bytes} bytes long (${longest}), over the ${MAX_SOCKET_PATH_BYTES}-byte limit of a Unix socket path; nothing was changed`,
+      {hint: `use a CUA_HOME at most ${MAX_SOCKET_PATH_BYTES - (bytes - Buffer.byteLength(cuaHome))} bytes long (the default home fits a username of up to 37 characters)`});
+  // BROWSER_USE_BACKEND_PATHS separates its paths with ':' (discovery.mjs).
+  if (cuaHome.includes(':')) fail('home_path_unsupported', `the cua route cannot use a CUA_HOME containing ':' (${cuaHome}); nothing was changed`, {hint: 'use a CUA_HOME without \':\''});
+  let host = null;
+  try { host = join(realpathSync(checkout), 'src', 'chrome', 'host.mjs'); } catch {}
+  if (!host || !fileAt(host)) fail('host_missing', `${join(String(checkout), 'src', 'chrome', 'host.mjs')} is not there; nothing was changed`, {hint: 'run `cua chrome register` from a complete cua checkout'});
+  if (typeof nodePath !== 'string' || !isAbsolute(nodePath) || !fileAt(nodePath)) fail('node_missing', `the node executable ${nodePath} is not there; nothing was changed`);
+  const lock = acquireLock(cuaHome, lockTiming);
+  try {
+    return registerCuaLocked({cuaHome, host, nodePath, replace, table: browsers, io});
+  } finally {
+    releaseLock(lock);
+  }
+}
+
+function registerCuaLocked({cuaHome, host, nodePath, replace, table, io}) {
+  const launcher = launcherPath(cuaHome);
+  const desired = Buffer.from(manifestText(CUA_NATIVE_HOST, launcher));
+  const planned = slots({browsers: table, nativeHost: CUA_HOST_NAME, onlyPresent: true}).map(s => ({...s, slot: readCuaSlot(s.manifestPath, launcher)}));
+  if (!planned.length)
+    fail('no_supported_browser', `no ${searched(table)}`, {hint: 'open the browser once so it creates its profile, then run `cua chrome register` again'});
+  const refused = planned.filter(s => s.slot.state === 'unreadable');
+  if (refused.length) unreadable(refused, CUA_HOST_NAME, 'register');
+  const foreign = planned.filter(s => s.slot.state === 'foreign');
+  if (foreign.length && !replace) otherHome(foreign);
+
+  for (const dir of [backendDir(cuaHome), logDir(cuaHome)]) {
+    mkdirSync(dir, {recursive: true, mode: 0o700});
+    chmodSync(dir, 0o700);
+  }
+  writeAtomic(launcher, launcherText({home: cuaHome, nodePath, host}), {mode: 0o700, dirMode: 0o700});
+  const before = readCuaRecord(cuaHome);
+  const beforeAt = before ? writtenAt(cuaRecordFile(cuaHome)) : null;
+  const record = {schema: 1, route: 'cua', launcher, backendsDir: backendDir(cuaHome), browsers: {...before?.browsers}};
+  const backups = [];
+  for (const s of planned) {
+    const kept = record.browsers[s.browser];
+    if (s.slot.state === 'foreign') {
+      const backup = cuaBackupFile(cuaHome, s.browser);
+      writeAtomic(backup, s.slot.bytes, {mode: 0o600, dirMode: 0o700});
+      if (!readFileSync(backup).equals(s.slot.bytes)) fail('backup_failed', `the backup ${backup} does not match ${s.manifestPath}; nothing was replaced`);
+      backups.push(backup);
+      record.browsers[s.browser] = {manifestPath: s.manifestPath, previous: s.slot.previous, backupSha256: sha256(s.slot.bytes)};
+    } else if (!(s.slot.state === 'ours' && kept)) {
+      record.browsers[s.browser] = {manifestPath: s.manifestPath, previous: null};
+    }
+  }
+  writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify(record, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+
+  const rows = [];
+  const applied = [];
+  try {
+    for (const s of planned) {
+      const entry = record.browsers[s.browser];
+      const row = {browser: s.browser, manifestPath: s.manifestPath, previous: entry.previous};
+      if (s.slot.state === 'ours' && s.slot.bytes.equals(desired)) { rows.push({...row, action: 'unchanged'}); continue; }
+      if (s.slot.state === 'absent') {
+        if (!publish(s.manifestPath, desired, io)) contended(s.manifestPath);
+        applied.push({...s, prior: null});
+        rows.push({...row, action: 'placed'});
+        continue;
+      }
+      const aside = take(s.manifestPath, s.slot.bytes, io);
+      if (!aside) contended(s.manifestPath);
+      const placed = withTaken(aside, s.manifestPath, io, () => publish(s.manifestPath, desired, io));
+      rmSync(aside, {force: true});
+      if (!placed) contended(s.manifestPath);
+      applied.push({...s, prior: s.slot.bytes});
+      rows.push(s.slot.state === 'ours' ? {...row, action: 'updated'} : {...row, action: 'replaced', backup: cuaBackupFile(cuaHome, s.browser)});
+    }
+  } catch (error) {
+    throw undoCuaRun(error, applied, {cuaHome, before, beforeAt, backups, desired, io});
+  }
+  return {launcher, backendsDir: backendDir(cuaHome), browsers: rows};
+}
+
+// Undoes this run's manifest writes, newest first, putting back what was there; with every one undone the record is
+// what it was before the run (and this run's backups go), otherwise the run's record and backups are kept for
+// `cua chrome unregister` and the error is registration_partial naming what is left.
+function undoCuaRun(error, applied, {cuaHome, before, beforeAt, backups, desired, io}) {
+  const left = [];
+  for (const change of [...applied].reverse()) {
+    try {
+      const aside = take(change.manifestPath, desired, io);
+      if (!aside) { left.push(`${change.browser} (${change.manifestPath} changed meanwhile)`); continue; }
+      if (change.prior) withTaken(aside, change.manifestPath, io, () => publish(change.manifestPath, change.prior, io) || fail('registration_contended', `${change.manifestPath} was written meanwhile`));
+      rmSync(aside, {force: true});
+    } catch (undoError) {
+      left.push(`${change.browser} (${change.manifestPath}: ${undoError.code ?? undoError.message})`);
+    }
+  }
+  if (left.length)
+    return new CuaError('registration_partial', `${error.message.replace(/ Nothing was changed\.$/, '')} (${error.code ?? 'error'}); cua could not undo what this run registered in ${left.join('; ')}`,
+      {hint: 'run `cua chrome unregister` to remove cua\'s remaining registrations (it restores what cua replaced from the kept backup)', cause: error});
+  try {
+    if (before) {
+      writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify(before, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+      restoreWrittenAt(cuaRecordFile(cuaHome), beforeAt);
+    }
+    else rmSync(cuaRecordFile(cuaHome), {force: true});
+    for (const backup of backups) rmSync(backup, {force: true});
+  } catch {}
+  if (applied.length) error.message += `; cua undid what it had registered earlier in this run (${applied.map(c => c.browser).join(', ')})`;
+  return error;
+}
+
+// -> {launcher, browsers: [{browser, manifestPath, action: absent|not_ours|removed|restored, restoration?, previous?,
+//    backup?, reason?, userAction?}], blocked}
+export function unregisterCuaHost({home, browsers = browsersFor(), io = FS, lockTiming = LOCK_TIMING}) {
+  const cuaHome = realHome(home);
+  const lock = acquireLock(cuaHome, lockTiming);
+  try {
+    return unregisterCuaLocked({cuaHome, table: browsers, io});
+  } finally {
+    releaseLock(lock);
+  }
+}
+
+function unregisterCuaLocked({cuaHome, table, io}) {
+  const launcher = launcherPath(cuaHome);
+  const record = readCuaRecord(cuaHome);
+  const all = slots({browsers: table, nativeHost: CUA_HOST_NAME, onlyPresent: false}).map(s => ({...s, slot: readCuaSlot(s.manifestPath, launcher)}));
+  const refused = all.filter(s => s.slot.state === 'unreadable');
+  if (refused.length) unreadable(refused, CUA_HOST_NAME, 'unregister');
+  const rows = all.map(s => {
+    const row = {browser: s.browser, manifestPath: s.manifestPath};
+    try {
+      return unregisterCuaSlot(s, row, {cuaHome, entry: record?.browsers[s.browser], io});
+    } catch (error) {
+      const still = readCuaSlot(s.manifestPath, launcher).state === 'ours';
+      return {...row, action: still ? 'not_removed' : 'removed', restoration: 'blocked', reason: `${error.message} while unregistering ${s.manifestPath}`,
+        userAction: error.code === 'manifest_rollback_failed' ? `${error.hint}; then run \`cua chrome unregister\` again` : 'fix the cause and run `cua chrome unregister` again'};
+    }
+  });
+  const blocked = rows.filter(r => r.restoration === 'blocked');
+  if (blocked.length) {
+    if (record) {
+      const at = writtenAt(cuaRecordFile(cuaHome));
+      writeAtomic(cuaRecordFile(cuaHome), `${JSON.stringify({...record, browsers: Object.fromEntries(blocked.filter(r => record.browsers[r.browser]).map(r => [r.browser, record.browsers[r.browser]]))}, null, 2)}\n`, {mode: 0o600, dirMode: 0o700});
+      restoreWrittenAt(cuaRecordFile(cuaHome), at);
+    }
+  } else {
+    rmSync(cuaRecordFile(cuaHome), {force: true});
+    rmSync(launcher, {force: true});
+    try { rmdirSync(cuaBackupDir(cuaHome)); } catch {}
+  }
+  return {launcher, browsers: rows, blocked: blocked.length > 0};
+}
+
+function unregisterCuaSlot(s, row, {cuaHome, entry, io}) {
+  if (s.slot.state === 'absent') return {...row, action: 'absent'};
+  if (s.slot.state === 'foreign') return {...row, action: 'not_ours', previous: s.slot.previous};
+  const previous = entry?.previous ?? null;
+  const backup = cuaBackupFile(cuaHome, s.browser);
+  const aside = take(s.manifestPath, s.slot.bytes, io);
+  if (!aside) contended(s.manifestPath);
+  if (typeof entry?.backupSha256 !== 'string') {
+    rmSync(aside, {force: true});
+    return {...row, action: 'removed', restoration: 'not_needed', previous};
+  }
+  let saved = null;
+  try { saved = readFileSync(backup); } catch {}
+  const reregister = previous ? `register the previous host again yourself: run \`cua chrome register\` in the cua home whose launcher is ${previous}` : `inspect ${backup}; if it is the previous manifest, copy it to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}")`;
+  if (!saved || sha256(saved) !== entry.backupSha256) {
+    rmSync(aside, {force: true});
+    return {...row, action: 'removed', restoration: 'blocked', previous,
+      reason: saved ? `the backup ${backup} does not match what cua recorded backing up; it was kept, not restored` : `the backup ${backup} is missing`, userAction: reregister};
+  }
+  const placed = withTaken(aside, s.manifestPath, io, () => publish(s.manifestPath, saved, io));
+  rmSync(aside, {force: true});
+  if (!placed)
+    return {...row, action: 'removed', restoration: 'blocked', previous, reason: `another program wrote ${s.manifestPath} while cua was restoring it; that manifest was left as it is and the backup ${backup} was kept`, userAction: `check which host ${s.manifestPath} names; if it is not the one you want, copy ${backup} to ${s.manifestPath}`};
+  let restored = null;
+  try { restored = readFileSync(s.manifestPath); } catch {}
+  if (!restored?.equals(saved))
+    return {...row, action: 'restored', restoration: 'blocked', previous, reason: `${s.manifestPath} does not read back as the backup; the backup and its record were kept`, userAction: `copy ${backup} to ${s.manifestPath} (cp "${backup}" "${s.manifestPath}")`};
+  rmSync(backup, {force: true});
+  return {...row, action: 'restored', restoration: 'restored', previous, backup};
+}
+
+// The route is whichever record was written last (route.mjs), so a record rewrite that is not a registration (an undo,
+// a blocked unregister keeping its entries) puts back the time the record had, and the route stays where it was.
+const writtenAt = path => { try { const {atimeMs, mtimeMs} = statSync(path); return {atimeMs, mtimeMs}; } catch { return null; } };
+function restoreWrittenAt(path, at) {
+  if (at) try { utimesSync(path, at.atimeMs / 1000, at.mtimeMs / 1000); } catch {}
+}
+
+// `cua chrome unregister --vendor`: the vendor route's unregisterHost, keeping the time its record was written (a
+// partly blocked unregister rewrites the record with the blocked browsers' entries; that is no registration).
+export function unregisterVendorHost(options) {
+  const file = recordFile(realHome(options.home));
+  const at = writtenAt(file);
+  try { return unregisterHost(options); } finally { restoreWrittenAt(file, at); }
+}
+
+// `cua chrome register --vendor` ran last: its record counts as the newer one (route.mjs), even when it changed no
+// manifest and so did not rewrite the record.
+export function chooseVendorRoute(home) {
+  const cuaHome = realHome(home);
+  let cuaWritten = 0;
+  try { cuaWritten = statSync(cuaRecordFile(cuaHome)).mtimeMs; } catch {}
+  // Strictly after the cua record, whatever the clock's and the filesystem's resolution.
+  const at = new Date(Math.max(Date.now(), Math.ceil(cuaWritten) + 1));
+  try { utimesSync(recordFile(cuaHome), at, at); } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
 }

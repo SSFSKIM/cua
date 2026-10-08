@@ -10,6 +10,7 @@
 //                                   BROWSER_USE_DISABLE_AMBIENT_NETWORK=1 suppresses telemetry and identity initialization
 //   browser-service.mjs:17686-17735 the extension request-header policy reads the identity promise, which that switch
 //                                   leaves unset (cn() stops jm); normal-network identity behaviour is NOT measured here
+//                                   (S0's no-header.mjs measures it, through vendorEnv's `network` parameter)
 import {spawn, spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {mkdirSync, realpathSync, rmSync} from 'node:fs';
@@ -19,7 +20,7 @@ import {resolveRuntime} from '../../../src/runtime/manifest.mjs';
 import {startFixture} from './fixture.mjs';
 import {backendInfo, NO_HANDLER} from './adapter.mjs';
 
-const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
+export const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const CONFIGS = [
   {label: 'extension', kind: 'extension', info: backendInfo('extension')},
@@ -30,7 +31,12 @@ const CONFIGS = [
 
 // Built from an explicit allowlist: an inherited PLAYWRIGHT_MCP_EXTENSION_TOKEN, BROWSER_USE_*, NODE_REPL_* or SKY_*
 // value can never reach the child, and nothing here reads one.
-export function vendorEnv({ambient, paths, codexHome, backendPath}) {
+// `network`: 'off' (M7's runs) sets BROWSER_USE_DISABLE_AMBIENT_NETWORK=1; 'default' leaves the vendor's own network
+// behaviour, as production `cua serve` does (S0 measures both). `availableBackends` mirrors production's
+// BROWSER_USE_AVAILABLE_BACKENDS when given.
+export const NETWORKS = ['default', 'off'];
+export function vendorEnv({ambient, paths, codexHome, backendPath, network = 'off', availableBackends}) {
+  if (!NETWORKS.includes(network)) throw new Error(`network must be one of ${NETWORKS.join(', ')}; got ${network}`);
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
   return Object.assign(env, {
@@ -45,7 +51,8 @@ export function vendorEnv({ambient, paths, codexHome, backendPath}) {
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: paths.codexCli,
     BROWSER_USE_BACKEND_PATHS: backendPath,
-    BROWSER_USE_DISABLE_AMBIENT_NETWORK: '1',
+    ...(network === 'off' ? {BROWSER_USE_DISABLE_AMBIENT_NETWORK: '1'} : {}),
+    ...(availableBackends ? {BROWSER_USE_AVAILABLE_BACKENDS: availableBackends} : {}),
   });
 }
 
@@ -59,7 +66,7 @@ function answerElicitation(params, approveOrigin, record) {
   return approve ? {action: 'accept', content: {}} : {action: 'decline'};
 }
 
-function mcpClient(child, transcript, {approveOrigin, elicitations}) {
+export function mcpClient(child, transcript, {approveOrigin, elicitations}) {
   let nextId = 0;
   const pending = new Map();
   const send = msg => child.stdin.write(JSON.stringify(msg) + '\n');
@@ -86,7 +93,7 @@ function mcpClient(child, transcript, {approveOrigin, elicitations}) {
 }
 
 // Each cell writes one "M7RESULT <json>" line; vendor output (documentation, banners) is never stored.
-const cell = body => `globalThis.__m7 ??= {};
+export const cell = body => `globalThis.__m7 ??= {};
 const __out = {};
 try { ${body} } catch (e) { __out.error = String(e?.message ?? e).slice(0, 400); }
 nodeRepl.write("M7RESULT " + JSON.stringify(__out));`;
@@ -118,62 +125,87 @@ async function runConfig({runtime, home, config, sentinels, ambient}) {
 
   const env = vendorEnv({ambient, paths: runtime.paths, codexHome, backendPath: socketPath});
   const out = {label: config.label, rawInfo: config.info, envKeys: Object.keys(env).sort(), cells: {}, elicitations: [], stderrBytes: 0, ...(config.approveOrigin ? {approveOrigin: config.approveOrigin} : {})};
-  const transcript = [];
-  let stderr = '';
-  const child = spawn(runtime.paths.node, [runtime.paths.cuaRepl], {env, cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: true});
-  child.stderr.on('data', d => { stderr += d; if (stderr.length > 1 << 20) stderr = stderr.slice(-(1 << 20)); });
-  let exitInfo = null;
-  const exited = new Promise(resolve => child.on('exit', (code, signal) => { exitInfo = {code, signal}; resolve(exitInfo); }));
-  const client = mcpClient(child, transcript, {approveOrigin: config.approveOrigin, elicitations: out.elicitations});
-  const sessionId = randomUUID();
-  const turnId = randomUUID();
-  const meta = () => {
-    const callId = randomUUID();
-    return {callId, threadId: sessionId, sessionId, 'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: turnId, call_id: callId, model: 'm7-probe'}};
-  };
+  const vendor = launchVendor({runtime, env, cwd, label: 'm7', approveOrigin: config.approveOrigin, elicitations: out.elicitations});
   try {
-    const init = await client.request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-m7-probe', version: '0'}}, 120_000);
-    client.notify('notifications/initialized', {});
-    const tools = await client.request('tools/list', {}, 30_000);
+    const {init, tools} = await vendor.handshake();
     const js = tools.tools.find(t => t.name === 'js');
     out.handshake = {serverName: init.serverInfo?.name ?? null, tools: tools.tools.map(t => t.name).sort(), jsDescriptionChars: js?.description?.length ?? 0,
       browserSurfaceDocumented: /createBrowserTab/.test(js?.description ?? ''), computerSurfaceDocumented: /getApp\(/.test(js?.description ?? '')};
     for (const [name, code] of CELLS) {
       const started = fixture.backend.frames.length;
-      try {
-        const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: 45_000}, _meta: meta()}, 90_000);
-        const text = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('\n');
-        const marker = text.match(/M7RESULT (\{.*\})/);
-        out.cells[name] = {isError: result.isError === true, result: marker ? JSON.parse(marker[1]) : null, ...(marker ? {} : {unmarkedChars: text.length})};
-      } catch (e) { out.cells[name] = {probeError: e.message}; }
+      try { out.cells[name] = await vendor.callCell(code); } catch (e) { out.cells[name] = {probeError: e.message}; }
       out.cells[name].backendMethods = fixture.backend.frames.slice(started).filter(f => f.direction === 'client->backend').map(f => f.method ?? (f.decodeError ? 'decode-error' : 'reply'));
     }
     const before = fixture.backend.frames.length;
-    try {
-      const ended = await client.request('tools/call', {name: 'turn_ended', arguments: {hook_event_name: 'Stop', session_id: sessionId, turn_id: turnId}, _meta: meta()}, 30_000);
-      out.turnEnded = {isError: ended.isError === true};
-    } catch (e) { out.turnEnded = {probeError: e.message}; }
+    try { out.turnEnded = await vendor.endTurn(); } catch (e) { out.turnEnded = {probeError: e.message}; }
     await sleep(200);
     const turnFrame = fixture.backend.frames.slice(before).find(f => f.method === 'turnEnded');
     out.turnEnded.backendFrame = turnFrame ?? null;
   } catch (e) {
     out.error = e.message;
   } finally {
-    child.stdin.end();
-    if (!(await Promise.race([exited, sleep(5000).then(() => null)]))) {
-      if (!exitInfo) { try { process.kill(-child.pid, 'SIGTERM'); out.teardownSignal = 'SIGTERM'; } catch {} }
-      if (!(await Promise.race([exited, sleep(5000).then(() => null)])) && !exitInfo) { try { process.kill(-child.pid, 'SIGKILL'); out.teardownSignal = 'SIGKILL'; } catch {} await exited; }
-    }
-    // Group members can outlive the launcher; signal the group we created only while a member remains.
-    if (spawnSync('pgrep', ['-g', String(child.pid)]).status === 0) { try { process.kill(-child.pid, 'SIGTERM'); out.groupStragglersSignalled = true; } catch {} }
-    out.exit = exitInfo;
-    out.stderrBytes = Buffer.byteLength(stderr);
+    Object.assign(out, await vendor.stop());
+    out.stderrBytes = Buffer.byteLength(vendor.stderr());
     out.frames = fixture.backend.frames;
     out.extensionCommands = fixture.extension.commands.map(c => ({method: c.method, ...(c.cdp ? {cdp: c.cdp} : {}), ...(c.debuggee ? {debuggee: Object.keys(c.debuggee).sort()} : {})}));
     out.adapterState = fixture.adapter.state();
     await fixture.close();
   }
-  return {out, scanTexts: [stderr, transcript.join('\n'), JSON.stringify(fixture.backend.frames), JSON.stringify(fixture.adapter.events)], scanRoots: [codexHome, cwd]};
+  return {out, scanTexts: [vendor.stderr(), vendor.transcript.join('\n'), JSON.stringify(fixture.backend.frames), JSON.stringify(fixture.adapter.events)], scanRoots: [codexHome, cwd]};
+}
+
+// One launch of the relocated vendor runtime (browser surface) with `env` in `cwd`, shared by every --vendor layer: the
+// child in its own process group, stderr kept (last 1 MiB), the MCP client, one session id and one turn id for every
+// call. handshake() runs initialize/initialized/tools-list; callCell(code) runs one `js` cell and parses its
+// "M7RESULT <json>" line ({isError, result} or {isError, result: null, unmarkedChars}); endTurn() is the hidden
+// turn_ended completion; stop() ends the group (stopVendor). Transport failures throw; callers record them.
+export function launchVendor({runtime, env, cwd, label, approveOrigin, elicitations = []}) {
+  const transcript = [];
+  let stderr = '';
+  const child = spawn(runtime.paths.node, [runtime.paths.cuaRepl], {env, cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: true});
+  child.stderr.on('data', d => { stderr += d; if (stderr.length > 1 << 20) stderr = stderr.slice(-(1 << 20)); });
+  let exitInfo = null;
+  const exited = new Promise(resolve => child.on('exit', (code, signal) => { exitInfo = {code, signal}; resolve(exitInfo); }));
+  const client = mcpClient(child, transcript, {approveOrigin, elicitations});
+  const sessionId = randomUUID(), turnId = randomUUID();
+  const meta = () => {
+    const callId = randomUUID();
+    return {callId, threadId: sessionId, sessionId, 'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: turnId, call_id: callId, model: `${label}-probe`}};
+  };
+  return {
+    child, sessionId, turnId, transcript,
+    stderr: () => stderr,
+    async handshake() {
+      const init = await client.request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: `cua-${label}-probe`, version: '0'}}, 120_000);
+      client.notify('notifications/initialized', {});
+      return {init, tools: await client.request('tools/list', {}, 30_000)};
+    },
+    async callCell(code) {
+      const result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: 45_000}, _meta: meta()}, 90_000);
+      const text = (result.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+      const marker = text.match(/M7RESULT (\{.*\})/);
+      return {isError: result.isError === true, result: marker ? JSON.parse(marker[1]) : null, ...(marker ? {} : {unmarkedChars: text.length})};
+    },
+    async endTurn() {
+      const ended = await client.request('tools/call', {name: 'turn_ended', arguments: {hook_event_name: 'Stop', session_id: sessionId, turn_id: turnId}, _meta: meta()}, 30_000);
+      return {isError: ended.isError === true};
+    },
+    stop: () => stopVendor(child, exited, () => exitInfo),
+  };
+}
+
+// Closes the launcher's stdin, then escalates SIGTERM/SIGKILL on the process group we created only while it lives.
+export async function stopVendor(child, exited, exitInfo) {
+  const out = {};
+  child.stdin.end();
+  if (!(await Promise.race([exited, sleep(5000).then(() => null)]))) {
+    if (!exitInfo()) { try { process.kill(-child.pid, 'SIGTERM'); out.teardownSignal = 'SIGTERM'; } catch {} }
+    if (!(await Promise.race([exited, sleep(5000).then(() => null)])) && !exitInfo()) { try { process.kill(-child.pid, 'SIGKILL'); out.teardownSignal = 'SIGKILL'; } catch {} await exited; }
+  }
+  // Group members can outlive the launcher; signal the group we created only while a member remains.
+  if (spawnSync('pgrep', ['-g', String(child.pid)]).status === 0) { try { process.kill(-child.pid, 'SIGTERM'); out.groupStragglersSignalled = true; } catch {} }
+  out.exit = exitInfo();
+  return out;
 }
 
 const status = (pass, blocked) => pass ? 'PASS' : blocked ? 'BLOCKED' : 'FAIL';

@@ -5,11 +5,15 @@
 # (a new CUA_REF in the conf moves the checkout). The parameters (render.sh writes them):
 #   CUA_USER     the desktop user the agent works as (autologin on :0, owns the checkout and cua's home)
 #   CUA_REF      the git ref of CUA_REPO checked out at /opt/cua
-#   CUA_REPO     the repository (https://github.com/SSFSKIM/cua)
+#   CUA_REPO     the repository (https://github.com/SSFSKIM/cua), or `upload`: a git bundle holding CUA_REF that the
+#                operator copies to /var/cache/cua/cua.bundle (the script waits up to CUA_DEB_WAIT seconds for it)
 #   CUA_DEB      where the pinned ChatGPT deb comes from: `pin` (the pin's own URL), an https URL (a mirror; the bytes
 #                must still match the pin), or `upload` (the operator copies it to /var/cache/cua/upload.deb; the
 #                script waits up to CUA_DEB_WAIT seconds for it, then stops at that step)
 #   CUA_RELAY    optional wss:// relay URL: enrol the device there and install the agent as a systemd user unit
+#   CUA_EXTENSION      where Chrome force-installs cua's extension from: `hosted` (default), the self-hosted CRX named
+#                      by CUA_EXTENSION_URL's update manifest, or `store` (the Chrome Web Store listing)
+#   CUA_EXTENSION_URL  the hosted update manifest (default the relay's /ext/update.xml, relay/deploy/update.sh --ext)
 # Results: /var/log/cua-provision.json is `cua doctor --json` at the end, /var/lib/cua-provision/checklist.txt the
 # owner's remaining steps (also printed), /var/log/cua-provision.log this script's output. Nothing it prints or logs is
 # a credential: a relay enrolment's client credential goes only to /root/cua-enrollment.json (0600).
@@ -21,17 +25,23 @@ conf=/etc/cua-provision.conf
 . "$conf"
 : "${CUA_USER:?} ${CUA_REF:?} ${CUA_REPO:?} ${CUA_DEB:?}"
 CUA_RELAY="${CUA_RELAY:-}" CUA_DEB_WAIT="${CUA_DEB_WAIT:-3600}"
+CUA_EXTENSION="${CUA_EXTENSION:-hosted}" CUA_EXTENSION_URL="${CUA_EXTENSION_URL:-https://178-104-102-73.sslip.io/ext/update.xml}"
 
 state=/var/lib/cua-provision
 mkdir -p "$state" /var/cache/cua
 exec > >(tee -a /var/log/cua-provision.log) 2>&1
 started=$SECONDS
 log() { printf '[cua-provision +%ss] %s\n' "$((SECONDS - started))" "$*"; }
-log "start $(date -u +%FT%TZ): user $CUA_USER, ref $CUA_REF, deb $CUA_DEB, relay ${CUA_RELAY:-none}"
+log "start $(date -u +%FT%TZ): user $CUA_USER, ref $CUA_REF, deb $CUA_DEB, relay ${CUA_RELAY:-none}, extension $CUA_EXTENSION"
 
 export DEBIAN_FRONTEND=noninteractive
 arch="$(dpkg --print-architecture)"   # amd64 or arm64
-EXTENSION_ID=hehggadaopoacecdllhhajmbjkdcmajg   # OpenAI's ChatGPT extension (the pins' nativeHost.extensionIds[0])
+EXTENSION_ID=jkejaaijdfpohkdhankllbekkhmnippb   # cua's own extension (CUA_EXTENSION_ID, src/chrome/extension.mjs)
+case "$CUA_EXTENSION" in
+  hosted) extension_update_url="$CUA_EXTENSION_URL" ;;
+  store) extension_update_url=https://clients2.google.com/service/update2/crx ;;
+  *) echo "CUA_EXTENSION is hosted or store: $CUA_EXTENSION" >&2; exit 1 ;;
+esac
 
 # apt waits for the first boot's unattended-upgrades instead of failing on its lock (NodeSource's script included).
 echo 'DPkg::Lock::Timeout "900";' >/etc/apt/apt.conf.d/90cua-provision-lock
@@ -72,9 +82,11 @@ SRC
   apt-get update -q
   apt-get install -y -q google-chrome-stable
 fi
-# The extension in every profile, by policy (installed from the Chrome Web Store the first time Chrome runs).
+# cua's extension in every profile, by policy: Chrome installs it from the update URL when a profile loads and picks a
+# changed file up while it runs. This file is the whole ExtensionInstallForcelist (Chrome does not merge one policy set
+# by several files in this directory: the last one wins), so an extension listed only elsewhere is not installed.
 mkdir -p /etc/opt/chrome/policies/managed
-printf '{"ExtensionInstallForcelist": ["%s;https://clients2.google.com/service/update2/crx"]}\n' "$EXTENSION_ID" \
+printf '{"ExtensionInstallForcelist": ["%s;%s"]}\n' "$EXTENSION_ID" "$extension_update_url" \
   >/etc/opt/chrome/policies/managed/cua.json
 # Chrome's web contents reach AT-SPI only with --force-renderer-accessibility. `google-chrome` on PATH (what the session,
 # `cua profiles open` and a terminal start) is this wrapper. --password-store=basic: the autologin session has no
@@ -175,7 +187,7 @@ xset s noblank
 dbus-update-activation-environment --systemd DISPLAY XAUTHORITY
 # own org.a11y.Bus on the session bus now rather than on first use
 /usr/libexec/at-spi-bus-launcher --launch-immediately &
-# Chrome in its Default profile, so the extension (installed by policy) starts cua's native host
+# Chrome in its Default profile, so cua's extension (installed by policy) starts cua's native host
 google-chrome --profile-directory=Default &
 CONF
 if ! printf '%s' "$autostart" | as_user cmp -s - "$home/.config/openbox/autostart"; then
@@ -192,12 +204,25 @@ elif ((changed)); then
   systemctl restart lightdm
 fi
 
-# 7. The cua checkout at /opt/cua, owned by the user, at CUA_REF; `cua` on PATH.
-if [[ ! -d /opt/cua/.git ]]; then
-  log "clone $CUA_REPO"
-  install -d -o "$CUA_USER" -g "$CUA_USER" /opt/cua
-  as_user git clone -q "$CUA_REPO" /opt/cua
+# 7. The cua checkout at /opt/cua, owned by the user, at CUA_REF from CUA_REPO (origin follows the conf); `cua` on PATH.
+repo="$CUA_REPO"
+if [[ "$CUA_REPO" == upload ]]; then
+  # The operator copies the bundle to /var/cache/cua/cua.bundle (create-hetzner.sh --repo does, and touches
+  # cua.bundle.failed when its copy fails); it stays there as origin for later runs.
+  repo=/var/cache/cua/cua.bundle
+  log "waiting up to ${CUA_DEB_WAIT}s for $repo (copied there by the operator)"
+  for _ in $(seq "$((CUA_DEB_WAIT / 5))"); do [[ -f "$repo" || -e "$repo.failed" ]] && break; sleep 5; done
+  if [[ -e "$repo.failed" || ! -f "$repo" ]]; then
+    rm -f "$repo.failed"; echo "no git bundle at $repo: copy it there, then run cua-provision.sh again" >&2; exit 1
+  fi
+  chmod 0644 "$repo"
 fi
+if [[ ! -d /opt/cua/.git ]]; then
+  log "clone $repo"
+  install -d -o "$CUA_USER" -g "$CUA_USER" /opt/cua
+  as_user git clone -q "$repo" /opt/cua
+fi
+as_user git -C /opt/cua remote set-url origin "$repo"
 as_user git -C /opt/cua fetch -q origin "$CUA_REF"
 if [[ "$(as_user git -C /opt/cua rev-parse HEAD)" != "$(as_user git -C /opt/cua rev-parse FETCH_HEAD)" ]]; then
   as_user git -C /opt/cua checkout -q --detach FETCH_HEAD
@@ -218,14 +243,8 @@ checklist() { # the owner's steps, written for create-hetzner.sh and printed
   {
     echo "cua device $(hostname) ($ip): the owner's steps"
     if [[ -n "${1:-}" ]]; then echo "  !! provisioning stopped early: $1"; fi
-    step "Sign in to ChatGPT in the VM's Chrome (profile Default). See the screen through an SSH tunnel:"
-    echo "       ssh -t -o ExitOnForwardFailure=yes -L 5901:localhost:5900 $CUA_USER@$ip 'p=\$(head -c6 /dev/urandom | base64); echo \"VNC password: \$p\"; x11vnc -display :0 -localhost -once -quiet -passwd \"\$p\"'"
-    echo "     then open vnc://localhost:5901 with that one-time password (or use the provider's web console)."
-    echo "     In Chrome sign in at https://chatgpt.com, then open the ChatGPT extension (puzzle icon) and sign in"
-    echo "     there if it asks."
-    step "Sign the cua server in to Codex:  ssh -t $CUA_USER@$ip cua login --device-auth   (the URL and code open on any machine)"
     if ((${bound:-0} == 0)); then
-      step "Bind the profile once Chrome runs with the extension:  ssh $CUA_USER@$ip cua profiles bind me   (cua profiles list: me ready)"
+      step "Bind the profile once Chrome runs with the cua extension:  ssh $CUA_USER@$ip cua profiles bind me   (cua profiles list: me ready)"
     fi
     if [[ -n "$CUA_RELAY" ]]; then
       step "Add the device to the relay's table. Its devices.json line:  ssh $CUA_USER@$ip cua remote show"
@@ -234,7 +253,8 @@ checklist() { # the owner's steps, written for create-hetzner.sh and printed
       step "On the client: store the credential with /secret <clientSecretKey> (the value is clientCredential in"
       echo "     ssh root@$ip cat /root/cua-enrollment.json), then run its devicesAddCommand (both in that file)."
     fi
-    echo "  Check: ssh $CUA_USER@$ip DISPLAY=:0 cua doctor   (codex.login passes once the server is signed in)"
+    if ((n == 0)); then echo "  none: the device is ready (no ChatGPT or Codex sign-in is needed)"; fi
+    echo "  Check: ssh $CUA_USER@$ip DISPLAY=:0 cua doctor   (codex.login reads skip: cua's extension route needs no Codex login)"
   } >"$state/checklist.txt"
 }
 doctor() {
@@ -283,22 +303,29 @@ if [[ ! -f "$deb" ]]; then
 fi
 chmod 0644 "$deb"
 
-# 9. cua: install the release (a no-op when it is installed), register the Chrome host, register the profile.
+# 9. cua: install the release (a no-op when it is installed; the vendor's service still drives the browser), register
+# cua's Chrome host (the cua route: io.github.ssfskim.cua names the launcher in cua's home), register the profile.
 log "cua install $release"
 as_user cua install --archive "$deb" --json | jq -c '{ok, release, source, changed}'
 as_user cua chrome register
 log "waiting for Chrome's Default profile and the extension"
-for _ in $(seq 60); do [[ -d "$home/.config/google-chrome/Default/Extensions/$EXTENSION_ID" ]] && break; sleep 5; done
+profile_dir="$home/.config/google-chrome/Default"
+for _ in $(seq 60); do
+  [[ -d "$profile_dir/Extensions/$EXTENSION_ID" || -d "$profile_dir/Local Extension Settings/$EXTENSION_ID" ]] && break
+  sleep 5
+done
 if [[ -d "$home/.config/google-chrome/Default" ]]; then
   added="$(as_user cua profiles add me --chrome-profile Default 2>&1)" || grep -q profile_exists <<<"$added" || { echo "$added" >&2; exit 1; }
   echo "$added"
 else
   log "Chrome's Default profile does not exist yet (is the desktop up?); cua profiles add me waits for a re-run"
 fi
-# The extension starts cua's host by itself, signed in or not (F2), a little after the registration. Binding `me` needs
-# that live host and nothing from the owner; where it fails, the checklist keeps it.
+# The extension starts cua's host by itself (it retries every 5 s until the registration is there), and the host
+# listens on a socket in cua's home. Binding `me` needs that live host and nothing from the owner; where it fails, the
+# checklist keeps it.
 log "waiting for the extension's host, then cua profiles bind me"
-for _ in $(seq 45); do pgrep -u "$CUA_USER" -f "/chrome-plugin/extension-host/linux/" >/dev/null && break; sleep 2; done
+# shellcheck disable=SC2016  # $HOME expands in the user's shell
+for _ in $(seq 45); do as_user sh -c 'ls "$HOME"/.local/share/cua/chrome/b/*.sock' >/dev/null 2>&1 && break; sleep 2; done
 bound=0
 if as_user cua profiles bind me; then bound=1; fi
 

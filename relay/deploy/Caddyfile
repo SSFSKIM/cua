@@ -15,6 +15,14 @@
 			flush_interval -1
 		}
 	}
+	# The self-hosted cua extension (update.sh --ext): update.xml and the CRX it names, which Linux VMs force-install
+	# through Chrome's ExtensionInstallForcelist policy. Static files only; nothing else is served from there.
+	handle_path /ext/* {
+		root * /var/lib/cua-relay/ext
+		@crx path *.crx
+		header @crx Content-Type application/x-chrome-extension
+		file_server
+	}
 	handle {
 		respond "cua-relay" 200
 	}

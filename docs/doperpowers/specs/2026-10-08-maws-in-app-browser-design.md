@@ -26,13 +26,13 @@ extensions bar, profile avatar, profile settings as a widget or sidebar tab) are
   and launch-environment code; owner requirements. Recorded on #13 (comment of 2026-10-08) and in Facts below.
 - [x] (2026-10-08) Design approved by the owner (scope, retained semantics, distribution, tab placement, action-row
   granularity, download location, default browser).
-- [x] (2026-10-08 13:20) M1 — cua: the host's client mode, discovery of a MAWS backend, `profiles_list`'s `maws` entry
+- [x] (2026-10-08) M1 — cua: the host's client mode, discovery of a MAWS backend, `profiles_list`'s `maws` entry
   (c4f9c86, 0bd4190, fix ab7db6e; reviewed clean).
-- [x] (2026-10-08 18:10) M2 — MAWS: the primitive server over `TabStore` and `TabDebugger`; spikes S1 (dialogs) and S2
+- [x] (2026-10-08) M2 — MAWS: the primitive server over `TabStore` and `TabDebugger`; spikes S1 (dialogs) and S2
   (file chooser), both promoted (MAWS b5dec4aa..d1d9d910, fix e33bf014; cua 602391b; reviewed clean).
-- [x] (2026-10-08 23:40) M3 — MAWS: takeover, cursor, action rows, downloads, dialogs and file chooser per the spikes
+- [x] (2026-10-08) M3 — MAWS: takeover, cursor, action rows, downloads, dialogs and file chooser per the spikes
   (MAWS 46fdc6b9..3bdad848, fix 9be49224..be8e257b; cua 4ae0f10; reviewed clean).
-- [x] (2026-10-09 02:30) M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs
+- [x] (2026-10-08 16:12 PDT) M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs
   (MAWS ef3256b3..a04c83b5, fix 2e08cd75..82bdf2be; reviewed clean).
 - [ ] M5 — Live acceptance as written; plugin release; evidence.
 

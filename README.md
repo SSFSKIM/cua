@@ -367,6 +367,10 @@ live cannot be told) or `chrome_data_unreadable` (below). The live part is check
 is bound, `list` and the agent's `profiles_list` each make the same bounded launch as `bind` (below), without tab
 counts.
 
+Inside MAWS (`CUA_BROWSER_BACKENDS` set; see For MAWS), `list` and `profiles_list` show the session's in-app browser
+first, under the key `maws`, ready or `maws_unreachable`; it is never written to the registry, and the keys `maws`,
+`maws-2`, … are reserved: `cua profiles add maws` is refused with `reserved_key`. `bind` never offers a MAWS backend.
+
 On macOS 26 and later, Chrome's data directory (`~/Library/Application Support/Google/Chrome`) can be behind privacy
 protection: a terminal without Full Disk Access, and everything started from it (`cua serve` included), gets
 "Operation not permitted" there. cua then reports the file checks as unreadable, never as a missing extension:
@@ -1212,6 +1216,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 |---|---|---|
 | `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through cua's own extension and host, no login needed; or, until its removal, the ChatGPT extension route with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
+| `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
@@ -1273,6 +1278,42 @@ wait for a download learns where the file landed; downloads made while no agent 
 
 ## For MAWS
 
-MAWS does not load this as a plugin. It bundles `cua-shim.mjs` as an app resource and writes the same server entry
-into the `--mcp-config` it passes to Claude Code, so the agent's computer use does not depend on what is installed in
-the user's `~/.claude`.
+MAWS (the owner's Electron workstation for Claude Code sessions) runs its sessions' engine with the user's settings, so
+the agent there gets cua from the plugin installed in `~/.claude` like any other session; MAWS bundles nothing of cua.
+What MAWS adds is its in-app browser: the same vendor browser API that drives a Chrome profile drives the tabs of the
+session's Browser panel (spec `docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md`).
+
+The contract is one environment variable. MAWS serves the cua extension's primitives (the extension protocol, version 1,
+plus `profileName` in its hello and `cursor.move`) on one Unix socket per app session, in a 0700 directory under its
+user data, and passes that socket's path to the session's engine as `CUA_BROWSER_BACKENDS`; the engine, its subagents
+and the `cua serve` they start inherit it, and nothing else knows it: the path is the session's authorization.
+`CUA_BROWSER_BACKENDS` lists absolute socket paths separated by `:` (a relative one fails `cua serve` with
+`invalid_setting`); it is read with the browser surface only, by `cua serve` and by `cua profiles list`.
+
+For each configured socket, the process connects and runs cua's ordinary host over that connection, in the process
+itself (client mode): the host listens at `$CUA_HOME/chrome/m/<name>-<pid>.sock` while connected, and its status file
+(`chrome/b`) and log (`chrome/logs`) take the same name. Each process runs its own host, so a relaunched `cua serve`, a
+fork subagent's own server and `cua profiles list` work side by side on one MAWS session, and one exiting leaves the
+others' alone; nothing lists `chrome/m`, so a process only ever sees the hosts it opened and one MAWS session's tabs
+never reach another session. `cua serve` waits up to 5 s for each backend's hello before it launches the runtime; a
+refused or lost connection (MAWS quitting while the engine lives, MAWS relaunched) is retried every 5 s, and the host's
+path is listed to the vendor from the start, so a backend that comes back is found again without restarting anything.
+
+What the agent sees: `profiles_list` lists `maws` first (`maws-2`, … for further sockets), ready with its
+`extensionInstanceId` (`maws:<app session>`) while connected, else `maws_unreachable`; its description says that
+`cua.getBrowser()` with no id is the in-app browser and that a Chrome profile is used only when the user names one.
+cua's trusted browser wrapper enforces that default: a selection that names no browser (`cua.getBrowser()`,
+`cua.getBrowser({url})`) is rewritten to the first configured backend's instance, so while MAWS is away it fails with the
+vendor's own "Browser is not available" instead of landing in a Chrome profile; `cua.getBrowser({extensionInstanceId})`
+with a Chrome profile's id still drives that profile. MAWS's tabs show the agent's cursor (`moveMouse` reaches MAWS as
+`cursor.move`) and a page's `window.open` arrives as a tab the agent already owns (`tabs.adopted`). `cua doctor` lists the
+connected MAWS hosts in its `maws.hosts` row.
+
+Checks, from a terminal, against a running MAWS session (or, for everything but the page steps, the fake peer
+`node test/helpers/fake-maws-peer.mjs --listen <socket>`):
+
+```sh
+CUA_BROWSER_BACKENDS=<socket> node bin/cua.mjs profiles list          # maws  ready  —  extension instance maws:<id>
+CUA_BROWSER_BACKENDS=<socket> node scripts/accept/maws-features.mjs --report /tmp/maws-features.json [--other <socket of a second session>]
+CUA_HOME=<scratch home with the runtime> node scripts/accept/maws-selection.mjs   # the default selection, with fake peers only
+```

@@ -26,7 +26,8 @@ extensions bar, profile avatar, profile settings as a widget or sidebar tab) are
   and launch-environment code; owner requirements. Recorded on #13 (comment of 2026-10-08) and in Facts below.
 - [x] (2026-10-08) Design approved by the owner (scope, retained semantics, distribution, tab placement, action-row
   granularity, download location, default browser).
-- [ ] M1 — cua: the host's client mode, discovery of a MAWS backend, `profiles_list`'s `maws` entry.
+- [x] (2026-10-08 13:20) M1 — cua: the host's client mode, discovery of a MAWS backend, `profiles_list`'s `maws` entry
+  (c4f9c86, 0bd4190, fix ab7db6e; reviewed clean).
 - [ ] M2 — MAWS: the primitive server over `TabStore` and `TabDebugger`; spikes S1 (dialogs) and S2 (file chooser).
 - [ ] M3 — MAWS: takeover, cursor, action rows, downloads, dialogs and file chooser per the spikes.
 - [ ] M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs.
@@ -725,6 +726,11 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   runtime restart. The vendor shows `getInfo.metadata.profileName` as the profile name as is. `/tmp/codex-browser-use`
   on this Mac holds about 333 socket files, nearly all stale; the vendor route lists them all, as the vendor's own scan
   would.
+
+- (2026-10-08, M1) cua's trusted worker loads only modules under `src/services` and `src/secrets`: the wrapper's
+  `maws:` prefix check is inlined in `src/services/browser.mjs`, since an import from `src/chrome` passes unit tests and
+  fails in the live runtime. The vendor's browser matcher treats an id as a kind or family only when it is one of those
+  names, else matches the browser id exactly, so the `maws:` marker can never select a Chrome backend.
 
 ## Decision Log
 

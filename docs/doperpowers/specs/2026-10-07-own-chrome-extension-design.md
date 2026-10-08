@@ -42,6 +42,9 @@ extension built here is designed so that C reuses it unchanged.
       popup listed in the session without a claim, `accept-chrome --route cua` 40/40, vendor manifests unchanged
       (`docs/evidence/2026-10-07-foreign-frames-acceptance.md`). Rerun on the branch head with the review fixes
       (`d7970a5`) after an extension reload: 8/8, no detach, popup in the session, runner 40/40.
+- [x] (2026-10-08) #82 — the browser `viewport` capability in the host (Decision Log 2026-10-08). Host tests and the
+      H1 probe (`--vendor --backend host`, the pinned service offering `viewport` to the agent and its set/reset reaching
+      the tab as Emulation overrides) pass; the `accept-chrome --route cua` viewport cell is added, not yet run live.
 
 ## Facts this design rests on
 
@@ -199,15 +202,20 @@ answers the exact `No handler registered for method: <m>` string so the service 
 | User tabs | `getUserTabs`, `claimUserTab`, `getCommittedTabUrl` | `getUserTabs` lists tabs no session owns (id, title, url); `claimUserTab` leases the tab to the session for this turn and returns `{id, title?, url?}`; the service's origin-access elicitation happens before and is not the host's concern. `getCommittedTabUrl` returns the tab's current URL. |
 | Marking | `markTab {tabId, status}`, `nameSession {name}` | records `handoff`/`deliverable`; renames the session's group. |
 | No-op | `moveMouse` | Succeeds, does nothing. |
-| Fallback | `executeCdpWithCachedExpression`, `executeTabRead`, `followSessionTab`, `allowDownload`, `browserAuthNewTargetProtection`, `executeUnhandledCommand`, `getUserHistory` | `No handler registered for method: <m>` |
+| Viewport | `executeUnhandledCommand {type, browser_id, width?, height?}` | The browser `viewport` capability (#82): `browser_viewport_set {width, height}` (positive integers) keeps the size on the session's active tab — with no tab yet, for the first tab the turn attaches — and `browser_viewport_reset` clears it; both answer `{}`. The host sends `Emulation.setDeviceMetricsOverride {width, height, deviceScaleFactor:1, mobile:false}` to the tab debuggee at once when it is attached, after every attach and again on an attach of a tab already attached (`clearDeviceMetricsOverride` for a reset of an attached tab). Chrome drops the override with the debugger, so a tab released at turn end loses it and a handoff tab gets it back on the next turn's attach; frame targets get none. Any other `type` answers `cua does not support command "<type>".` (the ChatGPT extension's wording). |
+| Fallback | `executeCdpWithCachedExpression`, `executeTabRead`, `followSessionTab`, `allowDownload`, `browserAuthNewTargetProtection`, `getUserHistory` | `No handler registered for method: <m>` |
 | Notifications sent | `onCDPEvent {source:{tabId, sessionId?, targetId?}, method, params}`, `onCDPDetach {tabId, reason}` | Every `chrome.debugger` event/detach for a debuggee a session owns, to that session's client. `onPageEvent`, `onDownloadChange` never. |
 
-**What differs from the vendor backend, by design:** `getInfo.capabilities` is `{browser:[], tab:[]}` (no viewport,
-management, page assets or WebMCP), `getUserHistory`/bookmarks/top sites answer `No handler`, there is no cursor
-overlay, and `profileName` is not labelled by the vendor (cua's directory map labels bind candidates instead).
+**What differs from the vendor backend, by design:** `getInfo.capabilities` is `{browser:[viewport], tab:[]}` (the
+viewport override is supported since #82; no browser management, page assets or WebMCP), `getUserHistory`/bookmarks/top
+sites answer `No handler`, there is no cursor overlay, and `profileName` is not labelled by the vendor (cua's directory
+map labels bind candidates instead). The viewport differs from the ChatGPT extension in two details: a set on a tab whose
+debugger is not attached waits for the next attach instead of attaching it, and a reset with no tab, or of a tab not
+attached, sends nothing (a fresh debugger session carries no override).
 
-**`getInfo`** is `{type:"extension", family:"chrome", name:"cua", version:<extension version>, capabilities:{browser:[],
-tab:[]}, metadata:{extensionInstanceId}}` — **no `agentRequestHeaderEnabled`** and, per M7's rule, no `extensionId`.
+**`getInfo`** is `{type:"extension", family:"chrome", name:"cua", version:<extension version>, capabilities:{browser:[{id:
+"viewport", description}], tab:[]}, metadata:{extensionInstanceId}}` (the description is the ChatGPT extension's text) —
+**no `agentRequestHeaderEnabled`** and, per M7's rule, no `extensionId`.
 The omission is what removes the login (Facts, "The login chain"): the backend honestly cannot add agent request
 headers, the pinned service treats the field as optional, and the pin makes the behaviour stable; it is not a bypass
 flag.
@@ -803,6 +811,28 @@ No new npm dependencies.
   every page the user opens); removing the foreign iframe (its extension re-inserts it, and a blanked element keeps its
   script quiet); re-injecting on every CDP command as the vendor does (a round trip per command for a case the
   observer already covers).
+
+- Decision (2026-10-08, #82): the host implements the vendor's browser `viewport` capability; the "What differs"
+  exclusion of viewport is withdrawn. What the vendor does (read for this decision): the pinned service has no handler
+  of its own for `browser_viewport_set {browser_id, height, width}` (positive integers) or `browser_viewport_reset
+  {browser_id}` and sends them to the backend as `executeUnhandledCommand {type, ...payload, session_id, turn_id}`,
+  parsing an empty object back (browser-service.mjs 35690-35760, 66425-66440, 68030); there is no `browser_viewport_get`
+  in this build, so the host has none. The service offers the capability to the agent only when `getInfo.capabilities.
+  browser` lists `{id:"viewport", description}` (`iE` requires both strings; `DN` lists it under "Additional
+  Capabilities"; the client's `Lc` builds `browser.capabilities.get("viewport")` with `set({width, height})` and
+  `reset()`). The ChatGPT extension (1.26.901.11451, background.js) keeps the size on the session's logical active tab's
+  lease, or pending for the turn when there is none (`setViewport`, `setViewportSize`, `takeViewportSizeForAttach`),
+  applies `Emulation.setDeviceMetricsOverride {...size, deviceScaleFactor:1, mobile:false}` in its tab attach (`Os`/`Ps`)
+  including an attach of a tab already attached, never on a `targetId` attach (`Zf`), clears a turn's pending size at
+  turn end and carries the lease's size across a handoff; an unknown command answers `<backend name> does not support
+  command "<type>".` (`_l`). cua follows it with two simplifications: a set on a tab not attached is applied by the next
+  attach rather than by attaching the tab itself (the service attaches before every tab operation, so the agent sees
+  the same size), and a reset sends `clearDeviceMetricsOverride` only to an attached tab. A set or reset from an ended
+  turn is refused like any other request of that turn. Alternatives rejected: applying on `attachTarget` too (an
+  out-of-process frame is sized by its page; the vendor does not), and clearing a handoff tab's size at turn end (the
+  vendor keeps it, and the detach already removes it while the user works in the tab). The live check is one
+  `accept-chrome --route cua` cell (800x600 set, the screenshot's pixel size read, then reset); it needs the owner's
+  loaded extension and is not yet run.
 
 ## Outcomes & Retrospective
 

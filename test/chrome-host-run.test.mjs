@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {runHost} from '../src/chrome/host.mjs';
+import {runHost, VIEWPORT_CAPABILITY} from '../src/chrome/host.mjs';
 import {createPeer, frameDecoder} from '../src/chrome/protocol.mjs';
 import {backendDir, logDir, socketNameFor} from '../src/chrome/extension.mjs';
 import {createFakeCuaExtension} from './helpers/fake-cua-extension.mjs';
@@ -79,7 +79,7 @@ test('after hello the host listens at chrome/b/<name>.sock, keeps <name>.json an
 
   const c = await backendClient(h.socketPath);
   const info = await c.request('getInfo', {session_id: 's', turn_id: 't', session_context: 'live'});
-  assert.deepEqual(info, {type: 'extension', family: 'chrome', name: 'cua', version: '0.3.0', capabilities: {browser: [], tab: []}, metadata: {extensionInstanceId: h.ext.instanceId}});
+  assert.deepEqual(info, {type: 'extension', family: 'chrome', name: 'cua', version: '0.3.0', capabilities: {browser: [VIEWPORT_CAPABILITY], tab: []}, metadata: {extensionInstanceId: h.ext.instanceId}});
   await assert.rejects(c.request('getUserHistory', {session_id: 's', turn_id: 't'}), e => e.message === 'No handler registered for method: getUserHistory' && e.code === -1);
   const s = c.session('sA');
   const tab = await s.call('createTab', {});

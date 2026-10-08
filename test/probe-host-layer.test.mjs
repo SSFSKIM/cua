@@ -14,9 +14,12 @@ function goodRun() {
       listBrowsers: {result: {browsers: [{type: 'extension', name: 'cua', metadata: {extensionInstanceId: 'inst-1'}}]}},
       createBrowserTab: {result: {created: '101'}},
       evaluate: {result: {value: 'h1-roundtrip:(() => {'}},
+      viewport: {result: {capabilities: ['viewport'], done: true}},
     },
     extensionCalls: [call('tabs.query'), call('windows.query'), call('tabs.create', {url: 'about:blank', windowId: 1, group: {key: 'sess-1', title: 'cua'}}),
-      call('debugger.attach', {tabId: 101}), call('debugger.sendCommand', {debuggee: {tabId: 101}, method: 'Runtime.evaluate'}), call('debugger.detach', {tabId: 101}), call('tabs.remove', {tabId: 101})],
+      call('debugger.attach', {tabId: 101}), call('debugger.sendCommand', {debuggee: {tabId: 101}, method: 'Runtime.evaluate'}),
+      call('debugger.sendCommand', {debuggee: {tabId: 101}, method: 'Emulation.setDeviceMetricsOverride', params: {width: 800, height: 600, deviceScaleFactor: 1, mobile: false}}),
+      call('debugger.sendCommand', {debuggee: {tabId: 101}, method: 'Emulation.clearDeviceMetricsOverride', params: {}}), call('debugger.detach', {tabId: 101}), call('tabs.remove', {tabId: 101})],
     turnEnded: {isError: false}, statusAfterTurn: {sessions: [{session_id: 'sess-1', tabs: []}]}, fakeTabsAfter: [100],
     hostExit: {code: 0, signal: null}, socketRemoved: true, statusRemoved: true,
   };
@@ -56,4 +59,16 @@ test('a tab left open or listed after the turn fails turn-end; a bypass switch i
   const bypass = goodRun();
   bypass.envKeys.push('BROWSER_USE_DISABLE_AMBIENT_NETWORK');
   assert.equal(statusOf(bypass, 'h1-launch'), 'FAIL');
+});
+
+test('viewport: not offered, an override of another size, or no reset fails the viewport scenario', () => {
+  const hidden = goodRun();
+  hidden.cells.viewport.result.capabilities = [];
+  assert.equal(statusOf(hidden, 'h1-viewport'), 'FAIL');
+  const resized = goodRun();
+  resized.extensionCalls.find(c => c.params.method === 'Emulation.setDeviceMetricsOverride').params.params.width = 1280;
+  assert.equal(statusOf(resized, 'h1-viewport'), 'FAIL');
+  const kept = goodRun();
+  kept.extensionCalls = kept.extensionCalls.filter(c => c.params.method !== 'Emulation.clearDeviceMetricsOverride');
+  assert.equal(statusOf(kept, 'h1-viewport'), 'FAIL');
 });

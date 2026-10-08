@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {request} from 'node:http';
 import {startAcceptancePage, SCRIPT, STYLE, CSP, expectedDigest, INPUT_LABEL, FRAME_SCRIPT, FRAME_CLICKED, frameCsp, framedCsp, USER_CSP} from '../scripts/accept/chrome-page.mjs';
-import {inducedFailure, fillReference, CLOSE_TAB} from '../scripts/accept/chrome-cells.mjs';
+import {inducedFailure, fillReference, CLOSE_TAB, imageSize, VIEWPORT_SCREENSHOT} from '../scripts/accept/chrome-cells.mjs';
 import {inputFailed} from '../src/services/secret-input.mjs';
 
 test('the page script shows the first 16 hex digits of SHA-256 of the field, never the field', async () => {
@@ -100,4 +100,42 @@ test('the fixed cells carry the reference, never anything else secret, and close
   assert.ok(cell.includes('"{{secret:cua-label}}"'));
   assert.doesNotMatch(cell, /getAXState/, 'ownership is never checked through an AX snapshot');
   assert.match(CLOSE_TAB, /String\(m\.tab\.id\) !== m\.tabId/);
+});
+
+// A PNG/JPEG header of the given pixel size (only what imageSize reads).
+const png = (width, height) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b); b.write('IHDR', 12); b.writeUInt32BE(width, 16); b.writeUInt32BE(height, 20); return new Uint8Array(b); };
+const jpeg = (width, height) => {
+  const app0 = [0xff, 0xe0, 0x00, 0x10, ...Buffer.from('JFIF\0'), 1, 1, 0, 0, 1, 0, 1, 0, 0];
+  const sof = [0xff, 0xc0, 0x00, 0x11, 8, height >> 8, height & 255, width >> 8, width & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+  return new Uint8Array([0xff, 0xd8, ...app0, 0xff, 0xdb, 0x00, 0x03, 0x00, ...sof, 0xff, 0xd9]);
+};
+
+test('imageSize reads a PNG\'s IHDR and a JPEG\'s start-of-frame, and nothing else', () => {
+  assert.deepEqual(imageSize(png(800, 600)), {format: 'png', width: 800, height: 600});
+  assert.deepEqual(imageSize(jpeg(1280, 720)), {format: 'jpeg', width: 1280, height: 720});
+  assert.equal(imageSize(new Uint8Array([0xff, 0xd8, 0xff])), null);
+  assert.equal(imageSize(new Uint8Array([1, 2, 3])), null);
+  assert.equal(imageSize(undefined), null);
+});
+
+test('the viewport cell sets 800x600 through the capability, reads the screenshot\'s size, and resets even when the shot fails', async () => {
+  const run = async ({shots}) => {
+    const calls = [], writes = [];
+    const viewport = {set: async size => calls.push(['set', size]), reset: async () => calls.push(['reset'])};
+    const browser = {capabilities: {list: async () => [{id: 'viewport', description: 'x'}], get: async id => { calls.push(['get', id]); return viewport; }}};
+    const cua = {getBrowser: async options => { calls.push(['getBrowser', options]); return browser; }};
+    const queue = [...shots];
+    globalThis.__acc = {browserId: 'b-1', tab: {id: 7, getScreenshot: async options => { calls.push(['shot', options]); const next = queue.shift(); if (next instanceof Error) throw next; return next; }}};
+    try {
+      await new Function('cua', 'nodeRepl', `return (async () => { ${VIEWPORT_SCREENSHOT} })();`)(cua, {write: text => writes.push(text)});
+    } finally { delete globalThis.__acc; }
+    return {calls, out: JSON.parse(writes[0].replace(/^PROBERESULT /, ''))};
+  };
+  const ok = await run({shots: [png(800, 600), jpeg(1512, 860)]});
+  assert.deepEqual(ok.out, {offered: true, set: {format: 'png', width: 800, height: 600}, reset: true, afterReset: {format: 'jpeg', width: 1512, height: 860}});
+  assert.deepEqual(ok.calls, [['getBrowser', {id: 'b-1'}], ['get', 'viewport'], ['set', {width: 800, height: 600}], ['shot', {emit: false}], ['reset'], ['shot', {emit: false}]]);
+  const failed = await run({shots: [new Error('capture failed')]});
+  assert.equal(failed.out.reset, true);
+  assert.equal(failed.out.error, 'capture failed');
+  assert.ok(failed.calls.some(c => c[0] === 'reset'));
 });

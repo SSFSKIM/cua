@@ -113,8 +113,10 @@ export function cellRunner({session, facts, limits = LIMITS}) {
 // Runs the script; `record(name, status, detail)` collects steps, `facts` gets cellsSent/tabOperations, `shots` the
 // screenshot bytes, file and metadata. Throws whatever failed unexpectedly, after the finally's cleanup attempt.
 // With `crossOriginFrame` (the cua route) the tab then navigates to the framed page and drives a locator inside its
-// cross-site iframe. Every navigation's latency (measured inside the cell, around goto) goes to facts.gotoMs.
-export async function runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots = {}, saveScreenshot = keepScreenshot, limits = LIMITS, crossOriginFrame = false}) {
+// cross-site iframe. Every navigation's latency (measured inside the cell, around goto) goes to facts.gotoMs. With
+// `viewport` (the cua route, #82) the created tab is last screenshotted under an explicit 800x600 viewport, then reset.
+export async function runAgentScript({session, page, instanceId, reference, sentinel, latch, tab, record, facts, shots = {}, saveScreenshot = keepScreenshot, limits = LIMITS, crossOriginFrame = false,
+  viewport = false}) {
   const run = cellRunner({session, facts, limits});
   const stoppedBefore = names => { record('input-stopped', 'BLOCKED', {reason: latch.reason, notSent: names}); };
   const withText = c => (c.text ? {text: c.text} : {});
@@ -169,6 +171,13 @@ export async function runAgentScript({session, page, instanceId, reference, sent
         const r = frame.result ?? {};
         return record('cross-origin-frame', r.parentMarker === true && r.frameMarker === true && r.frameClicked === true ? 'PASS' : 'FAIL',
           {class: frame.class, parentMarker: r.parentMarker ?? null, frameMarkerRead: r.frameMarker ?? null, frameButtonClicked: r.frameClicked ?? null, ...withText(frame)});
+      }]] : []),
+      ...(viewport ? [['viewportScreenshot', async () => {
+        const shot = await run('viewportScreenshot', cells.VIEWPORT_SCREENSHOT);
+        const r = shot.result ?? {};
+        const {width, height} = cells.VIEWPORT_SIZE;
+        return record('viewport-screenshot-size', r.offered === true && r.set?.width === width && r.set?.height === height && r.reset === true ? 'PASS' : 'FAIL',
+          {class: shot.class, offered: r.offered ?? null, requested: cells.VIEWPORT_SIZE, set: r.set ?? null, reset: r.reset ?? null, afterReset: r.afterReset ?? null, ...withText(shot)});
       }]] : []),
     ];
     for (let i = 0; i < steps.length; i++) {

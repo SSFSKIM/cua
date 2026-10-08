@@ -154,6 +154,26 @@ test('on the cua route the script also drives a locator inside the cross-site fr
   assert.deepEqual(h.facts.gotoByScenario, {c2: [420, 380]});
 });
 
+test('on the cua route the script ends with the viewport cell: PASS only for an 800x600 shot with the viewport offered and reset', async () => {
+  const shot = (set, extra = {}) => () => marker({offered: true, set, reset: true, afterReset: {format: 'png', width: 1512, height: 860}, ...extra});
+  const runWith = async answer => {
+    const session = fakeSession({answers: {crossOriginFrame: () => marker({gotoMs: 1, parentMarker: true, frameMarker: true, frameClicked: true}), viewportScreenshot: answer}});
+    const h = harness(session, {crossOriginFrame: true, viewport: true});
+    await h.run();
+    return {session, h, step: h.steps.find(s => s.name === 'viewport-screenshot-size')};
+  };
+  const ok = await runWith(shot({format: 'png', width: 800, height: 600}));
+  assert.deepEqual(ok.session.sent.slice(-4), ['crossOriginFrame', 'viewportScreenshot', 'closeCreatedTab', 'confirmClosed']);
+  assert.equal(ok.step.status, 'PASS');
+  assert.deepEqual(ok.step.detail.afterReset, {format: 'png', width: 1512, height: 860});
+  assert.equal((await runWith(shot({format: 'png', width: 1600, height: 1200}))).step.status, 'FAIL', 'a device-pixel-ratio-scaled shot is not the size asked for');
+  assert.equal((await runWith(shot({format: 'png', width: 800, height: 600}, {offered: false}))).step.status, 'FAIL');
+  assert.equal((await runWith(shot({format: 'png', width: 800, height: 600}, {reset: undefined}))).step.status, 'FAIL');
+  const failed = await runWith(() => marker({offered: true, error: 'Browser does not support capability viewport'}));
+  assert.equal(failed.step.status, 'FAIL');
+  assert.deepEqual(leftoverOf(failed.h.tab), {status: 'none'});
+});
+
 test('a frame whose locator does not resolve fails the cross-origin step; the created tab is still closed', async () => {
   const session = fakeSession({answers: {crossOriginFrame: () => marker({gotoMs: 380, parentMarker: true, frameMarker: false, frameClicked: false})}});
   const h = harness(session, {crossOriginFrame: true});

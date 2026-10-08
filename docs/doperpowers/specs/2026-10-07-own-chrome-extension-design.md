@@ -45,6 +45,10 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-08) #82 — the browser `viewport` capability in the host (Decision Log 2026-10-08). Host tests and the
       H1 probe (`--vendor --backend host`, the pinned service offering `viewport` to the agent and its set/reset reaching
       the tab as Emulation overrides) pass; the `accept-chrome --route cua` viewport cell is added, not yet run live.
+- [x] (2026-10-08 10:30 UTC) #15 — downloads in the extension (`downloads`, 0.3.0) and host (`onDownloadChange`);
+      dialogs and the file chooser measured as relay pass-through (Decision Log 2026-10-08, #15). Live on the Tart VM
+      through the relay-updated CRX: download, alert, confirm PASS; the file chooser PASS once the extension has file
+      access (`docs/evidence/2026-10-08-downloads-dialogs-chooser.md`). Store 0.3.0 upload waits for #78.
 
 ## Facts this design rests on
 
@@ -140,7 +144,7 @@ Claude Code ── cua serve (node REPL + vendor browser-service, L1)
 ### The extension (`extension/`)
 
 Manifest V3, name **cua**, permissions `debugger`, `nativeMessaging`, `tabs`, `tabGroups`, `storage`, `alarms`,
-`scripting`, and `host_permissions: ["<all_urls>"]`. No content script is declared; the only code cua runs in pages is
+`scripting`, `downloads` (Decision Log, 2026-10-08, #15), and `host_permissions: ["<all_urls>"]`. No content script is declared; the only code cua runs in pages is
 the **page guard**, injected with `chrome.scripting.executeScript` into tabs the host owns and nowhere else (Decision
 Log, 2026-10-07, #81). In a guarded tab it blanks every other extension's frame (`srcdoc=""` on an iframe,
 `about:blank` on a frame; open and closed shadow roots included) as it appears (MutationObserver) and on the host's
@@ -332,8 +336,10 @@ across all three, so registration, binding and doctor never care which one is in
 
 Replacing the vendor service (option C); removing the vendor route, `cua login`, M12's host placement and
 `chrome.host.config` (a follow-up ticket, registered in H5, after the Store listing is live); MAWS's in-app browser;
-downloads, file choosers, page events, WebMCP, browser management, history/bookmarks (they answer `No handler`); the
-cursor overlay and favicon badges; peer code-signature checks on the socket; Windows.
+page events (WebMCP), browser management, history/bookmarks (they answer `No handler`), the coordinate and DOM
+`download_media` variants (`executeUnhandledCommand`; the ChatGPT extension does not implement them either); the
+cursor overlay and favicon badges; peer code-signature checks on the socket; Windows. Downloads, JavaScript dialogs
+and the file chooser were out of scope until #15 (Decision Log, 2026-10-08).
 
 ## Acceptance
 
@@ -549,7 +555,9 @@ npm run extension:pack                                        # dist/cua-extensi
 Notifications from the extension: `hello {extensionId, extensionInstanceId, version, protocolVersion}` (first message
 after connect), `debugger.event {debuggee, sessionId?, method, params}`, `debugger.detached {debuggee, reason}`,
 `tabs.removed {tabId}`, `tabs.updated {tabId, url?, title?, status?}`, `tabs.popup {openerTabId, url}` (a guarded
-page's user-activated `window.open` or target link). Notification from the host: `hostRefused {code,
+page's user-activated `window.open` or target link), and, only while the extension holds a debuggee,
+`downloads.created {id, url?, finalUrl?, filename?, state?, error?}` (Chrome's `DownloadItem` fields) and
+`downloads.changed {id, filename?, finalUrl?, state?, error?}` (the `onChanged` delta's current values). Notification from the host: `hostRefused {code,
 message}` (`protocol_mismatch`, `hello_invalid`, `already_served`, `listen_failed`), sent before the host exits; the
 popup shows it. Errors carry Chrome's
 `chrome.runtime.lastError.message` verbatim; the host's own refusals are `message_too_large`, `protocol_mismatch`.
@@ -833,6 +841,42 @@ No new npm dependencies.
   vendor keeps it, and the detach already removes it while the user works in the tab). The live check is one
   `accept-chrome --route cua` cell (800x600 set, the screenshot's pixel size read, then reset); it needs the owner's
   loaded extension and is not yet run.
+
+- Decision (2026-10-08, #15, "original-route coverage" redefined on the cua route): downloads join the host; JavaScript
+  dialogs and the file chooser need no code and are proven live. What the vendor does (read for this decision): the
+  agent's `tab.waitForEvent("download")` (`playwright_wait_for_download`) resolves when the download has *completed*,
+  and `PlaywrightDownload.path()` answers the filename of the backend's last `onDownloadChange` for it; the service
+  intercepts document responses with `Fetch.enable`/`Fetch.requestPaused`, recognizes a download, applies its own
+  approval policy, and continues it with `Fetch.continueResponse` (or fails it `BlockedByClient`), then waits for
+  `onDownloadChange {id, filename, url, status: started | in_progress | complete | failed | canceled, session_id?}`:
+  `started` matched by the URL it approved, the rest by id, a notification without `session_id` accepted by every
+  session (browser-service.mjs 33733-33764, 49544-49551, 50015-50030, 53620-53747, 60890-61125). `allowDownload` is
+  asked only of `iab`/`cdp` backends (61001-61010). The ChatGPT extension feeds this from `chrome.downloads.onCreated`
+  (`{id: String(id), filename, url: finalUrl, status: "started"}`) and `onChanged` (filename deltas update its cache;
+  `USER_CANCELED` → `canceled`), while a session is active, broadcast to every client without `session_id`
+  (background.js L8:C69314-C69900, C86937-C87243). JavaScript dialogs are pure CDP: `Page.javascriptDialogOpening` →
+  `tab.getJsDialog()`, `Page.handleJavaScriptDialog` through `executeCdp` (48659-48730, 50431-50508); the file chooser
+  too: `Page.setInterceptFileChooserDialog`, `Page.fileChooserOpened`, `DOM.setFileInputFiles` with paths on the
+  browser's machine (50034-50085, 49554-49585) — both already pass through cua's relay. cua does the same as the
+  vendor for downloads: the extension gains the `downloads` permission (0.3.0) and reports `downloads.created` /
+  `downloads.changed` only while it holds a debuggee (the user's own downloads with no agent driving a tab are never
+  reported); the host maps them to the service's shape (id as a string, `finalUrl` else `url`, the latest filename,
+  `interrupted` + `USER_CANCELED` → `canceled`, other interruptions → `failed`, a change without a state →
+  `in_progress`), tells every client with a session, and forgets a download once it ends. The file lands where Chrome
+  puts it (the profile's download directory; "Ask where to save each file" would stall the agent on a Save dialog).
+  Alternatives rejected: CDP download events (`Browser.setDownloadBehavior {eventsEnabled}` → `Browser.downloadWillBegin`
+  / `downloadProgress`) without a new permission — the service does not consume them, and a chrome.debugger client is
+  expected to be refused that command (the live cell records the answer as evidence); attributing a download to a
+  session by its tab — `DownloadItem` carries no tab id, and the vendor broadcasts; implementing the `download_media`
+  coordinate/DOM variants — the vendor extension does not. Cost: one more Store review on the 0.3.0 upload, after the
+  pending 0.2.0 review (#78), and the "Manage your downloads" install warning. Proof: host and extension unit tests,
+  and the Linux live fixture `scripts/accept/linux-chrome-features.mjs` on the Tart VM (download to the real download
+  directory with a sha256 check, alert and confirm handled, a file chosen), `docs/evidence/2026-10-08-downloads-dialogs-chooser.md`.
+  Measured there: the download, alert and confirm pass as designed; the file chooser needs the extension's "Allow
+  access to file URLs" (Chrome refuses `DOM.setFileInputFiles` to a debugger client without it; no policy grants it;
+  with the check disabled the chooser passes), so it is documented, not coded; and the rejected CDP alternative is
+  refused outright (`Browser.setDownloadBehavior` "wasn't found", `Page.setDownloadBehavior` "Cannot not access
+  browser-level commands").
 
 ## Outcomes & Retrospective
 

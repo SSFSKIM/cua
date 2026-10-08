@@ -36,6 +36,13 @@
 //   a tab already attached; reset clears it. Chrome drops the override with the debugger, so a released tab loses it
 //   and a handoff tab gets it back when the next turn attaches it (the ChatGPT extension's setViewport, Os/Ps and
 //   takeViewportSizeForAttach). Frame targets get none: an out-of-process frame is sized by its parent page.
+// - Downloads: the service approves a download itself (Fetch.requestPaused → Fetch.continueResponse through executeCdp)
+//   and then waits for the backend's onDownloadChange {id, filename, url, status} notifications: `started` matched by
+//   the URL it approved, then `complete` | `failed` | `canceled` by id, the filename of the last one being the path
+//   PlaywrightDownload.path() answers (browser-service.mjs 60890-61125). The extension reports Chrome's download
+//   items (downloads.created, downloads.changed) while it holds a debuggee; the host maps them to that shape and tells
+//   every connected client, without session_id, as the ChatGPT extension does (the service matches by URL and id).
+//   allowDownload is never asked of an `extension` backend (BS 61001-61010), so it stays unhandled.
 // Vendor references (@oai/browser-desktop 0.1.1 in ChatGPT 26.928.40906): the backend client browser-service.mjs
 // 67808-68110; the ChatGPT extension's session model (hehggadaopoacecdllhhajmbjkdcmajg 1.26.901.11451, background.js):
 // endTurnUnlocked, resumeHandoffIfPresent, executeCdp/mg (timeout), Os/Zf (attach, "Another debugger" as success).
@@ -89,6 +96,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
   const sessions = new Map();           // session_id -> session
   const owners = new Map();             // tabId -> {session, tab}
   const targets = new Map();            // attached OOPIF targetId -> owning tabId
+  const downloads = new Map();          // Chrome download id -> {filename, url} of a download still in progress
   const statusPath = home ? join(backendDir(home), `${socketNameFor(hello.extensionInstanceId)}.json`) : null;
   let closed = false;
   // The extension's primitives, every refusal logged (the log is how a refused attach is diagnosed after the fact).
@@ -511,6 +519,21 @@ export function createHost({extension: port, hello, home = null, now = () => new
     try { s.client?.notify(method, params); } catch (error) { log(`notify ${method} to session ${s.id} failed: ${error.message}`); }
   }
 
+  // What every client with a session is told (a download belongs to no session the host can name).
+  function tellAll(method, params) {
+    for (const client of new Set([...sessions.values()].map(s => s.client))) {
+      try { client.notify(method, params); } catch (error) { log(`notify ${method} failed: ${error.message}`); }
+    }
+  }
+
+  // The service's status for Chrome's download state: a change without a state keeps the download in progress (a
+  // filename arriving); interrupted is the user's cancel or a failure (chrome.downloads.InterruptReason).
+  function downloadStatus({state, error}) {
+    if (state === 'complete') return 'complete';
+    if (state === 'interrupted') return error === 'USER_CANCELED' ? 'canceled' : 'failed';
+    return 'in_progress';
+  }
+
   const notifications = {
     'debugger.event'({debuggee, sessionId, method, params}) {
       const o = ownerOf(debuggee);
@@ -530,6 +553,24 @@ export function createHost({extension: port, hello, home = null, now = () => new
       if (!owner) return;
       release(owner.session, owner.tab);
       changed();
+    },
+    // Chrome's download items as the extension reports them (while it holds a debuggee), in the service's shape: the
+    // id as a string, the url the download ended at, the filename Chrome has settled on so far (its full path once
+    // known). A change of a download that began unreported is dropped: the service never saw its start.
+    'downloads.created'({id, url, finalUrl, filename}) {
+      if (id == null) return;
+      const d = {filename: typeof filename === 'string' ? filename : '', url: typeof finalUrl === 'string' && finalUrl ? finalUrl : (typeof url === 'string' ? url : '')};
+      downloads.set(id, d);
+      tellAll('onDownloadChange', {id: String(id), filename: d.filename, url: d.url, status: 'started'});
+    },
+    'downloads.changed'({id, filename, finalUrl, state, error}) {
+      const d = downloads.get(id);
+      if (!d) return;
+      if (typeof filename === 'string') d.filename = filename;
+      if (typeof finalUrl === 'string' && finalUrl) d.url = finalUrl;
+      const status = downloadStatus({state, error});
+      if (status !== 'in_progress') downloads.delete(id);
+      tellAll('onDownloadChange', {id: String(id), filename: d.filename, url: d.url, status});
     },
     // A guarded page opening a URL: the session whose current turn owns the opener takes it as a created tab, the turn's
     // active one, as if the agent had created it; anything else (the turn is over, the opener was released) is dropped.
@@ -643,7 +684,8 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     maxFrameBytes: MAX_TO_EXTENSION_BYTES,
     onError: (error, method) => log(`extension notification ${method} failed: ${error?.stack ?? error}`),
     handlers: {hello: params => gotHello(params), 'debugger.event': forward('debugger.event'), 'debugger.detached': forward('debugger.detached'),
-      'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup')},
+      'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup'),
+      'downloads.created': forward('downloads.created'), 'downloads.changed': forward('downloads.changed')},
   });
   const push = frameDecoder(MAX_FROM_EXTENSION_BYTES);
   stdin.on('data', chunk => {

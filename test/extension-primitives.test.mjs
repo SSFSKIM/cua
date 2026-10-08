@@ -429,3 +429,29 @@ test('an unguard that arrives while a guard is being installed wins: nothing sta
   await waitFor(async () => !(await guardIn(stub, made.id)) && await stub.page(made.id).run('main', 'globalThis.__cuaPagePopups === undefined'), 'both halves removed');
   stub.chrome.scripting.executeScript = executeScript;
 });
+
+test('downloads are reported only while a debuggee is held: the created item\'s fields, then each change\'s current values', async () => {
+  const {stub, host} = await start();
+  const tab = stub.addTab();
+  const reports = () => host.received.filter(m => typeof m.method === 'string' && m.method.startsWith('downloads.')).map(({method, params}) => ({method, params}));
+  const item = {id: 3, url: 'https://files.invalid/r', finalUrl: 'https://cdn.invalid/r.pdf', filename: '', state: 'in_progress', error: undefined, danger: 'safe', mime: 'application/pdf'};
+  stub.events.downloadsCreated.dispatch(item);
+  stub.events.downloadsChanged.dispatch({id: 3, filename: {previous: '', current: '/d/r.pdf'}});
+  await new Promise(r => setTimeout(r, 5));
+  assert.deepEqual(reports(), [], 'the user\'s own downloads, with no agent driving a tab, are not reported');
+
+  await host.request('debugger.attach', {tabId: tab.id});
+  stub.events.downloadsCreated.dispatch(item);
+  stub.events.downloadsChanged.dispatch({id: 3, filename: {previous: '', current: '/d/r.pdf'}, danger: {previous: 'safe', current: 'safe'}});
+  stub.events.downloadsChanged.dispatch({id: 3, state: {previous: 'in_progress', current: 'interrupted'}, error: {previous: undefined, current: 'USER_CANCELED'}});
+  await waitFor(() => reports().length === 3, 'three download reports');
+  assert.deepEqual(reports(), [
+    {method: 'downloads.created', params: {id: 3, url: 'https://files.invalid/r', finalUrl: 'https://cdn.invalid/r.pdf', filename: '', state: 'in_progress'}},
+    {method: 'downloads.changed', params: {id: 3, filename: '/d/r.pdf'}},
+    {method: 'downloads.changed', params: {id: 3, state: 'interrupted', error: 'USER_CANCELED'}},
+  ]);
+  await host.request('debugger.detach', {tabId: tab.id});
+  stub.events.downloadsChanged.dispatch({id: 3, state: {previous: 'interrupted', current: 'complete'}});
+  await new Promise(r => setTimeout(r, 5));
+  assert.equal(reports().length, 3);
+});

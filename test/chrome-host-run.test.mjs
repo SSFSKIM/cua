@@ -44,7 +44,7 @@ function backendClient(path) {
   return new Promise((resolve, reject) => {
     const socket = connect(path);
     const notes = [];
-    const peer = createPeer({send: bytes => socket.write(bytes), handlers: {onCDPEvent: p => notes.push({method: 'onCDPEvent', params: p}), onCDPDetach: p => notes.push({method: 'onCDPDetach', params: p})}});
+    const peer = createPeer({send: bytes => socket.write(bytes), handlers: {onCDPEvent: p => notes.push({method: 'onCDPEvent', params: p}), onCDPDetach: p => notes.push({method: 'onCDPDetach', params: p}), onDownloadChange: p => notes.push({method: 'onDownloadChange', params: p})}});
     const decode = frameDecoder();
     let closed = false;
     socket.on('data', chunk => { for (const m of decode(chunk)) peer.receive(m); });
@@ -90,6 +90,11 @@ test('after hello the host listens at chrome/b/<name>.sock, keeps <name>.json an
   h.ext.cdpEvent({tabId: tab.id}, 'Page.loadEventFired', {timestamp: 2});
   await waitFor(() => c.notes.length === 1, 'the CDP event');
   assert.deepEqual(c.notes[0], {method: 'onCDPEvent', params: {source: {tabId: tab.id}, method: 'Page.loadEventFired', params: {timestamp: 2}}});
+  h.ext.downloadCreated({id: 4, url: 'https://cdn.invalid/r.pdf', filename: ''});
+  h.ext.downloadChanged(4, {filename: '/d/r.pdf', state: 'complete'});
+  await waitFor(() => c.notes.length === 3, 'the download notifications');
+  assert.deepEqual(c.notes.slice(1), [{method: 'onDownloadChange', params: {id: '4', filename: '', url: 'https://cdn.invalid/r.pdf', status: 'started'}},
+    {method: 'onDownloadChange', params: {id: '4', filename: '/d/r.pdf', url: 'https://cdn.invalid/r.pdf', status: 'complete'}}]);
   await s.end();
   assert.equal(h.ext.state.tabs.has(tab.id), false);
   assert.deepEqual(h.status().sessions[0].tabs, []);

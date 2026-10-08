@@ -180,6 +180,10 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     },
     // A guarded page asking for a popup (the extension's page guard), as the extension tells the host.
     popup(openerTabId, url) { if (state.guarded.has(openerTabId)) emit('tabs.popup', {openerTabId, url}); },
+    // Chrome creating a download and changing one, reported (as the extension does) only while a debuggee is held;
+    // the fields are the ones the extension forwards from the DownloadItem and the onChanged delta's `current`s.
+    downloadCreated(item) { if (state.held.size) emit('downloads.created', {...item}); },
+    downloadChanged(id, delta) { if (state.held.size) emit('downloads.changed', {id, ...delta}); },
     holdCdp(method) { hold.set(method, []); },
     // Primitives of `method` are asked but never answer from now on.
     stall(method) { stalled.add(method); },

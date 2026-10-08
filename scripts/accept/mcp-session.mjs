@@ -36,7 +36,8 @@ export function openSession({args, env, onServerRequest = () => ({action: 'decli
   return {
     pid: child.pid, transcript, exited, request,
     get stderr() { return stderr; },
-    js: (code, timeoutMs = 60_000) => request('tools/call', {name: 'js', arguments: {code}}, timeoutMs),
+    // Let the runtime enforce the cell deadline; leave transport time for its timeout/reset reply.
+    js: (code, timeoutMs = 60_000) => request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 10_000),
     call: (name, args = {}, timeoutMs = 30_000) => request('tools/call', {name, arguments: args}, timeoutMs),
     async initialize() {
       const init = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: clientName, version: '0'}}, 120_000);

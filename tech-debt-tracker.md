@@ -2,6 +2,12 @@
 
 ## Open
 
+- **2026-10-08 — Viewport capability: what is not pinned yet (minor, issue #82).** (a) The `accept-chrome --route cua`
+  viewport cell (800x600 set, screenshot pixel size, reset) has not run live; it needs the owner's loaded cua
+  extension. Whether the service's screenshot path returns exactly the override's size (no downscale) is unobserved.
+  (b) Two host branches have no test of their own: the `touch` in `setViewport` (a set adopts the active tab into the
+  current turn) and a tab's own size taking precedence over a pending one at attach (`src/chrome/host.mjs`).
+
 - **2026-10-08 — Page guards: what the live run left (minor, issue #81).** (a) A detach can still happen right at a
   navigation: the input-helper draws its frame into the new document before the guard is injected at commit
   (`tabs.onUpdated` url), so Chrome answers `Detached while handling command.` once and the service re-attaches (4

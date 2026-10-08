@@ -671,7 +671,9 @@ test('viewport set with no tab yet waits for the turn\'s first attach; a turn\'s
   assert.equal(emulation(ext).length, 1, 'the ended turn\'s size is not applied');
   b.turn = 't1';
   await assert.rejects(viewportSet(b, 1, 1), e => e.message === 'Browser session sB turn t1 has ended', 'an ended turn sets nothing');
-  assert.equal(emulation(ext).length, 1);
+  await b.call('detach', {tabId: later.id});
+  await b.call('attach', {tabId: later.id});
+  assert.equal(emulation(ext).length, 1, 'a late attach of the ended turn does not find its size either');
 });
 
 test('viewport at turn end: a released tab loses it; a handoff tab keeps it and gets it back on the next turn\'s attach', async () => {

@@ -4,7 +4,7 @@
 // file, exit) is test/chrome-host-run.test.mjs.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createHost} from '../src/chrome/host.mjs';
+import {createHost, GUARD_WAIT_MS} from '../src/chrome/host.mjs';
 import {NO_HANDLER} from '../src/chrome/protocol.mjs';
 import {createFakeCuaExtension} from './helpers/fake-cua-extension.mjs';
 
@@ -219,6 +219,30 @@ test('another extension\'s frame: attach guards the tab first, a refusal for suc
   assert.equal(ext.state.held.has(`target:${frame}`), true);
 });
 
+test('a guard that never answers (an open JavaScript dialog blocks chrome.scripting) neither blocks the attach nor the turn\'s end', async t => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const {ext, client, session, sent, logs} = setup();
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  ext.stall('tabs.guard');
+  ext.stall('tabs.unguard');
+  let attached = false;
+  const attach = a.call('attach', {tabId: tab.id}).then(() => { attached = true; });
+  for (let i = 0; i < 5; i++) await settle();
+  t.mock.timers.tick(GUARD_WAIT_MS - 1);
+  for (let i = 0; i < 5; i++) await settle();
+  assert.equal(attached, false, 'waits for the sweep up to the bound');
+  t.mock.timers.tick(1);
+  await attach;
+  assert.equal(ext.state.held.has(`tab:${tab.id}`), true, 'attached anyway: attaching is how the agent dismisses the dialog');
+  assert.ok(logs.includes(`tab ${tab.id}: guard unanswered after ${GUARD_WAIT_MS} ms; attaching without waiting for it`));
+
+  // The turn ends with the tab handed off: the unguard is asked and not waited for.
+  await a.call('markTab', {tabId: tab.id, status: 'handoff'});
+  await a.end();
+  assert.deepEqual(sent('tabs.unguard'), [{tabId: tab.id}]);
+});
+
 test('guards end with ownership: a handed-off tab and tabs released open are unguarded, a closed tab is not asked', async () => {
   const {ext, client, session, sent} = setup();
   const userTab = ext.addTab({title: 'Users own'});
@@ -230,6 +254,7 @@ test('guards end with ownership: a handed-off tab and tabs released open are ung
   await a.call('markTab', {tabId: deliverable.id, status: 'deliverable'});
   await a.call('markTab', {tabId: handoff.id, status: 'handoff'});
   await a.end();
+  for (let i = 0; i < 5; i++) await settle();
   assert.deepEqual(sent('tabs.unguard').map(p => p.tabId).sort(), [deliverable.id, handoff.id, userTab.id].sort());
   assert.deepEqual([...ext.state.guarded], [], 'the closed tab left with its removal');
 

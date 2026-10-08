@@ -157,11 +157,13 @@ function pageGuard(key, popupEvent, settleMs) {
   return g[key].sweep();
 }
 
-// Runs in the page's own world (window.open is the page's). A user-activated window.open of an http(s) URL into a new
-// browsing context, or a click on such a link with a target, is offered to the isolated world; when it takes it the
-// page gets a stand-in window (null with noopener) and the host opens the URL as the session's tab. Not intercepted: a
-// call with window features (a sized popup, typically a sign-in flow that needs window.opener), targets naming this
-// context or one of its frames, and anything without user activation (Chrome's popup blocker decides those).
+// Runs in the page's own world (window.open is the page's), in the top frame only (a sandboxed subframe without
+// allow-popups must not open tabs through it). A user-activated window.open of an http(s) URL into a new browsing
+// context (no target, "" or _blank), or a click on such a link with target=_blank, is offered to the isolated world;
+// when it takes it the page gets a stand-in window (null with noopener) and the host opens the URL as the session's
+// tab. Left to Chrome: a call with window features (a sized popup, typically a sign-in flow that needs
+// window.opener), every named target (it may name a frame or window anywhere in the frame tree), and anything without
+// user activation (Chrome's popup blocker decides those).
 function pagePopups(key, popupEvent) {
   const g = globalThis;
   if (g[key]) return true;
@@ -174,11 +176,10 @@ function pagePopups(key, popupEvent) {
     if (href.protocol !== 'http:' && href.protocol !== 'https:') return false;
     return !document.dispatchEvent(new CustomEvent(popupEvent, {cancelable: true, detail: href.href}));
   };
-  const here = target => ['_self', '_parent', '_top', '_unfencedtop'].includes(target.toLowerCase())
-    || [...document.querySelectorAll('iframe, frame')].some(f => f.getAttribute('name') === target);
+  const fresh = target => target === '' || target.toLowerCase() === '_blank';
   const open = function (url, target, features) {
     const tokens = String(features ?? '').split(',').map(t => t.trim()).filter(Boolean);
-    if (url == null || url === '' || here(String(target ?? '')) || tokens.some(t => !NO_OPENER.test(t)) || !offer(String(url)))
+    if (url == null || url === '' || !fresh(String(target ?? '')) || tokens.some(t => !NO_OPENER.test(t)) || !offer(String(url)))
       return original.apply(this, arguments);
     return tokens.length ? null : {closed: false, focus() {}, blur() {}, close() {}, postMessage() {}};
   };
@@ -186,7 +187,7 @@ function pagePopups(key, popupEvent) {
     if (event.defaultPrevented || event.button !== 0) return;
     const a = event.composedPath().find(n => n?.tagName === 'A' && typeof n.href === 'string');
     if (!a || (a.hasAttribute('download') && a.origin === location.origin)) return;
-    if (a.target === '' || here(a.target)) return;
+    if (a.target.toLowerCase() !== '_blank') return;
     if (offer(a.href)) event.preventDefault();
   };
   // Armed in the capture phase, judged after the page's own handlers (which may cancel the click or navigate).
@@ -207,12 +208,17 @@ function pageUnguard(key) {
   return true;
 }
 
-// Guards every frame of the tab (the page world's interceptor first, so the bridge never sees a request it cannot
-// route) and sweeps; resolves {frames, blanked}. Chrome's refusal (a page cua may not script) rejects verbatim.
-async function guardFrames(tabId, target = {tabId, allFrames: true}) {
-  await chrome.scripting.executeScript({target, injectImmediately: true, world: 'MAIN', func: pagePopups, args: [POPUPS_KEY, POPUP_EVENT]}).catch(() => {});
-  const results = await chrome.scripting.executeScript({target, injectImmediately: true, func: pageGuard, args: [GUARD_KEY, POPUP_EVENT, SETTLE_MS]});
-  return {frames: results.length, blanked: results.reduce((n, r) => n + (r?.result?.blanked ?? 0), 0)};
+// Guards every frame of the tab (the top frame's page-world interceptor first, so the bridge never sees a request it
+// cannot route) and sweeps; resolves {frames, blanked}. Chrome's refusal (a page cua may not script) rejects verbatim.
+// An unguard (or the port dropping) that arrived meanwhile wins: what this call installed is removed again.
+async function guardFrames(tabId) {
+  try {
+    await chrome.scripting.executeScript({target: {tabId, frameIds: [0]}, injectImmediately: true, world: 'MAIN', func: pagePopups, args: [POPUPS_KEY, POPUP_EVENT]}).catch(() => {});
+    const results = await chrome.scripting.executeScript({target: {tabId, allFrames: true}, injectImmediately: true, func: pageGuard, args: [GUARD_KEY, POPUP_EVENT, SETTLE_MS]});
+    return {frames: results.length, blanked: results.reduce((n, r) => n + (r?.result?.blanked ?? 0), 0)};
+  } finally {
+    if (!guarded.has(tabId)) unguardFrames(tabId).catch(() => {});
+  }
 }
 
 function unguardFrames(tabId) {

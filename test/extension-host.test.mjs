@@ -337,7 +337,7 @@ test('another extension\'s frame cannot wedge an agent tab, a page\'s window.ope
   // The turn ends: the popup closes like any created tab, the claimed user tab is unguarded and released.
   await s.end();
   assert.equal(stub.state.tabs.has(popup.id), false);
-  assert.equal(await guarded(user.id), false);
+  await waitFor(async () => !(await guarded(user.id)), 'the claimed tab unguarded (not waited for by turnEnded)');
 
   // The host log names what Chrome refused (here: guarding about:blank before the first navigation) and the popup.
   const log = readFileSync(join(home, 'chrome', 'logs', `${socketNameFor(id)}.log`), 'utf8');

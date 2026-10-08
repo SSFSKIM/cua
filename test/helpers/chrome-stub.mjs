@@ -326,7 +326,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     // cua's host permissions do not reach (not http(s)) is refused.
     scripting: {
       executeScript: async ({target, func, args = [], world = 'ISOLATED', injectImmediately}) => {
-        calls.push({api: 'scripting.executeScript', args: [{target: {...target}, func: func?.name, args: structuredClone(args), world, injectImmediately}]});
+        calls.push({api: 'scripting.executeScript', args: [{target: structuredClone(target), func: func?.name, args: structuredClone(args), world, injectImmediately}]});
         await later();
         const tab = state.tabs.get(target?.tabId);
         if (!tab) return fail(`No tab with id: ${target?.tabId}.`);

@@ -42,6 +42,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
   };
   const calls = [];             // every primitive the host asked for: {method, params}
   const hold = new Map();       // CDP method -> pending resolvers: never answered while held
+  const stalled = new Set();    // primitives that never answer (a page whose open dialog blocks chrome.scripting)
   let onNotify = () => {};
 
   function addTab({windowId = [...state.windows.keys()][0], url = 'https://user.fixture.invalid/', title = 'User tab', active = false} = {}) {
@@ -149,6 +150,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     if (!connected) throw new Error('extension disconnected');
     const primitive = Object.hasOwn(primitives, method) ? primitives[method] : null;
     if (!primitive) throw Object.assign(new Error(`No handler registered for method: ${method}`), {code: -1});
+    if (stalled.has(method)) return await new Promise(() => {});
     return await primitive(params);
   }
 
@@ -179,6 +181,8 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     // A guarded page asking for a popup (the extension's page guard), as the extension tells the host.
     popup(openerTabId, url) { if (state.guarded.has(openerTabId)) emit('tabs.popup', {openerTabId, url}); },
     holdCdp(method) { hold.set(method, []); },
+    // Primitives of `method` are asked but never answer from now on.
+    stall(method) { stalled.add(method); },
     releaseCdp(method, result = {}) { for (const resolve of hold.get(method) ?? []) resolve(result); hold.delete(method); },
     // The native port, as the real extension holds it: hello first, then requests answered and notifications sent.
     connect({toHost, fromHost, sendHello = true, helloParams}) {

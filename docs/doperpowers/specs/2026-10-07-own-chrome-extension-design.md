@@ -139,9 +139,11 @@ the **page guard**, injected with `chrome.scripting.executeScript` into tabs the
 Log, 2026-10-07, #81). In a guarded tab it blanks every other extension's frame (`srcdoc=""` on an iframe,
 `about:blank` on a frame; open and closed shadow roots included) as it appears (MutationObserver) and on the host's
 request before each attach, because Chrome detaches `chrome.debugger` from a tab, and refuses to attach it again,
-while another extension's frame is in it. It also takes a user-activated `window.open` or `target` link of an http(s)
-URL and has the host open it as the session's tab (the page gets a stand-in window), instead of Chrome opening a tab
-no session owns; calls with window features (sized sign-in popups that need `window.opener`) are left to Chrome. A tab
+while another extension's frame is in it. In the top frame only (a sandboxed subframe must not open tabs through it),
+it also takes a user-activated `window.open` (no target or `_blank`) or `target=_blank` link of an http(s) URL and has
+the host open it as the session's tab (the page gets a stand-in window), instead of Chrome opening a tab no session
+owns; calls with window features (sized sign-in popups that need `window.opener`) and named targets (a frame or window
+anywhere in the frame tree) are left to Chrome. An unguard that arrives while a guard is installing wins. A tab
 is guarded from its creation (`tabs.create {guard}`) or the host's `tabs.guard`, every new document as it commits,
 until `tabs.unguard`, the tab's removal or the port dropping. The vendor's cursor overlay and favicon badges are not
 reproduced. The manifest carries `key` (the public key) so the unpacked load, the self-hosted
@@ -223,11 +225,12 @@ extension already holds the debuggee (DevTools and other extensions attach along
 debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor extension does.
 
 **Page guards and popups.** The host guards the tabs it owns: created tabs from creation (`tabs.create {guard:true}`),
-and every owned tab again (`tabs.guard`, a sweep) before each `attach`/`attachTarget`; a guard Chrome refuses (a page
-cua may not script, such as `about:blank`) is logged and ignored. An attach Chrome refuses with `Cannot access a
+and every owned tab again (`tabs.guard`, a sweep) before each `attach`/`attachTarget`, waited for at most 1.5 s
+(`GUARD_WAIT_MS`: an open JavaScript dialog stops `chrome.scripting`, and attaching is how the agent dismisses it); a
+guard Chrome refuses (a page cua may not script, such as `about:blank`) is logged and ignored. An attach Chrome refuses with `Cannot access a
 chrome-extension:// URL of different extension` is swept once more and retried once; a second refusal is the
 service's answer. A turn's end unguards its handoff tabs (the user works in them; the next turn's attach guards them
-again) and the tabs it releases open; tabs it closes need nothing. `tabs.popup {openerTabId, url}` is taken when the
+again) and the tabs it releases open, without waiting for the answer; tabs it closes need nothing. `tabs.popup {openerTabId, url}` is taken when the
 opener is owned by a session whose current turn it belongs to: the host opens `url` with `tabs.create {openerTabId,
 group, guard:true}` and owns it as a created tab of that turn, the session's active tab (vendor parity:
 `handleAgentBackgroundPopup` claims the popup as the logical active tab); otherwise it is dropped and logged. Every
@@ -777,10 +780,13 @@ No new npm dependencies.
   cua follows the injection model (an owned tab only; a user's other tabs never see cua code, and nothing is declared
   for every page) with three choices of its own: the guard is installed on the host's tab creation, at each new
   document's commit (`tabs.onUpdated` url/complete, so no `webNavigation` permission) and swept before each attach
-  rather than on every CDP command (one extra native round trip per attach, none per command); an attach refused for a
-  foreign frame is swept and retried once by the host; and `window.open` with window features is left to Chrome,
-  because a sized popup is almost always a sign-in flow that needs `window.opener`, which a tab opened by the extension
-  cannot have (the vendor intercepts those too). The host now logs every refused extension request so the next case
+  rather than on every CDP command (one extra native round trip per attach, none per command), the host waiting for a
+  sweep at most 1.5 s and never for an unguard (review: an open dialog blocks injection indefinitely); an attach refused
+  for a foreign frame is swept and retried once by the host; and the popup interceptor runs in the top frame only (the
+  vendor injects it into every frame, which lets a sandboxed frame without `allow-popups` open tabs) and takes only
+  new-context opens: `window.open` with window features is left to Chrome, because a sized popup is almost always a
+  sign-in flow that needs `window.opener`, which a tab opened by the extension cannot have, and so is every named
+  target, which may name a frame anywhere in the tree (the vendor intercepts both). The host now logs every refused extension request so the next case
   like this is diagnosable from `$CUA_HOME/chrome/logs/`. Cursor overlay and favicon badges stay excluded. The
   `<all_urls>` host permission is the one the Store scrutinizes, so this lands before the first upload (#78).
   Alternatives rejected: a declared `<all_urls>` content script that asks the worker whether its tab is owned (code in

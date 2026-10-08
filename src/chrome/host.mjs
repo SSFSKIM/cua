@@ -25,7 +25,7 @@
 //   the service's single re-attach recovers from (browser-service.mjs 47585-47595).
 // - A detach the user caused (canceled_by_user) is forwarded as onCDPDetach and the tab is never attached again.
 // - Owned tabs are guarded (extension/background.js, "Page guards"): created tabs from creation, every tab again before
-//   each attach, until the turn releases or hands it off. An attach Chrome refuses because another extension's frame is
+//   each attach (waited for at most GUARD_WAIT_MS), until the turn releases or hands it off (not waited for). An attach Chrome refuses because another extension's frame is
 //   in the tab ("Cannot access a chrome-extension:// URL of different extension") is retried once after a sweep. A page's
 //   window.open in an owned tab of the session's current turn (tabs.popup) opens as the session's tab, active.
 // - Every request the extension refuses is logged with its method, debuggee or tab and Chrome's message (never CDP
@@ -41,6 +41,8 @@ import {createPeer, frameDecoder, NO_HANDLER} from './protocol.mjs';
 import {backendDir, logDir, PROTOCOL_VERSION, socketNameFor} from './extension.mjs';
 
 export const DEFAULT_CDP_TIMEOUT_MS = 10_000;
+// How long an attach waits for the page guard's sweep before attaching anyway.
+export const GUARD_WAIT_MS = 1500;
 // Chrome tears the port down on a host->extension message over 1 MB; the extension may send up to 64 MiB.
 export const MAX_TO_EXTENSION_BYTES = 1024 * 1024;
 export const MAX_FROM_EXTENSION_BYTES = 64 * 1024 * 1024;
@@ -186,7 +188,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
           s.activeTabId ??= tab.tabId;
         } else {
           tab.state = 'handoff';
-          work.push(unguard(tab));          // the user works in it until the session resumes it
+          unguard(tab);                     // the user works in it until the session resumes it
         }
         work.push(detached);
         continue;
@@ -194,7 +196,8 @@ export function createHost({extension: port, hello, home = null, now = () => new
       release(s, tab);
       work.push(detached.then(() => {
         if (tab.origin === 'created' && tab.mark === 'none') return quiet(extension.request('tabs.remove', {tabId: tab.tabId}));
-        return Promise.all([unguard(tab), tab.origin === 'created' && quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}))]);
+        unguard(tab);
+        if (tab.origin === 'created') return quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}));
       }));
     }
     changed();
@@ -202,17 +205,32 @@ export function createHost({extension: port, hello, home = null, now = () => new
     log(`session ${s.id} turn ${turn} ended`);
   }
 
-  const unguard = tab => quiet(extension.request('tabs.unguard', {tabId: tab.tabId}));
+  // Never awaited: a page that cannot run scripts now (an open alert or beforeunload dialog blocks its renderer) must not
+  // hold up a turn's end.
+  const unguard = tab => { quiet(extension.request('tabs.unguard', {tabId: tab.tabId})); };
+
+  // A sweep of the tab, waited for at most GUARD_WAIT_MS: an open JavaScript dialog stops chrome.scripting until it is
+  // dismissed, and attaching is how the agent dismisses it. Resolves the sweep's result, or null.
+  async function sweep(tabId) {
+    let timer;
+    const bound = new Promise(resolve => { timer = setTimeout(() => resolve(TIMED_OUT), GUARD_WAIT_MS); });
+    try {
+      const result = await Promise.race([extension.request('tabs.guard', {tabId}).catch(() => null), bound]);
+      if (result !== TIMED_OUT) return result;
+      log(`tab ${tabId}: guard unanswered after ${GUARD_WAIT_MS} ms; attaching without waiting for it`);
+      return null;
+    } finally { clearTimeout(timer); }
+  }
 
   // Attaches a debuggee of an owned tab after guarding the tab; Chrome refusing it for another extension's frame gets one
   // more sweep and one retry.
   async function attachGuarded(tabId, debuggee) {
-    await quiet(extension.request('tabs.guard', {tabId}));
+    await sweep(tabId);
     try {
       return await extension.request('debugger.attach', debuggee);
     } catch (error) {
       if (!FOREIGN_FRAME.test(error?.message ?? '')) throw error;
-      const swept = await extension.request('tabs.guard', {tabId}).catch(() => null);
+      const swept = await sweep(tabId);
       log(`tab ${tabId}: another extension's frame blocked the debugger; swept ${JSON.stringify(swept)}, retrying once`);
       return await extension.request('debugger.attach', debuggee);
     }

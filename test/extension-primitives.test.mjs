@@ -329,8 +329,10 @@ test('a guarded tab is guarded again on every new document; an unguarded one is 
   stub.navigate(made.id, 'https://agent.invalid/', 'Agent');
   await waitFor(() => guardIn(stub, made.id), 'the guard in the new document');
   assert.equal(stub.calls.some(c => c.api === 'scripting.executeScript' && c.args[0].target.tabId === user.id), false, 'a tab nobody guards is never scripted');
-  assert.deepEqual(stub.callsOf('scripting.executeScript').filter(([a]) => a.target.tabId === made.id).map(([a]) => [a.world, a.func, a.target.allFrames, a.injectImmediately]).slice(-2),
-    [['MAIN', 'pagePopups', true, true], ['ISOLATED', 'pageGuard', true, true]]);
+  // The page-world interceptor goes to the top frame only (a sandboxed subframe must not open tabs through it); the
+  // frame guard to every frame.
+  assert.deepEqual(stub.callsOf('scripting.executeScript').filter(([a]) => a.target.tabId === made.id).map(([a]) => [a.world, a.func, a.target, a.injectImmediately]).slice(-2),
+    [['MAIN', 'pagePopups', {tabId: made.id, frameIds: [0]}, true], ['ISOLATED', 'pageGuard', {tabId: made.id, allFrames: true}, true]]);
 
   await host.request('debugger.attach', {tabId: made.id});
   assert.deepEqual(await host.request('tabs.unguard', {tabId: made.id}), {});
@@ -370,10 +372,12 @@ test('a guarded page\'s user-activated window.open and target links go to the ho
   page.click(button);
   await page.run('main', 'window.open("https://idp.invalid/auth", "signin", "width=500,height=600")');
   await page.run('main', 'window.open("/self", "_self")');
+  await page.run('main', 'window.open("/framed", "main")');
   await page.run('main', 'window.open("mailto:x@y.invalid")');
   page.navigator.userActivation.isActive = false;
   await page.run('main', 'window.open("/no-gesture")');
-  assert.deepEqual(page.nativeOpens.map(o => o.url), ['https://idp.invalid/auth', '/self', 'mailto:x@y.invalid', '/no-gesture']);
+  assert.deepEqual(page.nativeOpens.map(o => o.url), ['https://idp.invalid/auth', '/self', '/framed', 'mailto:x@y.invalid', '/no-gesture'],
+    'a named target may be a frame or window anywhere in the frame tree: Chrome resolves it');
 
   // A link with a target opens as the session's tab; one without a target navigates the tab itself (not touched).
   const link = page.document.body.appendChild(page.element('a'));
@@ -383,9 +387,13 @@ test('a guarded page\'s user-activated window.open and target links go to the ho
   const plain = page.document.body.appendChild(page.element('a'));
   plain.setAttribute('href', '/same-tab');
   assert.equal(page.click(plain).defaultPrevented, false);
+  const named = page.document.body.appendChild(page.element('a'));
+  named.setAttribute('href', '/in-frame');
+  named.setAttribute('target', 'content');
+  assert.equal(page.click(named).defaultPrevented, false, 'a link into a named frame is Chrome\'s');
   await waitFor(() => popups().length === 3, 'the link popup');
   assert.equal(popups()[2].url, 'https://agent.invalid/linked');
-  assert.equal(page.nativeOpens.length, 4);
+  assert.deepEqual(page.nativeOpens.slice(5).map(o => o.url), ['https://agent.invalid/in-frame']);
 
   // The worker only relays its own guard's requests from tabs it guards.
   const user = stub.addTab({url: 'https://user.invalid/'});
@@ -403,4 +411,21 @@ test('a guarded page\'s user-activated window.open and target links go to the ho
   assert.equal(stub.state.tabs.get(child.id).openerTabId, there.id);
   await host.request('tabs.unguard', {tabId: child.id});
   assert.ok(stub.callsOf('scripting.executeScript').some(([a]) => a.target.tabId === child.id && a.func === 'pageUnguard'), 'it was guarded');
+});
+
+test('an unguard that arrives while a guard is being installed wins: nothing stays installed in the tab', async () => {
+  const {stub, host} = await start();
+  const made = await host.request('tabs.create', {url: 'https://agent.invalid/', windowId: 1});
+  const executeScript = stub.chrome.scripting.executeScript;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  // The isolated injection waits until the unguard has gone through.
+  stub.chrome.scripting.executeScript = async details => { if (details.func?.name === 'pageGuard') await gate; return executeScript(details); };
+  const guarding = host.request('tabs.guard', {tabId: made.id});
+  await waitFor(() => stub.page(made.id).run('main', 'globalThis.__cuaPagePopups !== undefined'), 'the page-world half installed');
+  await host.request('tabs.unguard', {tabId: made.id});
+  release();
+  await guarding;
+  await waitFor(async () => !(await guardIn(stub, made.id)) && await stub.page(made.id).run('main', 'globalThis.__cuaPagePopups === undefined'), 'both halves removed');
+  stub.chrome.scripting.executeScript = executeScript;
 });

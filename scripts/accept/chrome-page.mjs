@@ -2,10 +2,14 @@
 // (ephemeral port), each with a per-run document marker. No external resource, form, cookie or network request (each
 // document's CSP forbids them); nothing persists. The servers answer only their own paths on their exact Host (a
 // rebinding or lookalike Host is refused) and count requests without paths.
-//   /        the C2 page: one password input and one button. The button computes SHA-256 of the input's value in the
-//            page (crypto.subtle; a loopback origin is a secure context) and shows only `done: <first 16 hex digits>`,
-//            so the harness can check what was entered without the value ever being displayed, read back or
-//            screenshotted (the field stays masked).
+//   /        the C2 page: one masked text input and one button. The button computes SHA-256 of the input's value in
+//            the page (crypto.subtle; a loopback origin is a secure context) and shows only `done: <first 16 hex
+//            digits>`, so the harness can check what was entered without the value ever being displayed, read back or
+//            screenshotted (its text is transparent). It is a plain text input, not a password input nor one masked
+//            with -webkit-text-security: in the owner's Chrome (H3b live) focusing either drew a password manager's
+//            frame into the page, and Chrome then refuses the debugger on the tab ("Cannot access a chrome-extension://
+//            URL of different extension"), failing the fill or the click after it; the opt-out attributes password
+//            managers document did not prevent it.
 //   /framed  a page embedding the frame server's page in an iframe. The frame server is a second loopback port named
 //            `localhost`, so the frame is cross-site as well as cross-origin: Chrome's site isolation puts it in its own
 //            renderer (an out-of-process iframe), which the vendor service reaches only through attachTarget. Its page
@@ -17,21 +21,23 @@ import {createServer} from 'node:http';
 import {createHash, randomBytes} from 'node:crypto';
 
 export const PAGE_TITLE = 'CUA acceptance page';
-export const INPUT_LABEL = 'Acceptance password';
+export const INPUT_LABEL = 'Acceptance secret';
 export const BUTTON_LABEL = 'Compute digest';
 export const DIGEST_HEX = 16;
 export const expectedDigest = value => createHash('sha256').update(value, 'utf8').digest('hex').slice(0, DIGEST_HEX);
 
 export const SCRIPT = "document.getElementById('compute').addEventListener('click', async () => { const out = document.getElementById('out'); out.textContent = 'computing'; const bytes = new TextEncoder().encode(document.getElementById('secret').value); const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)); out.textContent = 'done: ' + Array.from(hash, b => b.toString(16).padStart(2, '0')).join('').slice(0, " + DIGEST_HEX + "); });";
 const SCRIPT_HASH = createHash('sha256').update(SCRIPT).digest('base64');
-export const CSP = `default-src 'none'; script-src 'sha256-${SCRIPT_HASH}'; style-src 'none'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`;
+export const STYLE = '#secret { color: transparent; }';
+const STYLE_HASH = createHash('sha256').update(STYLE).digest('base64');
+export const CSP = `default-src 'none'; script-src 'sha256-${SCRIPT_HASH}'; style-src 'sha256-${STYLE_HASH}'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`;
 
 const html = marker => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${PAGE_TITLE}</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>${PAGE_TITLE}</title><style>${STYLE}</style></head>
 <body><main>
 <h1>${PAGE_TITLE}</h1>
 <p id="marker">${marker}</p>
-<input id="secret" type="password" aria-label="${INPUT_LABEL}" autocomplete="off">
+<input id="secret" type="text" aria-label="${INPUT_LABEL}" autocomplete="off" spellcheck="false">
 <button id="compute" type="button">${BUTTON_LABEL}</button>
 <p id="out" role="status">waiting</p>
 </main><script>${SCRIPT}</script></body></html>

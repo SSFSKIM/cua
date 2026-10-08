@@ -273,7 +273,7 @@ export async function twoClientScenario({sessions, page, instanceId, record, fac
     const closes = await Promise.all(runs.map((run, i) => (own[i] === null ? null : run('closeOwnTab', cells.closeOwnTab(ns[i])))));
     const ends = await Promise.all(sessions.map(session => endTask(session, limits)));
     const clean = closes.every((c, i) => own[i] === null || (c?.result?.closed === true && c.result.stillListed === false));
-    record('two-clients-cleanup', clean && ends.every(endedOk) ? 'PASS' : 'FAIL', {closed: closes.map(c => c?.result?.closed ?? null), endTask: ends});
+    record('two-clients-cleanup', clean && ends.every(endedOk) ? 'PASS' : 'FAIL', {closed: closes.map(c => c?.result?.closed ?? null), stillListed: closes.map(c => c?.result?.stillListed ?? null), endTask: ends});
     if (!clean) facts.leftoverNotes = [...(facts.leftoverNotes ?? []), 'a two-client tab on the runner\'s page may still be open; close it by hand'];
   }
 }

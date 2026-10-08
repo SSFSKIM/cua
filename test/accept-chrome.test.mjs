@@ -3,8 +3,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import {request} from 'node:http';
-import {startAcceptancePage, SCRIPT, CSP, expectedDigest, INPUT_LABEL, FRAME_SCRIPT, FRAME_CLICKED, frameCsp, framedCsp, USER_CSP} from '../scripts/accept/chrome-page.mjs';
+import {startAcceptancePage, SCRIPT, STYLE, CSP, expectedDigest, INPUT_LABEL, FRAME_SCRIPT, FRAME_CLICKED, frameCsp, framedCsp, USER_CSP} from '../scripts/accept/chrome-page.mjs';
 import {inducedFailure, fillReference, CLOSE_TAB} from '../scripts/accept/chrome-cells.mjs';
 import {inputFailed} from '../src/services/secret-input.mjs';
 
@@ -29,7 +30,7 @@ const get = (url, host) => new Promise((resolve, reject) => {
   req.end();
 });
 
-test('the page is one self-contained document on its exact loopback Host, with a masked password field', async t => {
+test('the page is one self-contained document on its exact loopback Host, with a text field whose text is transparent', async t => {
   const page = await startAcceptancePage();
   t.after(page.close);
   assert.match(page.origin, /^http:\/\/127\.0\.0\.1:\d+$/);
@@ -37,7 +38,9 @@ test('the page is one self-contained document on its exact loopback Host, with a
   assert.equal(ok.status, 200);
   assert.equal(ok.headers['content-security-policy'], CSP);
   assert.ok(ok.body.includes(page.documentMarker));
-  assert.match(ok.body, new RegExp(`<input id="secret" type="password" aria-label="${INPUT_LABEL}"`));
+  assert.match(ok.body, new RegExp(`<input id="secret" type="text" aria-label="${INPUT_LABEL}"`));
+  assert.ok(ok.body.includes(`<style>${STYLE}</style>`) && /color: transparent/.test(STYLE));
+  assert.ok(CSP.includes(`style-src 'sha256-${createHash('sha256').update(STYLE).digest('base64')}'`));
   assert.equal((await get(page.url, `localhost:${new URL(page.url).port}`)).status, 421);
   assert.equal((await get(`${page.origin}/other`)).status, 404);
   assert.deepEqual(page.requests(), {total: 3, served: 1, refused: 2, frame: {total: 0, served: 0, refused: 0}, user: {total: 0, served: 0, refused: 0}});

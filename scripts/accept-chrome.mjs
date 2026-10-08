@@ -25,7 +25,7 @@
 // store file in the temporary $HOME -> substitution -> the vendor @oai/browser-desktop service -> the original OpenAI
 // extension/host -> the profile's Chrome. The script selects the registered profile's backend by its stored instance
 // id (cua.getBrowser({extensionInstanceId})), creates one tab, navigates it to the runner's own loopback page, fills
-// its password field with `{{secret:<label>}}`, clicks; the page computes SHA-256 of what it received and shows only
+// its masked secret field with `{{secret:<label>}}`, clicks; the page computes SHA-256 of what it received and shows only
 // the first 16 hex digits, which the runner compares with the generated sentinel's digest. Then a substituted fill
 // the vendor must fail (no such element) shows the value-free classification, one screenshot of the masked page is
 // kept outside git, and the created tab is closed and confirmed gone.
@@ -179,7 +179,10 @@ try {
         const init = await session.initialize();
         const {result: list} = await session.request('tools/list', {});
         const tools = (list?.tools ?? []).map(t => t.name);
-        record('browser-surface', tools.includes('profiles_list') && /createBrowserTab/.test(list.tools.find(t => t.name === 'js')?.description ?? '') && /extensionInstanceId/.test(init.instructions ?? '') ? 'PASS' : 'FAIL', {tools});
+        // The Chrome rules (getBrowser by the listed extensionInstanceId) moved from the host notes into profiles_list's
+        // description (#73); either place counts.
+        const rules = `${init.instructions ?? ''}\n${list.tools.find(t => t.name === 'profiles_list')?.description ?? ''}`;
+        record('browser-surface', tools.includes('profiles_list') && /createBrowserTab/.test(list.tools.find(t => t.name === 'js')?.description ?? '') && /extensionInstanceId/.test(rules) ? 'PASS' : 'FAIL', {tools});
         const profiles = (await session.call('profiles_list', {}, 150_000)).result?.structuredContent;
         const entry = profiles?.profiles?.find(p => p.key === options.profile);
         const sameId = entry?.ready === true && entry.extensionInstanceId === profile.extensionInstanceId;

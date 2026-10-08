@@ -35,7 +35,7 @@ __out.markerFound = m.verified;`);
 
 export const fillReference = (page, reference) => cellCode(`${owned(page)}
 const field = m.tab.playwright.getByLabel(${js(INPUT_LABEL)}, {exact: true});
-if ((await field.count()) !== 1) throw new Error("accept: the password label does not resolve to exactly one element");
+if ((await field.count()) !== 1) throw new Error("accept: the secret field's label does not resolve to exactly one element");
 await field.fill(${js(reference)}, {timeoutMs: 10000});
 __out.filled = true;`);
 
@@ -220,13 +220,19 @@ try {
   __out.otherReachable = true;
 } catch (e) { __out.otherError = String(e?.message ?? e).slice(0, 300); }`);
 
+// close() returns when Chrome accepts Target.closeTarget, before the tab leaves Chrome's tab list (H3b live: one of two
+// concurrent closes was still listed right after), so the listing is polled for up to 2 s.
 export const closeOwnTab = ns => cellCode(`const m = ${at(ns)};
 ${ID_OF}
 if (!m?.own) throw new Error("accept: no own tab");
 const id = String(m.own.id);
 await m.own.close();
 __out.closed = true;
-__out.stillListed = (await m.browser.tabs.list()).flatMap(idsOf).includes(id);`);
+for (let i = 0; i < 10; i++) {
+  __out.stillListed = (await m.browser.tabs.list()).flatMap(idsOf).includes(id);
+  if (!__out.stillListed) break;
+  await new Promise(r => setTimeout(r, 200));
+}`);
 
 // Acceptance 6: the open task's next call after Chrome went away. A failure is the expected outcome; its text is
 // classified by the runner and the time it took is the point.

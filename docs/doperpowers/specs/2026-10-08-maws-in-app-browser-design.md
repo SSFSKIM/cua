@@ -131,9 +131,16 @@ client gets the `hello` notification at once:
 `hostRefused`, which MAWS logs. Several clients may connect over the socket's life (a relaunched `cua serve`, a fork
 subagent's own shim, an inventory launch of `cua profiles list`); each connection is its own host in its own process
 with its own tab ownership, and MAWS keeps per-connection state only (integer tab ids, leases, held commands, pending
-dialog callbacks). A tab is driven by one connection at a time: `debugger.attach` on a tab another connection holds a
-lease on is refused with `Tab is held by another agent session` (the host reports it to the vendor, which fails the
-call; no retry). When a connection closes, MAWS cancels its held commands, releases its leases and hides its cursor;
+dialog callbacks). Tab lifecycle authority is the connection's, separately from the debugger lease: a tab created
+through a connection (`tabs.create`, or adopted from such a tab's `window.open`) is *reserved* to that connection
+until the connection closes, whether or not a lease is held at the moment; `debugger.attach` on a tab reserved to
+another live connection, or under another connection's lease, is refused with `Tab is held by another agent session`
+(the host reports it to the vendor, which fails the call; no retry), and the destructive primitives, `tabs.remove` and
+the emulated `Target.closeTarget`, succeed only for a tab reserved to the requesting connection (a person's tab is
+never closed through a primitive: the host releases claimed tabs open at turn end, and a request to close one answers
+`Tab is not owned by this agent session`). When a connection closes its reserved tabs become the person's (any
+connection may then claim them). So a host that times out and detaches keeps its created tab, no other host can take
+it meanwhile, and its `turnEnded` cleanup closes only what is its own. When a connection closes, MAWS cancels its held commands, releases its leases and hides its cursor;
 tabs stay open (the host closes unmarked tabs at `turnEnded` itself, as on Chrome; a client that dies mid-turn leaves
 its tabs for the person, as a dead Chrome host does).
 
@@ -180,10 +187,14 @@ old driver refuses a tab under a cua lease with its `tabInUse` error. The old dr
 (`driver.ts`): auto-attach is reset before its bridge closes whatever leases remain, so a frame or worker paused by
 its `waitForDebuggerOnStart` is never left with nobody to resume it; only its physical detach follows the lease count. Focus emulation (`visibility.ts`,
 MAWS's own, default off) may keep the attachment alive after the agent lets go; so the server, on `debugger.detach`,
-on the host's timeout detach, on turn end and on disconnect, resets the agent's state before releasing its lease:
-`Fetch.disable`, `Target.setAutoAttach {autoAttach: false, flatten: true}`, `Emulation.clearDeviceMetricsOverride`,
-`Emulation.setFocusEmulationEnabled {enabled: false}` unless focus emulation is on; a persisting attachment then
-carries no agent state and a handed-back page never stalls on an interception nobody consumes.
+on the host's timeout detach, on turn end and on disconnect, resets the agent's state before releasing its lease.
+The server records every persistent toggle the connection switched on through the lease and undoes each:
+`Fetch.enable` → `Fetch.disable`; `Target.setAutoAttach` → `{autoAttach: false, flatten: true}`;
+`Emulation.setDeviceMetricsOverride` → `clearDeviceMetricsOverride`; `Emulation.setFocusEmulationEnabled` →
+`{enabled: false}` unless MAWS's own focus emulation is on; `Page.setInterceptFileChooserDialog` → `{enabled: false}`
+(the vendor disables it in a `finally` that never runs when the shim dies mid-wait, BS:50034-50063, and a person's
+later file-input click would otherwise open no picker). A persisting attachment then carries no agent state and a
+handed-back page never stalls on an interception nobody consumes.
 
 Commands pass through E4c's boundary, lifted from `src/main/browser/agent/bridge.ts` into the server: no `Browser.*`,
 `Storage.*`, `SystemInfo.*`, `Tethering.*`; of `Target.*` only `setAutoAttach`, `detachFromTarget`, `getTargetInfo`,
@@ -276,13 +287,21 @@ timer.
 run by `Runtime.callFunctionOn` (BS:49874-49898), and locators evaluate through `Runtime.*`. So the class is defined
 conservatively: a *reading* command is one of `Page.captureScreenshot`, `Page.getFrameTree`,
 `Page.getNavigationHistory`, `Page.getLayoutMetrics`, `DOM.getDocument`, `DOM.describeNode`, `DOM.getBoxModel`,
-`DOM.getContentQuads`, `DOM.getNodeForLocation`, `DOM.resolveNode`, `Accessibility.*`, `Target.*` (the allowed ones),
+`DOM.getContentQuads`, `DOM.getNodeForLocation`, `DOM.resolveNode`, `Accessibility.*`, `Target.setAutoAttach`,
+`Target.detachFromTarget`, `Target.getTargetInfo`, `Target.attachToTarget`, `Target.getTargets` (`Target.closeTarget`
+is acting: the vendor's `tab.close()` sends it on an attached tab, BS:47991-48024, 48075-48077, and the person's page
+must not vanish under their hands),
 `Runtime.enable`/`disable`, `Page.enable`/`disable`, `Network.enable`/`disable`, `Fetch.enable`/`disable`,
 `Fetch.continueRequest`/`continueResponse`/`failRequest` (a paused request must proceed or the page stalls),
 `Emulation.setFocusEmulationEnabled`, `Emulation.setDeviceMetricsOverride`/`clearDeviceMetricsOverride`; every other
 command, `Runtime.evaluate` and `Runtime.callFunctionOn` included, is *acting*.
 
-**Takeover.** While a tab is `human`, an acting command through a lease is held waiting for hand-back for at most
+**Takeover.** Before an acting command is marked and dispatched the server asks control's existing `personHolds`
+predicate (the control is `human`, or the person's last input on the tab is within the 3 s hand-back window while
+the tab is `idle`, `control.ts`), and a recent touch of an idle tab promotes it to `human` first, exactly as the old
+tools' pause point does; so a person who just touched an idle tab, or a tab whose agent-idle timer lapsed, is
+protected the same way. While a tab is `human`, an acting command through a lease is held waiting for hand-back for
+at most
 `min(BROWSER_TAKEOVER_HOLD_MS = 1500, timeoutMs - 100)` ms, where `timeoutMs` is the deadline the host passes with the
 command (the vendor converts a locator action's remaining budget to it, BS:48768-48779, and it can be below 1.5 s), then
 refused with the error `A person is using this tab; wait and retry`; a command whose deadline is already under 200 ms
@@ -551,7 +570,8 @@ Proves: acceptance 2 (all but the badge), 3, 7, 11 (two app sessions opened in t
 `--other`), 13's MAWS half, through M1's terminal harness against a running session; pins: a tab of another session is refused; a refused CDP method's error text; the lease count across two
 connections; the old driver retiring on one tab while a cua connection keeps navigating another with cross-origin
 frames; the old driver retiring on a tab with focus emulation on, then a new cross-origin frame loading in that tab
-and running (nothing left paused); the state reset on detach with focus emulation on; `Target.closeTarget` on the owned tab and on a foreign
+and running (nothing left paused); host A times out and detaches, host B's attach on A's created tab is refused, A's
+`turnEnded` closes only its own tab; a `tabs.remove` on a person's tab is refused; the state reset on detach with focus emulation on; `Target.closeTarget` on the owned tab and on a foreign
 target id; a held command cancelled by disconnect.
 
 ### M3 — MAWS: what the person sees and keeps
@@ -577,7 +597,10 @@ Does not touch: the six tools' code (still present until M4); charter text.
 
 Proves: acceptance 2's badge, 4, 5, 6, 8, 9, 10; pins: no typed text in any emitted event; the hold bounded by the
 command's deadline, then the refusal; a `Runtime.callFunctionOn` during `human` is held, a `Page.captureScreenshot`
-passes and leaves control `human`; the 30 s dialog default; a duplicate download path recorded once.
+passes and leaves control `human`; an acting command within 3 s of a person's touch on an idle tab is held, and the
+tab reads `human`; `Target.closeTarget` during takeover is held, then refused; a disconnect during a file-chooser wait
+leaves interception off and the person's next file-input click opens the native picker; the 30 s dialog default; a
+duplicate download path recorded once.
 
 ### M4 — MAWS: the cut-over
 
@@ -659,8 +682,8 @@ The MAWS userData path above is the packaged app's; the dev build's is printed b
 `cursor.move {tabId: number, x: number, y: number} → {}`, `timeoutMs?: number` on `debugger.sendCommand`, and the
 notification `tabs.adopted {openerTabId: number, tabId: number, url: string}`. Errors are `{code: 1, message}` with
 Chrome's wording where one exists (`No tab with id: <n>`, `No target with given id found`), `Method not allowed:
-<method>` for the filter, `Tab is held by another agent session`, `Tab is driven by the maws tools`, `A person is
-using this tab; wait and retry`, `Command cancelled: <why>`. Owner: M1 (`cursor.move`, `timeoutMs`, `tabs.adopted`),
+<method>` for the filter, `Tab is held by another agent session`, `Tab is not owned by this agent session`, `Tab is
+driven by the maws tools`, `A person is using this tab; wait and retry`, `Command cancelled: <why>`. Owner: M1 (`cursor.move`, `timeoutMs`, `tabs.adopted`),
 M2 (server), M3 (downloads, dialog and chooser paths).
 
 **`profiles_list` entry** (cua MCP): `{key: 'maws' | 'maws-<n>', ready: boolean, extensionInstanceId?: string,
@@ -714,7 +737,10 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   host command; the frame limits read in the host's direction. Second round (same day): the old driver's teardown
   resets auto-attach whatever leases remain; an unqualified selection is rewritten to the MAWS instance in the trusted
   wrapper so a missing backend fails instead of falling back to Chrome; the harness proves two-session isolation with
-  `--other`.
+  `--other`. Third round (same day): tab lifecycle authority is per connection (reserved tabs, destructive
+  primitives for the owner only, the person's tabs never closed by a primitive); the takeover gate uses control's
+  `personHolds` before any acting command; `Target.closeTarget` is acting; the pre-release reset undoes every
+  persistent toggle the connection set, chooser interception included.
   Rationale: both reviews (design and buildability) reproduced the defects against the code; none contradicts the
   approved design, each is a wire or lifecycle rule the design had left to the executor.
   Alternatives rejected then: a shared host per session with reuse rules (more state than per-process hosts, and

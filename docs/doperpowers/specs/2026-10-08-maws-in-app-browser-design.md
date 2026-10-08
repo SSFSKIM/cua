@@ -243,9 +243,12 @@ client-mode host sockets, plus the cua route's Chrome sockets as today, plus, on
 the next `cua serve`, the same limit the cua route has for unbound profiles). `BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID`
 is set to the first configured backend's instance id, and, because the vendor's selector falls back from a missing
 preferred instance to any extension (BS:68229-68235), the default is also enforced in cua's trusted browser wrapper
-(`src/services/browser.mjs`, which already intercepts every browser RPC): with `CUA_BROWSER_DEFAULT_INSTANCE=<that
-id>` in the launch env, a selection request that names no browser, kind, family or instance is rewritten to
-`{extensionInstanceId: <id>}` before it reaches the vendor, so `cua.getBrowser()` with no argument is the in-app
+(`src/services/browser.mjs`, which already intercepts every browser RPC): with `CUA_BROWSER_DEFAULT_INSTANCE` in the
+launch env (the first backend's instance id when its hello arrived before launch, else the bare marker `maws:`), a
+selection request that names no browser, kind, family or instance is resolved at selection time to the listed browser
+whose instance id equals the variable, else the first listed browser whose instance id starts with `maws:` (only this
+process's client-mode hosts can carry that prefix), else the vendor's own unavailable error, before it reaches the
+vendor (M1 refinement, Decision Log), so `cua.getBrowser()` with no argument is the in-app
 browser or fails with the vendor's own unavailable error while MAWS is down; it never lands in the owner's Chrome. A
 selection that names a Chrome profile's instance id passes untouched (the owner's choice: in MAWS the in-app browser
 is the default; a Chrome profile is used when the user names it).
@@ -672,7 +675,9 @@ The MAWS userData path above is the packaged app's; the dev build's is printed b
 **`CUA_BROWSER_BACKENDS`** (environment of `cua serve` and `cua profiles list`): absolute Unix socket paths,
 `:`-separated. Each is a peer speaking the extension protocol (version 1) that sends `hello` on connect. Owner: M1
 (reader), M2 (writer, through `extraSettings.env`). **`CUA_BROWSER_DEFAULT_INSTANCE`** (cua's launch env, set by
-`cua serve` for the trusted worker): the instance id an unqualified browser selection is rewritten to. Owner: M1.
+`cua serve` for the trusted worker whenever `CUA_BROWSER_BACKENDS` is set): the first backend's instance id, or the
+marker `maws:` when no hello arrived before launch; an unqualified browser selection resolves to the listed browser
+with that id, else the first listed `maws:` browser, else fails; never a Chrome profile. Owner: M1.
 
 **hello** (peer → host, notification, first message):
 `{extensionId: string, extensionInstanceId: string, version: string, protocolVersion: 1, profileName?: string}`.
@@ -788,6 +793,18 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   select the in-app browser until restarted, against "the MAWS peer reconnecting restores the default without
   restarting the runtime".
   Date/Author: 2026-10-08, the plan executor (M1 executor's report, task-1).
+
+- Decision (2026-10-08, execution): reviewer rung. astra is at its usage limit until 2026-10-13, so the milestone
+  frontier reviews run `doperpowers:reviewer-high` with the model overridden to opus (the dispatching session accepted
+  this); the rung's scope and the two whole-branch reviews are otherwise as the authoring entry states.
+  Date/Author: 2026-10-08, the plan executor.
+
+- Decision (2026-10-08, M1 refinement of `CUA_BROWSER_DEFAULT_INSTANCE`, confirmed by the dispatching session): the
+  instance id of a MAWS backend is known only from its hello, so the trusted wrapper resolves "the MAWS backend" at
+  selection time: the listed browser whose id equals the variable, else the first listed browser whose id starts with
+  `maws:`, else the vendor's unavailable error; it never falls back to Chrome. The variable carries the known id or the
+  marker `maws:`. The design section and Interfaces are revised to say so.
+  Date/Author: 2026-10-08, the plan executor.
 
 ## Outcomes & Retrospective
 

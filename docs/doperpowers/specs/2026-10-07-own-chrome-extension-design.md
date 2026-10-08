@@ -29,9 +29,10 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-07 07:10) H1 — the host and its contract with the vendor service, proven against a fake extension.
 - [x] (2026-10-07 09:40) H2 — registration, launch, discovery, binding and doctor for the cua route (code and tests, no live Chrome).
 - [x] (2026-10-07 09:40) H3a — the extension, proven against the real host under a `chrome.*` stub (no owner needed).
-- [ ] H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
+- [x] (2026-10-08 00:10 UTC) H3b — live acceptance on this Mac from a scratch home with no login (owner loads the extension once).
       (2026-10-07 16:20) Runner built and reviewed clean; acceptance 2 PASS live; items 1, 3–6 BLOCKED on the owner's
-      unpacked load.
+      unpacked load. (2026-10-08) Owner loaded it; acceptance 1–6 PASS live (runner 40/40 twice, restart 11/11) after
+      three runner fixes; `docs/evidence/2026-10-07-own-extension-acceptance.md`.
 - [x] (2026-10-07 14:10) H4 — Linux: the Tart VM and the cloud VM template, unattended, with a self-hosted CRX.
 - [x] (2026-10-07 16:20) H5 — packaging, docs, plugin 0.4.0, board #78 (Store listing, owner) and #79 (vendor-route
       removal, blocked by #78); acceptance 8 zip/CRX half and 10 pass. Remaining: 8's Store half (owner, #78) and the
@@ -575,6 +576,20 @@ No new npm dependencies.
   the service through node_repl: `listBrowsers` returned nothing while the owner's live ChatGPT-extension hosts had
   sockets in `/tmp/codex-browser-use`. Same host on another port is same-site, so the cross-origin iframe cell serves
   its frame from `localhost:<port2>` (not `127.0.0.1`) to get an OOPIF.
+- Observation (H3b live, 2026-10-08): in the owner's Chrome, focusing a password input (or a text input masked with
+  `-webkit-text-security`) drew a password-manager extension's frame into the page. Chrome then refused the debugger on
+  the tab with "Cannot access a chrome-extension:// URL of different extension"; the vendor service reports this as
+  "Google Chrome is blocking automation because another extension UI is open on this page". It happened in 3 of 4 fills
+  of a password field and 0 of 13 fills of a plain text field. The managers' documented opt-out attributes did not
+  prevent it. This is Chrome's rule for every `chrome.debugger` client, so both routes hit it: an agent filling a real
+  password field in a profile with such a manager has to ask the user to dismiss the manager's UI. The C2 page now uses
+  a plain text field with transparent text.
+- Observation (H3b live): the vendor's `tab.close()` returns when Chrome accepts `Target.closeTarget`, before the tab
+  leaves `chrome.tabs.query`, so a listing right after a close can still show the tab for a moment.
+- Observation (H3b live): a full run started 40 s after Chrome reopened, while Chrome was restoring about 20 tabs,
+  failed seven steps on host CDP timeouts (up to 10 s). The run two minutes later passed. The host does not log CDP
+  traffic, so the stalled methods are unknown; restore load is the likely cause. Every other run had no stall, with
+  navigations of 0.1–0.5 s.
 
 ## Decision Log
 
@@ -705,20 +720,23 @@ No new npm dependencies.
 
 ## Outcomes & Retrospective
 
-Written 2026-10-07 at the PR; **pending H3b live** for acceptance 1 (after registration), 3, 4, 5 and 6, which wait on
-the owner loading `extension/` unpacked in `Default` and, later, quitting and reopening Chrome. The PR is not merged
-until those run (the dispatching session's call); the commands are under "To finish" in
-`docs/evidence/2026-10-07-own-extension-acceptance.md`.
+Written 2026-10-07 at the PR and finalized 2026-10-08 after H3b's live run. The owner loaded `extension/` unpacked in
+`Default` and quit and reopened Chrome once, as acceptance 6 required.
 
-**Outcome so far.** The purpose — Chrome driven with no ChatGPT or OpenAI account — is met everywhere it has been run
+**Outcome.** The purpose — Chrome driven with no ChatGPT or OpenAI account — is met everywhere it has been run
 live: S0 showed the pinned vendor service sends session requests to a backend whose `getInfo` omits
 `agentRequestHeaderEnabled`, with no login, on the default network (the control with the field present failed on the
 missing Codex token); on Linux, acceptance 7 passed unattended on the Tart VM and a throwaway Hetzner VM (3 m 45 s from
 nothing to doctor `ok:true`, `chrome.hosts.live` 1, `verify.mjs` clean, `linux-chrome.mjs` PASS, no sign-in step),
-with the self-hosted CRX force-installed over HTTPS by branded Chrome 154/155. On this Mac, acceptance 2 passed live
-(vendor manifests byte-identical, cua manifests gone after `unregister`) and an empty `BROWSER_USE_BACKEND_PATHS`
-hides the owner's live ChatGPT sockets as designed. Acceptance 8's zip/CRX half and 10 pass (`npm test` 945: 944
-pass, 1 skip; `probe-chrome-contract --fixtures` 15/15; the host suite's pins). Acceptance 8's Store half waits on
+with the self-hosted CRX force-installed over HTTPS by branded Chrome 154/155. On this Mac, acceptance 1–6 passed live
+from a scratch home that was never logged in. `profiles bind` bound the unpacked extension automatically by directory. Doctor showed `codex.login: skip` and passed
+every browser row. `verify.mjs` was clean. The runner passed 40/40 twice: the secret round trip, the cross-site iframe,
+the user-tab claim with its origin-access elicitation, turn-end marking and handoff, and two clients refused on each
+other's tabs. `goto` took 0.1–0.5 s. After the owner quit and reopened Chrome, the open task failed in 5 ms with a
+classified error, `end_task` succeeded, and a new task drove the profile through the same `cua serve` (11/11). The
+vendor manifests were byte-identical before and after, and an empty `BROWSER_USE_BACKEND_PATHS` hides the owner's live
+ChatGPT sockets as designed. Acceptance 8's zip/CRX half and 10 pass (`npm test` 945: 944
+pass, 1 skip, again after H3b's runner fixes; `probe-chrome-contract --fixtures` 15/15; the host suite's pins). Acceptance 8's Store half waits on
 #78; the vendor route's removal is #79 (blocked by #78). The whole-branch review (opus, reviewer-high brief) found
 nothing material.
 
@@ -729,11 +747,16 @@ is already attached" — Chromium raises it only for the same extension, so the 
 (H3a, design revised); an acceptance-3 cell that would pass without the origin-access elicitation it is meant to prove
 (H3b). The lesson that generalizes: a stubbed proof is only as good as the stub's fidelity to the real platform, and
 reviewers checking stubs against the platform's source (Chromium's `debugger_api.cc`) were the most valuable reads.
+The live run found what no stub could: the owner's password manager drawing its frame into a focused password field,
+which makes Chrome refuse the debugger on that tab (the C2 page now uses a plain text field). It also found a runner
+check left stale by #73 and a listing taken too soon after a close. Each fix was in the runner; the host and the
+extension passed unchanged.
 
 **Process.** Two milestones whose inputs were already reviewed ran in parallel worktrees (H3a beside H2, H4 beside
 H3b, H5 beside H3b's fixes) and rebased cleanly; the early, throwaway measurement of H4's gate (off-store force-install
 on branded Linux Chrome) removed the plan's only product fork before H4 began. The owner dependency was the critical
 path: everything not needing the loaded extension was finished and reviewed around it.
 
-**Left open.** H3b's live items (above); the Store listing (#78, owner); the minors in `tech-debt-tracker.md`
-("cua's own Chrome extension and host"); placeholder icons (needed for the listing).
+**Left open.** The Store listing (#78, owner). Not observed live: whether the debugger infobar's Cancel detaches one
+tab or all, and the host's `windows.create {focused:false}` (Chrome always had a window). Also open: the minors in
+`tech-debt-tracker.md` ("cua's own Chrome extension and host") and the placeholder icons (needed for the listing).

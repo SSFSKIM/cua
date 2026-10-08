@@ -23,7 +23,7 @@ registration, 3, 4, 5, 6) are BLOCKED on the owner loading the extension unpacke
 | H1 host | `src/chrome/{host,protocol,extension}.mjs`, fake extension; real vendor service vs real host: 8/8 ×4 | 2 Important fixed (successor's socket deleted on exit; late `turnEnded` stranding a handoff tab) |
 | H2 registration | `cua chrome register|unregister` (cua route, `--vendor`), route rule, discovery, presence rule, doctor rows, launcher stderr log | 1 Important fixed (vendor hints sent users to the cua route) + route-flip minors |
 | H3a extension | MV3 worker + popup, proven against the real host under a `chrome.*` stub | 1 Important fixed (the design's "Another debugger … refusal otherwise" was wrong per Chromium source; design revised: adopt) |
-| H3b Mac live | runner `--route`, cells for every new behaviour; acceptance 2 PASS live; empty backend paths hide vendor sockets | runner: 1 Important fixed (acceptance 3 would pass without its elicitation); **live 1, 3–6 BLOCKED (owner)** |
+| H3b Mac live | runner `--route`, cells for every new behaviour; acceptance 2 PASS live; empty backend paths hide vendor sockets | runner: 1 Important fixed (acceptance 3 would pass without its elicitation); **live 1, 3–6 BLOCKED (owner)**; 2026-10-08: owner loaded it, live 1–6 PASS after three runner fixes (evidence file) |
 | H4 Linux | CRX3 packer, relay `/ext/`, template on the cua route; acceptance 7 PASS on Tart VM and Hetzner (3 m 45 s, deleted) | Approved; small fixes (`--deb` path with a space) |
 | H5 packaging/docs | `npm run extension:pack`, docs, cua-route wording, plugin 0.4.0; acceptance 8 zip/CRX half PASS | Approved; doc wording fixes |
 | Whole branch | — | "correct", no material findings |

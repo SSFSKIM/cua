@@ -74,7 +74,8 @@ The tab unselected in the session's panel with the "agent" badge is pinned by MA
                "sha256": "a3030829e7251330d53ac0d0a803039b8f82f6fa53d294b66e76d8fe3d8c6ec5", "sha256Match": true,
                "inDownloads": true, "elapsedMs": 274, "removed": {"deleted": true}}
 
-No save dialog (the window is click-through and nothing was shown; the M3 unit test pins the dialog-free path). The
+No save dialog: the file was complete in `~/Downloads` 274 ms after the click with nobody answering anything (a save
+panel would have held it), and MAWS's unit tests pin the dialog-free path for a leased tab. The
 "Allow download from <origin>" elicitation was accepted by the harness's answer, as the plugin's hook does. Each of
 the three download runs removed its own file; `ls ~/Downloads | grep -c cua-report` read `0` after every run. MAWS
 logged `tab b_000000000001's download was not recorded: no engine host holds m5-A`: these sessions have no engine,
@@ -142,7 +143,7 @@ Across four runs the buffer held no `screenshot` and no `typed` activity. The CD
 (`cdp-census.json`, one full harness run) explains both: zero `Page.captureScreenshot`, nine `Page.startScreencast`
 (the vendor takes a screenshot as a screencast frame, BS:43941-44040), and no `Input.insertText` (the vendor's `fill`
 sets the value by `Runtime.evaluate`). So "Screenshot" never appears (Finding A) and "Typed 1 character" appears only
-for keyboard input (`tab.cua.type`, key presses), not for `fill` (Finding C).
+for keyboard input, not for `fill` (Finding C).
 
 ## 11. end_task, handoff, two sessions — PASS from a terminal; two UI-started sessions BLOCKED
 
@@ -310,8 +311,9 @@ and retries until its 3 s budget, then reports `Playwright selector deadline exc
 protected; the agent cannot tell why it failed. README "For MAWS" now says what a held tab looks like to the agent.
 
 C. **`fill` leaves no "Typed" row.** The vendor fills by script (`Runtime.evaluate`), which MAWS cannot tell from any
-other evaluate, so only keyboard input (`tab.cua.type`, key presses) yields "Typed N characters". Acceptance 10's
-"Typed 1 character" needs a typing step, not `fill`.
+other evaluate, so only input sent as `Input.insertText` or key events yields "Typed N characters" (the vendor's
+`tab.cua.type` and key presses send those, BS:19008-19034; read in source, not run here). Acceptance 10's "Typed 1
+character" needs a typing step, not `fill`.
 
 D. Minor: a bare-Electron MAWS says hello with `version: "44.4.5"` (Electron's `app.getVersion()` with no app
 package); a packaged build sends its own version.

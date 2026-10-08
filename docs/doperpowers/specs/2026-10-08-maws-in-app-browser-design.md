@@ -129,10 +129,13 @@ client gets the `hello` notification at once:
 
 `protocolVersion` is cua's `PROTOCOL_VERSION` (`src/chrome/extension.mjs`); a host of another major refuses with
 `hostRefused`, which MAWS logs. Several clients may connect over the socket's life (a relaunched `cua serve`, a fork
-subagent's own shim); each connection is its own host with its own tab ownership, and MAWS keeps per-connection
-state only (integer tab ids, leases, pending dialog callbacks). When a connection closes, MAWS releases that
-connection's debugger leases and cursor; tabs stay open (the host closes unmarked tabs at `turnEnded` itself, as on
-Chrome; a client that dies mid-turn leaves its tabs for the person, as a dead Chrome host does).
+subagent's own shim, an inventory launch of `cua profiles list`); each connection is its own host in its own process
+with its own tab ownership, and MAWS keeps per-connection state only (integer tab ids, leases, held commands, pending
+dialog callbacks). A tab is driven by one connection at a time: `debugger.attach` on a tab another connection holds a
+lease on is refused with `Tab is held by another agent session` (the host reports it to the vendor, which fails the
+call; no retry). When a connection closes, MAWS cancels its held commands, releases its leases and hides its cursor;
+tabs stay open (the host closes unmarked tabs at `turnEnded` itself, as on Chrome; a client that dies mid-turn leaves
+its tabs for the person, as a dead Chrome host does).
 
 **Tab model.** The primitives' integer tab ids are minted per connection (1, 2, …) and mapped to MAWS `b_` tab ids;
 an id is never reused within a connection. The tabs a connection sees are the app session's reachable tabs — its own
@@ -160,43 +163,70 @@ Notifications to the host: `debugger.event {debuggee, sessionId, method, params}
 (child-session events carry their `sessionId`, as Chrome's do); `debugger.detached {debuggee, reason}` with
 `target_closed` when the view is destroyed, the renderer is gone or the tab closes, and `canceled_by_user` never (the
 person takes over by input, not by detaching); `tabs.removed {tabId}`, `tabs.updated {tabId, url, title, status}` on
-committed navigations and title changes of reachable tabs; `tabs.popup {openerTabId, url}` when a leased tab's
-`window.open` is honoured (the adopted child is the new tab, already in the session; the host answers by claiming it);
+committed navigations and title changes of reachable tabs; `tabs.adopted {openerTabId, tabId, url}` when a leased tab's
+`window.open` is honoured (the adopted child, already a session tab, is announced by id; the host owns it as a tab
+created by the opener's turn, so `end_task` closes it unless marked, and never opens a second one; MAWS never sends
+`tabs.popup`, whose meaning is "open this URL", which would duplicate the child and lose `window.opener`);
 `downloads.created` / `downloads.changed` (M3).
 
-**Debugger leases and the command filter.** `TabDebugger` becomes lease-counted: `lease()` attaches when nothing is
-attached and returns `{release()}`; the attachment ends when the last lease releases. Today's `attach()`/`detach()`
-pair (the Playwright driver's idle teardown, focus emulation, E4d's crop) becomes one implicit lease per owner, so no
-owner's detach can end an attachment another owner still uses: that is what lets the six tools and the server drive
-the same tab during M2 and M3. The primitive server holds one lease per tab per connection. Commands pass through E4c's boundary, lifted from
-`src/main/browser/agent/bridge.ts` into the server: no `Browser.*`, `Storage.*`, `SystemInfo.*`, `Tethering.*`; of
-`Target.*` only `setAutoAttach`, `detachFromTarget`, `getTargetInfo`, `attachToTarget` (flattened, for a child target of
-the same tab), and `getTargets` answered from the inventory above; `Page.handleJavaScriptDialog` and
+**Debugger leases, automation ownership and the command filter.** `TabDebugger` becomes lease-counted: `lease()`
+attaches when nothing is attached and returns `{release()}`; the attachment ends when the last lease releases. Today's
+`attach()`/`detach()` pair (the Playwright driver, focus emulation, E4d's crop) becomes one implicit lease per owner,
+so no owner's detach can end an attachment another owner still uses. Leases count attachment, not authority: CDP state
+(Fetch interception, auto-attach, device metrics, enabled domains) belongs to the one attachment, so automation
+ownership is exclusive. One automation owner per tab: a cua connection's lease, or, until M4 removes it, the old
+driver; the server refuses `debugger.attach` on a tab the old driver holds (`Tab is driven by the maws tools`) and the
+old driver refuses a tab under a cua lease with its `tabInUse` error, and the old driver's idle teardown sends
+`Target.setAutoAttach {autoAttach: false}` only when it holds the last lease. Focus emulation (`visibility.ts`,
+MAWS's own, default off) may keep the attachment alive after the agent lets go; so the server, on `debugger.detach`,
+on the host's timeout detach, on turn end and on disconnect, resets the agent's state before releasing its lease:
+`Fetch.disable`, `Target.setAutoAttach {autoAttach: false, flatten: true}`, `Emulation.clearDeviceMetricsOverride`,
+`Emulation.setFocusEmulationEnabled {enabled: false}` unless focus emulation is on; a persisting attachment then
+carries no agent state and a handed-back page never stalls on an interception nobody consumes.
+
+Commands pass through E4c's boundary, lifted from `src/main/browser/agent/bridge.ts` into the server: no `Browser.*`,
+`Storage.*`, `SystemInfo.*`, `Tethering.*`; of `Target.*` only `setAutoAttach`, `detachFromTarget`, `getTargetInfo`,
+`attachToTarget` (flattened, for a child target of the same tab), `getTargets` answered from the inventory above, and
+`closeTarget` emulated: its `targetId` must be the page target of a tab this connection holds a lease on, which is
+then closed through `TabStore.close` (the vendor's `tab.close()` sends `Target.closeTarget` whenever it knows a target
+id, BS:47991-48024); any other target answers `No target with given id found`. `Page.handleJavaScriptDialog` and
 `Page.setInterceptFileChooserDialog` take the dialog and chooser paths of M3. A refused method answers the error
 `Method not allowed: <method>`. Everything else, `Input.*`, `Runtime.*`, `DOM.*`, `Page.*`, `Network.*`, `Fetch.*`,
 `Emulation.*`, `Accessibility.*`, passes unchanged, Chromium's own error strings included (the host relies on
 "Debugger is not attached" wording only for Chrome's refusal, which Electron never produces; a crashed tab answers the
-lease's `target_closed` detach instead).
+lease's `target_closed` detach instead). `debugger.sendCommand` carries the host's `timeoutMs` (M1 forwards the
+vendor's per-command deadline; absent means the host's 10 s default) so the server can bound its own holds (takeover,
+below) and cancel: a command still held when its deadline passes, when its tab is detached by the host's timeout, when
+the turn ends, the connection closes or the tab is destroyed, is rejected at once with `Command cancelled: <why>`.
 
 **Session authorization.** The socket path is known to one app session's engine and nothing else; the directory is
 0700; no peer credential check beyond that (the Codex app's signed-peer check is its product's; cua's own Chrome
 sockets rely on the same filesystem rule). A fork subagent of the session shares the socket by design: it is the same
-app session. Two app sessions never share a socket, so neither lists or touches the other's tabs (A11).
+app session. Two app sessions never share a socket, and on the cua side a client-mode host is listed only to the
+process that opened it (next section), so no other session's vendor runtime can list, select or claim tabs through
+it (A11).
 
 ### cua: the host's client mode, discovery, `profiles_list` (`src/chrome/`, `src/runtime/`, `src/mcp/`)
 
 **Client mode.** `runHost` already takes any stream pair; `cua serve` (and the inventory launch of `cua profiles
 list`) reads `CUA_BROWSER_BACKENDS` (absolute socket paths, `:`-separated), connects to each, and runs `runHost({stdin:
-socket, stdout: socket})` in its own process. The host then listens at `$CUA_HOME/chrome/b/<socketNameFor('maws:<id>')>
-.sock` exactly as a Chrome-spawned host does, so `cua doctor`, the status file and the logs under `chrome/logs` apply
-unchanged. The connection is kept: a refused or lost connection is retried every 5 s for the life of the server
-(MAWS quitting and relaunching, D-16's detached engine), and the host's socket exists only while connected.
-`cua serve` waits up to 5 s for each configured backend's `hello` before launching the vendor runtime, so the first
-`listBrowsers` finds it; a backend that does not answer in time is launched without and found at the next retry (the
-vendor retries a dead listed path on every `listBrowsers`).
+socket, stdout: socket, socketName})` in its own process. Client-mode hosts listen in their own directory,
+`$CUA_HOME/chrome/m/` (0700), never in `chrome/b/`, which `backendPaths` scans for Chrome hosts; the name is
+`<socketNameFor(<configured MAWS socket path>)>-<pid>.sock`, known before any hello (M1 gives `runHost` a
+`socketName` option for this; the Chrome entry keeps deriving it from the hello) and unique per process, so a fork
+subagent's shim, an inventory launch and a relaunched `cua serve` each run their own host for the same MAWS session
+without `already_served`, and one exiting never touches another's. Nothing scans `chrome/m/`: a process lists exactly
+the client-mode hosts it opened, which is what keeps one session's backend out of every other process's inventory.
+Status files and logs follow the same name under `chrome/b/` and `chrome/logs/`; `cua doctor` reports client-mode
+hosts under a "MAWS" heading. The connection is kept: a refused or lost connection is retried every 5 s for the life
+of the server (MAWS quitting and relaunching, D-16's detached engine), and the host's socket exists only while
+connected. Because the path is known in advance it is prelisted in `BROWSER_USE_BACKEND_PATHS` whether or not the
+backend answered yet: `cua serve` waits up to 5 s for each configured backend's `hello` before launching the vendor
+runtime so the first `listBrowsers` finds it, and a backend that answers later is found at the next `listBrowsers`
+(the vendor retries every listed path, BS:67722-67753).
 
-**Discovery.** With `CUA_BROWSER_BACKENDS` set, `BROWSER_USE_BACKEND_PATHS` is set on every route: the client-mode
-hosts' sockets, plus the cua route's Chrome sockets as today, plus, on the vendor route, every `*.sock` present in
+**Discovery.** With `CUA_BROWSER_BACKENDS` set, `BROWSER_USE_BACKEND_PATHS` is set on every route: this process's
+client-mode host sockets, plus the cua route's Chrome sockets as today, plus, on the vendor route, every `*.sock` present in
 `/tmp/codex-browser-use` at launch (the OpenAI hosts the vendor would have scanned; sockets appearing later are found at
 the next `cua serve`, the same limit the cua route has for unbound profiles). `BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID`
 is set to the first configured backend's instance id, so `cua.getBrowser()` with no argument is the in-app browser
@@ -212,9 +242,14 @@ the line "- In MAWS: cua.getBrowser() with no id is this session's in-app browse
 only when the user names one." in place of the first Chrome rule's last sentence, keeping the description under
 Claude Code's 2,048-character cap.
 
-**`moveMouse`.** The host forwards the vendor's `moveMouse {tabId, x, y}` as the primitive `cursor.move` when the
-extension's hello carries `profileName` (a MAWS peer); for the Chrome extension, which has no cursor overlay, it stays
-the no-op it is. `cursor.move` is a request answered `{}`. The host's `getInfo` carries `metadata.profileName` from the hello when
+**Host changes for a MAWS peer.** The host forwards the vendor's `moveMouse {tabId, x, y}` as the primitive
+`cursor.move` when the extension's hello carries `profileName` (a MAWS peer); for the Chrome extension, which has no
+cursor overlay, it stays the no-op it is. `cursor.move` is a request answered `{}`. `debugger.sendCommand` gains
+`timeoutMs` (the limit `executeCdp` computes) on every peer; the Chrome extension ignores the extra field. The host
+handles the new notification `tabs.adopted {openerTabId, tabId, url}`: when the opener is owned by a live turn, the
+tab is owned as created by that turn and becomes its active tab (what `tabs.popup` does after its own `tabs.create`,
+without the create and without the http-only URL check: the tab exists already, `about:blank` included); otherwise it
+is logged and left to the person. The host's `getInfo` carries `metadata.profileName` from the hello when
 present, which is what the vendor lists as the backend's profile name and what cua's inventory shows.
 
 **Plugin.** `.claude-plugin/plugin.json` and `marketplace.json` go to 0.5.0 (plugin-visible: the `maws` profile and
@@ -224,17 +259,30 @@ the surface text). The README's "For MAWS" section is rewritten to the user-inst
 ### Retained MAWS semantics (MAWS, M3)
 
 **Who drives the tab.** Control (`src/main/browser/agent/control.ts`) keeps its three states. The agent's actions no
-longer arrive as tool calls, so the transitions move to the lease: a tab enters `agent` on the first `Input.*`,
-`Page.navigate`, `Page.reload` or `Runtime.evaluate` sent through a lease and re-arms the 10 s agent-idle timer on
-every such command; it returns to `idle` when the timer lapses or the lease is released. Human input still takes the
-page (`human`) exactly as today, with the 3 s hand-back timer.
+longer arrive as tool calls, so the transitions move to the lease: a tab enters `agent` on the first *acting* command
+(below) sent through a lease and re-arms the 10 s agent-idle timer on every such command; it returns to `idle` when the
+timer lapses or the lease is released. Reading commands never change control, so a permitted read during `human`
+cannot revoke the person's hold. Human input still takes the page (`human`) exactly as today, with the 3 s hand-back
+timer.
 
-**Takeover.** While a tab is `human`, an `Input.*`, `Page.navigate` or `Page.reload` command through a lease is held
-for at most `BROWSER_TAKEOVER_HOLD_MS = 1500` ms waiting for hand-back, then refused with the error
-`A person is using this tab; wait and retry`. The vendor caps locator actions at 3 s and the host detaches a tab after
-10 s without a reply, so a longer hold would turn the person's touch into a lost tab. Read commands (`Runtime.*`,
-`DOM.*`, screenshots) pass during `human`. The chrome's existing control affordances (the takeover banner, Hand back)
-are unchanged.
+**Acting and reading commands.** The vendor acts through more than `Input.*`: `selectOption` is an injected script
+run by `Runtime.callFunctionOn` (BS:49874-49898), and locators evaluate through `Runtime.*`. So the class is defined
+conservatively: a *reading* command is one of `Page.captureScreenshot`, `Page.getFrameTree`,
+`Page.getNavigationHistory`, `Page.getLayoutMetrics`, `DOM.getDocument`, `DOM.describeNode`, `DOM.getBoxModel`,
+`DOM.getContentQuads`, `DOM.getNodeForLocation`, `DOM.resolveNode`, `Accessibility.*`, `Target.*` (the allowed ones),
+`Runtime.enable`/`disable`, `Page.enable`/`disable`, `Network.enable`/`disable`, `Fetch.enable`/`disable`,
+`Fetch.continueRequest`/`continueResponse`/`failRequest` (a paused request must proceed or the page stalls),
+`Emulation.setFocusEmulationEnabled`, `Emulation.setDeviceMetricsOverride`/`clearDeviceMetricsOverride`; every other
+command, `Runtime.evaluate` and `Runtime.callFunctionOn` included, is *acting*.
+
+**Takeover.** While a tab is `human`, an acting command through a lease is held waiting for hand-back for at most
+`min(BROWSER_TAKEOVER_HOLD_MS = 1500, timeoutMs - 100)` ms, where `timeoutMs` is the deadline the host passes with the
+command (the vendor converts a locator action's remaining budget to it, BS:48768-48779, and it can be below 1.5 s), then
+refused with the error `A person is using this tab; wait and retry`; a command whose deadline is already under 200 ms
+is refused at once. A held command is cancelled by the events listed under the command filter. The vendor caps locator
+actions at 3 s and the host detaches a tab on its own timeout, so a longer hold would turn the person's touch into a
+lost tab. Reading commands pass during `human`. The chrome's existing control affordances (the takeover banner, Hand
+back) are unchanged.
 
 **Cursor.** `AgentCursor` already draws `move`, `press` and `release` from the `Input.dispatchMouseEvent` commands it
 observes while the tab is `agent`; `cursor.move` adds a `move` for the vendor's `moveMouse` so the pointer shows where
@@ -251,14 +299,14 @@ synthesizes the browser activity from the primitive stream and sends it to the r
     {kind: 'screenshot'}                           Page.captureScreenshot
     {kind: 'download', filename, state}            downloads.created / changed
     {kind: 'dialog', type, excerpt, answered}      a dialog opened / answered (M3's dialog path)
-    {kind: 'tabOpened' | 'tabClosed', url}         tabs.create / tabs.remove / a popup adopted
+    {kind: 'tabOpened' | 'tabClosed', url}         tabs.create / tabs.remove / Target.closeTarget / a popup adopted
 
 The click label is the clicked node's tag and accessible text: `DOM.getNodeForLocation` at the click, then
 `Accessibility.getPartialAXTree` for its name, else the node's text, cut to 40 characters; a failure leaves `null` and
 is not retried. Typed text never leaves main (a cell can type a substituted secret); only its length does. The
 renderer attaches each activity to the session's cua_repl `js` call in flight when it arrives, else to the most recent
 one of the turn, else as a standalone row; rows reuse `BrowserActionRow`'s line ("Navigated to example.com", "Clicked
-button Submit", "Typed 12 characters", "Screenshot", "Downloaded report.pdf"). The derive layer's `browser_action`
+button Submit", "Typed 12 characters", "Screenshot", "Downloaded cua-report.pdf"). The derive layer's `browser_action`
 presentation keeps classifying historical `mcp__maws__browser_*` tool uses, so old journals and X8 fixtures still
 render.
 
@@ -266,8 +314,12 @@ render.
 `~/Downloads` under its suggested name, suffixed ` (2)`, ` (3)`… on collision (Chrome's rule), reported as
 `downloads.created {id, url, finalUrl, filename, state: 'in_progress'}` and `downloads.changed {id, filename, state,
 error}` with `state: 'complete'` or `'interrupted'` (`error: 'USER_CANCELED'` for a cancel), the shape the host maps
-(`src/chrome/host.mjs`, "Downloads"). The tab's download line and Reveal in Finder work as for a human download, and a
-completed file is recorded as a session deliverable (`DeliverableWriter`, kind file) so the panel lists it. The vendor's
+(`src/chrome/host.mjs`, "Downloads"). The tab's download line and Reveal in Finder work as for a human download. A completed file becomes a session
+deliverable through a new validated host command main dispatches to the session's engine host,
+`maws.download.recorded {appSessionId, tabId, path, filename, url, bytes}` (the route `maws.artifact.captured` already
+takes: `HostSupervisor.dispatch`, `src/main/deliverables/index.ts`); the engine host writes it through
+`DeliverableWriter` (`src/engine-host/deliverables/store.ts`, which owns writes and emits the store change) as a file
+deliverable, ignores a path it already recorded, and logs a failure without affecting the saved file. The vendor's
 "Allow download from <origin>" elicitation is accepted by the plugin's hook (`hooks/cua-approve.sh`). A download from a
 tab under no lease stays the human's, with the save dialog.
 
@@ -297,7 +349,9 @@ rule's "the agent holds it or has a request on it" becomes "a lease is held on i
 screenshots work on a tab the person is not looking at.
 
 **Popups.** `window.open` from a tab under a lease passes the activation gate on the agent's attributed input as today;
-the adopted child is a session tab and the server sends `tabs.popup`, so the vendor's `waitForEvent('popup')` resolves.
+the adopted child is a session tab and the server sends `tabs.adopted`, so the host owns it and the vendor's tab list
+shows it on the next `listTabs` (the pinned vendor has no popup event: `waitForEvent` knows `download` and
+`filechooser` only, BS:878-890).
 
 ### Removal and the charter (MAWS, M4)
 
@@ -309,15 +363,18 @@ and the preload directly). Kept and re-homed out of `startBrowserAgent`: `TabCon
 `Parking`, the `-run-dialog` wrap, the e2e seam's `control`, `lastInputs`, `sendInput` and `cursorMessages`. The
 renderer keeps `BrowserActionRow` and the historical classification (above).
 
-Dated Decision Log entries, written in M4 before the code moves: in `docs/doperpowers/plans/2026-10-05-p1-extension.md`
-X9 (the six browser tools leave the `maws` server; the other tools' names stay frozen), A-19 (the scoped
-`webContents.debugger` route is now served to cua's host through the primitive server; the port still never ships),
-A-43 (a packaged build listens on one 0700 Unix socket per app session under userData, for cua's host only); in
-`docs/charter.md` §19 a 2026-10-08 entry superseding line 982's browser-tool choice with the owner's replacement
-decision, and §16 line 614's `cua-shim.mjs` bundling replaced by the user-installed plugin (the owner's choice: it is
-the route that works today; bundling can return when MAWS ships to others). A short execution pointer
+Dated Decision Log entries in `docs/doperpowers/plans/2026-10-05-p1-extension.md`, each written before the code it
+licenses (MAWS's rule: a binding changes by entry, never by divergence): A-19 and A-43 as M2's first commit (the
+scoped `webContents.debugger` route is now served to cua's host through the primitive server, the port still never
+ships; a packaged build listens on one 0700 Unix socket per app session under userData, for cua's host only); A-42 at
+M3's start, after S1's verdict (the agent-held `alert`/`confirm` defaults become the vendor's answer with the 30 s
+default, the wrap's guard, the human-tab routing and the Electron-upgrade re-verification row stay as A-42 states
+them); X9 at M4's start (the six browser tools leave the `maws` server; the other tools' names stay frozen); and in
+`docs/charter.md` §19, at M4, a 2026-10-08 entry superseding line 982's browser-tool choice with the owner's
+replacement decision, with §16 line 614's `cua-shim.mjs` bundling replaced by the user-installed plugin (the owner's
+choice: it is the route that works today; bundling can return when MAWS ships to others). A short execution pointer
 `docs/doperpowers/plans/2026-10-08-e13-cua-in-app-browser.md` names this spec, its milestones M2-M5 and the MAWS
-branch, so MAWS's own convention (execution documents under `plans/`) holds.
+branch, so MAWS's own convention (execution documents under `plans/`) holds; it is M2's first commit too.
 
 ### Lifecycle and failure table
 
@@ -325,7 +382,7 @@ branch, so MAWS's own convention (execution documents under `plans/`) holds.
 |---|---|---|
 | App session's first engine launch | socket listening; `CUA_BROWSER_BACKENDS` in the engine env | — |
 | `cua serve` starts in the engine | — | connects, gets `hello`, host listens, vendor launched with the socket listed and preferred |
-| Engine or `cua serve` exits | connection closes: leases released, cursor hidden, tabs stay | host exits with the connection |
+| Engine or `cua serve` exits | connection closes: held commands cancelled, state reset, leases released, cursor hidden, tabs stay | that process's host exits; other processes' hosts for the same session are untouched |
 | MAWS quits while the engine lives (D-16) | socket gone | host exits; `profiles_list` → `maws_unreachable`; retry every 5 s |
 | MAWS relaunched, same session resumed | same path listening again | reconnects; `maws` ready without relaunching the engine (A13) |
 | Human closes an agent tab | `tabs.removed` | host forgets the tab; the vendor reports the tab closed |
@@ -356,27 +413,32 @@ session's socket, which exercises the same backend without the engine.
 
 1. Inside MAWS, the session's `profiles_list` answers `[{key: 'maws', ready: true, extensionInstanceId: 'maws:<the
    session's appSessionId>'}, …registered Chrome profiles]`.
-2. A `js` cell `const b = await cua.getBrowser(); const t = await b.createTab(); await t.navigate('<features page>');
-   return (await t.playwright.locator('h1').textContent())` returns the page's heading; the tab is listed in the
-   session's Browser panel, not selected, with an "agent" badge.
-3. On the features page (`scripts/accept/features-page.mjs`), `locator('#name').fill('x')` then `locator('button')
-   .click()` changes the page's marker; `browser_viewport_set` 800×600 then `tab.screenshot()` returns a PNG of 800×600;
-   reset returns the pane's size.
-4. `waitForEvent('download')` around a click on the page's attachment link resolves with `path()` under
+2. A `js` cell `const b = await cua.getBrowser(); const t = await cua.createBrowserTab(b.browserId, '<features
+   page>'); return await t.playwright.locator('#marker').textContent()` returns the page's document marker; the tab is
+   listed in the session's Browser panel, not selected, with an "agent" badge (the badge is M3's; M2 proves the rest).
+3. On the features page (`scripts/accept/features-page.mjs`, extended in M1 with `#name`, `#submit`, `#popup`),
+   `locator('#name').fill('x')` then `locator('#submit').click()` makes `#state` read `submitted:x`;
+   `browser_viewport_set` 800×600 then `tab.screenshot()` returns a PNG of 800×600; reset returns the pane's size.
+4. `tab.playwright.waitForEvent('download')` around `locator('#dl').click()` resolves and `download.path()` is under
    `~/Downloads/`, the file's sha256 equal to the fixture's (`a3030829e7251330d53ac0d0a803039b8f82f6fa53d294b66e76d8fe3d8c6ec5`),
    no save dialog shown, the tab's download line showing the file, and the session's deliverables listing it.
-5. The page's `alert('hi')` and `confirm('ok?')` are answered through the vendor's dialog API (`tab.on('dialog')`,
-   `dialog.accept()` / `dismiss()`) with no native box appearing; `confirm` returns the chosen answer to the page.
-6. (if S2 promoted) `locator('input[type=file]').setInputFiles(<path>)` makes the page report the file's name and size;
-   (if discarded) the call fails within 3 s with `File chooser is not supported in MAWS`.
-7. `waitForEvent('popup')` around a click on the page's `window.open` link resolves with a page whose URL is the
-   popup's; the new tab is in the session's panel.
-8. Takeover: with the person clicking in the tab, a `locator('button').click()` in the same second fails with `A person
-   is using this tab; wait and retry` within 2 s; 3 s after the person's last input the same click succeeds; the tab
-   chrome shows the control states.
-9. During `locator.hover()` / `moveMouse` the agent cursor is visible in the page; after `end_task` it is hidden.
+5. After `locator('#alert').click()`, `tab.getJsDialog()` returns a dialog of type `alert` whose `dismiss()` lets the
+   page continue (`#state` reads `after-alert`); after `locator('#confirm').click()`, the `confirm` dialog's
+   `dismiss()` makes `#state` read `confirm:false`; no native box appears in either case.
+6. (if S2 promoted) `tab.playwright.waitForEvent('filechooser')` around `locator('#file').click()`, then
+   `chooser.setFiles([<path>])`, makes `#picked` read `<name>:<size>`; (if discarded) the `waitForEvent` rejects within
+   its timeout and the `js` result carries `File chooser is not supported in MAWS` from the refused
+   `Page.setInterceptFileChooserDialog`.
+7. After `locator('#popup').click()` (the page's `window.open('/popup')`), `cua.listTabs` for the browser shows one
+   new tab whose URL ends in `/popup`, in the session's panel, with exactly one tab opened (no duplicate); `end_task`
+   closes it with the agent's other tabs.
+8. Takeover: with the person clicking in the tab, a `locator('#submit').click()` in the same second fails with `A
+   person is using this tab; wait and retry` within 2 s; 3 s after the person's last input the same click succeeds; the
+   tab chrome shows the control states. Proven by a MAWS e2e case (the seam's `sendInput`) and by hand in M5.
+9. During `locator('#submit').hover()` the agent cursor is visible in the page; after `end_task` it is hidden. Proven
+   by a MAWS e2e case (the seam's `cursorMessages`) and by hand in M5.
 10. The transcript shows, under the `js` call's row: "Navigated to <host>", "Clicked button <label>", "Typed 1
-    character", "Screenshot", "Downloaded report.pdf".
+    character", "Screenshot", "Downloaded cua-report.pdf".
 11. `end_task` closes the agent's unmarked tabs; a tab marked handoff stays open and listed. Two sessions inside MAWS
     each create a tab; each session's `listTabs` shows only its own.
 12. `tools/list` of the `maws` server has no `browser_*` entry; a journal from before the change (fixture
@@ -385,8 +447,8 @@ session's socket, which exercises the same backend without the engine.
     10 s `profiles_list` shows `maws` ready again, without a new engine launch.
 14. Inside MAWS, `cua.getBrowser({extensionInstanceId: <a bound Chrome profile's id>})` still drives the owner's
     Chrome (one tab created and closed).
-15. Suites: cua `npm test` green; MAWS `pnpm test`, `pnpm typecheck`, `pnpm lint` green; `pnpm test:live` for the
-    browser project green.
+15. Suites: cua `npm test` green; MAWS `pnpm test`, `pnpm typecheck`, `pnpm lint` and `pnpm test:live` green (the
+    old browser live case is retired in M4).
 
 ## Constraints binding every milestone
 
@@ -401,8 +463,9 @@ session's socket, which exercises the same backend without the engine.
   and tokens, Decision Log entries for every binding changed.
 - Protocol: the primitive protocol is the extension protocol of
   `docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md` ("The extension protocol"), version 1, with the
-  additions this spec names (`profileName` in hello, `cursor.move`); a MAWS frame to the host is at most 1 MB, a host
-  frame to MAWS at most 64 MiB (the extension's limits).
+  additions this spec names (`profileName` in hello, `cursor.move`); a host frame to MAWS is at most 1 MiB and a MAWS
+  frame to the host at most 64 MiB (`MAX_TO_EXTENSION_BYTES`, `MAX_FROM_EXTENSION_BYTES` in `src/chrome/host.mjs`: a
+  large screenshot result travels MAWS → host).
 - Secrets: typed text, CDP params and page content never enter logs, rows or notices; errors carry method names and
   tab ids only.
 - Reviews: astra (GPT) rungs per the owner's note; the branch reviews are `doperpowers:reviewer-high`.
@@ -415,10 +478,15 @@ At the end, `CUA_BROWSER_BACKENDS=<socket> cua serve` connects to a MAWS-shaped 
 for it, lists it as `maws` in `profiles_list` and makes it the vendor's preferred backend, all proven against a fake
 MAWS peer and the real vendor runtime, with no MAWS code yet.
 
-Touches: `src/chrome/host.mjs` (client mode entry, `cursor.move` for `moveMouse` when hello carries `profileName`),
-`src/chrome/discovery.mjs` and `src/runtime/launch.mjs` (`CUA_BROWSER_BACKENDS`, the vendor-route `/tmp` sockets, the
-preferred instance), `src/mcp/server.mjs` and `src/cli.mjs` (connect, wait for hello, retry), `src/profiles/`
-(`maws` entries, the reserved key, `maws_unreachable`), `src/mcp/surface.mjs` (the MAWS line), `test/helpers/fake-maws-peer.mjs` (a fake MAWS
+Touches: `src/chrome/host.mjs` (the `socketName` option, `cursor.move` for `moveMouse` when hello carries
+`profileName`, `timeoutMs` on `debugger.sendCommand`, the `tabs.adopted` handler), `src/chrome/extension.mjs`
+(`chrome/m/`), `src/chrome/discovery.mjs` and `src/runtime/launch.mjs` (`CUA_BROWSER_BACKENDS`, the prelisted
+client-mode paths, the vendor-route `/tmp` sockets, the preferred instance), `src/mcp/server.mjs` and `src/cli.mjs`
+(connect, wait for hello, retry; doctor's MAWS heading), `src/profiles/` (`maws` entries, the reserved key,
+`maws_unreachable`), `src/mcp/surface.mjs` (the MAWS line), `scripts/accept/features-page.mjs` (`#name`, `#submit`
+writing `submitted:<value>` to `#state`, `#popup` calling `window.open('/popup')` and a `/popup` document),
+`scripts/accept/maws-features.mjs` (the terminal harness: against any configured backend it runs profiles, createTab,
+locator, viewport, popup and cleanup, reporting JSON; M3 adds download, alert, confirm and chooser), `test/helpers/fake-maws-peer.mjs` (a fake MAWS
 peer built on `test/helpers/fake-cua-extension.mjs`, which already models the extension's side: it listens on a
 socket, sends hello with `profileName` on connect, and runs as a script for manual checks), README "For MAWS" and "Profiles", plugin 0.5.0.
 
@@ -431,7 +499,11 @@ Decisions: the retry interval is 5 s and the hello wait 5 s, both constants expo
 Does not touch: MAWS; the Chrome extension; the Chrome host's behaviour for a hello without `profileName`.
 
 Proves: acceptance 1 and 14's cua half, 13's reconnect (with the fake peer restarted); pins: a `hello` without
-`profileName` keeps `moveMouse` a no-op; `profiles_list` under a dead socket; the description's length under 2,048.
+`profileName` keeps `moveMouse` a no-op; `profiles_list` under a dead socket; two `cua serve` processes and an
+inventory launch on one fake peer at once, the first exiting while the second keeps working; a process without
+`CUA_BROWSER_BACKENDS` never lists another process's client-mode host; `tabs.adopted` owns the announced tab and
+creates none; `timeoutMs` reaches the peer; a MAWS → host frame over 1 MiB is accepted and a host → MAWS frame over
+1 MiB fails without closing the connection; the description's length under 2,048.
 
 ### M2 — MAWS: the primitive server, with the two spikes
 
@@ -439,11 +511,16 @@ At the end, a running MAWS session listens on its socket, and `cua serve` from a
 drives its tabs through the vendor runtime: create, navigate, locate, click, fill, screenshot, viewport, popup, close
 at `end_task`; the engine of a session started in the app inherits the variable. S1 and S2 are answered.
 
-Touches: new `src/main/browser/cua/` (server, framing, tab map, filter, leases), `src/main/browser/debugger.ts`
-(leases), `src/main/browser/index.ts` (start the server beside the store), `src/main/sessions/launch-mapping.ts` and
-the launch spec (`extraSettings.env.CUA_BROWSER_BACKENDS`), `src/main/browser/tabs.ts` only if `open` needs a
-"no select" that it lacks, tests beside each, `docs/doperpowers/plans/2026-10-08-e13-cua-in-app-browser.md`
-(the pointer, created here as the first MAWS commit). Spikes S1 and S2 live under `spikes/cua-backend/` with a findings
+Touches: new `src/main/browser/cua/` (server, framing, tab map, filter, leases, held commands and the state reset,
+`Target.closeTarget`), `src/main/browser/debugger.ts` (leases), `src/main/browser/agent/driver.ts` (the last-lease
+guard on its teardown and the `tabInUse` refusal of a tab under a cua lease), `src/main/browser/agent/visible.ts`
+(parking by lease: "the agent holds it or has a request on it" gains "or a cua lease is held on it", the minimum a
+background tab needs for locators and screenshots), `src/main/browser/index.ts` (start the server beside the store),
+`src/main/sessions/launch-mapping.ts` and the launch spec (`extraSettings.env.CUA_BROWSER_BACKENDS`),
+`src/main/browser/tabs.ts` only if `open` needs a "no select" that it lacks, tests beside each, a MAWS e2e case that
+drives the socket with an in-repo fake host (the replacement for the retired browser live test),
+`docs/doperpowers/plans/2026-10-05-p1-extension.md` (the A-19 and A-43 entries) and
+`docs/doperpowers/plans/2026-10-08-e13-cua-in-app-browser.md` (the pointer), both in the first MAWS commit. Spikes S1 and S2 live under `spikes/cua-backend/` with a findings
 file; their verdicts go to Surprises & Discoveries.
 
 Decisions: the socket path is keyed by the session's persisted `appSessionId` (the sessions index), so a session
@@ -454,12 +531,15 @@ framing and JSON-RPC peer in TypeScript (no dependency on this repository's
 use a fake host (a node client over the socket) and a fake `TabStore`/`TabDebugger`, the live proof uses the real cua
 of M1; `debugger.getTargets` lists child targets from the `Target.attachedToTarget` events the server saw on the tab.
 
-Does not touch: control, cursor, dialogs, downloads, parking (M3); the six tools and the Playwright driver (M4), which
-keep working beside the server in this milestone (both routes drive the same tabs; the lease model keeps the
-attachment shared).
+Does not touch: control transitions, cursor, dialogs, downloads, the badge (M3); the six tools and the Playwright
+driver (M4), which keep working beside the server on tabs the server holds no lease on (one automation owner per tab;
+overlap on one tab is refused, never arbitrated).
 
-Proves: acceptance 2, 3, 7, 11 (second half: two sessions), 13's MAWS half; pins: a tab of another session is refused;
-a refused CDP method's error text; the lease count across two connections.
+Proves: acceptance 2 (all but the badge), 3, 7, 11, 13's MAWS half, through M1's terminal harness against a running
+session; pins: a tab of another session is refused; a refused CDP method's error text; the lease count across two
+connections; the old driver retiring on one tab while a cua connection keeps navigating another with cross-origin
+frames; the state reset on detach with focus emulation on; `Target.closeTarget` on the owned tab and on a foreign
+target id; a held command cancelled by disconnect.
 
 ### M3 — MAWS: what the person sees and keeps
 
@@ -467,10 +547,13 @@ At the end, the agent's work through cua is visible and bounded as the tools' wa
 the cursor, activity rows, agent downloads to `~/Downloads` with a deliverable, dialogs per S1, file chooser per S2,
 parking by lease, the "agent" badge in the panel.
 
-Touches: `src/main/browser/agent/{control, cursor, dialogs, visible}.ts`, `src/main/browser/downloads.ts`,
-`src/main/browser/cua/` (activity synthesis, dialog and chooser paths), `src/shared/ipc/schema/browser.ts`
-(`browser.agent.activity`), renderer transcript model (`derive.ts`, `rows.ts`, `BrowserAction.tsx`), the panel's tab
-list (badge), e2e seam.
+Touches: `src/main/browser/agent/{control, cursor, dialogs}.ts`, `src/main/browser/downloads.ts`,
+`src/main/browser/cua/` (activity synthesis, the acting/reading classes, takeover holds, dialog and chooser paths),
+`src/shared/ipc/schema/browser.ts` (`browser.agent.activity`), `src/shared/ipc/schema/maws.ts` and the engine host's
+deliverables (`maws.download.recorded`), renderer transcript model (`derive.ts`, `rows.ts`, `BrowserAction.tsx`), the
+panel's tab list (badge), e2e cases for takeover and the cursor through the seam, `scripts/accept/maws-features.mjs`
+in this repository (download, alert, confirm, chooser steps), `docs/doperpowers/plans/2026-10-05-p1-extension.md`
+(the A-42 entry, first commit of the milestone, after S1's verdict is in Surprises & Discoveries).
 
 Decisions: typed-character coalescing window 1 s; label lookup bounded to 500 ms; the activity event is emitted at
 most 20 times per second per tab (a mouse-move storm never floods the renderer; moves are not rows anyway);
@@ -479,8 +562,9 @@ record for a download is written when the item completes, never for a cancelled 
 
 Does not touch: the six tools' code (still present until M4); charter text.
 
-Proves: acceptance 4, 5, 6, 8, 9, 10; pins: no typed text in any emitted event; the 1.5 s hold then refusal; the 30 s
-dialog default.
+Proves: acceptance 2's badge, 4, 5, 6, 8, 9, 10; pins: no typed text in any emitted event; the hold bounded by the
+command's deadline, then the refusal; a `Runtime.callFunctionOn` during `human` is held, a `Page.captureScreenshot`
+passes and leaves control `human`; the 30 s dialog default; a duplicate download path recorded once.
 
 ### M4 — MAWS: the cut-over
 
@@ -489,7 +573,9 @@ render, the charter and P1 bindings carry dated entries, and MAWS's tests and li
 
 Touches: `src/engine-host/tool-server/{tools, browser, browser-bridge}.ts`, `src/shared/maws/browser.ts`, `src/shared/
 ipc/schema/maws.ts`, `src/main/browser/agent/` (removal and re-homing), renderer `classify.ts` (historical names
-kept), `package.json` (`playwright-core` if unused), `docs/charter.md`, `docs/doperpowers/plans/2026-10-05-p1-extension.md`,
+kept), `test/live/maws-browser.live.test.ts` and `test/live/support/browser-stand-in.ts` (retired: they prompt for and
+assert the removed tools; M2's e2e case is the replacement), `package.json` (`playwright-core` if unused),
+`docs/charter.md`, `docs/doperpowers/plans/2026-10-05-p1-extension.md` (X9, first commit of the milestone),
 `docs/tech-debt-tracker.md` (rows closed and the S2 row if discarded), the MAWS README's browser section if it names
 the tools.
 
@@ -506,14 +592,14 @@ Proves: acceptance 12 and 15's MAWS half.
 At the end, the acceptance section has run against the real MAWS build and the real vendor runtime, the evidence is
 recorded, the plugin is released, and #13 closes.
 
-Touches: `scripts/accept/maws-features.mjs` (this repository; reuses `scripts/accept/features-page.mjs` and
-`scripts/accept/mcp-session.mjs` from #15's fixture `scripts/accept/linux-chrome-features.mjs`, driving a MAWS session's
-socket from a terminal for items 2-9 and 11, and reporting JSON), `docs/evidence/2026-10-08-maws-in-app-browser.md`,
+Touches: `scripts/accept/maws-features.mjs` (complete since M3; run here against the real build for items 2-7 and
+11), `docs/evidence/2026-10-08-maws-in-app-browser.md`,
 README, `tech-debt-tracker.md`, the plugin cache on this Mac (`claude plugin update` or the marketplace path the owner
 uses).
 
-Decisions: items 1, 10, 12, 13, 14 are manual checks inside the app, recorded with screenshots under
-`docs/evidence/`; a check that cannot run on this Mac is recorded BLOCKED with the reason, never skipped silently.
+Decisions: items 1, 8, 9, 10, 12, 13, 14 are manual checks inside the app (8 and 9 also by the M3 e2e cases),
+recorded with screenshots under `docs/evidence/`; a check that cannot run on this Mac is recorded BLOCKED with the
+reason, never skipped silently.
 
 Proves: acceptance 1-15.
 
@@ -537,9 +623,9 @@ Working directories: cua `/Users/new/Developer/GitHub/cua-wt-13`, MAWS `/Users/n
     ls "$HOME/Library/Application Support/MAWS/browser/cua/"      # <appSessionId>.sock
     CUA_BROWSER_BACKENDS="$HOME/Library/Application Support/MAWS/browser/cua/<id>.sock" \
       node scripts/accept/maws-features.mjs --report /tmp/maws-features.json
-    #   {"profiles": "PASS", "createTab": "PASS", "locator": "PASS", "viewport": "PASS", "download": "PASS",
-    #    "alert": "PASS", "confirm": "PASS", "chooser": "PASS|BLOCKED", "popup": "PASS", "takeover": "PASS",
-    #    "cursor": "PASS", "cleanup": "PASS"}
+    #   {"profiles": "PASS", "createTab": "PASS", "locator": "PASS", "viewport": "PASS", "popup": "PASS",
+    #    "download": "PASS", "alert": "PASS", "confirm": "PASS", "chooser": "PASS|BLOCKED", "cleanup": "PASS"}
+    #   (M2 runs it before M3 adds the download, alert, confirm and chooser steps: those read "SKIP" then)
 
 The MAWS userData path above is the packaged app's; the dev build's is printed by `pnpm dev` at start.
 
@@ -554,9 +640,12 @@ The MAWS userData path above is the packaged app's; the dev build's is printed b
 `profileName` marks a non-Chrome peer: it enables `cursor.move` and the `maws` listing. Owner: M1 (host), M2 (MAWS).
 
 **Primitives** (host → peer requests; peer → host notifications): the table in "The MAWS primitive server", plus
-`cursor.move {tabId: number, x: number, y: number} → {}`. Errors are `{code: 1, message}` with Chrome's wording where
-one exists (`No tab with id: <n>`), `Method not allowed: <method>` for the filter. Owner: M1 (`cursor.move`), M2
-(server), M3 (downloads, dialog and chooser paths).
+`cursor.move {tabId: number, x: number, y: number} → {}`, `timeoutMs?: number` on `debugger.sendCommand`, and the
+notification `tabs.adopted {openerTabId: number, tabId: number, url: string}`. Errors are `{code: 1, message}` with
+Chrome's wording where one exists (`No tab with id: <n>`, `No target with given id found`), `Method not allowed:
+<method>` for the filter, `Tab is held by another agent session`, `Tab is driven by the maws tools`, `A person is
+using this tab; wait and retry`, `Command cancelled: <why>`. Owner: M1 (`cursor.move`, `timeoutMs`, `tabs.adopted`),
+M2 (server), M3 (downloads, dialog and chooser paths).
 
 **`profiles_list` entry** (cua MCP): `{key: 'maws' | 'maws-<n>', ready: boolean, extensionInstanceId?: string,
 reason?: 'maws_unreachable'}`. Owner: M1.
@@ -569,8 +658,16 @@ the first lease, detaches on the last release; `attach()`/`detach()` become one 
 `activity` as listed under "Action rows". Owner: M3.
 
 **MAWS primitive server module** (`src/main/browser/cua/index.ts`): `startCuaBackend({store, windows, reaches,
-userData, version}) → {socketPathFor(appSessionId): string, dispose(): void}`; `socketPathFor` is what the launch
-mapping writes into `extraSettings.env`. Owner: M2.
+userData, version}) → {socketPathFor(appSessionId): string, holds(tabId): boolean, dispose(): void}`; `socketPathFor`
+is what the launch mapping writes into `extraSettings.env`; `holds` is what the old driver (M2) and parking consult.
+Owner: M2.
+
+**`maws.download.recorded`** (MAWS host command, main → engine host): `{appSessionId, tabId, path, filename, url,
+bytes}`; the engine host records a file deliverable once per path. Owner: M3.
+
+**`runHost({…, socketName?})`** (cua, `src/chrome/host.mjs`): when given, the host listens at
+`$CUA_HOME/chrome/m/<socketName>.sock` and names its status file and log the same; when absent, today's Chrome rule.
+Owner: M1.
 
 Dependencies: Electron as pinned by MAWS (44.4.5: its `-run-dialog` event and `webContents.debugger` behaviour are
 what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependency on either side.
@@ -590,6 +687,22 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   Rationale: the cost of a wrong wire or lease decision is paid in both repositories; the owner's note prefers astra
   rungs this month.
   Date/Author: 2026-10-08, the design session (cua_repl session 1ea561bc).
+
+- Decision (2026-10-08, after the first review round): client-mode hosts live in `chrome/m/` under a per-process name
+  prelisted from the configured path, and only the opening process lists them; a tab has one automation owner and the
+  server resets agent CDP state before releasing a lease; `tabs.adopted` replaces `tabs.popup` for MAWS; the takeover
+  gate classes commands as acting or reading and bounds its hold by the command's deadline, which the host now
+  forwards; `Target.closeTarget` is emulated; A-42 joins the amendments and A-19/A-43 move ahead of M2's code;
+  parking by lease and the terminal harness move to M2/M1; acceptance uses the pinned vendor's API names
+  (`createBrowserTab`, `getJsDialog`, `waitForEvent('filechooser')`, `listTabs`); the download deliverable goes through a
+  host command; the frame limits read in the host's direction.
+  Rationale: both reviews (design and buildability) reproduced the defects against the code; none contradicts the
+  approved design, each is a wire or lifecycle rule the design had left to the executor.
+  Alternatives rejected then: a shared host per session with reuse rules (more state than per-process hosts, and
+  `already_served` exists to forbid it); full `iab`-style per-client CDP sessions (Electron gives one debugger per
+  webContents); rejecting every acting command during `human` at once (loses the brief-touch tolerance the owner's
+  takeover semantics want).
+  Date/Author: 2026-10-08, the design session.
 
 ## Outcomes & Retrospective
 

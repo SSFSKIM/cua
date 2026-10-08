@@ -325,7 +325,7 @@ test('a guarded tab is guarded again on every new document; an unguarded one is 
   stub.navigate(user.id, 'https://user.invalid/next', 'Next');
   const made = await host.request('tabs.create', {url: 'about:blank', windowId: 1, guard: true});
   // about:blank is no page cua may script: the sweep is refused with Chrome's message, nothing else happens.
-  await assert.rejects(host.request('tabs.guard', {tabId: made.id}), {message: /Cannot access contents of the page/});
+  await assert.rejects(host.request('tabs.guard', {tabId: made.id}), {message: 'Cannot access contents of url "about:blank". Extension manifest must request permission to access this host.'});
   stub.navigate(made.id, 'https://agent.invalid/', 'Agent');
   await waitFor(() => guardIn(stub, made.id), 'the guard in the new document');
   assert.equal(stub.calls.some(c => c.api === 'scripting.executeScript' && c.args[0].target.tabId === user.id), false, 'a tab nobody guards is never scripted');

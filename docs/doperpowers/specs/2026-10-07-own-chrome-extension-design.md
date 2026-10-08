@@ -37,8 +37,11 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-07 16:20) H5 — packaging, docs, plugin 0.4.0, board #78 (Store listing, owner) and #79 (vendor-route
       removal, blocked by #78); acceptance 8 zip/CRX half and 10 pass. Remaining: 8's Store half (owner, #78) and the
       live Mac items with H3b.
-- [ ] (2026-10-07) #81 — page guards (other extensions' frames, popups) and the host's refusal log; Decision Log
-      2026-10-07 (#81). Code and stubbed contract done; live re-measurement pending.
+- [x] (2026-10-08 02:53 UTC) #81 — page guards (other extensions' frames, popups) and the host's refusal log; Decision
+      Log 2026-10-07 (#81). Live on this Mac with the input-helper enabled: pm-probe 8/8 fills twice (was 0/8), the
+      popup listed in the session without a claim, `accept-chrome --route cua` 40/40, vendor manifests unchanged
+      (`docs/evidence/2026-10-07-foreign-frames-acceptance.md`). The review fixes (`d7970a5`) are proven under the
+      stub only; they need the extension reloaded to be live.
 
 ## Facts this design rests on
 
@@ -633,6 +636,13 @@ No new npm dependencies.
   vendor extension. The host logged none of the refusals (it logged only session open and close), which is why the
   cause had to be read off the service's wording. Evidence: the probe's `trials.json`/`diag.json` (job scratch),
   summarized in `docs/evidence/2026-10-07-foreign-frames-acceptance.md`.
+- Observation (#81 live, 2026-10-08): with the page guards the same probe filled 8/8 twice; after every focus the
+  helper's frame was in the page with `srcdoc=""`, and no attach was refused. Four `Detached while handling command.`
+  answers still came at navigations (the helper draws into the new document before the guard is injected at commit);
+  the service's re-attach recovered each, as on the vendor route. Chrome's refusal to script an agent tab's
+  `about:blank` reads `Cannot access contents of url "about:blank". Extension manifest must request permission to
+  access this host.` In all 8 password trials the field's value after the fill was not the probe's (10 characters,
+  not read further); text fields round-tripped 4/4.
 
 ## Decision Log
 

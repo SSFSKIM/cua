@@ -331,7 +331,8 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
         const tab = state.tabs.get(target?.tabId);
         if (!tab) return fail(`No tab with id: ${target?.tabId}.`);
         if (tab.url.startsWith('chrome://')) return fail('Cannot access a chrome:// URL');
-        if (!/^https?:/.test(tab.url)) return fail('Cannot access contents of the page. Extension manifest must request permission to access the respective host.');
+        // Chrome 154's wording, seen live for an agent tab's about:blank (#81 evidence).
+        if (!/^https?:/.test(tab.url)) return fail(`Cannot access contents of url "${tab.url}". Extension manifest must request permission to access this host.`);
         const page = pages.get(tab.id);
         const result = await page.run(world === 'MAIN' ? 'main' : 'isolated', `(${func.toString()})(...${JSON.stringify(args)})`);
         return [{frameId: 0, documentId: `doc-${tab.id}-${page.url}`, result: result === undefined ? null : JSON.parse(JSON.stringify(result))}];

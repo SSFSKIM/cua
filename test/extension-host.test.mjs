@@ -341,6 +341,6 @@ test('another extension\'s frame cannot wedge an agent tab, a page\'s window.ope
 
   // The host log names what Chrome refused (here: guarding about:blank before the first navigation) and the popup.
   const log = readFileSync(join(home, 'chrome', 'logs', `${socketNameFor(id)}.log`), 'utf8');
-  assert.match(log, new RegExp(`extension refused tabs\\.guard \\{"tabId":${tab}\\}: Cannot access contents of the page`));
+  assert.match(log, new RegExp(`extension refused tabs\\.guard \\{"tabId":${tab}\\}: Cannot access contents of url "about:blank"`));
   assert.match(log, new RegExp(`session sess took popup tab ${popup.id} from tab ${tab}`));
 });

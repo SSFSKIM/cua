@@ -636,7 +636,7 @@ Working directories: cua `/Users/new/Developer/GitHub/cua-wt-13`, MAWS `/Users/n
     ls "$HOME/Library/Application Support/MAWS/browser/cua/"      # <appSessionId>.sock
     CUA_BROWSER_BACKENDS="$HOME/Library/Application Support/MAWS/browser/cua/<id>.sock" \
       node scripts/accept/maws-features.mjs --report /tmp/maws-features.json \
-      --other "$HOME/Library/Application Support/MAWS/browser/cua/<id of a second session>.sock" 
+      --other "$HOME/Library/Application Support/MAWS/browser/cua/<id of a second session>.sock"
     #   {"profiles": "PASS", "createTab": "PASS", "locator": "PASS", "viewport": "PASS", "popup": "PASS",
     #    "download": "PASS", "alert": "PASS", "confirm": "PASS", "chooser": "PASS|BLOCKED", "cleanup": "PASS",
     #    "isolation": "PASS"}

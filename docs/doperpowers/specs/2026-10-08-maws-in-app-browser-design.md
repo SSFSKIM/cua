@@ -201,7 +201,9 @@ later file-input click would otherwise open no picker). A persisting attachment 
 handed-back page never stalls on an interception nobody consumes.
 
 Commands pass through E4c's boundary, lifted from `src/main/browser/agent/bridge.ts` into the server: no `Browser.*`,
-`Storage.*`, `SystemInfo.*`, `Tethering.*`; of `Target.*` only `setAutoAttach`, `detachFromTarget`, `getTargetInfo`,
+`Storage.*`, `SystemInfo.*`, `Tethering.*`, and none of the `Network.*` methods that reach the partition's cookie jar
+(`getAllCookies`, `getCookies`, `setCookie`, `setCookies`, `deleteCookies`, `clearBrowserCookies`; the vendor never sends
+them, and the socket is reachable by every process the session starts; final review); of `Target.*` only `setAutoAttach`, `detachFromTarget`, `getTargetInfo`,
 `attachToTarget` (flattened, for a child target of the same tab), `getTargets` answered from the inventory above, and
 `closeTarget` emulated: its `targetId` must be the page target of a tab this connection holds a lease on, which is
 then closed through `TabStore.close` (the vendor's `tab.close()` sends `Target.closeTarget` whenever it knows a target
@@ -352,7 +354,8 @@ or a second window shows them again; persistence across an app restart is out of
 `browser_action` presentation keeps classifying historical `mcp__maws__browser_*` tool uses, so old journals and X8
 fixtures still render.
 
-**Downloads.** A `will-download` whose webContents is a tab under a lease is the agent's: saved without a dialog to
+**Downloads.** A `will-download` whose webContents is a tab under a lease, while the person does not hold it (control
+`agent`, or `idle` with `personHolds` false: the rule dialogs and `navigated` follow), is the agent's: saved without a dialog to
 `~/Downloads` under its suggested name, suffixed ` (1)`, ` (2)`… on collision (Chrome's rule on macOS; revised in M3, Decision Log), reported as
 `downloads.created {id, url, finalUrl, filename, state: 'in_progress'}` and `downloads.changed {id, filename, state,
 error}` with `state: 'complete'` or `'interrupted'` (`error: 'USER_CANCELED'` for a cancel), the shape the host maps
@@ -954,6 +957,22 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   Open to the owner: with `browser.agent.acting` gone, the Browser tool no longer opens when an agent starts acting
   (an E4c behaviour); carried to the dispatching session.
   Date/Author: 2026-10-08, the plan executor (M4 executor's report, task-4).
+
+- Decision (2026-10-08, MAWS whole-branch review): three rules the milestone reviews could not see across milestones.
+  (1) The vendor's plain screenshot is a screencast first (`Page.startScreencast`, the first `Page.screencastFrame`,
+  `stopScreencast`, `screencastFrameAck`), falling back to `Page.captureScreenshot` only when no frame comes within
+  2 s (BS:43892-44050, also the AX-state screenshot BS:53574). The screencast commands are *reading*; the cursor is
+  hidden (with its grace) before `Page.startScreencast` as before a capture; the `screenshot` activity is emitted once
+  per screenshot, at the first screencast frame delivered after a start or at a `Page.captureScreenshot`, so a
+  fallback is one row. Whether a parked, never-placed view yields screencast frames on Electron 44.4.5 is measured; if
+  it does not, the 2 s fallback per agent screenshot is recorded as tech debt. (2) The command filter refuses the
+  cookie-jar `Network.*` methods (above): A-51's reason for refusing `Storage.*` covers them, the socket path is in
+  every session process's environment, and the partition can be the owner's imported Chrome profile. (3) An agent
+  download is decided by the same `personHolds` rule as dialogs and navigations, so a person who took a leased tab over
+  gets the save dialog and no agent row or deliverable.
+  Rationale: (1) restores what M3 and M4 meant (screenshot row, reading class, no overlay) on the vendor's default path;
+  (2) keeps A-19/A-51's boundary; (3) makes the three attribution rules agree.
+  Date/Author: 2026-10-08, the plan executor (final review findings).
 
 ## Outcomes & Retrospective
 

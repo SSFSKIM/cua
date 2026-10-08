@@ -1252,6 +1252,16 @@ runtime's home is always under `CUA_HOME`), `CUA_SHIM_SESSION_ID` (each connecti
 `CUA_SHIM_LOG` (it recorded whole transcripts). Apart from basic OS variables (`HOME`, `USER`, `TMPDIR`, locale),
 nothing else in the server's environment reaches the runtime.
 
+## Privacy
+
+The cua Chrome extension collects no data. It passes tab content and DevTools Protocol messages only to the cua
+program on the user's own computer (the native host that `cua chrome register` installs), which the user installs
+and controls; nothing is sent to the developer or to third parties. The extension has no analytics, no remote code
+and no sign-in. In tabs an agent session owns it injects one script, which blanks iframes that other extensions
+insert (Chrome refuses debugger access to a tab containing another extension's frame) and routes `window.open`
+pop-ups into the agent's tab group; the script reads no page content, sends nothing anywhere, and is removed when
+the agent's task ends. Tabs an agent is not using are never touched.
+
 ## For MAWS
 
 MAWS does not load this as a plugin. It bundles `cua-shim.mjs` as an app resource and writes the same server entry

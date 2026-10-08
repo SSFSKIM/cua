@@ -28,7 +28,8 @@ extensions bar, profile avatar, profile settings as a widget or sidebar tab) are
   granularity, download location, default browser).
 - [x] (2026-10-08 13:20) M1 — cua: the host's client mode, discovery of a MAWS backend, `profiles_list`'s `maws` entry
   (c4f9c86, 0bd4190, fix ab7db6e; reviewed clean).
-- [ ] M2 — MAWS: the primitive server over `TabStore` and `TabDebugger`; spikes S1 (dialogs) and S2 (file chooser).
+- [x] (2026-10-08 18:10) M2 — MAWS: the primitive server over `TabStore` and `TabDebugger`; spikes S1 (dialogs) and S2
+  (file chooser), both promoted (MAWS b5dec4aa..d1d9d910, fix e33bf014; cua 602391b; reviewed clean).
 - [ ] M3 — MAWS: takeover, cursor, action rows, downloads, dialogs and file chooser per the spikes.
 - [ ] M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs.
 - [ ] M5 — Live acceptance as written; plugin release; evidence.

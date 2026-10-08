@@ -24,6 +24,12 @@
 //   answering the vendor extension's timeout wording; the next command then answers "Debugger unattached", the string
 //   the service's single re-attach recovers from (browser-service.mjs 47585-47595).
 // - A detach the user caused (canceled_by_user) is forwarded as onCDPDetach and the tab is never attached again.
+// - Owned tabs are guarded (extension/background.js, "Page guards"): created tabs from creation, every tab again before
+//   each attach, until the turn releases or hands it off. An attach Chrome refuses because another extension's frame is
+//   in the tab ("Cannot access a chrome-extension:// URL of different extension") is retried once after a sweep. A page's
+//   window.open in an owned tab of the session's current turn (tabs.popup) opens as the session's tab, active.
+// - Every request the extension refuses is logged with its method, debuggee or tab and Chrome's message (never CDP
+//   params, which can carry substituted secrets).
 // Vendor references (@oai/browser-desktop 0.1.1 in ChatGPT 26.928.40906): the backend client browser-service.mjs
 // 67808-68110; the ChatGPT extension's session model (hehggadaopoacecdllhhajmbjkdcmajg 1.26.901.11451, background.js):
 // endTurnUnlocked, resumeHandoffIfPresent, executeCdp/mg (timeout), Os/Zf (attach, "Another debugger" as success).
@@ -45,6 +51,8 @@ const OTHER_SESSION = 'tab owned by another session';
 const TIMED_OUT = Symbol('timed out');
 // Pages chrome.debugger cannot drive and a user tab may not be claimed for (the vendor refuses chrome:// the same way).
 const INTERNAL_URL = /^(chrome|chrome-extension|chrome-untrusted|devtools):\/\//;
+// Chrome's refusal while another extension's frame is in the tab.
+const FOREIGN_FRAME = /Cannot access a chrome-extension:\/\/ URL of different extension/;
 
 class HostError extends Error {
   constructor(message, code = 1) { super(message); this.code = code; }
@@ -53,16 +61,32 @@ const refuse = (message, code) => { throw new HostError(message, code); };
 const notPart = (s, tabId) => `Tab ${tabId} is not part of browser session ${s.id}`;
 const turnOver = (s, turn) => (s.closed ? `Browser session ${s.id} has ended: its client disconnected` : `Browser session ${s.id} turn ${turn} has ended`);
 const tolerateNotAttached = error => { if (!/not attached/i.test(error?.message ?? '')) throw error; };
+// What a refusal is about: the debuggee, tab or window, and the CDP method; never CDP params.
+function describe(method, params) {
+  const p = params ?? {};
+  const d = method === 'debugger.sendCommand' ? p.debuggee : (p.tabId !== undefined || p.targetId !== undefined ? p : null);
+  const picked = {
+    ...(d?.tabId !== undefined ? {tabId: d.tabId} : {}), ...(d?.targetId !== undefined ? {targetId: d.targetId} : {}),
+    ...(p.sessionId !== undefined ? {sessionId: p.sessionId} : {}), ...(p.windowId !== undefined ? {windowId: p.windowId} : {}),
+    ...(p.openerTabId !== undefined ? {openerTabId: p.openerTabId} : {}),
+  };
+  return `${JSON.stringify(picked)}${method === 'debugger.sendCommand' ? ` ${p.method}` : ''}`;
+}
 
 // `extension` is {request(method, params)}; a client is {notify(method, params)}; `hello` is the extension's hello.
 // With a `home`, the status (<name>.json beside the socket) is rewritten on every change.
-export function createHost({extension, hello, home = null, now = () => new Date(), log = () => {}, pid = process.pid}) {
+export function createHost({extension: port, hello, home = null, now = () => new Date(), log = () => {}, pid = process.pid}) {
   const sessions = new Map();           // session_id -> session
   const owners = new Map();             // tabId -> {session, tab}
   const targets = new Map();            // attached OOPIF targetId -> owning tabId
   const statusPath = home ? join(backendDir(home), `${socketNameFor(hello.extensionInstanceId)}.json`) : null;
   let closed = false;
-  const quiet = (promise, what) => promise.catch(error => log(`${what}: ${error?.message ?? error}`));
+  // The extension's primitives, every refusal logged (the log is how a refused attach is diagnosed after the fact).
+  const extension = {request: (method, params) => port.request(method, params).catch(error => {
+    log(`extension refused ${method} ${describe(method, params)}: ${error?.message ?? error}`);
+    throw error;
+  })};
+  const quiet = promise => promise.catch(() => {});   // already logged
 
   function status() {
     return {
@@ -146,7 +170,7 @@ export function createHost({extension, hello, home = null, now = () => new Date(
     const debuggees = [...(tab.attached ? [{tabId: tab.tabId}] : []), ...[...tab.targets].map(targetId => ({targetId}))];
     tab.attached = false;
     for (const targetId of [...tab.targets]) dropTarget(tab, targetId);
-    return Promise.all(debuggees.map(d => quiet(extension.request('debugger.detach', d).catch(tolerateNotAttached), `detach ${JSON.stringify(d)}`)));
+    return Promise.all(debuggees.map(d => quiet(extension.request('debugger.detach', d).catch(tolerateNotAttached))));
   }
 
   async function endTurn(s, turn) {
@@ -160,20 +184,38 @@ export function createHost({extension, hello, home = null, now = () => new Date(
         if (turn !== s.turn && s.turn !== null && !s.ended.has(s.turn) && !s.closed) {
           Object.assign(tab, {mark: 'none', turnId: s.turn});
           s.activeTabId ??= tab.tabId;
-        } else tab.state = 'handoff';
+        } else {
+          tab.state = 'handoff';
+          work.push(unguard(tab));          // the user works in it until the session resumes it
+        }
         work.push(detached);
         continue;
       }
       release(s, tab);
       work.push(detached.then(() => {
-        if (tab.origin !== 'created') return;
-        if (tab.mark === 'none') return quiet(extension.request('tabs.remove', {tabId: tab.tabId}), `close ${tab.tabId}`);
-        return quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}), `ungroup ${tab.tabId}`);
+        if (tab.origin === 'created' && tab.mark === 'none') return quiet(extension.request('tabs.remove', {tabId: tab.tabId}));
+        return Promise.all([unguard(tab), tab.origin === 'created' && quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}))]);
       }));
     }
     changed();
     await Promise.all(work);
     log(`session ${s.id} turn ${turn} ended`);
+  }
+
+  const unguard = tab => quiet(extension.request('tabs.unguard', {tabId: tab.tabId}));
+
+  // Attaches a debuggee of an owned tab after guarding the tab; Chrome refusing it for another extension's frame gets one
+  // more sweep and one retry.
+  async function attachGuarded(tabId, debuggee) {
+    await quiet(extension.request('tabs.guard', {tabId}));
+    try {
+      return await extension.request('debugger.attach', debuggee);
+    } catch (error) {
+      if (!FOREIGN_FRAME.test(error?.message ?? '')) throw error;
+      const swept = await extension.request('tabs.guard', {tabId}).catch(() => null);
+      log(`tab ${tabId}: another extension's frame blocked the debugger; swept ${JSON.stringify(swept)}, retrying once`);
+      return await extension.request('debugger.attach', debuggee);
+    }
   }
 
   async function pickWindow(preferred) {
@@ -212,9 +254,9 @@ export function createHost({extension, hello, home = null, now = () => new Date(
     async createTab({preferredWindowId}, s, turn) {
       if (s.ended.has(turn)) refuse(turnOver(s, turn));
       const windowId = await pickWindow(preferredWindowId);
-      const created = await extension.request('tabs.create', {url: 'about:blank', windowId, group: {key: s.id, title: s.title}});
+      const created = await extension.request('tabs.create', {url: 'about:blank', windowId, group: {key: s.id, title: s.title}, guard: true});
       if (s.closed || s.ended.has(turn)) {
-        await quiet(extension.request('tabs.remove', {tabId: created.id}), `close ${created.id}`);
+        await quiet(extension.request('tabs.remove', {tabId: created.id}));
         refuse(turnOver(s, turn));
       }
       own(s, newTab(created.id, created.windowId ?? windowId, turn, 'created'));
@@ -228,9 +270,9 @@ export function createHost({extension, hello, home = null, now = () => new Date(
       if (tab.canceledByUser) refuse(`Tab ${tabId}: the user canceled debugging; cua does not attach it again`);
       touch(s, tab, turn);
       if (tab.attached) return {};
-      await extension.request('debugger.attach', {tabId});
+      await attachGuarded(tabId, {tabId});
       if (!stillOwned(s, tab)) {
-        await quiet(extension.request('debugger.detach', {tabId}).catch(tolerateNotAttached), `detach ${tabId}`);
+        await quiet(extension.request('debugger.detach', {tabId}).catch(tolerateNotAttached));
         refuse(notPart(s, tabId));
       }
       tab.attached = true;
@@ -255,9 +297,9 @@ export function createHost({extension, hello, home = null, now = () => new Date(
       if (tab.canceledByUser) refuse(`Tab ${tabId}: the user canceled debugging; cua does not attach it again`);
       touch(s, tab, turn);
       if (tab.targets.has(targetId)) return {};
-      await extension.request('debugger.attach', {targetId});
+      await attachGuarded(tabId, {targetId});
       if (!stillOwned(s, tab)) {
-        await quiet(extension.request('debugger.detach', {targetId}).catch(tolerateNotAttached), `detach ${targetId}`);
+        await quiet(extension.request('debugger.detach', {targetId}).catch(tolerateNotAttached));
         refuse(notPart(s, tabId));
       }
       tab.targets.add(targetId);
@@ -298,7 +340,7 @@ export function createHost({extension, hello, home = null, now = () => new Date(
           if (preserveDebuggerOnTimeout !== true && tab.attached) {
             tab.attached = false;
             changed();
-            await quiet(extension.request('debugger.detach', {tabId}).catch(tolerateNotAttached), `detach ${tabId} after timeout`);
+            await quiet(extension.request('debugger.detach', {tabId}).catch(tolerateNotAttached));
           }
           refuse(`Timed out after ${limit}ms waiting for CDP command ${method}.`);
         }
@@ -401,6 +443,26 @@ export function createHost({extension, hello, home = null, now = () => new Date(
       release(owner.session, owner.tab);
       changed();
     },
+    // A guarded page opening a URL: the session whose current turn owns the opener takes it as a created tab, the turn's
+    // active one, as if the agent had created it; anything else (the turn is over, the opener was released) is dropped.
+    async 'tabs.popup'({openerTabId, url}) {
+      const owner = owners.get(openerTabId);
+      const s = owner?.session, turn = owner?.tab.turnId;
+      const live = () => owners.get(openerTabId)?.tab === owner.tab && owner.tab.state === 'active' && !s.closed && turn === s.turn && !s.ended.has(turn);
+      if (!owner || !live() || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+        log(`popup from tab ${openerTabId} dropped: no current turn owns the tab`);
+        return;
+      }
+      const created = await extension.request('tabs.create', {url, openerTabId, group: {key: s.id, title: s.title}, guard: true});
+      if (!live()) {
+        await quiet(extension.request('tabs.remove', {tabId: created.id}));
+        return;
+      }
+      own(s, newTab(created.id, created.windowId, turn, 'created'));
+      s.activeTabId = created.id;
+      changed();
+      log(`session ${s.id} took popup tab ${created.id} from tab ${openerTabId}`);
+    },
   };
 
   changed();
@@ -421,14 +483,16 @@ export function createHost({extension, hello, home = null, now = () => new Date(
         for (const turn of new Set([...s.tabs.values()].filter(t => t.state === 'active').map(t => t.turnId))) await endTurn(s, turn);
         for (const tab of [...s.tabs.values()]) {
           release(s, tab);
-          if (tab.origin === 'created') await quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}), `ungroup ${tab.tabId}`);
+          if (tab.origin === 'created') await quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}));
         }
         changed();
         log(`session ${s.id} closed with its client`);
       }));
     },
-    onExtensionNotification({method, params}) {
-      if (Object.hasOwn(notifications, method)) notifications[method](params ?? {});
+    // Resolves when the notification has been handled (tests await it; the program does not).
+    async onExtensionNotification({method, params}) {
+      if (!Object.hasOwn(notifications, method)) return;
+      try { await notifications[method](params ?? {}); } catch (error) { log(`extension notification ${method} failed: ${error?.message ?? error}`); }
     },
     extensionClosed() {
       closed = true;
@@ -491,7 +555,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
     maxFrameBytes: MAX_TO_EXTENSION_BYTES,
     onError: (error, method) => log(`extension notification ${method} failed: ${error?.stack ?? error}`),
     handlers: {hello: params => gotHello(params), 'debugger.event': forward('debugger.event'), 'debugger.detached': forward('debugger.detached'),
-      'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated')},
+      'tabs.removed': forward('tabs.removed'), 'tabs.updated': forward('tabs.updated'), 'tabs.popup': forward('tabs.popup')},
   });
   const push = frameDecoder(MAX_FROM_EXTENSION_BYTES);
   stdin.on('data', chunk => {

@@ -4,7 +4,10 @@
 // (chrome.tabs: "No tab with id: N."; chrome.debugger: "No tab with given id N.", "Cannot access a chrome:// URL",
 // "Debugger is not attached to the tab with id: N."). As the real extension, an attach of a debuggee it already holds
 // answers {alreadyHeld: true} (Chromium refuses only the holder's second attach, which the extension adopts; DevTools and
-// other extensions attach alongside, so there is no foreign refusal).
+// other extensions attach alongside, so there is no foreign refusal). Another extension's frame in a tab
+// (`addForeignFrame`) makes Chrome detach the tab and refuse attaching it ("Cannot access a chrome-extension:// URL of
+// different extension") until a tabs.guard sweep removes it; a frame can survive a number of sweeps (`sticky`), as one
+// re-inserted by its extension does.
 //
 // Two wirings: `api` ({request(method, params)}, answered on a later turn) plugs straight into createHost, with
 // `onNotify` receiving the extension's notifications; `connect({toHost, fromHost})` speaks real native-messaging
@@ -34,6 +37,8 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     tabs: new Map(),
     groups: new Map(),          // groupId -> {id, windowId, key, title}
     held: new Set(),            // debuggee keys this extension holds
+    guarded: new Set(),         // tabIds the host asked to guard
+    foreign: new Map(),         // tabId -> [{extensionId, sticky}] other extensions' frames in the tab
   };
   const calls = [];             // every primitive the host asked for: {method, params}
   const hold = new Map();       // CDP method -> pending resolvers: never answered while held
@@ -65,12 +70,24 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
 
   const primitives = {
     'tabs.query': () => [...state.tabs.values()].map(({id, windowId, url, title, active, groupId}) => ({id, windowId, url, title, active, groupId})),
-    'tabs.create': ({url = 'about:blank', windowId, group}) => {
-      if (!state.windows.has(windowId)) throw new Error(`No window with id: ${windowId}.`);
-      const tab = addTab({windowId, url, title: '', active: false});
-      if (group) tab.groupId = groupFor(windowId, group.key, group.title).id;
-      return {id: tab.id, windowId};
+    'tabs.create': ({url = 'about:blank', windowId, group, openerTabId, guard}) => {
+      const w = windowId ?? (openerTabId !== undefined ? tabOr(openerTabId, `No tab with id: ${openerTabId}.`).windowId : undefined);
+      if (!state.windows.has(w)) throw new Error(`No window with id: ${w}.`);
+      const tab = addTab({windowId: w, url, title: '', active: false});
+      if (openerTabId !== undefined) tab.openerTabId = openerTabId;
+      if (group) tab.groupId = groupFor(w, group.key, group.title).id;
+      if (guard === true) state.guarded.add(tab.id);
+      return {id: tab.id, windowId: w};
     },
+    'tabs.guard': ({tabId}) => {
+      tabOr(tabId, `No tab with id: ${tabId}.`);
+      state.guarded.add(tabId);
+      const frames = state.foreign.get(tabId) ?? [];
+      const left = frames.filter(f => f.sticky-- > 0);
+      state.foreign.set(tabId, left);
+      return {frames: 1, blanked: frames.length};
+    },
+    'tabs.unguard': ({tabId}) => { state.guarded.delete(tabId); return {}; },
     'tabs.remove': ({tabId}) => {
       tabOr(tabId, `No tab with id: ${tabId}.`);
       removeTab(tabId);
@@ -96,6 +113,8 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
       const key = keyOf(debuggee);
       if (state.held.has(key)) return {alreadyHeld: true};
       if (debuggee?.tabId !== undefined && state.tabs.get(debuggee.tabId).url.startsWith('chrome://')) throw new Error('Cannot access a chrome:// URL');
+      const tabId = debuggee?.tabId ?? Number(String(debuggee.targetId).match(/^T-(\d+)/)[1]);
+      if (state.foreign.get(tabId)?.length) throw new Error('Cannot access a chrome-extension:// URL of different extension');
       state.held.add(key);
       return {alreadyHeld: false};
     },
@@ -118,6 +137,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
       if (d.tabId === tabId || String(d.targetId ?? '').startsWith(`T-${tabId}-`)) { state.held.delete(key); emit('debugger.detached', {debuggee: d, reason: 'target_closed'}); }
     }
     state.tabs.delete(tabId);
+    state.guarded.delete(tabId);
     emit('tabs.removed', {tabId});
   }
 
@@ -148,6 +168,16 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
       if (state.held.delete(keyOf(debuggee))) emit('debugger.detached', {debuggee, reason: 'canceled_by_user'});
     },
     userCloseTab(tabId) { if (state.tabs.has(tabId)) removeTab(tabId); },
+    // Another extension draws a frame into the tab: Chrome detaches every debuggee of the tab.
+    addForeignFrame(tabId, {extensionId = 'pejdijmoenmkgeppbflobdenhhabjlaj', sticky = 0} = {}) {
+      state.foreign.set(tabId, [...(state.foreign.get(tabId) ?? []), {extensionId, sticky}]);
+      for (const key of [...state.held]) {
+        const d = debuggeeOf(key);
+        if (d.tabId === tabId || String(d.targetId ?? '').startsWith(`T-${tabId}-`)) { state.held.delete(key); emit('debugger.detached', {debuggee: d, reason: 'target_closed'}); }
+      }
+    },
+    // A guarded page asking for a popup (the extension's page guard), as the extension tells the host.
+    popup(openerTabId, url) { if (state.guarded.has(openerTabId)) emit('tabs.popup', {openerTabId, url}); },
     holdCdp(method) { hold.set(method, []); },
     releaseCdp(method, result = {}) { for (const resolve of hold.get(method) ?? []) resolve(result); hold.delete(method); },
     // The native port, as the real extension holds it: hello first, then requests answered and notifications sent.

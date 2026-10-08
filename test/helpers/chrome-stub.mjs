@@ -6,6 +6,12 @@
 // attached" while DevTools and other extensions attach alongside; a CDP-level error rejects with the protocol error as a
 // JSON string; commands pending when a debuggee detaches reject with "Detached while handling command.".
 //
+// Each tab holds a fake page (test/helpers/fake-page.mjs; a new one per navigation) where chrome.scripting runs the
+// extension's page guards as Chrome does, serialized into the page's own or the extension's isolated world. Chrome's
+// rule about other extensions' frames is modelled: while such a frame is committed in a tab, chrome.debugger refuses to
+// attach it ("Cannot access a chrome-extension:// URL of different extension"), and one committing while the tab is
+// attached detaches it. A page's chrome.runtime.sendMessage reaches the worker with the tab as sender.
+//
 // The native port is the point: `runtime.connectNative(name)` spawns the real host (src/chrome/host.mjs) as Chrome does
 // — a child process with the home baked into its environment, u32-framed JSON on stdin/stdout — or, with
 // `nativeHost: 'fake'`, connects to a test-held JSON-RPC peer (`hostPeers`) for primitive-level checks. Chrome's limits
@@ -21,6 +27,7 @@ import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {createPeer, encodeFrame, frameDecoder} from '../../src/chrome/protocol.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME} from '../../src/chrome/extension.mjs';
+import {createFakePage} from './fake-page.mjs';
 
 export const EXTENSION_DIR = fileURLToPath(new URL('../../extension/', import.meta.url));
 export const HOST = fileURLToPath(new URL('../../src/chrome/host.mjs', import.meta.url));
@@ -73,13 +80,24 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     startup: event(), installed: event(), message: event(), alarm: event(), groupRemoved: event(),
   };
 
-  function addTab({windowId = [...state.windows.keys()][0], url = 'https://user.fixture.invalid/', title = 'User tab', active = false} = {}) {
+  const pages = new Map();       // tabId -> its fake page
+  function loadPage(tabId, url) {
+    const page = createFakePage({url, extensionId: CUA_EXTENSION_ID,
+      sendMessage: message => stub.sendMessage(message, {id: CUA_EXTENSION_ID, tab: tabInfo(state.tabs.get(tabId)), frameId: 0}),
+      onCommit: () => { if (pages.get(tabId) === page && page.foreignFrames().length) detachFor(d => d.tabId === tabId || state.frames.get(d.targetId)?.tabId === tabId, 'target_closed'); }});
+    pages.set(tabId, page);
+    return page;
+  }
+  function addTab({windowId = [...state.windows.keys()][0], url = 'https://user.fixture.invalid/', title = 'User tab', active = false, openerTabId} = {}) {
     const id = nextTabId++;
-    const tab = {id, windowId, url, title, active, groupId: -1, status: 'complete', index: [...state.tabs.values()].filter(t => t.windowId === windowId).length};
+    const tab = {id, windowId, url, title, active, groupId: -1, status: 'complete', index: [...state.tabs.values()].filter(t => t.windowId === windowId).length,
+      ...(openerTabId !== undefined ? {openerTabId} : {})};
     state.tabs.set(id, tab);
+    loadPage(id, url);
     return tab;
   }
   const tabInfo = t => ({...t});
+  const FOREIGN_FRAME = 'Cannot access a chrome-extension:// URL of different extension';
   function detachFor(predicate, reason) {
     for (const [key, d] of [...state.attached]) {
       if (!predicate(d)) continue;
@@ -94,6 +112,7 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     for (const [targetId, f] of state.frames) if (f.tabId === tabId) state.frames.delete(targetId);
     const tab = state.tabs.get(tabId);
     state.tabs.delete(tabId);
+    pages.delete(tabId);
     if (tab?.groupId >= 0 && ![...state.tabs.values()].some(t => t.groupId === tab.groupId)) {
       state.groups.delete(tab.groupId);
       ev.groupRemoved.dispatch({id: tab.groupId});
@@ -224,10 +243,11 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     tabs: {
       query: call(`tabs.query`, () => [...state.tabs.values()].map(tabInfo)),
       get: call(`tabs.get`, tabId => (state.tabs.has(tabId) ? tabInfo(state.tabs.get(tabId)) : fail(`No tab with id: ${tabId}.`))),
-      create: call(`tabs.create`, ({url = 'chrome://newtab/', windowId, active = true} = {}) => {
+      create: call(`tabs.create`, ({url = 'chrome://newtab/', windowId, active = true, openerTabId} = {}) => {
         const w = windowId ?? [...state.windows.values()].find(x => x.focused)?.id;
         if (!state.windows.has(w)) return fail(`No window with id: ${windowId}.`);
-        return tabInfo(addTab({windowId: w, url, title: '', active}));
+        if (openerTabId !== undefined && state.tabs.get(openerTabId)?.windowId !== w) return fail(`Tab opener must be in the same window as the updated tab.`);
+        return tabInfo(addTab({windowId: w, url, title: '', active, openerTabId}));
       }),
       remove: call(`tabs.remove`, tabIds => {
         for (const id of [tabIds].flat()) if (!state.tabs.has(id)) return fail(`No tab with id: ${id}.`);
@@ -268,6 +288,8 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       attach: call(`debugger.attach`, (debuggee, version) => {
         if (version !== '1.3') return fail(`Requested protocol version is not supported: ${version}.`);
         requireDebuggee(debuggee);
+        const tabId = debuggee.tabId ?? state.frames.get(debuggee.targetId)?.tabId;
+        if (pages.get(tabId)?.foreignFrames().length) return fail(FOREIGN_FRAME);
         const key = keyOf(debuggee);
         if (state.attached.has(key))
           return fail(`Another debugger is already attached to the ${debuggee.targetId !== undefined ? 'target' : 'tab'} with id: ${debuggee.targetId ?? debuggee.tabId}.`);
@@ -299,6 +321,21 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
         ...[...state.frames].map(([id, f]) => ({type: 'other', id, attached: attachedByAnyone(`target:${id}`), title: '', url: f.url})),
       ]),
       onEvent: ev.debuggerEvent, onDetach: ev.debuggerDetach,
+    },
+    // Runs `func` in the tab's page, in the page's own world (MAIN) or the extension's; one frame (the main one). A page
+    // cua's host permissions do not reach (not http(s)) is refused.
+    scripting: {
+      executeScript: async ({target, func, args = [], world = 'ISOLATED', injectImmediately}) => {
+        calls.push({api: 'scripting.executeScript', args: [{target: {...target}, func: func?.name, args: structuredClone(args), world, injectImmediately}]});
+        await later();
+        const tab = state.tabs.get(target?.tabId);
+        if (!tab) return fail(`No tab with id: ${target?.tabId}.`);
+        if (tab.url.startsWith('chrome://')) return fail('Cannot access a chrome:// URL');
+        if (!/^https?:/.test(tab.url)) return fail('Cannot access contents of the page. Extension manifest must request permission to access the respective host.');
+        const page = pages.get(tab.id);
+        const result = await page.run(world === 'MAIN' ? 'main' : 'isolated', `(${func.toString()})(...${JSON.stringify(args)})`);
+        return [{frameId: 0, documentId: `doc-${tab.id}-${page.url}`, result: result === undefined ? null : JSON.parse(JSON.stringify(result))}];
+      },
     },
   };
 
@@ -341,11 +378,11 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     // CDP commands of `method` stay unanswered until released (or their debuggee detaches).
     holdCdp(method) { heldCdp.set(method, []); },
     releaseCdp(method, result = {}) { for (const resolve of heldCdp.get(method) ?? []) resolve(result); heldCdp.delete(method); },
-    // The popup asking the worker something, as chrome.runtime.sendMessage does.
-    sendMessage(message) {
+    // The popup (or, with `sender`, a page's content script) asking the worker something, as chrome.runtime.sendMessage does.
+    sendMessage(message, sender = {id: CUA_EXTENSION_ID}) {
       return new Promise((resolve, reject) => {
         let answered = false;
-        const results = ev.message.dispatch(structuredClone(message), {id: CUA_EXTENSION_ID}, response => { answered = true; resolve(structuredClone(response)); });
+        const results = ev.message.dispatch(structuredClone(message), structuredClone(sender), response => { answered = true; resolve(structuredClone(response)); });
         if (!answered && !results.includes(true)) reject(new Error('The message port closed before a response was received.'));
       });
     },
@@ -361,11 +398,14 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
     },
     userCancel(debuggee) { detachFor(d => keyOf(d) === keyOf(debuggee), 'canceled_by_user'); },
     userCloseTab(tabId) { if (state.tabs.has(tabId)) removeTab(tabId); },
+    // A new document in the tab (a fresh page: whatever was injected into the old one is gone).
     navigate(tabId, url, title) {
       const tab = state.tabs.get(tabId);
       Object.assign(tab, {url, title, status: 'complete'});
+      loadPage(tabId, url);
       ev.tabsUpdated.dispatch(tabId, {url, title, status: 'complete'}, tabInfo(tab));
     },
+    page: tabId => pages.get(tabId),
     // Ends every spawned host (test cleanup).
     async shutdown() {
       await Promise.all(ports.filter(p => p.child && !p.exited).map(p => new Promise(resolve => {

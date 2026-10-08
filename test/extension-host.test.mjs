@@ -293,3 +293,54 @@ test('a host of another protocol refuses with hostRefused: the popup status show
   await waitFor(async () => stub.port.exited && !(await status(stub)).connected, 'the second refusal');
   assert.equal((await status(stub)).refusal.code, 'protocol_mismatch');
 });
+
+test('another extension\'s frame cannot wedge an agent tab, a page\'s window.open becomes the session\'s tab, and refusals reach the host log', async t => {
+  const {stub, home, id, socketPath, hostStatus} = await start(t);
+  const c = await backendClient(t, socketPath);
+  const s = c.session('sess');
+  const guarded = tabId => stub.page(tabId).run('isolated', 'globalThis.__cuaPageGuard !== undefined');
+
+  // An agent tab: guarded from its first real document; the helper's frame on focus is blanked, the debugger stays.
+  const {id: tab} = await s.call('createTab', {});
+  await s.call('attach', {tabId: tab});
+  stub.navigate(tab, 'https://site.invalid/login', 'Login');
+  await waitFor(() => guarded(tab), 'the guard in the agent tab');
+  stub.page(tab).addForeignFrame();
+  await new Promise(r => setTimeout(r, 20));
+  assert.deepEqual(stub.page(tab).foreignFrames(), []);
+  assert.equal(c.notes.some(n => n.method === 'onCDPDetach'), false);
+  assert.deepEqual(await s.call('executeCdp', {target: {tabId: tab}, method: 'Runtime.evaluate', commandParams: {expression: 'ok'}}), {result: {type: 'string', value: 'evaluated:ok'}});
+
+  // A user tab already showing such a frame: claiming and attaching it sweeps first, so Chrome lets the debugger in.
+  const user = stub.addTab({url: 'https://user.invalid/', title: 'Mine'});
+  stub.page(user.id).addForeignFrame('aaaabbbbccccddddeeeeffffgggghhhh', {shadow: 'closed'});
+  await new Promise(r => setImmediate(r));
+  await assert.rejects(stub.chrome.debugger.attach({tabId: user.id}, '1.3'), {message: 'Cannot access a chrome-extension:// URL of different extension'});
+  await s.call('claimUserTab', {tabId: user.id});
+  await s.call('attach', {tabId: user.id});
+  assert.equal(stub.state.attached.has(`tab:${user.id}`), true);
+
+  // The page opens a window on the agent's click: the session owns the new tab, active, in its group; no claim.
+  const page = stub.page(tab);
+  page.click(page.document.body.appendChild(page.element('button')));
+  await page.run('main', 'window.open("/receipt")');
+  await waitFor(async () => (await s.call('getTabs')).length === 3, 'the popup in the session');
+  const listed = await s.call('getTabs');
+  const popup = listed.find(x => x.id !== tab && x.id !== user.id);
+  assert.equal(popup.active, true);
+  assert.equal(stub.state.tabs.get(popup.id).url, 'https://site.invalid/receipt');
+  assert.equal(stub.state.tabs.get(popup.id).openerTabId, tab);
+  assert.equal(stub.state.tabs.get(popup.id).groupId, stub.state.tabs.get(tab).groupId);
+  assert.equal(stub.state.tabs.get(popup.id).active, false, 'never takes the user\'s focus');
+  assert.ok(hostStatus().sessions[0].tabs.some(x => x.tabId === popup.id && x.origin === 'created'));
+
+  // The turn ends: the popup closes like any created tab, the claimed user tab is unguarded and released.
+  await s.end();
+  assert.equal(stub.state.tabs.has(popup.id), false);
+  assert.equal(await guarded(user.id), false);
+
+  // The host log names what Chrome refused (here: guarding about:blank before the first navigation) and the popup.
+  const log = readFileSync(join(home, 'chrome', 'logs', `${socketNameFor(id)}.log`), 'utf8');
+  assert.match(log, new RegExp(`extension refused tabs\\.guard \\{"tabId":${tab}\\}: Cannot access contents of the page`));
+  assert.match(log, new RegExp(`session sess took popup tab ${popup.id} from tab ${tab}`));
+});

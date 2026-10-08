@@ -63,7 +63,7 @@ test('createTab: inactive, in the session\'s own "cua" group, in the preferred w
   assert.equal(t1.active, true, 'the vendor reports the created tab as the logical active one');
   assert.equal(ext.state.tabs.get(t1.id).windowId, 2);
   assert.equal(ext.state.tabs.get(t1.id).active, false, 'never takes the user\'s focus');
-  assert.deepEqual(sent('tabs.create')[0], {url: 'about:blank', windowId: 2, group: {key: 'sA', title: 'cua'}});
+  assert.deepEqual(sent('tabs.create')[0], {url: 'about:blank', windowId: 2, group: {key: 'sA', title: 'cua'}, guard: true}, 'guarded from its first document on');
   const t2 = await a.call('createTab', {preferredWindowId: 1});
   assert.equal(ext.state.tabs.get(t2.id).windowId, 1);
   const t3 = await a.call('createTab', {preferredWindowId: 3});
@@ -161,6 +161,116 @@ test('attach is idempotent, an already-held debuggee is success, and an attach C
   ext.state.tabs.get(other.id).url = 'chrome://settings/';
   await assert.rejects(a.call('attach', {tabId: other.id}), e => e.message === 'Cannot access a chrome:// URL');
   await assert.rejects(a.call('executeCdp', {target: {tabId: other.id}, method: 'Page.enable'}), /Debugger unattached/);
+});
+
+test('every request the extension refuses is logged with its method, debuggee and Chrome\'s message, never CDP params', async () => {
+  const {ext, client, session, logs} = setup();
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  ext.state.tabs.get(tab.id).url = 'chrome://settings/';
+  await assert.rejects(a.call('attach', {tabId: tab.id}));
+  const ok = await a.call('createTab', {});
+  await a.call('attach', {tabId: ok.id});
+  ext.state.held.delete(`tab:${ok.id}`);
+  await assert.rejects(a.call('executeCdp', {target: {tabId: ok.id, sessionId: 'CHILD-1'}, method: 'Input.insertText', commandParams: {text: 'hunter2-secret'}}));
+  await assert.rejects(a.call('getCommittedTabUrl', {tabId: 4242}));
+  assert.ok(logs.includes(`extension refused debugger.attach {"tabId":${tab.id}}: Cannot access a chrome:// URL`), logs.join('\n'));
+  assert.ok(logs.includes(`extension refused debugger.sendCommand {"tabId":${ok.id},"sessionId":"CHILD-1"} Input.insertText: Debugger is not attached to the tab with id: ${ok.id}.`), logs.join('\n'));
+  assert.equal(logs.some(l => l.includes('hunter2')), false, 'CDP params never reach the log');
+});
+
+test('another extension\'s frame: attach guards the tab first, a refusal for such a frame is swept and retried once, and logged', async () => {
+  const {ext, client, session, sent, logs} = setup();
+  const c = client();
+  const a = session(c, 'sA');
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  assert.deepEqual(ext.calls.filter(x => ['tabs.guard', 'debugger.attach'].includes(x.method)).map(x => x.method), ['tabs.guard', 'debugger.attach'], 'guarded before the attach');
+
+  // The helper extension draws its frame: Chrome detaches; the service re-attaches and the guard's sweep clears it.
+  ext.addForeignFrame(tab.id);
+  await settle();
+  assert.deepEqual(c.notes.at(-1), {method: 'onCDPDetach', params: {tabId: tab.id, reason: 'target_closed'}});
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(ext.state.held.has(`tab:${tab.id}`), true);
+  assert.equal(sent('debugger.attach').length, 2, 'no refusal, so no retry');
+
+  // A frame its extension puts back once: the attach is refused, swept again and retried once.
+  await a.call('detach', {tabId: tab.id});
+  ext.addForeignFrame(tab.id, {sticky: 1});
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(sent('debugger.attach').length, 4);
+  assert.ok(logs.includes(`extension refused debugger.attach {"tabId":${tab.id}}: Cannot access a chrome-extension:// URL of different extension`));
+  assert.ok(logs.some(l => l.startsWith(`tab ${tab.id}: another extension's frame blocked the debugger; swept {"frames":1,"blanked":1}, retrying once`)), logs.join('\n'));
+
+  // One that survives both sweeps: refused with Chrome's wording after exactly one retry; the next attach tries again.
+  await a.call('detach', {tabId: tab.id});
+  ext.addForeignFrame(tab.id, {sticky: 2});
+  await assert.rejects(a.call('attach', {tabId: tab.id}), e => e.message === 'Cannot access a chrome-extension:// URL of different extension');
+  assert.equal(sent('debugger.attach').length, 6);
+  await a.call('attach', {tabId: tab.id});
+  assert.equal(ext.state.held.has(`tab:${tab.id}`), true);
+
+  // Frames go the same way: a target attach is retried after a sweep of its tab.
+  const frame = `T-${tab.id}-1`;
+  ext.state.foreign.set(tab.id, [{extensionId: 'x', sticky: 1}]);
+  await a.call('attachTarget', {tabId: tab.id, targetId: frame});
+  assert.deepEqual(sent('tabs.guard').slice(-2), [{tabId: tab.id}, {tabId: tab.id}]);
+  assert.equal(ext.state.held.has(`target:${frame}`), true);
+});
+
+test('guards end with ownership: a handed-off tab and tabs released open are unguarded, a closed tab is not asked', async () => {
+  const {ext, client, session, sent} = setup();
+  const userTab = ext.addTab({title: 'Users own'});
+  const a = session(client(), 'sA');
+  const plain = await a.call('createTab', {}), deliverable = await a.call('createTab', {}), handoff = await a.call('createTab', {});
+  await a.call('claimUserTab', {tabId: userTab.id});
+  for (const t of [plain, deliverable, handoff, userTab]) await a.call('attach', {tabId: t.id});
+  assert.deepEqual([...ext.state.guarded].sort(), [plain.id, deliverable.id, handoff.id, userTab.id].sort());
+  await a.call('markTab', {tabId: deliverable.id, status: 'deliverable'});
+  await a.call('markTab', {tabId: handoff.id, status: 'handoff'});
+  await a.end();
+  assert.deepEqual(sent('tabs.unguard').map(p => p.tabId).sort(), [deliverable.id, handoff.id, userTab.id].sort());
+  assert.deepEqual([...ext.state.guarded], [], 'the closed tab left with its removal');
+
+  // The handoff resumes next turn: guarded again before its attach.
+  a.turn = 't2';
+  await a.call('attach', {tabId: handoff.id});
+  assert.equal(ext.state.guarded.has(handoff.id), true);
+});
+
+test('a guarded page\'s popup becomes the session\'s active tab in the opener\'s window and group; outside a live turn it is dropped', async () => {
+  const {ext, host, client, session, sent, logs} = setup();
+  const w2 = ext.addWindow();
+  const a = session(client(), 'sA');
+  const opener = await a.call('createTab', {preferredWindowId: w2});
+  await a.call('nameSession', {name: 'Checkout'});
+  await host.onExtensionNotification({method: 'tabs.popup', params: {openerTabId: opener.id, url: 'https://popup.invalid/x'}});
+  const created = sent('tabs.create').at(-1);
+  assert.deepEqual(created, {url: 'https://popup.invalid/x', openerTabId: opener.id, group: {key: 'sA', title: 'Checkout'}, guard: true});
+  const tabs = await a.call('getTabs', {});
+  const popup = tabs.find(t => t.id !== opener.id);
+  assert.deepEqual(tabs.map(t => [t.id, t.active]), [[opener.id, false], [popup.id, true]], 'listed without a claim, as the active tab');
+  assert.equal(ext.state.tabs.get(popup.id).windowId, w2);
+  assert.equal(ext.state.tabs.get(popup.id).groupId, ext.state.tabs.get(opener.id).groupId);
+  assert.ok(logs.includes(`session sA took popup tab ${popup.id} from tab ${opener.id}`));
+  await a.call('attach', {tabId: popup.id});
+
+  // It belongs to the turn like a created tab: the turn's end closes it.
+  await a.end();
+  assert.equal(ext.state.tabs.has(popup.id), false);
+
+  // A tab no session owns, a released tab, and an ended turn's tab take no popup.
+  const b = session(client(), 'sB');
+  const kept = await b.call('createTab', {});
+  await b.call('markTab', {tabId: kept.id, status: 'deliverable'});
+  await b.end();
+  const before = sent('tabs.create').length;
+  const user = ext.addTab();
+  await host.onExtensionNotification({method: 'tabs.popup', params: {openerTabId: user.id, url: 'https://popup.invalid/'}});
+  await host.onExtensionNotification({method: 'tabs.popup', params: {openerTabId: kept.id, url: 'https://popup.invalid/'}});
+  assert.equal(sent('tabs.create').length, before);
+  assert.equal(logs.filter(l => l.includes('dropped: no current turn owns the tab')).length, 2);
 });
 
 test('executeCdp times out at 10 s by default and detaches the tab, so the next command answers "Debugger unattached"', async t => {

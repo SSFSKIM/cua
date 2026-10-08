@@ -987,6 +987,12 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   setting Settings › Engine to a wrapper); the owner's manual sitting uses that route.
   Date/Author: 2026-10-08, the plan executor (M5 executor's report, task-5).
 
+- Decision (2026-10-08, owner decision relayed by the dispatching session): the Browser panel follows the agent again.
+  When a lease's first acting command arrives on a tab, the session's Browser panel opens as E4c's
+  `browser.agent.acting` did; the tab itself stays unselected (the earlier choice), and when the panel already shows
+  another tab the behaviour is E4c's. Implemented in the MAWS final fix wave with an e2e assertion through the seam.
+  Date/Author: 2026-10-08, the plan executor, on the owner's decision.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

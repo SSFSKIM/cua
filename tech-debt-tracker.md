@@ -27,8 +27,11 @@
   refusals, so the extension retries them every 5 s, one log each — a doctor or startup sweep would bound it. (c)
   `chooseVendorRoute` can set the vendor record's mtime into the future under clock skew; a re-register after a blocked
   unregister, or over a vanished manifest, orphans that browser's backup (`src/chrome/registration.mjs`). (d) Doctor's
-  `agent.*` rows fail for a non-default home on a machine whose agent unit belongs to another home. (e) An extension
-  update through the CRX's `update_url` (a version bump served by the relay) is untested. (f) Cosmetic: a failed title
+  `agent.*` rows fail for a non-default home on a machine whose agent unit belongs to another home. (e) Measured
+  2026-10-08 (#15): a version bump served by the relay reaches a force-installed copy (Chrome 154 fetched 0.3.0 within
+  a minute under `--extensions-update-frequency=20`) but installs only when the extension is idle, and a worker holding
+  the native port never is, so the update waited for a Chrome restart; the default check interval is hours. A machine
+  that must take an update promptly restarts Chrome (deploy/cloud-vm could do that from its update path). (f) Cosmetic: a failed title
   on a new tab group is silent (`extension/background.js`); the `chrome.*` stub's `runtime.sendMessage` also delivers
   to the sender; `test/extension-pack.test.mjs` needs the `unzip` binary; the acceptance runner's restart-bound comment
   names the CDP timeout rather than the real worst path (connect + getInfo + locator, ~9 s).

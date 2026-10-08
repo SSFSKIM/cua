@@ -14,7 +14,7 @@ import {REPO} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {clientModeDir} from '../src/chrome/extension.mjs';
 import {clientSocketName} from '../src/chrome/client-mode.mjs';
-import {UNKNOWN_DEFAULT_INSTANCE} from '../src/chrome/discovery.mjs';
+import {MAWS_INSTANCE_MARKER} from '../src/chrome/discovery.mjs';
 import {startFakeMawsPeer} from './helpers/fake-maws-peer.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
@@ -104,7 +104,8 @@ test('MAWS down: profiles_list reads maws_unreachable, the launch still lists th
   await server.call('js', {code: 'hello'});
   const [{start}] = records(home);
   assert.equal(start.env.BROWSER_USE_BACKEND_PATHS.split(':')[0], join(clientModeDir(home), `${clientSocketName(path, server.child.pid)}.sock`));
-  assert.equal(start.env.CUA_BROWSER_DEFAULT_INSTANCE, UNKNOWN_DEFAULT_INSTANCE);
+  assert.equal(start.env.CUA_BROWSER_DEFAULT_INSTANCE, MAWS_INSTANCE_MARKER);
+  assert.equal(MAWS_INSTANCE_MARKER, 'maws:');
   assert.equal(start.env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, undefined);
   const peer = await startFakeMawsPeer({path});
   t.after(() => peer.stop());

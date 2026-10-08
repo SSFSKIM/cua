@@ -9,7 +9,7 @@ import {join} from 'node:path';
 import {buildLaunch, BROWSER_SERVICE, SKY_SERVICE} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {backendDir, clientModeDir, socketNameFor, socketPathFor} from '../src/chrome/extension.mjs';
-import {backendPaths, launchBackendPaths, UNKNOWN_DEFAULT_INSTANCE, VENDOR_SOCKET_DIR} from '../src/chrome/discovery.mjs';
+import {backendPaths, launchBackendPaths, MAWS_INSTANCE_MARKER, VENDOR_SOCKET_DIR} from '../src/chrome/discovery.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
@@ -109,13 +109,14 @@ test('on the vendor route (or with no registration) the sockets in the vendor\'s
   assert.equal(VENDOR_SOCKET_DIR, '/tmp/codex-browser-use');
 });
 
-test('a MAWS backend that has not said hello yet is still listed; the default fails closed instead of falling back to Chrome', t => {
+test('a MAWS backend that has not said hello yet is still listed; the default is the bare marker maws:, resolved at selection time', t => {
   const f = fixture(t);
   const hostPaths = [join(clientModeDir(f.home), 'aaaaaaaaaaaa-13.sock')];
   const {env} = mawsLaunch(f, {hostPaths, defaultInstance: null});
   assert.ok(env.BROWSER_USE_BACKEND_PATHS.split(':').includes(hostPaths[0]));
   assert.equal(env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, undefined);
-  assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, UNKNOWN_DEFAULT_INSTANCE);
+  assert.equal(env.CUA_BROWSER_DEFAULT_INSTANCE, MAWS_INSTANCE_MARKER);
+  assert.equal(MAWS_INSTANCE_MARKER, 'maws:');
 });
 
 test('a process without MAWS backends never lists another process\'s client-mode host, even on the cua route', t => {

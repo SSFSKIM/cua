@@ -1303,8 +1303,9 @@ What the agent sees: `profiles_list` lists `maws` first (`maws-2`, … for furth
 `extensionInstanceId` (`maws:<app session>`) while connected, else `maws_unreachable`; its description says that
 `cua.getBrowser()` with no id is the in-app browser and that a Chrome profile is used only when the user names one.
 cua's trusted browser wrapper enforces that default: a selection that names no browser (`cua.getBrowser()`,
-`cua.getBrowser({url})`) is rewritten to the first configured backend's instance, so while MAWS is away it fails with the
-vendor's own "Browser is not available" instead of landing in a Chrome profile; `cua.getBrowser({extensionInstanceId})`
+`cua.getBrowser({url})`) is resolved when it is made to the first configured backend's instance, else the first
+listed MAWS backend (a `cua serve` that started while MAWS was down picks MAWS up once it returns), so while MAWS is
+away it fails with the vendor's own "Browser is not available" instead of landing in a Chrome profile; `cua.getBrowser({extensionInstanceId})`
 with a Chrome profile's id still drives that profile. MAWS's tabs show the agent's cursor (`moveMouse` reaches MAWS as
 `cursor.move`) and a page's `window.open` arrives as a tab the agent already owns (`tabs.adopted`). `cua doctor` lists the
 connected MAWS hosts in its `maws.hosts` row.

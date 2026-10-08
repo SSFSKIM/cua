@@ -5,11 +5,7 @@
 - **2026-10-08 — MAWS client mode: small leftovers (minor, issue #13).** (a) Each `cua serve` with
   `CUA_BROWSER_BACKENDS` appends to its own `chrome/logs/<name>-<pid>.log`, one file per process lifetime; nothing
   prunes them (the Chrome route's logs are per profile and bounded in number). (b) When `profiles.json` does not parse,
-  `profiles_list` answers `profiles_invalid` and the `maws` entry, which needs no registry, is lost with it. (c) If the
-  first MAWS backend has not said hello within the 5 s wait, the launch's default instance is a placeholder no browser
-  has (`maws:unreachable`), so `cua.getBrowser()` keeps failing closed for that `cua serve`'s life even after MAWS
-  connects (an explicit `getBrowser({extensionInstanceId})` with the id `profiles_list` then shows works); the default
-  is an environment variable fixed at launch. Rare: MAWS starts the engine only once the socket listens.
+  `profiles_list` answers `profiles_invalid` and the `maws` entry, which needs no registry, is lost with it.
 
 - **2026-10-08 — Viewport capability: what is not pinned yet (minor, issue #82).** (a) The `accept-chrome --route cua`
   viewport cell (800x600 set, screenshot pixel size, reset) has not run live; it needs the owner's loaded cua

@@ -48,7 +48,7 @@
 //                                            said hello
 //   CUA_BROWSER_DEFAULT_INSTANCE             with `browserBackends`: the instance the trusted browser wrapper rewrites
 //                                            an unqualified selection to (src/services/browser.mjs); the first MAWS
-//                                            backend's, or one no browser has when it has not said hello
+//                                            backend's instance id, or the marker `maws:` when it has not said hello
 //   CUA_SECRETS_DIR                          with secrets on: the secret store directory (src/secrets/store.mjs), which
 //                                            the trusted services read a value from; untrusted cells see only the
 //                                            vendor's env allowlist (they can still read the directory: the sandbox
@@ -68,7 +68,7 @@ import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
-import {launchBackendPaths, UNKNOWN_DEFAULT_INSTANCE} from '../chrome/discovery.mjs';
+import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -126,7 +126,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     if (paths) env.BROWSER_USE_BACKEND_PATHS = paths.join(':');
     if (browserBackends) {
       if (browserBackends.defaultInstance) env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID = browserBackends.defaultInstance;
-      env.CUA_BROWSER_DEFAULT_INSTANCE = browserBackends.defaultInstance ?? UNKNOWN_DEFAULT_INSTANCE;
+      env.CUA_BROWSER_DEFAULT_INSTANCE = browserBackends.defaultInstance ?? MAWS_INSTANCE_MARKER;
     }
   }
   if (secretsDir) env[STORE_ENV.dir] = secretsDir;

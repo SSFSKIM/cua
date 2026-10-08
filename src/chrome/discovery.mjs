@@ -40,9 +40,9 @@ export function backendPaths(home) {
 // The vendor service's own socket directory on macOS and Linux (browser-service.mjs `Va`), scanned when
 // BROWSER_USE_BACKEND_PATHS is unset.
 export const VENDOR_SOCKET_DIR = '/tmp/codex-browser-use';
-// The default instance a launch gets when its first MAWS backend has not said hello: no browser has it, so an
-// unqualified selection fails with the vendor's own "Browser is not available" rather than reaching a Chrome profile.
-export const UNKNOWN_DEFAULT_INSTANCE = 'maws:unreachable';
+// The default instance a launch gets when its first MAWS backend has not said hello: the bare prefix, which the trusted
+// browser wrapper resolves at selection time to the first listed maws: browser (src/services/browser.mjs).
+export const MAWS_INSTANCE_MARKER = 'maws:';
 
 // -> the BROWSER_USE_BACKEND_PATHS list for a launch, or null to leave it unset. `clientHosts` is the process's
 // client-mode host sockets (null without MAWS backends: today's rule, backendPaths).

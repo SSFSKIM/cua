@@ -32,10 +32,13 @@
 // CUA_BROWSER_DEFAULT_INSTANCE in the launch environment (`cua serve` sets it to its first MAWS backend's instance id,
 // src/runtime/launch.mjs), a selection that names no browser, kind, family or instance (cua.getBrowser() sends
 // get_default_browser {}, getBrowser({url}) get_browser_for_url {url}: oai_js_cua create_browser_api.js) becomes
-// get_browser for that instance's browser id, read from the vendor's own list_browsers. The vendor's selectors fall
-// back from a missing preferred instance to any extension (browser-service.mjs fL, hL), which would land the agent in
-// the user's Chrome while MAWS is away; the rewrite asks for the instance by id instead (its browser id when listed,
-// else the instance id itself), so the selection is the in-app browser or the vendor's own "Browser is not available".
+// get_browser for a browser resolved at selection time from the vendor's own list_browsers: the one whose instance id
+// equals the variable, else the first whose instance id starts with maws: (the variable is the bare marker `maws:`
+// when no hello came before launch, and a known id can be missing while another session's process is not listed here
+// at all: only this process's client-mode hosts carry that prefix). The vendor's selectors fall back from a missing
+// preferred instance to any extension (browser-service.mjs fL, hL), which would land the agent in the user's Chrome
+// while MAWS is away; with no maws: browser listed the rewrite asks for the variable itself as the id, so the vendor
+// answers its own "Browser is not available" and the selection never reaches a Chrome profile.
 // A selection naming a browser (get_browser {id}: an id, a kind, a family, or the instance's id the client resolved)
 // passes untouched.
 import {readFile} from 'node:fs/promises';
@@ -56,6 +59,9 @@ const isNullableIndex = value => value === null || isIndex(value);
 const isPositiveInt = value => Number.isInteger(value) && value > 0;
 const SERVICE_METHODS = ['execute', 'executeWithRecovery'];
 const UNQUALIFIED_SELECTIONS = ['get_default_browser', 'get_browser_for_url'];
+// MAWS's instances (src/chrome/extension.mjs isMawsInstance; not imported: the trusted worker loads only modules under
+// src/services and src/secrets).
+const isMawsInstance = id => typeof id === 'string' && id.startsWith('maws:');
 const REQUEST_KEYS = ['method', 'params'];
 
 const FILL = {
@@ -157,7 +163,9 @@ export function createBrowserService({loadVendor, vendorVersion, secrets, secret
   async function selectDefault({method, clientTimeout}) {
     const service = await vendorService();
     const listed = await service.handleRpc({method: 'execute', params: {type: 'list_browsers'}});
-    const match = (Array.isArray(listed) ? listed : []).find(b => b?.type === 'extension' && b.metadata?.extensionInstanceId === defaultInstance);
+    const extensions = (Array.isArray(listed) ? listed : []).filter(b => b?.type === 'extension');
+    const match = extensions.find(b => b.metadata?.extensionInstanceId === defaultInstance)
+      ?? extensions.find(b => isMawsInstance(b.metadata?.extensionInstanceId));
     return service.handleRpc({method, params: {type: 'get_browser', id: typeof match?.id === 'string' ? match.id : defaultInstance,
       ...(clientTimeout !== undefined ? {client_timeout_ms: clientTimeout} : {})}});
   }

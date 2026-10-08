@@ -333,10 +333,27 @@ test('an unqualified selection (default or by URL) is rewritten to the default i
   }
 });
 
-test('with the default instance absent (MAWS down) an unqualified selection fails with the vendor\'s unavailable error, never another browser', async () => {
-  const {service, received} = selectionHarness({listing: [LISTING[0]]});
-  await assert.rejects(service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}}), /^Error: Browser is not available: maws:app-1$/);
-  assert.deepEqual(received.at(-1).params, {type: 'get_browser', id: 'maws:app-1'});
+test('with no maws: browser listed (MAWS down) an unqualified selection fails with the vendor\'s unavailable error, never another browser', async () => {
+  for (const defaultInstance of ['maws:app-1', 'maws:']) {
+    const {service, received} = selectionHarness({listing: [LISTING[0]], defaultInstance});
+    await assert.rejects(service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}}), new RegExp(`^Error: Browser is not available: ${defaultInstance}$`));
+    assert.deepEqual(received.at(-1).params, {type: 'get_browser', id: defaultInstance});
+  }
+});
+
+test('the default resolves at selection time: the exact instance first, else the first listed maws: browser (the marker before any hello, or a known id not listed)', async () => {
+  const late = {id: '3', type: 'extension', family: 'chrome', name: 'cua', profileName: 'MAWS', metadata: {extensionInstanceId: 'maws:app-late'}};
+  const cases = [
+    {defaultInstance: 'maws:', listing: [LISTING[0], late], expected: '3'},
+    {defaultInstance: 'maws:app-1', listing: [LISTING[0], late], expected: '3'},
+    {defaultInstance: 'maws:app-1', listing: [late, ...LISTING], expected: '2'},
+    {defaultInstance: 'maws:', listing: [LISTING[0], {...late, type: 'iab'}], expected: 'maws:'},
+  ];
+  for (const {defaultInstance, listing, expected} of cases) {
+    const {service, received} = selectionHarness({listing, defaultInstance});
+    await service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}}).catch(() => {});
+    assert.deepEqual(received.at(-1).params, {type: 'get_browser', id: expected}, JSON.stringify({defaultInstance, expected}));
+  }
 });
 
 test('a selection that names a browser, kind, family or instance, and every other command, passes untouched', async () => {

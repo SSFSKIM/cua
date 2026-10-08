@@ -13,7 +13,11 @@
 // "Browser is not available", never selecting the Chrome-shaped peer); explicit-chrome (getBrowser({extensionInstanceId:
 // <the Chrome-shaped peer's>}) still works: one tab created and closed there); reconnect-ready (the MAWS peer started
 // again: profiles_list reads maws ready within 10 s); default-restored (cua.getBrowser() selects MAWS again in the same
-// REPL heap, so the runtime was never restarted). Exit 0 when every step passed.
+// REPL heap, so the runtime was never restarted). Then a second `cua serve` starts while the MAWS peer is down, so no
+// hello arrives before its launch (the default is the bare marker maws:): late-start-fails-closed (cua.getBrowser()
+// fails with the vendor's error, never the Chrome-shaped peer); late-start-ready (the peer started: maws ready within
+// 10 s); late-start-default (cua.getBrowser() selects MAWS in the same REPL heap: resolved at selection time, no
+// restart). Exit 0 when every step passed.
 import {randomUUID} from 'node:crypto';
 import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
@@ -27,9 +31,17 @@ import {startFakeMawsPeer} from '../../test/helpers/fake-maws-peer.mjs';
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const js = value => JSON.stringify(value);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const serveFor = backends => openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_BROWSER_BACKENDS: backends}, clientName: 'cua-maws-selection'});
+const entryOf = session => async () => (await session.call('profiles_list', {}, 60_000)).result?.structuredContent?.profiles?.find(p => p.key === 'maws');
+async function readyWithin(mawsEntry, ms) {
+  const started = Date.now();
+  let entry;
+  while (Date.now() - started < ms) { entry = await mawsEntry(); if (entry?.ready) break; await sleep(250); }
+  return {...entry, afterMs: Date.now() - started};
+}
 
 export const SELECT_DEFAULT = cell(`
-  globalThis.__selection ??= {heap: ${js(randomUUID())}};
+  globalThis.__selection ??= {heap: \`\${Date.now().toString(36)}-\${Math.random().toString(36).slice(2)}\`};
   let selected = null, error = null;
   try {
     const browser = await cua.getBrowser();
@@ -52,9 +64,10 @@ export async function runSelection() {
   const chrome = await startFakeMawsPeer({path: chromePath, chrome: true, instanceId: randomUUID()});
   const steps = [];
   const record = (name, ok, detail) => { steps.push({name, status: ok ? 'PASS' : 'FAIL', detail}); return ok; };
-  const session = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off', CUA_BROWSER_BACKENDS: `${mawsPath}:${chromePath}`}, clientName: 'cua-maws-selection'});
+  const session = serveFor(`${mawsPath}:${chromePath}`);
+  let late = null;
   const run = code => session.js(code, 90_000).then(parseFeatureResult);
-  const mawsEntry = async () => (await session.call('profiles_list', {}, 60_000)).result?.structuredContent?.profiles?.find(p => p.key === 'maws');
+  const mawsEntry = entryOf(session);
   try {
     await session.initialize();
     const first = await run(SELECT_DEFAULT);
@@ -73,18 +86,33 @@ export async function runSelection() {
     record('explicit-chrome', explicit.closed === true && created === 1 && gone, {...explicit, chromePeer: {created, gone}});
     await session.call('end_task', {}, 30_000);
     maws = await startFakeMawsPeer({path: mawsPath});
-    const restarted = Date.now();
-    let back;
-    while (Date.now() - restarted < 10_000) { back = await mawsEntry(); if (back?.ready) break; await sleep(250); }
-    record('reconnect-ready', back?.ready === true && back.extensionInstanceId === maws.instanceId, {...back, afterMs: Date.now() - restarted});
+    const back = await readyWithin(mawsEntry, 10_000);
+    record('reconnect-ready', back.ready === true && back.extensionInstanceId === maws.instanceId, back);
     const again = await run(SELECT_DEFAULT);
     record('default-restored', again.selected === maws.instanceId && again.heap === first.heap, again);
     await session.call('end_task', {}, 30_000);
+
+    await maws.stop();
+    late = serveFor(`${mawsPath}:${chromePath}`);
+    await late.initialize();
+    const runLate = code => late.js(code, 90_000).then(parseFeatureResult);
+    const before = await runLate(SELECT_DEFAULT);
+    record('late-start-fails-closed', before.selected === null && /^Browser is not available: maws:$/.test(before.error ?? '') && before.heap !== first.heap, before);
+    await late.call('end_task', {}, 30_000);
+    maws = await startFakeMawsPeer({path: mawsPath});
+    const lateBack = await readyWithin(entryOf(late), 10_000);
+    record('late-start-ready', lateBack.ready === true && lateBack.extensionInstanceId === maws.instanceId, lateBack);
+    const after = await runLate(SELECT_DEFAULT);
+    record('late-start-default', after.selected === maws.instanceId && after.heap === before.heap, after);
+    await late.call('end_task', {}, 30_000);
   } catch (error) {
     record('harness', false, String(error?.message ?? error));
   } finally {
-    const serve = await session.terminate();
-    record('serve-exited-cleanly', serve.code === 0 && !serve.forced, serve);
+    for (const [name, s] of [['serve-exited-cleanly', session], ['late-serve-exited-cleanly', late]]) {
+      if (!s) continue;
+      const exit = await s.terminate();
+      record(name, exit.code === 0 && !exit.forced, exit);
+    }
     await maws.stop();
     await chrome.stop();
     rmSync(dir, {recursive: true, force: true});

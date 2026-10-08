@@ -13,20 +13,26 @@
 //   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset
 //              gives the pane's size back (reported)
 //   popup      #popup (window.open('/popup')) adds exactly one tab, whose URL ends in /popup
-//   download, alert, confirm, chooser   M3's (SKIP until then: FEATURE_STEPS below)
+//   download   waitForEvent('download') around #dl's click: download.path() is under ~/Downloads and its bytes are the
+//              fixture's (sha256); the file is removed afterwards once the run proved it made it
+//   alert      #alert's alert, read through getJsDialog() and dismissed: #state reads after-alert
+//   confirm    #confirm's confirm, dismissed: #state reads confirm:false
+//   chooser    waitForEvent('filechooser') around #file's click, setFiles([a 1234-byte temporary file]): #picked reads
+//              cua-upload.txt:1234 (spike S2 promoted: the chooser passes through MAWS)
 //   cleanup    end_task; afterwards neither the created tab nor the popup is listed
 //   isolation  with --other: a second `cua serve` on the second socket; each lists exactly one maws browser, its own,
 //              and cua.getBrowser({extensionInstanceId: <the other's>}) fails in each (SKIP without --other)
 // The JSON report's `summary` is {<step>: status}; exit 0 when no step FAILed.
-import {writeFileSync} from 'node:fs';
-import {resolve} from 'node:path';
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {homedir, tmpdir} from 'node:os';
+import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {configuredBackends} from '../../src/chrome/client-mode.mjs';
 import {openSession} from './mcp-session.mjs';
-import {parseFeatureResult} from './linux-chrome-features.mjs';
+import {DOWNLOAD_CELL, deleteFixtureDownload, dialogCell, downloadEvidence, fileChooserCell, parseFeatureResult} from './linux-chrome-features.mjs';
 import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/original/elicitation.mjs';
-import {startFeaturesPage} from './features-page.mjs';
+import {REPORT_BODY, startFeaturesPage} from './features-page.mjs';
 import {imageSize} from './chrome-cells.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -109,12 +115,59 @@ export const ISOLATION = otherInstance => cell(`
   try { await cua.getBrowser({extensionInstanceId: ${js(otherInstance)}}); otherSelected = true; } catch (error) { otherError = String(error?.message ?? error).slice(0, 200); }
   return {mawsInstances: maws.map(b => b.metadata.extensionInstanceId), otherSelected, otherError};`);
 
-// What M3 adds (download, alert, confirm, chooser): each `run({session, page, js})` -> {ok, detail}; null is SKIP.
-export const FEATURE_STEPS = {download: null, alert: null, confirm: null, chooser: null};
+// The Chrome route's feature cells (linux-chrome-features.mjs) read the tab as `fixtureTab`: here it is the created tab.
+const onTab = body => cell(`${created} const fixtureTab = m.tab; ${body}`);
+export const DOWNLOAD = onTab(DOWNLOAD_CELL);
+export const ALERT = onTab(dialogCell('#alert', 'after-alert'));
+export const CONFIRM = onTab(dialogCell('#confirm', 'confirm:false'));
+export const CHOOSER = path => onTab(fileChooserCell(path));
+export const UPLOAD_BYTES = 1234;
+
+// M3's steps (download, alert, confirm, chooser): each `step({run})` -> {ok, detail}.
+export const FEATURE_STEPS = {
+  async download({run, downloads = join(homedir(), 'Downloads')}) {
+    const startedAt = Date.now();
+    const result = await run(DOWNLOAD, 90_000);
+    if (typeof result.path !== 'string') return {ok: false, detail: result};
+    const evidence = downloadEvidence(result.path, startedAt);
+    const inDownloads = dirname(result.path) === downloads;
+    const removed = deleteFixtureDownload(evidence); // the fixture's file only, proven by its birth time and bytes
+    const {path, dev, ino, birthtimeMs, ...detail} = evidence;
+    return {
+      ok: result.clickError === undefined && evidence.sha256Match && evidence.size === REPORT_BODY.length && inDownloads,
+      detail: {...detail, inDownloads, elapsedMs: result.elapsedMs, removed, ...(result.clickError !== undefined && {clickError: result.clickError})},
+    };
+  },
+  async alert({run}) {
+    const detail = await run(ALERT);
+    return {ok: detail.type === 'alert' && detail.closed === true && detail.state === 'after-alert', detail};
+  },
+  async confirm({run}) {
+    const detail = await run(CONFIRM);
+    return {ok: detail.type === 'confirm' && detail.closed === true && detail.state === 'confirm:false', detail};
+  },
+  async chooser({run}) {
+    const directory = mkdtempSync(join(tmpdir(), 'cua-maws-chooser-'));
+    try {
+      const path = join(directory, 'cua-upload.txt');
+      writeFileSync(path, Buffer.alloc(UPLOAD_BYTES, 0x61), {flag: 'wx'});
+      const detail = await run(CHOOSER(path));
+      return {ok: detail.picked === `cua-upload.txt:${UPLOAD_BYTES}`, detail};
+    } finally { rmSync(directory, {recursive: true, force: true}); }
+  },
+};
+
+// The served page's own file transfers (the vendor's download and upload approvals) are accepted for it, as the Chrome
+// route's features run does; every other elicitation keeps the shared policy.
+export function featureDecision(msg, origin) {
+  const strict = decideElicitation(msg, {origin});
+  return !strict.accept && strict.kind === 'file-transfer' && strict.ownOrigin && msg?.params?._meta?.origin === origin
+    ? {...strict, accept: true, reason: 'file transfer with the served page'} : strict;
+}
 
 function startServe(env, page, elicitations) {
   const answer = msg => {
-    const decision = decideElicitation(msg, {origin: page.origin});
+    const decision = featureDecision(msg, page.origin);
     elicitations.push(inventoryEntry(msg, decision));
     return answerFor(decision);
   };
@@ -161,8 +214,7 @@ export async function runHarness({other = null} = {}) {
       const detail = await run(POPUP);
       return {ok: detail.added.length === 1 && detail.added[0].url.endsWith('/popup'), detail};
     });
-    for (const [name, step] of Object.entries(FEATURE_STEPS))
-      await check(name, async () => (step ? (tabOk ? step({session, page, run}) : {ok: false, detail: 'no tab: createTab failed'}) : {skip: true, detail: 'M3 adds this step'}));
+    for (const [name, step] of Object.entries(FEATURE_STEPS)) await needsTab(name, () => step({run}));
     await check('cleanup', async () => {
       const ended = await session.call('end_task', {}, 30_000);
       if (failed(ended)) return {ok: false, detail: ended};

@@ -749,6 +749,20 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   takeover semantics want).
   Date/Author: 2026-10-08, the design session.
 
+- Decision (2026-10-08, execution pre-flight): milestone order M1 → M2 → M3 → M4 → M5 is a strict chain (each
+  consumes the previous one's interfaces), so every milestone is its own review frontier (`doperpowers:reviewer-high`
+  per the authoring entry). Two execution rules the dispatch adds and the spec left open: (a) the owner's installed cua
+  plugin (`~/.claude/plugins` cache) and a running packaged MAWS are the owner's live environment; no milestone
+  overwrites the plugin cache with an unmerged branch or quits/relaunches the owner's MAWS. Live checks run against a
+  dev or e2e MAWS instance with its own userData and against the worktree's `bin/cua.mjs`; an "inside MAWS" check that
+  needs the 0.5.0 plugin installed for the engine is run with a session-scoped plugin directory if MAWS's launch can
+  take one without touching the owner's install, else recorded BLOCKED with what is needed. (b) M5's "plugin is
+  released, and #13 closes" means: the version bump and README land on the branch; merging, the marketplace update and
+  the plugin-cache refresh are the dispatching session's after review (the pull requests are opened, not merged).
+  Rationale: the brief forbids merging and touching the main checkouts; overwriting the owner's live plugin with an
+  unreviewed branch would change every other session on this Mac.
+  Date/Author: 2026-10-08, the plan executor.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

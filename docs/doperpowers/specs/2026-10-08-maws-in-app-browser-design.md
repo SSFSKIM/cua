@@ -318,7 +318,10 @@ back) are unchanged.
 
 **Cursor.** `AgentCursor` already draws `move`, `press` and `release` from the `Input.dispatchMouseEvent` commands it
 observes while the tab is `agent`; `cursor.move` adds a `move` for the vendor's `moveMouse` so the pointer shows where
-the agent aims before a locator click. `hide` follows the lease's release as it follows the agent letting go today.
+the agent aims before a locator click. `hide` follows the lease's release as it follows the agent letting go today. An agent's `Page.captureScreenshot` never carries the overlay
+(Design §9, which the old tools kept with a hiding stylesheet and a `hide` before `capturePage`): the server sends the
+cursor's `hide` and waits the overlay's grace before forwarding the capture; the agent's next mouse event draws it again
+(M4 fix wave, Decision Log).
 
 **Action rows.** The agent's work arrives as cua_repl `js` calls (`mcp__plugin_cua_cua_repl__js`), opaque to MAWS. Main
 synthesizes the browser activity from the primitive stream and sends it to the renderer as a new IPC event
@@ -930,6 +933,26 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   person's page for 30 s (the vendor's answer is an acting command held by the takeover gate). `personHolds` is the
   takeover gate's own test, so dialogs, navigations and acting commands agree on who holds the tab.
   Date/Author: 2026-10-08, the plan executor (M3 review findings P2, P3).
+
+- Decision (2026-10-08, M4): how the cut-over landed (MAWS ef3256b3..a04c83b5). The X9 amendment is P1 row A-54.
+  `src/shared/maws/browser.ts` stays as a frozen record (names, input and result schemas, `browserCallOf`) and the
+  normaliser admits historical calls through `parseBrowserToolArguments`, so old journals and X8 fixtures map
+  unchanged; `classify.ts` keeps a frozen `HISTORICAL_BROWSER_TOOL_USE` and `MAWS_TOOL_USE` lost the six names. What
+  stays of the agent layer (the dialog wrap, parking, the e2e seam) is re-homed in `startAgentPresence`. TabControls
+  lost its request-pending count, pause point and `AgentControl`; the dialogs' tool-result buffer, the downloads'
+  refusal hook, the debugger's `driver` owner, cua's "driven by the maws tools" refusal, `browser.agent.acting`, the
+  row's live waiting line and the engine host's `onClientGone` plumbing are gone with the tools; `playwright-core`
+  left the dependencies (no importer). `browser-comment-live.spec` and p1-live's S4 cases 5-7 retire; `verify` runs
+  `e2e:browser-cua`. MAWS has no root README, so the "For MAWS" section of `plugins/cua/README.md` is what changed.
+  Gap resolved here: the old tools hid the agent cursor's overlay from every screenshot (Design §9); through cua a
+  capture would carry it. The server now hides the cursor before an agent's `Page.captureScreenshot` (the "Cursor"
+  paragraph is revised); M4's fix wave implements it.
+  Known and outside this initiative: `test:live` is 39/40, the failing case (`W1 delivered next steer on disk`)
+  asserting an on-disk record exactly while engine 2.1.295 adds `delivery_id`; it is engine drift, not this change,
+  and goes to residue (acceptance 15's live half reads "green except that case").
+  Open to the owner: with `browser.agent.acting` gone, the Browser tool no longer opens when an agent starts acting
+  (an E4c behaviour); carried to the dispatching session.
+  Date/Author: 2026-10-08, the plan executor (M4 executor's report, task-4).
 
 ## Outcomes & Retrospective
 

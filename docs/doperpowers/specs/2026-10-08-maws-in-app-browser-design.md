@@ -363,7 +363,8 @@ answers nothing itself: it holds the callback and lets CDP decide. S1 settles wh
   false, defaultPrompt}` itself, intercepts `Page.handleJavaScriptDialog` to answer the held callback, and emits
   `Page.javascriptDialogClosed {result, userInput}`.
 
-Either way a dialog nobody answers within 30 s gets today's defaults (alert dismissed, confirm false) and a `Closed`
+Either way a dialog nobody answers within 30 s gets today's defaults (alert dismissed, confirm false), answered through
+the held callback (S1: an unanswered dialog stays open for good, and CDP is not the default's path), and a `Closed`
 event, so a cell that ignores dialogs cannot hang the tab; the activity row records type, excerpt and answer.
 `prompt()` stays refused by Electron's renderer.
 
@@ -590,7 +591,8 @@ Touches: `src/main/browser/agent/{control, cursor, dialogs}.ts`, `src/main/brows
 deliverables (`maws.download.recorded`), renderer transcript model (`derive.ts`, `rows.ts`, `BrowserAction.tsx`), the
 panel's tab list (badge), e2e cases for takeover and the cursor through the seam, `scripts/accept/maws-features.mjs`
 in this repository (download, alert, confirm, chooser steps), `docs/doperpowers/plans/2026-10-05-p1-extension.md`
-(the A-42 entry, first commit of the milestone, after S1's verdict is in Surprises & Discoveries).
+(the A-42 entry, first commit of the milestone, after S1's verdict is in Surprises & Discoveries; S1 promoted the
+native path, and the entry states that the 30 s default answers through the held callback, not through CDP).
 
 Decisions: typed-character coalescing window 1 s; label lookup bounded to 500 ms; the activity event is emitted at
 most 20 times per second per tab (a mouse-move storm never floods the renderer; moves are not rows anyway);

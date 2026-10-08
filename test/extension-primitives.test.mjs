@@ -4,7 +4,7 @@
 // docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "The extension protocol".
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {CUA_HOST_NAME} from '../src/chrome/extension.mjs';
+import {CUA_EXTENSION_ID, CUA_HOST_NAME} from '../src/chrome/extension.mjs';
 import {createChromeStub} from './helpers/chrome-stub.mjs';
 
 const waitFor = async (predicate, what, ms = 3000) => {
@@ -280,4 +280,152 @@ test('a restarted worker keeps the instance id, and its load plus the startup ev
   assert.equal(stub.hostPeers.length, 2);
   assert.equal(stub.hostPeers[1].hello.extensionInstanceId, id);
   assert.equal(stub.callsOf('storage.local.set').length, 1, 'minted once');
+});
+
+// --- page guards: other extensions' frames and popups in tabs the host owns ----------------------------------------
+
+const FOREIGN = 'Cannot access a chrome-extension:// URL of different extension';
+const turn = () => new Promise(r => setImmediate(r));
+const guardIn = (stub, tabId) => stub.page(tabId).run('isolated', 'globalThis.__cuaPageGuard !== undefined');
+
+test('tabs.guard blanks other extensions\' frames (also in closed shadow roots) and waits for them to unload: Chrome\'s attach refusal clears', async () => {
+  const {stub, host} = await start();
+  const tab = stub.addTab({url: 'https://site.invalid/login'});
+  const page = stub.page(tab.id);
+  const helper = page.addForeignFrame();
+  const hidden = page.addForeignFrame('aaaabbbbccccddddeeeeffffgggghhhh', {shadow: 'closed'});
+  const own = page.addForeignFrame(CUA_EXTENSION_ID, {path: '/popup.html'});
+  await turn();
+  assert.equal(page.foreignFrames().length, 2);
+  await assert.rejects(host.request('debugger.attach', {tabId: tab.id}), {message: FOREIGN, code: 1});
+
+  assert.deepEqual(await host.request('tabs.guard', {tabId: tab.id}), {frames: 1, blanked: 2});
+  assert.equal(helper.getAttribute('srcdoc'), '');
+  assert.equal(hidden.getAttribute('srcdoc'), '');
+  assert.equal(own.getAttribute('srcdoc'), null, 'this extension\'s own frames are left alone');
+  assert.deepEqual(page.foreignFrames(), [], 'unloaded by the time the sweep answers');
+  assert.deepEqual(await host.request('debugger.attach', {tabId: tab.id}), {alreadyHeld: false});
+
+  // While guarded, a frame appearing (or a frame pointed at another extension) is blanked before it commits: no detach.
+  page.addForeignFrame();
+  const late = page.element('iframe');
+  page.document.body.appendChild(late);
+  late.setAttribute('src', 'chrome-extension://pejdijmoenmkgeppbflobdenhhabjlaj/completion_list.html');
+  for (let i = 0; i < 3; i++) await turn();
+  assert.deepEqual(page.foreignFrames(), []);
+  assert.equal(stub.state.attached.has(`tab:${tab.id}`), true);
+  assert.equal(host.received.some(m => m.method === 'debugger.detached'), false);
+  // A second sweep finds nothing new.
+  assert.deepEqual(await host.request('tabs.guard', {tabId: tab.id}), {frames: 1, blanked: 0});
+});
+
+test('a guarded tab is guarded again on every new document; an unguarded one is never scripted; unguard and the port dropping remove the guard', async () => {
+  const {stub, host} = await start();
+  const user = stub.addTab({url: 'https://user.invalid/'});
+  stub.navigate(user.id, 'https://user.invalid/next', 'Next');
+  const made = await host.request('tabs.create', {url: 'about:blank', windowId: 1, guard: true});
+  // about:blank is no page cua may script: the sweep is refused with Chrome's message, nothing else happens.
+  await assert.rejects(host.request('tabs.guard', {tabId: made.id}), {message: 'Cannot access contents of url "about:blank". Extension manifest must request permission to access this host.'});
+  stub.navigate(made.id, 'https://agent.invalid/', 'Agent');
+  await waitFor(() => guardIn(stub, made.id), 'the guard in the new document');
+  assert.equal(stub.calls.some(c => c.api === 'scripting.executeScript' && c.args[0].target.tabId === user.id), false, 'a tab nobody guards is never scripted');
+  // The page-world interceptor goes to the top frame only (a sandboxed subframe must not open tabs through it); the
+  // frame guard to every frame.
+  assert.deepEqual(stub.callsOf('scripting.executeScript').filter(([a]) => a.target.tabId === made.id).map(([a]) => [a.world, a.func, a.target, a.injectImmediately]).slice(-2),
+    [['MAIN', 'pagePopups', {tabId: made.id, frameIds: [0]}, true], ['ISOLATED', 'pageGuard', {tabId: made.id, allFrames: true}, true]]);
+
+  await host.request('debugger.attach', {tabId: made.id});
+  assert.deepEqual(await host.request('tabs.unguard', {tabId: made.id}), {});
+  assert.equal(await guardIn(stub, made.id), false);
+  assert.equal(await stub.page(made.id).run('main', 'window.open === open && globalThis.__cuaPagePopups === undefined'), true);
+  stub.page(made.id).addForeignFrame();
+  await waitFor(() => host.received.some(m => m.method === 'debugger.detached'), 'Chrome detaching for the unguarded frame');
+  assert.deepEqual(host.received.find(m => m.method === 'debugger.detached').params, {debuggee: {tabId: made.id}, reason: 'target_closed'});
+
+  // Guarded again, then the host goes: the worker removes the guards it can no longer be asked to remove.
+  await host.request('tabs.guard', {tabId: made.id});
+  host.exit();
+  await waitFor(async () => !(await guardIn(stub, made.id)), 'the guard removed on port drop');
+});
+
+test('a guarded page\'s user-activated window.open and target links go to the host as tabs.popup; the page gets a stand-in', async () => {
+  const {stub, host} = await start();
+  const made = await host.request('tabs.create', {url: 'https://agent.invalid/start', windowId: 1, guard: true});
+  await host.request('tabs.guard', {tabId: made.id});
+  const page = stub.page(made.id);
+  const popups = () => host.received.filter(m => m.method === 'tabs.popup').map(m => m.params);
+  const button = page.document.body.appendChild(page.element('button'));
+
+  page.click(button);
+  assert.equal(await page.run('main', 'JSON.stringify(window.open("/next?x=1"))'), '{"closed":false}');
+  await waitFor(() => popups().length === 1, 'the popup request');
+  assert.deepEqual(popups(), [{openerTabId: made.id, url: 'https://agent.invalid/next?x=1'}]);
+  // One per activation: a second open of the same click is swallowed, not sent and not given to Chrome.
+  await page.run('main', 'window.open("https://agent.invalid/again")');
+  // noopener: null, as the web platform answers, and still the session's tab.
+  page.click(button);
+  assert.equal(await page.run('main', 'window.open("https://other.invalid/", "_blank", "noopener")'), null);
+  await waitFor(() => popups().length === 2, 'the noopener popup');
+  assert.equal(popups()[1].url, 'https://other.invalid/');
+
+  // Left to Chrome: a sized popup (needs window.opener), no user activation, this context's own targets, non-http(s).
+  page.click(button);
+  await page.run('main', 'window.open("https://idp.invalid/auth", "signin", "width=500,height=600")');
+  await page.run('main', 'window.open("/self", "_self")');
+  await page.run('main', 'window.open("/framed", "main")');
+  await page.run('main', 'window.open("mailto:x@y.invalid")');
+  page.navigator.userActivation.isActive = false;
+  await page.run('main', 'window.open("/no-gesture")');
+  assert.deepEqual(page.nativeOpens.map(o => o.url), ['https://idp.invalid/auth', '/self', '/framed', 'mailto:x@y.invalid', '/no-gesture'],
+    'a named target may be a frame or window anywhere in the frame tree: Chrome resolves it');
+
+  // A link with a target opens as the session's tab; one without a target navigates the tab itself (not touched).
+  const link = page.document.body.appendChild(page.element('a'));
+  link.setAttribute('href', '/linked');
+  link.setAttribute('target', '_blank');
+  assert.equal(page.click(link).defaultPrevented, true);
+  const plain = page.document.body.appendChild(page.element('a'));
+  plain.setAttribute('href', '/same-tab');
+  assert.equal(page.click(plain).defaultPrevented, false);
+  const named = page.document.body.appendChild(page.element('a'));
+  named.setAttribute('href', '/in-frame');
+  named.setAttribute('target', 'content');
+  assert.equal(page.click(named).defaultPrevented, false, 'a link into a named frame is Chrome\'s');
+  await waitFor(() => popups().length === 3, 'the link popup');
+  assert.equal(popups()[2].url, 'https://agent.invalid/linked');
+  assert.deepEqual(page.nativeOpens.slice(5).map(o => o.url), ['https://agent.invalid/in-frame']);
+
+  // The worker only relays its own guard's requests from tabs it guards.
+  const user = stub.addTab({url: 'https://user.invalid/'});
+  await stub.sendMessage({type: 'cua.popup', url: 'https://x.invalid/'}, {id: CUA_EXTENSION_ID, tab: {id: user.id}, frameId: 0}).catch(() => {});
+  await stub.sendMessage({type: 'cua.popup', url: 'https://x.invalid/'}, {id: 'someoneelse', tab: {id: made.id}, frameId: 0}).catch(() => {});
+  await stub.sendMessage({type: 'cua.popup', url: 'javascript:alert(1)'}, {id: CUA_EXTENSION_ID, tab: {id: made.id}, frameId: 0}).catch(() => {});
+  await turn();
+  assert.equal(popups().length, 3);
+
+  // tabs.create for a popup opens in the opener's window, with the opener, guarded.
+  const w2 = stub.addWindow();
+  const there = await host.request('tabs.create', {url: 'about:blank', windowId: w2});
+  const child = await host.request('tabs.create', {url: 'https://agent.invalid/linked', openerTabId: there.id, guard: true});
+  assert.equal(child.windowId, w2);
+  assert.equal(stub.state.tabs.get(child.id).openerTabId, there.id);
+  await host.request('tabs.unguard', {tabId: child.id});
+  assert.ok(stub.callsOf('scripting.executeScript').some(([a]) => a.target.tabId === child.id && a.func === 'pageUnguard'), 'it was guarded');
+});
+
+test('an unguard that arrives while a guard is being installed wins: nothing stays installed in the tab', async () => {
+  const {stub, host} = await start();
+  const made = await host.request('tabs.create', {url: 'https://agent.invalid/', windowId: 1});
+  const executeScript = stub.chrome.scripting.executeScript;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  // The isolated injection waits until the unguard has gone through.
+  stub.chrome.scripting.executeScript = async details => { if (details.func?.name === 'pageGuard') await gate; return executeScript(details); };
+  const guarding = host.request('tabs.guard', {tabId: made.id});
+  await waitFor(() => stub.page(made.id).run('main', 'globalThis.__cuaPagePopups !== undefined'), 'the page-world half installed');
+  await host.request('tabs.unguard', {tabId: made.id});
+  release();
+  await guarding;
+  await waitFor(async () => !(await guardIn(stub, made.id)) && await stub.page(made.id).run('main', 'globalThis.__cuaPagePopups === undefined'), 'both halves removed');
+  stub.chrome.scripting.executeScript = executeScript;
 });

@@ -15,12 +15,15 @@ const waitFor = async (predicate, what, ms = 3000) => {
   while (!(await predicate())) { if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 2)); }
 };
 
-test('the manifest is MV3 "cua" with exactly the needed permissions, nothing in pages, and a key that gives CUA_EXTENSION_ID', () => {
+test('the manifest is MV3 "cua" with exactly the needed permissions, no declared content scripts, and a key that gives CUA_EXTENSION_ID', () => {
   assert.equal(MANIFEST.manifest_version, 3);
   assert.equal(MANIFEST.name, 'cua');
   assert.match(MANIFEST.version, /^\d+\.\d+\.\d+$/);
-  assert.deepEqual([...MANIFEST.permissions].sort(), ['alarms', 'debugger', 'nativeMessaging', 'storage', 'tabGroups', 'tabs']);
-  for (const field of ['host_permissions', 'optional_permissions', 'content_scripts', 'web_accessible_resources', 'update_url'])
+  assert.deepEqual([...MANIFEST.permissions].sort(), ['alarms', 'debugger', 'nativeMessaging', 'scripting', 'storage', 'tabGroups', 'tabs']);
+  // Page guards are injected into owned tabs only (chrome.scripting), which needs every host; nothing runs in a page
+  // by declaration.
+  assert.deepEqual(MANIFEST.host_permissions, ['<all_urls>']);
+  for (const field of ['optional_permissions', 'content_scripts', 'web_accessible_resources', 'update_url'])
     assert.equal(MANIFEST[field], undefined, field);
   assert.equal(extensionIdFromKey(MANIFEST.key), CUA_EXTENSION_ID);
   assert.deepEqual(MANIFEST.background, {service_worker: 'background.js'});

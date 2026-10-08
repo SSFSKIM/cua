@@ -37,6 +37,11 @@ extension built here is designed so that C reuses it unchanged.
 - [x] (2026-10-07 16:20) H5 — packaging, docs, plugin 0.4.0, board #78 (Store listing, owner) and #79 (vendor-route
       removal, blocked by #78); acceptance 8 zip/CRX half and 10 pass. Remaining: 8's Store half (owner, #78) and the
       live Mac items with H3b.
+- [x] (2026-10-08 02:53 UTC) #81 — page guards (other extensions' frames, popups) and the host's refusal log; Decision
+      Log 2026-10-07 (#81). Live on this Mac with the input-helper enabled: pm-probe 8/8 fills twice (was 0/8), the
+      popup listed in the session without a claim, `accept-chrome --route cua` 40/40, vendor manifests unchanged
+      (`docs/evidence/2026-10-07-foreign-frames-acceptance.md`). Rerun on the branch head with the review fixes
+      (`d7970a5`) after an extension reload: 8/8, no detach, popup in the session, runner 40/40.
 
 ## Facts this design rests on
 
@@ -131,9 +136,20 @@ Claude Code ── cua serve (node REPL + vendor browser-service, L1)
 
 ### The extension (`extension/`)
 
-Manifest V3, name **cua**, permissions `debugger`, `nativeMessaging`, `tabs`, `tabGroups`, `storage`, `alarms`; no
-`host_permissions`, no content scripts (nothing runs in pages; the vendor's cursor overlay, favicon badges and popup
-interception are not reproduced). The manifest carries `key` (the public key) so the unpacked load, the self-hosted
+Manifest V3, name **cua**, permissions `debugger`, `nativeMessaging`, `tabs`, `tabGroups`, `storage`, `alarms`,
+`scripting`, and `host_permissions: ["<all_urls>"]`. No content script is declared; the only code cua runs in pages is
+the **page guard**, injected with `chrome.scripting.executeScript` into tabs the host owns and nowhere else (Decision
+Log, 2026-10-07, #81). In a guarded tab it blanks every other extension's frame (`srcdoc=""` on an iframe,
+`about:blank` on a frame; open and closed shadow roots included) as it appears (MutationObserver) and on the host's
+request before each attach, because Chrome detaches `chrome.debugger` from a tab, and refuses to attach it again,
+while another extension's frame is in it. In the top frame only (a sandboxed subframe must not open tabs through it),
+it also takes a user-activated `window.open` (no target or `_blank`) or `target=_blank` link of an http(s) URL and has
+the host open it as the session's tab (the page gets a stand-in window), instead of Chrome opening a tab no session
+owns; calls with window features (sized sign-in popups that need `window.opener`) and named targets (a frame or window
+anywhere in the frame tree) are left to Chrome. An unguard that arrives while a guard is installing wins. A tab
+is guarded from its creation (`tabs.create {guard}`) or the host's `tabs.guard`, every new document as it commits,
+until `tabs.unguard`, the tab's removal or the port dropping. The vendor's cursor overlay and favicon badges are not
+reproduced. The manifest carries `key` (the public key) so the unpacked load, the self-hosted
 CRX and the Store build share one id; the id is `CUA_EXTENSION_ID` in `src/chrome/extension.mjs`, derived from that
 key (first 32 hex chars of sha256(DER public key), `0-f` → `a-p`; a test recomputes it from `extension/manifest.json`).
 The private key lives with the owner at `~/.config/cua/extension-key.pem` (0600, never in git, never printed); the
@@ -210,6 +226,19 @@ its sessions. A detach initiated by the user (reason `canceled_by_user`) is forw
 re-attached. `Another debugger is already attached` from Chrome is success: Chromium raises it only when this same
 extension already holds the debuggee (DevTools and other extensions attach alongside), so the extension adopts the
 debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor extension does.
+
+**Page guards and popups.** The host guards the tabs it owns: created tabs from creation (`tabs.create {guard:true}`),
+and every owned tab again (`tabs.guard`, a sweep) before each `attach`/`attachTarget`, waited for at most 1.5 s
+(`GUARD_WAIT_MS`: an open JavaScript dialog stops `chrome.scripting`, and attaching is how the agent dismisses it); a
+guard Chrome refuses (a page cua may not script, such as `about:blank`) is logged and ignored. An attach Chrome refuses with `Cannot access a
+chrome-extension:// URL of different extension` is swept once more and retried once; a second refusal is the
+service's answer. A turn's end unguards its handoff tabs (the user works in them; the next turn's attach guards them
+again) and the tabs it releases open, without waiting for the answer; tabs it closes need nothing. `tabs.popup {openerTabId, url}` is taken when the
+opener is owned by a session whose current turn it belongs to: the host opens `url` with `tabs.create {openerTabId,
+group, guard:true}` and owns it as a created tab of that turn, the session's active tab (vendor parity:
+`handleAgentBackgroundPopup` claims the popup as the logical active tab); otherwise it is dropped and logged. Every
+request the extension refuses is logged (`extension refused <method> <debuggee or tab> [CDP method]: <Chrome's
+message>`), never CDP params, which can carry substituted secrets.
 
 **Socket placement and discovery.** Sockets live in `$CUA_HOME/chrome/b/` (0700; the short name keeps the path under
 the macOS limit for any username up to 37 characters at the default home; `register` refuses a home whose worst-case
@@ -494,7 +523,9 @@ npm run extension:pack                                        # dist/cua-extensi
 | Method | Params | Result |
 |---|---|---|
 | `tabs.query` | `{}` | `[{id, windowId, url, title, active, groupId}]` |
-| `tabs.create` | `{url?, windowId?, group:{key, title}}` | `{id, windowId}` (inactive; in the (window, key) group, created if needed) |
+| `tabs.create` | `{url?, windowId?, group:{key, title}, openerTabId?, guard?}` | `{id, windowId}` (inactive; in the (window, key) group, created if needed; with `openerTabId` and no window, in the opener's window; `guard` guards it from its first document) |
+| `tabs.guard` | `{tabId}` | `{frames, blanked}` (guards the tab and sweeps every frame; resolves once the frames it blanked unloaded, ≤ 1 s; a page cua may not script rejects with Chrome's message) |
+| `tabs.unguard` | `{tabId}` | `{}` (removes the page guard from every frame) |
 | `tabs.remove` | `{tabId}` | `{}` |
 | `tabs.get` | `{tabId}` | `{id, windowId, url, title, status}` |
 | `tabs.ungroup` | `{tabId}` | `{}` |
@@ -509,7 +540,8 @@ npm run extension:pack                                        # dist/cua-extensi
 
 Notifications from the extension: `hello {extensionId, extensionInstanceId, version, protocolVersion}` (first message
 after connect), `debugger.event {debuggee, sessionId?, method, params}`, `debugger.detached {debuggee, reason}`,
-`tabs.removed {tabId}`, `tabs.updated {tabId, url?, title?, status?}`. Notification from the host: `hostRefused {code,
+`tabs.removed {tabId}`, `tabs.updated {tabId, url?, title?, status?}`, `tabs.popup {openerTabId, url}` (a guarded
+page's user-activated `window.open` or target link). Notification from the host: `hostRefused {code,
 message}` (`protocol_mismatch`, `hello_invalid`, `already_served`, `listen_failed`), sent before the host exits; the
 popup shows it. Errors carry Chrome's
 `chrome.runtime.lastError.message` verbatim; the host's own refusals are `message_too_large`, `protocol_mismatch`.
@@ -590,6 +622,27 @@ No new npm dependencies.
   failed seven steps on host CDP timeouts (up to 10 s). The run two minutes later passed. The host does not log CDP
   traffic, so the stalled methods are unknown; restore load is the likely cause. Every other run had no stall, with
   navigations of 0.1–0.5 s.
+- Observation (#81, 2026-10-07): the H3b conclusion that both routes hit the foreign-frame refusal was wrong. On the
+  owner's Chrome an input-helper extension (`pejdijmoenmkgeppbflobdenhhabjlaj`) draws an invisible 9001 px
+  `/completion_list.html` iframe on focus of **any** field. Same Chrome session, same loopback page (one password and
+  one text field), 4 trials each, focus then fill: the ChatGPT-extension route filled 8/8, twice (before and minutes
+  after the cua run; one focus on the rerun answered "Detached while handling command." and the fill still passed),
+  the cua route 0/8. On the cua route the first focus made Chrome detach the debugger and refuse every re-attach with
+  `Cannot access a chrome-extension:// URL of different extension` (the service: "Google Chrome is blocking
+  automation because another extension UI is open on this page…"); every later call on the tab failed, navigation and
+  close included, and a fresh tab failed again on its first focus. The vendor route recovers because its extension
+  blanks other extensions' frames in the tabs it controls (`content-scripts/foreign-frame-monitor.js`, injected by
+  `chrome.scripting`). The same runs measured tab creation: 0.2–0.5 s through the cua host against 8–10 s through the
+  vendor extension. The host logged none of the refusals (it logged only session open and close), which is why the
+  cause had to be read off the service's wording. Evidence: the probe's `trials.json`/`diag.json` (job scratch),
+  summarized in `docs/evidence/2026-10-07-foreign-frames-acceptance.md`.
+- Observation (#81 live, 2026-10-08): with the page guards the same probe filled 8/8 twice; after every focus the
+  helper's frame was in the page with `srcdoc=""`, and no attach was refused. Four `Detached while handling command.`
+  answers still came at navigations (the helper draws into the new document before the guard is injected at commit);
+  the service's re-attach recovered each, as on the vendor route. Chrome's refusal to script an agent tab's
+  `about:blank` reads `Cannot access contents of url "about:blank". Extension manifest must request permission to
+  access this host.` In all 8 password trials the field's value after the fill was not the probe's (10 characters,
+  not read further); text fields round-tripped 4/4.
 
 ## Decision Log
 
@@ -717,6 +770,39 @@ No new npm dependencies.
   install, so VMs installed from the hosted CRX keep updating from the relay after the template flips to `store`
   (moving one in place is untested; noted on #79). Board: #78 Store listing (owner), #79 vendor-route removal blocked
   by #78.
+
+- Decision (2026-10-07, #81, owner-approved): the design's "no content scripts" is reversed for exactly two behaviours,
+  both in tabs the host owns: blanking other extensions' frames, and routing a page's popup to the session. Rationale:
+  the measurement above (vendor route 8/8 twice, cua route 0/8, same session): without the first, one focused field in
+  a profile with an input-helper or password-manager extension makes a tab undrivable for its life. What the vendor
+  does (ChatGPT extension 1.26.901.11451, `background.js`, read for this decision): the monitor (`Mh`, also shipped as
+  `content-scripts/foreign-frame-monitor.js`) runs in the isolated world, walks the document and every open or closed
+  shadow root (`chrome.dom.openOrClosedShadowRoot`), and for an `<iframe>`/`<frame>` whose `src` is a
+  `chrome-extension://` URL of another extension sets `srcdoc=""` (iframe) or `src="about:blank"` (frame); it never
+  removes or hides the element; a MutationObserver (childList, subtree, `src`) repeats this for every addition. It is
+  injected with `chrome.scripting.executeScript` (not a declared content script) into every document of a leased tab
+  on every session request that touches the tab (`requireSessionTab`: `attach`, `attachTarget`, `executeCdp`,
+  `createTab`, `claimUserTab`, `markTab`) and when a leased tab starts loading, so it is in place before each attach and
+  catches frames on insertion; it is removed at turn end. Its attach (`Os`) has no retry of its own; recovery is the
+  service's re-attach finding the frame blanked. Its popup interceptor (`Rh` in the page's world, a bridge `kh` in the
+  isolated world, behind the `codex-app-chrome-extension-background-popups` gate) replaces `window.open` and
+  target-link clicks with a request the extension turns into a background tab claimed for the session.
+  cua follows the injection model (an owned tab only; a user's other tabs never see cua code, and nothing is declared
+  for every page) with three choices of its own: the guard is installed on the host's tab creation, at each new
+  document's commit (`tabs.onUpdated` url/complete, so no `webNavigation` permission) and swept before each attach
+  rather than on every CDP command (one extra native round trip per attach, none per command), the host waiting for a
+  sweep at most 1.5 s and never for an unguard (review: an open dialog blocks injection indefinitely); an attach refused
+  for a foreign frame is swept and retried once by the host; and the popup interceptor runs in the top frame only (the
+  vendor injects it into every frame, which lets a sandboxed frame without `allow-popups` open tabs) and takes only
+  new-context opens: `window.open` with window features is left to Chrome, because a sized popup is almost always a
+  sign-in flow that needs `window.opener`, which a tab opened by the extension cannot have, and so is every named
+  target, which may name a frame anywhere in the tree (the vendor intercepts both). The host now logs every refused extension request so the next case
+  like this is diagnosable from `$CUA_HOME/chrome/logs/`. Cursor overlay and favicon badges stay excluded. The
+  `<all_urls>` host permission is the one the Store scrutinizes, so this lands before the first upload (#78).
+  Alternatives rejected: a declared `<all_urls>` content script that asks the worker whether its tab is owned (code in
+  every page the user opens); removing the foreign iframe (its extension re-inserts it, and a blanked element keeps its
+  script quiet); re-injecting on every CDP command as the vendor does (a round trip per command for a case the
+  observer already covers).
 
 ## Outcomes & Retrospective
 

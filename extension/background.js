@@ -1,14 +1,23 @@
 // cua's Chrome extension: the service worker. It exposes Chrome's primitives (tabs, windows, tab groups,
 // chrome.debugger) to cua's native host (io.github.ssfskim.cua, src/chrome/host.mjs in the cua checkout) over native
-// messaging, and keeps no state beyond the debuggees it attached and which tab group serves which (window, session).
-// Every session, turn and ownership rule lives in the host. Spec (in the cua repository):
+// messaging, and keeps no state beyond the debuggees it attached, which tab group serves which (window, session), and
+// which tabs the host asked it to guard. Every session, turn and ownership rule lives in the host. Spec (in the cua repository):
 // docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "The extension" and "The extension protocol".
 //
 // The wire is JSON-RPC 2.0 with the host's peer conventions (src/chrome/protocol.mjs; an extension cannot import from
 // the checkout, so this is a copy of the half it needs): an error reply is {code, message} with Chrome's own message
 // verbatim, an unknown method answers code -1 "No handler registered for method: <m>", a failing handler code 1. The
 // extension sends no requests, only notifications: hello (first), debugger.event, debugger.detached, tabs.removed,
-// tabs.updated. Native messaging frames each message; the host refuses to send one over Chrome's 1 MB limit.
+// tabs.updated, tabs.popup. Native messaging frames each message; the host refuses to send one over Chrome's 1 MB limit.
+//
+// Page guards (the only code cua runs in pages, and only in tabs the host owns): Chrome detaches chrome.debugger from a
+// tab, and refuses to attach it again, while a frame of another extension is in the tab ("Cannot access a
+// chrome-extension:// URL of different extension"); input-helper and password-manager extensions draw such frames when
+// a field is focused. The guard blanks every other extension's frame in a guarded tab (srcdoc "", as the ChatGPT
+// extension's foreign-frame monitor does) when it appears and whenever the host asks before an attach, and routes a
+// user-activated window.open or target=_blank link of the page to the host, which opens it as the session's tab
+// (tabs.popup) instead of Chrome opening a tab no session owns. A tab is guarded from tabs.create {guard} or tabs.guard
+// until tabs.unguard, its removal or the port dropping; each new document of a guarded tab is guarded as it commits.
 //
 // Connection: at load and on runtime.onStartup/onInstalled the worker connects and says hello. While disconnected it
 // retries every 5 s, and the cua-reconnect alarm retries every minute (it wakes a suspended worker). When the port
@@ -29,6 +38,10 @@ const LASTING_REFUSALS = new Set(['protocol_mismatch', 'hello_invalid']);
 const BACKOFF_KEY = 'lastingRefusal';     // storage.session: {refusal, streak, notBefore}
 const MINUTE_MS = 60_000;
 const MAX_BACKOFF_MINUTES = 60;
+const GUARD_KEY = '__cuaPageGuard';         // the isolated world's guard (frames, popup bridge)
+const POPUPS_KEY = '__cuaPagePopups';       // the page's own world's window.open / link interceptor
+const POPUP_EVENT = 'cua:popup-request';    // the page world asking the isolated world to open a URL
+const SETTLE_MS = 1000;                     // how long a requested sweep waits for blanked frames to unload
 
 let port = null;           // the open native port
 let peer = null;           // its JSON-RPC peer
@@ -39,6 +52,7 @@ let lastError = null;      // Chrome's reason the latest port closed
 let instanceIdLoad = null;
 const held = new Map();    // debuggee key -> the debuggee this extension attached
 const groups = new Map();  // windowId + session key -> promise of the Chrome tab group cua made for it
+const guarded = new Set(); // tabIds the host owns and asked to guard
 
 const keyOf = d => (d.targetId != null ? `target:${d.targetId}` : `tab:${d.tabId}`);
 const debuggeeOf = d => (d?.targetId != null ? {targetId: d.targetId} : {tabId: d?.tabId});
@@ -58,6 +72,161 @@ function loadInstanceId() {
     return minted;
   })().catch(error => { instanceIdLoad = null; throw error; });
   return instanceIdLoad;
+}
+
+// --- page guards ----------------------------------------------------------------------------------------------------
+
+// Runs in a guarded tab's frames, in this extension's isolated world (chrome.scripting serializes it: no closure over
+// the worker). Installs once per document, then every call sweeps and resolves {blanked} once the frames it blanked
+// have unloaded (at most `settleMs`). Another extension's iframe gets srcdoc "" (it then holds an empty document, and
+// its owner's script keeps a live element); a <frame> gets about:blank. Closed shadow roots are reached through
+// chrome.dom. The popup bridge accepts one request per user activation from the page world's interceptor.
+function pageGuard(key, popupEvent, settleMs) {
+  const g = globalThis;
+  if (!g[key]) {
+    const ownId = chrome.runtime.id;
+    const openOrClosed = chrome.dom?.openOrClosedShadowRoot;
+    const foreign = url => {
+      const u = typeof url === 'string' ? url.trim() : '';
+      if (!u.startsWith('chrome-extension://')) return false;
+      try { const {host} = new URL(u); return host !== '' && host !== ownId; } catch { return false; }
+    };
+    const shadowOf = el => {
+      if (typeof openOrClosed === 'function') try { return openOrClosed(el) ?? null; } catch {}
+      return el.shadowRoot ?? null;
+    };
+    const unloading = new Set();
+    const watched = new WeakSet();
+    let blanked = 0;
+    const check = el => {
+      const frame = el.tagName === 'IFRAME' || el.tagName === 'FRAME';
+      if (frame && (foreign(el.getAttribute('src')) || foreign(el.src)) && !(el.tagName === 'IFRAME' && el.getAttribute('srcdoc') === '')) {
+        unloading.add(el);
+        el.addEventListener('load', () => unloading.delete(el), {once: true});
+        if (el.tagName === 'IFRAME') el.setAttribute('srcdoc', ''); else el.setAttribute('src', 'about:blank');
+        blanked++;
+      }
+      const root = shadowOf(el);
+      if (root) watch(root);
+    };
+    const scan = node => {
+      if (node.nodeType === 1) check(node);
+      for (const el of node.querySelectorAll?.('*') ?? []) check(el);
+    };
+    const observer = new MutationObserver(records => {
+      for (const r of records) {
+        if (r.type === 'attributes') check(r.target);
+        for (const n of r.addedNodes ?? []) if (n.nodeType === 1) scan(n);
+      }
+    });
+    function watch(root) {
+      if (watched.has(root)) return;
+      watched.add(root);
+      observer.observe(root, {subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'srcdoc']});
+      scan(root);
+    }
+    let allowance = true;
+    const renew = event => { if (event.isTrusted) allowance = true; };
+    const onPopup = event => {
+      if (typeof event.detail !== 'string' || navigator.userActivation?.isActive === false) return;
+      event.preventDefault();   // handled: the page world does not fall back to Chrome's window.open
+      if (!allowance) return;
+      allowance = false;
+      chrome.runtime.sendMessage({type: 'cua.popup', url: event.detail}).catch(() => {});
+    };
+    document.addEventListener('click', renew, true);
+    document.addEventListener('keydown', renew, true);
+    document.addEventListener(popupEvent, onPopup);
+    g[key] = {
+      sweep() {
+        const before = blanked;
+        if (watched.has(document)) scan(document); else watch(document);
+        const count = blanked - before;
+        const settled = Promise.all([...unloading].map(el => new Promise(resolve => el.addEventListener('load', resolve, {once: true}))));
+        return Promise.race([settled, new Promise(resolve => setTimeout(resolve, settleMs))]).then(() => ({blanked: count}));
+      },
+      stop() {
+        observer.disconnect();
+        document.removeEventListener('click', renew, true);
+        document.removeEventListener('keydown', renew, true);
+        document.removeEventListener(popupEvent, onPopup);
+        delete g[key];
+      },
+    };
+  }
+  return g[key].sweep();
+}
+
+// Runs in the page's own world (window.open is the page's), in the top frame only (a sandboxed subframe without
+// allow-popups must not open tabs through it). A user-activated window.open of an http(s) URL into a new browsing
+// context (no target, "" or _blank), or a click on such a link with target=_blank, is offered to the isolated world;
+// when it takes it the page gets a stand-in window (null with noopener) and the host opens the URL as the session's
+// tab. Left to Chrome: a call with window features (a sized popup, typically a sign-in flow that needs
+// window.opener), every named target (it may name a frame or window anywhere in the frame tree), and anything without
+// user activation (Chrome's popup blocker decides those).
+function pagePopups(key, popupEvent) {
+  const g = globalThis;
+  if (g[key]) return true;
+  const original = window.open;
+  const NO_OPENER = /^(?:noopener|noreferrer)(?:\s*=\s*(?:1|yes|true))?$/i;
+  const offer = url => {
+    if (navigator.userActivation?.isActive === false) return false;
+    let href;
+    try { href = new URL(url, document.baseURI); } catch { return false; }
+    if (href.protocol !== 'http:' && href.protocol !== 'https:') return false;
+    return !document.dispatchEvent(new CustomEvent(popupEvent, {cancelable: true, detail: href.href}));
+  };
+  const fresh = target => target === '' || target.toLowerCase() === '_blank';
+  const open = function (url, target, features) {
+    const tokens = String(features ?? '').split(',').map(t => t.trim()).filter(Boolean);
+    if (url == null || url === '' || !fresh(String(target ?? '')) || tokens.some(t => !NO_OPENER.test(t)) || !offer(String(url)))
+      return original.apply(this, arguments);
+    return tokens.length ? null : {closed: false, focus() {}, blur() {}, close() {}, postMessage() {}};
+  };
+  const onClick = event => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    const a = event.composedPath().find(n => n?.tagName === 'A' && typeof n.href === 'string');
+    if (!a || (a.hasAttribute('download') && a.origin === location.origin)) return;
+    if (a.target.toLowerCase() !== '_blank') return;
+    if (offer(a.href)) event.preventDefault();
+  };
+  // Armed in the capture phase, judged after the page's own handlers (which may cancel the click or navigate).
+  const arm = () => { window.removeEventListener('click', onClick); window.addEventListener('click', onClick, {once: true}); };
+  window.open = open;
+  window.addEventListener('click', arm, true);
+  g[key] = {stop() {
+    window.removeEventListener('click', arm, true);
+    window.removeEventListener('click', onClick);
+    if (window.open === open) window.open = original;
+    delete g[key];
+  }};
+  return true;
+}
+
+function pageUnguard(key) {
+  globalThis[key]?.stop();
+  return true;
+}
+
+// Guards every frame of the tab (the top frame's page-world interceptor first, so the bridge never sees a request it
+// cannot route) and sweeps; resolves {frames, blanked}. Chrome's refusal (a page cua may not script) rejects verbatim.
+// An unguard (or the port dropping) that arrived meanwhile wins: what this call installed is removed again.
+async function guardFrames(tabId) {
+  try {
+    await chrome.scripting.executeScript({target: {tabId, frameIds: [0]}, injectImmediately: true, world: 'MAIN', func: pagePopups, args: [POPUPS_KEY, POPUP_EVENT]}).catch(() => {});
+    const results = await chrome.scripting.executeScript({target: {tabId, allFrames: true}, injectImmediately: true, func: pageGuard, args: [GUARD_KEY, POPUP_EVENT, SETTLE_MS]});
+    return {frames: results.length, blanked: results.reduce((n, r) => n + (r?.result?.blanked ?? 0), 0)};
+  } finally {
+    if (!guarded.has(tabId)) unguardFrames(tabId).catch(() => {});
+  }
+}
+
+function unguardFrames(tabId) {
+  const target = {tabId, allFrames: true};
+  return Promise.all([
+    chrome.scripting.executeScript({target, injectImmediately: true, world: 'MAIN', func: pageUnguard, args: [POPUPS_KEY]}),
+    chrome.scripting.executeScript({target, injectImmediately: true, func: pageUnguard, args: [GUARD_KEY]}),
+  ]);
 }
 
 // --- the primitives the host asks for -------------------------------------------------------------------------------
@@ -95,11 +264,27 @@ const primitives = {
   },
 
   // Agent tabs never take the user's focus, and sit in their session's group so the user sees which not to touch.
-  // Grouping is cosmetic: a tab Chrome would not group is still the host's.
-  'tabs.create': async ({url, windowId, group}) => {
-    const tab = await chrome.tabs.create({...(url != null ? {url} : {}), ...(windowId != null ? {windowId} : {}), active: false});
+  // Grouping is cosmetic: a tab Chrome would not group is still the host's. A tab opened for a page (openerTabId) opens
+  // in its opener's window; `guard` guards it from its first document on.
+  'tabs.create': async ({url, windowId, group, openerTabId, guard}) => {
+    const w = windowId ?? (openerTabId != null ? (await chrome.tabs.get(openerTabId)).windowId : undefined);
+    const tab = await chrome.tabs.create({...(url != null ? {url} : {}), ...(w != null ? {windowId: w} : {}),
+      ...(openerTabId != null ? {openerTabId} : {}), active: false});
+    if (guard === true) guarded.add(tab.id);
     if (group) await groupTab(tab, group).catch(error => console.warn(`cua: cannot group tab ${tab.id}: ${error?.message ?? error}`));
     return {id: tab.id, windowId: tab.windowId};
+  },
+
+  // Guards the tab and sweeps its frames now: the host asks before every attach.
+  'tabs.guard': async ({tabId}) => {
+    guarded.add(tabId);
+    return await guardFrames(tabId);
+  },
+
+  'tabs.unguard': async ({tabId}) => {
+    if (!guarded.delete(tabId)) return {};
+    await unguardFrames(tabId);
+    return {};
   },
 
   'tabs.remove': async ({tabId}) => { await chrome.tabs.remove(tabId); return {}; },
@@ -254,6 +439,9 @@ function closed(p) {
   const debuggees = [...held.values()];
   held.clear();
   for (const d of debuggees) chrome.debugger.detach(d).catch(() => {});
+  const tabs = [...guarded];
+  guarded.clear();
+  for (const tabId of tabs) unguardFrames(tabId).catch(() => {});
   const lasting = refusal && LASTING_REFUSALS.has(refusal.code) ? refusal : null;
   if (!lasting) scheduleRetry();
   recordRefusal(lasting).catch(() => {});
@@ -279,9 +467,15 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   changed();
 });
 
-chrome.tabs.onRemoved.addListener(tabId => tell('tabs.removed', {tabId}));
+chrome.tabs.onRemoved.addListener(tabId => {
+  guarded.delete(tabId);
+  tell('tabs.removed', {tabId});
+});
 
+// A guarded tab's new document is guarded as its URL commits, and every frame again when it has loaded (frames that
+// arrived since); both are no-ops in a document already guarded.
 chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (guarded.has(tabId) && (change.url !== undefined || change.status === 'complete')) guardFrames(tabId).catch(() => {});
   const fields = Object.fromEntries(['url', 'title', 'status'].filter(k => change[k] !== undefined).map(k => [k, change[k]]));
   if (Object.keys(fields).length) tell('tabs.updated', {tabId, ...fields});
 });
@@ -289,6 +483,13 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
 // The popup's question: is the host connected, and if not, why. A popup that just opened (`retry`) while a lasting
 // refusal backs off also clears the backoff and tries once now: the user who updated cua should not wait out an hour.
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // A guarded page's popup, from this extension's own page guard: the host decides whether the session takes it.
+  if (message?.type === 'cua.popup') {
+    const tabId = sender?.tab?.id;
+    if (sender?.id === chrome.runtime.id && guarded.has(tabId) && typeof message.url === 'string' && /^https?:\/\//i.test(message.url))
+      tell('tabs.popup', {openerTabId: tabId, url: message.url});
+    return false;
+  }
   if (message?.type !== 'cua.status' || sender?.id !== chrome.runtime.id) return false;
   Promise.all([loadInstanceId().catch(() => null), backedOff().catch(() => false)]).then(([instanceId]) => {
     sendResponse({hostName: HOST_NAME, connected: port !== null && refusal === null, refusal, error: port ? null : lastError, instanceId, debuggees: held.size});

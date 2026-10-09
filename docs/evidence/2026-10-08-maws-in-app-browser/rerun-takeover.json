@@ -1,0 +1,68 @@
+{
+ "clickFirst": {
+  "created": {
+   "id": "1"
+  },
+  "person": {
+   "at": 1791503942420,
+   "tab": "b_000000000004",
+   "down": true,
+   "up": true,
+   "control": "human"
+  },
+  "duringClick": {
+   "ok": false,
+   "ms": 3047,
+   "error": "Error: Playwright selector deadline exceeded\nwaiting on click for selector #submit\nLocator diagnostics: {\"kind\":\"action_failed\",\"action\":\"click\",\"locator\":\"#submit\",\"matchCount\":1,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Submit\",\"type\":\"button\",\"visible\":true}],\"visibleCount\":1,\"truncated\":false}",
+   "sincePersonMs": 3059
+  },
+  "stateAfterRefusal": "waiting",
+  "duringShot": {
+   "ok": true,
+   "ms": 72,
+   "sincePersonMs": 3143
+  },
+  "controlDuring": "agent",
+  "controlAfter3s": "agent",
+  "afterClick": {
+   "ok": true,
+   "ms": 279,
+   "state": "submitted:x",
+   "sincePersonMs": 3646
+  },
+  "controlEnd": "agent"
+ },
+ "shotFirst": {
+  "created": {
+   "id": "1"
+  },
+  "person": {
+   "at": 1791503982736,
+   "tab": "b_000000000008",
+   "down": true,
+   "up": true,
+   "control": "human"
+  },
+  "duringShot": {
+   "ok": true,
+   "ms": 1579,
+   "sincePersonMs": 1601
+  },
+  "controlAfterShot": "human",
+  "duringClick": {
+   "ok": true,
+   "ms": 1641,
+   "sincePersonMs": 3299
+  },
+  "stateAfterRefusal": "submitted:x",
+  "controlDuring": "agent",
+  "controlAfter3s": "agent",
+  "afterClick": {
+   "ok": true,
+   "ms": 276,
+   "state": "submitted:x",
+   "sincePersonMs": 3704
+  },
+  "controlEnd": "agent"
+ }
+}

@@ -1,0 +1,43 @@
+{
+ "hello": {
+  "extensionInstanceId": "maws:m5-B",
+  "profileName": "MAWS"
+ },
+ "tabId": 1,
+ "results": {
+  "attach": {
+   "ok": true,
+   "keys": 1
+  },
+  "Network.getAllCookies": {
+   "error": "Method not allowed: Network.getAllCookies"
+  },
+  "Network.getCookies": {
+   "error": "Method not allowed: Network.getCookies"
+  },
+  "Network.setCookie": {
+   "error": "Method not allowed: Network.setCookie"
+  },
+  "Network.setCookies": {
+   "error": "Method not allowed: Network.setCookies"
+  },
+  "Network.deleteCookies": {
+   "error": "Method not allowed: Network.deleteCookies"
+  },
+  "Network.clearBrowserCookies": {
+   "error": "Method not allowed: Network.clearBrowserCookies"
+  },
+  "Network.enable": {
+   "ok": true,
+   "keys": 0
+  },
+  "detach": {
+   "ok": true,
+   "keys": 0
+  },
+  "remove": {
+   "ok": true,
+   "keys": 0
+  }
+ }
+}

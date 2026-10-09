@@ -1,5 +1,6 @@
-// M5 scratch: does an agent's tab.screenshot() through cua carry MAWS's agent cursor overlay? Hover #submit, then
-// screenshot twice (once right after the hover, once after a second hover elsewhere) and save the JPEGs.
+// M5 probe: does an agent's tab.screenshot() through cua carry MAWS's agent cursor overlay? Click #submit, then take a
+// screenshot (the vendor's moveMouse draws the cursor before the click), save the JPEG, then type one
+// character into #name with pressSequentially and submit it (#state reads submitted:y).
 import {writeFileSync} from 'node:fs';
 import {openSession} from '../../../../scripts/accept/mcp-session.mjs';
 import {parseFeatureResult} from '../../../../scripts/accept/linux-chrome-features.mjs';
@@ -21,7 +22,12 @@ try {
     await new Promise(r => setTimeout(r, 300));
     const toB64 = (v) => typeof v === "string" ? v : Buffer.from(v?.data ?? v).toString("base64");
     const shot = await tab.screenshot({});
-    return {box, shot: toB64(shot), type: typeof shot, keys: shot && typeof shot === "object" ? Object.keys(shot).slice(0, 5) : null};`), 120_000));
+    // keyboard input: locator.pressSequentially sends key events per character; fill, locator.type and tab.cua.type
+    // set the value by script (no Input.* in the census) and are no row
+    await tab.playwright.locator("#name").pressSequentially("y");
+    await tab.playwright.locator("#submit").click();
+    let typed = null; for (let i = 0; i < 20; i++) { typed = await tab.playwright.locator("#state").textContent({timeoutMs: 1000}).catch(() => null); if (typed === "submitted:y") break; await new Promise(r => setTimeout(r, 100)); }
+    return {typed, box, shot: toB64(shot), type: typeof shot, keys: shot && typeof shot === "object" ? Object.keys(shot).slice(0, 5) : null};`), 120_000));
   if (r.shot) { writeFileSync(process.env.MAWS_PROBE_SHOT ?? '/tmp/maws-probe-shot.jpg', Buffer.from(r.shot, 'base64')); delete r.shot; }
   console.log(JSON.stringify(r));
   await s.call('end_task', {}, 30_000);

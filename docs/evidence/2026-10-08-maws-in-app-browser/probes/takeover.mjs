@@ -1,6 +1,7 @@
 // M5 scratch, acceptance 8 with the real vendor runtime against the dev MAWS: the person clicks the agent's tab (the
-// seam's sendInput), then the agent's screenshot and locator click in the same second, then the click 3 s later.
-import {writeFileSync, existsSync, readFileSync} from 'node:fs';
+// seam's sendInput), then the agent's locator click and screenshot in the same second (TAKEOVER_ORDER=shot-first: the
+// screenshot first, control read right after it), then the click 3 s later.
+import {writeFileSync, existsSync, readFileSync, readdirSync, rmSync} from 'node:fs';
 import {openSession} from '../../../../scripts/accept/mcp-session.mjs';
 import {parseFeatureResult} from '../../../../scripts/accept/linux-chrome-features.mjs';
 import {cell, featureDecision} from '../../../../scripts/accept/maws-features.mjs';
@@ -11,6 +12,7 @@ const CLI = fileURLToPath(new URL('../../../../bin/cua.mjs', import.meta.url));
 const DIR = process.env.MAWS_PROBE_DIR ?? '/tmp/maws-probe'; // the launcher's trigger directory (launch.cjs)
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let n = 0;
+for (const f of existsSync(DIR) ? readdirSync(DIR) : []) if (/^ack-\d+\.json$/.test(f)) rmSync(`${DIR}/${f}`); // a previous run's answers
 const person = async op => { const k = ++n; writeFileSync(`${DIR}/cmd.json`, JSON.stringify({op, n: k})); for (;;) { if (existsSync(`${DIR}/ack-${k}.json`)) return JSON.parse(readFileSync(`${DIR}/ack-${k}.json`, 'utf8')); await sleep(20); } };
 const page = await startFeaturesPage();
 const s = openSession({args: [CLI, 'serve'], env: {...process.env, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SECRETS: 'off'}, clientName: 'cua-m5-takeover', onServerRequest: msg => answerFor(featureDecision(msg, page.origin))});
@@ -23,11 +25,20 @@ try {
     await globalThis.__t.playwright.locator("#name").fill("x"); return {id: String(globalThis.__t.id)};`, 120_000);
   out.person = await person('click');
   const t0 = out.person.at;
+  if (process.env.TAKEOVER_ORDER === 'shot-first') {
+  out.duringShot = await run(`const s0 = Date.now(); try { const img = await globalThis.__t.screenshot({}); return {ok: true, ms: Date.now() - s0}; } catch (e) { return {ok: false, ms: Date.now() - s0, error: String(e?.message ?? e).slice(0, 3000)}; }`);
+  out.duringShot.sincePersonMs = Date.now() - t0;
+  out.controlAfterShot = (await person('read')).control; // a reading command leaves the person the page
+  out.duringClick = await run(`const s0 = Date.now(); try { await globalThis.__t.playwright.locator("#submit").click(); return {ok: true, ms: Date.now() - s0}; } catch (e) { return {ok: false, ms: Date.now() - s0, error: String(e?.message ?? e).slice(0, 3000)}; }`);
+  out.duringClick.sincePersonMs = Date.now() - t0;
+  out.stateAfterRefusal = await run(`return await globalThis.__t.playwright.locator("#state").textContent({timeoutMs: 3000}).catch(e => "ERR " + String(e?.message ?? e).slice(0, 80));`);
+  } else {
   out.duringClick = await run(`const s0 = Date.now(); try { await globalThis.__t.playwright.locator("#submit").click(); return {ok: true, ms: Date.now() - s0}; } catch (e) { return {ok: false, ms: Date.now() - s0, error: String(e?.message ?? e).slice(0, 3000)}; }`);
   out.duringClick.sincePersonMs = Date.now() - t0;
   out.stateAfterRefusal = await run(`return await globalThis.__t.playwright.locator("#state").textContent({timeoutMs: 3000}).catch(e => "ERR " + String(e?.message ?? e).slice(0, 80));`);
   out.duringShot = await run(`const s0 = Date.now(); try { const img = await globalThis.__t.screenshot({}); return {ok: true, ms: Date.now() - s0}; } catch (e) { return {ok: false, ms: Date.now() - s0, error: String(e?.message ?? e).slice(0, 3000)}; }`);
   out.duringShot.sincePersonMs = Date.now() - t0;
+  }
   out.controlDuring = (await person('read')).control;
   const wait = t0 + 3300 - Date.now(); if (wait > 0) await sleep(wait);
   out.controlAfter3s = (await person('read')).control;

@@ -6,9 +6,14 @@
   tab the person holds reaches the agent's locator as the vendor's `Playwright selector deadline exceeded … action_failed`
   at its 3 s budget, never as MAWS's "A person is using this tab; wait and retry": the vendor retries the refused step
   until its own deadline (README "For MAWS" says so). Making the cause visible would take a MAWS hint the vendor
-  surfaces (none found in the pinned service) or a shorter vendor budget. (b) The vendor's `fill` sets the value by
-  `Runtime.evaluate`, so MAWS's transcript shows no "Typed" row for a filled field (only keyboard input yields one);
-  telling a fill from any other evaluate would need page-script inspection, which the activity design avoids. (c) The
+  surfaces (none found in the pinned service) or a shorter vendor budget. (b) The vendor's `fill`, `locator.type` and
+  `tab.cua.type` set the value by script, so MAWS's transcript shows no "Typed" row for them (only key events, e.g.
+  `pressSequentially`, yield one); telling them from any other evaluate would need page-script inspection, which the
+  activity design avoids. (c) A `tab.screenshot()` on a tab the person
+  holds takes about 1.6 s: the vendor first reads `window.devicePixelRatio` by `Runtime.evaluate`, which MAWS's
+  takeover gate holds as acting and refuses after 1.5 s (the vendor then captures at scale 1; control stays the
+  person's). An exact-expression reading exception in MAWS's `cua/filter.ts`, pinned to the 0.1.1 vendor, would make
+  it immediate. (d) The
   inside-MAWS half of the acceptance (items 1, 2's badge, 4's deliverable, 8-10 by hand, 11 with two app sessions,
   13 with a real engine, 14 with a real Chrome profile) awaits the owner's sitting:
   `docs/evidence/2026-10-08-maws-in-app-browser.md`, "The inside-MAWS sitting".

@@ -1,0 +1,640 @@
+{
+ "inspect": {
+  "m5-A": {
+   "path": "/tmp/mh13-m5/browser/cua/m5-A.sock",
+   "connections": 0,
+   "held": 0,
+   "leased": []
+  },
+  "m5-B": {
+   "path": "/tmp/mh13-m5/browser/cua/m5-B.sock",
+   "connections": 0,
+   "held": 0,
+   "leased": []
+  }
+ },
+ "activities": {
+  "m5-A": [
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:34.368Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:34.469Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49579/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:34.610Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:34.977Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:35.046Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:35.133Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 248.1875,
+     "y": 274.125,
+     "label": "button Popup"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000002",
+    "at": "2026-10-08T23:58:35.137Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "http://127.0.0.1:49579/popup"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:36.450Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 64.953125,
+     "y": 127.125,
+     "label": "a Download report"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:36.462Z",
+    "activity": {
+     "kind": "download",
+     "filename": "cua-report.pdf",
+     "state": "complete"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:36.783Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 147.82421875,
+     "y": 127.625,
+     "label": "button Alert"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:37.031Z",
+    "activity": {
+     "kind": "dialog",
+     "type": "alert",
+     "excerpt": "cua alert",
+     "answered": "accepted"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:37.100Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 205.07421875,
+     "y": 127.625,
+     "label": "button Confirm"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:37.349Z",
+    "activity": {
+     "kind": "dialog",
+     "type": "confirm",
+     "excerpt": "cua confirm?",
+     "answered": "dismissed"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:37.416Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 134.25,
+     "y": 200.875,
+     "label": "input \ud30c\uc77c \uc120\ud0dd"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000001",
+    "at": "2026-10-08T23:58:37.862Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49579/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000002",
+    "at": "2026-10-08T23:58:37.863Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49579/popup"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000003",
+    "at": "2026-10-08T23:59:00.716Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000003",
+    "at": "2026-10-08T23:59:00.813Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49667/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000003",
+    "at": "2026-10-08T23:59:00.882Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000003",
+    "at": "2026-10-08T23:59:01.489Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000003",
+    "at": "2026-10-08T23:59:01.543Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49667/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000004",
+    "at": "2026-10-08T23:59:02.238Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000004",
+    "at": "2026-10-08T23:59:02.321Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49684/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000004",
+    "at": "2026-10-08T23:59:05.559Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000004",
+    "at": "2026-10-08T23:59:05.781Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000004",
+    "at": "2026-10-08T23:59:06.116Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49684/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000005",
+    "at": "2026-10-08T23:59:06.804Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000005",
+    "at": "2026-10-08T23:59:06.883Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49706/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000005",
+    "at": "2026-10-08T23:59:07.075Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000005",
+    "at": "2026-10-08T23:59:10.155Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000005",
+    "at": "2026-10-08T23:59:10.549Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49706/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000007",
+    "at": "2026-10-08T23:59:19.873Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000007",
+    "at": "2026-10-08T23:59:19.952Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49753/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000007",
+    "at": "2026-10-08T23:59:21.634Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000007",
+    "at": "2026-10-08T23:59:23.077Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000007",
+    "at": "2026-10-08T23:59:23.484Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000007",
+    "at": "2026-10-08T23:59:23.807Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49753/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000008",
+    "at": "2026-10-08T23:59:42.506Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000008",
+    "at": "2026-10-08T23:59:42.595Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49818/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000008",
+    "at": "2026-10-08T23:59:44.333Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000008",
+    "at": "2026-10-08T23:59:45.759Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000008",
+    "at": "2026-10-08T23:59:46.167Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000008",
+    "at": "2026-10-08T23:59:46.491Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49818/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000009",
+    "at": "2026-10-09T00:00:19.720Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000009",
+    "at": "2026-10-09T00:00:19.817Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:49934/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000009",
+    "at": "2026-10-09T00:00:19.885Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000009",
+    "at": "2026-10-09T00:00:20.500Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000009",
+    "at": "2026-10-09T00:00:20.579Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:49934/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:45.373Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:45.511Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:50074/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:45.593Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:46.259Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:46.292Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 81.5,
+     "y": 274.125,
+     "label": "input"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:46.568Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000010",
+    "at": "2026-10-09T00:00:46.862Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:50074/"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:01.866Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:01.982Z",
+    "activity": {
+     "kind": "navigated",
+     "url": "http://127.0.0.1:50132/",
+     "title": ""
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:02.075Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:02.690Z",
+    "activity": {
+     "kind": "screenshot"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:02.701Z",
+    "activity": {
+     "kind": "typed",
+     "chars": 1
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:02.727Z",
+    "activity": {
+     "kind": "clicked",
+     "x": 187.95703125,
+     "y": 274.125,
+     "label": "button Submit"
+    }
+   },
+   {
+    "appSessionId": "m5-A",
+    "tabId": "b_000000000011",
+    "at": "2026-10-09T00:01:03.195Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "http://127.0.0.1:50132/"
+    }
+   }
+  ],
+  "m5-B": [
+   {
+    "appSessionId": "m5-B",
+    "tabId": "b_000000000006",
+    "at": "2026-10-08T23:59:10.700Z",
+    "activity": {
+     "kind": "tabOpened",
+     "url": "about:blank"
+    }
+   },
+   {
+    "appSessionId": "m5-B",
+    "tabId": "b_000000000006",
+    "at": "2026-10-08T23:59:10.780Z",
+    "activity": {
+     "kind": "tabClosed",
+     "url": "about:blank"
+    }
+   }
+  ]
+ }
+}

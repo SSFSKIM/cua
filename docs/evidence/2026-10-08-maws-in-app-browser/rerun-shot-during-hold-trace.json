@@ -1,0 +1,36 @@
+{
+ "note": "proxy.mjs trace of tab.screenshot() during the person's hold (takeover.mjs, TAKEOVER_ORDER=shot-first), ms since the connection opened; the held Runtime.evaluate is the vendor's window.devicePixelRatio read (BS:43869-43891)",
+ "trace": [
+  {
+   "at": 732,
+   "call": "(tabs.get)",
+   "ms": 1
+  },
+  {
+   "at": 737,
+   "call": "Runtime.evaluate",
+   "ms": 1504,
+   "error": "A person is using this tab; wait and retry"
+  },
+  {
+   "at": 2242,
+   "call": "Page.getLayoutMetrics",
+   "ms": 1
+  },
+  {
+   "at": 2243,
+   "call": "Page.startScreencast",
+   "ms": 54
+  },
+  {
+   "at": 2308,
+   "call": "Page.stopScreencast",
+   "ms": 0
+  },
+  {
+   "at": 2309,
+   "call": "Page.screencastFrameAck",
+   "ms": 0
+  }
+ ]
+}

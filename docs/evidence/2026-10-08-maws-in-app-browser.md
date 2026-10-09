@@ -13,8 +13,10 @@ owner's packaged MAWS, plugin cache or Chrome profiles.
 - Probes for the checks the committed harnesses do not cover are kept beside the outputs, in
   `2026-10-08-maws-in-app-browser/probes/`: `launch.cjs` (serve-plain.cjs plus, in-process, a SIGUSR2 dump of the
   seam's `inspect()` and the sessions' activity buffers, and a file trigger that makes the seam's `sendInput` click
-  for the person), `reconnect.mjs` (13), `handoff.mjs` (11), `takeover.mjs` (8, needs `launch.cjs`), `cursor.mjs` (9),
-  `proxy.mjs` (a byte-transparent socket proxy that records each `debugger.sendCommand` method, never params). Run
+  for the person), `reconnect.mjs` (13), `handoff.mjs` (11), `takeover.mjs` (8, needs `launch.cjs`; `TAKEOVER_ORDER=shot-first`
+  for the screenshot during the hold), `cursor.mjs` (9 and 10's Typed), `cookie-jar.mjs` (a raw primitive client:
+  `node cookie-jar.mjs <socket>`), `proxy.mjs` (a byte-transparent socket proxy that records each request's
+  primitive or CDP method, its time and a refusal's text, never params or results). Run
   MAWS as `node_modules/electron/dist/Electron.app/Contents/MacOS/Electron <probes>/launch.cjs /tmp/mh13-m5 m5-A m5-B`
   from the MAWS checkout, then each probe with `CUA_HOME=/tmp/cua-h13
   CUA_BROWSER_BACKENDS=/tmp/mh13-m5/browser/cua/m5-A.sock node <probe>`. Their outputs are the JSON files there.
@@ -28,9 +30,9 @@ owner's packaged MAWS, plugin cache or Chrome profiles.
 | 5 alert, confirm | **PASS** | harness `alert`, `confirm` |
 | 6 file chooser | **PASS** (S2 promoted) | harness `chooser` |
 | 7 popup, end_task | **PASS** | harness `popup`, `cleanup` |
-| 8 takeover | **PASS** with a finding (the refusal reaches a locator as the vendor's deadline, at 3 s); by hand **BLOCKED** | e2e; `takeover.json` |
-| 9 cursor | **PASS** (e2e; live in an agent screenshot); by hand **BLOCKED** | e2e; `agent-screenshot-carries-cursor.jpg` |
-| 10 transcript rows | **BLOCKED** (needs a session); main's feed live: **FINDING** (no Screenshot, no Typed for `fill`) | activity buffer |
+| 8 takeover | **PASS** as revised (the vendor's deadline at about 3 s, page untouched); by hand **BLOCKED** | e2e; `takeover.json`, re-run |
+| 9 cursor | **PASS** (e2e; live); absent from agent screenshots at `a47603a4`; by hand **BLOCKED** | e2e; re-run |
+| 10 transcript rows | **BLOCKED** (needs a session); main's feed live: PASS at `a47603a4` (Screenshot per bounded capture; Typed for key input, never `fill`) | activity buffer, re-run |
 | 11 end_task, handoff, two sessions | **PASS** from a terminal; two UI-started sessions **BLOCKED** | `turn-end-handoff.json`, harness `isolation` |
 | 12 no `browser_*`; old journal renders | **PASS** | vitest |
 | 13 reconnect | **PASS** (dev MAWS relaunched, 2.0 s); with a real engine **BLOCKED** | `reconnect.json` |
@@ -38,8 +40,8 @@ owner's packaged MAWS, plugin cache or Chrome profiles.
 | 15 suites | **PASS**; `test:live` cited from M4 (39/40, engine drift) | below |
 
 Findings are under "Findings" at the end; the owner's sitting for every BLOCKED item is under "The inside-MAWS
-sitting". Everything above ran at MAWS `82bdf2be`; the steps a later MAWS fix affects are listed under "Re-run after the
-MAWS fix", still open.
+sitting". The item sections ran at MAWS `82bdf2be`; "Re-run after the MAWS fix" repeats the affected steps at
+`a47603a4`, where Finding A is fixed.
 
 ## 1. `profiles_list` inside MAWS — BLOCKED (terminal equivalent PASS)
 
@@ -245,18 +247,17 @@ call the plugin cua_repl `profiles_list` tool and show its result verbatim." Exp
 
 S3 (items 2's panel and badge, 4's deliverable, 10). In session A ask for one cua_repl `js` cell: `const b = await
 cua.getBrowser(); const t = await cua.createBrowserTab(b.browserId, '<features URL>'); await
-t.playwright.locator('#name').fill('x'); await t.cua.type('y'); await t.playwright.locator('#submit').click(); await
+t.playwright.locator('#name').pressSequentially('x'); await t.playwright.locator('#submit').click(); await
 t.screenshot(); const [d] = await Promise.all([t.playwright.waitForEvent('download'),
 t.playwright.locator('#dl').click()]); return d.path()`. Screenshot: the Browser panel listing the tab unselected
 with the "agent" badge; the transcript with the activity rows under the `js` row ("Navigated to 127.0.0.1",
-"Clicked button Submit", "Typed 1 character" for the `type`, "Downloaded cua-report.pdf"; "Screenshot" is expected
-missing until Finding A is fixed); the rows still in view after the turn folds and after a window reload (Cmd-R);
+"Typed 1 character", "Clicked button Submit", "Screenshot", "Downloaded cua-report.pdf"); the rows still in view after the turn folds and after a window reload (Cmd-R);
 the tab's download line; the session's deliverables listing `cua-report.pdf`. Delete `~/Downloads/cua-report.pdf`
 afterwards.
 
 S4 (items 8 and 9 by hand). Ask for a cell that clicks `#submit` every 500 ms for 20 s. Watch the agent cursor in
 the tab, then click inside the page: the takeover banner shows, the agent's clicks fail (as the vendor's deadline,
-Finding B), and 3 s after your last click the agent resumes; after the turn the cursor is gone. Screenshot the
+Finding B), the Browser panel having opened on the agent's first click, and 3 s after your last click the agent resumes; after the turn the cursor is gone. Screenshot the
 banner and the cursor.
 
 S5 (item 11, two sessions). Start session B; in A and B each create one tab, then in each ask for
@@ -273,47 +274,74 @@ profiles_list>})`, create one tab and close it: the owner's Chrome opens and clo
 Afterwards: quit the dev MAWS, `rm -rf /tmp/mh13-owner /tmp/claude-cua05`, and reset Settings › Engine if the
 packaged MAWS was pointed at the wrapper instead.
 
-## Re-run after the MAWS fix (open)
+## Re-run after the MAWS fix (MAWS `a47603a4`)
 
-The final review's MAWS fix (screencast screenshots hidden, rowed and classed reading; the cookie-jar `Network.*`
-methods refused; agent downloads following `personHolds`) lands after this run. Its first commit, `38d4df7f` (the
-cookie-jar refusal), was built once to check the committed probes: `takeover.mjs` (click first) and `reconnect.mjs`
-(ready again in 2020 ms) read as at `82bdf2be`. Against a build of the fixed head, re-run and record here:
+MAWS's final fix wave, `82bdf2be..a47603a4`: screencast screenshots are reading commands, hide the cursor before a
+bounded start and give one row each; the cookie-jar `Network.*` methods are refused; agent downloads follow
+`personHolds`; the Browser panel opens on a lease's first acting command. Rebuilt with `pnpm build` at `a47603a4`, run
+as above (`probes/launch.cjs /tmp/mh13-m5 m5-A m5-B`), 2026-10-08 23:55-00:02 UTC. Outputs are the `rerun-*` files.
 
-- Item 3: harness `viewport` (and `locator`): `<pending: MAWS head, result>`.
-- Item 4: harness `download`, plus a download while the person holds the tab (the save dialog path, not the
-  agent's): `<pending>`.
-- Item 9: an agent screenshot after a locator click no longer shows the cursor (the cursor probe, image beside
-  `agent-screenshot-carries-cursor.jpg`): `<pending>`.
-- Item 10: the activity buffer holds a `screenshot` per agent screenshot; record whether the vendor took the
-  screencast or the `Page.captureScreenshot` path (`cdp-census.json`'s method): `<pending>`.
-- Item 8: a screenshot during the person's hold passes at once and leaves control `human` (`takeover.json`'s
-  screenshot-first run read 2994 ms and `agent` at `82bdf2be`): `<pending>`.
+- **Harness, all items 2-7 and 11's isolation: PASS, 11/11** (`rerun-features.json`; through the recording proxy, with
+  `--other` on m5-B): `locator` `submitted:x`; `viewport` 800×600 JPEG, reset 1280×800; `download` in `~/Downloads`,
+  sha256 equal, removed (0 `cua-report` files left); `alert` `after-alert`; `confirm` `confirm:false`; `chooser`
+  `cua-upload.txt:1234`; one popup; cleanup; isolation each side its own instance only.
+- **Item 3/10, which path the vendor took: screencast.** `rerun-cdp-census.json`: 9 `Page.startScreencast`, 0
+  `Page.captureScreenshot`. The activity buffer (`rerun-activities.json`) holds exactly two `screenshot` rows for the
+  harness run, the viewport step's two `tab.screenshot()` calls; the other seven starts are the vendor's unbounded
+  per-cell captures, which by design are no row.
+- **Item 9: no cursor in an agent's screenshot. PASS.** `probes/cursor.mjs`, a locator click on `#submit` then
+  `tab.screenshot()`: [`rerun-agent-screenshot-no-cursor.jpg`](2026-10-08-maws-in-app-browser/rerun-agent-screenshot-no-cursor.jpg)
+  shows the page with no cursor at the button (compare `agent-screenshot-carries-cursor.jpg` at `82bdf2be`); the
+  buffer has one `screenshot` row for it.
+- **Item 10, Typed: PASS for keyboard input.** `locator('#name').pressSequentially('y')` sent `Input.dispatchKeyEvent`
+  and the buffer told `{kind: 'typed', chars: 1}`; the page read `submitted:y`. The vendor's `locator.type('y')` and
+  `tab.cua.type({text: 'y'})` also put the text in the field but sent no `Input.*` at all (the census through the
+  proxy): like `fill`, they set the value by script and make no row (Finding C).
+- **Item 8, takeover: PASS as revised** (`rerun-takeover.json`, click first): the agent's locator click in the same
+  second failed at 3047 ms with the vendor's `Playwright selector deadline exceeded`, `#state` still `waiting`; 3.6 s
+  after the person's input the click went through (`submitted:x`).
+- **Item 8, a screenshot during `human`: control kept, not at once.** Screenshot first (`TAKEOVER_ORDER=shot-first`):
+  `tab.screenshot()` succeeded and control read `human` right after (at `82bdf2be`: 2994 ms, then `agent`), but it
+  took 1576-1579 ms (two runs). The trace (`rerun-shot-during-hold-trace.json`) shows why: before capturing, the
+  vendor reads `window.devicePixelRatio` with `Runtime.evaluate` (BS:43869-43891), which is acting, so it is held
+  1504 ms and refused; the vendor swallows that, falls back to scale 1 and captures (`Page.startScreencast` 54 ms).
+  Finding E.
+- **Cookie jar: refused. PASS.** `probes/cookie-jar.mjs` on m5-B's socket, a raw primitive client with a leased
+  `about:blank` tab (`rerun-cookie-jar.json`): `Network.getAllCookies`, `getCookies`, `setCookie`, `setCookies`,
+  `deleteCookies` and `clearBrowserCookies` each answered `Method not allowed: <method>`; `Network.enable` passed;
+  detach and remove answered `{}`.
+- **E2e: PASS, 3/3** (`pnpm e2e:browser-cua` at `fb56e803`, `a47603a4` plus one tracker-only commit): the M2 socket
+  case, takeover and cursor, and the new "the Browser panel follows the agent: a lease's first acting command opens
+  the shown session's Browser tool, and the agent's tab is not selected".
+- **Item 4 during the person's hold: not run live.** Under the fix a download on a tab the person holds is the
+  person's, with the native save panel, which this run may not open on screen; MAWS's unit tests pin the routing. The
+  agent's own download is the harness step above.
 
 ## Findings
 
-A. **An agent's screenshot is a screencast frame, which MAWS's cua server does not treat as a screenshot**
-(`src/main/browser/cua/{filter,connection,activity}.ts`). The pinned vendor captures through `Page.startScreencast`
-and one frame whenever the scale is 1 or the mode is `device` (BS:43941-44040); `Page.captureScreenshot` is only its
-fallback. The census shows 9 `Page.startScreencast` and 0 `Page.captureScreenshot` in a full run. Consequences: (1)
-the cursor is not hidden first, so the screenshot shows it (the JPEG above), against Design §9 and M4's fix; (2) no
-`screenshot` activity row; (3) `Page.startScreencast`, `Page.screencastFrameAck` and `Page.stopScreencast` are
-classed acting, so during the person's hold a screenshot waits for the hand-back (2994 ms live in
-`takeover.json`'s screenshot-first run) and then turns control to `agent`, where the spec has screenshots pass as
-reading commands. The fix belongs in MAWS: class the three screencast methods as reading, hide the cursor before
-`Page.startScreencast`, emit `screenshot` once per `Page.startScreencast`, and add `Page.stopScreencast` to the
-release reset. Being fixed on the MAWS branch after this run (the final review's fixer); see "Re-run after the MAWS
-fix".
+A. **An agent's screenshot is a screencast frame, which MAWS's cua server did not treat as a screenshot. Fixed in
+`a47603a4`.** The pinned vendor captures through `Page.startScreencast` and one frame whenever the scale is 1 or the
+mode is `device` (BS:43941-44040); `Page.captureScreenshot` is only its fallback (9 starts, 0 captures in a full run).
+At `82bdf2be` the screenshot showed the cursor (`agent-screenshot-carries-cursor.jpg`), no `screenshot` row was
+told, and the screencast methods were acting, so a screenshot during the person's hold waited 2994 ms for the
+hand-back and turned control to `agent`. The re-run above shows each of the three fixed.
 
-B. **The takeover refusal does not reach the agent's locator as MAWS's text.** The server refuses at 1.5 s as
-specified (the e2e's raw command sees the text), but the vendor's locator treats the refusal as one failed attempt
-and retries until its 3 s budget, then reports `Playwright selector deadline exceeded … action_failed`. The person is
-protected; the agent cannot tell why it failed. README "For MAWS" now says what a held tab looks like to the agent.
+B. **The takeover refusal reaches the agent's locator as the vendor's deadline.** The server refuses at 1.5 s as
+specified (the e2e's raw command sees the text), but the vendor's locator retries the refused step until its 3 s
+budget, then reports `Playwright selector deadline exceeded … action_failed`. The person is protected. Acceptance 8
+now says so (spec Decision Log, M5), and README "For MAWS" says what a held tab looks like to the agent.
 
-C. **`fill` leaves no "Typed" row.** The vendor fills by script (`Runtime.evaluate`), which MAWS cannot tell from any
-other evaluate, so only input sent as `Input.insertText` or key events yields "Typed N characters" (the vendor's
-`tab.cua.type` and key presses send those, BS:19008-19034; read in source, not run here). Acceptance 10's "Typed 1
-character" needs a typing step, not `fill`.
+C. **Only key events make a "Typed" row.** `fill`, `locator.type` and `tab.cua.type` all set the value by script
+(no `Input.*` reaches MAWS), which MAWS cannot tell from any other evaluate; `locator.pressSequentially` (and `press`,
+`tab.cua.keypress`) send `Input.dispatchKeyEvent` and yield "Typed N characters" or the key's row. Acceptance 10 now
+excludes `fill`; its wording "a keyboard `type`" should name `pressSequentially`, since the vendor's `type` methods are
+scripts too.
 
 D. Minor: a bare-Electron MAWS says hello with `version: "44.4.5"` (Electron's `app.getVersion()` with no app
 package); a packaged build sends its own version.
+
+E. **A screenshot during the person's hold takes about 1.6 s.** The vendor's `tab.screenshot()` first reads
+`window.devicePixelRatio` through `Runtime.evaluate`, which the takeover gate holds as acting for 1.5 s and refuses;
+the vendor then falls back to scale 1 and captures. Control stays the person's and the capture succeeds, so the
+design's intent holds except for "at once". Making that read pass would need an exact-expression exception in MAWS's
+command classes, pinned to the 0.1.1 vendor (tracked in `tech-debt-tracker.md`).

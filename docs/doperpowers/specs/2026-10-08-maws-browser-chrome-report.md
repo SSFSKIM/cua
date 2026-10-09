@@ -8,7 +8,10 @@ Spec: `docs/doperpowers/specs/2026-10-08-maws-browser-chrome-design.md` (this di
 
 - S1 (MAWS `58125f24`): verdict **promote**; reviewed clean by reviewer-medium on opus.
 - M1a (MAWS `af1c70ab`): reviewed clean by reviewer-medium on opus, with no material findings.
-- M1b (MAWS `40df2f7b`): under review.
+- M1b (MAWS `40df2f7b`, fix `3d37cb18`): reviewed clean after one P2 fix (⌘⇧B narrowed to tabs that can show a bar).
+- M2 (MAWS `35cc8541`, fixes `fff71e10`, `3eab8cbf`): clean; the cover still's blank pane root-caused and fixed, then its races closed.
+- M3 (MAWS `8b6c9712`, fix `8855d708`): clean after one fix wave (2 P2, 2 P3).
+- M4: executing.
 
 ## Text for maws-fe (charter, P1 spec, ledger), collected per milestone
 
@@ -34,6 +37,27 @@ Spec: `docs/doperpowers/specs/2026-10-08-maws-browser-chrome-design.md` (this di
   - `SETTINGS_DEFAULTS_V12`.
 - **Ledger §6, exceptions to "appended blocks only":** `src/shared/ipc/schema/browser.ts` `BrowserChromeCommandSchema`'s enum (marked `cua #90`).
 
+
+
+### From M2
+- **Ledger §5 (cua board #90)**:
+  - `browser.profiles.list`'s item is now `BrowserProfileListItemSchema` = `{ profileDir, name, gaiaName, userName, avatar: { kind: 'picture', dataUrl } | { kind: 'initials', letter } }` (in place, marked).
+  - New shared names: `PROFILE_AVATAR_MAX_BYTES`, `PROFILE_AVATAR_URL_PREFIX`, `ProfileAvatar`.
+  - Main: `import/avatar.ts` (`readChromePicture`, `avatarPng`, `AvatarImage`, `AVATAR_FILE` = `avatar.png` in the partition folder, `AVATAR_SIZE` 64, `PICTURE_MAX_BYTES` 1 MiB); `chrome/read-capped.ts`'s `readCappedBytesNoFollow`; `local-state.ts`'s `readChromePictureName`; `BrowserImportDeps.decodeImage`/`readPicture`; `browser/profile-avatars.ts` (`ProfileAvatars`, `profileInitial`); `BrowserHandlerDeps.avatars`.
+  - Renderer: `import/store.ts` `syncBookmarks`, `startReimport`/`reimportRemoved`/`endReimport` and the state's `reimport`; `ProfileSheets` (app-level, in `App.tsx`); `ImportSheet`/`ProfilePicker` `preselect`; `RemoveSheet` `onRemoved`; `actions.ts` `switchProfile`.
+- **Ledger §6, exceptions to "appended blocks only"**: `src/shared/ipc/schema/browser.ts`, the `browser.profiles.list` output (marked); `src/main/browser/partition.ts`, the loose `BrowserProfileSchema`'s optional `gaiaName`/`userName`/`avatar` (marked).
+- **Import enumerated reads (E4b Design §9)** gain the Google profile picture: in place, after `admitted()`, `O_NOFOLLOW`, regular file, ≤ 1 MiB.
+
+### From M3
+- **Ledger §5, cua board #90:**
+  - commands `browser.extensions.actions {partition} → {actions: ExtensionAction[]}` (in `QUERY_COMMANDS`), `browser.extensions.action.click {tabId, extensionId, anchor: {x, y, width, height}} → void`, `browser.extensions.action.options {tabId, extensionId} → void`, `browser.extensions.action.menu {tabId, extensionId, anchor: {x, y}} → void`, `browser.extensions.puzzle {tabId, anchor: {x, y, width, height}} → void`;
+  - events `browser.extensions.actions.changed {partition}`, `browser.extensions.popup {tabId, extensionId | null}`, `browser.extensions.reveal {tabId, show: {kind: 'tab', tab: BrowserTab} | {kind: 'settings'}}`;
+  - `ExtensionActionSchema {extensionId, name, title, icon: dataUrl | null, hasPopup, hasOptions}`, `EXTENSION_ICON_SIZE`, `EXTENSION_ICON_MAX_BYTES`, `EXTENSION_POPUP_MIN/MAX`, `ACTIONS_FOLD_ADDRESS_MIN_PX`, `optionsTabTitle` (`src/shared/browser/extensions.ts`);
+  - `BrowserTab.internal: {kind: 'extension', extensionId, title} | null` (additive, never persisted) and `isExtensionPage(url, extensionId)` (`src/shared/browser/tab.ts`);
+  - `ViewManager.onViewAdded/onCovered/isCovered`, `TabStore.evict`, `OpenRequest.internal`, `Browser.extensions.removing`; the import log kind `popupRefused`; the e2e seam `__maws_browser.extensions.popup()` and the menu ids `action:<id>`, `options`, `options:<id>`, `name`, `manage`.
+- **Ledger §6, exceptions to "appended blocks only":** `BrowserNoticeSchema.kind` gains `extensionPopupFailed`, `extensionPageClosed` (in place, marked `cua #90`); `BrowserTabSchema` gains `internal` (a marked additive field, as E13's `agentBadge`).
+- **X15:** no version moves: `tabs.json` keeps its version (internal tabs are never written; `PersistedTab` picks no new field).
+- **Ledger §6 (M3 fix):** the partition request rule `extensionPagesRule` (`src/main/browser/extensions/pages.ts`) registered through `registerRequestRule`; `Navigator.leaveInternal`.
 
 ## Carried for the author session
 

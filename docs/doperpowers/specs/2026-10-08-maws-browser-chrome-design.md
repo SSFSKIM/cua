@@ -21,7 +21,7 @@ Design approved by the owner on 2026-10-08 in the cua_repl session (four forks a
 - [x] (2026-10-09 01:57, review clean after one fix) M1b — The bar, native folder and overflow menus, the toggle, suggestions in the field, the native-menu e2e seam
 - [x] (2026-10-09 03:58, review clean after two fixes) M2 — The avatar and the profile popover
 - [x] (2026-10-09 05:43, review clean after one fix) M3 — The extensions action bar, popups and options pages (scope fixed by S1's verdict)
-- [ ] M4 — Acceptance as written, gates, documents, hand-back
+- [x] (2026-10-09 06:26, whole-branch review clean after one fix; the owner's sitting on the real profile pending) M4 — Acceptance as written, gates, documents, hand-back
 
 ## Facts this design rests on
 
@@ -334,4 +334,10 @@ export class ExtensionPopups {
 
 ## Outcomes & Retrospective
 
-(Written at M4.)
+2026-10-09. Every milestone landed on MAWS branch `90-browser-chrome`, rebased on master `16006624`; the code head is `7a630cd2` and the branch head `95b5b871`. S1 `c3d79fe9` (promote). M1a `7906a7bb`. M1b `5a357080`, fix `00ab2125`. M2 `db8b7e6e`, cover-still fixes `5bc57721` and `1426d515`. M3 `3ebc5dac`, fix `691311b5`. M4 `f63860d0` (an options main tab retargeted in place), `60062715` (documents), the whole-branch fix `7a630cd2`, and `95b5b871` (the ledger sha). Versions stayed as reserved: settings 12, index 7, `profiles.json` 2, with no renumbering at the rebase. Gates on the rebased tree: typecheck, lint, 10,336 units (the known pty flake 6/6 alone), e2e browser-chrome 7, browser-import 6, browser 8, browser-cua 5, browser-comment 13, build:app.
+
+Against the Purpose. The bookmarks bar, the avatar with its popover, and the extensions action bar with popups and options tabs all exist and are proved against the synthetic fixture (Acceptance 1–13 map in the report). What the e2e cannot prove is the owner's sitting on the real profile: the real `Menu.popup`, a real ⌘⇧B not double-firing, real popup sizing, and blur-close by hand.
+
+What the work found beyond the design. ⌘⇧B was already `panel.toggle`. The owner kept the browser-scoped chord, narrowed by review to tabs that can show a bar. The cover protocol had always left a hole under a DOM layer, and forever for a page that committed under it. That was found by an executor's screenshot, ruled unacceptable by the author session, and fixed in two waves, the second closing races the first introduced. Making options pages TabStore entries opened two boundary leaks that per-milestone reviews caught one at a time: Back into an extension page from an ordinary tab (M3's review), and cua reaching an options tab (the whole-branch review, A-51). Electron's `chrome.tabs.query` in a popup never sees the page tab, and `onClicked` has no API.
+
+Retrospective. What worked: the spike first. S1 turned the riskiest unknown into recorded lines in one pass, and its refinements (the tabs.query assertion, the inert tooltip, options loaded directly) went straight into M3. Milestone-boundary reviews with fixes resumed on the same executor converged in one or two rounds each. The author session's bound on review loops ("after the re-review, only a P1/P2 continues") kept the cover-still fix from spiralling. What did not: the design treated an options tab as a tab with a mark. That mark has to be honoured by every tab consumer (history, persistence, caps, cua), and two of those were found late, one per review. A design that introduces a new kind of tab should list every consumer of the tab store and say what each does with it. The cover hole had shipped since E4a unnoticed, because no e2e asserted that the still was non-blank; the new scene now does.

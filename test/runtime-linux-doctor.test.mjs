@@ -229,8 +229,9 @@ test('the default Chrome checks on Linux read the host\'s Chrome under $XDG_CONF
   mkdirSync(manifestDir, {recursive: true});
   const host = join(realpathSync(home), 'runtimes', pin.release, 'chrome-plugin', 'extension-host', 'linux', 'x64', 'extension-host');
   writeFileSync(join(manifestDir, 'com.openai.codexextension.json'), JSON.stringify({name: 'com.openai.codexextension', type: 'stdio', path: host}));
+  // The secrets rows are stubbed: this env has no HOME, so the default would describe the account's own store.
   const report = await inspectRuntime({home, env: {XDG_CONFIG_HOME: realpathSync(config)}, pins: [pin], host: LINUX,
-    inspectLinux: async () => DESKTOP_ROWS, inspectLogin: async () => ({state: 'logged-in'}), inspectAgent: async () => []});
+    inspectSecrets: async () => ({dir: '/none', exists: false}), inspectLinux: async () => DESKTOP_ROWS, inspectLogin: async () => ({state: 'logged-in'}), inspectAgent: async () => []});
   const rows = byName(report);
   assert.equal(rows['chrome.host.registered'].status, 'pass');
   assert.equal(rows['chrome.host.registered'].detail, `cua: com.openai.codexextension names ${host}`);

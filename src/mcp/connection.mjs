@@ -3,9 +3,10 @@
 //
 // `openConnection` resolves the installed runtime (per connection, so a `cua runtime use` or a first `cua install`
 // takes effect on the next connection without restarting an agent), claims run/<sessionId> (src/runtime/run-dir.mjs),
-// resolves the secret store (src/secrets/store.mjs: $HOME/.config/claude-secrets, unless secrets are off), builds the
+// resolves the secret store (src/secrets/store.mjs: $HOME/.config/claude-secrets, and with `project` that project's
+// directory beneath it, unless secrets are off), builds the
 // launch for the enabled surfaces (CUA_SHIM_SURFACES) with their trusted services registered (src/services/sky.mjs for
-// computer use, src/services/browser.mjs for the browser) and the store's directory (or the reason there is none) in
+// computer use, src/services/browser.mjs for the browser) and the store's directories (or the reason there is none) in
 // its environment, spawns the runtime in an owned working directory, and serves `input`/`output` through
 // `createServer` until EOF, a transport loss, a failure or `close(reason)`. With the browser surface, profiles_list
 // reads $CUA_HOME's profile registry and, when a profile is bound, checks it against the live backends with one bounded
@@ -27,7 +28,9 @@
 // passes one; the HTTP agent never does, so a device never drives a third one through itself. `browserBackends` (the
 // stdio `serve`'s MAWS backends, src/chrome/client-mode.mjs) puts their hosts first in the launch's backend list with
 // the first one's instance as the default, lists them ahead of the registered profiles in profiles_list, and tells the
-// model so in profiles_list's description.
+// model so in profiles_list's description. `project` (an absolute path, src/secrets/project.mjs) gives the connection
+// the project tier of the secret store: the stdio `serve` passes the project it was started in; the HTTP agent never
+// does, so a device's remote clients see the global tier only.
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
@@ -47,7 +50,7 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env, extensionId: extensionIdFor(chromeRoute(home))}),
-  listBackends, onWithdrawn, probeUserns, browserBackends = null}) {
+  listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
@@ -79,11 +82,11 @@ export async function openConnection({home, env = process.env, sessionId, input,
 
   let server;
   try {
-    const secrets = connectionSecrets({enabled: secretsEnabled, env});
+    const secrets = connectionSecrets({enabled: secretsEnabled, env, project});
     launch = prepareLaunch(buildLaunch({
       runtime, home, sessionId, ambient: env, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
-      secretsDir: secrets.dir, secretsUnavailable: secrets.unavailable?.code,
+      secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
     }));
     assertSandboxFits(sandbox, launch);

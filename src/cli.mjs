@@ -64,10 +64,13 @@ export const usageFor = platform => {
   login [--device-auth]                                        sign the server in to Codex, at this terminal (only the
                                                                ChatGPT extension route, chrome register --vendor, needs it)
   login --status                                               whether the server has a Codex login (never shows it)
-  secrets set <KEY>                                            store a secret in ~/.config/claude-secrets/KEY, typed hidden
-                                                               at this terminal (in Claude Code, /secret KEY is preferred)
-  secrets list [--json]                                        stored keys, never values
-  secrets remove <KEY> [--yes]                                 delete one secret (confirmed at the terminal)
+  secrets set <KEY> [--project|--global]                       store a secret in ~/.config/claude-secrets/KEY (--project:
+                                                               this project's, ~/.config/claude-secrets/projects/<slug>/KEY),
+                                                               typed hidden at this terminal (in Claude Code, /secret KEY is
+                                                               preferred, and stores in the project)
+  secrets list [--project|--global] [--json]                   stored keys, never values: both tiers, each key marked
+  secrets remove <KEY> [--project|--global] [--yes]            delete one secret (confirmed at the terminal); global unless
+                                                               --project
   profiles add <key> --chrome-profile <directory> [--json]     register an existing Chrome profile under a key
   profiles list [--json]                                       registered profiles and whether each is ready
   profiles remove <key> [--json]                               forget a key (Chrome itself is never changed)
@@ -422,38 +425,43 @@ async function agentRun({http, relay}) {
 
 // A secret is never an argument: set takes exactly one key and reads the value at a masked terminal prompt. Usage
 // errors here are fixed messages that never repeat what was passed (an option name or a stray word may be a value
-// typed in the wrong place), so the parser's own messages are not shown.
+// typed in the wrong place), so the parser's own messages are not shown. --project and --global (-g) pick the store's
+// tier (src/secrets/commands.mjs); at most one is given.
 const SECRETS_USAGE = {
-  set: 'secrets set takes exactly one key; the secret is typed at the terminal, never passed as an argument',
-  remove: 'secrets remove takes exactly one key and optionally --yes',
-  list: 'secrets list takes only --json',
+  set: 'secrets set takes exactly one key and optionally --project or --global; the secret is typed at the terminal, never passed as an argument',
+  remove: 'secrets remove takes exactly one key and optionally --project or --global, and --yes',
+  list: 'secrets list takes only --project or --global, and --json',
 };
+const SCOPE_OPTIONS = {project: {type: 'boolean'}, global: {type: 'boolean', short: 'g'}};
 
 async function secrets(args) {
   const [command, ...rest] = args;
   if (!Object.hasOwn(SECRETS_USAGE, command)) throw new UsageError(`secrets takes set, list or remove; ${PREFERRED_ENTRY}`);
   const fixed = (options, positionals) => {
-    try { return parse(rest, options, positionals); } catch (error) {
+    let parsed;
+    try { parsed = parse(rest, {...SCOPE_OPTIONS, ...options}, positionals); } catch (error) {
       if (error instanceof UsageError) throw new UsageError(SECRETS_USAGE[command]);
       throw error;
     }
+    if (parsed.values.project && parsed.values.global) throw new UsageError(SECRETS_USAGE[command]);
+    return {...parsed, scope: parsed.values.project ? 'project' : parsed.values.global ? 'global' : undefined};
   };
   const label = positionals => {
     if (!isLabel(positionals[0])) throw new UsageError(LABEL_RULE);
     return positionals[0];
   };
   if (command === 'set') {
-    const {values, positionals} = fixed({}, 1);
+    const {values, positionals, scope} = fixed({}, 1);
     if (values.json) throw new UsageError(SECRETS_USAGE.set);
-    return runSecrets({command, label: label(positionals)});
+    return runSecrets({command, label: label(positionals), scope});
   }
   if (command === 'remove') {
-    const {values, positionals} = fixed({yes: {type: 'boolean'}}, 1);
+    const {values, positionals, scope} = fixed({yes: {type: 'boolean'}}, 1);
     if (values.json) throw new UsageError(SECRETS_USAGE.remove);
-    return runSecrets({command, label: label(positionals), yes: values.yes});
+    return runSecrets({command, label: label(positionals), yes: values.yes, scope});
   }
-  const {values} = fixed({}, 0);
-  return runSecrets({command, json: values.json});
+  const {values, scope} = fixed({}, 0);
+  return runSecrets({command, json: values.json, scope});
 }
 
 // The server's own Codex login, kept in CUA_HOME's CODEX_HOME (src/runtime/login.mjs). No key or token is ever an

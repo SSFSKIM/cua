@@ -21,7 +21,8 @@ import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 import {addDevice} from '../src/remote/devices.mjs';
 import {clientSecretKey} from '../src/remote/device.mjs';
-import {fileStore, storeDir} from '../src/secrets/store.mjs';
+import {fileStore, projectStoreDir, storeDir} from '../src/secrets/store.mjs';
+import {projectRoot} from '../src/secrets/project.mjs';
 
 const supported = installedHomeSupported;
 // A user home of the test's own, holding a secret store with one key: secrets-on servers resolve their store from it.
@@ -562,25 +563,29 @@ test('close is bounded even when the host stops reading the MCP stream', {skip: 
   assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
 
-test('serve resolves the store from its $HOME, hands the runtime only its directory, and lists its keys, never a value', {skip: !supported}, async t => {
+test('serve resolves the store from its $HOME and project, hands the runtime only their directories, and lists their keys, never a value', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const user = userHomeWithStore(t);
+  const projectDir = join(user.dir, 'projects', '-work-repo');
+  mkdirSync(projectDir, {recursive: true, mode: 0o700});
+  writeFileSync(join(projectDir, 'API_TOKEN'), 'pw-sentinel-9q', {mode: 0o600});
   const input = new PassThrough();
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
   const diagnostics = [];
-  const served = serve({home, env: {...process.env, HOME: user.home, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: line => diagnostics.push(line)});
+  const served = serve({home, env: {...process.env, HOME: user.home, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: line => diagnostics.push(line), project: '/work/repo'});
   t.after(async () => { input.end(); await served; });  // a failed assertion must not leave the server (and the suite) running
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   await reply(1);
   input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
   const list = await reply(2);
-  assert.deepEqual(list.result.structuredContent, {status: 'ok', labels: ['WORK_PASSWORD']});
+  assert.deepEqual(list.result.structuredContent, {status: 'ok', labels: ['API_TOKEN', 'WORK_PASSWORD']});
   const [{start}] = records(home);
-  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_DIR']);
+  assert.deepEqual(Object.keys(start.env).filter(key => key.startsWith('CUA_SECRETS_')), ['CUA_SECRETS_DIR', 'CUA_SECRETS_PROJECT_DIR']);
   assert.equal(start.env.CUA_SECRETS_DIR, user.dir);
+  assert.equal(start.env.CUA_SECRETS_PROJECT_DIR, projectDir);
   assert.deepEqual(JSON.parse(start.env.NODE_REPL_TRUSTED_SERVICES), {sky: SKY_SERVICE});
   assert.equal(JSON.stringify(frames).includes('pw-sentinel-9q'), false);
   assert.equal(JSON.stringify(start).includes('pw-sentinel-9q'), false, 'no value reaches the runtime\'s launch');
@@ -597,7 +602,10 @@ test('serve with no store yet still serves, and secrets_list lists no keys', {sk
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const served = serve({home, env: {...process.env, HOME: empty.dir, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: () => {}});
+  // No `project` is passed, so serve takes the project of its own working directory; a store variable planted in the
+  // session's environment never reaches the launch.
+  const env = {...process.env, HOME: empty.dir, CUA_SHIM_SECRETS: 'on', CUA_SECRETS_PROJECT_DIR: '/tmp/planted', CUA_SECRETS_DIR: '/tmp/planted-global'};
+  const served = serve({home, env, input, output, diagnostics: () => {}});
   t.after(async () => { input.end(); await served; });
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
@@ -605,6 +613,7 @@ test('serve with no store yet still serves, and secrets_list lists no keys', {sk
   assert.deepEqual(frames.find(f => f.id === 2).result.structuredContent, {status: 'ok', labels: []});
   const [{start}] = records(home);
   assert.equal(start.env.CUA_SECRETS_DIR, join(empty.dir, '.config', 'claude-secrets'));
+  assert.equal(start.env.CUA_SECRETS_PROJECT_DIR, projectStoreDir(projectRoot(process.cwd()), {HOME: empty.dir}));
   input.end();
   assert.equal(await served, 0);
 });

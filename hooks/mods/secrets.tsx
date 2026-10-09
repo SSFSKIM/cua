@@ -2,8 +2,9 @@ import type { EngineInterface, Hook, On } from 'claude-code'
 
 /**
  * `/secret KEY` opens a field in a pane; the value typed there is drawn as
- * bullets, stored as `~/.config/claude-secrets/KEY` (mode 600), and the model
- * sees only the key. The value never passes through the prompt box, so neither
+ * bullets, stored as `~/.config/claude-secrets/projects/<slug>/KEY` for the
+ * session's project (`/secret -g KEY`: `~/.config/claude-secrets/KEY`, for
+ * every project; mode 600), and the model sees only the key. The value never passes through the prompt box, so neither
  * the prompt history nor the transcript can hold it; a stored value that turns
  * up in a tool's output reaches neither the model nor the transcript file.
  *
@@ -17,26 +18,42 @@ import type { EngineInterface, Hook, On } from 'claude-code'
 // finds the login keychain locked and cannot raise its unlock dialog.
 export const DIR = '.config/claude-secrets'
 export const MASK = '•'
-// `/secret KEY ` or `/secret KEY=`: the value starts after the one character
-// that ends the key.
-const PREFIX = /^\/secret[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t=]/
+// `/secret KEY ` or `/secret KEY=`, `-g` or `--global` before the key or not:
+// the value starts after the one character that ends the key.
+const PREFIX = /^\/secret[ \t]+(?:(?:-g|--global)[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t=]/
+const FLAG = /^(?:(-g|--global)(?:[ \t]+|$))?([\s\S]*)$/
 const ARGS = /^([A-Za-z_][A-Za-z0-9_]*)[ \t=]([\s\S]*)$/
 // The echo of a `/secret` run as the conversation keeps it.
-const ECHO = /(<command-name>\/secret<\/command-name>[\s\S]*?<command-args>[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t=])([\s\S]*?)(<\/command-args>)/g
+const ECHO = /(<command-name>\/secret<\/command-name>[\s\S]*?<command-args>[ \t]*(?:(?:-g|--global)[ \t]+)?[A-Za-z_][A-Za-z0-9_]*[ \t=])([\s\S]*?)(<\/command-args>)/g
+// Device credentials (cua's reserved keys, src/secrets/label.mjs) are read
+// from the global tier only, so they are stored there whatever the project.
+const RESERVED = /^CUA_DEVICE_/i
+// The global tier's folder of the project tiers, so never a key (in any case:
+// macOS's file system would open PROJECTS for projects).
+const PROJECTS = /^projects$/i
+// Claude Code cuts a slug at this length and adds a hash of the whole path.
+const SLUG_MAX = 200
 // Shorter values would scrub ordinary words out of everything the model reads.
 const SCRUB_MIN = 6
 
 const PANE = 'secret'
 const FIELD = 'secret-value'
 
+type Scope = 'project' | 'global'
+type Pending = { key: string; scope: Scope }
+type Listed = { key: string; scope: Scope; shadowed: boolean }
+
 // What is typed lives only in this module's memory, never in `$.state` (which
 // every plugin can read): `drafted` behind the prompt box's bullets, `typed`
-// behind the field's, for the key in `pending`.
+// behind the field's, for the key and tier in `pending`.
 let drafted = ''
 let typed = ''
-let pending: string | undefined
-// Every stored secret, key to value, so that no row the model reads carries one.
-const known = new Map<string, string>()
+let pending: Pending | undefined
+// The session's project root, once resolved.
+let project: string | undefined
+// Every stored secret of both tiers, by `<scope>/<key>`, so that no row the
+// model reads carries one.
+const known = new Map<string, { key: string; scope: Scope; value: string }>()
 
 type Edit = { text: string; start: number; end: number; inputText: string }
 type Masked = { held: string; box?: { text: string; cursor: number } }
@@ -95,7 +112,7 @@ function spellings(value: string): string[] {
 
 function scrub(text: string): string {
   let out = maskEcho(text)
-  for (const [key, value] of known) {
+  for (const { key, value } of known.values()) {
     if (value.length < SCRUB_MIN) continue
     for (const spelling of spellings(value)) out = out.split(spelling).join(`[secret:${key}]`)
   }
@@ -103,19 +120,32 @@ function scrub(text: string): string {
 }
 
 // The one form a command may name a stored value in: substituted where it is
-// used, so the command's own output is all that could carry it.
-const SUBSTITUTION = /\$\(\s*cat\s+(?:~|"?\$HOME"?|"?\$\{HOME\}"?|\/(?:Users|home)\/[^/\s"')]+)\/\.config\/claude-secrets\/[A-Za-z_][A-Za-z0-9_]*\s*\)/g
+// used, so the command's own output is all that could carry it. It admits the
+// global tier and, given the session's project slug, that project's tier
+// only: another project's values are not loaded for scrubbing, so a command
+// naming its folder is refused like any other read of the store.
+export function substitutionFor(slug?: string): RegExp {
+  const tier = slug === undefined ? '' : `(?:projects\\/${slug.replace(/[^A-Za-z0-9-]/g, '')}\\/)?`
+  return new RegExp(
+    `\\$\\(\\s*cat\\s+(?:~|"?\\$HOME"?|"?\\$\\{HOME\\}"?|\\/(?:Users|home)\\/[^/\\s"')]+)\\/\\.config\\/claude-secrets\\/${tier}[A-Za-z_][A-Za-z0-9_]*\\s*\\)`,
+    'g',
+  )
+}
+// The session's form, rebuilt once its project is resolved.
+let substitution = substitutionFor()
 
 /**
  * Why a tool call would read the store itself, or undefined: a command naming
- * the folder other than in the substitution form, or a file tool whose path
+ * the folder (the projects' folders beneath it included) other than in the
+ * substitution form (`form`, the session's: its own project's folder and the
+ * global one), or a file tool whose path
  * (a Glob's pattern) points into it. What a Write or an Edit puts in a file,
  * or what a Grep searches for, is not a read of the store.
  */
-export function guardReason(input: Readonly<Record<string, unknown>>): string | undefined {
+export function guardReason(input: Readonly<Record<string, unknown>>, form: RegExp = substitution): string | undefined {
   const reads =
     typeof input.command === 'string'
-      ? input.command.replace(SUBSTITUTION, '').includes('.config/claude-secrets')
+      ? input.command.replace(form, '').includes('.config/claude-secrets')
       : Object.entries(input).some(
           ([field, value]) =>
             (/path$/i.test(field) || (input.tool === 'Glob' && field === 'pattern')) &&
@@ -143,11 +173,61 @@ function scrubRecord(value: unknown): unknown {
   return value
 }
 
-function usage(key: string): string {
-  return `"$(cat ~/${DIR}/${key})"`
+/**
+ * A project's path as Claude Code names its folder under ~/.claude/projects/:
+ * every character other than an ASCII letter or digit becomes '-', and a slug
+ * longer than 200 characters keeps its first 200 and gains '-' and a base-36
+ * hash of the path. cua's store (src/secrets/store.mjs) carries the same.
+ */
+export function projectSlug(path: string): string {
+  const slug = path.replace(/[^a-zA-Z0-9]/g, '-')
+  if (slug.length <= SLUG_MAX) return slug
+  let hash = 0
+  for (let i = 0; i < path.length; i++) hash = ((hash << 5) - hash + path.charCodeAt(i)) | 0
+  return `${slug.slice(0, SLUG_MAX)}-${Math.abs(hash).toString(36)}`
 }
 
-async function storeField($: EngineInterface, key: string, value: string) {
+/**
+ * The project root from `git rev-parse --path-format=absolute
+ * --git-common-dir --show-toplevel`'s two lines: the main checkout's root
+ * (the parent of its `.git`, which every linked worktree shares), or the
+ * repository's top level where the common directory is no `.git` folder (a
+ * submodule's). cua's src/secrets/project.mjs resolves it the same way.
+ */
+export function rootFromGit(commonDir: string, topLevel: string): string {
+  return /\/\.git$/.test(commonDir) ? commonDir.slice(0, -'/.git'.length) || '/' : topLevel
+}
+
+// The session's project: the main worktree root of the git repository around
+// its directory, else that directory. Resolved once, at session start.
+async function projectOf($: EngineInterface, cwd?: string): Promise<string> {
+  if (project !== undefined) return project
+  const dir = cwd ?? (await $.session.cwd())
+  let root = dir
+  try {
+    const git = await $.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'], { cwd: dir, timeoutMs: 5000 })
+    const [commonDir, topLevel] = git.stdout.trim().split('\n')
+    // A git older than 2.31 echoes `--path-format=absolute` back as a line of
+    // its own; only two absolute paths are an answer.
+    if (git.exitCode === 0 && commonDir?.startsWith('/') && topLevel?.startsWith('/')) root = rootFromGit(commonDir, topLevel)
+  } catch {}
+  project = root
+  substitution = substitutionFor(projectSlug(root))
+  return root
+}
+
+// The tier's folder, relative to $HOME.
+async function tierDir($: EngineInterface, scope: Scope): Promise<string> {
+  return scope === 'global' ? DIR : `${DIR}/projects/${projectSlug(await projectOf($))}`
+}
+
+async function usage($: EngineInterface, key: string, scope: Scope): Promise<string> {
+  return `"$(cat ~/${await tierDir($, scope)}/${key})"`
+}
+
+const TIER = { project: 'for this project', global: 'for every project (global)' }
+
+async function storeField($: EngineInterface, { key, scope }: Pending, value: string) {
   if (value === '') return
   // The bullets hide a mistyped character, an input method left on.
   if (/[^\x20-\x7e]/.test(value)) {
@@ -157,7 +237,7 @@ async function storeField($: EngineInterface, key: string, value: string) {
   }
   // The value goes in on stdin, so no process's arguments carry it, and is
   // created under umask 077 (`$.fs.write` sets no mode).
-  const dir = `${await $.env.get('HOME')}/${DIR}`
+  const dir = `${await $.env.get('HOME')}/${await tierDir($, scope)}`
   const added = await $.process.run(
     ['/bin/sh', '-c', 'umask 077 && mkdir -p "$1" && chmod 700 "$1" && cat > "$1/$2" && chmod 600 "$1/$2"', 'sh', dir, key],
     { stdin: value },
@@ -166,22 +246,39 @@ async function storeField($: EngineInterface, key: string, value: string) {
     $.ui.toast(`secret: not stored, ${added.stderr.trim().split('\n')[0] || 'the write failed'}`)
     return
   }
-  known.set(key, value)
+  known.set(`${scope}/${key}`, { key, scope, value })
   typed = ''
   pending = undefined
   await $.ui.close({ id: PANE })
-  $.ui.toast(`secret: stored ${key}`)
+  $.ui.toast(`secret: stored ${key} (${scope})`)
   await $.session.append({
     message: {
       type: 'user',
       content: [
         {
           type: 'text',
-          text: `The person stored a secret under ${key}. You never see its value. In a shell command, read it as ${usage(key)}, never printing it.`,
+          text: `The person stored a secret under ${key}, ${TIER[scope]}. You never see its value. In a shell command, read it as ${await usage($, key, scope)}, never printing it.`,
         },
       ],
     },
   })
+}
+
+// The stored keys, sorted by key with the project's first; a global key the
+// project's of the same name shadows is marked so.
+function listed(): Listed[] {
+  return [...known.values()]
+    .map(({ key, scope }) => ({ key, scope, shadowed: scope === 'global' && known.has(`project/${key}`) }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : a.scope === 'project' ? -1 : 1))
+}
+
+function describe({ key, scope, shadowed }: Listed): string {
+  return `${key} (${scope}${shadowed ? ", shadowed by the project's" : ''})`
+}
+
+// The tier's folder as the pane shows it, the project resolved at session start.
+function shownDir(scope: Scope): string {
+  return scope === 'global' || project === undefined ? DIR : `${DIR}/projects/${projectSlug(project)}`
 }
 
 // Taken with both matchers below: the other mods register session.start too,
@@ -189,14 +286,19 @@ async function storeField($: EngineInterface, key: string, value: string) {
 const secretsStart: Hook<'session.start'> = async ($, e, next) => {
   await $.command.register({
     name: 'secret',
-    description: 'Store a secret that the model sees only by its key; the value goes in the field it opens',
-    argumentHint: 'KEY',
+    description: 'Store a secret for this project (-g: for every project) that the model sees only by its key; the value goes in the field it opens',
+    argumentHint: '[-g] KEY',
   })
-  const dir = `${await $.env.get('HOME')}/${DIR}`
-  if (await $.fs.exists(dir)) {
+  project = undefined
+  known.clear()
+  await projectOf($, e.cwd)
+  const home = await $.env.get('HOME')
+  for (const scope of ['project', 'global'] as const) {
+    const dir = `${home}/${await tierDir($, scope)}`
+    if (!(await $.fs.exists(dir))) continue
     for (const entry of await $.fs.list(dir)) {
       if (entry.kind === 'file' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name)) {
-        known.set(entry.name, await $.fs.read(`${dir}/${entry.name}`))
+        known.set(`${scope}/${entry.name}`, { key: entry.name, scope, value: await $.fs.read(`${dir}/${entry.name}`) })
       }
     }
   }
@@ -215,9 +317,10 @@ export function registerSecrets(on: On) {
   })
 
   on('command.run', { command: 'secret' }, async ($, e) => {
-    const args = e.args.trim()
-    if (args === '') {
-      return { text: known.size ? `Stored: ${[...known.keys()].join(', ')}` : 'No secrets stored.' }
+    const [, flag, rest = ''] = FLAG.exec(e.args.trim()) ?? []
+    const args = rest.trim()
+    if (args === '' && !flag) {
+      return { text: known.size ? `Stored: ${listed().map(describe).join(', ')}` : 'No secrets stored.' }
     }
     const parsed = ARGS.exec(args)
     drafted = ''
@@ -228,11 +331,19 @@ export function registerSecrets(on: On) {
           'A value typed in the prompt box may be in the prompt history (~/.claude/history.jsonl), whole or in part.',
       }
     }
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(args)) return { text: 'Usage: /secret KEY (letters, digits and _)' }
-    pending = args
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(args)) return { text: 'Usage: /secret [-g|--global] KEY (letters, digits and _)' }
+    if (PROJECTS.test(args)) return { text: 'Not stored: "projects" is the folder that holds the projects\' secrets, so it is not a key.' }
+    const isDevice = !flag && RESERVED.test(args)
+    pending = { key: args, scope: flag || isDevice ? 'global' : 'project' }
     typed = ''
-    await $.ui.open({ id: PANE, title: `secret ${args}`, focus: true, closeOnEscape: true, rows: 2 })
-    return { text: `Type the value of ${args} in the field of the pane it opened: Enter stores it, Escape cancels.` }
+    await projectOf($)
+    await $.ui.open({ id: PANE, title: `secret ${args} (${pending.scope})`, focus: true, closeOnEscape: true, rows: 2 })
+    const where = isDevice
+      ? 'for every project, as device credentials are'
+      : pending.scope === 'project'
+        ? `${TIER.project} (/secret -g ${args} stores it for every project)`
+        : TIER.global
+    return { text: `Type the value of ${args} in the field of the pane it opened; it is stored ${where}. Enter stores it, Escape cancels.` }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, ($, e) => {
@@ -245,14 +356,14 @@ export function registerSecrets(on: On) {
       <Box flexDirection="column">
         <Input
           key={FIELD}
-          label={`${pending ?? ''} `}
+          label={`${pending?.key ?? ''} `}
           value={MASK.repeat(typed.length)}
           placeholder="value"
           submitLabel="store"
           autoFocus
           onSubmit={() => {}}
         />
-        <Text dimColor>Escape cancels. Stored in ~/{DIR}/{pending ?? ''}, mode 600.</Text>
+        <Text dimColor>Escape cancels. Stored in ~/{pending ? `${shownDir(pending.scope)}/${pending.key}` : DIR}, mode 600.</Text>
       </Box>
     )
   })
@@ -307,10 +418,10 @@ export function registerSecrets(on: On) {
     return isChanged ? next({ ...e, message: { ...e.message, content } }) : next(e)
   })
 
-  on('prompt.compose', async (_, e, next) => {
+  on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
     if (known.size === 0) return composed
-    const lines = [...known.keys()].map((key) => `- ${key}: ${usage(key)}`)
+    const lines = await Promise.all(listed().map(async (s) => `- ${describe(s)}: ${await usage($, s.key, s.scope)}`))
     return {
       sections: [
         ...composed.sections,
@@ -318,8 +429,9 @@ export function registerSecrets(on: On) {
           id: 'cua:secrets',
           scope: 'session',
           text:
-            'Secrets the person stored, one file each. You see only their keys; ' +
-            'read a value inside the shell command that uses it, never printing it:\n' +
+            'Secrets the person stored, one file each, for this project or for every project (global). ' +
+            'You see only their keys; read a value inside the shell command that uses it, never printing it. ' +
+            "Where a key is stored in both, use the project's:\n" +
             lines.join('\n'),
         },
       ],

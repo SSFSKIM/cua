@@ -44,7 +44,8 @@ const LINUX_END_TASK_TOOL = {...END_TASK_TOOL, _meta: {'anthropic/searchHint': '
 export const SECRETS_LIST_TOOL = {
   name: 'secrets_list',
   description: 'List the keys of the secrets the user stored for computer-use input (with /secret KEY in Claude Code or '
-    + '`cua secrets set KEY`), never their values. Returns status "ok" with labels (the keys), or status "unavailable"/"error" '
+    + '`cua secrets set KEY`), for this project or for every project, never their values. A key stored for the project '
+    + 'is used in place of a global one of the same name. Returns status "ok" with labels (the keys), or status "unavailable"/"error" '
     + 'with a code when secret storage cannot be used on this connection. To enter a secret the user has authorized, pass exactly "{{secret:<label>}}" '
     + 'as the whole text of typeText or paste, or the whole value of setValue: the stored value is substituted outside '
     + 'your code and never returned. Anywhere else the marker is not expanded.',
@@ -142,7 +143,8 @@ const COMPUTER_HEAD = '- Use when a macOS app\'s GUI is the only way; the first 
 const LINUX_COMPUTER_HEAD = '- Use when a Linux app\'s GUI is the only way; the first js call returns the API docs.';
 const BROWSER_HEAD = '- Use for the user\'s existing Chrome profiles when no API or skill fits; the first js call returns the API docs.';
 // The store is a plain directory any cell can read under every sandbox mode (the vendor's read-deny would bind the
-// trusted worker too); the rule keeps the agent on the reference.
+// trusted worker too); the rule keeps the agent on the reference. It names the store's root, so it covers the
+// projects' directories beneath it (the project tier) as well.
 const SECRETS_NOTE = '- Never read ~/.config/claude-secrets; type secrets as {{secret:KEY}}.';
 const GENERAL_NOTES = [
   '- Call end_task as soon as the task is done, before your final reply. An error spends the connection: report it.',

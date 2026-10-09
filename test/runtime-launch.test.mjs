@@ -5,6 +5,7 @@ import {join, dirname} from 'node:path';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
+import {connectionSecrets} from '../src/secrets/store.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000001';
 const AMBIENT = {
@@ -97,6 +98,24 @@ test('the secret store directory reaches the launch environment only as an expli
   const without = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT}).env;
   assert.equal(Object.keys(without).some(k => k.startsWith('CUA_SECRETS_')), false);
   assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsDir: 'relative/dir'}), err => err.code === 'invalid_secrets_dir');
+  // The project's directory travels beside the global one, never alone.
+  const projectDir = `${dir}/projects/-Users-u-repo`;
+  const tiered = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsDir: dir, secretsProjectDir: projectDir}).env;
+  assert.equal(tiered.CUA_SECRETS_DIR, dir);
+  assert.equal(tiered.CUA_SECRETS_PROJECT_DIR, projectDir);
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsDir: dir, secretsProjectDir: 'relative/dir'}), err => err.code === 'invalid_secrets_dir');
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsProjectDir: projectDir}), err => err.code === 'invalid_secrets_dir');
+});
+
+test('the launch carries only the store directories the connection resolved, never ones from the session\'s environment', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const ambient = {...AMBIENT, HOME: '/Users/u', CUA_SECRETS_PROJECT_DIR: '/tmp/planted', CUA_SECRETS_DIR: '/tmp/planted-global'};
+  const off = buildLaunch({runtime, home, sessionId: SESSION, ambient}).env;
+  assert.equal(Object.keys(off).some(k => k.startsWith('CUA_SECRETS_')), false);
+  const secrets = connectionSecrets({enabled: true, env: ambient, project: '/work/repo'});
+  const on = buildLaunch({runtime, home, sessionId: SESSION, ambient, secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir}).env;
+  assert.equal(on.CUA_SECRETS_DIR, '/Users/u/.config/claude-secrets');
+  assert.equal(on.CUA_SECRETS_PROJECT_DIR, '/Users/u/.config/claude-secrets/projects/-work-repo');
 });
 
 test('the session id becomes a path segment, so only plain identifiers are accepted', t => {

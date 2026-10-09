@@ -319,6 +319,10 @@ test('the account\'s own secret store is informational by default: a failing sec
   assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: rows}}),
     {healthy: true, detail: 'exit 1; ok false; informational, not gating: secrets.store fail'});
   assert.equal(doctorHealth({code: 0, doctor: {ok: true, checks: rows}}).healthy, false, 'ok that contradicts its rows');
+  // So is the project tier of the directory the runner was started in (#99).
+  const tiered = [...rows, {name: 'secrets.project', status: 'fail', detail: ''}];
+  assert.deepEqual(doctorHealth({code: 1, doctor: {ok: false, checks: tiered}}),
+    {healthy: true, detail: 'exit 1; ok false; informational, not gating: secrets.store fail, secrets.project fail'});
 });
 
 test('a caller may make more doctor rows informational: reported, never gating, and the report must still agree with itself', () => {

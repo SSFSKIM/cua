@@ -39,11 +39,14 @@ differ from the pinned record, and never modifies vendor files. Doctor's `runtim
 ### 2. Secrets (only if secret substitution will be used)
 
 ```sh
-node bin/cua.mjs secrets set WORK_PASSWORD   # or /secret WORK_PASSWORD in Claude Code (the cua plugin's mod)
+node bin/cua.mjs secrets set WORK_PASSWORD   # or /secret -g WORK_PASSWORD in Claude Code (the cua plugin's mod)
 ```
 
 Each secret is a file `~/.config/claude-secrets/<KEY>` (mode 0600), the store the plugin's `/secret` mod writes, so
-there is nothing to build or sign (issue #66). This works over SSH too (`ssh -t` for the masked prompt).
+there is nothing to build or sign (issue #66). This works over SSH too (`ssh -t` for the masked prompt). A secret for
+one project only goes in that project's tier, `~/.config/claude-secrets/projects/<slug>/<KEY>`: `/secret KEY` in a
+session there, or `secrets set KEY --project` run in the project's directory; it shadows a global key of the same name
+there (README, Secrets). `cua doctor` reports both.
 
 ### 3. No login
 

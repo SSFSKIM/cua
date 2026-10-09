@@ -5,10 +5,13 @@
 //   fail     the directory is not one, is not this user's, or is open to others; or a key file the trusted services
 //            would refuse (not a regular file, not this user's, not mode 0600), named by key
 //   pass     otherwise, with the number of stored keys
+// and one more, `secrets.project`, for the project tier of this working directory (src/secrets/project.mjs): the same
+// rules, except that a project with no directory is `skip` (most projects keep no secrets of their own).
 import {lstatSync, readdirSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {isLabel} from './label.mjs';
-import {storeDir} from './store.mjs';
+import {projectRoot} from './project.mjs';
+import {projectStoreDir, storeDir} from './store.mjs';
 
 const ownUid = () => (typeof process.geteuid === 'function' ? process.geteuid() : null);
 const octal = mode => `0${(mode & 0o777).toString(8)}`;
@@ -37,10 +40,12 @@ export function inspectStore({dir}) {
   return info;
 }
 
-export function classifyStore(info, {enabled = true} = {}) {
-  const row = (status, detail) => ({name: 'secrets.store', status, detail});
+// The store's row; with `project` (the project's root), the project tier's row `secrets.project`.
+export function classifyStore(info, {enabled = true, project} = {}) {
+  const row = (status, detail) => ({name: project ? 'secrets.project' : 'secrets.store', status, detail});
   if (!enabled) return row('skip', 'secrets are turned off for this server (CUA_SHIM_SECRETS=off)');
   const {dir} = info;
+  if (!info.exists && project) return row('skip', `no project secrets for ${project} (${dir}); /secret KEY in a Claude Code session there, or cua secrets set KEY --project, stores the first`);
   if (!info.exists) return row('blocked', `no secret store at ${dir} yet, so nothing is stored; /secret KEY in Claude Code (the cua plugin's mod) or cua secrets set KEY creates it`);
   if (info.error && info.directory === undefined) return row('fail', `the secret store ${dir} could not be read (${info.error})`);
   if (!info.directory) return row('fail', `${dir} is not a directory, so no secret can be stored or read there`);
@@ -48,7 +53,11 @@ export function classifyStore(info, {enabled = true} = {}) {
   if (info.mode & 0o077) return row('fail', `the secret store ${dir} is mode ${octal(info.mode)}, open to other users; chmod 700 "${dir}"`);
   if (info.error) return row('fail', `the secret store ${dir} could not be listed (${info.error})`);
   if (info.unsafe.length) return row('fail', `secret files the trusted services would refuse: ${info.unsafe.map(u => `${u.key} (${u.why})`).join(', ')}; chmod 600 each file in ${dir}`);
-  return row('pass', `${info.keys.length} secret${info.keys.length === 1 ? '' : 's'} in ${dir} (0700, yours, each file 0600)`);
+  return row('pass', `${info.keys.length} secret${info.keys.length === 1 ? '' : 's'} in ${dir}${project ? ` for ${project}` : ''} (0700, yours, each file 0600)`);
 }
 
-export const inspectSecretStore = ({env = process.env} = {}) => inspectStore({dir: storeDir(env)});
+// The global store's facts, with the project tier's for `cwd` under `project` ({root, ...facts}).
+export const inspectSecretStore = ({env = process.env, cwd = process.cwd()} = {}) => {
+  const root = projectRoot(cwd);
+  return {...inspectStore({dir: storeDir(env)}), project: {root, ...inspectStore({dir: projectStoreDir(root, env)})}};
+};

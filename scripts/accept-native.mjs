@@ -300,9 +300,15 @@ async function item6(probe, textedit) {
 
     const list = await cli(['list', '--json']);
     const json = parseJson(list.stdout);
-    const labelsOnly = list.code === 0 && json && Object.keys(json).sort().join() === 'labels,ok' && json.labels.every(isLabel) && json.labels.includes(key) && !list.stdout.includes(value);
+    // Both tiers (#99): {ok, project, labels, scopes: {project, global}}, every list of keys only, the key `set` stored in
+    // the global tier.
+    const keysOnly = names => Array.isArray(names) && names.every(isLabel);
+    const labelsOnly = list.code === 0 && json && Object.keys(json).sort().join() === 'labels,ok,project,scopes'
+      && typeof json.project === 'string' && keysOnly(json.labels) && json.labels.includes(key)
+      && json.scopes && Object.keys(json.scopes).sort().join() === 'global,project' && keysOnly(json.scopes.project) && keysOnly(json.scopes.global)
+      && json.scopes.global.includes(key) && !list.stdout.includes(value);
     checks.push(check('secrets list returns keys only', labelsOnly ? 'PASS' : 'FAIL',
-      labelsOnly ? `{ok, labels}: the stored key and no value (${json.labels.length} key(s))` : `exit ${list.code}; ${json ? `keys ${Object.keys(json).join(',')}` : 'no JSON'}`));
+      labelsOnly ? `{ok, project, labels, scopes}: the stored key, in the global tier, and no value (${json.labels.length} key(s))` : `exit ${list.code}; ${json ? `keys ${Object.keys(json).join(',')}` : 'no JSON'}`));
 
     const removed = await cli(['remove', key, '--yes']);
     const gone = !(await listed() ?? [key]).includes(key);

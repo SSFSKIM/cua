@@ -46,8 +46,6 @@ Final fix at 7a630cd2: `pnpm vitest run src/main/browser/cua src/main/browser/ex
 | 11 | `e2e:browser-cua` "a person's bookmark click on a leased idle tab is theirs: no agent row, and the agent's acting command in the hand-back window is refused; the agent's own navigation still makes its row" | no |
 | 12 | `e2e:browser-chrome` "9, 10, 12" (the relaunch restores the page's tab, not the options tab; the selection falls to the neighbour) | no |
 | 13 | §4 above: every gate green (the pty case alone) | no |
-| 12 | `e2e:browser-chrome` "9, 10, 12" (an options tab is not restored after a relaunch; the other tabs are) | no |
-| 13 | the gates above | no |
 
 ## The owner's sitting list (their own build and profile; parked, not blocked)
 
@@ -183,4 +181,4 @@ The eight minor findings live as rows in MAWS `docs/tech-debt-tracker.md` (owner
 ## Carried for the author session
 
 - P2 cut (MAWS master `a2899355`), P2-B's proposed ruling Q11 ("keep eager loading; the question passes to the cua session, whose #90 owns the extensions bar"): carried here unacted, as agreed.
-- Tracker row due at M4: a preparation-time bookmarks sync refused because another import or removal is running is not retried until the next preparation or a manual sync.
+- The tracker rows due at M4 (the refused preparation-time sync and the seven others) are written in MAWS `docs/tech-debt-tracker.md` (`60062715`).

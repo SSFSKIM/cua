@@ -7,6 +7,7 @@
 // acceptance gate were proven, and it must never be reported as release acceptance.
 // `secrets.store` (src/secrets/check.mjs) describes the secret store, $HOME/.config/claude-secrets, from metadata only:
 // absent is `blocked` (nothing stored yet), a directory or key file the trusted services would refuse is `fail`.
+// `secrets.project` describes the project tier of the working directory's project the same way, absent being `skip`.
 // `codex.login` asks the relocated bundled CLI (`codex login status`, bounded) whether the server's own CODEX_HOME holds
 // a Codex login, which the ChatGPT extension route needs (on the cua route the row is skip); only the exit code is kept
 // and no auth file is opened. It is capability evidence, never runtime health: `pass` or `blocked`, so it never changes `ok`. It is the one check that
@@ -134,7 +135,10 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
       'Accessibility and Screen Recording belong to the Codex Computer Use helper and are granted by you in System Settings > Privacy & Security when macOS asks on first use; a passive check cannot read them. '
       + `Confirm with a live probe (${LIVE_PROBE}).`));
   }
-  checks.push(classifyStore(await inspectSecrets({env}), {enabled: (env.CUA_SHIM_SECRETS ?? 'on') !== 'off'}));
+  const secretsInfo = await inspectSecrets({env});
+  const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
+  checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
+  if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
   checks.push(route === 'cua' ? result('codex.login', 'skip', 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)')
     : await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home, host, env, route}));

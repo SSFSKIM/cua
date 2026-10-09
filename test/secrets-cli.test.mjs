@@ -3,10 +3,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {runSecrets} from '../src/secrets/commands.mjs';
+import {projectSlug} from '../src/secrets/store.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
@@ -33,19 +34,25 @@ test('anything but a single valid label is refused as usage, never echoing what 
 const VALUE = 'hunter2-typed-value';
 const TTY = {input: {isTTY: true, setRawMode() {}}, output: {write() {}}};
 
-function doubles({lines = [VALUE, VALUE], keys = ['A', 'B'], terminal = TTY} = {}) {
+// Both tiers as doubles: the global one holds `keys`, the project's (/work/repo) `projectKeys`. Each call records its tier.
+function doubles({lines = [VALUE, VALUE], keys = ['A', 'B'], projectKeys = [], terminal = TTY} = {}) {
   const calls = [];
   const printed = [];
   const notes = [];
   const queue = [...lines];
+  const tier = (name, dir, stored) => ({
+    dir,
+    write: async (key, value) => { calls.push(['write', key, value, name]); return `${dir}/${key}`; },
+    remove: async key => { calls.push(['remove', key, name]); return `${dir}/${key}`; },
+    list: async () => { calls.push(['list', name]); return stored; },
+  });
   return {
     calls, printed, notes,
     deps: {
-      store: {
-        dir: '/home/u/.config/claude-secrets',
-        write: async (key, value) => { calls.push(['write', key, value]); return `/home/u/.config/claude-secrets/${key}`; },
-        remove: async key => { calls.push(['remove', key]); return `/home/u/.config/claude-secrets/${key}`; },
-        list: async () => { calls.push(['list']); return keys; },
+      stores: {
+        root: '/work/repo',
+        project: tier('project', '/home/u/.config/claude-secrets/projects/-work-repo', projectKeys),
+        global: tier('global', '/home/u/.config/claude-secrets', keys),
       },
       terminal,
       readLine: async ({prompt}) => { calls.push(['prompt', prompt]); return queue.shift() ?? null; },
@@ -58,7 +65,7 @@ function doubles({lines = [VALUE, VALUE], keys = ['A', 'B'], terminal = TTY} = {
 test('set reads the value twice at the terminal and writes it under the key; nothing it prints carries the value', async () => {
   const d = doubles();
   assert.equal(await runSecrets({command: 'set', label: 'WORK_PASSWORD'}, d.deps), 0);
-  assert.deepEqual(d.calls.filter(c => c[0] === 'write'), [['write', 'WORK_PASSWORD', VALUE]]);
+  assert.deepEqual(d.calls.filter(c => c[0] === 'write'), [['write', 'WORK_PASSWORD', VALUE, 'global']]);
   assert.match(d.notes.join('\n'), /stored WORK_PASSWORD in .*claude-secrets\/WORK_PASSWORD \(mode 0600\)/);
   assert.doesNotMatch(JSON.stringify([d.notes, d.printed, d.calls.filter(c => c[0] === 'prompt')]), /hunter2/);
 });
@@ -80,7 +87,7 @@ test('set stores nothing on a mismatch, an empty entry, a cancel, or without a t
 test('remove asks at the terminal unless --yes', async () => {
   const yes = doubles();
   assert.equal(await runSecrets({command: 'remove', label: 'K', yes: true}, yes.deps), 0);
-  assert.deepEqual(yes.calls, [['remove', 'K']]);
+  assert.deepEqual(yes.calls, [['remove', 'K', 'global']]);
   const confirmed = doubles({lines: ['y']});
   assert.equal(await runSecrets({command: 'remove', label: 'K'}, confirmed.deps), 0);
   assert.deepEqual(confirmed.calls.map(c => c[0]), ['prompt', 'remove']);
@@ -91,36 +98,77 @@ test('remove asks at the terminal unless --yes', async () => {
   await assert.rejects(runSecrets({command: 'remove', label: 'K'}, piped.deps), {code: 'no_terminal'});
 });
 
-test('list prints keys, or JSON with --json', async () => {
-  const d = doubles();
+test('list prints both tiers, each key marked, or JSON with --json', async () => {
+  const d = doubles({projectKeys: ['B', 'C']});
   assert.equal(await runSecrets({command: 'list'}, d.deps), 0);
-  assert.deepEqual(d.printed, ['A\nB']);
-  const j = doubles();
+  assert.deepEqual(d.printed, ['A (global)\nB (project)\nB (global, shadowed by the project\'s)\nC (project)']);
+  const j = doubles({projectKeys: ['B', 'C']});
   assert.equal(await runSecrets({command: 'list', json: true}, j.deps), 0);
-  assert.deepEqual(j.printed, [{ok: true, labels: ['A', 'B']}]);
+  assert.deepEqual(j.printed, [{ok: true, project: '/work/repo', labels: ['A', 'B', 'C'], scopes: {project: ['B', 'C'], global: ['A', 'B']}}]);
   const none = doubles({keys: []});
   assert.equal(await runSecrets({command: 'list'}, none.deps), 0);
-  assert.match(none.notes.join(), /no secrets are stored in/);
+  assert.match(none.notes.join(), /no secrets are stored in \/home\/u\/\.config\/claude-secrets\/projects\/-work-repo or \/home\/u\/\.config\/claude-secrets$/);
 });
 
-const cli = (args, home, options = {}) => spawnSync(process.execPath, [CLI, 'secrets', ...args],
-  {env: {...process.env, HOME: home, CUA_HOME: join(home, 'cua-home')}, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe'], ...options});
+test('--project and --global pick one tier for list, set and remove', async () => {
+  const d = doubles({projectKeys: ['P']});
+  assert.equal(await runSecrets({command: 'list', scope: 'project'}, d.deps), 0);
+  assert.equal(await runSecrets({command: 'list', scope: 'global', json: true}, d.deps), 0);
+  assert.deepEqual(d.printed, ['P', {ok: true, labels: ['A', 'B']}]);
+  const p = doubles();
+  assert.equal(await runSecrets({command: 'list', scope: 'project', json: true}, p.deps), 0);
+  assert.deepEqual(p.printed, [{ok: true, project: '/work/repo', labels: []}]);
 
-test('the real CLI lists $HOME/.config/claude-secrets and refuses set without a terminal', t => {
-  const home = mkdtempSync(join(tmpdir(), 'cua-cli-home-'));
+  const set = doubles();
+  assert.equal(await runSecrets({command: 'set', label: 'K', scope: 'project'}, set.deps), 0);
+  assert.deepEqual(set.calls.filter(c => c[0] === 'write'), [['write', 'K', VALUE, 'project']]);
+  assert.match(set.notes.join(), /stored K in \/home\/u\/\.config\/claude-secrets\/projects\/-work-repo\/K/);
+  const removed = doubles();
+  assert.equal(await runSecrets({command: 'remove', label: 'K', yes: true, scope: 'project'}, removed.deps), 0);
+  assert.deepEqual(removed.calls, [['remove', 'K', 'project']]);
+});
+
+test('a device credential is never put in or taken from a project\'s tier', async () => {
+  for (const command of ['set', 'remove']) {
+    const d = doubles();
+    await assert.rejects(runSecrets({command, label: 'CUA_DEVICE_x', yes: true, scope: 'project'}, d.deps), {code: 'secret_reserved'});
+    assert.deepEqual(d.calls, []);
+  }
+  const d = doubles();
+  assert.equal(await runSecrets({command: 'set', label: 'CUA_DEVICE_x'}, d.deps), 0);
+  assert.deepEqual(d.calls.filter(c => c[0] === 'write'), [['write', 'CUA_DEVICE_x', VALUE, 'global']]);
+});
+
+// The real CLI runs in `home`, a directory outside any git repository, so the project is `home` itself.
+const cli = (args, home, options = {}) => spawnSync(process.execPath, [CLI, 'secrets', ...args],
+  {cwd: home, env: {...process.env, HOME: home, CUA_HOME: join(home, 'cua-home')}, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe'], ...options});
+
+test('the real CLI lists $HOME/.config/claude-secrets and its project tier, and refuses set without a terminal', t => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'cua-cli-home-')));
   t.after(() => rmSync(home, {recursive: true, force: true}));
   const dir = join(home, '.config', 'claude-secrets');
-  mkdirSync(dir, {recursive: true, mode: 0o700});
+  const projectDir = join(dir, 'projects', projectSlug(home));
+  mkdirSync(projectDir, {recursive: true, mode: 0o700});
   writeFileSync(join(dir, 'FROM_MOD'), 'v', {mode: 0o600});
+  writeFileSync(join(projectDir, 'FROM_MOD'), 'p', {mode: 0o600});
+  writeFileSync(join(projectDir, 'PROJECT_ONLY'), 'p', {mode: 0o600});
   const listed = cli(['list', '--json'], home);
   assert.equal(listed.status, 0, listed.stderr);
-  assert.deepEqual(JSON.parse(listed.stdout), {ok: true, labels: ['FROM_MOD']});
-  const set = cli(['set', 'NEW_KEY'], home);
+  assert.deepEqual(JSON.parse(listed.stdout), {ok: true, project: home, labels: ['FROM_MOD', 'PROJECT_ONLY'], scopes: {project: ['FROM_MOD', 'PROJECT_ONLY'], global: ['FROM_MOD']}});
+  assert.equal(cli(['list'], home).stdout, 'FROM_MOD (project)\nFROM_MOD (global, shadowed by the project\'s)\nPROJECT_ONLY (project)\n');
+  assert.deepEqual(JSON.parse(cli(['list', '-g', '--json'], home).stdout), {ok: true, labels: ['FROM_MOD']});
+  assert.equal(cli(['list', '--project', '--global'], home).status, 2);
+  const set = cli(['set', 'NEW_KEY', '--project'], home);
   assert.equal(set.status, 1);
   assert.match(set.stderr, /no_terminal|not one/);
   const removed = cli(['remove', 'FROM_MOD', '--yes'], home);
   assert.equal(removed.status, 0, removed.stderr);
-  assert.deepEqual(JSON.parse(cli(['list', '--json'], home).stdout), {ok: true, labels: []});
+  const removedProject = cli(['remove', 'PROJECT_ONLY', '--project', '--yes'], home);
+  assert.equal(removedProject.status, 0, removedProject.stderr);
+  const missing = cli(['remove', 'PROJECT_ONLY', '--project', '--yes'], home);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /no secret named "PROJECT_ONLY"/);
+  assert.deepEqual(JSON.parse(cli(['list', '--json'], home).stdout), {ok: true, project: home, labels: ['FROM_MOD'], scopes: {project: ['FROM_MOD'], global: []}});
 });
 
 // A real pty (script(1), BSD syntax on macOS): the value typed is stored exactly and never echoed back.

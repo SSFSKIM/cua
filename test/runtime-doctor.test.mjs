@@ -206,6 +206,13 @@ test('secrets.store is reported beside runtime health: no store yet is blocked, 
 
   const off = await inspectRuntime({...common, env: {CUA_SHIM_SECRETS: 'off'}, inspectSecrets: noSecrets});
   assert.equal(check(off, 'secrets.store').status, 'skip');
+
+  // The project tier of the working directory gets a row of its own; a loose project file fails the run as a global one does.
+  const project = {root: '/w/repo', dir: '/h/s/projects/-w-repo', exists: true, directory: true, owned: true, mode: 0o700, keys: ['P'], unsafe: [{key: 'P', why: 'mode 0644, not 0600'}]};
+  const tiered = await inspectRuntime({...common, inspectSecrets: async () => ({dir: '/h/s', exists: true, directory: true, owned: true, mode: 0o700, keys: ['A'], unsafe: [], project})});
+  assert.equal(check(tiered, 'secrets.store').status, 'pass');
+  assert.equal(check(tiered, 'secrets.project').status, 'fail');
+  assert.equal(tiered.ok, false);
 });
 
 test('codex.login is capability evidence: pass when logged in, blocked with "run cua login" otherwise, ok unchanged', {skip: !darwin}, async t => {

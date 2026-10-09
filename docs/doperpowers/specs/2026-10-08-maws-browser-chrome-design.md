@@ -16,7 +16,7 @@ Design approved by the owner on 2026-10-08 in the cua_repl session (four forks a
 
 ## Progress
 
-- [ ] S1 — Spike: what an extension popup can do in a MAWS-hosted view (verdict in Surprises & Discoveries)
+- [x] S1 — Spike: what an extension popup can do in a MAWS-hosted view (verdict in Surprises & Discoveries)
 - [ ] M1a — Bookmarks behind the chrome: the fourth import category, decoder, index store, record version 2, mirror sync, suggestions
 - [ ] M1b — The bar, native folder and overflow menus, the toggle, suggestions in the field, the native-menu e2e seam
 - [ ] M2 — The avatar and the profile popover
@@ -297,7 +297,14 @@ export class ExtensionPopups {
 
 ## Surprises & Discoveries
 
-(To be filled by the executor: S1's verdict with the recorded outputs; anything the code showed that this design did not.)
+- 2026-10-08, S1 verdict: **promote** (MAWS `58125f24`, `spikes/extension-popup/findings.txt`, `results/run.txt` hidden window and `results/run-show.txt` on screen). Electron 44.4.5 (Chrome 152): the fixture popup in a `WebContentsView` of the partition session (`sandbox`, `contextIsolation`, `enablePreferredSizeMode`) loads, reaches its background by `sendMessage` and `connect`, and sizes itself, for MV3 (`[mv3] ping reply: {"value":{"echo":{"ping":1},"fromTab":6,"swSawMessage":true}}`, `preferred size: 344x179 (events: 344x104 344x179)`) and MV2 alike (Electron loads MV2 with a deprecation warning; `[mv2] ping reply: {"value":{"pong":1,"from":"background-page","fromTab":8}}`). M3 builds the popup view as designed.
+- S1: `chrome.tabs.query({ active: true, currentWindow: true })` never answers the page tab: `[]` in a hidden window, and on screen the popup itself (Electron's "active" follows the focused webContents; `tabs.query({})` lists every webContents of the session, all `windowId 0`). The design's expected `[]` holds only off screen, so M3's e2e asserts that the page tab is absent from the answer, not that it is empty. The background also sees the popup as a tab (`sender.tab` set; Chrome leaves it unset). `chrome.windows` is undefined in popups; an MV2 popup has neither `chrome.browserAction` nor `chrome.action`.
+- S1: `preferred-size-changed` fires first at the page's first layout and again as content grows; M3 resizes on every event, never only the first.
+- S1: `chrome.action.onClicked`: no API (`session.extensions` offers load/remove/get; `ServiceWorkerMain` has no extension-event dispatch; CDP `Extensions.triggerAction` is not implemented). An action without a popup is drawn present-but-inert with the tooltip.
+- S1: the popup's `window.open` and `target=_blank` reach `setWindowOpenHandler` on the popup view's own webContents (disposition `foreground-tab`), a same-frame link reaches its `will-navigate`; M3's gating sits on those two hooks. `chrome.runtime.openOptionsPage()` fails ("Could not create an options page.") and creates nothing, so an extension's own settings button that calls it does nothing; loading `options.html` directly in a view works, so `openExtensionPage` is sound.
+- S1: the session's frame preload already runs in every extension document today: popups, options pages, MV2 background pages and offscreen documents. M3's non-http(s) early return in `src/preload/browser.ts` therefore covers all of them, not only the new popups.
+- S1, public extensions (fetched by pinned release URL): Dark Reader 4.9.133's popup (MV3 and MV2) hosts and sizes (276x516) but its background crashes on the absent `chrome.permissions` (E0b's known gap), so it shows "Loading, please wait"; Refined GitHub 26.10 has no popup and its options page loads. A public popup is useful exactly when its background runs; that is E0b's API-gap question, not the popup route's. Candidate Settings copy for M3: "Popups that act on the current page can't see it here."
+
 
 ## Decision Log
 

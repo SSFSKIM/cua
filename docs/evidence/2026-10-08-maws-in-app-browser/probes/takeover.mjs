@@ -8,6 +8,9 @@ import {cell, featureDecision} from '../../../../scripts/accept/maws-features.mj
 import {answerFor} from '../../../../scripts/probe/chrome/original/elicitation.mjs';
 import {startFeaturesPage} from '../../../../scripts/accept/features-page.mjs';
 import {fileURLToPath} from 'node:url';
+// Refuse to run without a MAWS backend: with no CUA_BROWSER_BACKENDS the default selection is not rewritten and
+// cua.getBrowser() could land in the owner's Chrome.
+if (!(process.env.CUA_BROWSER_BACKENDS ?? '').trim()) throw new Error('set CUA_BROWSER_BACKENDS to a MAWS session socket (and CUA_HOME to a scratch home)');
 const CLI = fileURLToPath(new URL('../../../../bin/cua.mjs', import.meta.url));
 const DIR = process.env.MAWS_PROBE_DIR ?? '/tmp/maws-probe'; // the launcher's trigger directory (launch.cjs)
 const sleep = ms => new Promise(r => setTimeout(r, ms));

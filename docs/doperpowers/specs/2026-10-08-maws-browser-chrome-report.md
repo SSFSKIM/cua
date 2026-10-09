@@ -4,6 +4,10 @@ Spec: `docs/doperpowers/specs/2026-10-08-maws-browser-chrome-design.md` (this di
 
 **Status: DONE.** MAWS PR: https://github.com/SSFSKIM/MAWS/pull/6 (against master, not merged); the spec's cua PR: https://github.com/SSFSKIM/cua/pull/101. Commit range: `16006624..95b5b871` (11 milestone commits plus the final fix `7a630cd2` and the ledger sha `95b5b871`; rebased from `5bd2cd57` onto master `16006624` with no conflicts; master's settings 11 and index 6 had not moved, so no renumbering: settings 12, index 7 pinned sha256 `e5dbe799d588c31efa19def80e2c8b54bec78b138b2e1fe3d3c789fb214fce90`, `profiles.json` 2). At PR time master was one commit further, with no change to the version files, and it merges cleanly. The owner's sitting on the real profile is parked (below), not blocked.
 
+## After the owner's sitting (2026-10-09)
+
+The owner passed all eight sitting items. PR #6 was rebased onto master `035ce4f9`, with docs-only conflicts in the ledger (master's placement kept, #90's §4 rows once) and the tracker (both sides kept). No renumbering; no `BrowserTab` literal needed changing. New head `7010f6aa` (code head `18e2247c`, then the ledger and pointer shas `8243dc35` and the e2e URL-wait plus one tracker row `7010f6aa`). Gates: typecheck exit 0; lint exit 0; units `Tests 3 failed | 11003 passed | 1 skipped`, all three in the known flaky `pause-take-over.pty.test.ts` (alone `Tests 6 passed (6)`); e2e browser-chrome `7 passed (26.9s)` alone (it failed while a sibling worktree's e2e took the desktop's focus, since a window blur closes the popup; tracker row); browser-import `6 passed (1.0m)`; browser `8 passed (40.8s)`; browser-cua `5 passed (31.5s)`; browser-comment `13 passed (42.0s)`; build:app exit 0. `gh pr view 6`: MERGEABLE, CLEAN. Not merged.
+
 ## Milestones
 
 - S1 (MAWS `58125f24`): verdict **promote**; reviewed clean by reviewer-medium on opus.

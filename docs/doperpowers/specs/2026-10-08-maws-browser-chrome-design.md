@@ -21,7 +21,8 @@ Design approved by the owner on 2026-10-08 in the cua_repl session (four forks a
 - [x] (2026-10-09 01:57, review clean after one fix) M1b — The bar, native folder and overflow menus, the toggle, suggestions in the field, the native-menu e2e seam
 - [x] (2026-10-09 03:58, review clean after two fixes) M2 — The avatar and the profile popover
 - [x] (2026-10-09 05:43, review clean after one fix) M3 — The extensions action bar, popups and options pages (scope fixed by S1's verdict)
-- [x] (2026-10-09 06:26, whole-branch review clean after one fix; the owner's sitting on the real profile pending) M4 — Acceptance as written, gates, documents, hand-back
+- [x] (2026-10-09 06:26, whole-branch review clean after one fix; the owner's sitting on the real profile passed all eight items) M4 — Acceptance as written, gates, documents, hand-back
+- [x] (2026-10-09 16:45) Rebase after the owner's sitting: MAWS PR #6 rebased onto master `035ce4f9` (P2-A, P2-B, P2-D, P2-E1 landed; P2-C not, so settings 12, index 7, `profiles.json` 2 stand). Conflicts were docs only: the ledger kept master's placement of P2-C's rows and #90's §4 rows once, at code head `18e2247c`; the tracker kept both sides. No `BrowserTab` literal needed `internal: null`, since typecheck was clean. The popup scene's URL read now waits for the load to commit. Gates: typecheck, lint, 11003 units (the pty flake 6/6 alone), e2e browser-chrome 7/7 (alone; it fails while another MAWS e2e takes the desktop's focus, a tracker row), browser-import 6/6, browser 8/8, browser-cua 5/5, browser-comment 13/13, build:app. Head `7010f6aa`, PR MERGEABLE (CLEAN), not merged.
 
 ## Facts this design rests on
 

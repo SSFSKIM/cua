@@ -34,7 +34,9 @@ extensions bar, profile avatar, profile settings as a widget or sidebar tab) are
   (MAWS 46fdc6b9..3bdad848, fix 9be49224..be8e257b; cua 4ae0f10; reviewed clean).
 - [x] (2026-10-08 16:12 PDT) M4 — MAWS: removal of the six tools and the Playwright driver; charter amendments; docs
   (MAWS ef3256b3..a04c83b5, fix 2e08cd75..82bdf2be; reviewed clean).
-- [ ] M5 — Live acceptance as written; plugin release; evidence.
+- [x] (2026-10-08) M5 — Live acceptance as written; evidence (cua b1d802f..3d7a486, against MAWS 82bdf2be then a47603a4):
+  every item without an app session PASS; the inside-MAWS items are BLOCKED with owner steps in
+  `docs/evidence/2026-10-08-maws-in-app-browser.md` (the dispatching session runs that sitting); release after merge.
 
 ## Facts this design rests on
 
@@ -486,7 +488,8 @@ session's socket, which exercises the same backend without the engine.
    the agent cursor is visible in the page; after `end_task` it is hidden. Proven
    by a MAWS e2e case (the seam's `cursorMessages`) and by hand in M5.
 10. The transcript shows, under the `js` call's row: "Navigated to <host>", "Clicked button <label>", "Typed 1
-    character" (for a keyboard `type`; `fill` sets the value by script and is no row), "Screenshot", "Downloaded
+    character" (for key events, e.g. `locator.pressSequentially`, `press` or `cua.keypress`; the vendor's `fill`,
+    `locator.type` and `tab.cua.type` set the value by script and are no row), "Screenshot", "Downloaded
     cua-report.pdf".
 11. `end_task` closes the agent's unmarked tabs; a tab marked handoff stays open and listed. Two sessions inside MAWS
     each create a tab; each session's `listTabs` shows only its own.
@@ -790,6 +793,14 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   label lookup uses `false`, as the press does. A person's `sendInput` click on a parked, unplaced view lands on the
   page. Live (bare Electron on its own userData, real vendor runtime): all eleven harness steps PASS, and an
   unanswered `confirm` closed at 30 s with `false`.
+
+- (2026-10-08, M5 re-run against MAWS a47603a4) The vendor takes every screenshot by screencast (a full harness run: 9
+  `Page.startScreencast`, 0 `Page.captureScreenshot`); exactly one "Screenshot" row per `tab.screenshot()`, none for
+  the vendor's per-cell captures; no cursor in an agent screenshot after a click. A screenshot while the person holds
+  the tab succeeds and leaves control `human` but takes about 1.58 s: the vendor first reads `window.devicePixelRatio`
+  by `Runtime.evaluate` (BS:43869), which MAWS classes as acting and holds then refuses, and the vendor then captures at
+  scale 1 (tech-debt row in cua; an exact-expression exception pinned to the vendor would make it immediate). The
+  vendor's `locator.type` and `tab.cua.type` send no `Input.*` (value by script); `pressSequentially` does.
 
 ## Decision Log
 

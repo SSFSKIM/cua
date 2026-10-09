@@ -53,6 +53,9 @@
 //                                            the trusted services read a value from; untrusted cells see only the
 //                                            vendor's env allowlist (they can still read the directory: the sandbox
 //                                            that would deny them would deny the trusted worker too)
+//   CUA_SECRETS_PROJECT_DIR                  with secrets on and a project (the stdio `cua serve`'s, never the HTTP agent's):
+//                                            the project's store directory, which the trusted services read a key from
+//                                            before the global one
 //   CUA_SECRETS_UNAVAILABLE                  otherwise: why (e.g. secrets_disabled), so the trusted services fail a
 //                                            {{secret:…}} reference with that reason
 // Deliberately never set: NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the
@@ -87,11 +90,12 @@ export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 
 // `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
 // CUA_BROWSER_BACKENDS configured any.
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsUnavailable, ambient = process.env, browserBackends = null}) {
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   if (secretsDir !== undefined && (typeof secretsDir !== 'string' || !isAbsolute(secretsDir))) fail('invalid_secrets_dir', 'the secret store directory must be an absolute path');
+  if (secretsProjectDir !== undefined && (typeof secretsProjectDir !== 'string' || !isAbsolute(secretsProjectDir) || !secretsDir)) fail('invalid_secrets_dir', 'the project secret store directory must be an absolute path beside the global one');
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
   const linux = runtime.manifest.platform === 'linux';
@@ -129,8 +133,10 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
       env.CUA_BROWSER_DEFAULT_INSTANCE = browserBackends.defaultInstance ?? MAWS_INSTANCE_MARKER;
     }
   }
-  if (secretsDir) env[STORE_ENV.dir] = secretsDir;
-  else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
+  if (secretsDir) {
+    env[STORE_ENV.dir] = secretsDir;
+    if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
+  } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }
 

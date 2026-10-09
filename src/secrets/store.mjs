@@ -3,6 +3,13 @@
 // the trusted services (src/services, inside node_repl's trusted worker), which read a value to substitute a
 // {{secret:KEY}} reference, and `cua serve`/`cua secrets`, which list keys and (the CLI) write or remove one file.
 //
+// The store has two tiers (issue #99). The global one is the directory above; a project's is
+// $HOME/.config/claude-secrets/projects/<slug>/<KEY>, the slug being the project's path in the form Claude Code names
+// its ~/.claude/projects/ folders (projectSlug below), and the project the main worktree root of the git repository
+// around a working directory, else that directory (src/secrets/project.mjs). A {{secret:KEY}} reference reads the
+// project's file first and the global one only when the project has none (tieredStore). Each tier is a directory of the
+// same kind, read by the same rules.
+//
 // A value is read only from a regular file owned by this user with mode exactly 0600: it is opened without following a
 // symlink and without blocking (a FIFO is refused, never waited on), checked on the open descriptor, bounded in size
 // and decoded as UTF-8; exactly one trailing newline is dropped (a file written by `echo`). Every refusal is a
@@ -19,13 +26,30 @@ import {join} from 'node:path';
 import {isLabel, isReserved, LABEL_RULE} from './label.mjs';
 
 export const STORE_RELATIVE = join('.config', 'claude-secrets');
-// The trusted worker's launch variables (src/runtime/launch.mjs): the store directory `cua serve` resolved, or why the
-// connection has none (secrets_disabled under CUA_SHIM_SECRETS=off).
-export const STORE_ENV = {dir: 'CUA_SECRETS_DIR', unavailable: 'CUA_SECRETS_UNAVAILABLE'};
+// The trusted worker's launch variables (src/runtime/launch.mjs): the global store directory `cua serve` resolved and,
+// when the connection has a project, that project's directory; or why the connection has none (secrets_disabled under
+// CUA_SHIM_SECRETS=off).
+export const STORE_ENV = {dir: 'CUA_SECRETS_DIR', projectDir: 'CUA_SECRETS_PROJECT_DIR', unavailable: 'CUA_SECRETS_UNAVAILABLE'};
 export const MAX_VALUE_BYTES = 262_144;
+// Claude Code cuts a slug at this length and adds a hash of the whole path, so that long paths stay distinct.
+const SLUG_MAX = 200;
 
 // The store directory for an environment: $HOME's, as the mod resolves it.
 export const storeDir = (env = process.env) => join(env.HOME || homedir(), STORE_RELATIVE);
+
+// A project's path as Claude Code names its folder under ~/.claude/projects/: every character other than an ASCII
+// letter or digit becomes '-' (/Users/me/repo is -Users-me-repo), and a slug longer than 200 characters keeps its first
+// 200 and gains '-' and a base-36 hash of the path. The mod (hooks/mods/secrets.tsx) carries the same function.
+export function projectSlug(path) {
+  const slug = path.replace(/[^a-zA-Z0-9]/g, '-');
+  if (slug.length <= SLUG_MAX) return slug;
+  let hash = 0;
+  for (let i = 0; i < path.length; i++) hash = ((hash << 5) - hash + path.charCodeAt(i)) | 0;
+  return `${slug.slice(0, SLUG_MAX)}-${Math.abs(hash).toString(36)}`;
+}
+
+// The store directory of a project (an absolute path) for an environment.
+export const projectStoreDir = (project, env = process.env) => join(storeDir(env), 'projects', projectSlug(project));
 
 const SENTENCES = {
   invalid_label: () => LABEL_RULE,
@@ -134,11 +158,32 @@ export function fileStore({dir}) {
   };
 }
 
-// The secrets side of one connection in `cua serve`: the store's directory (handed to the trusted worker) and its key
-// listing for secrets_list, or why the connection has none. The listing is the model's, so reserved keys (device
-// credentials, label.mjs) are left out of it.
-export function connectionSecrets({enabled, env = process.env}) {
+// The two tiers read as one: a key is read from the project's store, and from the global one only when the project's
+// has no such key (not_found). Any other refusal of the project's file stands, so a broken project file never falls
+// through to a global value. `list` is every key either tier holds, once.
+export function tieredStore({project, global}) {
+  return {
+    dir: global.dir,
+    projectDir: project.dir,
+    async read(key) {
+      try { return await project.read(key); } catch (error) {
+        if (error?.code !== 'not_found') throw error;
+      }
+      return global.read(key);
+    },
+    async list() {
+      return [...new Set([...await project.list(), ...await global.list()])].sort();
+    },
+  };
+}
+
+// The secrets side of one connection in `cua serve`: the store's directories (handed to the trusted worker) and its
+// key listing for secrets_list, or why the connection has none. `project` is the project `cua serve` was started in
+// (src/secrets/project.mjs); without one (the HTTP agent that serves remote clients) the connection has the global
+// tier only. The listing is the model's, so reserved keys (device credentials, label.mjs) are left out of it.
+export function connectionSecrets({enabled, env = process.env, project = null}) {
   if (!enabled) return {unavailable: {code: 'secrets_disabled', message: 'secret storage is turned off for this server (CUA_SHIM_SECRETS=off)'}};
-  const store = fileStore({dir: storeDir(env)});
-  return {dir: store.dir, list: async () => (await store.list()).filter(key => !isReserved(key))};
+  const global = fileStore({dir: storeDir(env)});
+  const store = project ? tieredStore({project: fileStore({dir: projectStoreDir(project, env)}), global}) : global;
+  return {dir: store.dir, ...(project ? {projectDir: store.projectDir} : {}), list: async () => (await store.list()).filter(key => !isReserved(key))};
 }

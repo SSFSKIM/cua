@@ -97,6 +97,13 @@ test('the secret store directory reaches the launch environment only as an expli
   const without = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT}).env;
   assert.equal(Object.keys(without).some(k => k.startsWith('CUA_SECRETS_')), false);
   assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsDir: 'relative/dir'}), err => err.code === 'invalid_secrets_dir');
+  // The project's directory travels beside the global one, never alone.
+  const projectDir = `${dir}/projects/-Users-u-repo`;
+  const tiered = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, secretsDir: dir, secretsProjectDir: projectDir}).env;
+  assert.equal(tiered.CUA_SECRETS_DIR, dir);
+  assert.equal(tiered.CUA_SECRETS_PROJECT_DIR, projectDir);
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsDir: dir, secretsProjectDir: 'relative/dir'}), err => err.code === 'invalid_secrets_dir');
+  assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, secretsProjectDir: projectDir}), err => err.code === 'invalid_secrets_dir');
 });
 
 test('the session id becomes a path segment, so only plain identifiers are accepted', t => {

@@ -37,6 +37,7 @@ import {randomUUID} from 'node:crypto';
 import {createInterface} from 'node:readline';
 import {TaskLifecycle} from './task.mjs';
 import {openConnection} from './connection.mjs';
+import {projectRoot} from '../secrets/project.mjs';
 import {connectionTarget} from './target.mjs';
 import {deviceDirectory} from '../remote/directory.mjs';
 import {
@@ -373,9 +374,10 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // finds it); the hosts close with the connection. The connection's close waits for a readiness
 // listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime
 // teardown, or a listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome` and `listBackends`
-// are openConnection's seams, forwarded unchanged.
+// are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
+// Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
-  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends}) {
+  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, project = projectRoot()}) {
   const settings = settingsFrom(env, {devices: true});
   const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
   try {
@@ -395,7 +397,7 @@ export async function serve({home, env = process.env, input = process.stdin, out
   try {
     await browserBackends?.waitForHellos();
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
-      prepareLaunch, chrome, listBackends, devices: deviceDirectory({env}), browserBackends});
+      prepareLaunch, chrome, listBackends, devices: deviceDirectory({env}), browserBackends, project});
     if (signalled) connection.close('signal');
     result = await connection.closed;
   } finally {

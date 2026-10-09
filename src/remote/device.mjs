@@ -44,6 +44,8 @@ export function relayEndpoint(record) {
 
 // The key a client stores this device's client credential under with the cua plugin's `/secret` (hooks/mods/secrets.tsx,
 // ~/.config/claude-secrets/<KEY>). Keys are [A-Za-z_][A-Za-z0-9_]* and a device id is base64url, so '-' becomes '_'.
+// The key is reserved (label.mjs), and reserved keys live in the global tier only: the mod and `cua secrets` store them
+// there whatever project they run in, and the device directory reads them from there, so devices have no project tier.
 export const clientSecretKey = deviceId => `CUA_DEVICE_${deviceId.replaceAll('-', '_')}`;
 
 export function readDevice(home) {

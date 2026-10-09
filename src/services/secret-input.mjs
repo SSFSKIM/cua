@@ -5,7 +5,7 @@
 // carries a cause, a vendor payload or anything derived from a value. The trusted worker returns a rejection's message
 // to model code, so nothing here logs either.
 import {isAbsolute} from 'node:path';
-import {SecretStoreError, STORE_ENV, fileStore} from '../secrets/store.mjs';
+import {SecretStoreError, STORE_ENV, fileStore, tieredStore} from '../secrets/store.mjs';
 import {LABEL_RULE, RESERVED_PREFIX, isReserved} from '../secrets/label.mjs';
 
 export const NOTHING_ENTERED = 'nothing was entered';
@@ -75,11 +75,17 @@ export function readFailure(error, label) {
 // After the value was read and handed to the vendor: a fixed classification of what went wrong, never its text.
 export const inputFailed = (what, label, kind) => new SecretInputError('secret_input_failed', `${what} with secret "${label}" failed (${kind}) after the secret was read; it may have been partly entered. The runtime's error is withheld because it can contain the secret`);
 
-// The store reader and the launch's reason there is none, as the trusted worker's environment configures them.
+// The store reader and the launch's reason there is none, as the trusted worker's environment configures them. With a
+// project directory too, a key is read from the project's store first and from the global one when the project has none.
 export function secretsFromEnv(env) {
   const dir = env[STORE_ENV.dir];
+  const projectDir = env[STORE_ENV.projectDir];
   const reason = env[STORE_ENV.unavailable];
-  if (typeof dir === 'string' && isAbsolute(dir) && !reason) return {secrets: fileStore({dir}), secretsUnavailable: null};
+  if (typeof dir === 'string' && isAbsolute(dir) && !reason) {
+    const global = fileStore({dir});
+    const secrets = typeof projectDir === 'string' && isAbsolute(projectDir) ? tieredStore({project: fileStore({dir: projectDir}), global}) : global;
+    return {secrets, secretsUnavailable: null};
+  }
   const unconfigured = async () => { throw new SecretStoreError('not_configured'); };
   return {
     secrets: {read: unconfigured, list: unconfigured},

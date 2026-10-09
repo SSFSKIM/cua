@@ -1019,4 +1019,33 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+(2026-10-08, at the pull requests.) The route works as designed: MAWS's main process serves the extension's
+primitives on one 0700 socket per app session, cua's host connects to it in client mode, and the pinned vendor
+runtime drives MAWS tabs with no vendor change and no cua host behaviour change for Chrome. Against a MAWS built from
+the branch and the real vendor runtime, every acceptance item that needs no app session passed (the terminal harness
+11/11 with two-session isolation, the selection probe 11/11, reconnect after a MAWS relaunch in about 2 s, the takeover,
+cursor, panel-opening and replay e2e cases, the cookie-jar probe); the items that need a session whose engine loads the
+0.5.0 plugin (acceptance 1, 4's deliverable, 8-10 by hand, 11 from the UI, 13 with a real engine, 14) are BLOCKED for
+the owner's sitting, whose steps are in `docs/evidence/2026-10-08-maws-in-app-browser.md` (a session loads the plugin
+with `--plugin-dir` without touching the installed one). The release (merge, marketplace, plugin cache) follows the
+merge.
+
+What the milestone reviews could not see and the whole-branch review did: the vendor's default screenshot is a
+screencast, not `Page.captureScreenshot`, so every rule keyed on the latter (cursor hiding, the screenshot row, the
+reading class) had quietly missed the common path; and the command filter left the partition's cookie jar reachable
+through `Network.*` to any process holding the socket path. Both are fixed. The lesson for a backend that serves a
+vendor: classify by what the vendor actually sends (a recording proxy in the harness found the screencast at once),
+not by the CDP method a reader would expect.
+
+Measured against the pinned vendor and recorded as revised acceptance wording: a takeover refusal reaches the agent as
+the vendor's own locator deadline after about 3 s (the person is protected either way); `fill` and `type` set values by
+script and are no "Typed" row; a screenshot during a person's hold takes about 1.6 s because the vendor's
+`devicePixelRatio` read is classed as acting (tech debt). Owner decisions taken during execution: activity rows stay in
+view after a turn folds and survive a reload (a 500-entry buffer per session), and the Browser panel opens on an
+agent's first action as E4c's did. Out of scope and carried as residue: activity rows across an app restart; the
+`test:live` W1 case that asserts an on-disk record exactly while engine 2.1.295 adds `delivery_id`.
+
+Process: the astra rung was at its usage limit for the whole run, so every review ran `reviewer-high` on opus. The
+harness's hand-back enforcement ended this controller's run several times while reviewers worked; the ledger and the
+committed spec carried every resume without loss.
+

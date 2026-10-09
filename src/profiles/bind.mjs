@@ -29,8 +29,10 @@
 // stands.
 import {ACCESS_NOTE} from './chrome.mjs';
 import {effectiveRoute} from '../chrome/route.mjs';
+import {isMawsInstance} from '../chrome/extension.mjs';
 
-export const isChromeBackend = backend => backend?.family === 'chrome';
+// A MAWS backend reports family chrome (its pages are Chromium) but is no Chrome profile's: bind and readiness ignore it.
+export const isChromeBackend = backend => backend?.family === 'chrome' && !isMawsInstance(backend.instanceId);
 
 // Instance id -> the directory whose store records it, or null when several directories' stores record it.
 export function placements(stores) {

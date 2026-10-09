@@ -293,3 +293,85 @@ test('a reserved key in lower or mixed case is refused too: the store\'s file sy
     assert.deepEqual(reads, []);
   }
 });
+
+// ---- the default selection in MAWS (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "Discovery") ----
+// cua.getBrowser() sends get_default_browser {}, getBrowser({url}) get_browser_for_url {url} (oai_js_cua
+// create_browser_api.js `l`); the vendor answers either from its own preference and falls back to any extension
+// (browser-service.mjs fL, hL). With CUA_BROWSER_DEFAULT_INSTANCE the wrapper turns them into get_browser for that
+// instance's browser id, so an unqualified selection is the in-app browser or the vendor's own unavailable error.
+
+const LISTING = [
+  {id: '1', type: 'extension', family: 'chrome', name: 'cua', metadata: {extensionInstanceId: 'chrome-inst'}},
+  {id: '2', type: 'extension', family: 'chrome', name: 'cua', profileName: 'MAWS', metadata: {extensionInstanceId: 'maws:app-1'}},
+];
+function selectionHarness({listing = LISTING, defaultInstance = 'maws:app-1'} = {}) {
+  const received = [];
+  const vendor = {handleRpc: async request => {
+    received.push(structuredClone(request));
+    const {type, id} = request.params ?? {};
+    if (type === 'list_browsers') return listing;
+    if (type === 'get_browser') {
+      const found = listing.find(b => b.id === id);
+      if (!found) throw new Error(`Browser is not available: ${id}`);
+      return request.method === 'executeWithRecovery' ? {ok: true, value: found} : found;
+    }
+    return {echo: type};
+  }};
+  const service = createBrowserService({loadVendor: async () => vendor, vendorVersion: async () => PINNED_VENDOR_VERSION, secrets: {read: async () => assert.fail('no secret is read')}, defaultInstance});
+  return {service, received};
+}
+
+test('an unqualified selection (default or by URL) is rewritten to the default instance\'s browser before the vendor sees it', async () => {
+  for (const params of [{type: 'get_default_browser'}, {type: 'get_browser_for_url', url: 'https://example.com/'}, {type: 'get_default_browser', client_timeout_ms: 30000}]) {
+    for (const method of ['execute', 'executeWithRecovery']) {
+      const {service, received} = selectionHarness();
+      const result = await service.handleRpc({method, params});
+      assert.deepEqual(received.map(r => r.params.type), ['list_browsers', 'get_browser']);
+      assert.deepEqual(received[1], {method, params: {type: 'get_browser', id: '2', ...(params.client_timeout_ms ? {client_timeout_ms: params.client_timeout_ms} : {})}});
+      assert.equal((method === 'execute' ? result : result.value).metadata.extensionInstanceId, 'maws:app-1');
+    }
+  }
+});
+
+test('with no maws: browser listed (MAWS down) an unqualified selection fails with the vendor\'s unavailable error, never another browser', async () => {
+  for (const defaultInstance of ['maws:app-1', 'maws:']) {
+    const {service, received} = selectionHarness({listing: [LISTING[0]], defaultInstance});
+    await assert.rejects(service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}}), new RegExp(`^Error: Browser is not available: ${defaultInstance}$`));
+    assert.deepEqual(received.at(-1).params, {type: 'get_browser', id: defaultInstance});
+  }
+});
+
+test('the default resolves at selection time: the exact instance first, else the first listed maws: browser (the marker before any hello, or a known id not listed)', async () => {
+  const late = {id: '3', type: 'extension', family: 'chrome', name: 'cua', profileName: 'MAWS', metadata: {extensionInstanceId: 'maws:app-late'}};
+  const cases = [
+    {defaultInstance: 'maws:', listing: [LISTING[0], late], expected: '3'},
+    {defaultInstance: 'maws:app-1', listing: [LISTING[0], late], expected: '3'},
+    {defaultInstance: 'maws:app-1', listing: [late, ...LISTING], expected: '2'},
+    {defaultInstance: 'maws:', listing: [LISTING[0], {...late, type: 'iab'}], expected: 'maws:'},
+  ];
+  for (const {defaultInstance, listing, expected} of cases) {
+    const {service, received} = selectionHarness({listing, defaultInstance});
+    await service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}}).catch(() => {});
+    assert.deepEqual(received.at(-1).params, {type: 'get_browser', id: expected}, JSON.stringify({defaultInstance, expected}));
+  }
+});
+
+test('a selection that names a browser, kind, family or instance, and every other command, passes untouched', async () => {
+  const {service, received} = selectionHarness();
+  const requests = [
+    {method: 'execute', params: {type: 'get_browser', id: '1'}},
+    {method: 'execute', params: {type: 'list_browsers'}},
+    {method: 'execute', params: {type: 'create_tab', browser_id: '1'}},
+  ];
+  for (const request of requests) {
+    await service.handleRpc(request);
+    assert.deepEqual(received.at(-1), request);
+  }
+  assert.equal(received.length, requests.length, 'nothing listed on the side');
+});
+
+test('without a default instance (no MAWS backend configured) unqualified selections pass untouched', async () => {
+  const {service, received} = selectionHarness({defaultInstance: null});
+  await service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}});
+  assert.deepEqual(received, [{method: 'execute', params: {type: 'get_default_browser'}}]);
+});

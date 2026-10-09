@@ -12,10 +12,13 @@
 // mapping, directory-map.mjs), and nothing stores it. The cell's call
 // carries the sandbox state CUA_SHIM_SANDBOX picks (src/runtime/sandbox.mjs), as `cua serve`'s do: the vendor's
 // labelling copies each profile's extension store to a temp directory, which node_repl's default sandbox refuses.
+// A MAWS backend (src/chrome/client-mode.mjs) reports family chrome too; the cell recognises it by its instance id
+// prefix (maws:) and lets nothing of it out: it is never a Chrome profile's.
 import {randomUUID} from 'node:crypto';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
+import {isMawsInstance} from '../chrome/extension.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {spawnUpstream} from '../mcp/upstream.mjs';
@@ -31,6 +34,7 @@ try {
   __out.backends = [];
   for (const b of list) {
     if (b?.type !== "extension") continue;
+    if (typeof b.metadata?.extensionInstanceId === "string" && b.metadata.extensionInstanceId.startsWith("maws:")) continue;
     if (b.family !== "chrome") { __out.backends.push({family: typeof b.family === "string" ? (/^[a-z]{1,20}$/.test(b.family) ? b.family : "other") : null}); continue; }
     const entry = {instanceId: typeof b.metadata?.extensionInstanceId === "string" ? b.metadata.extensionInstanceId : null, family: "chrome", profileName: typeof b.profileName === "string" && b.profileName ? b.profileName : null, tabCount: null};
 ${tabCounts ? '    try { const tabs = await cua.listTabs({browser: b.id, emit: false}); entry.tabCount = Array.isArray(tabs) ? tabs.length : null; } catch {}\n' : ''}    __out.backends.push(entry);
@@ -55,8 +59,9 @@ function parseBackends(result) {
   let payload;
   try { payload = JSON.parse(line.slice(MARKER.length + 1)); } catch { listingFailed('unreadable listing'); }
   if (payload?.error || !Array.isArray(payload?.backends)) listingFailed('the vendor listing failed');
-  // A non-Chrome backend keeps only its family, whatever else the payload carries.
-  return payload.backends.map(b => {
+  // A non-Chrome backend keeps only its family, whatever else the payload carries; a MAWS backend (the cell already
+  // skips it) is no Chrome profile's and is dropped.
+  return payload.backends.filter(b => !isMawsInstance(b?.instanceId)).map(b => {
     if (b?.family !== 'chrome') return typeof b?.family === 'string' ? {family: b.family} : {};
     if (typeof b.instanceId !== 'string' || !INSTANCE_ID.test(b.instanceId)) listingFailed('a Chrome backend without a usable extension instance id');
     return {instanceId: b.instanceId, family: 'chrome', ...(typeof b.profileName === 'string' ? {profileName: b.profileName} : {}), ...(Number.isInteger(b.tabCount) ? {tabCount: b.tabCount} : {})};

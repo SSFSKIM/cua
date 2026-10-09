@@ -24,7 +24,10 @@
 // only. `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
 // directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
-// passes one; the HTTP agent never does, so a device never drives a third one through itself.
+// passes one; the HTTP agent never does, so a device never drives a third one through itself. `browserBackends` (the
+// stdio `serve`'s MAWS backends, src/chrome/client-mode.mjs) puts their hosts first in the launch's backend list with
+// the first one's instance as the default, lists them ahead of the registered profiles in profiles_list, and tells the
+// model so in profiles_list's description.
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
@@ -44,7 +47,7 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env, extensionId: extensionIdFor(chromeRoute(home))}),
-  listBackends, onWithdrawn, probeUserns}) {
+  listBackends, onWithdrawn, probeUserns, browserBackends = null}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
@@ -81,6 +84,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       runtime, home, sessionId, ambient: env, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsUnavailable: secrets.unavailable?.code,
+      browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
     }));
     assertSandboxFits(sandbox, launch);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
@@ -92,10 +96,10 @@ export async function openConnection({home, env = process.env, sessionId, input,
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
-      return list;
+      return [...(browserBackends?.entries() ?? []), ...list];
     }};
     server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, launch.cwd), onWithdrawn, devices, ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, launch.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...serverSettings});
   } catch (error) {
     await release();
     throw error;

@@ -2,6 +2,27 @@
 
 ## Open
 
+- **2026-10-08 — MAWS in-app browser: what the live acceptance left (minor, issue #13).** (a) A refused action on a
+  tab the person holds reaches the agent's locator as the vendor's `Playwright selector deadline exceeded … action_failed`
+  at its 3 s budget, never as MAWS's "A person is using this tab; wait and retry": the vendor retries the refused step
+  until its own deadline (README "For MAWS" says so). Making the cause visible would take a MAWS hint the vendor
+  surfaces (none found in the pinned service) or a shorter vendor budget. (b) The vendor's `fill`, `locator.type` and
+  `tab.cua.type` set the value by script, so MAWS's transcript shows no "Typed" row for them (only key events, e.g.
+  `pressSequentially`, yield one); telling them from any other evaluate would need page-script inspection, which the
+  activity design avoids. (c) A `tab.screenshot()` on a tab the person
+  holds takes about 1.6 s: the vendor first reads `window.devicePixelRatio` by `Runtime.evaluate`, which MAWS's
+  takeover gate holds as acting and refuses after 1.5 s (the vendor then captures at scale 1; control stays the
+  person's). An exact-expression reading exception in MAWS's `cua/filter.ts`, pinned to the 0.1.1 vendor, would make
+  it immediate. (d) The
+  inside-MAWS half of the acceptance (items 1, 2's badge, 4's deliverable, 8-10 by hand, 11 with two app sessions,
+  13 with a real engine, 14 with a real Chrome profile) awaits the owner's sitting:
+  `docs/evidence/2026-10-08-maws-in-app-browser.md`, "The inside-MAWS sitting".
+
+- **2026-10-08 — MAWS client mode: small leftovers (minor, issue #13).** (a) Each `cua serve` with
+  `CUA_BROWSER_BACKENDS` appends to its own `chrome/logs/<name>-<pid>.log`, one file per process lifetime; nothing
+  prunes them (the Chrome route's logs are per profile and bounded in number). (b) When `profiles.json` does not parse,
+  `profiles_list` answers `profiles_invalid` and the `maws` entry, which needs no registry, is lost with it.
+
 - **2026-10-08 — Viewport capability: what is not pinned yet (minor, issue #82).** (a) The `accept-chrome --route cua`
   viewport cell (800x600 set, screenshot pixel size, reset) has not run live; it needs the owner's loaded cua
   extension. Whether the service's screenshot path returns exactly the override's size (no downscale) is unobserved.

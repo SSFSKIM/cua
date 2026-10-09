@@ -1,5 +1,6 @@
-// One self-contained loopback document for linux-chrome-features.mjs. Like chrome-page.mjs's serveDocuments,
-// it binds an ephemeral 127.0.0.1 port, refuses any other Host, and never permits caching or external resources.
+// One self-contained loopback document for linux-chrome-features.mjs and maws-features.mjs, and the /popup document its
+// #popup button opens. Like chrome-page.mjs's serveDocuments, it binds an ephemeral 127.0.0.1 port, refuses any other
+// Host, and never permits caching or external resources.
 import {createServer} from 'node:http';
 import {createHash, randomBytes} from 'node:crypto';
 
@@ -15,7 +16,11 @@ document.getElementById('confirm').addEventListener('click', () => {
 document.getElementById('file').addEventListener('change', () => {
   const file = document.getElementById('file').files[0];
   document.getElementById('picked').textContent = file ? \`\${file.name}:\${file.size}\` : 'none';
-});`;
+});
+document.getElementById('submit').addEventListener('click', () => {
+  document.getElementById('state').textContent = 'submitted:' + document.getElementById('name').value;
+});
+document.getElementById('popup').addEventListener('click', () => { window.open('/popup'); });`;
 const SCRIPT_HASH = createHash('sha256').update(SCRIPT).digest('base64');
 export const CSP = `default-src 'none'; script-src 'sha256-${SCRIPT_HASH}'; style-src 'none'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`;
 const html = marker => `<!doctype html>
@@ -29,14 +34,23 @@ const html = marker => `<!doctype html>
 <p id="state">waiting</p>
 <input id="file" type="file">
 <p id="picked">waiting</p>
+<input id="name" type="text">
+<button id="submit" type="button">Submit</button>
+<button id="popup" type="button">Popup</button>
 </main><script>${SCRIPT}</script></body></html>
 `;
+const popupHtml = marker => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>CUA browser features popup</title></head>
+<body><p id="marker">${marker}-popup</p></body></html>
+`;
+const POPUP_CSP = "default-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'";
 const HEADERS = {'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff'};
 
 export async function startFeaturesPage() {
   const documentMarker = `cua-accept-features-${randomBytes(6).toString('hex')}`;
   const counts = {total: 0, served: 0, refused: 0};
   const body = Buffer.from(html(documentMarker));
+  const popup = Buffer.from(popupHtml(documentMarker));
   let expectedHost;
   const server = createServer((req, res) => {
     counts.total++;
@@ -45,19 +59,20 @@ export async function startFeaturesPage() {
       res.writeHead(421, {...HEADERS, 'content-type': 'text/plain'}).end('misdirected\n');
       return;
     }
-    if (req.method !== 'GET' || !['/', '/report.pdf'].includes(req.url)) {
+    if (req.method !== 'GET' || !['/', '/report.pdf', '/popup'].includes(req.url)) {
       counts.refused++;
       res.writeHead(404, {...HEADERS, 'content-type': 'text/plain'}).end('not found\n');
       return;
     }
     counts.served++;
     const download = req.url === '/report.pdf';
+    const document = req.url === '/popup' ? popup : body;
     res.writeHead(200, {...HEADERS,
       'content-type': download ? 'application/pdf' : 'text/html; charset=utf-8',
-      'content-length': download ? REPORT_BODY.length : body.length,
-      ...(download ? {'content-disposition': 'attachment; filename="cua-report.pdf"'} : {'content-security-policy': CSP}),
+      'content-length': download ? REPORT_BODY.length : document.length,
+      ...(download ? {'content-disposition': 'attachment; filename="cua-report.pdf"'} : {'content-security-policy': req.url === '/popup' ? POPUP_CSP : CSP}),
     });
-    res.end(download ? REPORT_BODY : body);
+    res.end(download ? REPORT_BODY : document);
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   expectedHost = `127.0.0.1:${server.address().port}`;

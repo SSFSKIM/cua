@@ -6,7 +6,7 @@ import {parseArgs} from 'node:util';
 import {execFile, spawn} from 'node:child_process';
 import {hostname} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {defaultHome} from './runtime/layout.mjs';
+import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
@@ -32,6 +32,7 @@ import {isPermissionError, mapExtensionDirectories} from './profiles/directory-m
 import {chooseVendorRoute, registerCuaHost, registerHost, unregisterCuaHost, unregisterVendorHost} from './chrome/registration.mjs';
 import {chromeRoute, effectiveRoute, extensionIdFor} from './chrome/route.mjs';
 import {CUA_EXTENSION_ID, CUA_HOST_NAME} from './chrome/extension.mjs';
+import {configuredBackends, startClientBackends} from './chrome/client-mode.mjs';
 
 // The usage text names this platform's archive kind and default home, and the service manager that runs an installed
 // agent (agent install, uninstall, status): launchd on macOS, the systemd user manager on Linux. The console check is
@@ -551,7 +552,8 @@ async function pickBackend(list, reason, nonChromeExcluded, {staleBinding, route
   } finally { rl.close(); }
 }
 
-const readinessLine = (p, route) => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${p.chromeProfileDirectory.padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p, {route})}`;
+// A MAWS backend's line has no Chrome directory (—).
+const readinessLine = (p, route) => `${p.key.padEnd(12)} ${(p.ready ? 'ready' : 'not ready').padEnd(10)} ${(p.chromeProfileDirectory ?? '—').padEnd(12)} ${p.ready ? `extension instance ${p.extensionInstanceId}` : reasonText(p, {route})}`;
 // The command as the user could paste it; it runs without a shell (execFile).
 const shellWord = word => /^[A-Za-z0-9_./=:-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
 // A detached opener (Linux's google-chrome, which becomes the browser itself when none runs) is done once it has
@@ -564,6 +566,18 @@ export const runOpen = (command, args, {detached = false} = {}) => detached
   })
   : new Promise(resolve => execFile(command, args, {encoding: 'utf8', timeout: 30_000}, (error, _stdout, stderr) =>
     resolve({code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stderr: stderr || (error && typeof error.code !== 'number' ? error.message : '')})));
+
+// The MAWS backends CUA_BROWSER_BACKENDS configures, as profiles_list lists them (src/chrome/client-mode.mjs): this
+// process connects to each with its own host, waits up to 5 s for the hellos, and closes them again.
+async function mawsEntries(home) {
+  const paths = configuredBackends(process.env);
+  if (!paths.length) return [];
+  const backends = startClientBackends({home: realHome(home), paths});
+  try {
+    await backends.waitForHellos();
+    return backends.entries();
+  } finally { await backends.close(); }
+}
 
 async function profiles(args) {
   const [command, ...rest] = args;
@@ -589,10 +603,12 @@ async function profiles(args) {
   if (command === 'list' || command === 'bind' || command === 'open') sandboxModeFrom(process.env);
   if (command === 'list') {
     const {values} = parsed({}, 0);
-    const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends: () => {
+    const maws = await mawsEntries(home);
+    const {profiles: registered, listingError} = await profileReadiness({home, chrome, listBackends: () => {
       if (!values.json) process.stderr.write('checking the live Chrome extension backends through the runtime (one bounded launch)...\n');
       return listLiveBackends({home, runtime: resolveRuntime({home}), tabCounts: false});
     }});
+    const list = [...maws, ...registered];
     const leftover = listingError?.code === 'runtime_teardown_unconfirmed';
     if (values.json) { print({ok: !leftover, profiles: list, ...(listingError ? {listingError: listingError.code} : {})}); return leftover ? 1 : 0; }
     if (listingError) process.stderr.write(`cua: the live Chrome extension backends could not be listed (${listingError.code}: ${listingError.message})\n`);

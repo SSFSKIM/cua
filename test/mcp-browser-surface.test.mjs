@@ -314,3 +314,39 @@ test('secrets_list teaches the reference on both platforms; on Linux without set
     assert.deepEqual(tool.annotations, SECRETS_LIST_TOOL.annotations);
   }
 });
+
+// ---- MAWS (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "profiles_list") ----------------------
+
+const MAWS_RULE = '- In MAWS: cua.getBrowser() with no id is this session\'s in-app browser (key maws). Use a Chrome profile only when the user names one.';
+
+test('with a MAWS backend configured, profiles_list lists maws ahead of the profiles and its description says the in-app browser is the default, under the cap', async () => {
+  const entries = [{key: 'maws', ready: true, extensionInstanceId: 'maws:app-1'}, ...PROFILES.slice(0, 1)];
+  for (const {platform, surfaces, devices} of COMBINATIONS.filter(c => c.surfaces.includes('browser'))) {
+    const label = `${platform} ${surfaces.join()}${devices ? ' devices' : ''}`;
+    const h = harness({server: {surfaces, platform, devices: devices ? {} : null, inAppBrowser: true, profiles: {list: () => entries}}});
+    await initialized(h);
+    const list = h.client.request('tools/list', {});
+    h.upstream.reply(await h.upstream.nextRequest('tools/list'), {tools: UPSTREAM_TOOLS});
+    const tool = (await list.response).result.tools.find(t => t.name === 'profiles_list');
+    const lines = tool.description.split('\n');
+    const first = lines.findIndex(line => line.startsWith('- Give cua.getBrowser'));
+    assert.equal(lines[first], '- Give cua.getBrowser({extensionInstanceId}) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again.', `${label}: the first rule loses its last sentence`);
+    assert.equal(lines[first + 1], MAWS_RULE, label);
+    assert.doesNotMatch(tool.description, /Never pick or bind a profile for the user/, label);
+    assert.ok(tool.description.length <= DESCRIPTION_CAP, `${label}: ${tool.description.length}`);
+    const response = await h.client.call('profiles_list').response;
+    assert.deepEqual(structured(response).profiles, [{key: 'maws', ready: true, extensionInstanceId: 'maws:app-1'}, {key: 'personal', ready: true, extensionInstanceId: 'inst-a'}]);
+  }
+  const plain = harness({server: {surfaces: ['browser'], profiles: {list: () => []}}});
+  const description = (await toolsOf(plain)).find(t => t.name === 'profiles_list').description;
+  assert.ok(!description.includes('In MAWS'), 'without a MAWS backend the description is unchanged');
+});
+
+test('maws unreachable reads as not ready with the reason and the step, never with an instance id', async () => {
+  const h = harness({server: {surfaces: ['browser'], inAppBrowser: true, profiles: {list: () => [{key: 'maws', ready: false, reason: 'maws_unreachable'}]}}});
+  await initialized(h);
+  const response = await h.client.call('profiles_list').response;
+  const {guidance, ...fields} = structured(response);
+  assert.deepEqual(fields.profiles, [{key: 'maws', ready: false, reason: 'maws_unreachable'}]);
+  assert.match(guidance, /^maws is not ready \(maws_unreachable\): MAWS is not running or this session's browser socket is gone; start MAWS, then call profiles_list again\./);
+});

@@ -27,6 +27,20 @@
 // envelope {ok:false, error} that executeWithRecovery returns for recovery errors (browser-service.mjs X2). A
 // substituted call that fails on either becomes one fixed, bounded diagnostic classified by the vendor's error class
 // and its enumerated reason, never its text; unsubstituted calls keep the vendor's own result and errors.
+//
+// The default selection in MAWS (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "Discovery"). With
+// CUA_BROWSER_DEFAULT_INSTANCE in the launch environment (`cua serve` sets it to its first MAWS backend's instance id,
+// src/runtime/launch.mjs), a selection that names no browser, kind, family or instance (cua.getBrowser() sends
+// get_default_browser {}, getBrowser({url}) get_browser_for_url {url}: oai_js_cua create_browser_api.js) becomes
+// get_browser for a browser resolved at selection time from the vendor's own list_browsers: the one whose instance id
+// equals the variable, else the first whose instance id starts with maws: (the variable is the bare marker `maws:`
+// when no hello came before launch, and a known id can be missing while another session's process is not listed here
+// at all: only this process's client-mode hosts carry that prefix). The vendor's selectors fall back from a missing
+// preferred instance to any extension (browser-service.mjs fL, hL), which would land the agent in the user's Chrome
+// while MAWS is away; with no maws: browser listed the rewrite asks for the variable itself as the id, so the vendor
+// answers its own "Browser is not available" and the selection never reaches a Chrome profile.
+// A selection naming a browser (get_browser {id}: an id, a kind, a family, or the instance's id the client resolved)
+// passes untouched.
 import {readFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -44,6 +58,10 @@ const isIndex = value => Number.isInteger(value) && value >= 0;
 const isNullableIndex = value => value === null || isIndex(value);
 const isPositiveInt = value => Number.isInteger(value) && value > 0;
 const SERVICE_METHODS = ['execute', 'executeWithRecovery'];
+const UNQUALIFIED_SELECTIONS = ['get_default_browser', 'get_browser_for_url'];
+// MAWS's instances (src/chrome/extension.mjs isMawsInstance; not imported: the trusted worker loads only modules under
+// src/services and src/secrets).
+const isMawsInstance = id => typeof id === 'string' && id.startsWith('maws:');
 const REQUEST_KEYS = ['method', 'params'];
 
 const FILL = {
@@ -127,13 +145,34 @@ function rejectionKind(error) {
 }
 const envelopeKind = details => RECOVERY_REASONS.has(details?.reason) ? `recovery:${details.reason}` : 'recovery';
 
+// An unqualified selection to rewrite (see the header), or null.
+function unqualifiedSelection(request) {
+  if (request === null || typeof request !== 'object' || !SERVICE_METHODS.includes(request.method)) return null;
+  const params = request.params;
+  if (params === null || typeof params !== 'object' || !UNQUALIFIED_SELECTIONS.includes(params.type)) return null;
+  return {method: request.method, clientTimeout: isPositiveInt(params.client_timeout_ms) ? params.client_timeout_ms : undefined};
+}
+
 // `loadVendor` resolves the vendor service module; `vendorVersion` its package version (or null); `secrets` reads a
-// label's value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store.
-export function createBrowserService({loadVendor, vendorVersion, secrets, secretsUnavailable = null}) {
+// label's value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store;
+// `defaultInstance` the extension instance an unqualified selection is rewritten to (null: none is).
+export function createBrowserService({loadVendor, vendorVersion, secrets, secretsUnavailable = null, defaultInstance = null}) {
   let vendor = null;
   const vendorService = () => (vendor ??= loadVendor());
 
+  async function selectDefault({method, clientTimeout}) {
+    const service = await vendorService();
+    const listed = await service.handleRpc({method: 'execute', params: {type: 'list_browsers'}});
+    const extensions = (Array.isArray(listed) ? listed : []).filter(b => b?.type === 'extension');
+    const match = extensions.find(b => b.metadata?.extensionInstanceId === defaultInstance)
+      ?? extensions.find(b => isMawsInstance(b.metadata?.extensionInstanceId));
+    return service.handleRpc({method, params: {type: 'get_browser', id: typeof match?.id === 'string' ? match.id : defaultInstance,
+      ...(clientTimeout !== undefined ? {client_timeout_ms: clientTimeout} : {})}});
+  }
+
   async function handleRpc(request) {
+    const selection = defaultInstance ? unqualifiedSelection(request) : null;
+    if (selection) return selectDefault(selection);
     const plan = substitutionFor(request);
     if (!plan) return (await vendorService()).handleRpc(request);
 
@@ -178,6 +217,7 @@ export function browserServiceFromEnv(env = process.env) {
       return import(pathToFileURL(vendorPath).href);
     },
     vendorVersion: async () => vendorPath ? packageVersion(vendorPath) : null,
+    defaultInstance: env.CUA_BROWSER_DEFAULT_INSTANCE || null,
     ...secretsFromEnv(env),
   });
 }

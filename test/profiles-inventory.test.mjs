@@ -178,3 +178,25 @@ test('an unconfirmed runtime teardown fails the listing, classified, and keeps a
   replyCell(both, await both.nextCall('js'), {error: 'list_failed'});
   await assert.rejects(failing, error => error.code === 'runtime_teardown_unconfirmed' && /a group member survived/.test(error.message) && /listing_failed/.test(error.message));
 });
+
+test('the cell recognises a MAWS backend by its instance id prefix and lets nothing of it out; a parsed one is dropped too', async () => {
+  const writes = [];
+  const cua = {
+    listBrowsers: async () => [
+      {id: '1', type: 'extension', family: 'chrome', profileName: 'Personal', metadata: {extensionInstanceId: 'inst-a'}},
+      {id: '2', type: 'extension', family: 'chrome', profileName: 'MAWS', metadata: {extensionInstanceId: 'maws:app-1'}},
+    ],
+    listTabs: async () => [],
+  };
+  for (const cell of [LIST_CELL, LIVENESS_CELL]) {
+    writes.length = 0;
+    await new Function('cua', 'nodeRepl', `return (async () => { ${cell} })();`)(cua, {write: text => writes.push(text)});
+    assert.ok(!writes[0].includes('maws:app-1'));
+    assert.deepEqual(JSON.parse(writes[0].slice(MARKER.length + 1)).backends.map(b => b.instanceId), ['inst-a']);
+  }
+  const upstream = fakeUpstream();
+  const listing = listBackendsWith(upstream);
+  await answerHandshake(upstream);
+  replyCell(upstream, await upstream.nextCall('js'), {backends: [{instanceId: 'maws:app-1', family: 'chrome'}, {instanceId: 'a', family: 'chrome'}]});
+  assert.deepEqual((await listing).backends, [{instanceId: 'a', family: 'chrome'}]);
+});

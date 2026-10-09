@@ -66,9 +66,11 @@ The model never needs to read the store, so a tool call that would is
 refused before it runs: a command naming `~/.config/claude-secrets` (the
 projects' folders beneath it included) other than in the form
 `$(cat ~/.config/claude-secrets/KEY)` or
-`$(cat ~/.config/claude-secrets/projects/<slug>/KEY)`, which substitutes the
-value where it is used, and a file tool whose path (a Glob's pattern) points
-into the folder. What a Write or an Edit puts in a file, or what a Grep searches
+`$(cat ~/.config/claude-secrets/projects/<slug>/KEY)` with the session's own
+slug, which substitutes the value where it is used, and a file tool whose path
+(a Glob's pattern) points into the folder. Another project's folder is refused
+even in that form: its values are not loaded, so nothing could scrub them.
+`projects` is not a key in either tier. What a Write or an Edit puts in a file, or what a Grep searches
 for, is not a read. In a live session the model, asked to `cat` a stored
 value, declined on the system prompt section alone, and its diagnostic `ls`
 and `wc` of the file were refused.

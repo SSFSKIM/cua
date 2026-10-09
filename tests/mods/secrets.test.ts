@@ -2,7 +2,7 @@ import { describe, expect, mock, test, tier } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { MASK, guardReason, maskEcho, maskEdit, projectSlug, readField, rootFromGit } from '../../hooks/mods/secrets'
+import { MASK, guardReason, maskEcho, maskEdit, projectSlug, readField, rootFromGit, substitutionFor } from '../../hooks/mods/secrets'
 
 tier('user')
 
@@ -239,6 +239,42 @@ describe('the tiers', () => {
     expect(seen.written?.argv.slice(-2)).toEqual([GLOBAL_DIR, 'CUA_DEVICE_abc'])
   })
 
+  // A session whose git answers `answer` (an exit code and its output), then
+  // `/secret KEY` and a value in the field: the folder the write went to.
+  const storedIn = async ($: Engine, on: On, cwd: string, answer: { exitCode: number; stdout: string }) => {
+    let written: readonly string[] | undefined
+    mock.env(on, { HOME: '/home/t' })
+    on('command.register', (_, e) => ({ value: { command: e.name } }))
+    on('session.start', (_, e) => ({ cwd: e.cwd }))
+    on('fs.exists', () => ({ value: false }))
+    on('ui.open', () => ({ value: { isPlaced: true as const } }))
+    on('ui.close', () => ({ value: undefined }))
+    on('ui.toast', () => ({ value: undefined }))
+    on('session.append', (_, e, next) => next(e))
+    on('process.run', (_, e) => {
+      if (e.argv[0] === 'git') return { value: { ...answer, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      written = e.argv
+      return ok()
+    })
+    await $.session.start({ cwd, surface: null, isInteractive: false })
+    await run($, 'API_KEY')
+    await typeInField($, 'sk-value-1')
+    return written?.at(-2)
+  }
+
+  test('outside a git repository the project is the session directory itself', async ($, on) => {
+    expect(await storedIn($, on, '/tmp/plain', { exitCode: 128, stdout: '' })).toBe('/home/t/.config/claude-secrets/projects/-tmp-plain')
+  })
+
+  test('a git older than 2.31, which echoes --path-format=absolute back, leaves the session directory as the project', async ($, on) => {
+    const old = { exitCode: 0, stdout: '--path-format=absolute\n.git\n/work/repo\n' }
+    expect(await storedIn($, on, '/work/repo/sub', old)).toBe('/home/t/.config/claude-secrets/projects/-work-repo-sub')
+  })
+
+  test('"projects", in any case, is not a key in either tier', async ($) => {
+    for (const args of ['projects', '-g PROJECTS', '--global Projects']) expect((await run($, args)).text).toContain('Not stored')
+  })
+
   test('a value given after -g is refused like any other', async ($) => {
     expect((await run($, '-g API_KEY sk-in-the-clear')).text).toContain('Not stored')
     expect((await run($, '-g')).text).toContain('Usage')
@@ -293,8 +329,31 @@ describe('the guard', () => {
     // The client registration `cua remote enroll --json` prints (clientRegisterCommand).
     const register = 'claude mcp add --transport http cua_repl https://relay.example/d/a-b_c/mcp --header "Authorization: Bearer $(cat ~/.config/claude-secrets/CUA_DEVICE_a_b_c)"'
     expect(guardReason({ tool: 'Bash', command: register })).toBeUndefined()
-    // A project's key, in the form the system prompt lists it.
-    expect(guardReason({ tool: 'Bash', command: 'curl -H "X-Key: $(cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY)" https://x' })).toBeUndefined()
+  })
+
+  test("admits the session's own project tier in that form, and no other project's", () => {
+    const own = 'curl -H "X-Key: $(cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY)" https://x'
+    const other = 'curl -H "X-Key: $(cat ~/.config/claude-secrets/projects/-Users-u-other/API_KEY)" https://x'
+    const form = substitutionFor('-Users-u-repo')
+    expect(guardReason({ tool: 'Bash', command: own }, form)).toBeUndefined()
+    expect(guardReason({ tool: 'Bash', command: '$(cat ~/.config/claude-secrets/GLOBAL_KEY)' }, form)).toBeUndefined()
+    expect(guardReason({ tool: 'Bash', command: other }, form)).toContain('not for reading')
+    // Before a project is known, only the global tier.
+    expect(guardReason({ tool: 'Bash', command: own }, substitutionFor())).toContain('not for reading')
+  })
+
+  test("in a session, a command naming another project's secret is refused before it runs", async ($, on) => {
+    let ran = 0
+    on('tool.call', () => {
+      ran++
+      return { result: { stdout: '', stderr: '', interrupted: false } }
+    })
+    await startWith($, on, {}, { API_KEY: 'sk-project-0123456789' })
+    const own = await $.tool.call({ tool: 'Bash', command: 'curl -H "X: $(cat ~/.config/claude-secrets/projects/-work-repo/API_KEY)" https://x' })
+    expect(own.deny).toBeUndefined()
+    const other = await $.tool.call({ tool: 'Bash', command: 'curl -H "X: $(cat ~/.config/claude-secrets/projects/-work-other/API_KEY)" https://x' })
+    expect(other.deny).toContain('not for reading')
+    expect(ran).toBe(1)
   })
 
   test('refuses a command that reads the store', () => {

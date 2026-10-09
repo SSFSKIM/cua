@@ -28,6 +28,9 @@ const ECHO = /(<command-name>\/secret<\/command-name>[\s\S]*?<command-args>[ \t]
 // Device credentials (cua's reserved keys, src/secrets/label.mjs) are read
 // from the global tier only, so they are stored there whatever the project.
 const RESERVED = /^CUA_DEVICE_/i
+// The global tier's folder of the project tiers, so never a key (in any case:
+// macOS's file system would open PROJECTS for projects).
+const PROJECTS = /^projects$/i
 // Claude Code cuts a slug at this length and adds a hash of the whole path.
 const SLUG_MAX = 200
 // Shorter values would scrub ordinary words out of everything the model reads.
@@ -116,22 +119,33 @@ function scrub(text: string): string {
   return out
 }
 
-// The one form a command may name a stored value in, of either tier:
-// substituted where it is used, so the command's own output is all that could
-// carry it.
-const SUBSTITUTION = /\$\(\s*cat\s+(?:~|"?\$HOME"?|"?\$\{HOME\}"?|\/(?:Users|home)\/[^/\s"')]+)\/\.config\/claude-secrets\/(?:projects\/[A-Za-z0-9-]+\/)?[A-Za-z_][A-Za-z0-9_]*\s*\)/g
+// The one form a command may name a stored value in: substituted where it is
+// used, so the command's own output is all that could carry it. It admits the
+// global tier and, given the session's project slug, that project's tier
+// only: another project's values are not loaded for scrubbing, so a command
+// naming its folder is refused like any other read of the store.
+export function substitutionFor(slug?: string): RegExp {
+  const tier = slug === undefined ? '' : `(?:projects\\/${slug.replace(/[^A-Za-z0-9-]/g, '')}\\/)?`
+  return new RegExp(
+    `\\$\\(\\s*cat\\s+(?:~|"?\\$HOME"?|"?\\$\\{HOME\\}"?|\\/(?:Users|home)\\/[^/\\s"')]+)\\/\\.config\\/claude-secrets\\/${tier}[A-Za-z_][A-Za-z0-9_]*\\s*\\)`,
+    'g',
+  )
+}
+// The session's form, rebuilt once its project is resolved.
+let substitution = substitutionFor()
 
 /**
  * Why a tool call would read the store itself, or undefined: a command naming
  * the folder (the projects' folders beneath it included) other than in the
- * substitution form, or a file tool whose path
+ * substitution form (`form`, the session's: its own project's folder and the
+ * global one), or a file tool whose path
  * (a Glob's pattern) points into it. What a Write or an Edit puts in a file,
  * or what a Grep searches for, is not a read of the store.
  */
-export function guardReason(input: Readonly<Record<string, unknown>>): string | undefined {
+export function guardReason(input: Readonly<Record<string, unknown>>, form: RegExp = substitution): string | undefined {
   const reads =
     typeof input.command === 'string'
-      ? input.command.replace(SUBSTITUTION, '').includes('.config/claude-secrets')
+      ? input.command.replace(form, '').includes('.config/claude-secrets')
       : Object.entries(input).some(
           ([field, value]) =>
             (/path$/i.test(field) || (input.tool === 'Glob' && field === 'pattern')) &&
@@ -193,9 +207,12 @@ async function projectOf($: EngineInterface, cwd?: string): Promise<string> {
   try {
     const git = await $.process.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'], { cwd: dir, timeoutMs: 5000 })
     const [commonDir, topLevel] = git.stdout.trim().split('\n')
-    if (git.exitCode === 0 && commonDir && topLevel) root = rootFromGit(commonDir, topLevel)
+    // A git older than 2.31 echoes `--path-format=absolute` back as a line of
+    // its own; only two absolute paths are an answer.
+    if (git.exitCode === 0 && commonDir?.startsWith('/') && topLevel?.startsWith('/')) root = rootFromGit(commonDir, topLevel)
   } catch {}
   project = root
+  substitution = substitutionFor(projectSlug(root))
   return root
 }
 
@@ -315,6 +332,7 @@ export function registerSecrets(on: On) {
       }
     }
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(args)) return { text: 'Usage: /secret [-g|--global] KEY (letters, digits and _)' }
+    if (PROJECTS.test(args)) return { text: 'Not stored: "projects" is the folder that holds the projects\' secrets, so it is not a key.' }
     const isDevice = !flag && RESERVED.test(args)
     pending = { key: args, scope: flag || isDevice ? 'global' : 'project' }
     typed = ''

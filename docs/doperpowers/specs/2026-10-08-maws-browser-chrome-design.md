@@ -16,7 +16,7 @@ Design approved by the owner on 2026-10-08 in the cua_repl session (four forks a
 
 ## Progress
 
-- [ ] S1 — Spike: what an extension popup can do in a MAWS-hosted view (verdict in Surprises & Discoveries)
+- [x] (2026-10-08 23:37, review clean) S1 — Spike: what an extension popup can do in a MAWS-hosted view (verdict in Surprises & Discoveries)
 - [ ] M1a — Bookmarks behind the chrome: the fourth import category, decoder, index store, record version 2, mirror sync, suggestions
 - [ ] M1b — The bar, native folder and overflow menus, the toggle, suggestions in the field, the native-menu e2e seam
 - [ ] M2 — The avatar and the profile popover

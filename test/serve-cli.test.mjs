@@ -21,7 +21,8 @@ import {sandboxState} from '../src/runtime/sandbox.mjs';
 import {CLASSIC_LEVEL_MODULES, NO_CLASSIC_LEVEL, writeStore} from './fixtures/classic-level.mjs';
 import {addDevice} from '../src/remote/devices.mjs';
 import {clientSecretKey} from '../src/remote/device.mjs';
-import {fileStore, storeDir} from '../src/secrets/store.mjs';
+import {fileStore, projectStoreDir, storeDir} from '../src/secrets/store.mjs';
+import {projectRoot} from '../src/secrets/project.mjs';
 
 const supported = installedHomeSupported;
 // A user home of the test's own, holding a secret store with one key: secrets-on servers resolve their store from it.
@@ -601,7 +602,10 @@ test('serve with no store yet still serves, and secrets_list lists no keys', {sk
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const served = serve({home, env: {...process.env, HOME: empty.dir, CUA_SHIM_SECRETS: 'on'}, input, output, diagnostics: () => {}});
+  // No `project` is passed, so serve takes the project of its own working directory; a store variable planted in the
+  // session's environment never reaches the launch.
+  const env = {...process.env, HOME: empty.dir, CUA_SHIM_SECRETS: 'on', CUA_SECRETS_PROJECT_DIR: '/tmp/planted', CUA_SECRETS_DIR: '/tmp/planted-global'};
+  const served = serve({home, env, input, output, diagnostics: () => {}});
   t.after(async () => { input.end(); await served; });
   input.write(JSON.stringify({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}}}) + '\n');
   input.write(JSON.stringify({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'secrets_list', arguments: {}}}) + '\n');
@@ -609,6 +613,7 @@ test('serve with no store yet still serves, and secrets_list lists no keys', {sk
   assert.deepEqual(frames.find(f => f.id === 2).result.structuredContent, {status: 'ok', labels: []});
   const [{start}] = records(home);
   assert.equal(start.env.CUA_SECRETS_DIR, join(empty.dir, '.config', 'claude-secrets'));
+  assert.equal(start.env.CUA_SECRETS_PROJECT_DIR, projectStoreDir(projectRoot(process.cwd()), {HOME: empty.dir}));
   input.end();
   assert.equal(await served, 0);
 });

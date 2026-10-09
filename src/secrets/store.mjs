@@ -23,7 +23,7 @@ import {chmod, mkdir, open, readdir, rename, rm, unlink} from 'node:fs/promises'
 import {randomUUID} from 'node:crypto';
 import {homedir} from 'node:os';
 import {join} from 'node:path';
-import {isLabel, isReserved, LABEL_RULE} from './label.mjs';
+import {isLabel, isReserved, LABEL_RULE, PROJECTS_FOLDER} from './label.mjs';
 
 export const STORE_RELATIVE = join('.config', 'claude-secrets');
 // The trusted worker's launch variables (src/runtime/launch.mjs): the global store directory `cua serve` resolved and,
@@ -49,7 +49,7 @@ export function projectSlug(path) {
 }
 
 // The store directory of a project (an absolute path) for an environment.
-export const projectStoreDir = (project, env = process.env) => join(storeDir(env), 'projects', projectSlug(project));
+export const projectStoreDir = (project, env = process.env) => join(storeDir(env), PROJECTS_FOLDER, projectSlug(project));
 
 const SENTENCES = {
   invalid_label: () => LABEL_RULE,

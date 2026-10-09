@@ -5,11 +5,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {connectionSecrets, fileStore, projectSlug, projectStoreDir, storeDir, tieredStore} from '../src/secrets/store.mjs';
-import {projectRoot, rootFromGit} from '../src/secrets/project.mjs';
+import {projectRoot, rootFromGit, rootFromRevParse} from '../src/secrets/project.mjs';
+import {isLabel} from '../src/secrets/label.mjs';
+import {REPO} from './fixtures/runtime-fixture.mjs';
 import {classifyStore, inspectSecretStore} from '../src/secrets/check.mjs';
 import {secretsFromEnv} from '../src/services/secret-input.mjs';
 
@@ -113,4 +115,21 @@ test('doctor reports the project tier of the working directory beside the global
   put(projectStoreDir(cwd, {HOME: home}), 'LOOSE', 'v', 0o644);
   assert.equal(classifyStore(inspectSecretStore({env: {HOME: home}, cwd}).project, {project: cwd}).status, 'fail');
   assert.equal(classifyStore(stored.project, {project: cwd, enabled: false}).status, 'skip');
+});
+
+test('"projects", in any case, is never a key: the label rule, the store\'s write and the CLI refuse it', async t => {
+  for (const key of ['projects', 'PROJECTS', 'Projects']) assert.equal(isLabel(key), false, key);
+  assert.equal(isLabel('projects_key'), true);
+  const home = temp(t, 'cua-label-');
+  await assert.rejects(fileStore({dir: storeDir({HOME: home})}).write('Projects', 'v'), {code: 'invalid_label'});
+  const cli = spawnSync(process.execPath, [join(REPO, 'bin', 'cua.mjs'), 'secrets', 'set', 'projects'],
+    {cwd: home, env: {...process.env, HOME: home, CUA_HOME: join(home, 'cua-home')}, encoding: 'utf8', timeout: 20_000, stdio: ['ignore', 'pipe', 'pipe']});
+  assert.equal(cli.status, 2);
+  assert.match(cli.stderr, /not "projects"/);
+});
+
+test('a git older than 2.31 echoes --path-format=absolute back, and the directory itself stands as the project', () => {
+  assert.equal(rootFromRevParse('--path-format=absolute\n.git\n/work/repo\n', '/work/repo/sub'), '/work/repo/sub');
+  assert.equal(rootFromRevParse('.git\n/work/repo\n', '/work/repo/sub'), '/work/repo/sub');
+  assert.equal(rootFromRevParse('/work/repo/.git\n/work/repo-wt\n', '/work/repo-wt'), '/work/repo');
 });

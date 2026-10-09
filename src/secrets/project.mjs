@@ -8,19 +8,26 @@
 // .git/modules/), the repository's own top level stands in. Kept apart from store.mjs, which the trusted worker
 // imports and which runs no process.
 import {execFileSync} from 'node:child_process';
-import {basename, dirname} from 'node:path';
+import {basename, dirname, isAbsolute} from 'node:path';
 
 // The project root from `git rev-parse --path-format=absolute --git-common-dir --show-toplevel`'s two lines.
 export function rootFromGit(commonDir, topLevel) {
   return basename(commonDir) === '.git' ? dirname(commonDir) : topLevel;
 }
 
-export function projectRoot(cwd = process.cwd()) {
-  let lines;
-  try {
-    lines = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'],
-      {cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000}).trim().split('\n');
-  } catch { return cwd; }
+// The project for `cwd` from that command's output. A git older than 2.31 echoes `--path-format=absolute` back as a line
+// of its own, so only two absolute paths are an answer; anything else leaves the directory itself.
+export function rootFromRevParse(stdout, cwd) {
+  const lines = stdout.trim().split('\n');
   const [commonDir, topLevel] = lines;
-  return commonDir && topLevel ? rootFromGit(commonDir, topLevel) : cwd;
+  return lines.length === 2 && isAbsolute(commonDir) && isAbsolute(topLevel) ? rootFromGit(commonDir, topLevel) : cwd;
+}
+
+export function projectRoot(cwd = process.cwd()) {
+  let stdout;
+  try {
+    stdout = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'],
+      {cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000});
+  } catch { return cwd; }
+  return rootFromRevParse(stdout, cwd);
 }

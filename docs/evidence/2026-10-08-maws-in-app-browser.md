@@ -345,3 +345,40 @@ E. **A screenshot during the person's hold takes about 1.6 s.** The vendor's `ta
 the vendor then falls back to scale 1 and captures. Control stays the person's and the capture succeeds, so the
 design's intent holds except for "at once". Making that read pass would need an exact-expression exception in MAWS's
 command classes, pinned to the 0.1.1 vendor (tracked in `tech-debt-tracker.md`).
+
+## The inside-MAWS sitting — run 2026-10-08 19:05–19:40 KST (owner + the cua_repl session driving the app through cua_repl)
+
+Setup: the owner's S1 (dev MAWS on `/tmp/mh13-owner`, Settings › Engine → `/tmp/claude-cua05`, the 0.5.0 plugin through
+`--plugin-dir /Users/new/Developer/GitHub/cua-wt-13`); features page `http://127.0.0.1:64643/` (marker
+`cua-accept-features-82d8efe29c2d`) started by the session; sessions A (`ef03a872-…`) and B (`71a091df-…`) in
+`/private/tmp`, started without trusting the folder. The session drove the MAWS window itself through `cua_repl`'s
+macOS surface (the app `Electron.app` of `MAWS-wt-13`), reading the accessibility tree; the owner acted where a person
+had to.
+
+| Step | Result | Evidence |
+|---|---|---|
+| S2 env + `profiles_list` | PASS | `echo $CUA_BROWSER_BACKENDS` → `/tmp/mh13-owner/browser/cua/ef03a872-….sock`; `profiles_list` → `maws` first, `ready: true`, `extensionInstanceId: "maws:ef03a872-…"`, then personal/school ready, work `extension_not_installed` |
+| S3 tab, rows, download, deliverable | PASS | tab listed in the session's Browser panel as "CUA browser features acceptance **agent**"; the panel opened on the first acting command; rows under the `js` call: Navigated to 127.0.0.1:64643 · Typed 1 character · Clicked button Submit · Screenshot · Clicked a Download report · Downloaded cua-report.pdf; `#state` = `submitted:x`; `~/Downloads/cua-report.pdf` sha256 `a3030829…6ec5`; download line "Downloaded cua-report.pdf" with Reveal in Finder; deliverable record `deliverables/ef03a872-…/016e2d1e-….json` (kind file) and the overview's "Deliverables · 1 delivered · cua-report.pdf"; after View › Reload the six rows were listed again |
+| S4 takeover + cursor | PASS (owner) | 60 s clicking cell; the owner: "배너 보임, 에이전트 재개됨" and the Browser panel had opened by itself; transcript shows a run of "Clicked button Submit" rows; full-screen screenshot kept by the owner at `/tmp/shots/screen.png` (not committed: whole desktop). Cursor hidden after the turn: not observed by the owner (unverified) |
+| S5 two sessions, handoff | PASS | B's `listTabs` → `[{"id":"1","url":"http://127.0.0.1:64643/"}]` (its own tab only); A's `listTabs` → its own tab only; `markHandoff()` then `end_task` → `{"status":"ended"}`; A's next task listed the same tab again and the panel kept it |
+| S6 relaunch | PASS (crash form) | `Quit MAWS` **and** `종료 및 윈도우 유지` both ended the dev supervisor and the engines (log: `supervisor pid … exited (code 0)`), so the spec's "the supervisor keeps A's engine" holds only when the app dies: with the main process killed (`kill -9`) the supervisor (43241) and A's engine (57682) survived, the relaunched app reconnected A without Resume, `profiles_list` answered `maws` ready in the first turn (14 s turn, the host reconnect is ≤ 5 s), and A's journal kept its 3 launch files (no new launch) |
+| S7 Chrome profile | PASS | `getBrowser({extensionInstanceId: '94c9fc71-…'})` selected Chrome (type extension, id 2, the personal profile); a tab opened on the features page (`h1` read), `t.close()` closed it |
+
+Findings from the sitting:
+
+- **F1 (MAWS, robustness).** After the owner's `Ctrl-C` on the terminal `pnpm dev` the Electron main process lived on
+  with a dead stdout; the next `console.error` (`[ipc] git.watch failed NotARepositoryError` for the non-git
+  `/private/tmp`) threw `write EIO` as an uncaught exception and MAWS showed "A JavaScript error occurred in the main
+  process". Not browser-related; any app launched from a terminal that closes would crash the same way. Ticket.
+- **F2 (MAWS, P3).** A person's ⌘R on a leased idle tab reloads the page (keys.ts takes the chord) and an agent
+  "Navigated to …" row appeared for it: the chord path does not count as the person's input for `personHolds`. Ticket.
+- **F3 (vendor REPL, no action).** A cell's last expression is not returned; only `nodeRepl.write` output and what the
+  API prints (the first call also attaches the API documentation). The harness already uses `nodeRepl.write`.
+- **F4 (MAWS, observation).** `Quit MAWS` and `종료 및 윈도우 유지` both stop the detached supervisor on this dev build;
+  acceptance 13's wording assumed a quit keeps the engine. Recorded for the MAWS side; no cua change.
+- **F5 (cua_repl, observation).** The app's accessibility diff went stale twice while a turn ran (a click elsewhere
+  refreshed it) and a `pressKey` with `modifiers: ["command"]` typed the bare letter into the focused field (⌘Q → "q",
+  ⌘A → "a"); menu items were used instead. Noted for the cua_repl macOS surface.
+
+Cleanup: dev MAWS quit (supervisor and engines ended with it), `/tmp/mh13-owner` and `/tmp/claude-cua05` removed, the
+features page stopped, `~/Downloads/cua-report.pdf` removed after its hash matched.

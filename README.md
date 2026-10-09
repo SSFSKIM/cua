@@ -77,8 +77,8 @@ The same server drives other machines too: `devices_list` and `devices_use` swit
 registered with `cua devices` (Remote control, 4), with no registration in Claude Code per device. The plugin also
 carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
 (Remote control), and, where function hooks are enabled (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY`
-command: a value typed into a masked field and stored as `~/.config/claude-secrets/KEY` (mode 600), which the model
-sees only by its key (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
+command: a value typed into a masked field and stored for the session's project (`/secret -g KEY`: for every
+project; mode 600, see Secrets), which the model sees only by its key (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
 `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next section.
 This repository is the plugin's source of truth.
 
@@ -180,19 +180,33 @@ Secrets are plain files, one value per file, in the directory the plugin's `/sec
 `~` is). A KEY is letters, digits and `_`, not starting with a digit. One store serves cua on macOS and Linux, locally
 and through the remote agent, and any other tool that reads that directory.
 
+The store has two tiers. That directory is the global one, for every project. Each project has its own beside it,
+`~/.config/claude-secrets/projects/<slug>/<KEY>`, the slug being the project's path in the form Claude Code names its
+`~/.claude/projects/` folders (every character other than a letter or digit becomes `-`: `/Users/me/repo` is
+`-Users-me-repo`). The project is the main checkout of the git repository around the working directory, so every
+worktree of a repository shares its secrets, and outside a repository the directory itself. A key stored in both is
+read from the project's tier: the project's value shadows the global one. Device credentials (`CUA_DEVICE_…`, Remote
+control) live in the global tier only, and so does everything a device's remote agent serves: it has no project.
+Existing files stay where they are; nothing moves between tiers.
+
 The preferred way to store one is `/secret KEY` in Claude Code (the plugin's mod, where function hooks are enabled):
-it opens a masked field, writes the file, and keeps the value out of the model's view of tool output. Without the mod,
-cua does the same at a terminal:
+it opens a masked field, writes the file in the session's project tier (`/secret -g KEY` or `--global`: the global
+tier), and keeps the value out of the model's view of tool output. The model's system prompt lists the keys of both
+tiers, each marked `(project)` or `(global)`, a global key the project shadows included. Without the mod, cua does
+the same at a terminal, on the global tier unless told `--project`:
 
 ```sh
-node bin/cua.mjs secrets set WORK_PASSWORD     # typed twice at a masked prompt, nothing echoed
-node bin/cua.mjs secrets list                  # keys only
-node bin/cua.mjs secrets remove WORK_PASSWORD  # asks for confirmation; --yes skips it
+node bin/cua.mjs secrets set WORK_PASSWORD             # typed twice at a masked prompt, nothing echoed
+node bin/cua.mjs secrets set WORK_PASSWORD --project   # the same, for the project of this directory
+node bin/cua.mjs secrets list                          # keys only, both tiers, each marked; --project or --global for one
+node bin/cua.mjs secrets remove WORK_PASSWORD          # asks for confirmation; --yes skips it; --project for that tier
 ```
 
 A value is only ever typed at a terminal: `set` refuses arguments, flags and piped input, and nothing prints or
-exports a value. `secrets_list` lists the keys: the names of the store's regular files that follow the KEY rule, whatever their mode
-(a key whose file is not 0600 is listed, then refused with `secret_insecure_mode` when used).
+exports a value. `secrets_list` lists the keys of both tiers, once each: the names of the stores' regular files that follow the KEY rule, whatever their mode
+(a key whose file is not 0600 is listed, then refused with `secret_insecure_mode` when used). `cua serve` learns its
+project from its own working directory, which Claude Code sets to the session's. `cua doctor` reports the global store
+(`secrets.store`) and the working directory's project tier (`secrets.project`).
 
 To have the agent enter a stored secret, authorize it to use the key; it then passes the exact reference
 `{{secret:<KEY>}}` as an input argument:
@@ -207,8 +221,8 @@ To have the agent enter a stored secret, authorize it to use the key; it then pa
 
 The substitution happens inside the runtime's trusted service process (`src/services/sky.mjs`, and
 `src/services/browser.mjs` for Chrome), after the agent's
-code and the MCP call have passed: the trusted service reads the file (from the store directory `cua serve` resolved
-from its own `$HOME`) and hands the value only to the native input command, never to the agent's code, the tool
+code and the MCP call have passed: the trusted service reads the file (from the store directories `cua serve` resolved
+from its own `$HOME` and working directory, the project's first) and hands the value only to the native input command, never to the agent's code, the tool
 result or an error. Only an argument that is entirely one reference expands; text that merely contains `{{secret:…}}`,
 any other method or field, and JavaScript strings in general are left alone. A reference fails before anything is
 entered, with a value-free error code, when its key is invalid (`invalid_secret_label`) or unknown
@@ -1009,7 +1023,7 @@ lack of `DISPLAY`.
 - **Typing.** The helper's `typeText` and `paste` insert text through AT-SPI. In GTK3 text views (gedit, mousepad)
   they crashed the app on arm64, and on x64 failed without inserting ("editable Paste did not insert text").
   `pressKey`, one X keysym per character, types there on both. In GTK4 they inserted the text and then threw.
-- **Secrets.** The same file store as on macOS (see Secrets): `secrets_list` lists `~/.config/claude-secrets`, and a
+- **Secrets.** The same file store as on macOS (see Secrets): `secrets_list` lists `~/.config/claude-secrets` and the project's tier, and a
   `{{secret:KEY}}` reference is substituted as the whole text of `typeText` or `paste` (both arrive as `type_text
   {window, text}`). The typing caveat above applies: in a GTK3 text view the substituted `type_text` is what crashes.
 - **Doctor's rows.** `display`, `accessibility.bus` and `sandbox.userns` replace the macOS helper rows.

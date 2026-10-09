@@ -2,7 +2,7 @@
 
 Spec: `docs/doperpowers/specs/2026-10-08-maws-browser-chrome-design.md` (this directory), executed from reviewed revision `050411be`. Code: MAWS worktree `/Users/new/Developer/GitHub/MAWS-wt-90`, branch `90-browser-chrome`.
 
-**Status: DONE.** MAWS PR: https://github.com/SSFSKIM/MAWS/pull/6 (against master, not merged). Commit range: `16006624..95b5b871` (11 milestone commits plus the final fix `7a630cd2` and the ledger sha `95b5b871`; rebased from `5bd2cd57` onto master `16006624` with no conflicts; master's settings 11 and index 6 had not moved, so no renumbering: settings 12, index 7 pinned sha256 `e5dbe799d588c31efa19def80e2c8b54bec78b138b2e1fe3d3c789fb214fce90`, `profiles.json` 2). At PR time master was one commit further, with no change to the version files, and it merges cleanly. The owner's sitting on the real profile is parked (below), not blocked.
+**Status: DONE.** MAWS PR: https://github.com/SSFSKIM/MAWS/pull/6 (against master, not merged); the spec's cua PR: https://github.com/SSFSKIM/cua/pull/101. Commit range: `16006624..95b5b871` (11 milestone commits plus the final fix `7a630cd2` and the ledger sha `95b5b871`; rebased from `5bd2cd57` onto master `16006624` with no conflicts; master's settings 11 and index 6 had not moved, so no renumbering: settings 12, index 7 pinned sha256 `e5dbe799d588c31efa19def80e2c8b54bec78b138b2e1fe3d3c789fb214fce90`, `profiles.json` 2). At PR time master was one commit further, with no change to the version files, and it merges cleanly. The owner's sitting on the real profile is parked (below), not blocked.
 
 ## Milestones
 

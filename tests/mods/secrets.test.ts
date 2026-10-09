@@ -2,7 +2,7 @@ import { describe, expect, mock, test, tier } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { MASK, guardReason, maskEcho, maskEdit, readField } from '../../hooks/mods/secrets'
+import { MASK, guardReason, maskEcho, maskEdit, projectSlug, readField, rootFromGit } from '../../hooks/mods/secrets'
 
 tier('user')
 
@@ -37,6 +37,14 @@ describe('the prompt box', () => {
     expect(held).toBe('sk-abc')
   })
 
+  test('a value after -g or --global is masked too', () => {
+    for (const flag of ['-g', '--global']) {
+      const { box, held } = type(`/secret ${flag} API_KEY sk-abc`)
+      expect(box.text).toBe(`/secret ${flag} API_KEY ${MASK.repeat(6)}`)
+      expect(held).toBe('sk-abc')
+    }
+  })
+
   test('backspace removes a held character', () => {
     const { box, held } = type('/secret API_KEY sk-abc\b\b')
     expect(box.text).toBe(`/secret API_KEY ${MASK.repeat(4)}`)
@@ -65,20 +73,34 @@ describe('the prompt box', () => {
 test('an unmasked /secret echo is masked before the model reads it', () => {
   const echo = '<command-name>/secret</command-name>\n<command-args>API_KEY=sk-raw-1234</command-args>'
   expect(maskEcho(echo)).toBe(`<command-name>/secret</command-name>\n<command-args>API_KEY=${MASK.repeat(11)}</command-args>`)
+  expect(maskEcho('<command-name>/secret</command-name>\n<command-args>-g API_KEY sk-abc</command-args>')).toBe(`<command-name>/secret</command-name>\n<command-args>-g API_KEY ${MASK.repeat(6)}</command-args>`)
   expect(maskEcho('<command-name>/other</command-name><command-args>A b</command-args>')).toContain('A b')
 })
 
-// A headless session whose ~/.config/claude-secrets holds `files`: the mod
-// reads them at session start, as it does in a session.
-const startWith = async ($: Engine, on: On, files: Record<string, string>) => {
-  const dir = '/home/t/.config/claude-secrets'
+const GLOBAL_DIR = '/home/t/.config/claude-secrets'
+// The project of a session in /work/repo/sub, a git repository whose main
+// checkout is /work/repo.
+const PROJECT_DIR = '/home/t/.config/claude-secrets/projects/-work-repo'
+const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+const gitRepo = (_: unknown, e: { argv: readonly string[] }) => (e.argv[0] === 'git' ? ok('/work/repo/.git\n/work/repo\n') : undefined)
+
+// A headless session in /work/repo/sub whose ~/.config/claude-secrets holds
+// `files` and whose project folder holds `projectFiles`: the mod reads both at
+// session start, as it does in a session.
+const startWith = async ($: Engine, on: On, files: Record<string, string>, projectFiles: Record<string, string> = {}) => {
+  const tiers: Record<string, Record<string, string>> = { [GLOBAL_DIR]: files, [PROJECT_DIR]: projectFiles }
+  const entries = (names: Record<string, string>) => Object.keys(names).map((name) => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false }))
   mock.env(on, { HOME: '/home/t' })
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  on('fs.exists', (_, e) => ({ value: e.path === dir }))
-  on('fs.list', () => ({ value: Object.keys(files).map((name) => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false })) }))
-  on('fs.read', (_, e) => ({ value: files[e.path.slice(dir.length + 1)] ?? '' }))
-  await $.session.start({ cwd: '/tmp', surface: null, isInteractive: false })
+  on('process.run', (_, e) => gitRepo(_, e) ?? ok())
+  on('fs.exists', (_, e) => ({ value: e.path in tiers && Object.keys(tiers[e.path] ?? {}).length > 0 }))
+  on('fs.list', (_, e) => ({ value: entries(tiers[e.path] ?? {}) }))
+  on('fs.read', (_, e) => {
+    const at = e.path.lastIndexOf('/')
+    return { value: tiers[e.path.slice(0, at)]?.[e.path.slice(at + 1)] ?? '' }
+  })
+  await $.session.start({ cwd: '/work/repo/sub', surface: null, isInteractive: false })
 }
 
 test('a stored value is scrubbed from a tool result the model would read', async ($, on) => {
@@ -141,23 +163,113 @@ test('a value given with the command is refused', async ($) => {
   expect(ran.text).toContain('Not stored')
 })
 
-test('the field stores what was typed, the last characters and Enter arriving together', async ($, on) => {
+// Answers the pane's calls and records the write the field's Enter makes.
+const storing = (on: On) => {
+  const seen: { opened: string; written?: { argv: readonly string[]; stdin?: string }; appended: string[] } = { opened: '', appended: [] }
   mock.env(on, { HOME: '/home/t' })
-  let opened = ''
-  let written: { argv: readonly string[]; stdin?: string } | undefined
+  on('session.cwd', () => ({ value: '/work/repo/sub' }))
   on('ui.open', (_, e) => {
-    opened = e.id
+    seen.opened = e.id
     return { value: { isPlaced: true as const } }
   })
   on('ui.close', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
+  // Nothing beneath keeps a row in a test, so the append itself fails; this
+  // hook records what reached the bottom on its way there.
+  on('session.append', (_, e, next) => {
+    const block = e.message.content[0]
+    if (block?.type === 'text' && typeof block.text === 'string') seen.appended.push(block.text)
+    return next(e)
+  })
   on('process.run', (_, e) => {
-    written = { argv: e.argv, stdin: e.init?.stdin }
-    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    const git = gitRepo(_, e)
+    if (git) return git
+    seen.written = { argv: e.argv, stdin: e.init?.stdin }
+    return ok()
+  })
+  return seen
+}
+
+const run = ($: Engine, args: string) =>
+  $.command.run({ command: 'secret', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
+
+const typeInField = async ($: Engine, text: string) => {
+  const pane = await $.ui.mount({
+    plugin: 'cua-mods',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'secret',
+    props: { title: 'secret', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { offset: 0, bodyRows: 2 }, view: {} },
+  })
+  await pane.input({ key: 'secret-value', text, kind: 'submit' })
+  await pane.unmount()
+}
+
+describe('the tiers', () => {
+  test('a project is named as Claude Code names its folder under ~/.claude/projects/', () => {
+    expect(projectSlug('/Users/new/Developer/GitHub/MAWS')).toBe('-Users-new-Developer-GitHub-MAWS')
+    expect(projectSlug('/private/tmp/fold-smoke/.claude/worktrees/72-api-architect')).toBe('-private-tmp-fold-smoke--claude-worktrees-72-api-architect')
+    // Past 200 characters, the first 200 and a hash of the whole path (the same value src/secrets/store.mjs gives).
+    const long = projectSlug(`/Users/new/${'a'.repeat(120)}/${'b'.repeat(100)}`)
+    expect(long.length).toBe(207)
+    expect(long.slice(195)).toBe('bbbbb-iqtzp2')
   })
 
+  test("a worktree's project is its main checkout; a submodule's is its own top level", () => {
+    expect(rootFromGit('/work/repo/.git', '/work/repo')).toBe('/work/repo')
+    expect(rootFromGit('/work/repo/.git', '/work/repo-wt')).toBe('/work/repo')
+    expect(rootFromGit('/work/super/.git/modules/sub', '/work/super/sub')).toBe('/work/super/sub')
+  })
+
+  test('/secret KEY stores in the project, /secret -g KEY and a device credential globally', async ($, on) => {
+    const seen = storing(on)
+    expect((await run($, 'API_KEY')).text).toContain('for this project')
+    await typeInField($, 'sk-project-1')
+    expect(seen.written?.argv.slice(-2)).toEqual([PROJECT_DIR, 'API_KEY'])
+    expect(seen.appended.at(-1)).toContain('"$(cat ~/.config/claude-secrets/projects/-work-repo/API_KEY)"')
+
+    for (const args of ['-g API_KEY', '--global API_KEY']) {
+      expect((await run($, args)).text).toContain('for every project')
+      await typeInField($, 'sk-global-1')
+      expect(seen.written?.argv.slice(-2)).toEqual([GLOBAL_DIR, 'API_KEY'])
+    }
+
+    await run($, 'CUA_DEVICE_abc')
+    await typeInField($, 'c'.repeat(64))
+    expect(seen.written?.argv.slice(-2)).toEqual([GLOBAL_DIR, 'CUA_DEVICE_abc'])
+  })
+
+  test('a value given after -g is refused like any other', async ($) => {
+    expect((await run($, '-g API_KEY sk-in-the-clear')).text).toContain('Not stored')
+    expect((await run($, '-g')).text).toContain('Usage')
+  })
+
+  test('the system prompt lists both tiers, a shadowed global key included', async ($, on) => {
+    on('prompt.compose', () => ({ sections: [] }))
+    await startWith($, on, { API_KEY: 'sk-global-0123456789', OTHER: 'other-global-value' }, { API_KEY: 'sk-project-0123456789' })
+    const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
+    const section = composed.sections.find((s) => s.id === 'cua:secrets')
+    expect(section?.text.split('\n').slice(1)).toEqual([
+      '- API_KEY (project): "$(cat ~/.config/claude-secrets/projects/-work-repo/API_KEY)"',
+      '- API_KEY (global, shadowed by the project\'s): "$(cat ~/.config/claude-secrets/API_KEY)"',
+      '- OTHER (global): "$(cat ~/.config/claude-secrets/OTHER)"',
+    ])
+    expect((await run($, '')).text).toBe("Stored: API_KEY (project), API_KEY (global, shadowed by the project's), OTHER (global)")
+  })
+
+  test('a value of either tier is scrubbed', async ($, on) => {
+    on('tool.call', () => ({ result: { stdout: 'sk-global-0123456789 sk-project-0123456789', stderr: '', interrupted: false } }))
+    await startWith($, on, { API_KEY: 'sk-global-0123456789' }, { API_KEY: 'sk-project-0123456789' })
+    const ran = await $.tool.call({ tool: 'Bash', command: 'env' })
+    expect(ran.result).toEqual({ stdout: '[secret:API_KEY] [secret:API_KEY]', stderr: '', interrupted: false })
+  })
+})
+
+test('the field stores what was typed, the last characters and Enter arriving together', async ($, on) => {
+  const seen = storing(on)
+
   await $.command.run({ command: 'secret', args: 'API_KEY', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } })
-  expect(opened).toBe('secret')
+  expect(seen.opened).toBe('secret')
   const pane = await $.ui.mount({
     plugin: 'cua-mods',
     surface: 'terminal',
@@ -170,8 +282,8 @@ test('the field stores what was typed, the last characters and Enter arriving to
   // The rest of the value and Enter arrive together.
   await pane.input({ key: 'secret-value', text: '••••ive-9', kind: 'submit' })
 
-  expect(written?.argv.slice(-2)).toEqual(['/home/t/.config/claude-secrets', 'API_KEY'])
-  expect(written?.stdin).toBe('sk-live-9')
+  expect(seen.written?.argv.slice(-2)).toEqual([PROJECT_DIR, 'API_KEY'])
+  expect(seen.written?.stdin).toBe('sk-live-9')
 })
 
 describe('the guard', () => {
@@ -181,6 +293,8 @@ describe('the guard', () => {
     // The client registration `cua remote enroll --json` prints (clientRegisterCommand).
     const register = 'claude mcp add --transport http cua_repl https://relay.example/d/a-b_c/mcp --header "Authorization: Bearer $(cat ~/.config/claude-secrets/CUA_DEVICE_a_b_c)"'
     expect(guardReason({ tool: 'Bash', command: register })).toBeUndefined()
+    // A project's key, in the form the system prompt lists it.
+    expect(guardReason({ tool: 'Bash', command: 'curl -H "X-Key: $(cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY)" https://x' })).toBeUndefined()
   })
 
   test('refuses a command that reads the store', () => {
@@ -189,6 +303,9 @@ describe('the guard', () => {
       'ls -la ~/.config/claude-secrets',
       'xxd /Users/u/.config/claude-secrets/API_KEY',
       'echo ok; cat ~/.config/claude-secrets/API_KEY | head -c 4',
+      'ls ~/.config/claude-secrets/projects',
+      'cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY',
+      'echo "$(cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY)" ; ls ~/.config/claude-secrets/projects/-Users-u-repo',
     ]) {
       expect(guardReason({ tool: 'Bash', command })).toContain('not for reading')
     }
@@ -197,6 +314,7 @@ describe('the guard', () => {
   test('refuses a file tool pointed into the store, not text that names it', () => {
     expect(guardReason({ tool: 'Read', file_path: '/Users/u/.config/claude-secrets/API_KEY' })).toBeDefined()
     expect(guardReason({ tool: 'Glob', pattern: '/Users/u/.config/claude-secrets/*' })).toBeDefined()
+    expect(guardReason({ tool: 'Read', file_path: '/Users/u/.config/claude-secrets/projects/-Users-u-repo/API_KEY' })).toBeDefined()
     expect(guardReason({ tool: 'Grep', pattern: 'claude-secrets', path: '/repo' })).toBeUndefined()
     expect(guardReason({ tool: 'Write', file_path: '/repo/run.sh', content: 'cat ~/.config/claude-secrets/API_KEY' })).toBeUndefined()
   })

@@ -19,6 +19,7 @@
     "bin/",
     "src/",
     "extension/",
+    "native/",
     "runtime/releases/",
     "scripts/probe/lib.mjs",
     "cua-shim.mjs",
@@ -28,5 +29,8 @@
   ],
   "dependencies": {
     "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "node-api-headers": "1.9.0"
   }
 }

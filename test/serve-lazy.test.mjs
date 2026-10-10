@@ -384,7 +384,7 @@ test('CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole mill
 });
 
 // In process: a lazyRuntime whose every launch is a fake runtime the test answers (the handshake by itself).
-function idleHarness({record = RECORD, runtimeIdleMs = 60_000, profiles} = {}) {
+function idleHarness({record = RECORD, runtimeIdleMs = 60_000, profiles, devices} = {}) {
   const clock = fakeClock();
   const runtimes = [];
   let stops = 0;
@@ -397,7 +397,7 @@ function idleHarness({record = RECORD, runtimeIdleMs = 60_000, profiles} = {}) {
   };
   const diagnostics = [];
   const upstream = lazyRuntime({start, records: {read: () => record, write: () => {}}, stopped: () => { stops++; }, diagnostics: line => diagnostics.push(line)});
-  const h = harness({upstream, server: {runtimeIdleMs, idleTimer: clock.timer, diagnostics: line => diagnostics.push(line),
+  const h = harness({upstream, server: {runtimeIdleMs, devices, idleTimer: clock.timer, diagnostics: line => diagnostics.push(line),
     ...(profiles ? {profiles, surfaces: ['computer', 'browser']} : {})}});
   return {...h, clock, runtimes, diagnostics, stops: () => stops};
 }
@@ -469,6 +469,54 @@ test('a call that races the idle stop, during its completion or its teardown, wa
   assert.equal(h.stops(), 1);
   assert.deepEqual(h.diagnostics, ['runtime stopped after 1 min idle']);
   assert.deepEqual(dying.terminations, [{budgetMs: 150}]);
+});
+
+test('a held js/js_reset blocks devices_use during idle teardown; a held end_task alone does not', async t => {
+  for (const name of ['js', 'js_reset', 'end_task']) await t.test(name, async t => {
+    let opens = 0;
+    const devices = {open: async device => {
+      assert.equal(device, 'other');
+      opens++;
+      return {initializeResult: {}, request: async () => ({result: {tools: []}}), close: async () => {}};
+    }};
+    const h = idleHarness({devices});
+    let release;
+    t.after(async () => { release?.(); h.client.eof(); await h.server.closed; });
+    await h.client.request('initialize', INIT).response;
+    const first = h.client.call('js', {code: 'first'});
+    await until('the launch', () => h.runtimes.length === 1);
+    const [dying] = h.runtimes;
+    await answer(dying, 'js', 'first');
+    await first.response;
+    release = dying.holdTeardown();
+    h.clock.fire();
+    await answer(dying, 'turn_ended', '{}');
+    await until('the teardown', () => dying.terminations.length === 1);
+    assert.equal(h.server.state, 'idle', 'the previous task is complete while teardown waits');
+
+    const held = h.client.call(name, name === 'js' ? {code: 'held'} : {});
+    const switched = await h.client.call('devices_use', {device: 'other'}).response;
+    if (name === 'end_task') {
+      assert.equal(switched.result.structuredContent.status, 'ok');
+      assert.equal(opens, 1, 'an end_task alone does not keep the local task open');
+    } else {
+      assert.equal(switched.result.structuredContent.code, 'task_open');
+      assert.equal(opens, 0, 'the target stays local while work is held');
+    }
+    assert.equal(h.client.responsesFor(held.id).length, 0, 'the held call is still waiting for teardown');
+    release();
+    if (name === 'end_task') {
+      assert.deepEqual((await held.response).result.structuredContent, {status: 'noop', ended: false});
+      assert.equal(h.runtimes.length, 1, 'no new runtime for a held end_task');
+    } else {
+      await until('the relaunch', () => h.runtimes.length === 2);
+      await answer(h.runtimes[1], name, 'local');
+      assert.match(textOf(await held.response), /\nlocal$/);
+      const end = h.client.call('end_task');
+      await answer(h.runtimes[1], 'turn_ended', '{}');
+      await end.response;
+    }
+  });
 });
 
 test('a close during the idle stop refuses the call it held and confirms; an unconfirmed idle teardown makes the close code 1', async () => {

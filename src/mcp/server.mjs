@@ -139,7 +139,8 @@ export function createServer({
   // The connection's target (src/mcp/target.mjs), with the device tools, when a device directory is given (stdio).
   let clientInitialize = null;
   const target = devices && connectionTarget({devices, write, diagnostics, onWithdrawn,
-    initializeParams: () => clientInitialize, localTaskOpen: () => lifecycle.state !== 'idle'});
+    initializeParams: () => clientInitialize,
+    localTaskOpen: () => lifecycle.state !== 'idle' || [...waiting.values()].some(({name}) => WORK_TOOLS.has(name))});
 
   const lifecycle = new TaskLifecycle({
     sessionId, completionDeadlineMs, newId,

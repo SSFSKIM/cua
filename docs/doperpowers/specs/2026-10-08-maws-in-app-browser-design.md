@@ -221,10 +221,11 @@ the turn ends, the connection closes or the tab is destroyed, is rejected at onc
 
 **Session authorization.** The socket path is known to one app session's engine and nothing else; the directory is
 0700; no peer credential check beyond that (the Codex app's signed-peer check is its product's; cua's own Chrome
-sockets rely on the same filesystem rule). A fork subagent of the session shares the socket by design: it is the same
-app session. Two app sessions never share a socket, and on the cua side a client-mode host is listed only to the
-process that opened it (next section), so no other session's vendor runtime can list, select or claim tabs through
-it (A11).
+sockets rely on the same filesystem rule). (2026-10-09: superseded; the path is discoverable, and the socket and the
+client-mode relay now check the peer by ancestry, `2026-10-09-maws-socket-peer-auth-design.md` and the Decision Log
+entry of that date.) A fork subagent of the session shares the socket by design: it is the same app session. Two app
+sessions never share a socket, and on the cua side a client-mode host is listed only to the process that opened it
+(next section), so no other session's vendor runtime can list, select or claim tabs through it (A11).
 
 ### cua: the host's client mode, discovery, `profiles_list` (`src/chrome/`, `src/runtime/`, `src/mcp/`)
 
@@ -1016,6 +1017,20 @@ what S1/S2 measure); Node's `net` for sockets on both sides; no new npm dependen
   amended): emitted once per lease before the takeover gate (E4c's order), never for a close; the renderer handler is
   E4c's, so the panel opens once per turn and never over an open Browser tool, the tab unselected.
   Date/Author: 2026-10-08, the plan executor (final fix report).
+
+- Decision (2026-10-09, board #95): "Session authorization" (Design) is superseded by
+  `2026-10-09-maws-socket-peer-auth-design.md`. Both sockets now check the peer by ancestry at accept, before anything
+  is read: MAWS's per-session socket accepts only a peer running as MAWS's user that descends from that session's
+  engine process instance (pid and start time), and the client-mode relay inside `cua serve` accepts only descendants
+  of that `cua serve` process; both fail closed when the peer identity addon (`native/peer-auth/`) cannot load. The
+  0700 directory stays, and the MAWS socket file is now 0600. The Chrome-route host (`src/chrome/host.mjs`, launched
+  by Chrome through native messaging) is unchanged: its vendor client is not its descendant, so it keeps the
+  filesystem rule. The residual the check accepts (engine descendants, configuration-injected code, the SIGUSR1
+  inspector of stock Node processes, MAWS's supervisor token) is stated in that spec's Purpose and in MAWS's tracker
+  row for this socket.
+  Rationale: the filesystem rule admitted every process of the owner's user; the session's path was listable and the
+  relay's pid published in `chrome/b/*.json`.
+  Date/Author: 2026-10-09, the plan executor (socket peer authentication, M4).
 
 ## Outcomes & Retrospective
 

@@ -30,6 +30,15 @@
 // - Control traffic is never queued behind JavaScript: cancellations and elicitation answers go straight upstream.
 // - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
 //   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
+// - The idle stop (issue #107): with an upstream that can stop its runtime (src/mcp/lazy-runtime.mjs) and
+//   `runtimeIdleMs` > 0, a running runtime is stopped once no tool call of this machine's (js, js_reset, end_task,
+//   profiles_list's live check) has run for that long: the timer arms when the last such call completes (or the
+//   handshake launched a runtime) and is cleared by the next one, so a call still running never counts as idle. The
+//   stop is the normal end's: an open task is completed (its attachments released as at end_task; a completion that
+//   fails fails the connection, as at end_task), then the runtime is torn down; the connection and its MAWS dial stay.
+//   js, js_reset and end_task arriving while it stops wait for it, then run as on a fresh connection's runtime: the
+//   next js or js_reset launches one and its result opens with a notice that the runtime restarted after idling and
+//   its REPL state is gone. A stop whose teardown is unconfirmed makes the connection's close code 1.
 // On EOF or a signal the connection becomes terminal (Closing), makes a bounded best-effort completion, then tears
 // down the owned runtime, if one was launched, within the teardown budget, and writes any local
 // reply still being computed (a profiles_list listing) before the MCP stream's final bounded flush. A failure
@@ -57,12 +66,22 @@ const COMPLETION_CODES = new Set(['completion_timeout', 'completion_failed']);
 const NOT_CONFIGURED = {unavailable: {code: 'secrets_not_configured', message: 'secret storage is not configured for this server'}};
 const LIST_CODES = new Set(['unreadable']);
 const NO_PROFILES = {list: () => []};
+const DEFAULT_RUNTIME_IDLE_MS = 15 * 60_000;
+const idleText = ms => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
+const restartNotice = ms => `cua: the runtime was stopped after ${idleText(ms)} without a tool call and has restarted for this call. `
+  + 'Its REPL state is gone (variables, app handles, browser tabs and anything bound to them): rebind what you need from the API document below.';
+// One timer on the real clock: returns its cancel. It never holds the process open.
+const realTimer = (fn, ms) => {
+  const timer = setTimeout(fn, ms);
+  timer.unref?.();
+  return () => clearTimeout(timer);
+};
 
 export function createServer({
   input, output, upstream, sessionId = randomUUID(), secrets = NOT_CONFIGURED, surfaces = ['computer'], profiles = NO_PROFILES,
   platform = process.platform, devices = null, persist = 'session', hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
-  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {},
+  diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -138,6 +157,53 @@ export function createServer({
   });
   const terminal = () => lifecycle.state === 'failed' || lifecycle.state === 'closing';
 
+  // ---- the idle stop ----
+  const idleMs = upstream.stop ? runtimeIdleMs : 0;
+  let callsRunning = 0;
+  let cancelIdle = null;
+  let idleStop = null;          // the stop under way: settles (never rejects) when it is over
+  let restarted = false;        // the next runtime reply to js/js_reset carries the restart notice
+  let idleLeftover = false;     // an idle stop's teardown was unconfirmed
+  const waiting = new Map();    // client ID key -> a call held until the idle stop is over
+
+  const disarm = () => { cancelIdle?.(); cancelIdle = null; };
+  function arm() {
+    disarm();
+    if (idleMs > 0 && !callsRunning && !idleStop && !terminal() && upstream.running) cancelIdle = idleTimer(stopIdle, idleMs);
+  }
+  // A tool call that counts as use: none is idle while one runs.
+  function counted(promise) {
+    callsRunning++;
+    disarm();
+    const done = () => { callsRunning--; arm(); };
+    promise.then(done, done);
+    return promise;
+  }
+
+  function stopIdle() {
+    cancelIdle = null;
+    if (callsRunning || idleStop || terminal()) return;
+    idleStop = (async () => {
+      if (lifecycle.state === 'active') {
+        try { await lifecycle.endTask(); } catch { return; }     // a failed completion failed the connection
+      }
+      if (terminal()) return;
+      const teardown = await upstream.stop({budgetMs: teardownBudgetMs});
+      if (!teardown) return;
+      restarted = true;
+      if (!teardown.confirmed) {
+        idleLeftover = true;
+        diagnostics(`idle runtime teardown unconfirmed after ${teardown.steps.join(', ')}: ${teardown.reason ?? 'no reason given'}; owned processes may remain`);
+      }
+      diagnostics(`runtime stopped after ${idleText(idleMs)} idle`);
+    })().finally(() => {
+      idleStop = null;
+      const calls = [...waiting.values()];
+      waiting.clear();
+      for (const {msg, name} of calls) localTool(msg, name);
+    });
+  }
+
   function rejectionResult(error, {endTask = false} = {}) {
     const structured = {status: 'error', ...(endTask ? {ended: false} : {}), code: error.code};
     if (error.detail?.stage) structured.stage = error.detail.stage;
@@ -152,10 +218,12 @@ export function createServer({
       _meta: turnMeta(taskId, callId, msg.params._meta),
     }, {clientKey: key}));
     queuedWork.set(key, ticket);
-    ticket.promise.then(({taskId, reply}) => {
+    counted(ticket.promise).then(({taskId, reply}) => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);
       if (reply.error) return write({jsonrpc: '2.0', id: msg.id, error: reply.error});
       const result = redactTokens(correctImages(reply.result ?? {}));
+      if (restarted) result.content = [{type: 'text', text: restartNotice(idleMs)}, ...(result.content ?? [])];
+      restarted = false;
       respond(msg.id, {...result, _meta: {...(result._meta ?? {}), 'cua/taskId': taskId}});
     }, error => {
       if (queuedWork.get(key) === ticket) queuedWork.delete(key);
@@ -164,7 +232,7 @@ export function createServer({
   }
 
   function endTask(msg) {
-    lifecycle.endTask().then(
+    counted(lifecycle.endTask()).then(
       result => respond(msg.id, statusResult(result)),
       error => respond(msg.id, rejectionResult(error, {endTask: true})),
     );
@@ -189,7 +257,7 @@ export function createServer({
   // the guidance is there as well as in the text, whose JSON line does not repeat it.
   async function profilesList(msg) {
     try {
-      const list = await profiles.list();
+      const list = await profiles.list({track: counted});
       const fields = {status: 'ok', profiles: list.map(profileView)};
       const notReady = list.filter(p => !p.ready).map(p => `${p.key} is not ready (${p.reason}): ${reasonText(p, {route: profiles.route})}.`);
       if (!notReady.length) return respond(msg.id, statusResult(fields));
@@ -218,8 +286,9 @@ export function createServer({
     return reply.finally(() => localReplies.delete(reply));
   };
 
-  // A tool call on this machine.
+  // A tool call on this machine. One for the runtime waits while an idle stop is under way.
   function localTool(msg, name) {
+    if (idleStop && (WORK_TOOLS.has(name) || name === 'end_task')) return void waiting.set(idKey(msg.id), {msg, name});
     if (WORK_TOOLS.has(name)) return runWork(msg);
     if (name === 'end_task') return endTask(msg);
     if (terminal()) return respond(msg.id, noMoreWork());
@@ -247,7 +316,8 @@ export function createServer({
     if (msg.method === 'initialize') {
       clientModel ??= typeof msg.params?.clientInfo?.name === 'string' ? msg.params.clientInfo.name : undefined;
       clientInitialize ??= msg.params;
-      return passThrough(msg, result => ({...result, instructions: withHostNotes(result?.instructions, hostNotes)}));
+      // A handshake that launched the runtime arms the idle stop, as a completed call does.
+      return passThrough(msg, result => { arm(); return {...result, instructions: withHostNotes(result?.instructions, hostNotes)}; });
     }
     if (msg.method === 'tools/list') return passThrough(msg, result => ({...result, tools: modelTools(result?.tools, {surfaces, platform, devices: Boolean(target), inAppBrowser})}));
     return passThrough(msg);
@@ -258,7 +328,7 @@ export function createServer({
     if (msg.method === 'notifications/cancelled') {
       if (target?.cancel(msg.params)) return;                // a call routed to a device
       const key = idKey(msg.params?.requestId);
-      if (queuedWork.get(key)?.cancel()) return onWithdrawn(msg.params.requestId);   // withdrawn before it reached the runtime: never answered
+      if (queuedWork.get(key)?.cancel() || waiting.delete(key)) return onWithdrawn(msg.params.requestId);   // withdrawn before it reached the runtime: never answered
       const upstreamId = upstreamIdOf.get(key);
       if (upstreamId !== undefined) upstream.send({...msg, params: {...msg.params, requestId: upstreamId}});
       return;                                                 // end_task and local tools are not cancellable
@@ -326,11 +396,13 @@ export function createServer({
       const failed = reason === 'failed';
       // The device session ends beside the local teardown (DELETE, bounded), before the final flush.
       const deviceClosed = target ? target.close() : Promise.resolve();
+      disarm();
       upstream.closing?.();
       const {completion} = failed ? {completion: 'failed'} : await lifecycle.close();
       lifecycle.abandon();
       tearingDown = true;
       const teardown = await upstream.terminate({budgetMs: teardownBudgetMs});
+      await idleStop;     // the calls it held are answered (refused) before the final flush
       abandonUpstream(lifecycle.state === 'failed' ? 'connection_failed' : 'connection_closing');
       if (!teardown.confirmed) diagnostics(`runtime teardown unconfirmed after ${teardown.steps.join(', ')}: ${teardown.reason ?? 'no reason given'}; owned processes may remain`);
       else if (teardown.steps.length > 1) diagnostics(`runtime teardown needed ${teardown.steps.slice(1).join(' then ')}; every owned process is gone`);
@@ -342,7 +414,7 @@ export function createServer({
       await Promise.allSettled([...localReplies]);
       await flush();
       input.destroy?.();
-      const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && (completion === 'none' || completion === 'ended');
+      const clean = !failed && lifecycle.state !== 'failed' && teardown.confirmed && !idleLeftover && (completion === 'none' || completion === 'ended');
       const result = {code: clean ? 0 : 1, reason, completion, teardown};
       resolveClosed(result);
       return result;
@@ -362,7 +434,16 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices}));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform};
+  return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform,
+    runtimeIdleMs: runtimeIdleFrom(env)};
+}
+
+// CUA_RUNTIME_IDLE_MS: how long a launched runtime may go without a tool call before it is stopped; 0 never stops it.
+export function runtimeIdleFrom(env) {
+  const value = env.CUA_RUNTIME_IDLE_MS;
+  if (value === undefined) return DEFAULT_RUNTIME_IDLE_MS;
+  if (!/^\d{1,10}$/.test(value)) fail('invalid_setting', 'CUA_RUNTIME_IDLE_MS must be a whole number of milliseconds (0 never stops the runtime)');
+  return Number(value);
 }
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
@@ -377,11 +458,11 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // hosts close with the connection. Once recorded, the handshake needs no runtime (src/mcp/lazy-runtime.mjs), so a
 // session that never uses cua never launches one. The connection's close waits for a readiness listing still running
 // (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime teardown, or a
-// listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome` and `listBackends`
+// listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome`, `listBackends` and `idleTimer`
 // are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
 // Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
-  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, project = projectRoot()}) {
+  prepareLaunch, diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), chrome, listBackends, idleTimer, project = projectRoot()}) {
   const settings = settingsFrom(env, {devices: true});
   const mawsPaths = settings.surfaces.includes('browser') ? configuredBackends(env) : [];
   try {
@@ -400,7 +481,7 @@ export async function serve({home, env = process.env, input = process.stdin, out
   const browserBackends = mawsPaths.length ? startClientBackends({home: realHome(home), paths: mawsPaths, log: diagnostics}) : null;
   try {
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
-      prepareLaunch, chrome, listBackends, devices: deviceDirectory({env}), browserBackends, project});
+      prepareLaunch, chrome, listBackends, idleTimer, devices: deviceDirectory({env}), browserBackends, project});
     if (signalled) connection.close('signal');
     result = await connection.closed;
   } finally {

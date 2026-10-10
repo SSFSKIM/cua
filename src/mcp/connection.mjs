@@ -9,7 +9,9 @@
 // computer use, src/services/browser.mjs for the browser) and the store's directories (or the reason there is none) in
 // its environment, checks it against the sandbox mode, and serves `input`/`output` through `createServer` until EOF, a
 // transport loss, a failure or `close(reason)`. The runtime is spawned in an owned working directory only when the
-// first call needs it (src/mcp/lazy-runtime.mjs), and then stays for the connection's life. With the browser surface, profiles_list
+// first call needs it (src/mcp/lazy-runtime.mjs), and stays until the connection closes or, after CUA_RUNTIME_IDLE_MS
+// without a tool call, the idle stop ends it (src/mcp/server.mjs); its working directory goes with it, the session's
+// run record and approval file stay with the connection, and the next call launches afresh. With the browser surface, profiles_list
 // waits up to 5 s for the MAWS backends' first hello outcomes, then reads $CUA_HOME's profile registry and, when a
 // profile is bound, checks it against the live backends with one bounded listing launch (inventory.mjs, no tab counts);
 // the connection's close waits for such a listing.
@@ -24,7 +26,7 @@
 // (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and is not reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
 // arch}, the process's by default: which pin resolves and the host notes) and
 // `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
-// only. `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
+// only, as is `idleTimer` (createServer's clock for the idle stop). `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
 // directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
 // passes one; the HTTP agent never does, so a device never drives a third one through itself. `browserBackends` (the
@@ -54,7 +56,7 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env, extensionId: extensionIdFor(chromeRoute(home))}),
-  listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null}) {
+  listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null, idleTimer}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
@@ -110,18 +112,25 @@ export async function openConnection({home, env = process.env, sessionId, input,
       chmodSync(launch.cwd, 0o700);
       return spawnUpstream(launch);
     };
-    const upstream = lazyRuntime({start, diagnostics,
+    // An idle stop leaves nothing of the runtime in run/: the next launch makes its working directory afresh.
+    const stopped = () => {
+      try { rmSync(launch.cwd, {recursive: true, force: true}); } catch (error) {
+        diagnostics(`the stopped runtime's working directory could not be removed (${error.code ?? error.message}); the connection's close retries`);
+      }
+    };
+    const upstream = lazyRuntime({start, stopped, diagnostics,
       records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(',')})});
     // `route` words a missing extension as the home's route's (registry.mjs reasonText).
-    const profiles = {route: chromeRoute(home), list: async () => {
+    // `track` (createServer's): the live check counts as use of the runtime for the idle stop.
+    const profiles = {route: chromeRoute(home), list: async ({track = promise => promise} = {}) => {
       await browserBackends?.waitForHellos();
-      const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
+      const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends: () => track(listBackends())});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
       return [...(browserBackends?.entries() ?? []), ...list];
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {
     await release();
     throw error;

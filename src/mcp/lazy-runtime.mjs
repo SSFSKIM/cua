@@ -70,6 +70,7 @@ export function handshakeRecords({dir, surfaces}) {
     },
   };
 }
+
 // CUA_RUNTIME_IDLE_MS: how long a launched runtime may go without a tool call before it is stopped; 0 never stops it.
 export function runtimeIdleFrom(env) {
   const value = env.CUA_RUNTIME_IDLE_MS;

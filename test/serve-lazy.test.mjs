@@ -6,7 +6,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
 import {createServer as createNetServer} from 'node:net';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -365,6 +365,34 @@ test('an idle runtime stops after the default 15 min through the normal end and 
   assert.equal(await server.end(), 0, server.diagnostics.join('\n'));
   assert.deepEqual(readdirSync(join(home, 'run')), []);
   assert.equal(existsSync(approval), false);
+});
+
+test('an idle restart reuses a leftover working directory, fixes its mode and removes it at close', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const clock = fakeClock();
+  const server = served(t, home, {env: {CUA_RUNTIME_IDLE_MS: '60000'}, idleTimer: clock.timer});
+  await server.request('initialize', INIT);
+  await server.call('js', {code: 'first'});
+  const cwd = server.launches[0].cwd;
+  clock.fire();
+  await until('the idle stop', () => server.diagnostics.includes('runtime stopped after 1 min idle'));
+
+  // The residue of a failed idle cleanup (issue #107): the directory and its files still exist at the next launch.
+  mkdirSync(cwd);
+  chmodSync(cwd, 0o777);
+  const residue = join(cwd, 'leftover');
+  writeFileSync(residue, 'leftover');
+  const again = await server.call('js', {code: 'again'});
+  assert.equal(again.error, undefined, server.diagnostics.join('\n'));
+  assert.equal(again.result.isError, false, server.diagnostics.join('\n'));
+  assert.equal(JSON.parse(again.result.content.at(-1).text).code, 'again');
+  assert.equal(server.launches.length, 2);
+  assert.equal(server.launches[1].cwd, cwd, 'the connection reuses its own working directory');
+  assert.equal(readFileSync(residue, 'utf8'), 'leftover');
+  assert.equal(statSync(cwd).mode & 0o777, 0o700, 'the existing directory is private again');
+  assert.equal(await server.end(), 0, server.diagnostics.join('\n'));
+  assert.equal(existsSync(cwd), false, 'close removes the reused directory and its residue');
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
 });
 
 test('CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole milliseconds', {skip: !supported}, async t => {

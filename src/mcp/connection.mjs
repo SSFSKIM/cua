@@ -108,14 +108,14 @@ export async function openConnection({home, env = process.env, sessionId, input,
       launch = prepareLaunch(launchFor());
       assertSandboxFits(sandbox, launch);
       mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-      mkdirSync(launch.cwd, {mode: 0o700});
+      mkdirSync(launch.cwd, {recursive: true, mode: 0o700});
       chmodSync(launch.cwd, 0o700);
       return spawnUpstream(launch);
     };
-    // An idle stop leaves nothing of the runtime in run/: the next launch makes its working directory afresh.
+    // An idle stop removes the runtime's working directory; if removal fails, the next launch reuses it.
     const stopped = () => {
       try { rmSync(launch.cwd, {recursive: true, force: true}); } catch (error) {
-        diagnostics(`the stopped runtime's working directory could not be removed (${error.code ?? error.message}); the connection's close retries`);
+        diagnostics(`the stopped runtime's working directory could not be removed (${error.code ?? error.message}); the next launch reuses it and the connection's close retries removal`);
       }
     };
     const upstream = lazyRuntime({start, stopped, diagnostics,

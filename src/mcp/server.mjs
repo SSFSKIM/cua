@@ -20,9 +20,10 @@
 //   ready profile, the reason of one that is not (with what to tell the user in `guidance`, text and structured content
 //   alike, which names the registered profile's Chrome directory only where the user's step happens there); never a
 //   directory in the profile entries.
-//   Readiness includes the live check (a bound instance among the live backends), so it can take a runtime launch. It
-//   is the gate before profile selection: only a ready profile's instance id is handed out, and a profile with no live
-//   host reads host_not_live with the wake step. A selection that fails later (the host exited after profiles_list)
+//   Readiness waits for the configured MAWS backends' first hello outcomes (at most 5 s) and includes the live check
+//   (a bound instance among the live backends), so it can take a listing runtime launch. It is the gate before profile
+//   selection: only a ready profile's instance id is handed out, and a profile with no live host reads host_not_live
+//   with the wake step. A selection that fails later (the host exited after profiles_list)
 //   fails closed inside the REPL with the vendor's own error; profiles_list's description sends the agent back to it.
 // - secrets_list asks the connection's secrets provider (the file store, src/secrets/store.mjs) for its keys; it never
 //   reads a value. Without a provider, or when the provider says why secrets are unavailable, it reports that.
@@ -30,7 +31,7 @@
 // - js/js_reset results get their image MIME types corrected and token-bearing URLs redacted (surface.mjs); requests
 //   and error replies pass unchanged. Accepted app approvals get `_meta.persist`.
 // On EOF or a signal the connection becomes terminal (Closing), makes a bounded best-effort completion, then tears
-// down the owned runtime within the teardown budget, and writes any local
+// down the owned runtime, if one was launched, within the teardown budget, and writes any local
 // reply still being computed (a profiles_list listing) before the MCP stream's final bounded flush. A failure
 // (completion uncertainty, runtime exit) does the same without the completion attempt.
 import {randomUUID} from 'node:crypto';
@@ -325,6 +326,7 @@ export function createServer({
       const failed = reason === 'failed';
       // The device session ends beside the local teardown (DELETE, bounded), before the final flush.
       const deviceClosed = target ? target.close() : Promise.resolve();
+      upstream.closing?.();
       const {completion} = failed ? {completion: 'failed'} : await lifecycle.close();
       lifecycle.abandon();
       tearingDown = true;
@@ -369,11 +371,13 @@ const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 // device in $HOME's registry, src/remote/directory.mjs). The settings are read first, so an invalid one
 // fails before anything else; then $CUA_HOME/run is swept of sessions whose owning process is gone, the signal handlers
 // go in, and the connection opens and serves until EOF or a signal. With the browser surface and CUA_BROWSER_BACKENDS
-// (MAWS's in-app browser, src/chrome/client-mode.mjs), this process connects to each configured backend and runs its own
-// host for it, waiting up to 5 s for each hello before the connection launches the runtime (so the first listBrowsers
-// finds it); the hosts close with the connection. The connection's close waits for a readiness
-// listing still running (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime
-// teardown, or a listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome` and `listBackends`
+// (MAWS's in-app browser, src/chrome/client-mode.mjs), this process connects to each configured backend at once and runs
+// its own host for it; the connection's runtime launch, on the first call that needs it, and profiles_list both wait
+// up to 5 s for the backends' first hello outcomes (so the first listBrowsers and readiness listing find them); the
+// hosts close with the connection. Once recorded, the handshake needs no runtime (src/mcp/lazy-runtime.mjs), so a
+// session that never uses cua never launches one. The connection's close waits for a readiness listing still running
+// (so serve keeps its signal handlers meanwhile), and serve exits 1 when the connection's runtime teardown, or a
+// listing's, could not be confirmed. Returns the exit code. `prepareLaunch`, `chrome` and `listBackends`
 // are openConnection's seams, forwarded unchanged. `project` is the secret store's project (src/secrets/project.mjs):
 // Claude Code starts the server in its session's directory, so the server's own working directory names it.
 export async function serve({home, env = process.env, input = process.stdin, output = process.stdout,
@@ -395,7 +399,6 @@ export async function serve({home, env = process.env, input = process.stdin, out
   let result;
   const browserBackends = mawsPaths.length ? startClientBackends({home: realHome(home), paths: mawsPaths, log: diagnostics}) : null;
   try {
-    await browserBackends?.waitForHellos();
     connection = await openConnection({home, env, sessionId: randomUUID(), input, output, settings, diagnostics,
       prepareLaunch, chrome, listBackends, devices: deviceDirectory({env}), browserBackends, project});
     if (signalled) connection.close('signal');

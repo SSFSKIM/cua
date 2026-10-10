@@ -4,13 +4,15 @@
 // `openConnection` resolves the installed runtime (per connection, so a `cua runtime use` or a first `cua install`
 // takes effect on the next connection without restarting an agent), claims run/<sessionId> (src/runtime/run-dir.mjs),
 // resolves the secret store (src/secrets/store.mjs: $HOME/.config/claude-secrets, and with `project` that project's
-// directory beneath it, unless secrets are off), builds the
+// directory beneath it, unless secrets are off), plans the
 // launch for the enabled surfaces (CUA_SHIM_SURFACES) with their trusted services registered (src/services/sky.mjs for
 // computer use, src/services/browser.mjs for the browser) and the store's directories (or the reason there is none) in
-// its environment, spawns the runtime in an owned working directory, and serves `input`/`output` through
-// `createServer` until EOF, a transport loss, a failure or `close(reason)`. With the browser surface, profiles_list
-// reads $CUA_HOME's profile registry and, when a profile is bound, checks it against the live backends with one bounded
-// listing launch (inventory.mjs, no tab counts); the connection's close waits for such a listing.
+// its environment, checks it against the sandbox mode, and serves `input`/`output` through `createServer` until EOF, a
+// transport loss, a failure or `close(reason)`. The runtime is spawned in an owned working directory only when the
+// first call needs it (src/mcp/lazy-runtime.mjs), and then stays for the connection's life. With the browser surface, profiles_list
+// waits up to 5 s for the MAWS backends' first hello outcomes, then reads $CUA_HOME's profile registry and, when a
+// profile is bound, checks it against the live backends with one bounded listing launch (inventory.mjs, no tab counts);
+// the connection's close waits for such a listing.
 //
 // Before `closed` settles, everything the connection created is released: the session's app-approval file the runtime
 // wrote, and its run entries. `closed` resolves (never rejects) {code, reason, completion, teardown, listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed or a release step
@@ -18,7 +20,7 @@
 // says a readiness listing's runtime could not be confirmed stopped. An open that fails rejects with the error (its
 // `code` classified) after releasing whatever it had taken.
 //
-// `prepareLaunch` may adjust the launch record; it exists for tests and the opt-in live probes
+// `prepareLaunch` may adjust the launch record, and is called once per launch; it exists for tests and the opt-in live probes
 // (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and is not reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
 // arch}, the process's by default: which pin resolves and the host notes) and
 // `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
@@ -35,6 +37,8 @@ import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
 import {spawnUpstream} from './upstream.mjs';
+import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
+import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
@@ -83,26 +87,41 @@ export async function openConnection({home, env = process.env, sessionId, input,
   let server;
   try {
     const secrets = connectionSecrets({enabled: secretsEnabled, env, project});
-    launch = prepareLaunch(buildLaunch({
+    const launchFor = () => buildLaunch({
       runtime, home, sessionId, ambient: env, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
-    }));
-    assertSandboxFits(sandbox, launch);
+    });
+    // The open checks the launch as it would be built now, so a misconfiguration fails the connection before its
+    // handshake; nothing is spawned or created for it.
+    const planned = launchFor();
+    assertSandboxFits(sandbox, planned);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
-    mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
-    mkdirSync(launch.cwd, {mode: 0o700});
-    chmodSync(launch.cwd, 0o700);
+    // The launch itself (lazy-runtime.mjs): on the first call that needs the runtime, after the MAWS backends' hellos
+    // (so the launch prefers the in-app browser's instance and the first listBrowsers finds its host).
+    const start = async ({signal}) => {
+      if (browserBackends && !signal.aborted) await Promise.race([browserBackends.waitForHellos(), new Promise(resolve => signal.addEventListener('abort', resolve, {once: true}))]);
+      if (signal.aborted) return null;
+      launch = prepareLaunch(launchFor());
+      assertSandboxFits(sandbox, launch);
+      mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
+      mkdirSync(launch.cwd, {mode: 0o700});
+      chmodSync(launch.cwd, 0o700);
+      return spawnUpstream(launch);
+    };
+    const upstream = lazyRuntime({start, diagnostics,
+      records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(',')})});
     // `route` words a missing extension as the home's route's (registry.mjs reasonText).
     const profiles = {route: chromeRoute(home), list: async () => {
+      await browserBackends?.waitForHellos();
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;
       return [...(browserBackends?.entries() ?? []), ...list];
     }};
-    server = createServer({input, output, sessionId, upstream: spawnUpstream(launch), secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, launch.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...serverSettings});
+    server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
+      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...serverSettings});
   } catch (error) {
     await release();
     throw error;

@@ -4,10 +4,11 @@ Spec: `docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md` (this 
 
 ## PRs and ranges
 
-- **MAWS**: https://github.com/SSFSKIM/MAWS/pull/7. Branch `95-socket-peer-auth`, a35dc53d..4e998773.
+- **MAWS**: https://github.com/SSFSKIM/MAWS/pull/7. Branch `95-socket-peer-auth`, a35dc53d..0a0214e0.
   - M1 a925fbdd
   - M2 36cea2a6, review fix 8ab7258d
   - M4 tracker 5178d7f5, PR number 4e998773
+  - SIGUSR1 follow-up ee88fe67, master merge a66b0040 (origin/master 8f43ab95), the tracker amendment moved to an appended row 0b6ea59d, review fix 0a0214e0 (the supervisor spawned with `--disable-sigusr1`; the SIGUSR1 specs guard against a held 9229)
 - **cua**: https://github.com/SSFSKIM/cua/pull/104. Branch `spec/socket-peer-auth-95`, 9b33a97..HEAD.
   - Spec commits 17d060a and earlier, pre-flight f6474cc
   - M1 dacfd61
@@ -27,6 +28,15 @@ Spec: `docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md` (this 
 - **pnpm e2e:browser-cua**: `7 passed (33.6s)`, exit 0. Run by the controller at 5178d7f5. The executor and reviewer each also ran it 7/7.
 - **pnpm e2e:browser**: 8/8 (M2).
 - **pnpm build:app && pnpm e2e:packaged**: `61 passed, 140 skipped (4.0m)`, exit 0. Run by the controller at 5178d7f5. The run includes `peerModule === 'loaded'`, and `Resources/peer-auth/peer-auth.node` is present.
+
+- **After the SIGUSR1 follow-up and the master merge** (0a0214e0; every e2e group run through the quiet wrapper):
+  - typecheck and lint exit 0
+  - `pnpm test`: 11446 passed at 0b6ea59d; the only failure was the pty flake, which passes alone
+  - hosts and detached units 134/134
+  - `build:app` exit 0
+  - `e2e:packaged`: 64 passed, 142 skipped, including `sigusr1.spec`
+  - `e2e:supervisor:packaged`: 1 passed
+  - `e2e:browser-cua`: 7/7
 
 ### cua
 
@@ -51,6 +61,7 @@ Every reviewer ran on opus at high, because of the astra limit.
 | M3 | medium | correct | P3 the cua-remote skill still said Node 22; fixed in 1fde3cf, re-reviewed clean |
 | cua branch | high | correct | P3 Node 23.0–23.6 lack `--disable-sigusr1`; fixed in 8350004 (`^22.14 \|\| >=23.7`), re-reviewed clean |
 | MAWS branch | high | correct | P3 the tracker row's `MAWS PR #<n>` placeholder; filled in 4e998773 |
+| MAWS SIGUSR1 follow-up | medium | correct | P2 a false pass while 9229 is held; P3 the supervisor's startup window. Both fixed in 0a0214e0, re-reviewed clean |
 
 No unresolved findings. The one ledger Minor, a cloud-VM README line longer than 120 columns, was fixed in 8350004.
 
@@ -85,7 +96,7 @@ Where it goes: `docs/doperpowers/plans/2026-10-05-p1-extension.md`, the A-52 row
 Decision cell, after "…until the spec's M4 removes it.". This is the form the A-51 and A-54 rows use for their dated
 amendments ("Amended 2026-10-08 (…): …").
 
-> Amended 2026-10-09 (cua board #95, MAWS PR #7; the cua spec `docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md`): the 0700 directory is no longer the whole authorization. The socket file is 0600 and each peer is checked at accept, before a byte is read (`pauseOnConnect`): it is accepted only when it runs as MAWS's user and descends from the session's engine process instance (the pid every `session.status` carries, stored with its start time and re-verified at every check; a peer that connects before the first status waits up to 3 s for it), read from the kernel by a committed N-API addon (`LOCAL_PEERPID`, `getpeereid`, `proc_pidinfo`); any other peer is destroyed with one log line naming its pid and reason, and every peer is refused when the addon cannot load. cua's client-mode relay inside `cua serve` applies the same check with that `cua serve` process as its root (plugin 0.7.0); cua's Chrome-route sockets keep the filesystem rule. A peer is accepted by where it sits in the process tree, not by what it is: the engine's descendants (the model's commands among them) and code a same-user process injects through the owner's or a project's Claude Code configuration (hooks, MCP servers, plugin files; the engine loads them under `--setting-sources user,project,local` without `--strict-mcp-config`) are admitted, bounded by the rules every peer meets. Every stock Node process in an admitted tree (the engine's other Node MCP servers, Node processes the model starts, the vendor runtime's Node launcher) opens an inspector on a same-user SIGUSR1 (MAWS's main process and the detached supervisor ignore it since MAWS PR #7 gave them a no-op SIGUSR1 listener; cua's own processes run with `--disable-sigusr1`), and the supervisor's 0600 token file lets any same-user process take the supervisor over; these routes are accepted by the spec's owner and carried in the tracker's E13 row with the follow-ups that would close them.
+> Amended 2026-10-09 (cua board #95, MAWS PR #7; the cua spec `docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md`): the 0700 directory is no longer the whole authorization. The socket file is 0600 and each peer is checked at accept, before a byte is read (`pauseOnConnect`): it is accepted only when it runs as MAWS's user and descends from the session's engine process instance (the pid every `session.status` carries, stored with its start time and re-verified at every check; a peer that connects before the first status waits up to 3 s for it), read from the kernel by a committed N-API addon (`LOCAL_PEERPID`, `getpeereid`, `proc_pidinfo`); any other peer is destroyed with one log line naming its pid and reason, and every peer is refused when the addon cannot load. cua's client-mode relay inside `cua serve` applies the same check with that `cua serve` process as its root (plugin 0.7.0); cua's Chrome-route sockets keep the filesystem rule. A peer is accepted by where it sits in the process tree, not by what it is: the engine's descendants (the model's commands among them) and code a same-user process injects through the owner's or a project's Claude Code configuration (hooks, MCP servers, plugin files; the engine loads them under `--setting-sources user,project,local` without `--strict-mcp-config`) are admitted, bounded by the rules every peer meets. Every stock Node process in an admitted tree (the engine's other Node MCP servers, Node processes the model starts, the vendor runtime's Node launcher) opens an inspector on a same-user SIGUSR1 (since MAWS PR #7, MAWS's main process ignores it through a no-op listener at its entry, from that line on, and the detached supervisor is spawned with `--disable-sigusr1`; cua's own processes run with the flag too), and the supervisor's 0600 token file lets any same-user process take the supervisor over; these routes are accepted by the spec's owner and carried in the tracker's E13 row with the follow-ups that would close them.
 
 Optional companion in the same row's Reason cell, appended:
 

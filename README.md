@@ -14,7 +14,8 @@ on another machine (see Remote control). The design and its status are in
 ## Requirements
 
 - macOS on Apple silicon, or Linux on x64 or arm64 with an X11 desktop (see Linux; other platforms get
-  `unsupported_platform`), and `node` 22 or newer on `PATH`. The one npm dependency, `ws`, is needed only for remote
+  `unsupported_platform`), and Node 22.14+ (or 23.7+) as `node` on `PATH` (the plugin starts the server with
+  `--disable-sigusr1`, which those versions introduced). The one npm dependency, `ws`, is needed only for remote
   control through a relay (`npm ci`); everything else runs without `node_modules`.
 - The pinned runtime, installed into `CUA_HOME` (default `~/Library/Application Support/cua`) by `cua install`: it
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
@@ -65,7 +66,7 @@ claude plugin install cua@cua
 ```
 
 This repository is its own marketplace, so the installed plugin follows `main` (`claude plugin marketplace update cua`
-picks up a new version). The plugin runs `node cua-shim.mjs`, which is `cua serve`, as the MCP server
+picks up a new version). The plugin runs `node --disable-sigusr1 cua-shim.mjs`, which is `cua serve`, as the MCP server
 `plugin:cua:cua_repl` with `CUA_SHIM_SURFACES=computer,browser`; its tools are `mcp__plugin_cua_cua_repl__*`. The
 installed copy needs no `npm ci`: `ws`, the one dependency, is loaded only on the relay path of `cua agent`, never by
 `serve` (the suite checks that; a copy without `node_modules` reaches the runtime check). The plugin cannot install the runtime: run
@@ -1300,9 +1301,11 @@ session's Browser panel (spec `docs/doperpowers/specs/2026-10-08-maws-in-app-bro
 The contract is one environment variable. MAWS serves the cua extension's primitives (the extension protocol, version 1,
 plus `profileName` in its hello and `cursor.move`) on one Unix socket per app session, in a 0700 directory under its
 user data, and passes that socket's path to the session's engine as `CUA_BROWSER_BACKENDS`; the engine, its subagents
-and the `cua serve` they start inherit it, and nothing else knows it: the path is the session's authorization.
-`CUA_BROWSER_BACKENDS` lists absolute socket paths separated by `:` (a relative one fails `cua serve` with
-`invalid_setting`); it is read with the browser surface only, by `cua serve` and by `cua profiles list`.
+and the `cua serve` they start inherit it. Who may use the session's browser is that path plus two peer checks (spec
+`docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md`): MAWS accepts a connection only from a process that
+runs as its user and descends from the session's engine, and cua's own host for it (below) only from a descendant of the
+cua process that opened it. `CUA_BROWSER_BACKENDS` lists absolute socket paths separated by `:` (a relative one fails
+`cua serve` with `invalid_setting`); it is read with the browser surface only, by `cua serve` and by `cua profiles list`.
 
 For each configured socket, the process connects and runs cua's ordinary host over that connection, in the process
 itself (client mode): the host listens at `$CUA_HOME/chrome/m/<name>-<pid>.sock` while connected, and its status file
@@ -1313,16 +1316,31 @@ never reach another session. `cua serve` waits up to 5 s for each backend's hell
 refused or lost connection (MAWS quitting while the engine lives, MAWS relaunched) is retried every 5 s, and the host's
 path is listed to the vendor from the start, so a backend that comes back is found again without restarting anything.
 
+The host's socket is cua's half of the check. The kernel names the connecting process (the committed peer identity addon
+in `native/peer-auth/`, three system calls, Apple silicon macOS only; `native/peer-auth/README.md` says how to rebuild
+it), and the host accepts it only if it runs as the same user and descends from the process that opened the socket: the
+vendor browser service and the trusted worker that `cua serve` launched, or `cua profiles list`'s own listing. Anything
+else (a Terminal `nc -U`, another application, another session's process) is closed before a byte of it is read, with
+one line `relay <name>: refused peer pid <pid> (<reason>)` in the host's log. The status file says `peerCheck: "on"`
+(`"off"` for the Chrome route's host, which checks no peer). If the addon cannot load, the host fails closed: it refuses
+every client (`module_unavailable`), its status says `"unavailable"`, `profiles_list` reads `maws_unreachable` and
+`cua doctor`'s `maws.hosts` row is blocked and says why. What the check does not stop: a process that is itself in the
+tree (the model's commands run under the engine), code a same-user process gets the engine to start by editing Claude
+Code's settings or plugins, and a same-user `kill -USR1` that opens Node's inspector in a stock Node process of the tree.
+cua's own processes ignore that signal (the plugin starts the server with `--disable-sigusr1`, and the runtime's anchor
+is started with it); the vendor runtime's Node processes, which cua runs unmodified, do not: its launcher opens an
+inspector on 127.0.0.1:9229 (under the default scoped sandbox the kernel's and the trusted worker's cannot listen).
+
 What the agent sees: `profiles_list` lists `maws` first (`maws-2`, … for further sockets), ready with its
-`extensionInstanceId` (`maws:<app session>`) while connected, else `maws_unreachable`; its description says that
-`cua.getBrowser()` with no id is the in-app browser and that a Chrome profile is used only when the user names one.
-cua's trusted browser wrapper enforces that default: a selection that names no browser (`cua.getBrowser()`,
-`cua.getBrowser({url})`) is resolved when it is made to the first configured backend's instance, else the first
-listed MAWS backend (a `cua serve` that started while MAWS was down picks MAWS up once it returns), so while MAWS is
-away it fails with the vendor's own "Browser is not available" instead of landing in a Chrome profile; `cua.getBrowser({extensionInstanceId})`
-with a Chrome profile's id still drives that profile. MAWS's tabs show the agent's cursor (`moveMouse` reaches MAWS as
-`cursor.move`) and a page's `window.open` arrives as a tab the agent already owns (`tabs.adopted`). `cua doctor` lists the
-connected MAWS hosts in its `maws.hosts` row.
+`extensionInstanceId` (`maws:<app session>`) while connected and checking its peers, else `maws_unreachable`; its
+description says that `cua.getBrowser()` with no id is the in-app browser and that a Chrome profile is used only when
+the user names one. cua's trusted browser wrapper enforces that default: a selection that names no browser
+(`cua.getBrowser()`, `cua.getBrowser({url})`) is resolved when it is made to the first configured backend's instance,
+else the first listed MAWS backend (a `cua serve` that started while MAWS was down picks MAWS up once it returns), so
+while MAWS is away it fails with the vendor's own "Browser is not available" instead of landing in a Chrome profile;
+`cua.getBrowser({extensionInstanceId})` with a Chrome profile's id still drives that profile. MAWS's tabs show the
+agent's cursor (`moveMouse` reaches MAWS as `cursor.move`) and a page's `window.open` arrives as a tab the agent already
+owns (`tabs.adopted`). `cua doctor` lists the connected MAWS hosts in its `maws.hosts` row, each with its peer check.
 
 The person can take a MAWS tab over by touching it: from their input until 3 s after their last one, MAWS refuses the
 agent's actions on that tab (clicks, typing, scripts) and lets reads through. A locator action retries a refused step

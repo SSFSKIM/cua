@@ -21,7 +21,8 @@ client's `/secret` field themselves.
 1. **cua from a checkout.** Use an existing checkout if `cua` (or `node <checkout>/bin/cua.mjs`) runs; otherwise
    `git clone https://github.com/SSFSKIM/cua` at a stable path, then `npm ci` there (the relay leg needs its `ws`) and
    optionally `npm link`. Not the plugin's cache copy: the agent job runs the checkout it was installed from, and the
-   cache is replaced on every plugin update. Node 22 or newer.
+   cache is replaced on every plugin update. Node 22.14+ or 23.7+: cua starts the runtime's anchor with
+   `--disable-sigusr1`.
 2. **The runtime.** `cua install`, then `cua doctor`. On Linux first meet the README's Linux requirements (an X11
    session, the apt packages; keep a copy of the deb for `--archive`). This gives the GUI surface. For the browser
    surface too, follow the README's Chrome section on the device before enrolling: the cua extension in the Chrome

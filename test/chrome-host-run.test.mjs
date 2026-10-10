@@ -16,6 +16,7 @@ import {createFakeCuaExtension} from './helpers/fake-cua-extension.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 
 const HOST = fileURLToPath(new URL('../src/chrome/host.mjs', import.meta.url));
+const CONNECTOR = fileURLToPath(new URL('./helpers/relay-connector.mjs', import.meta.url));
 const OTHER = 'tab owned by another session';
 let nextPid = 900_000;
 const waitFor = async (predicate, what, ms = 3000) => {
@@ -101,6 +102,23 @@ test('after hello the host listens at chrome/b/<name>.sock, keeps <name>.json an
   c.close();
   h.port.disconnect();
   assert.equal((await h.done).code, 0);
+});
+
+// The Chrome route keeps its trust model (docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md: its vendor
+// client is not its descendant): runHost without `authorize` checks no peer, so an orphaned same-user process is served.
+test('the Chrome-route host checks no peer: an orphaned same-user process is served as before, and the status reads peerCheck off', async t => {
+  const h = start(t);
+  t.after(() => { h.port.disconnect(); return h.done; });
+  await waitFor(() => existsSync(h.socketPath), 'the socket');
+  assert.equal(h.status().peerCheck, 'off');
+  const s = shortScratch('cua-h1o-');
+  t.after(s.cleanup);
+  const result = join(s.dir, 'result.json');
+  const q = JSON.stringify;
+  spawn('/bin/sh', ['-c', `(${q(process.execPath)} ${q(CONNECTOR)} ${q(h.socketPath)} ${q(result)} &)`], {stdio: 'ignore'});
+  await waitFor(() => existsSync(result), 'the orphan\'s outcome', 8000);
+  assert.deepEqual(JSON.parse(readFileSync(result, 'utf8')), {connected: true, replied: true, closed: false});
+  assert.doesNotMatch(readFileSync(join(logDir(h.home), `${h.name}.log`), 'utf8'), /refused peer/);
 });
 
 test('two clients each drive their own tab; neither lists the other\'s, and executeCdp on the other\'s is refused', async t => {

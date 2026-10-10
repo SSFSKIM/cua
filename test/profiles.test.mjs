@@ -356,9 +356,9 @@ test('the keys profiles_list gives MAWS backends (maws, maws-<n>) are reserved: 
   assert.deepEqual(Object.keys(readRegistry(home).profiles), ['mawson']);
 });
 
-test('maws_unreachable says MAWS is down or the session\'s socket is gone, and what to do', () => {
+test('maws_unreachable says MAWS is down or the session\'s socket is gone, or cua\'s peer check is unavailable, and what to do', () => {
   assert.equal(reasonText({key: 'maws', reason: 'maws_unreachable'}),
-    'MAWS is not running or this session\'s browser socket is gone; start MAWS, then call profiles_list again');
+    'MAWS is not running or this session\'s browser socket is gone, so start MAWS and call profiles_list again; or cua\'s peer check is unavailable and its relay refuses the browser service (cua doctor\'s maws.hosts row says why)');
 });
 
 test('a MAWS backend (instance maws:…) is never a Chrome profile\'s backend, whatever family it reports', () => {

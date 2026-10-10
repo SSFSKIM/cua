@@ -2,8 +2,14 @@
 // mode, discovery, profiles_list"): CUA_BROWSER_BACKENDS names MAWS sockets; for each, a process connects, runs the
 // host over that connection and listens at $CUA_HOME/chrome/m/<socketNameFor(path)>-<pid>.sock while connected,
 // retrying a refused or lost connection every 5 s. Against the fake MAWS peer (test/helpers/fake-maws-peer.mjs).
+//
+// The host's socket accepts only this process and its descendants (docs/doperpowers/specs/2026-10-09-maws-socket-peer-
+// auth-design.md, "cua: the authorizer on the client-mode relay"): the vendor clients here run in the test process, the
+// root itself. The check needs the peer identity addon, built for Apple silicon macOS only; elsewhere the relay refuses
+// every client and the entry reads maws_unreachable, so the cases that need a ready relay skip there.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
 import {existsSync, readFileSync, readdirSync, statSync} from 'node:fs';
 import {connect} from 'node:net';
 import {join} from 'node:path';
@@ -13,7 +19,11 @@ import {
 import {backendDir, clientModeDir, logDir, socketNameFor} from '../src/chrome/extension.mjs';
 import {createPeer, frameDecoder} from '../src/chrome/protocol.mjs';
 import {startFakeMawsPeer} from './helpers/fake-maws-peer.mjs';
-import {shortScratch} from './fixtures/runtime-fixture.mjs';
+import {REPO, shortScratch} from './fixtures/runtime-fixture.mjs';
+
+const relayOnly = {skip: !(process.platform === 'darwin' && process.arch === 'arm64')
+  && 'the relay\'s peer check needs the peer identity addon, built for Apple silicon macOS only (elsewhere every client is refused)'};
+const CONNECTOR = join(REPO, 'test', 'helpers', 'relay-connector.mjs');
 
 const waitFor = async (predicate, what, ms = 3000) => {
   const deadline = Date.now() + ms;
@@ -51,7 +61,7 @@ test('CUA_BROWSER_BACKENDS: absolute socket paths separated by ":", deduplicated
   assert.equal(HELLO_WAIT_MS, 5000);
 });
 
-test('connected: the host listens at chrome/m/<name>-<pid>.sock (0700 dir, 0600 socket), status in chrome/b, log in chrome/logs; the entry is ready', async t => {
+test('connected: the host listens at chrome/m/<name>-<pid>.sock (0700 dir, 0600 socket), status in chrome/b, log in chrome/logs; the entry is ready', relayOnly, async t => {
   const h = home(t);
   const peerPath = join(h, 'p.sock');
   const peer = await startFakeMawsPeer({path: peerPath});
@@ -65,7 +75,9 @@ test('connected: the host listens at chrome/m/<name>-<pid>.sock (0700 dir, 0600 
   assert.equal(statSync(clientModeDir(h)).mode & 0o777, 0o700);
   assert.equal(statSync(socketPath).mode & 0o777, 0o600);
   assert.deepEqual(readdirSync(backendDir(h)).filter(n => n.endsWith('.sock')), [], 'nothing listens in chrome/b');
-  assert.equal(JSON.parse(readFileSync(join(backendDir(h), `${name}.json`), 'utf8')).instanceId, peer.instanceId);
+  const status = JSON.parse(readFileSync(join(backendDir(h), `${name}.json`), 'utf8'));
+  assert.equal(status.instanceId, peer.instanceId);
+  assert.equal(status.peerCheck, 'on', 'the status file says the relay checks its peers');
   assert.ok(existsSync(join(logDir(h), `${name}.log`)));
   assert.deepEqual(client.entries(), [{key: 'maws', ready: true, extensionInstanceId: peer.instanceId}]);
   assert.equal(client.defaultInstance(), peer.instanceId);
@@ -81,7 +93,7 @@ test('connected: the host listens at chrome/m/<name>-<pid>.sock (0700 dir, 0600 
   await waitFor(() => peer.live().length === 0, 'the peer seeing the connection close');
 });
 
-test('MAWS down at start: the wait ends at the first refusal, the entry reads maws_unreachable, and the host appears once MAWS listens', async t => {
+test('MAWS down at start: the wait ends at the first refusal, the entry reads maws_unreachable, and the host appears once MAWS listens', relayOnly, async t => {
   const h = home(t);
   const peerPath = join(h, 'p.sock');
   const client = startClientBackends({home: h, paths: [peerPath], pid: 7, retryMs: 50});
@@ -98,7 +110,7 @@ test('MAWS down at start: the wait ends at the first refusal, the entry reads ma
   assert.equal(existsSync(client.hostPaths()[0]), true);
 });
 
-test('MAWS quitting and coming back: the host exits with the connection and reconnects on the next retry, same instance', async t => {
+test('MAWS quitting and coming back: the host exits with the connection and reconnects on the next retry, same instance', relayOnly, async t => {
   const h = home(t);
   const peerPath = join(h, 'p.sock');
   let peer = await startFakeMawsPeer({path: peerPath});
@@ -117,7 +129,7 @@ test('MAWS quitting and coming back: the host exits with the connection and reco
   assert.equal(client.entries()[0].extensionInstanceId, peer.instanceId);
 });
 
-test('two processes on one MAWS socket each run their own host; the first closing leaves the second serving', async t => {
+test('two processes on one MAWS socket each run their own host; the first closing leaves the second serving', relayOnly, async t => {
   const h = home(t);
   const peerPath = join(h, 'p.sock');
   const peer = await startFakeMawsPeer({path: peerPath});
@@ -138,7 +150,7 @@ test('two processes on one MAWS socket each run their own host; the first closin
   assert.equal(second.entries()[0].ready, true);
 });
 
-test('a second configured backend is maws-2; a refused hello (another protocol major) is retried, never listened for', async t => {
+test('a second configured backend is maws-2; a refused hello (another protocol major) is retried, never listened for', relayOnly, async t => {
   const h = home(t);
   const a = await startFakeMawsPeer({path: join(h, 'a.sock')});
   const b = await startFakeMawsPeer({path: join(h, 'b.sock'), extension: {protocolVersion: 2}});
@@ -153,7 +165,7 @@ test('a second configured backend is maws-2; a refused hello (another protocol m
   assert.equal(existsSync(client.hostPaths()[1]), false);
 });
 
-test('frame limits over the MAWS socket: a 2 MiB answer reaches the vendor; a host frame over 1 MiB fails alone and the connection stays', async t => {
+test('frame limits over the MAWS socket: a 2 MiB answer reaches the vendor; a host frame over 1 MiB fails alone and the connection stays', relayOnly, async t => {
   const h = home(t);
   const big = 'x'.repeat(2 * 1024 * 1024);
   const peer = await startFakeMawsPeer({path: join(h, 'p.sock'), extension: {cdp: ({method, params}) => (method === 'Runtime.evaluate'
@@ -172,4 +184,73 @@ test('frame limits over the MAWS socket: a 2 MiB answer reaches the vendor; a ho
   await assert.rejects(evaluate('y'.repeat(1024 * 1024 + 1)), e => e.message === 'message_too_large');
   assert.deepEqual(await evaluate('small'), {result: {type: 'string', value: 'ok:5'}}, 'the connection survived the refused frame');
   assert.equal(peer.live().length, 1);
+});
+
+// ---- the relay's peer check ------------------------------------------------------------------------------------------
+
+// Runs the connector (test/helpers/relay-connector.mjs) against `socketPath`, as this process's child or as an orphan,
+// and resolves what it saw: {pid, connected, replied, closed}.
+async function connectorOutcome(t, socketPath, {orphan}) {
+  const s = shortScratch('cua-rc-');
+  t.after(s.cleanup);
+  const result = join(s.dir, 'result.json');
+  const pidFile = join(s.dir, 'pid');
+  const node = JSON.stringify(process.execPath), script = JSON.stringify(CONNECTOR);
+  const args = [JSON.stringify(socketPath), JSON.stringify(result)].join(' ');
+  // The orphan's subshell exits at once, so launchd adopts it; it records its own pid for the refusal line.
+  const command = orphan ? `(${node} ${script} ${args} & echo $! > ${JSON.stringify(pidFile)})` : `echo $$ > ${JSON.stringify(pidFile)}; exec ${node} ${script} ${args}`;
+  const child = spawn('/bin/sh', ['-c', command], {stdio: 'ignore'});
+  t.after(() => child.kill());
+  await waitFor(() => existsSync(result), 'the connector\'s outcome', 8000);
+  return {pid: Number(readFileSync(pidFile, 'utf8')), ...JSON.parse(readFileSync(result, 'utf8'))};
+}
+
+test('an orphaned same-user process connecting to the relay is refused before anything is read: one log line with its pid, nothing reaches MAWS', relayOnly, async t => {
+  const h = home(t);
+  const peer = await startFakeMawsPeer({path: join(h, 'p.sock')});
+  t.after(() => peer.stop());
+  const client = startClientBackends({home: h, paths: [peer.path], pid: 12});
+  t.after(() => client.close());
+  await client.waitForHellos();
+  const [hostPath] = client.hostPaths();
+  const name = clientSocketName(peer.path, 12);
+  const orphan = await connectorOutcome(t, hostPath, {orphan: true});
+  assert.deepEqual({connected: orphan.connected, replied: orphan.replied, closed: orphan.closed}, {connected: true, replied: false, closed: true});
+  assert.deepEqual(peer.connections[0].ext.calls.filter(c => c.method === 'tabs.create'), [], 'its createTab was never read');
+  const log = readFileSync(join(logDir(h), `${name}.log`), 'utf8');
+  assert.deepEqual(log.match(/relay .*: refused .*/g), [`relay ${name}: refused peer pid ${orphan.pid} (not_descendant)`]);
+  assert.equal(client.entries()[0].ready, true, 'the relay keeps serving its own tree');
+  const vendor = await vendorClient(hostPath);
+  assert.ok(Number.isInteger((await vendor.request('createTab', {session_id: 's', turn_id: 't'})).id));
+  vendor.close();
+});
+
+test('a child of the process that opened the relay (the vendor service\'s place) is accepted', relayOnly, async t => {
+  const h = home(t);
+  const peer = await startFakeMawsPeer({path: join(h, 'p.sock')});
+  t.after(() => peer.stop());
+  const client = startClientBackends({home: h, paths: [peer.path], pid: 13});
+  t.after(() => client.close());
+  await client.waitForHellos();
+  const child = await connectorOutcome(t, client.hostPaths()[0], {orphan: false});
+  assert.equal(child.replied, true);
+  assert.equal(peer.connections[0].ext.calls.filter(c => c.method === 'tabs.create').length, 1);
+  assert.doesNotMatch(readFileSync(join(logDir(h), `${clientSocketName(peer.path, 13)}.log`), 'utf8'), /refused peer/);
+});
+
+test('without the addon the relay fails closed: every client refused (module_unavailable, naming the build script), peerCheck unavailable, the entry not ready', async t => {
+  const h = home(t);
+  const peer = await startFakeMawsPeer({path: join(h, 'p.sock')});
+  t.after(() => peer.stop());
+  const client = startClientBackends({home: h, paths: [peer.path], pid: 14, peerAddon: null});
+  t.after(() => client.close());
+  await client.waitForHellos();
+  const [hostPath] = client.hostPaths();
+  const name = clientSocketName(peer.path, 14);
+  assert.ok(existsSync(hostPath), 'the relay still listens, so the refusal shows');
+  assert.equal(JSON.parse(readFileSync(join(backendDir(h), `${name}.json`), 'utf8')).peerCheck, 'unavailable');
+  assert.deepEqual(client.entries(), [{key: 'maws', ready: false, reason: 'maws_unreachable'}]);
+  const own = await connectorOutcome(t, hostPath, {orphan: false});
+  assert.deepEqual({replied: own.replied, closed: own.closed}, {replied: false, closed: true});
+  assert.match(readFileSync(join(logDir(h), `${name}.log`), 'utf8'), new RegExp(`relay ${name}: refused peer \\(module_unavailable\\); run scripts/build-peer-auth\\.sh`));
 });

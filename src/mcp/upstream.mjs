@@ -60,8 +60,10 @@ export function spawnUpstream({command, args, env, cwd}, {
   let anchorExited = false;
   let stopAcknowledged = false;
 
-  // The anchor leads a new process group; its pid is the group's number for as long as it lives.
-  const anchor = spawn(process.execPath, [ANCHOR], {env, cwd, stdio: ['pipe', 'pipe', stderr, 'ipc'], detached: true});
+  // The anchor leads a new process group; its pid is the group's number for as long as it lives. --disable-sigusr1: a
+  // same-user SIGUSR1 would otherwise open Node's inspector in it, a process of the tree a MAWS relay accepts
+  // (docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md).
+  const anchor = spawn(process.execPath, ['--disable-sigusr1', ANCHOR], {env, cwd, stdio: ['pipe', 'pipe', stderr, 'ipc'], detached: true});
   const pgid = anchor.pid;
   const anchorGone = new Promise(resolve => anchor.once('exit', resolve));
   anchor.stdin.on('error', () => {});

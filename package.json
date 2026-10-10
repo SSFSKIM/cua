@@ -5,7 +5,7 @@
   "description": "Standalone MCP server for OpenAI's computer-use runtime on macOS and Linux.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": "^22.14 || >=23.7"
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
@@ -19,6 +19,7 @@
     "bin/",
     "src/",
     "extension/",
+    "native/",
     "runtime/releases/",
     "scripts/probe/lib.mjs",
     "cua-shim.mjs",
@@ -28,5 +29,8 @@
   ],
   "dependencies": {
     "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "node-api-headers": "1.9.0"
   }
 }

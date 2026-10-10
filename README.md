@@ -147,8 +147,15 @@ means control has been handed back.
 
 **Process footprint.** Claude Code starts the plugin's server in every session, used or not, so `cua serve` holds no
 runtime until a call needs one. It answers the MCP handshake and the tool list itself and launches the runtime
-(the vendor's `node`, `node_repl` and their sandboxed children) on the first `js` or `js_reset`; from then
-on the runtime stays until the session's server exits (there is no idle shutdown yet). `secrets_list`, `devices_list`,
+(the vendor's `node`, `node_repl` and their sandboxed children) on the first `js` or `js_reset`. A runtime that goes
+15 minutes (`CUA_RUNTIME_IDLE_MS`, in milliseconds; `0` keeps it for the session's life) without a `js`, `js_reset`,
+`end_task` or `profiles_list` live check is stopped as a task's end and a session's close stop it: an open task is
+completed first (its app and Chrome attachments released, a MAWS browser's lease included), the processes are torn down
+and the connection's working directory under `run/` removed, while the session's MCP connection, its MAWS socket and
+its app approvals stay. A running call never counts as idle. The next `js` or `js_reset` launches a fresh runtime, and
+its result opens with a line telling the model that the runtime restarted after idling and its REPL state (variables,
+app handles, tabs) is gone, ahead of the API document a fresh runtime returns; a call that arrives while the runtime is
+being stopped waits for the fresh one. `secrets_list`, `devices_list`,
 `devices_use`, an `end_task` with no task open and the registry part of `profiles_list` never launch it (a bound
 profile's live check makes its own short launch, see Profiles), and a session that never used cua exits with nothing to
 tear down. The handshake answers come from the runtime itself: the first connection of an installed release (per
@@ -868,8 +875,9 @@ there are no per-client credentials.
 
 ### Sessions: limits, and how they end
 
-Each `initialize` opens a session, which launches one runtime on the Mac at its first `js` or `js_reset` (as `cua
-serve` does, see Process footprint). Two numbers bound them:
+Each `initialize` opens a session, which launches one runtime on the Mac at its first `js` or `js_reset` and stops it
+after `CUA_RUNTIME_IDLE_MS` without a tool call (as `cua serve` does, see Process footprint; `cua agent install`
+carries the variable into the job when it is set). Two numbers bound them:
 
 - **At most 1 session at a time** (`CUA_AGENT_MAX_SESSIONS`), because every session drives the same mouse, keyboard,
   front window and Chrome. An `initialize` at the cap first evicts the oldest Idle session: nothing in flight, and
@@ -1248,6 +1256,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` hands the runtime no secret store; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
+| `CUA_RUNTIME_IDLE_MS` | `900000` (15 minutes) | how long a launched runtime may go without a `js`, `js_reset`, `end_task` or `profiles_list` live check before it is stopped (the next `js` or `js_reset` launches a fresh one, its REPL state gone; see Process footprint); `0` keeps it for the connection's life; maximum `2147483647` (about 24.8 days) |
 | `CUA_SHIM_SANDBOX` | `scoped`; on Linux with the computer surface `disabled` (see Linux) | the sandbox node_repl applies to the runtime's JavaScript: `scoped` lets it write only its connection's run directory and `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
 
 cua sends node_repl a sandbox state, in the field Codex uses for it (`_meta["codex/sandbox-state-meta"]`), on every call

@@ -69,7 +69,7 @@ test('install adds --relay when the device has a relay URL, takes --surfaces, an
 
 test('install carries the agent\'s settings from its environment into the job when they are set, validated as agent run validates them', async t => {
   const {home, install, plist, launchctl} = setup(t);
-  const settings = {CUA_AGENT_MAX_SESSIONS: '2', CUA_AGENT_IDLE_MINUTES: '5', CUA_AGENT_ALLOWED_ORIGINS: 'https://a.example', CUA_AGENT_CONSOLE_CHECK: 'off'};
+  const settings = {CUA_AGENT_MAX_SESSIONS: '2', CUA_AGENT_IDLE_MINUTES: '5', CUA_AGENT_ALLOWED_ORIGINS: 'https://a.example', CUA_AGENT_CONSOLE_CHECK: 'off', CUA_RUNTIME_IDLE_MS: '300000'};
   const result = await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...settings, CUA_AGENT_OTHER: 'x', PATH: '/bin'}});
   const job = readPlist(readFileSync(plist, 'utf8'));
   assert.deepEqual(job.environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', ...settings});
@@ -79,7 +79,7 @@ test('install carries the agent\'s settings from its environment into the job wh
 
   const calls = launchctl.calls.length;
   const before = readFileSync(plist, 'utf8');
-  for (const bad of [{CUA_AGENT_MAX_SESSIONS: '0'}, {CUA_AGENT_IDLE_MINUTES: 'soon'}, {CUA_AGENT_CONSOLE_CHECK: 'sometimes'}])
+  for (const bad of [{CUA_AGENT_MAX_SESSIONS: '0'}, {CUA_AGENT_IDLE_MINUTES: 'soon'}, {CUA_AGENT_CONSOLE_CHECK: 'sometimes'}, {CUA_RUNTIME_IDLE_MS: '15m'}])
     await assert.rejects(install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...bad}}), {code: 'invalid_setting'}, JSON.stringify(bad));
   assert.equal(readFileSync(plist, 'utf8'), before, 'a refused setting changes nothing');
   assert.equal(launchctl.calls.length, calls);

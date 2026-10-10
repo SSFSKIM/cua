@@ -14,7 +14,7 @@ import {PassThrough} from 'node:stream';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
 import {fakeUpstream, harness, textOf, tick} from './fixtures/mcp-harness.mjs';
-import {serve} from '../src/mcp/server.mjs';
+import {serve, settingsFrom} from '../src/mcp/server.mjs';
 import {handshakeRecords, lazyRuntime} from '../src/mcp/lazy-runtime.mjs';
 import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
@@ -299,4 +299,195 @@ test('without a record the handshake launches and records the runtime\'s answers
   assert.equal(runtime.sent.filter(m => m.method === 'notifications/initialized').length, 1);
   h.client.eof();
   assert.equal((await h.server.closed).code, 0);
+});
+
+// ---- the idle stop (issue #107) ----
+
+// A fake clock for createServer's idle timer: timers are recorded and fire only when the test says so.
+function fakeClock() {
+  const timers = [];
+  return {
+    timers,
+    timer: (fn, ms) => {
+      const entry = {fn, ms, live: true};
+      timers.push(entry);
+      return () => { entry.live = false; };
+    },
+    pending: () => timers.filter(entry => entry.live),
+    fire() {
+      const [entry, ...more] = timers.filter(e => e.live);
+      assert.ok(entry && !more.length, `exactly one idle timer is pending (${timers.filter(e => e.live).length})`);
+      entry.live = false;
+      entry.fn();
+    },
+  };
+}
+const until = async (what, predicate) => {
+  for (let i = 0; i < 400; i++) { if (predicate()) return; await tick(10); }
+  throw new Error(`timed out waiting for ${what}`);
+};
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+test('an idle runtime stops after the default 15 min through the normal end and the next js relaunches it once, its result opening with the restart notice', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  handshakeRecords({dir: recordDir(home), surfaces: ['computer']}).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
+  const clock = fakeClock();
+  const server = served(t, home, {env: {CUA_RUNTIME_IDLE_MS: undefined}, idleTimer: clock.timer});
+  await server.request('initialize', INIT);
+  assert.equal((await server.call('end_task')).result.structuredContent.status, 'noop');
+  assert.equal(clock.timers.length, 0, 'with no runtime running nothing arms');
+
+  await server.call('js', {code: 'approve'});
+  assert.equal(server.launches.length, 1);
+  assert.deepEqual(clock.pending().map(e => e.ms), [15 * 60_000], 'armed once the call completed, at the default');
+  const [session] = readdirSync(join(home, 'run')).filter(name => name.endsWith('.pid')).map(name => name.slice(0, -4));
+  const approval = join(server.launches[0].env.CODEX_HOME, 'computer-use', 'sessions', `${session}.toml`);
+  assert.ok(existsSync(approval));
+
+  clock.fire();
+  await until('the idle stop', () => server.diagnostics.includes('runtime stopped after 15 min idle'));
+  assert.deepEqual(server.diagnostics, ['runtime stopped after 15 min idle'], 'one line, no teardown trouble');
+  const first = runtimeLog(home);
+  assert.deepEqual(first.filter(e => e.received?.method === 'tools/call').map(e => e.received.params.name), ['js', 'turn_ended'], 'the open task was completed before the teardown');
+  assert.equal(alive(first[0].start.pid), false, 'the runtime is gone');
+  assert.deepEqual(readdirSync(join(home, 'run')), [`${session}.pid`], 'its working directory is gone; the connection keeps its record');
+  assert.ok(existsSync(approval), 'the connection\'s app approvals stay with it');
+  assert.equal(clock.pending().length, 0);
+
+  assert.deepEqual((await server.call('end_task')).result.structuredContent, {status: 'noop', ended: false}, 'the stop ended the task');
+  assert.equal(server.launches.length, 1, 'a no-op end_task launches nothing');
+  const again = await server.call('js', {code: 'again'});
+  assert.equal(server.launches.length, 2, 'one relaunch');
+  assert.match(again.result.content[0].text, /^cua: the runtime was stopped after 15 min without a tool call and has restarted for this call\. Its REPL state is gone \(variables, app handles, browser tabs/);
+  assert.equal(JSON.parse(again.result.content[1].text).code, 'again', 'then the fresh runtime\'s own result');
+  assert.notEqual(runtimeLog(home)[0].start.pid, first[0].start.pid);
+  assert.equal((await server.call('js', {code: 'third'})).result.content.length, 1, 'only the first call after the restart carries the notice');
+  assert.equal(await server.end(), 0, server.diagnostics.join('\n'));
+  assert.deepEqual(readdirSync(join(home, 'run')), []);
+  assert.equal(existsSync(approval), false);
+});
+
+test('CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole milliseconds', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const clock = fakeClock();
+  const server = served(t, home, {env: {CUA_RUNTIME_IDLE_MS: '0'}, idleTimer: clock.timer});
+  await server.request('initialize', INIT);
+  await server.call('js', {code: 'hello'});
+  await server.call('end_task');
+  assert.equal(clock.timers.length, 0);
+  assert.equal(await server.end(), 0);
+  assert.equal(settingsFrom({}).runtimeIdleMs, 15 * 60_000);
+  assert.equal(settingsFrom({CUA_RUNTIME_IDLE_MS: '90000'}).runtimeIdleMs, 90_000);
+  for (const bad of ['', 'soon', '-1', '1.5', '15m']) assert.throws(() => settingsFrom({CUA_RUNTIME_IDLE_MS: bad}), {code: 'invalid_setting'}, bad);
+});
+
+// In process: a lazyRuntime whose every launch is a fake runtime the test answers (the handshake by itself).
+function idleHarness({record = RECORD, runtimeIdleMs = 60_000, profiles} = {}) {
+  const clock = fakeClock();
+  const runtimes = [];
+  let stops = 0;
+  const start = async () => {
+    const runtime = fakeUpstream();
+    const send = runtime.send;
+    runtime.send = msg => { send(msg); if (msg.method === 'initialize') queueMicrotask(() => runtime.reply(msg, record.initialize)); };
+    runtimes.push(runtime);
+    return runtime;
+  };
+  const diagnostics = [];
+  const upstream = lazyRuntime({start, records: {read: () => record, write: () => {}}, stopped: () => { stops++; }, diagnostics: line => diagnostics.push(line)});
+  const h = harness({upstream, server: {runtimeIdleMs, idleTimer: clock.timer, diagnostics: line => diagnostics.push(line),
+    ...(profiles ? {profiles, surfaces: ['computer', 'browser']} : {})}});
+  return {...h, clock, runtimes, diagnostics, stops: () => stops};
+}
+const answer = async (runtime, name, text) => runtime.text(await runtime.nextCall(name), text);
+
+test('the idle timer arms only when no call is running and the next call clears it; profiles_list\'s live check counts as a call', async t => {
+  let listed;
+  const h = idleHarness({profiles: {list: ({track}) => track(new Promise(resolve => { listed = resolve; })).then(() => [])}});
+  t.after(async () => { h.client.eof(); await h.server.closed; });
+  await h.client.request('initialize', INIT).response;
+  const js = h.client.call('js', {code: 'a'});
+  await until('the launch', () => h.runtimes.length === 1);
+  const [runtime] = h.runtimes;
+  assert.deepEqual(h.clock.timers, [], 'a running call is never idle');
+  await answer(runtime, 'js', 'a');
+  await js.response;
+  assert.deepEqual(h.clock.pending().map(e => e.ms), [60_000]);
+
+  const second = h.client.call('js', {code: 'b'});
+  await until('the second call upstream', () => runtime.calls('js').length === 2);
+  assert.equal(h.clock.pending().length, 0, 'the next call cleared it');
+  runtime.text(runtime.calls('js')[1], 'b');
+  await second.response;
+  assert.equal(h.clock.pending().length, 1, 're-armed after it');
+
+  const profiles = h.client.call('profiles_list');
+  await tick(10);
+  assert.equal(h.clock.pending().length, 0, 'a live check under way is not idle');
+  listed();
+  await profiles.response;
+  assert.equal(h.clock.pending().length, 1);
+  assert.equal(h.runtimes.length, 1);
+});
+
+test('a call that races the idle stop, during its completion or its teardown, waits and runs on a fresh runtime; the dying one is never heard from', async t => {
+  const h = idleHarness();
+  t.after(async () => { h.client.eof(); await h.server.closed; });
+  await h.client.request('initialize', INIT).response;
+  const js = h.client.call('js', {code: 'first'});
+  await until('the launch', () => h.runtimes.length === 1);
+  const [dying] = h.runtimes;
+  await answer(dying, 'js', 'first');
+  await js.response;
+  const release = dying.holdTeardown();
+
+  h.clock.fire();
+  const completion = await dying.nextCall('turn_ended');
+  const duringCompletion = h.client.call('js', {code: 'during completion'});
+  dying.text(completion, '{}');
+  await until('the teardown', () => dying.terminations.length === 1);
+  const duringTeardown = h.client.call('js_reset');
+  dying.emit({jsonrpc: '2.0', id: 'late', method: 'elicitation/create', params: {}});
+  dying.exit({code: 0, signal: null});
+  await tick(20);
+  assert.equal(h.runtimes.length, 1, 'no launch while the old runtime is stopping');
+  assert.equal(dying.calls('js').length, 1, 'the dying runtime got no new work');
+  assert.equal(h.client.responsesFor(duringCompletion.id).length + h.client.responsesFor(duringTeardown.id).length, 0, 'both wait');
+
+  release();
+  await until('the relaunch', () => h.runtimes.length === 2);
+  const fresh = h.runtimes[1];
+  await answer(fresh, 'js', 'fresh');
+  const first = await duringCompletion.response;
+  assert.match(textOf(first), /^cua: the runtime was stopped after 1 min without a tool call and has restarted for this call\.[^\n]*\nfresh$/);
+  fresh.text(await fresh.nextCall('js_reset'), 'reset');
+  assert.equal(textOf(await duringTeardown.response), 'reset', 'the notice goes once');
+  assert.equal(h.client.frames.some(m => m.id === 'late'), false, 'the dying runtime\'s request never reached the client');
+  assert.equal(h.server.state, 'active', 'the connection stays, a new task open');
+  assert.equal(h.stops(), 1);
+  assert.deepEqual(h.diagnostics, ['runtime stopped after 1 min idle']);
+  assert.deepEqual(dying.terminations, [{budgetMs: 150}]);
+});
+
+test('a close during the idle stop refuses the call it held and confirms; an unconfirmed idle teardown makes the close code 1', async () => {
+  const h = idleHarness();
+  await h.client.request('initialize', INIT).response;
+  const js = h.client.call('js', {code: 'x'});
+  await until('the launch', () => h.runtimes.length === 1);
+  const [dying] = h.runtimes;
+  await answer(dying, 'js', 'x');
+  await js.response;
+  const release = dying.holdTeardown({confirmed: false, steps: ['eof', 'SIGTERM', 'SIGKILL'], reason: 'group still lists 1 process(es)'});
+  h.clock.fire();
+  await answer(dying, 'turn_ended', '{}');
+  await until('the teardown', () => dying.terminations.length === 1);
+  const held = h.client.call('js', {code: 'held'});
+  h.client.eof();
+  await tick(20);
+  release();
+  const closed = await h.server.closed;
+  assert.match(textOf(await held.response), /connection_closing/);
+  assert.equal(h.runtimes.length, 1, 'nothing relaunched for a closing connection');
+  assert.equal(closed.code, 1);
+  assert.ok(h.diagnostics.some(line => /^idle runtime teardown unconfirmed after eof, SIGTERM, SIGKILL: group still lists 1 process/.test(line)), h.diagnostics.join('\n'));
 });

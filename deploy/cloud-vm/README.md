@@ -64,11 +64,11 @@ as Hetzner's 32 KiB).
 - **Sandbox.** `kernel.apparmor_restrict_unprivileged_userns = 0` (`/etc/sysctl.d/60-cua-userns.conf`), so the scoped
   sandbox works for the browser surface alone and for `cua profiles list` and `bind`. With the computer surface the
   Linux default is `disabled` (README, "Linux": the runtime's sandbox refuses every socket, X's included).
-- **cua.** Node 22 (NodeSource, unless a Node 22.14 or later is already on `PATH`), a checkout of `--ref` at
-  `/opt/cua` owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua` (the vendor's browser service still runs from it), cua's Chrome
-  host registered (`cua chrome register`, the cua route), and the profile `me` registered for `Default` and bound. The
-  extension starts cua's host as soon as the registration is there, so the bind needs no one; if it fails (Chrome not
-  up yet), the checklist keeps it.
+- **cua.** Node 22 (NodeSource, unless Node 22.14+ or 23.7+ is already on `PATH`), a checkout of `--ref` at `/opt/cua`
+  owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua` (the vendor's
+  browser service still runs from it), cua's Chrome host registered (`cua chrome register`, the cua route), and the
+  profile `me` registered for `Default` and bound. The extension starts cua's host as soon as the registration is there,
+  so the bind needs no one; if it fails (Chrome not up yet), the checklist keeps it.
 - **The deb.** By default the VM downloads the pin's official URL (about 450 MB); `--deb <https URL>` downloads a
   mirror instead; `--deb <file>` makes `create-hetzner.sh` copy your copy to the VM's `/var/cache/cua/upload.deb`
   while cloud-init runs, and the VM waits for it (with `render.sh` alone, copy it there yourself; a failed copy is

@@ -14,8 +14,8 @@ on another machine (see Remote control). The design and its status are in
 ## Requirements
 
 - macOS on Apple silicon, or Linux on x64 or arm64 with an X11 desktop (see Linux; other platforms get
-  `unsupported_platform`), and `node` 22.14 or newer on `PATH` (the plugin starts the server with `--disable-sigusr1`,
-  which Node 22.14 introduced). The one npm dependency, `ws`, is needed only for remote
+  `unsupported_platform`), and Node 22.14+ (or 23.7+) as `node` on `PATH` (the plugin starts the server with
+  `--disable-sigusr1`, which those versions introduced). The one npm dependency, `ws`, is needed only for remote
   control through a relay (`npm ci`); everything else runs without `node_modules`.
 - The pinned runtime, installed into `CUA_HOME` (default `~/Library/Application Support/cua`) by `cua install`: it
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with

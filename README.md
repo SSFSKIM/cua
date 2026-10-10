@@ -132,7 +132,8 @@ until the next plugin update). Without the plugin, register the same script your
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns OpenAI's API document to the model, which then writes small JavaScript cells against the `cua`
-API. The server adds rules covering what that document leaves out: how to run a task, in the host notes it appends to
+API. That first call is also when `cua serve` launches the runtime (a few seconds; see Process footprint below), so it
+takes longer than the ones after it. The server adds rules covering what that document leaves out: how to run a task, in the host notes it appends to
 the server instructions (see Operating guidance for agents), and the native quirks (index-first addressing, dropping
 an app handle after quitting it, `typeText` and emoji, and so on), ahead of OpenAI's text in the `js` description.
 
@@ -143,6 +144,16 @@ hooks for this; if completion cannot be confirmed, the connection fails closed a
 cleanup of what was already submitted is unconfirmed. In this pinned runtime a forwarded MCP cancellation does not stop
 a running cell and `js_reset` waits behind it, so a cell's `timeout_ms` is what bounds runaway work; cancelling never
 means control has been handed back.
+
+**Process footprint.** Claude Code starts the plugin's server in every session, used or not, so `cua serve` holds no
+runtime until a call needs one. It answers the MCP handshake and the tool list itself and launches the runtime
+(the vendor's `node`, `node_repl` and their sandboxed children) on the first `js` or `js_reset`; from then
+on the runtime stays until the session's server exits (there is no idle shutdown yet). `secrets_list`, `devices_list`,
+`devices_use`, an `end_task` with no task open and the registry part of `profiles_list` never launch it (a bound
+profile's live check makes its own short launch, see Profiles), and a session that never used cua exits with nothing to
+tear down. The handshake answers come from the runtime itself: the first connection of an installed release (per
+enabled surfaces and client protocol version) launches at its handshake, as every connection used to, and its answers
+are recorded under `$CUA_HOME/state/handshake/<release>/` for the connections after it.
 
 `cua serve` (the plugin's server) adds two more: `devices_list` and `devices_use`, which switch every other tool to a
 remote machine and back (Remote control, 4). The agent's HTTP sessions never list them.
@@ -857,7 +868,8 @@ there are no per-client credentials.
 
 ### Sessions: limits, and how they end
 
-Each `initialize` opens a session, which is one runtime on the Mac. Two numbers bound them:
+Each `initialize` opens a session, which launches one runtime on the Mac at its first `js` or `js_reset` (as `cua
+serve` does, see Process footprint). Two numbers bound them:
 
 - **At most 1 session at a time** (`CUA_AGENT_MAX_SESSIONS`), because every session drives the same mouse, keyboard,
   front window and Chrome. An `initialize` at the cap first evicts the oldest Idle session: nothing in flight, and
@@ -1229,7 +1241,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 
 | variable | default | meaning |
 |---|---|---|
-| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
+| `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the vendor's browser API for your existing Chrome profiles (through cua's own extension and host, no login needed; or, until its removal, the ChatGPT extension route with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
@@ -1312,7 +1324,8 @@ itself (client mode): the host listens at `$CUA_HOME/chrome/m/<name>-<pid>.sock`
 (`chrome/b`) and log (`chrome/logs`) take the same name. Each process runs its own host, so a relaunched `cua serve`, a
 fork subagent's own server and `cua profiles list` work side by side on one MAWS session, and one exiting leaves the
 others' alone; nothing lists `chrome/m`, so a process only ever sees the hosts it opened and one MAWS session's tabs
-never reach another session. `cua serve` waits up to 5 s for each backend's hello before it launches the runtime; a
+never reach another session. `cua serve` connects at once, and its runtime launch, at the first call that needs it,
+waits up to 5 s for each backend's hello first; a
 refused or lost connection (MAWS quitting while the engine lives, MAWS relaunched) is retried every 5 s, and the host's
 path is listed to the vendor from the start, so a backend that comes back is found again without restarting anything.
 

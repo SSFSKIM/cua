@@ -1256,7 +1256,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
 | `CUA_SHIM_SECRETS` | `on` | `off` hands the runtime no secret store; `secrets_list` then reports secrets as disabled and a `{{secret:…}}` reference fails with `secrets_disabled` |
-| `CUA_RUNTIME_IDLE_MS` | `900000` (15 minutes) | how long a launched runtime may go without a `js`, `js_reset`, `end_task` or `profiles_list` live check before it is stopped (the next `js` or `js_reset` launches a fresh one, its REPL state gone; see Process footprint); `0` keeps it for the connection's life |
+| `CUA_RUNTIME_IDLE_MS` | `900000` (15 minutes) | how long a launched runtime may go without a `js`, `js_reset`, `end_task` or `profiles_list` live check before it is stopped (the next `js` or `js_reset` launches a fresh one, its REPL state gone; see Process footprint); `0` keeps it for the connection's life; maximum `2147483647` (about 24.8 days) |
 | `CUA_SHIM_SANDBOX` | `scoped`; on Linux with the computer surface `disabled` (see Linux) | the sandbox node_repl applies to the runtime's JavaScript: `scoped` lets it write only its connection's run directory and `$TMPDIR`, with no network; `disabled` turns the sandbox off; `default` leaves node_repl's own default, which denies every write. Also read by `cua profiles list` and `bind` and reported by `cua doctor` |
 
 cua sends node_repl a sandbox state, in the field Codex uses for it (`_meta["codex/sandbox-state-meta"]`), on every call

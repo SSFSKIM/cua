@@ -378,6 +378,8 @@ test('CUA_RUNTIME_IDLE_MS: 0 never stops the runtime; a value must be whole mill
   assert.equal(await server.end(), 0);
   assert.equal(settingsFrom({}).runtimeIdleMs, 15 * 60_000);
   assert.equal(settingsFrom({CUA_RUNTIME_IDLE_MS: '90000'}).runtimeIdleMs, 90_000);
+  assert.equal(settingsFrom({CUA_RUNTIME_IDLE_MS: '2147483647'}).runtimeIdleMs, 2_147_483_647);
+  assert.throws(() => settingsFrom({CUA_RUNTIME_IDLE_MS: '2147483648'}), {code: 'invalid_setting', message: /2147483647.*24\.8 days/});
   for (const bad of ['', 'soon', '-1', '1.5', '15m']) assert.throws(() => settingsFrom({CUA_RUNTIME_IDLE_MS: bad}), {code: 'invalid_setting'}, bad);
 });
 

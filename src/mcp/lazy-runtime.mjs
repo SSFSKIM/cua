@@ -75,7 +75,7 @@ export function handshakeRecords({dir, surfaces}) {
 export function runtimeIdleFrom(env) {
   const value = env.CUA_RUNTIME_IDLE_MS;
   if (value === undefined) return DEFAULT_RUNTIME_IDLE_MS;
-  if (!/^\d{1,10}$/.test(value)) fail('invalid_setting', 'CUA_RUNTIME_IDLE_MS must be a whole number of milliseconds (0 never stops the runtime)');
+  if (!/^\d{1,10}$/.test(value) || Number(value) > 2_147_483_647) fail('invalid_setting', 'CUA_RUNTIME_IDLE_MS must be a whole number of milliseconds from 0 to 2147483647 (about 24.8 days; 0 never stops the runtime)');
   return Number(value);
 }
 

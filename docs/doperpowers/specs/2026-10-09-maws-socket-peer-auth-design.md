@@ -13,7 +13,7 @@ The boundary, stated plainly so nobody reads more into it. A peer is accepted by
 ## Progress
 
 - [x] (2026-10-09 21:45, reviewed clean: MAWS a35dc53d..a925fbdd, cua f6474cc..dacfd61) M1 — The peer identity addon, built once and committed in both repositories, with each repository's loader and tests
-- [ ] M2 — MAWS: the authorizer on the cua socket server, engine roots as (pid, start), the e2e seam and scenes, the packaged proof
+- [x] (2026-10-09 22:29, reviewed clean: MAWS a925fbdd..8ab7258d) M2 — MAWS: the authorizer on the cua socket server, engine roots as (pid, start), the e2e seam and scenes, the packaged proof
 - [x] (2026-10-09 22:15, reviewed clean: cua 22e069a..1fde3cf) M3 — cua: the authorizer on the client-mode relay, plugin 0.7.0, tests
 - [ ] M4 — Documents, acceptance as written, the two PRs, hand-back
 

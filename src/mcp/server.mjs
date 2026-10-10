@@ -57,6 +57,7 @@ import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {reasonText} from '../profiles/registry.mjs';
 import {sandboxModeFrom, withSandbox} from '../runtime/sandbox.mjs';
+import {runtimeIdleFrom} from './lazy-runtime.mjs';
 import {configuredBackends, startClientBackends} from '../chrome/client-mode.mjs';
 import {realHome} from '../runtime/layout.mjs';
 
@@ -66,7 +67,6 @@ const COMPLETION_CODES = new Set(['completion_timeout', 'completion_failed']);
 const NOT_CONFIGURED = {unavailable: {code: 'secrets_not_configured', message: 'secret storage is not configured for this server'}};
 const LIST_CODES = new Set(['unreadable']);
 const NO_PROFILES = {list: () => []};
-const DEFAULT_RUNTIME_IDLE_MS = 15 * 60_000;
 const idleText = ms => (ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
 const restartNotice = ms => `cua: the runtime was stopped after ${idleText(ms)} without a tool call and has restarted for this call. `
   + 'Its REPL state is gone (variables, app handles, browser tabs and anything bound to them): rebind what you need from the API document below.';
@@ -438,13 +438,6 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
     runtimeIdleMs: runtimeIdleFrom(env)};
 }
 
-// CUA_RUNTIME_IDLE_MS: how long a launched runtime may go without a tool call before it is stopped; 0 never stops it.
-export function runtimeIdleFrom(env) {
-  const value = env.CUA_RUNTIME_IDLE_MS;
-  if (value === undefined) return DEFAULT_RUNTIME_IDLE_MS;
-  if (!/^\d{1,10}$/.test(value)) fail('invalid_setting', 'CUA_RUNTIME_IDLE_MS must be a whole number of milliseconds (0 never stops the runtime)');
-  return Number(value);
-}
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'];
 

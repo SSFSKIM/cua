@@ -33,10 +33,12 @@
 import {randomUUID} from 'node:crypto';
 import {mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
+import {fail} from '../runtime/errors.mjs';
 
 const RECORD_SCHEMA = 1;
 const PROTOCOL_VERSION = /^[A-Za-z0-9._-]{1,64}$/;
 const HANDSHAKE_ID = 'cua-handshake';
+const DEFAULT_RUNTIME_IDLE_MS = 15 * 60_000;
 
 const isRequest = msg => msg.method !== undefined && msg.id !== undefined;
 const validRecord = r => r?.schema === RECORD_SCHEMA && typeof r.initialize?.protocolVersion === 'string' && Array.isArray(r.tools?.tools);
@@ -67,6 +69,13 @@ export function handshakeRecords({dir, surfaces}) {
       } finally { rmSync(temp, {force: true}); }
     },
   };
+}
+// CUA_RUNTIME_IDLE_MS: how long a launched runtime may go without a tool call before it is stopped; 0 never stops it.
+export function runtimeIdleFrom(env) {
+  const value = env.CUA_RUNTIME_IDLE_MS;
+  if (value === undefined) return DEFAULT_RUNTIME_IDLE_MS;
+  if (!/^\d{1,10}$/.test(value)) fail('invalid_setting', 'CUA_RUNTIME_IDLE_MS must be a whole number of milliseconds (0 never stops the runtime)');
+  return Number(value);
 }
 
 export function lazyRuntime({start, records, stopped = () => {}, diagnostics = () => {}}) {

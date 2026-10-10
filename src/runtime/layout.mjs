@@ -4,6 +4,7 @@
 //   staging/              per-operation scratch for downloads and extraction (same volume, so renames are atomic), and
 //                         bind's short-lived copies of Chrome extension stores (src/profiles/directory-map.mjs)
 //   state/codex/          CODEX_HOME for the runtime: its config and per-user approvals
+//   state/handshake/      per release, the runtime's recorded MCP handshake answers (src/mcp/lazy-runtime.mjs)
 //   run/<session>/        per-connection working directory and private endpoints
 import {readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -27,6 +28,7 @@ export function homeLayout(home) {
     pointer: join(home, 'current.json'),
     staging: join(home, 'staging'),
     codexHome: join(home, 'state', 'codex'),
+    handshake: join(home, 'state', 'handshake'),
     run: join(home, 'run'),
   };
 }

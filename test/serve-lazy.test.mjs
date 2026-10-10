@@ -158,6 +158,32 @@ for (const how of ['eof', 'SIGTERM', 'SIGINT', 'SIGHUP']) {
   });
 }
 
+// The record holds the runtime's own answers only; cua's serve-time additions (host notes, its own tools, the MAWS rule
+// in profiles_list) are applied on top at every connection, so sessions configured differently share one record.
+test('the record is the runtime\'s raw answers; a MAWS session and a plain one replaying it each get their own descriptions', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const env = {CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off'};
+  const plain = served(t, home, {env});
+  await plain.request('initialize', INIT);
+  const plainTools = (await plain.request('tools/list')).result.tools;
+  assert.equal(await plain.end(), 0);
+  const record = JSON.parse(readFileSync(join(recordDir(home), 'computer,browser@2025-06-18.json'), 'utf8'));
+  assert.deepEqual(record.tools.tools.map(tool => tool.name), ['js', 'js_add_node_module_dir', 'js_reset', 'turn_ended'], 'the runtime\'s list, none of cua\'s tools');
+  assert.equal(JSON.stringify(record).includes('Host notes'), false, 'no host notes in the record');
+  assert.equal(JSON.stringify(record).includes('Host rules (cua)'), false, 'no js rules in the record');
+
+  const maws = served(t, home, {env: {...env, CUA_BROWSER_BACKENDS: join(home, 'nothing-listens.sock'), CUA_SHIM_HOST_NOTES: 'Replaced notes.'}});
+  const init = await maws.request('initialize', INIT);
+  const mawsTools = (await maws.request('tools/list')).result.tools;
+  assert.equal(maws.launches.length, 0, 'replayed from the record');
+  assert.match(init.result.instructions, /Replaced notes\.$/, 'this connection\'s host notes');
+  const profiles = tools => tools.find(tool => tool.name === 'profiles_list').description;
+  assert.match(profiles(mawsTools), /In MAWS: cua\.getBrowser\(\) with no id is this session's in-app browser/);
+  assert.doesNotMatch(profiles(plainTools), /In MAWS/);
+  assert.deepEqual(mawsTools.map(tool => tool.name), plainTools.map(tool => tool.name));
+  assert.equal(await maws.end(), 0, maws.diagnostics.join('\n'));
+});
+
 // MAWS (src/chrome/client-mode.mjs): the socket is dialled at once; launches and readiness listings wait for its hello.
 test('with a MAWS backend the handshake does not wait for its hello; profiles_list and the first launch do, and prefer its instance', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);

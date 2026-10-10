@@ -10,8 +10,9 @@
 // its environment, checks it against the sandbox mode, and serves `input`/`output` through `createServer` until EOF, a
 // transport loss, a failure or `close(reason)`. The runtime is spawned in an owned working directory only when the
 // first call needs it (src/mcp/lazy-runtime.mjs), and then stays for the connection's life. With the browser surface, profiles_list
-// reads $CUA_HOME's profile registry and, when a profile is bound, checks it against the live backends with one bounded
-// listing launch (inventory.mjs, no tab counts); the connection's close waits for such a listing.
+// waits up to 5 s for the MAWS backends' first hello outcomes, then reads $CUA_HOME's profile registry and, when a
+// profile is bound, checks it against the live backends with one bounded listing launch (inventory.mjs, no tab counts);
+// the connection's close waits for such a listing.
 //
 // Before `closed` settles, everything the connection created is released: the session's app-approval file the runtime
 // wrote, and its run entries. `closed` resolves (never rejects) {code, reason, completion, teardown, listingLeftover}: `code` is the connection's own (1 when its runtime teardown was unconfirmed or a release step
@@ -113,6 +114,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
       records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(',')})});
     // `route` words a missing extension as the home's route's (registry.mjs reasonText).
     const profiles = {route: chromeRoute(home), list: async () => {
+      await browserBackends?.waitForHellos();
       const {profiles: list, listingError} = await profileReadiness({home, chrome, listBackends});
       if (listingError) diagnostics(`profiles_list: the live Chrome extension backends could not be listed (${listingError.code})`);
       if (listingError?.code === 'runtime_teardown_unconfirmed') listingLeftover = true;

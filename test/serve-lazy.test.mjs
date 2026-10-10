@@ -69,6 +69,7 @@ test('the first connection launches at its handshake and records it; a later one
   const coldTools = await cold.request('tools/list');
   assert.equal(await cold.end(), 0);
   assert.deepEqual(readdirSync(recordDir(home)), ['computer@2025-06-18.json']);
+  const coldRuntimeLog = runtimeLog(home);
 
   const warm = served(t, home);
   const init = await warm.request('initialize', INIT);
@@ -81,7 +82,7 @@ test('the first connection launches at its handshake and records it; a later one
   assert.deepEqual((await warm.call('devices_list')).result.structuredContent.devices.map(d => d.name), ['local']);
   assert.deepEqual((await warm.call('end_task')).result.structuredContent, {status: 'noop', ended: false});
   assert.equal(warm.launches.length, 0, 'nothing so far needed the runtime');
-  assert.equal(runtimeLog(home).some(e => e.start?.pid && e.received), false);
+  assert.deepEqual(runtimeLog(home), coldRuntimeLog, 'no new runtime start or traffic was logged after the cold connection');
 
   const first = await warm.call('js', {code: 'hello'});
   assert.equal(warm.launches.length, 1);
@@ -157,8 +158,8 @@ for (const how of ['eof', 'SIGTERM', 'SIGINT', 'SIGHUP']) {
   });
 }
 
-// MAWS (src/chrome/client-mode.mjs): the socket is dialled at once, but only the launch waits for the hello.
-test('with a MAWS backend the handshake does not wait for its hello; the first launch does, and prefers its instance', {skip: !supported}, async t => {
+// MAWS (src/chrome/client-mode.mjs): the socket is dialled at once; launches and readiness listings wait for its hello.
+test('with a MAWS backend the handshake does not wait for its hello; profiles_list and the first launch do, and prefer its instance', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
   const path = join(home, 'maws.sock');
   const instanceId = 'maws:lazy';
@@ -177,11 +178,13 @@ test('with a MAWS backend the handshake does not wait for its hello; the first l
   assert.ok(Date.now() - began < 2000, 'the handshake is answered without the hello');
   for (let i = 0; i < 200 && !ports.length; i++) await tick(10);
   assert.equal(ports.length, 1, 'the backend socket was dialled at once');
+  const profiles = server.call('profiles_list');
   const js = server.call('js', {code: 'hello'});
   await tick(300);
   assert.equal(server.launches.length, 0, 'the launch waits for the hello');
   ports[0].port.peer.notify('hello', ports[0].ext.hello());
   await js;
+  assert.deepEqual((await profiles).result.structuredContent.profiles, [{key: 'maws', ready: true, extensionInstanceId: instanceId}], 'a listing requested before the hello reports its ready instance');
   assert.equal(server.launches.length, 1);
   assert.equal(server.launches[0].env.BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID, instanceId);
   assert.equal(await server.end(), 0, server.diagnostics.join('\n'));
@@ -219,6 +222,23 @@ test('a launch that fails answers the waiting call with its reason and fails the
   const closed = await h.server.closed;
   assert.equal(closed.code, 1);
   assert.ok(h.diagnostics.some(line => /could not be started \(launch_broke\)/.test(line)), h.diagnostics.join('\n'));
+});
+
+test('a runtime that exits before start resolves answers the waiting call with runtime_exited and fails the connection', async t => {
+  const runtime = fakeUpstream();
+  const h = lazyHarness({record: RECORD, start: async () => {
+    // The spawn error was already reported before lazyRuntime could attach its exit handler.
+    runtime.exit({code: null, signal: null, error: 'ENOENT: the runtime anchor could not be spawned'});
+    runtime.send = () => false;
+    return runtime;
+  }});
+  t.after(async () => { h.client.eof(); await h.server.closed; });
+  await h.client.request('initialize', INIT).response;
+  const js = await h.client.call('js', {code: 'x'}).response;
+  assert.match(js.error.message, /the runtime could not be started \(runtime_exited\):/);
+  const closed = await h.server.closed;
+  assert.equal(closed.code, 1);
+  assert.ok(h.diagnostics.some(line => /could not be started \(runtime_exited\)/.test(line)), h.diagnostics.join('\n'));
 });
 
 test('a close while a launch waits before spawning abandons it: nothing spawned, the call answered connection_closing', async () => {

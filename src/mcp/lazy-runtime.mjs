@@ -96,7 +96,10 @@ export function lazyRuntime({start, records, diagnostics = () => {}}) {
         if (state === 'starting') failLaunch({code: 'runtime_exited', message: `the runtime exited before its handshake (${info.error ?? (info.signal ? `signal ${info.signal}` : `code ${info.code}`)})`}, info);
         else if (state === 'running') onExit(info);
       });
-      runtime.send({jsonrpc: '2.0', id: HANDSHAKE_ID, method: 'initialize', params: clientInit});
+      // A spawn error can be reported before start() resolves and before our exit handler is attached.
+      if (runtime.send({jsonrpc: '2.0', id: HANDSHAKE_ID, method: 'initialize', params: clientInit}) === false) {
+        failLaunch({code: 'runtime_exited', message: 'the runtime exited before its handshake (initialize could not be sent)'});
+      }
       return runtime;
     })();
   }

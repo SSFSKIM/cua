@@ -1,6 +1,6 @@
 # MAWS socket peer authentication (cua board #95): execution report
 
-Spec: `docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md` (this branch). Status: DONE_WITH_CONCERNS. The concern is the open SIGUSR1 route into MAWS main and the supervisor; see Residue.
+Spec: `docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md` (this branch). Status: DONE. On 2026-10-10 the owner decided to close the SIGUSR1 route into MAWS main and the supervisor on this branch, and it is closed (MAWS ee88fe67).
 
 ## PRs and ranges
 
@@ -57,8 +57,8 @@ No unresolved findings. The one ledger Minor, a cloud-VM README line longer than
 ## The checks the spec asked for
 
 - **SIGUSR1 in MAWS main (M2).** The check ran only on instances the executor launched over scratch e2e user data. The answer is yes: an inspector opens on 127.0.0.1:9229 in dev main, in packaged main, and in the packaged binary run as Node, which is the detached supervisor. The `EnableNodeCliInspectArguments` fuse is enabled.
-  - A no-op `process.on('SIGUSR1')` listener suppresses it on Electron 44.4.5 and keeps Playwright's `--inspect=0` working. It was not applied: it is outside M2's edge, and I asked the coordinator and got no decision before the PRs.
-  - The finding is recorded in the spec's Surprises and in the tracker's E13 row ("not applied yet").
+  - A no-op `process.on('SIGUSR1')` listener suppresses it on Electron 44.4.5 and keeps Playwright's `--inspect=0` working. On 2026-10-10 the owner decided to apply it: ee88fe67 adds it at main's and the supervisor's entries. `e2e/sigusr1.spec.ts` (dev and packaged) and the packaged supervisor spec check it; they failed before the fix (127.0.0.1:9229 opened) and pass after.
+  - The tracker records it in a new dated row appended at the end (0b6ea59d), which amends E13. The E13 row itself is back to master's text, because P2-F edits rows by script.
 - **SIGUSR1 in cua (M3).** `cua serve` and the anchor are now flagged; they open no inspector and stay alive.
   - The vendor launcher (stock Node `cua_node/bin/node`) opens one.
   - The sandboxed kernel and the trusted worker try to, but the default sandbox blocks the listener.
@@ -137,7 +137,7 @@ browser-cua 7, browser 8, packaged 61.
 
 ## Residue (for tickets)
 
-1. **SIGUSR1 into MAWS main and the detached supervisor.** Any same-user `kill -USR1` opens an inspector in the whole app, going around both socket checks. The measured fix is a no-op SIGUSR1 listener in main and at the supervisor's entry; it is small and could also land on MAWS #7 if you decide so. Related fuses: `EnableNodeOptionsEnvironmentVariable` is enabled and `OnlyLoadAppFromAsar` is disabled.
+1. **The fuses** `EnableNodeCliInspectArguments`, `EnableNodeOptionsEnvironmentVariable` and `OnlyLoadAppFromAsar`: a MAWS-wide decision. SIGUSR1 into main and the supervisor is closed on this branch by the 2026-10-10 listener (ee88fe67).
 2. **The supervisor's 0600 token file** (`src/engine-host/detached.ts`). Any same-user process can read it and take over the supervisor and the session's engine. This is a MAWS-wide authorization question.
 3. **`--strict-mcp-config` or narrower `--setting-sources` for the engine launch.** Hooks and MCP servers injected through configuration are admitted as engine descendants. Changing that is a charter decision against §4.1's launch line.
 4. **The vendor launcher's SIGUSR1 inspector.** The vendor's stock Node, started by `cua serve`, is an inspector route into the relay's admitted tree. It can only be closed upstream, or by a decision to pass the flag into the vendor launch.

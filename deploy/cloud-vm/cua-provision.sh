@@ -57,8 +57,9 @@ apt-get install -y -q --no-install-recommends \
   xorg xserver-xorg-video-dummy lightdm lightdm-gtk-greeter openbox gedit zenity jq dconf-cli x11vnc \
   git curl ca-certificates gpg
 
-# 2. Node 22 (NodeSource, as relay/deploy does) unless a node 22 or later is on PATH.
-if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null; then
+# 2. Node 22 (NodeSource, as relay/deploy does) unless a node 22.14 or later is on PATH (cua starts its runtime's anchor
+#    with --disable-sigusr1, which Node 22.14 introduced).
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 14) ? 0 : 1)' 2>/dev/null; then
   log "node 22"
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y -q nodejs

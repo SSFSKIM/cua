@@ -563,8 +563,9 @@ test('status() is the <name>.json shape', async () => {
   const tab = await a.call('createTab', {});
   await a.call('attach', {tabId: tab.id});
   const status = host.status();
-  assert.deepEqual(Object.keys(status).sort(), ['extensionVersion', 'instanceId', 'pid', 'protocolVersion', 'sessions', 'updatedAt']);
+  assert.deepEqual(Object.keys(status).sort(), ['extensionVersion', 'instanceId', 'peerCheck', 'pid', 'protocolVersion', 'sessions', 'updatedAt']);
   assert.equal(status.instanceId, ext.instanceId);
+  assert.equal(status.peerCheck, 'off', 'a host with no peer check (the Chrome route) says so');
   assert.equal(status.extensionVersion, '0.2.0');
   assert.equal(status.protocolVersion, 1);
   assert.equal(status.pid, process.pid);

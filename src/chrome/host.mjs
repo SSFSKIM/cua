@@ -100,7 +100,10 @@ function describe(method, params) {
 // `extension` is {request(method, params)}; a client is {notify(method, params)}; `hello` is the extension's hello.
 // With a `home`, the status (<name>.json beside the socket) is rewritten on every change.
 // `statusName` names the status file (the client-mode host's per-process name); by default the instance id's.
-export function createHost({extension: port, hello, home = null, now = () => new Date(), log = () => {}, pid = process.pid, statusName = null}) {
+// `peerCheck` is what the status says of the socket's peer check: 'on', 'unavailable' (the check refuses every client)
+// or 'off' (none: the Chrome route).
+export function createHost({extension: port, hello, home = null, now = () => new Date(), log = () => {}, pid = process.pid, statusName = null,
+  peerCheck = 'off'}) {
   const sessions = new Map();           // session_id -> session
   const owners = new Map();             // tabId -> {session, tab}
   const targets = new Map();            // attached OOPIF targetId -> owning tabId
@@ -118,7 +121,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
 
   function status() {
     return {
-      instanceId: hello.extensionInstanceId, extensionVersion: hello.version, protocolVersion: hello.protocolVersion, pid,
+      instanceId: hello.extensionInstanceId, extensionVersion: hello.version, protocolVersion: hello.protocolVersion, pid, peerCheck,
       sessions: [...sessions.values()].map(s => ({session_id: s.id, turn_id: s.turn,
         tabs: [...s.tabs.values()].map(t => ({tabId: t.tabId, origin: t.origin, mark: t.mark, attached: t.attached}))})),
       updatedAt: now().toISOString(),
@@ -696,8 +699,12 @@ const listen = (server, path) => new Promise((resolve, reject) => {
 // backend) has its name before any hello: it listens at $CUA_HOME/chrome/m/<socketName>.sock, and its status file
 // (chrome/b) and log (chrome/logs, appended across reconnects) take the same name. `onListening({hello, socketPath})` is
 // told once the socket accepts clients.
+// `authorize` ({peerCheck, check(socket)}, src/chrome/client-mode.mjs relayAuthorizer) checks each client before
+// anything of it is read (docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md): the socket is accepted
+// paused, and a refusal ({reason, pid}) destroys it and logs one line with the pid and the reason. Without it (the
+// Chrome route, whose vendor client is not this process's descendant) every client is served as it connects.
 export async function runHost({stdin, stdout, env = process.env, home = env.CUA_HOME, pid = process.pid, captureProcessErrors = false,
-  socketName = null, onListening = () => {}}) {
+  socketName = null, onListening = () => {}, authorize = null}) {
   if (!home) return {code: 2, reason: 'home_missing', message: 'CUA_HOME is not set; the launcher `cua chrome register` writes sets it'};
   const backends = backendDir(home), logs = logDir(home);
   const listenDir = socketName ? clientModeDir(home) : backends;
@@ -760,7 +767,16 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   if (await socketIsLive(socketPath)) return await refuseExtension('already_served', `another host serves ${socketPath}`);
 
   const sockets = new Set();
-  const server = createServer(socket => {
+  const server = createServer({pauseOnConnect: authorize !== null}, socket => {
+    if (authorize) {
+      const refusal = authorize.check(socket);
+      if (refusal) {
+        log(`relay ${name}: refused peer${refusal.pid === null ? '' : ` pid ${refusal.pid}`} (${refusal.reason})`
+          + (refusal.reason === 'module_unavailable' ? '; run scripts/build-peer-auth.sh' : ''));
+        socket.destroy();
+        return;
+      }
+    }
     sockets.add(socket);
     const client = {notify: (method, params) => peer.notify(method, params)};
     const peer = createPeer({
@@ -778,6 +794,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
       peer.close('client closed');
       host.clientClosed(client).catch(error => log(`client cleanup failed: ${error.message}`));
     });
+    if (authorize) socket.resume();
   });
   try {
     await listen(server, socketPath);
@@ -787,7 +804,7 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   }
   chmodSync(socketPath, 0o600);
   // Connections are accepted from the next turn on; the host exists before the first one arrives.
-  host = createHost({extension, hello, home, log, pid, statusName: name});
+  host = createHost({extension, hello, home, log, pid, statusName: name, peerCheck: authorize?.peerCheck ?? 'off'});
   // The log takes the profile's name only now: a host refused above never replaces the serving host's log.
   if (!socketName) {
     const named = join(logs, `${name}.log`);

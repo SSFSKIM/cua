@@ -3,21 +3,28 @@
 // (test/helpers/fake-maws-peer.mjs) on the configured socket (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-
 // design.md, M1): each process runs its own client-mode host in chrome/m, the launch lists it first and prefers its
 // instance, profiles_list puts maws ahead of the registered profiles, and one process exiting leaves another's host up.
+// Each host accepts only its own process's tree (docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-design.md): the
+// fake upstream, started under the runtime's anchor, is a descendant; this test process, the server's parent, is not.
+// The check needs the peer identity addon, built for Apple silicon macOS only, so the cases that need a ready host skip
+// elsewhere.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFile, spawn} from 'node:child_process';
+import {connect} from 'node:net';
 import {promisify} from 'node:util';
 import {existsSync, readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {REPO} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome, installedHomeSupported} from './fixtures/installed-home.mjs';
-import {clientModeDir} from '../src/chrome/extension.mjs';
+import {clientModeDir, logDir} from '../src/chrome/extension.mjs';
 import {clientSocketName} from '../src/chrome/client-mode.mjs';
 import {MAWS_INSTANCE_MARKER} from '../src/chrome/discovery.mjs';
 import {startFakeMawsPeer} from './helpers/fake-maws-peer.mjs';
 
 const CLI = join(REPO, 'bin', 'cua.mjs');
+const relayReady = !installedHomeSupported || (!(process.platform === 'darwin' && process.arch === 'arm64')
+  && 'the relay\'s peer check needs the peer identity addon, built for Apple silicon macOS only (elsewhere every client is refused)');
 // The fake peer lives in this process's event loop, so the CLI runs asynchronously (spawnSync would starve it).
 const cli = (home, args, env) => promisify(execFile)(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: join(home, 'user'), ...env}, encoding: 'utf8'});
 const waitFor = async (predicate, what, ms = 8000) => {
@@ -46,7 +53,7 @@ function serve(home, env = {}) {
 const records = home => readFileSync(join(home, 'state', 'codex', 'fake-upstream.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
 const hostSocket = (home, peer, pid) => join(clientModeDir(home), `${clientSocketName(peer.path, pid)}.sock`);
 
-test('cua serve with a MAWS backend: its own host in chrome/m, listed first and preferred; profiles_list puts maws first; the description says so', {skip: !installedHomeSupported}, async t => {
+test('cua serve with a MAWS backend: its own host in chrome/m, listed first and preferred; profiles_list puts maws first; the description says so', {skip: relayReady}, async t => {
   const home = fakeInstalledHome(t);
   const peer = await startFakeMawsPeer({path: join(home, 'maws.sock')});
   t.after(() => peer.stop());
@@ -69,7 +76,7 @@ test('cua serve with a MAWS backend: its own host in chrome/m, listed first and 
   assert.equal(existsSync(host), false, 'the host socket goes with the process');
 });
 
-test('two cua serve processes and a cua profiles list on one MAWS socket at once; the first exiting leaves the second serving', {skip: !installedHomeSupported}, async t => {
+test('two cua serve processes and a cua profiles list on one MAWS socket at once; the first exiting leaves the second serving', {skip: relayReady}, async t => {
   const home = fakeInstalledHome(t);
   const peer = await startFakeMawsPeer({path: join(home, 'maws.sock')});
   t.after(() => peer.stop());
@@ -94,7 +101,7 @@ test('two cua serve processes and a cua profiles list on one MAWS socket at once
   assert.deepEqual(readdirSync(clientModeDir(home)), [], 'every client-mode socket is gone');
 });
 
-test('MAWS down: profiles_list reads maws_unreachable, the launch still lists the host path and the default fails closed; MAWS starting later is found without a restart', {skip: !installedHomeSupported}, async t => {
+test('MAWS down: profiles_list reads maws_unreachable, the launch still lists the host path and the default fails closed; MAWS starting later is found without a restart', {skip: relayReady}, async t => {
   const home = fakeInstalledHome(t);
   const path = join(home, 'maws.sock');
   const server = serve(home, {CUA_BROWSER_BACKENDS: path});
@@ -112,6 +119,30 @@ test('MAWS down: profiles_list reads maws_unreachable, the launch still lists th
   await waitFor(() => peer.connections.length > 0, 'the 5 s retry reaching MAWS');
   await waitFor(() => existsSync(hostSocket(home, peer, server.child.pid)), 'the host listening');
   assert.deepEqual((await server.call('profiles_list')).result.structuredContent.profiles, [{key: 'maws', ready: true, extensionInstanceId: peer.instanceId}]);
+  server.child.stdin.end();
+  assert.equal((await server.exit).code, 0);
+});
+
+test('the host accepts the runtime cua serve started (a descendant through the anchor) and refuses this test process, the server\'s parent, before any read', {skip: relayReady}, async t => {
+  const home = fakeInstalledHome(t);
+  const peer = await startFakeMawsPeer({path: join(home, 'maws.sock')});
+  t.after(() => peer.stop());
+  const server = serve(home, {CUA_BROWSER_BACKENDS: peer.path});
+  await server.ready();
+  const reply = await server.call('js', {code: 'relay'});
+  const outcome = JSON.parse(reply.result.content[0].text);
+  assert.equal(outcome.relay, 'replied', JSON.stringify(outcome));
+  assert.equal(outcome.info.metadata.extensionInstanceId, peer.instanceId);
+  const host = hostSocket(home, peer, server.child.pid);
+  const outsider = connect(host);
+  outsider.on('error', () => {});
+  let bytes = 0;
+  outsider.on('data', chunk => { bytes += chunk.length; });
+  outsider.once('connect', () => outsider.write(Buffer.from([0, 0, 0, 2, 0x7b, 0x7d])));
+  await new Promise(resolve => outsider.once('close', resolve));
+  assert.equal(bytes, 0, 'closed with nothing answered');
+  const log = readFileSync(join(logDir(home), `${clientSocketName(peer.path, server.child.pid)}.log`), 'utf8');
+  assert.deepEqual(log.match(/relay .*: refused .*/g), [`relay ${clientSocketName(peer.path, server.child.pid)}: refused peer pid ${process.pid} (not_descendant)`]);
   server.child.stdin.end();
   assert.equal((await server.exit).code, 0);
 });

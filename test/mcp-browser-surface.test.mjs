@@ -348,5 +348,5 @@ test('maws unreachable reads as not ready with the reason and the step, never wi
   const response = await h.client.call('profiles_list').response;
   const {guidance, ...fields} = structured(response);
   assert.deepEqual(fields.profiles, [{key: 'maws', ready: false, reason: 'maws_unreachable'}]);
-  assert.match(guidance, /^maws is not ready \(maws_unreachable\): MAWS is not running or this session's browser socket is gone; start MAWS, then call profiles_list again\./);
+  assert.match(guidance, /^maws is not ready \(maws_unreachable\): MAWS is not running or this session's browser socket is gone, so start MAWS and call profiles_list again; or cua's peer check is unavailable and its relay refuses the browser service \(cua doctor's maws\.hosts row says why\)\./);
 });

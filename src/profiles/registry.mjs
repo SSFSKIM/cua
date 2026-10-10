@@ -190,7 +190,7 @@ export const REASONS = {
   backends_unlistable: 'the live OpenAI extension backends could not be listed at this request (the listing launch failed), so whether its bound instance is live cannot be told',
   chrome_data_unreadable: `this process cannot read Chrome's data directory (${ACCESS_NOTE}, or run from a process that has it); the live check still works`,
   // A MAWS backend's entry (never a registered profile's).
-  maws_unreachable: 'MAWS is not running or this session\'s browser socket is gone; start MAWS, then call profiles_list again',
+  maws_unreachable: 'MAWS is not running or this session\'s browser socket is gone, so start MAWS and call profiles_list again; or cua\'s peer check is unavailable and its relay refuses the browser service (cua doctor\'s maws.hosts row says why)',
 };
 
 // The cua route's wording where the vendor route's names the ChatGPT extension (H2's hand-off; codes unchanged).

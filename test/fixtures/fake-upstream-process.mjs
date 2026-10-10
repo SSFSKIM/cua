@@ -10,8 +10,12 @@
 // working directory are appended to $CODEX_HOME/fake-upstream.jsonl for the test to inspect. A js call with code
 // "approve" writes the session approval file node_repl writes for an accepted app approval. A Chrome backend listing
 // cell (src/profiles/inventory.mjs) is answered with $CODEX_HOME/fake-backends.json as its listing when that file
-// exists (otherwise it is echoed like any cell, which the listing reads as a failure).
+// exists (otherwise it is echoed like any cell, which the listing reads as a failure). A js call with code "relay" connects
+// to the first of BROWSER_USE_BACKEND_PATHS as the vendor browser service does and answers {relay: 'replied', info} with
+// its getInfo, or {relay: 'closed'} when the host closes the connection first (a refused peer).
 import {spawn} from 'node:child_process';
+import {connect} from 'node:net';
+import {createPeer, frameDecoder} from '../../src/chrome/protocol.mjs';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, statSync} from 'node:fs';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -44,6 +48,18 @@ if (mode === 'unowned') {
   helper.unref();
 }
 
+function relayGetInfo() {
+  return new Promise(resolve => {
+    const socket = connect(process.env.BROWSER_USE_BACKEND_PATHS.split(':')[0]);
+    const peer = createPeer({send: bytes => socket.write(bytes)});
+    const decode = frameDecoder();
+    socket.on('data', chunk => { for (const message of decode(chunk)) peer.receive(message); });
+    socket.on('error', () => {});
+    socket.once('close', () => resolve({relay: 'closed'}));
+    socket.once('connect', () => peer.request('getInfo', {}).then(info => { resolve({relay: 'replied', info}); socket.destroy(); }, () => {}));
+  });
+}
+
 const send = msg => {
   if (mode === 'noise') process.stdout.write('not json from the runtime\n');
   process.stdout.write(JSON.stringify(msg) + '\n');
@@ -71,6 +87,7 @@ createInterface({input: process.stdin}).on('line', line => {
       }
       const backends = process.env.CODEX_HOME && join(process.env.CODEX_HOME, 'fake-backends.json');
       if (name === 'js' && String(args.code).includes('"CUABACKENDS "') && backends && existsSync(backends)) return reply(text(`CUABACKENDS ${readFileSync(backends, 'utf8').trim()}`));
+      if (name === 'js' && args.code === 'relay') return relayGetInfo().then(outcome => reply(text(outcome)));
       if (name === 'js') return reply(text({code: args.code, turn: _meta?.['x-codex-turn-metadata']}));
       if (name === 'js_reset') return reply(text('js kernel reset'));
       if (name === 'turn_ended') return reply(text('{}'));

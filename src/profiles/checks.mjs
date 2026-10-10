@@ -19,8 +19,11 @@
 // On either route, the MAWS row (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md):
 //   maws.hosts               the client-mode hosts cua processes run for MAWS backends (src/chrome/client-mode.mjs),
 //                            from their status files in chrome/b (instance maws:…) and sockets in chrome/m: pass with
-//                            each one's instance and process, skip when there is none. A record whose process is gone
-//                            is stale and removed (status file and socket).
+//                            each one's instance, process and peer check, skip when there is none. A record whose
+//                            process is gone is stale and removed (status file and socket). Blocked when the relay's
+//                            peer check is unavailable (docs/doperpowers/specs/2026-10-09-maws-socket-peer-auth-
+//                            design.md): the peer identity addon does not load here on Apple silicon macOS, or a live
+//                            host's status says peerCheck 'unavailable'; such a host refuses every vendor connection.
 import {execFileSync} from 'node:child_process';
 import {readdirSync, readFileSync, rmSync, statSync} from 'node:fs';
 import {connect} from 'node:net';
@@ -32,6 +35,7 @@ import {NATIVE_HOST_NAME, PERMISSION_FIX, PERMISSION_HINT, countLiveHosts} from 
 import {profileStatuses, REASONS, reasonFor} from './registry.mjs';
 import {backendDir, clientModeDir, CUA_HOST_NAME, isMawsInstance, launcherPath} from '../chrome/extension.mjs';
 import {parseLauncher} from '../chrome/registration.mjs';
+import {loadPeerAddon, peerAddonPath} from '../chrome/peer.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
@@ -95,7 +99,11 @@ const fileAt = path => { try { return statSync(path).isFile(); } catch { return 
 // Signal 0 checks that a process exists; EPERM means it does, under another user.
 const processAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 
-export function mawsHostCheck({home, alive = processAlive}) {
+const PEER_CHECK_FIX = 'reinstall or update cua, or rebuild the addon with scripts/build-peer-auth.sh';
+
+// `addonPath` and `host` are where the peer identity addon is loaded from and the platform it is loaded on (tests point
+// them elsewhere); off Apple silicon macOS, where MAWS does not run, it is not tried.
+export function mawsHostCheck({home, alive = processAlive, addonPath = peerAddonPath(), host = process}) {
   const root = realHome(home);
   let names = [];
   try { names = readdirSync(backendDir(root)).filter(name => name.endsWith('.json')); } catch {}
@@ -104,7 +112,7 @@ export function mawsHostCheck({home, alive = processAlive}) {
     let status;
     try { status = JSON.parse(readFileSync(join(backendDir(root), file), 'utf8')); } catch { continue; }
     if (!isMawsInstance(status?.instanceId) || !Number.isInteger(status.pid)) continue;
-    hosts.push({name: file.slice(0, -'.json'.length), instanceId: status.instanceId, pid: status.pid});
+    hosts.push({name: file.slice(0, -'.json'.length), instanceId: status.instanceId, pid: status.pid, peerCheck: status.peerCheck ?? 'off'});
   }
   const live = hosts.filter(h => alive(h.pid));
   const stale = hosts.filter(h => !alive(h.pid));
@@ -113,8 +121,13 @@ export function mawsHostCheck({home, alive = processAlive}) {
     rmSync(join(clientModeDir(root), `${h.name}.sock`), {force: true});
   }
   const note = stale.length ? `; removed ${stale.length} stale host record(s) of processes that are gone` : '';
+  const listed = live.length ? `${live.length} MAWS client-mode host(s) connected: ${live.map(h => `${h.instanceId} (pid ${h.pid}, peer check ${h.peerCheck})`).join(', ')}` : '';
+  const addonMissing = host.platform === 'darwin' && host.arch === 'arm64' && !loadPeerAddon(addonPath, host);
+  if (addonMissing) return result('maws.hosts', 'blocked', `the relay's peer check is unavailable: ${addonPath} does not load, so a MAWS client-mode host of this cua refuses every vendor browser connection; ${PEER_CHECK_FIX}${listed ? `; ${listed}` : ''}${note}`);
+  const unchecked = live.filter(h => h.peerCheck === 'unavailable');
+  if (unchecked.length) return result('maws.hosts', 'blocked', `${listed}; the peer check of ${unchecked.map(h => `pid ${h.pid}`).join(', ')} is unavailable (its process could not load the peer identity addon), so every vendor browser connection to it is refused; ${PEER_CHECK_FIX}${note}`);
   return live.length
-    ? result('maws.hosts', 'pass', `${live.length} MAWS client-mode host(s) connected: ${live.map(h => `${h.instanceId} (pid ${h.pid})`).join(', ')}${note}`)
+    ? result('maws.hosts', 'pass', `${listed}${note}`)
     : result('maws.hosts', 'skip', `no cua process is connected to a MAWS backend (MAWS passes CUA_BROWSER_BACKENDS to its sessions' engines; cua serve connects then)${note}`);
 }
 

@@ -6,7 +6,7 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 
 | milestone | branch | PR | state |
 |---|---|---|---|
-| M0 | feat/own-browser-service | (opening) | reviewed clean at 5393503 (reviewer-high), awaiting merge |
+| M0 | feat/own-browser-service | https://github.com/SSFSKIM/cua/pull/121 | reviewed clean at 5393503 (reviewer-high), awaiting merge |
 
 ## Log
 

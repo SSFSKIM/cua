@@ -347,6 +347,9 @@ Dependencies: `playwright-core` (exact pin, devDependency; only its injected scr
 - Observation (M0 corpus, live): an apparent intermittent control-event failure was a stopped fixture server whose established HTTP connection Chrome kept using, so page POSTs reached the old state; the fixture now closes active connections on shutdown and the runs verify zero fixture processes between runs.
   Evidence: commit 1ec2b38, `test/browser-parity/fixture.test.mjs` (M0 task 2, 2026-10-13).
 
+- Observation (benchmark, live on the mini): `end_task` resets the device REPL ("this is a new session on mini: its REPL state is fresh"), and the device REPL can import `node:fs`/`node:os` and write under `os.tmpdir()` (the mini user's per-user `$TMPDIR`, stable across sessions) but not `/tmp`; evidence copied through the model picked up transcription typos. The benchmark recorder therefore journals every row to `${os.tmpdir()}/cua-bench/<service>-run-<n>/` as it happens and the controller copies the files with `scp`; three pilot vendor runs taken before that are kept under `pilot/` and not counted.
+  Evidence: controller probes 2026-10-13 (EPERM on /tmp, a file written in one session read back after `end_task`); pilot runs under `docs/evidence/2026-10-13-own-browser-service-benchmark/pilot/`.
+
 ## Decision Log
 
 - 2026-10-13 (verification call, at authoring): one independent spec review on the design (`doperpowers:adversarial-reviewer`) and one buildability review of the execution section (the same agent, the standard brief), findings folded before the executor starts; each milestone's PR gets `doperpowers:reviewer-high`. Execution through `doperpowers:plan-executor` at its pin (opus high; workers task-executor opus high, task-reviewer sol xhigh); the owner's temporary note prefers GPT routes for bounded work, so the executor may pin its workers to astra at medium where the brief allows.

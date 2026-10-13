@@ -408,9 +408,22 @@ On macOS 26 and later, Chrome's data directory (`~/Library/Application Support/G
 protection: a terminal without Full Disk Access, and everything started from it (`cua serve` included), gets
 "Operation not permitted" there. cua then reports the file checks as unreadable, never as a missing extension:
 `add` still registers, `bind` skips the presence check, `doctor` blocks `chrome.extension.<key>` with the error code,
-and a bound profile is ready whenever its bound extension instance is live, because the live check goes through the
-runtime and does not need that access. A profile that is unbound or not live reads `chrome_data_unreadable`; to get
-the file checks back, grant your terminal Full Disk Access (System Settings → Privacy & Security → Full Disk Access).
+and a profile bound on the current Chrome route is ready whenever its exact bound extension instance is live, because the live check goes through the
+runtime and does not need that access. A profile that is unbound or not live reads `chrome_data_unreadable`; its guidance distinguishes no live Chrome backend,
+a different live instance, and a failed live listing (including its error code). A binding from the other Chrome route
+reads `rebind_required` even when files are unreadable: bind again on the current route. Directory and display-name
+labels from Chrome data help choose a binding; they are not required to confirm an existing binding live. To get
+the file checks back, grant the process doing those reads Full Disk Access (System Settings → Privacy & Security →
+Full Disk Access): your terminal for `cua serve`, **the installed agent's node binary for remote control**, not the SSH
+terminal. `cua agent status` prints that exact node path (for example `~/.nvm/versions/node/<version>/bin/node`).
+
+On macOS, doctor's `chrome.agent` row reports the resident agent's own recorded Chrome readability beside the
+calling process's `chrome.extension.*` / `chrome.profiles` file checks. It names the node from the installed launchd
+plist and its last observation time; a terminal's successful read never makes the agent row pass. The agent records
+actual Chrome directory and Local State reads, registered-profile access and registry failures in `state/agent.json`
+at startup and each `profiles_list`. A record from an old pid or node, an older agent without a record, or a stopped
+job is blocked rather than guessed. After granting access, call `profiles_list` again to refresh it; no doctor
+network probe, TCC edits or automatic restart is involved.
 
 `bind` records which live extension instance is this profile, because the browser service selects a browser by that id
 (`cua.getBrowser({extensionInstanceId})`). It makes one bounded, read-only launch of the runtime to list the live
@@ -739,6 +752,11 @@ or `install` refuses with `relay_unavailable`.
 
 **After upgrading or moving node, run `cua agent install` again.** The job runs the node that ran `install` (shown by
 `agent status`); a Homebrew or nvm upgrade that removes it breaks the job, and `agent.installed` then fails naming it.
+**For the Chrome profile route, that exact agent node binary needs Full Disk Access**, independently of your
+terminal's grant. `agent install` prints the full path and the System Settings step (also `chromeAccess` in `--json`);
+`agent status` shows the installed path again. On an nvm install this is `~/.nvm/versions/node/<version>/bin/node`.
+Grant the new path at the screen after node moves. `chrome.agent` in doctor reports what the agent last read.
+
 With `--http` and macOS's application firewall on, that node binary is what the firewall judges for incoming
 connections: allow it, or install with a node that is already allowed (otherwise macOS asks at the console the first
 time the agent listens). Relay mode only dials out and is unaffected.

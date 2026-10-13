@@ -122,6 +122,16 @@ export function chromeFacts({host = hostTarget(), env = process.env, userHome = 
   return {
     userData,
     extensionId,
+    // Exercise actual directory/file reads: stat alone can succeed even when TCC refuses Chrome's data.
+    dataReadability() {
+      try {
+        readdirSync(userData);
+        readFileSync(join(userData, 'Local State'));
+        return {status: 'readable'};
+      } catch (error) {
+        return {status: ABSENT.has(error.code) ? 'missing' : 'unreadable', error: error.code ?? 'error'};
+      }
+    },
     isDirectoryName,
     // -> 'exists' | 'missing' | 'unreadable'
     profileDirectoryExists: name => isDirectoryName(name) ? stateName(directoryState(join(userData, name))) : 'missing',

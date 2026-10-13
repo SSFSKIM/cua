@@ -255,3 +255,15 @@ test('install refuses to add --relay when this checkout cannot load the ws packa
   const http = await install({http: '192.168.1.20:7801', loadRelay: missing}).catch(error => error);
   assert.equal(http.code, 'relay_unavailable', 'a relay-enrolled device always gets --relay, so --http does not bypass the check');
 });
+
+test('install reports the exact launchd node needing Full Disk Access, including JSON consumers', async t => {
+  const {install} = setup(t);
+  const result = await install({http: '127.0.0.1:7801'});
+  assert.ok(result.chromeAccess.includes(NODE), result.chromeAccess);
+  assert.match(result.chromeAccess, /Full Disk Access.*Chrome profile/);
+  assert.match(result.chromeAccess, /System Settings.*Privacy & Security/);
+  const {agentInstallMessage} = await import('../src/cli.mjs');
+  const text = agentInstallMessage(result);
+  assert.ok(text.includes(result.chromeAccess), text);
+  assert.ok(text.includes(NODE));
+});

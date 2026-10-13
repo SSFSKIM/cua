@@ -584,3 +584,26 @@ test('cua profiles open prints the command it ran and the readiness line; --json
   assert.equal(JSON.parse(unknown.stdout).error.code, 'unknown_profile');
   assert.equal(readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 2 * args.length, 'two opens, none for the unknown key');
 });
+
+test('unreadable Chrome cannot bypass a route change and explains why live evidence did not confirm readiness', async t => {
+  const home = unreadableHome(t);
+  const chrome = fakeChromeFacts({Default: {directory: 'unreadable'}});
+  addProfile({home, key: 'personal', directory: 'Default', chrome});
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a', route: 'cua'});
+  // Default home route is vendor: a live id is not permission to use a binding from another route.
+  const changed = await profileReadiness({home, chrome, listBackends: async () => assert.fail('the wrong-route binding must not launch')});
+  assert.equal(changed.profiles[0].reason, 'rebind_required');
+  assert.match(reasonText(changed.profiles[0]), /other Chrome route.*bind it again/);
+  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a'});
+  const ready = await profileReadiness({home, chrome, listBackends: listing([{instanceId: 'inst-a'}])});
+  assert.equal(ready.profiles[0].ready, true);
+  assert.equal(ready.profiles[0].extensionInstanceId, 'inst-a');
+  for (const [backends, expected] of [[[], 'host_not_live'], [[{instanceId: 'inst-new'}], 'binding_stale']]) {
+    const {profiles: [p]} = await profileReadiness({home, chrome, listBackends: listing(backends)});
+    assert.equal(p.liveReason, expected);
+    assert.match(reasonText(p), expected === 'host_not_live' ? /no live.*backend/ : /other backends are live/);
+  }
+  const {profiles: [p]} = await profileReadiness({home, chrome, listBackends: failing(Object.assign(new Error('bounded launch failed'), {code: 'runtime_unresponsive'}))});
+  assert.equal(p.liveReason, 'backends_unlistable');
+  assert.match(reasonText(p), /runtime_unresponsive/);
+});

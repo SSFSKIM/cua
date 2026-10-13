@@ -1,10 +1,16 @@
 import {isDeepStrictEqual} from 'node:util';
 // Explicit result oracles, not cross-service equality: broken identical implementations must fail run.
 export function expectValues(expected, state = () => true) {
-  return ({results,fixtureState}) => ({
-    ok: results.length === Object.keys(expected).length && results.every(r => r.ok && Object.hasOwn(expected,r.cell) && (typeof expected[r.cell] === 'function' ? expected[r.cell](r.value) : isDeepStrictEqual(r.value,expected[r.cell]))) && state(fixtureState),
-    reason: results.filter(r=>!r.ok).map(r=>`${r.cell}: ${r.error?.message}`).join('; ') || undefined,
-  });
+  return ({results,fixtureState}) => {
+    if(results.length!==Object.keys(expected).length)return {ok:false,reason:'unexpected cell count'};
+    for(const result of results) {
+      if(!result.ok)return {ok:false,reason:`${result.cell}: ${result.error?.message}`};
+      const oracle=expected[result.cell];
+      if(!Object.hasOwn(expected,result.cell)||(typeof oracle==='function'?!oracle(result.value):!isDeepStrictEqual(result.value,oracle)))return {ok:false,reason:`${result.cell}: unexpected fixture result ${JSON.stringify(result.value)}`};
+    }
+    if(!state(fixtureState))return {ok:false,reason:`fixture side effects differ: ${JSON.stringify(fixtureState)}`};
+    return {ok:true};
+  };
 }
 export function expectError(results,label,pattern,codes=['Error']) {
   const result=results.find(r=>r.cell===label);

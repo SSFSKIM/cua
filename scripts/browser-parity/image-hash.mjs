@@ -75,7 +75,7 @@ function jpeg(bytes) {
     else if(marker===0xda) {
       if(!components)throw new Error('JPEG frame missing');
       const count=bytes[pos++],scan=[];
-      for(let i=0;i<count;i++){const c=components.find(c=>c.id===bytes[pos++]),selector=bytes[pos++];if(!c)throw new Error('Invalid JPEG component');scan.push({...c,dcTable:tables.get(selector>>4),acTable:tables.get(16+(selector&15))});}
+      for(let i=0;i<count;i++){const id=bytes[pos++],c=components.find(c=>c.id===id),selector=bytes[pos++];if(!c)throw new Error('Invalid JPEG component');scan.push({...c,dcTable:tables.get(selector>>4),acTable:tables.get(16+(selector&15))});}
       const ss=bytes[pos++],se=bytes[pos++],approx=bytes[pos++];
       if(progressive&&(ss!==0||se!==0||(approx>>4)!==0))throw new Error('JPEG first scan must contain initial DCs');
       if(!scan.some(c=>c.id===components[0].id))throw new Error('JPEG first scan lacks luminance');

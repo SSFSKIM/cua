@@ -28,3 +28,8 @@ test('baseline JPEG screenshots use decoded luminance DCs, not compressed bytes'
   const value=await normalize({$imageData:[...readFileSync(new URL('./fixture/hash-sample.jpg',import.meta.url))]});
   assert.deepEqual(value,{$image:'ahash64',width:64,height:64,hash:'ffffffff00000000'});
 });
+test('multi-component color JPEG screenshots decode every scan component without advancing the selector cursor during lookup',async()=>{
+  const normalize=createNormalizer();
+  const value=await normalize({$imageData:[...readFileSync(new URL('./fixture/hash-color.jpg',import.meta.url))]});
+  assert.deepEqual(value,{$image:'ahash64',width:64,height:64,hash:'00000000ffffffff'});
+});

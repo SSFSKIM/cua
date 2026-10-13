@@ -11,7 +11,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
   let state = {counter:0,events:[]};
   const pages = {
     ...corpusPages,
-    'dialogs': `<button id="alert" onclick="alert('fixture alert')">Alert</button><button id="confirm" onclick="document.querySelector('#result').textContent=confirm('fixture confirm')">Confirm</button><button id="prompt" onclick="document.querySelector('#result').textContent=prompt('fixture prompt','seed')">Prompt</button><output id="result"></output>`,
+    'dialogs': `<button id="alert" onclick="setTimeout(()=>alert('fixture alert'),100)">Alert</button><button id="confirm" onclick="setTimeout(()=>document.querySelector('#result').textContent=confirm('fixture confirm'),100)">Confirm</button><button id="prompt" onclick="setTimeout(()=>document.querySelector('#result').textContent=prompt('fixture prompt','seed'),100)">Prompt</button><output id="result"></output>`,
     'downloads': '<a id="download" href="/download" download="parity.txt">Download</a>',
     'chooser': `<input id="file" type="file"><output id="filename"></output><script>document.querySelector('#file').onchange=e=>{const name=e.target.files[0].name;document.querySelector('#filename').textContent=name;${record}({file:name})});}</script>`,
     'oopif': '<iframe id="outer" src="/frame.html"></iframe>',

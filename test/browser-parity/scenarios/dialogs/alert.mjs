@@ -9,7 +9,7 @@ export default {
   },
   {
     "label": "get",
-    "code": "globalThis.dialog=await tab.getJsDialog();return dialog.type;"
+    "code": "globalThis.dialog=undefined;for(const deadline=Date.now()+3000;!dialog&&Date.now()<deadline;){dialog=await tab.getJsDialog();if(!dialog)await new Promise(r=>setTimeout(r,25));}return dialog?.type;"
   },
   {
     "label": "blocked",

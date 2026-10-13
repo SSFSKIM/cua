@@ -9,3 +9,14 @@ test('corpus pages and media are loopback fixtures with stable interaction targe
   }
   const media=await fetch(fixture.url+'/image.svg');assert.equal(media.status,200);assert.match(media.headers.get('content-type'),/image\/svg/);
 });
+
+test('dialog triggers return before opening the modal so CDP input does not time out and detach',async t=>{
+  const {runInNewContext}=await import('node:vm');
+  const fixture=await startFixture({port:0});t.after(()=>fixture.close());
+  const html=await (await fetch(fixture.url+'/dialogs.html')).text();
+  const handler=html.match(/id="alert" onclick="([^"]+)"/)[1];
+  let opened=false;const scheduled=[];
+  runInNewContext(handler,{alert:()=>{opened=true;},setTimeout:fn=>scheduled.push(fn)});
+  assert.equal(opened,false,'modal must not block Input.dispatchMouseEvent');
+  assert.equal(scheduled.length,1);scheduled[0]();assert.equal(opened,true);
+});

@@ -5,7 +5,7 @@ export default {
   cells:[
   {
     "label": "mutate",
-    "code": "return await tab.playwright.evaluate(\"document.title = 'changed'; document.title\");"
+    "code": "return await tab.playwright.evaluate(()=>{document.title='changed';return document.title;});"
   },
   {
     "label": "title",

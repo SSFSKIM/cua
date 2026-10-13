@@ -186,7 +186,7 @@ Decisions: the injected script is Playwright's from the pinned package, installe
 
 Does not touch: actions, input, screenshots, waits (M1c).
 
-Proves: acceptance 3 (with the switch set by hand), 5's M1b scenarios.
+Proves: acceptance 3 (with the switch set by hand), 5's M1b scenarios. Also at M1b's end (session, 2026-10-13): the parity cases return to opening their tab with `cua.createBrowserTab` (M1a moved them to `tabs.new` + `goto` because the client's `createBrowserTab` renders the DOM snapshot), with a vendor control diff of 0 for that change.
 
 ### M1c — Pointer and locator actions, keyboard, screenshots, waits, DOM-CUA
 

@@ -266,6 +266,7 @@ export async function handleRpc(request)            // {method:'setup'|'execute'
 // setup → {apiManifest, disabledMemberIds: string[]}            (no credentialRecoveryErrorVersion)
 // execute → the command's result value; rejects with BrowserServiceError
 // executeWithRecovery → {ok:true, value}; rejects exactly as execute; never {ok:false}
+export const COMMAND_HANDLERS                     // Map<wire type, handler>: the registry execute dispatches through; the inventory test checks every due row's type is registered here (M0 task 2 review)
 ```
 
 In `src/browser-service/errors.mjs`:
@@ -363,6 +364,7 @@ Dependencies: `playwright-core` (exact pin, devDependency; only its injected scr
 - 2026-10-13 (session, after vendor run 1): the benchmark verdict judges per-task tool-call time (the sum of the task's call durations, median over three runs, within max(10 %, 500 ms)) and reports wall time beside it, because wall time is dominated by the controller model's thinking, not the service: in vendor run 1, `click-button`'s late done mark gave it 51.9 s of wall time against about 4 to 8 s for its siblings, and T0 measured 40.8 s from reading the documentation between calls. The owner's "no regression" is about the service. Outcomes stay as the M0 task 1 review entry defines them.
 - 2026-10-13 (session, on the live dialog behaviour): cua keeps `dialog_open` for a locator action while a JS dialog is open, as the design's blocking rule intends, rather than matching the vendor's selector-deadline retry; it is the more informative error and in the owner-approved vocabulary. The case is an entry in `test/browser-parity/expected-differences.json` (from M1a, when cua first runs it) with that reason; acceptance 4 states cua's behaviour.
 - 2026-10-13 (M0 task 2): the inventory has 88 rows (the 87-type union of `Rf`, `zN` and the capability fallbacks plus the M3-required disabled `tab_content_export`); disabled optional capabilities carry executable client-side absence assertions rather than skips; two cases are excluded with reasons (Chrome's person-operated "Ask where to save" dialog; successful authenticated or external exports without an external fixture, whose rows keep executable coverage); `prepare` refuses a missing or stale binding instead of binding. The M0 vendor baseline is the run pair under `docs/evidence/2026-10-13-own-browser-service-parity/` at harness commit 081aad8: 39 cases, 101 cells, 0 differences with no allowance file; later milestones diff their cua runs against `vendor-1` there.
+- 2026-10-13 (M0 task 2 review): the inventory's handler gate reads `COMMAND_HANDLERS`, a `Map` exported by `src/browser-service/index.mjs` from wire type to the dispatch function `execute` actually uses, rather than inferring a handler from any response other than `unsupported_command` (which validation or tab errors before dispatch would fake); a negative test removes a handler while its schema remains. Scenarios that claim a mutation or wait observe it through fixture or page state, and a harness self-test requires them to fail against a no-op service double.
 
 ## Outcomes & Retrospective
 

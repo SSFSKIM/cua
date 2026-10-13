@@ -31,3 +31,13 @@ test('file chooser acknowledgement is published only after its independent fixtu
   assert.equal(output.textContent,'');release();await pending;
   assert.equal(output.textContent,'fixture.txt');assert.equal(output.dataset.recorded,'yes');
 });
+
+test('control event acknowledgement consumes a successful fixture response and reflects its recorded state',async t=>{
+  const {runInNewContext}=await import('node:vm');
+  const fixture=await startFixture({port:0});t.after(()=>fixture.close());
+  const html=await (await fetch(fixture.url+'/controls.html')).text();
+  const script=html.match(/<script>(.*?)<\/script>/s)[1];
+  const recorded=await runInNewContext(script+'record({double:true});',{fetch:(url,options)=>fetch(fixture.url+url,options)});
+  assert.deepEqual(recorded,{counter:0,events:[{double:true}]});
+  assert.deepEqual(await (await fetch(fixture.url+'/state')).json(),recorded);
+});

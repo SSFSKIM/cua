@@ -1,5 +1,5 @@
 // Browser-owned handlers make mutations independently observable at /state.
-const events = `<script>const record=value=>fetch('/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});</script>`;
+const events = `<script>const record=async value=>{const response=await fetch('/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});const state=await response.json();if(!response.ok)throw new Error('fixture POST failed: '+response.status);return state;};</script>`;
 export const corpusPages = {
   logs: '<p>Console fixture</p><script>console.log("parity-log deterministic message")</script>',
   read: '<h1>Read fixture</h1><p class="item" data-note="stable">Alpha</p><p class="item">Beta</p><button id="enabled">Enabled</button><button id="disabled" disabled>Disabled</button><div id="hidden" hidden>Hidden</div>',

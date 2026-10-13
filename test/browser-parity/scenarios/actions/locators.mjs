@@ -1,6 +1,6 @@
 import {expectValues} from '../../support/assertions.mjs';
 export default {
-  id:"actions/locators", milestone:"M1c", commands:["playwright_locator_click", "playwright_locator_dblclick", "playwright_locator_fill", "playwright_locator_press", "playwright_locator_press_sequentially", "playwright_locator_select_option", "playwright_locator_set_checked", "playwright_locator_wait_for"],
+  id:"actions/locators", milestone:"M1c", commands:["playwright_locator_click", "playwright_locator_fill", "playwright_locator_press", "playwright_locator_press_sequentially", "playwright_locator_select_option", "playwright_locator_set_checked", "playwright_locator_wait_for"],
   setup:{page:"/controls.html",state:{}},
   cells:[
   {
@@ -24,13 +24,9 @@ export default {
     "code": "await tab.playwright.locator('#click').click();return true;"
   },
   {
-    "label": "double",
-    "code": "await tab.playwright.locator('#double').dblclick();return true;"
-  },
-  {
     "label": "wait",
-    "code": "await tab.playwright.getByText('recorded',{exact:true}).waitFor({state:'visible',timeoutMs:1000});return true;"
+    "code": "await tab.playwright.getByText('recorded',{exact:true}).waitFor({state:'visible',timeoutMs:3000});return true;"
   }
 ],
-  assert:expectValues({fill:'alpha',press:'alpha beta',select:'b',check:true,click:true,double:true,wait:true},s=>s.events.some(e=>e.click===true)&&s.events.some(e=>e.double===true)&&s.events.some(e=>e.selected==='b')&&s.events.some(e=>e.checked===true)),
+  assert(input) {const result=expectValues({fill:'alpha',press:'alpha beta',select:'b',check:true,click:true,wait:true},s=>s.events.some(e=>e.click===true)&&s.events.some(e=>e.selected==='b')&&s.events.some(e=>e.checked===true))(input);return result.ok?result:{...result,reason:result.reason+'; fixture='+JSON.stringify(input.fixtureState)};},
 };

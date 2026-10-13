@@ -473,7 +473,7 @@
     "dispatch": "Rf",
     "milestone": "M1c",
     "cases": [
-      "actions/locators"
+      "actions/doubleclick"
     ],
     "reachability": "always"
   },

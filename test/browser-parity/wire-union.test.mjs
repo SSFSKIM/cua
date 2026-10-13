@@ -6,7 +6,7 @@ const source=`var Rf={};G(Rf,{ReadCommand:()=>read,NavCommand:()=>nav});
 var read=L("read",()=>{}); nav.type="navigate";
 G(ie,{Get:()=>schema});G(schema,{commandType:()=>type});var type="get";
 var zN={[ie.Get.commandType]:fn};
-var visibility="visibility_get",viewport="viewport_set",management="management_call";
+var visibility="visibility_get",viewport="viewport_set",management="management_call",unused="unused_schema";
 var RTe={[management]:m};var zTe={[visibility]:v};var iCe={[viewport]:p};`;
 test('extracts all three dispatch sources without inventing unused schemas',()=>{
   assert.deepEqual(extractWireUnion(source),['get','management_call','navigate','read','viewport_set','visibility_get']);

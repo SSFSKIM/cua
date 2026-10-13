@@ -93,26 +93,29 @@ On the device, from its cua checkout (leave the relay running in this terminal):
 
 ```sh
 # Hashes only; remote show does not print the client credential.
-(umask 077; { printf '{\n'; cua remote show --json | jq -r .devicesEntry; printf '}\n'; } > /tmp/cua-loopback-devices.json)
-node relay/server.mjs --port 7800 --devices /tmp/cua-loopback-devices.json
+devices_file=$(mktemp "${TMPDIR:-/tmp}/cua-loopback-devices.XXXXXX")
+(umask 077; { printf '{\n'; cua remote show --json | jq -r .devicesEntry; printf '}\n'; } > "$devices_file")
+node relay/server.mjs --port 7800 --devices "$devices_file"
 ```
 
 In another device terminal, `cua remote enroll --relay ws://127.0.0.1:7800/ws` moves the existing link; do not use
 `--rotate`. The running relay-enabled agent redials within about 30 s. On the client:
 
 ```sh
-ssh -N -L 17800:127.0.0.1:7800 <device-ssh-host>
+ssh -N -L 127.0.0.1:17800:127.0.0.1:7800 <device-ssh-host>
 cua devices add mini-local --relay http://127.0.0.1:17800 --device=<existing-device-id>
 ```
 
 Run the second command in another terminal while the tunnel stays up. It reuses the existing device's stored
 credential (same device id), never copies it into the relay table. `devices_list`, then `devices_use mini-local`
-works normally. Both plaintext listeners are loopback-only; SSH protects the network leg.
+works normally. The explicit `127.0.0.1` bind keeps the client forward loopback-only even when SSH `GatewayPorts`
+is enabled. Both plaintext listeners are loopback-only; SSH protects the network leg.
 
 After the hosted relay and its devices table are restored, end the temporary task, move the device back with
 `cua remote enroll --relay wss://<original-relay>/ws`, verify `agent.relay` and the original client entry, and switch
-back. Stop only the temporary relay and tunnel you started, remove the hash table and `cua devices remove mini-local`.
-Do not restart the resident agent, Chrome or its hosts.
+back. Stop only the temporary relay and tunnel you started, run `rm -f "$devices_file"` in the original device terminal
+to remove the generated private hash table, and `cua devices remove mini-local` on the client. Do not restart the
+resident agent, Chrome or its hosts.
 
 ## Add a device
 

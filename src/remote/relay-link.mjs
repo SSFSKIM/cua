@@ -62,6 +62,7 @@ export async function connectRelay({target, handle, diagnostics = () => {}, onSt
   }
 
   function dial() {
+    if (stopping) return;
     retry = null;
     const to = target();
     dialled = to?.url ?? null;
@@ -88,10 +89,13 @@ export async function connectRelay({target, handle, diagnostics = () => {}, onSt
       watchdog.unref?.();
     };
     const send = frame => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame)); };
+    const active = () => !stopping && socket === ws && !ws.redial && ws.readyState === WebSocket.OPEN;
 
     ws.on('open', () => {
+      if (!active()) return;
       opened = true;
       onState({url, status: 'connected'});
+      if (!active()) return;
       delay = minBackoffMs;
       connections++;
       send({t: 'hello', deviceId});
@@ -99,7 +103,9 @@ export async function connectRelay({target, handle, diagnostics = () => {}, onSt
       arm();
     });
     ws.on('ping', () => {
+      if (!active()) return;
       onState({url, status: 'connected'});
+      if (!active()) return;
       arm();
       refresh();
     });
@@ -109,14 +115,15 @@ export async function connectRelay({target, handle, diagnostics = () => {}, onSt
       clearTimeout(watchdog);
       for (const channel of channels.values()) abort(channel);
       channels.clear();
-      if (socket === ws) socket = null;
+      if (socket !== ws) return;
+      socket = null;
       if (stopping) return;
       if (ws.redial) return dial();
       const reason = reasonBytes.toString('utf8');
       if (STOP_CODES.has(code)) {
+        stopping = true;
         onState({url, status: 'stopped', error: `${code}: ${reason || STOP_CODES.get(code)}`});
         diagnostics(`relay: closed with ${code} (${reason || STOP_CODES.get(code)}): ${STOP_CODES.get(code)}; not reconnecting`);
-        stopping = true;
         return resolveStopped({code, reason});
       }
       const refused = !opened && /\b401\b/.test(failure ?? '') ? '; the relay does not know this device\'s credential: add the line cua remote show prints to its devices.json' : '';

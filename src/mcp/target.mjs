@@ -33,6 +33,7 @@ import {DEVICE_NAME, LOCAL} from '../remote/devices.mjs';
 import {statusResult, WORK_TOOLS} from './surface.mjs';
 
 const idKey = id => JSON.stringify(id);
+const shellQuote = text => `'${text.replaceAll("'", "'\\''")}'`;
 const DEVICE_REQUEST = 'cua-device-';     // the local ids of the device's own requests
 const NEVER = new AbortController().signal;
 const ENDING_CODES = new Set(['connection_closing', 'connection_failed']);
@@ -293,7 +294,7 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
       let state;
       try { state = await devices.probe(name); } catch (error) { state = {status: 'offline', code: error?.code ?? 'device_protocol'}; }
       const guidance = relayUnreachable(state)
-        ? `The relay origin ${relayUrl} is not answering (or its proxy cannot reach the device); check the relay host before the device: curl ${relayUrl}/, and the hosting provider's server list.`
+        ? `The relay origin ${relayUrl} is not answering (or its proxy cannot reach the device); check the relay host before the device: curl ${shellQuote(`${relayUrl}/`)}, and the hosting provider's server list.`
         : state.status === 'offline' && !state.code
           ? 'The relay answered, but this device has no live link; on the device check cua agent status and cua doctor.' : null;
       return {name, deviceId, relay: relayUrl, ...state, ...(guidance ? {guidance} : {})};

@@ -6,6 +6,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+import {existsSync} from 'node:fs';
 import {createServer as createHttpServer} from 'node:http';
 import {createMcpHttp} from '../src/mcp/http.mjs';
 import {openDeviceSession} from '../src/remote/client.mjs';
@@ -814,4 +816,27 @@ test('devices_list distinguishes an unreachable relay from an unlinked device an
   probes.b = {status: 'online'};
   const mixed = structured(await h.client.call('devices_list', {}).response);
   assert.equal(mixed.guidance, undefined, 'a healthy device on the same relay rules out an all-device outage');
+});
+
+test('devices_list curl guidance passes IPv6 relay origins intact through zsh',
+  {skip: !existsSync('/bin/zsh') && 'needs zsh for the IPv6 guidance regression'}, async t => {
+  const home = userHome(t);
+  const entries = [
+    {name: 'loopback', deviceId: 'loopback', relayUrl: 'http://[::1]:17800'},
+    {name: 'hosted', deviceId: 'hosted', relayUrl: 'https://[2001:db8::1]'},
+  ];
+  const h = await local(t, home, {devices: {list: async () => entries, probe: async () => ({status: 'offline', code: 'relay_unreachable'})}});
+  const response = await h.client.call('devices_list', {}).response;
+  const fields = structured(response);
+  for (const entry of entries) {
+    const guidance = fields.devices.find(device => device.name === entry.name).guidance;
+    assertModelSeesText(response, guidance);
+    const command = guidance.match(/\bcurl .+?(?=, and\b)/)?.[0];
+    assert.ok(command, 'the guidance supplies a curl command');
+    // A shell-local curl double prints argv; no network request or shell startup files are used.
+    const run = spawnSync('/bin/zsh', ['-f', '-c', `curl() { printf '%s\\n' "$@"; }\n${command}`],
+      {env: {...process.env, HOME: home.env.HOME}, cwd: home.env.HOME, encoding: 'utf8'});
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout, `${entry.relayUrl}/\n`);
+  }
 });

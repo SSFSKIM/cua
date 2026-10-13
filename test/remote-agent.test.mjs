@@ -827,6 +827,48 @@ test('a failure while stopping after a refusal is logged and does not replace th
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });
 
+test('queued relay pings cannot publish connected after close starts', {skip: NEEDS_WS}, async t => {
+  const states = [];
+  const relay = await fakeRelay(t);
+  let closing;
+  const {link} = await dial(t, relay.url, {onState: state => {
+    states.push(state);
+    if (state.status === 'connected' && states.filter(s => s.status === 'connected').length === 2)
+      closing = link.close();
+  }});
+  await until(() => relay.connections[0]?.frames.length, 'hello');
+  // Both pings are queued before the client handles either: the first starts close(), the second arrives during it.
+  relay.connections[0].socket.ping('close now');
+  relay.connections[0].socket.ping('late heartbeat');
+  await until(() => Boolean(closing), 'close started by the first ping');
+  await closing;
+  const terminal = states.findIndex(state => state.status === 'stopped');
+  assert.notEqual(terminal, -1);
+  assert.deepEqual(states.slice(terminal), [{url: relay.url, status: 'stopped', error: 'closed by the agent'}]);
+});
+
+test('queued pings on a redialed socket cannot restore the previous relay health', {skip: NEEDS_WS}, async t => {
+  const a = await fakeRelay(t);
+  const b = await fakeRelay(t);
+  let target = {url: a.url, deviceCredential: DEVICE_CREDENTIAL, deviceId: 'dev'};
+  const states = [];
+  const link = await connectRelay({target: () => target, handle: () => {}, onState: state => {
+    states.push(state);
+    if (state.status === 'connected' && states.filter(s => s.status === 'connected').length === 2) {
+      target = {...target, url: b.url};
+      link.refresh();
+    }
+  }, minBackoffMs: 10, maxBackoffMs: 40});
+  t.after(() => link.close());
+  await until(() => a.connections[0]?.frames.length, 'hello on the original relay');
+  a.connections[0].socket.ping('redial now');
+  a.connections[0].socket.ping('old heartbeat');
+  await until(() => b.connections[0]?.frames.length, 'hello on the replacement relay');
+  const redial = states.findIndex(state => state.status === 'connecting' && state.url === b.url);
+  assert.notEqual(redial, -1);
+  assert.deepEqual(states.slice(redial), [{url: b.url, status: 'connecting'}, {url: b.url, status: 'connected'}]);
+});
+
 test('relay lifecycle publishes failures, connects, heartbeat freshness, recovery and terminal close', {skip: NEEDS_WS}, async t => {
   const states = [];
   const relay = await fakeRelay(t, {pingMs: 10});

@@ -95,6 +95,9 @@ test('a Deadline counts down, expires, and a child never outlives its parent', a
   assert.equal(d.remaining(), 0);
   assert.throws(() => d.check(), error => error instanceof BrowserServiceError && error.code === 'timeout' && error.message === DEADLINE_EXCEEDED);
   assert.equal(new Deadline(0).expired(), true);
+  assert.equal(new Deadline(2500).ms, 2500, 'a deadline keeps the budget it was given (the vendor names it in its sentences)');
+  assert.equal(new Deadline(-5).ms, 0);
+  assert.equal(new Deadline(5000).child(800).ms, 800);
   assert.throws(() => new Deadline(Number.NaN), TypeError);
 });
 

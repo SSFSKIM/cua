@@ -70,6 +70,20 @@ test('reload reloads the page and waits for its load', async t => {
   assert.equal(pages.sent.filter(s => s.method === 'Page.reload').length, 1);
 });
 
+test('a reload whose CDP command stalls and whose host-side detach stalls too still ends at timeout_ms (the host never answers)', async t => {
+  const {run, ext} = await tabOn(t);
+  await run({type: 'navigate_tab_url', url: 'https://example.com/a'});
+  ext.holdCdp('Page.reload');
+  ext.stall('debugger.detach');
+  const started = Date.now();
+  const error = await rejection(run({type: 'navigate_tab_reload', timeout_ms: 40}));
+  assert.ok(Date.now() - started < 800, `settled after ${Date.now() - started} ms (an unbounded wait never settles; one bounded only by timeoutMs and the grace takes over a second)`);
+  assert.ok(error instanceof BrowserServiceError);
+  assert.equal(error.code, 'timeout');
+  ext.releaseCdp('Page.reload', {});
+  assert.equal(ext.calls.filter(c => c.params?.method === 'Page.reload').length, 1, 'never dispatched twice (no replay)');
+});
+
 test('the history commands refuse a tab id that is not a positive integer, in the vendor\'s words', async t => {
   const {run} = await tabOn(t);
   for (const type of ['navigate_tab_back', 'navigate_tab_forward', 'navigate_tab_reload'])

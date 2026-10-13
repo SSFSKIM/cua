@@ -16,11 +16,18 @@
 import {readdir} from 'node:fs/promises';
 import {endianness} from 'node:os';
 import {isAbsolute, resolve} from 'node:path';
-import {serviceError} from './errors.mjs';
+import {BrowserServiceError, DEADLINE_EXCEEDED, serviceError} from './errors.mjs';
+import {Deadline} from './budgets.mjs';
 
 const HEADER_BYTES = 4;
 const LE = endianness() === 'LE';
 const MAX_FRAME_BYTES = 0xffffffff;
+// The host's own bound on a CDP command without a timeoutMs (src/chrome/host.mjs DEFAULT_CDP_TIMEOUT_MS), and how long
+// past a command's bound the service still waits for the host's answer when the command has no deadline: the host
+// answers a timed-out command only after detaching the tab, and a detach can stall.
+export const HOST_CDP_TIMEOUT_MS = 10000;
+export const CDP_ANSWER_GRACE_MS = 1000;
+const exceeded = () => new BrowserServiceError('timeout', DEADLINE_EXCEEDED);
 // How long discovery waits for a backend's getInfo ($_).
 export const BACKEND_INFO_TIMEOUT_MS = 5000;
 // The vendor's own socket directory on macOS and Linux (Va), listed when BROWSER_USE_BACKEND_PATHS is unset.
@@ -78,22 +85,30 @@ export class Backend {
   get closed() { return this.#terminal !== null; }
 
   // Sends `method` and resolves with the backend's result or rejects with its error ({message, code}). With a
-  // `sessionId` the session fields ride along; a `deadline` (budgets.mjs) bounds the wait, and a spent one sends nothing.
-  request(method, params = {}, {sessionId, turnId, sessionContext = 'live', deadline} = {}) {
+  // `sessionId` the session fields ride along. A `deadline` (budgets.mjs) bounds the wait: a spent one sends nothing,
+  // and when it runs out after sending, the request is abandoned (rejected with `expired()`, by default the deadline
+  // error; its late answer is dropped) and never sent again.
+  request(method, params = {}, {sessionId, turnId, sessionContext = 'live', deadline, expired = exceeded} = {}) {
     try { deadline?.check(); } catch (error) { return Promise.reject(error); }
     const message = {...params, ...(sessionId !== undefined ? {session_id: sessionId, turn_id: turnId, session_context: sessionContext} : {})};
     const id = this.#nextId++;
-    const answer = new Promise((resolve, reject) => {
-      this.#pending.set(id, {resolve, reject});
+    return new Promise((resolve, reject) => {
+      let timer;
+      const settle = (fn, value) => { clearTimeout(timer); fn(value); };
+      this.#pending.set(id, {resolve: value => settle(resolve, value), reject: error => settle(reject, error)});
       try {
         this.#send({jsonrpc: '2.0', method, params: message, id});
       } catch (error) {
         this.#pending.delete(id);
-        reject(error);
+        settle(reject, error);
+        return;
       }
+      if (deadline) timer = setTimeout(() => { if (this.#pending.delete(id)) reject(expired()); }, deadline.remaining());
     });
-    return deadline ? deadline.race(answer) : answer;
   }
+
+  // Requests sent and not yet answered (or abandoned).
+  get pendingCount() { return this.#pending.size; }
 
   notify(method, params = {}) { this.#send({jsonrpc: '2.0', method, params}); }
 
@@ -224,8 +239,14 @@ export class BackendApi {
 
   ping() { return this.sendRequest('ping'); }
 
-  // {target: {tabId, sessionId? | targetId?}, method, commandParams, timeoutMs?, preserveDebuggerOnTimeout?}
-  executeCdp(params) { return this.sendSessionRequest('executeCdp', params); }
+  // {target: {tabId, sessionId? | targetId?}, method, commandParams, timeoutMs?, preserveDebuggerOnTimeout?}. The
+  // answer is awaited until the command's `deadline`, or without one until its timeoutMs (the host's 10 s default)
+  // plus a grace; past that the command is abandoned with the host's own timeout sentence, never re-sent.
+  executeCdp(params, {deadline} = {}) {
+    const limit = typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : HOST_CDP_TIMEOUT_MS;
+    const expired = () => new BrowserServiceError('timeout', `Timed out after ${limit}ms waiting for CDP command ${params.method}.`);
+    return this.sendSessionRequest('executeCdp', params, {deadline: deadline ?? new Deadline(limit + CDP_ANSWER_GRACE_MS), expired});
+  }
 
   matchesCurrentSessionId(sessionId) {
     const current = sessionIdOf(this.getTurnMetadata());
@@ -303,13 +324,13 @@ export class BackendApi {
   async close() { await this.backend.close(); }
 
   // A request carrying the current turn's session (`deadline` bounds the wait).
-  sendSessionRequest(method, params, {deadline} = {}) {
+  sendSessionRequest(method, params, {deadline, expired} = {}) {
     let session;
     try { session = this.getSessionParams(); } catch (error) { return Promise.reject(error); }
     if (method !== 'getInfo' && method !== 'getUserTabs') this.lastSessionParams = {session_id: session.session_id, turn_id: session.turn_id};
     if (this.clientInfo != null && this.turnEndedTracker != null && this.endingTurnId !== session.turn_id)
       this.turnEndedTracker.track({session_id: session.session_id, turn_id: session.turn_id}, this.turnEnded);
-    return this.#send(method, params, session, deadline);
+    return this.#send(method, params, session, deadline, expired);
   }
 
   sendRequest(method, params = {}) { return this.backend.request(method, params); }
@@ -335,8 +356,9 @@ export class BackendApi {
     try { return this.getSessionParams(); } catch { return null; }
   }
 
-  #send(method, params, session, deadline) {
-    return this.backend.request(method, params, {sessionId: session.session_id, turnId: session.turn_id, sessionContext: session.session_context, deadline});
+  #send(method, params, session, deadline, expired) {
+    return this.backend.request(method, params, {sessionId: session.session_id, turnId: session.turn_id, sessionContext: session.session_context,
+      deadline, ...(expired ? {expired} : {})});
   }
 }
 

@@ -272,11 +272,12 @@ export class CdpController extends Emitter {
     const attachment = this.attachedTabIds.has(target.tabId) ? this.tabAttachmentPromises.get(target.tabId) : undefined;
     const timeoutMs = dispatchTimeout(options);
     try {
+      // The answer is awaited only until the deadline: once dispatched, the command is never sent again.
       return await this.api.executeCdp({
         target, method, commandParams: params ?? {},
         ...(options.preserveOnTimeout === true ? {preserveDebuggerOnTimeout: true} : {}),
         ...(timeoutMs !== undefined ? {timeoutMs} : {}),
-      });
+      }, {deadline: options.deadline});
     } catch (error) {
       if (isNotAttached(error)) {
         if (attachment != null && this.tabAttachmentPromises.get(target.tabId) === attachment) this.forgetAttachedTab(target.tabId);
@@ -634,7 +635,7 @@ export class CdpController extends Emitter {
     try {
       const timeoutMs = callTimeout(options);
       await this.api.executeCdp({target: {tabId}, method: 'Emulation.setFocusEmulationEnabled', commandParams: {enabled: true},
-        ...(timeoutMs !== undefined ? {timeoutMs} : {})});
+        ...(timeoutMs !== undefined ? {timeoutMs} : {})}, {deadline: options.deadline});
     } catch (error) {
       if (isDeadlineError(error)) throw error;
     }
@@ -647,11 +648,11 @@ export class CdpController extends Emitter {
       return ms !== undefined ? {timeoutMs: ms} : {};
     };
     try {
-      await this.api.executeCdp({target, method: 'Target.setAutoAttach', commandParams: {...base, filter: [{type: 'iframe', exclude: false}]}, ...timeout()});
+      await this.api.executeCdp({target, method: 'Target.setAutoAttach', commandParams: {...base, filter: [{type: 'iframe', exclude: false}]}, ...timeout()}, {deadline: options.deadline});
     } catch (error) {
       if (isDeadlineError(error)) throw error;
       try {
-        await this.api.executeCdp({target, method: 'Target.setAutoAttach', commandParams: base, ...timeout()});
+        await this.api.executeCdp({target, method: 'Target.setAutoAttach', commandParams: base, ...timeout()}, {deadline: options.deadline});
       } catch (second) {
         if (isDeadlineError(second)) throw second;
         checkDeadline(options);
@@ -916,9 +917,10 @@ export class CdpController extends Emitter {
       const ms = dispatchTimeout(options);
       return ms !== undefined ? {timeoutMs: ms} : {};
     };
-    await this.api.executeCdp({target: session.target, method: 'Page.enable', commandParams: {}, ...timeout()});
-    await this.api.executeCdp({target: session.target, method: 'Runtime.enable', commandParams: {}, ...timeout()});
-    const tree = await this.api.executeCdp({target: session.target, method: 'Page.getFrameTree', commandParams: {}, ...timeout()});
+    const bound = {deadline: options.deadline};
+    await this.api.executeCdp({target: session.target, method: 'Page.enable', commandParams: {}, ...timeout()}, bound);
+    await this.api.executeCdp({target: session.target, method: 'Runtime.enable', commandParams: {}, ...timeout()}, bound);
+    const tree = await this.api.executeCdp({target: session.target, method: 'Page.getFrameTree', commandParams: {}, ...timeout()}, bound);
     if (this.frameSessionsBySessionId.get(session.sessionId) !== session) return;
     this.setFrameSessionForFrame(session.target.tabId, tree.frameTree.frame.id, session);
   }

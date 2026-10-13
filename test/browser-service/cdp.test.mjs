@@ -630,6 +630,31 @@ test('real host: attaching sends focus emulation, Page.enable and auto-attach to
   assert.equal((await rejection(cdp.call(tabId, 'Runtime.evaluate', {expression: '2'}))).code, 'dialog_open');
 });
 
+test('real host: a dispatched command whose host answer never comes (a stalled detach after its timeout) rejects at the deadline, once', async t => {
+  const {host, api, cdp, tabId} = await realController(t);
+  await cdp.attach(tabId);
+  host.ext.holdCdp('Page.reload');
+  host.ext.stall('debugger.detach');
+  const started = Date.now();
+  const error = await rejection(cdp.call(tabId, 'Page.reload', {}, {deadline: new Deadline(40)}));
+  assert.ok(Date.now() - started < 800, `settled after ${Date.now() - started} ms (an unbounded wait never settles; one bounded only by timeoutMs and the grace takes over a second)`);
+  assert.equal(error.name, 'BrowserServiceError');
+  assert.equal(error.code, 'timeout');
+  assert.match(error.message, /^Timed out after \d+ms waiting for CDP command Page\.reload\.$/);
+  assert.equal(host.ext.calls.filter(c => c.params?.method === 'Page.reload').length, 1, 'never re-dispatched');
+  assert.equal(api.backend.pendingCount, 0, 'the abandoned request is forgotten; a late answer is dropped');
+});
+
+test('real host: without a deadline a stalled answer is still bounded, by the command\'s timeoutMs and a grace', async t => {
+  const {host, cdp, tabId} = await realController(t);
+  await cdp.attach(tabId);
+  host.ext.holdCdp('Page.reload');
+  host.ext.stall('debugger.detach');
+  const error = await rejection(cdp.call(tabId, 'Page.reload', {}, {timeoutMs: 30}));
+  assert.equal(error.code, 'timeout');
+  assert.equal(error.message, HOST_TIMEOUT(30, 'Page.reload'));
+});
+
 test('real host: beforeunload is accepted through the host as Page.handleJavaScriptDialog', async t => {
   const {host, cdp, tabId} = await realController(t);
   await cdp.attach(tabId);

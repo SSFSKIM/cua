@@ -155,6 +155,16 @@ test('a request whose deadline is spent is never sent; one outliving its deadlin
   assert.equal(pipe.sent.length, 1);
 });
 
+test('a request abandoned at its deadline is forgotten: its late answer is dropped', async () => {
+  const pipe = memoryPipe();
+  const backend = new Backend(pipe.stream);
+  const late = await rejection(backend.request('executeCdp', {}, {sessionId: 's', turnId: 't', deadline: new Deadline(20)}));
+  assert.equal(late.code, 'timeout');
+  assert.equal(backend.pendingCount, 0);
+  pipe.answer(1, {result: {late: true}});
+  assert.equal(backend.closed, false);
+});
+
 test('connect needs the trusted worker\'s nativePipe bridge', async () => {
   await assert.rejects(connect('/tmp/x.sock', {nativePipe: null}), /privileged native pipe bridge is not available/);
   await assert.rejects(connect('/nonexistent/cua-no.sock', {nativePipe}), /ENOENT|ECONNREFUSED/);

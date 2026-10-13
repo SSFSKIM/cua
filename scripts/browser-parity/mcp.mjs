@@ -1,0 +1,58 @@
+// A minimal newline JSON-RPC MCP stdio client. Requests from the server have their own ID namespace.
+import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
+export class StdioClient {
+  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {}}) {
+    this.child = spawn(command,args,{env,cwd,stdio:['pipe','pipe','pipe']});
+    this.pending = new Map(); this.nextId=0; this.timeoutMs=timeoutMs; this.closed=false;
+    this.exited = new Promise(resolve => this.child.once('close',(code,signal) => {this.closed=true;this.failAll(new Error(`MCP exited (${code ?? signal})`));resolve({code,signal});}));
+    // Do not persist arbitrary runtime stderr: it is not part of parity evidence.
+    this.child.stderr.resume();
+    this.child.once('error',e => this.failAll(e));
+    this.child.stdin.on('error',e => this.failAll(e));
+    const lines = createInterface({input:this.child.stdout});
+    lines.on('line',line => {
+      let msg; try {msg=JSON.parse(line);} catch {this.failAll(new Error('Non-JSON MCP stdout'));return;}
+      if (msg.method && msg.id !== undefined) {
+        if (msg.method === 'elicitation/create') {
+          // Vendor approvals are schema-form requests. Record action only, never prompt text or supplied secrets.
+          const row = {t:new Date().toISOString(),method:msg.method,action:'accept'};
+          onElicitation(row);
+          this.write({jsonrpc:'2.0',id:msg.id,result:{action:'accept',content:{}}});
+        } else if (msg.method === 'ping') this.write({jsonrpc:'2.0',id:msg.id,result:{}});
+        else this.write({jsonrpc:'2.0',id:msg.id,error:{code:-32601,message:'Unsupported client request'}});
+        return;
+      }
+      if (!msg.method && msg.id !== undefined) {
+        const p = this.pending.get(msg.id); if (!p) return;
+        this.pending.delete(msg.id); clearTimeout(p.timer);
+        if (msg.error) p.reject(Object.assign(new Error(msg.error.message),{code:msg.error.code}));else p.resolve(msg.result);
+      }
+    });
+  }
+  write(msg) {if (!this.closed && !this.child.stdin.destroyed) this.child.stdin.write(JSON.stringify(msg)+'\n');}
+  failAll(error) {for (const p of this.pending.values()) {clearTimeout(p.timer);p.reject(error);} this.pending.clear();}
+  request(method,params={},timeoutMs=this.timeoutMs) {
+    if(this.closed) return Promise.reject(new Error('MCP connection is closed'));
+    const id=++this.nextId;
+    return new Promise((resolve,reject) => {
+      const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error(`MCP ${method} timed out`));},timeoutMs);
+      this.pending.set(id,{resolve,reject,timer}); this.write({jsonrpc:'2.0',id,method,params});
+    });
+  }
+  async initialize() {
+    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities:{elicitation:{form:{}}},clientInfo:{name:'cua-browser-parity',version:'1'}});
+    this.write({jsonrpc:'2.0',method:'notifications/initialized'});return value;
+  }
+  call(name,args={}) {return this.request('tools/call',{name,arguments:args});}
+  async close({drop=false}={}) {
+    if (!this.closed) {
+      if(drop) this.child.kill('SIGTERM'); else this.child.stdin.end();
+    }
+    let timer;
+    const exited=await Promise.race([this.exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),5000);})]);clearTimeout(timer);
+    if(exited) return exited;
+    this.child.kill('SIGKILL'); return this.exited;
+  }
+}
+export const textOf = result => (result?.content ?? []).filter(c=>c.type==='text').map(c=>c.text).join('\n');

@@ -58,6 +58,7 @@ import {connect, createServer} from 'node:net';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createPeer, frameDecoder, NO_HANDLER} from './protocol.mjs';
+import {sessionTrace, traceSession} from './trace.mjs';
 import {backendDir, clientModeDir, logDir, PROTOCOL_VERSION, socketNameFor} from './extension.mjs';
 
 export const DEFAULT_CDP_TIMEOUT_MS = 10_000;
@@ -142,7 +143,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
   function sessionFor(client, sessionId, turn) {
     let s = sessions.get(sessionId);
     if (!s) {
-      s = {id: sessionId, client, turn: null, seen: new Set(), ended: new Set(), title: 'cua', activeTabId: null, tabs: new Map(), closed: false, pendingViewport: null};
+      s = {tracePath: sessionTrace(home), id: sessionId, client, turn: null, seen: new Set(), ended: new Set(), title: 'cua', activeTabId: null, tabs: new Map(), closed: false, pendingViewport: null};
       sessions.set(sessionId, s);
       log(`session ${sessionId} opened`);
     }
@@ -536,13 +537,21 @@ export function createHost({extension: port, hello, home = null, now = () => new
   }
 
   function tell(s, method, params) {
-    try { s.client?.notify(method, params); } catch (error) { log(`notify ${method} to session ${s.id} failed: ${error.message}`); }
+    try {
+      s.client?.notify(method, params);
+      traceSession(s, 'notification', method, params, {ok: true});
+    } catch (error) {
+      traceSession(s, 'notification', method, params, {ok: false});
+      log(`notify ${method} to session ${s.id} failed: ${error.message}`);
+    }
   }
 
   // What every client with a session is told (a download belongs to no session the host can name).
   function tellAll(method, params) {
     for (const client of new Set([...sessions.values()].map(s => s.client))) {
-      try { client.notify(method, params); } catch (error) { log(`notify ${method} failed: ${error.message}`); }
+      let ok = true;
+      try { client.notify(method, params); } catch (error) { ok = false; log(`notify ${method} failed: ${error.message}`); }
+      for (const s of sessions.values()) if (s.client === client) traceSession(s, 'notification', method, params, {ok});
     }
   }
 
@@ -635,12 +644,24 @@ export function createHost({extension: port, hello, home = null, now = () => new
   return {
     methods: Object.keys(handlers),
     async handleBackendRequest(client, {method, params}) {
-      const handler = Object.hasOwn(handlers, method) ? handlers[method] : null;
-      if (!handler) refuse(NO_HANDLER(method), -1);
       const p = params ?? {};
-      if (SESSION_EXEMPT.has(method)) return await handler(p);
-      if (typeof p.session_id !== 'string' || typeof p.turn_id !== 'string') refuse(`${method} requires session_id and turn_id`);
-      return await handler(p, sessionFor(client, p.session_id, p.turn_id), p.turn_id);
+      let s = sessions.get(p.session_id);
+      const started = performance.now();
+      try {
+        const handler = Object.hasOwn(handlers, method) ? handlers[method] : null;
+        if (!handler) refuse(NO_HANDLER(method), -1);
+        if (!SESSION_EXEMPT.has(method)) {
+          if (typeof p.session_id !== 'string' || typeof p.turn_id !== 'string') refuse(`${method} requires session_id and turn_id`);
+          s = sessionFor(client, p.session_id, p.turn_id);
+        }
+        const value = await handler(p, s, p.turn_id);
+        traceSession(s, 'request', method, p, {ms: performance.now() - started, ok: true});
+        return value;
+      } catch (error) {
+        traceSession(s, 'request', method, p, {ms: performance.now() - started, ok: false,
+          ...(typeof error.code === 'number' ? {code: error.code} : {})});
+        throw error;
+      }
     },
     async clientClosed(client) {
       await Promise.all([...sessions.values()].filter(s => s.client === client).map(async s => {

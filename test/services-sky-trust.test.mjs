@@ -9,7 +9,7 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {registerHooks} from 'node:module';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 
@@ -37,6 +37,9 @@ registerHooks({resolve(specifier, context, nextResolve) {
   return resolved;
 }});
 const out = [];
+// The trusted worker's nodeRepl, as much of it as a service's setup touches (cua's own browser service registers its
+// turn-ended hook there).
+if (process.env.TRUST_TEST_NODE_REPL === '1') globalThis.nodeRepl = {env: process.env, requestMeta: {}, addTurnEndedHandler: () => () => {}};
 const [name, setup, reference] = JSON.parse(process.env.TRUST_TEST_REQUESTS);
 try {
   const service = await import(pathToFileURL(JSON.parse(process.env.NODE_REPL_TRUSTED_SERVICES)[name]).href);
@@ -52,8 +55,8 @@ const SKY_INPUT = process.platform === 'linux' ? {window: {id: 7, app: 'Gedit', 
 const SKY_REQUESTS = ['sky', {type: 'setup'}, {type: 'execute', method: 'type_text', args: [{...SKY_INPUT, text: '{{secret:WORK_PASSWORD}}'}]}];
 const BROWSER_REQUESTS = ['browser', {method: 'setup', params: {}}, {method: 'executeWithRecovery', params: {type: 'playwright_locator_fill', browser_id: '1', tab_id: '2', selector: 's', value: '{{secret:WORK_PASSWORD}}', replace: true}}];
 
-function runWorker(env, requests = SKY_REQUESTS) {
-  return new Promise((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', WORKER], {env: {...env, TRUST_TEST_REQUESTS: JSON.stringify(requests)}, encoding: 'utf8'}, (error, stdout, stderr) => {
+function runWorker(env, requests = SKY_REQUESTS, {nodeRepl = false} = {}) {
+  return new Promise((resolve, reject) => execFile(process.execPath, ['--input-type=module', '-e', WORKER], {env: {...env, TRUST_TEST_REQUESTS: JSON.stringify(requests), ...(nodeRepl ? {TRUST_TEST_NODE_REPL: '1'} : {})}, encoding: 'utf8'}, (error, stdout, stderr) => {
     if (error) return reject(new Error(`${error.message}\n${stderr}`));
     resolve(JSON.parse(stdout));
   }));
@@ -103,5 +106,27 @@ test('the production browser service and everything it imports load under exactl
   assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
   const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => !SERVICE_SUPPORT_DIRS.includes(dir)).join(':');
   const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed}, BROWSER_REQUESTS);
+  assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
+});
+
+// cua's own browser service (CUA_BROWSER_SERVICE=cua): the wrapper imports it from src/browser-service, which the
+// launch trusts only under that selection. Its real setup runs here, under exactly the launch's environment.
+const CUA_BROWSER_REQUESTS = ['browser', {method: 'setup', params: {environment: 'codex-app'}}, BROWSER_REQUESTS[2]];
+
+test('cua\'s own browser service and everything it imports load under exactly the launch\'s trusted paths when selected', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', ambient: {CUA_BROWSER_SERVICE: 'cua'}});
+  assert.equal(env.CUA_BROWSER_SERVICE, 'cua');
+  const [setup, reference] = await runWorker(env, CUA_BROWSER_REQUESTS, {nodeRepl: true});
+  assert.equal(setup.loadError, undefined, setup.loadError);
+  assert.deepEqual(Object.keys(setup).sort(), ['apiManifest', 'disabledMemberIds'], 'cua\'s setup, not the fake vendor\'s');
+  assert.equal(setup.apiManifest.root, 'Agent');
+  assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
+});
+
+test('the hook copy is effective for cua\'s service: without its directory trusted, its setup cannot load', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', ambient: {CUA_BROWSER_SERVICE: 'cua'}});
+  const narrowed = env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').filter(dir => dir !== BROWSER_SERVICE_IMPL_DIR).join(':');
+  assert.notEqual(narrowed, env.NODE_REPL_TRUSTED_CODE_PATHS);
+  const [result] = await runWorker({...env, NODE_REPL_TRUSTED_CODE_PATHS: narrowed}, CUA_BROWSER_REQUESTS, {nodeRepl: true});
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
 });

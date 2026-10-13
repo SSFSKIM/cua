@@ -19,6 +19,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
   - [x] (2026-10-13 task 1, reviewed clean after two fix waves) errors, budgets, backend transport, CDP controller.
   - [x] (2026-10-13 task 2, reviewed clean) index with COMMAND_HANDLERS, manifest, tabs, docs, the switch, trust root and two-pin guard; real-client error proof; live M1a parity on the mini: 0 unexpected differences.
 - [ ] M1b — Injected script, selector resolution, reads, evaluate, snapshot.
+  - [x] (2026-10-13 task 1, reviewed clean after one fix wave) playwright-core 1.59.1 pin, extractor, injected script per frame, selector resolution.
 - [ ] M1c — Pointer and locator actions, keyboard, screenshots, waits, DOM-CUA.
 - [ ] M2 — Dialog answering, downloads, file chooser, clipboard, console logs, viewport and visibility, raw CDP, cursor.
 - [ ] M3 — Optional features: exports, page assets, WebMCP, bot-detection report, auth handoff, user history.
@@ -297,7 +298,7 @@ In `src/browser-service/cdp.mjs`: `class CdpController { attach(tabId); detach(t
 
 In `src/browser-service/tabs.mjs`: `class TabRegistry { create(browserId); select(browserId); claim(browserId, tabId); mark(tabId, status); name(name); endTurn() }`.
 
-In `src/browser-service/selectors.mjs` (M1b): `resolve(selector, frame, {deadline, strict}) → ElementHandle`; `resolveAll(...)`. In `evaluate.mjs`: `evaluateInPage(frame, script, args, {deadline})` with the no-replay rule.
+In `src/browser-service/selectors.mjs` (M1b): `resolve(selector, frame, {deadline, strict}) → ElementHandle` (`backendNodeId`, `frameId`, `target`, `oopifFrameChain`, `selector`, `evaluate(fn, {arg, deadline})`); `resolveAll(...) → {handles, target, frameId, oopifFrameChain, selector, documentBackendNodeId}` (the scope survives zero matches); `evaluateOnSelector`/`evaluateOnSelectorAll`/`evaluateInFrame` for the isolated-world reads. In `evaluate.mjs`: `evaluateInPage(frame, script, args, {deadline})` with the no-replay rule.
 
 In `src/services/browser.mjs`: `createBrowserService({loadService, actualServiceVersion, expectedVersion, secrets, ...})` where `loadService` resolves by `CUA_BROWSER_SERVICE` (`cua` → `src/browser-service/index.mjs`; `vendor` → `CUA_BROWSER_VENDOR_SERVICE`), `actualServiceVersion` reads the real version of the selected module and `expectedVersion` is `PINNED_CUA_VERSION` ('0.1.0') or `PINNED_VENDOR_VERSION` ('0.1.1'); `rejectionKind` gains the `BrowserServiceError` branch.
 

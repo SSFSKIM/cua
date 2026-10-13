@@ -22,8 +22,12 @@ const TAB = 7;
 // A backend API (the BackendApi surface the controller uses) whose CDP answers come from `answers` (method -> value or
 // (params) => value) and whose scripted failures (`fail(method, message, times)`) reject the next calls of a method.
 // `delays` (method or 'attach' -> ms) makes those answers take that long; every call records when it was dispatched.
-function scriptedApi(answers = {}, delays = {}) {
+// With `host: true` the double enforces each command's timeoutMs as the real host does (src/chrome/host.mjs executeCdp:
+// default 10 s; past it the host's sentence, and the tab detached unless preserveDebuggerOnTimeout, so the next command
+// on it answers "Debugger unattached" until it is attached again).
+function scriptedApi(answers = {}, delays = {}, {host = false} = {}) {
   const listeners = {onCDPEvent: [], onCDPDetach: []};
+  const hostDetached = new Set();
   const calls = [];
   const failures = [];
   const answer = (method, params) => {
@@ -41,6 +45,7 @@ function scriptedApi(answers = {}, delays = {}) {
       calls.push({op: 'attach', tabId, at: Date.now()});
       if (delays.attach) await sleep(delays.attach);
       answer('attach');
+      hostDetached.delete(tabId);
       return {};
     },
     async detach(tabId) { calls.push({op: 'detach', tabId}); return {}; },
@@ -50,6 +55,16 @@ function scriptedApi(answers = {}, delays = {}) {
     async executeCdp(params) {
       calls.push({op: 'executeCdp', params: structuredClone(params), at: Date.now()});
       await settle();
+      if (host) {
+        const tabId = params.target.tabId;
+        if (hostDetached.has(tabId)) throw new Error(UNATTACHED);
+        const limit = typeof params.timeoutMs === 'number' && params.timeoutMs > 0 ? params.timeoutMs : 10_000;
+        if ((delays[params.method] ?? 0) > limit) {
+          await sleep(limit);
+          if (params.preserveDebuggerOnTimeout !== true) hostDetached.add(tabId);
+          throw new Error(HOST_TIMEOUT(limit, params.method));
+        }
+      }
       if (delays[params.method]) await sleep(delays[params.method]);
       return answer(params.method, params);
     },
@@ -229,6 +244,48 @@ test('a caller sharing an attachment whose starter ran out of budget attaches ag
   assert.equal(patient.status, 'fulfilled');
   assert.equal(api.calls.filter(c => c.op === 'attach').length, 2);
   assert.deepEqual(api.calls.filter(c => c.params?.method === 'Runtime.evaluate').map(c => c.params.commandParams.expression), ['patient']);
+});
+
+test('host double: a joined caller re-attaches after the host timed out a setup command the starter\'s deadline bounded', async () => {
+  const api = scriptedApi({}, {'Emulation.setFocusEmulationEnabled': 60}, {host: true});
+  const cdp = new CdpController(api);
+  const [short, patient] = await Promise.allSettled([
+    cdp.call(TAB, 'Runtime.evaluate', {expression: 'short'}, {deadline: new Deadline(40)}),
+    cdp.call(TAB, 'Runtime.evaluate', {expression: 'patient'}, {deadline: new Deadline(2000)}),
+  ]);
+  const focus = api.calls.filter(c => c.params?.method === 'Emulation.setFocusEmulationEnabled');
+  assert.ok(focus[0].params.timeoutMs <= 40, 'the starter\'s budget bounded the first focus emulation');
+  assert.equal(short.reason?.code, 'timeout');
+  await waitFor(() => api.calls.length > 0 && focus.length > 0, 'the focus emulation');
+  assert.equal(patient.status, 'fulfilled', patient.reason?.message);
+  assert.equal(api.calls.filter(c => c.op === 'attach').length, 2);
+  assert.ok(focus[1].at - focus[0].at >= focus[0].params.timeoutMs, 'the retry followed the host\'s timeout of the first, not the service\'s own check');
+  assert.ok(focus[1].params.timeoutMs > 1000, 'the second attachment runs on the patient caller\'s budget');
+  assert.deepEqual(api.calls.filter(c => c.params?.method === 'Runtime.evaluate').map(c => c.params.commandParams.expression), ['patient']);
+});
+
+test('host double: a joined caller does not retry a timeout from the starter\'s own smaller per-call bound', async () => {
+  const api = scriptedApi({}, {'Emulation.setFocusEmulationEnabled': 60}, {host: true});
+  const cdp = new CdpController(api);
+  const [starter, joined] = await Promise.allSettled([
+    cdp.call(TAB, 'Runtime.evaluate', {expression: 'a'}, {deadline: new Deadline(2000), timeoutMs: 20}),
+    cdp.call(TAB, 'Runtime.evaluate', {expression: 'b'}, {deadline: new Deadline(2000)}),
+  ]);
+  assert.equal(starter.reason?.message, HOST_TIMEOUT(20, 'Emulation.setFocusEmulationEnabled'));
+  assert.equal(joined.reason?.code, 'timeout', 'the per-call bound was the command\'s choice, not a spent budget');
+  assert.equal(api.calls.filter(c => c.op === 'attach').length, 1);
+});
+
+test('a joined caller does not retry an attachment that failed for any other reason', async () => {
+  const api = scriptedApi({}, {attach: 10});
+  api.fail('attach', 'Tab 7 is not part of browser session s');
+  const cdp = new CdpController(api);
+  const results = await Promise.allSettled([
+    cdp.call(TAB, 'DOM.enable', {}, {deadline: new Deadline(30)}),
+    cdp.call(TAB, 'DOM.enable', {}, {deadline: new Deadline(2000)}),
+  ]);
+  assert.deepEqual(results.map(r => r.reason?.message), ['Tab 7 is not part of browser session s', 'Tab 7 is not part of browser session s']);
+  assert.equal(api.calls.filter(c => c.op === 'attach').length, 1);
 });
 
 test('a deadline spent before the first attachment dispatches nothing at all', async () => {

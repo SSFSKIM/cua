@@ -151,6 +151,7 @@ export class CdpController extends Emitter {
   fileChoosersById = new Map();
   attachedTabIds = new Set();
   tabAttachmentPromises = new Map();
+  attachmentBudgets = new WeakMap();            // attachment promise -> the starter's {deadline, timeoutMs}
   initializingTabIds = new Set();
   tabAttachHandlers = new Set();
   tabCleanupHandlers = new Set();
@@ -582,7 +583,9 @@ export class CdpController extends Emitter {
 
   // Attaches the tab once for all callers. `options` ({deadline, timeoutMs}) is the budget of the caller that starts
   // the attachment: every setup command (attach, focus emulation, the attach handlers' Page.enable and auto-attach) is
-  // given what is left of it at its own dispatch, and none is dispatched once it is spent.
+  // given what is left of it at its own dispatch, and none is dispatched once it is spent. A caller that joined an
+  // attachment which then timed out because its starter's deadline ran out attaches again on its own budget; any
+  // other failure (a refusal, or a timeout of the starter's own smaller per-call bound) is everyone's.
   async ensureAttachedTab(tabId, options = {}) {
     if (this.attachedTabIds.has(tabId)) return;
     if (this.initializingTabIds.has(tabId)) throw new Error(UNATTACHED);
@@ -606,16 +609,25 @@ export class CdpController extends Emitter {
         if (!this.attachedTabIds.has(tabId)) throw new Error(UNATTACHED);
       })();
       this.tabAttachmentPromises.set(tabId, attaching);
+      this.attachmentBudgets.set(attaching, options);
     }
     try {
       await attaching;
     } catch (error) {
       if (this.tabAttachmentPromises.get(tabId) === attaching) this.forgetAttachedTab(tabId);
-      // Another caller's attachment ran out of that caller's budget: this caller attaches again on its own.
-      if (joined && error instanceof BrowserServiceError && error.code === 'timeout' && error.message === DEADLINE_EXCEEDED
-        && !options.deadline?.expired()) return await this.ensureAttachedTab(tabId, options);
+      if (joined && this.failedOnStarterBudget(attaching, error) && !options.deadline?.expired()) return await this.ensureAttachedTab(tabId, options);
       throw error;
     }
+  }
+
+  // Whether an attachment failed because its starter's deadline ran out: a timeout, in the service's words (the check
+  // before a dispatch) or the host's (it enforces each setup command's timeoutMs), with the starter's deadline spent.
+  // The host starts its clock only after the service computed the allowance, so when the starter's deadline bounded
+  // the command, the deadline has passed by the time the host's answer arrives; when the starter's smaller per-call
+  // timeoutMs bounded it, the deadline still has time left.
+  failedOnStarterBudget(attaching, error) {
+    const timedOut = (error instanceof BrowserServiceError && error.code === 'timeout') || messageOf(error) === DEADLINE_EXCEEDED || isCdpTimeout(error);
+    return timedOut && this.attachmentBudgets.get(attaching)?.deadline?.expired() === true;
   }
 
   async enableFocusEmulation(tabId, options) {

@@ -5,7 +5,7 @@ export default {
   cells:[
   {
     "label": "late",
-    "code": "await tab.playwright.locator('#late').click({timeoutMs:15000});return true;",
+    "code": "await tab.playwright.locator('#late').click({timeoutMs:15000});await tab.playwright.locator('html[data-recorded-late=\"true\"]').waitFor({state:'attached',timeoutMs:3000});return true;",
     "timeoutMs": 25000
   }
 ],

@@ -1,5 +1,7 @@
 // Browser-owned handlers make mutations independently observable at /state.
-const events = `<script>const record=async value=>{const response=await fetch('/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});const state=await response.json();if(!response.ok)throw new Error('fixture POST failed: '+response.status);return state;};</script>`;
+// A final acknowledgement covers earlier events too (notably drag-start before drag-end).
+export const eventScript = `let recording=Promise.resolve();const record=value=>recording=recording.then(async()=>{const response=await fetch('/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(value)});const state=await response.json();if(!response.ok)throw new Error('fixture POST failed: '+response.status);for(const [key,recordedValue] of Object.entries(value))document.documentElement.setAttribute('data-recorded-'+key.toLowerCase(),String(recordedValue));return state;});`;
+const events = `<script>${eventScript}</script>`;
 export const corpusPages = {
   'locator-wait': '<button id="start-wait" onclick="setTimeout(()=>document.querySelector(\'#wait-result\').textContent=\'ready\',600)">Start delayed element</button><output id="wait-result"></output>',
   waits: '<button id="start-url" onclick="setTimeout(()=>location.href=\'/wait-target.html\',600)">Start delayed navigation</button>',

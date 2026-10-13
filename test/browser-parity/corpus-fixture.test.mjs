@@ -37,7 +37,7 @@ test('control event acknowledgement consumes a successful fixture response and r
   const fixture=await startFixture({port:0});t.after(()=>fixture.close());
   const html=await (await fetch(fixture.url+'/controls.html')).text();
   const script=html.match(/<script>(.*?)<\/script>/s)[1];
-  const recorded=await runInNewContext(script+'record({double:true});',{fetch:(url,options)=>fetch(fixture.url+url,options)});
+  const recorded=await runInNewContext(script+'record({double:true});',{document:{documentElement:{setAttribute(){}}},fetch:(url,options)=>fetch(fixture.url+url,options)});
   assert.deepEqual(recorded,{counter:0,events:[{double:true}]});
   assert.deepEqual(await (await fetch(fixture.url+'/state')).json(),recorded);
 });

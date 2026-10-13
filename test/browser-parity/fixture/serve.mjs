@@ -1,6 +1,6 @@
 // Loopback-only deterministic pages. Imported by tests, run directly by the mini harness.
 import {createServer} from 'node:http';
-import {corpusPages,imageSvg} from './corpus-pages.mjs';
+import {corpusPages,imageSvg,eventScript} from './corpus-pages.mjs';
 import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -17,7 +17,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
     'oopif': '<iframe id="outer" src="/frame.html"></iframe>',
     'frame': '<label>Nested input<input id="nested"></label><button id="frame-button">Frame button</button>',
     'popup': '<button id="popup" onclick="window.open(\'/counter.html\')">Open popup</button>',
-    'slow': `<main id="target"></main><script>setTimeout(()=>{document.querySelector('#target').innerHTML='<button id="late">Late element</button>';document.querySelector('#late').onclick=()=>${record}({late:true})});},8000)</script>`,
+    'slow': `<main id="target"></main><script>${eventScript}setTimeout(()=>{document.querySelector('#target').innerHTML='<button id="late">Late element</button>';document.querySelector('#late').onclick=()=>record({late:true});},8000)</script>`,
     'strict': '<button class="duplicate">Same</button><button class="duplicate">Same</button>',
     'counter': `<button id="post" onclick="fetch('/counter',{method:'POST'})">Post once</button><button id="navigate" onclick="fetch('/counter',{method:'POST'}).then(()=>location.href='/counter.html?navigated=1')">Post and navigate</button><div id="value">Counter fixture</div>`,
   };

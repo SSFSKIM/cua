@@ -9,7 +9,7 @@ export default {
   },
   {
     "label": "type",
-    "code": "const m=domText.split(\"\\n\").find(line=>line.includes(\"Pointer input\"))?.match(/node_id[=\\\" :]+(\\d+)[^\\n]*Pointer input/);if(!m)throw new Error('fixture input node missing from visible DOM');await tab.dom_cua.click({node_id:m[1]});await tab.dom_cua.type({text:'dom'});return await tab.playwright.locator('#input').evaluate(e=>e.value);"
+    "code": "const m=domText.split(\"\\n\").find(line=>line.includes(\"Pointer input\"))?.match(/node_id[=\\\" :]+(\\d+)[^\\n]*Pointer input/);if(!m)throw new Error('fixture input node missing from visible DOM');await tab.dom_cua.click({node_id:m[1]});await tab.dom_cua.type({text:'dom'});await tab.playwright.locator('html[data-recorded-text=\"dom\"]').waitFor({state:'attached',timeoutMs:3000});return await tab.playwright.locator('#input').evaluate(e=>e.value);"
   },
   {
     "label": "end-key",
@@ -17,7 +17,7 @@ export default {
   },
   {
     "label": "double",
-    "code": "const text=await tab.dom_cua.get_visible_dom();const m=text.split(\"\\n\").find(line=>line.includes(\"Double target\"))?.match(/node_id[=\\\" :]+(\\d+)[^\\n]*Double target/);if(!m)throw new Error('fixture button node missing from visible DOM');await tab.dom_cua.double_click({node_id:m[1]});return true;"
+    "code": "const text=await tab.dom_cua.get_visible_dom();const m=text.split(\"\\n\").find(line=>line.includes(\"Double target\"))?.match(/node_id[=\\\" :]+(\\d+)[^\\n]*Double target/);if(!m)throw new Error('fixture button node missing from visible DOM');await tab.dom_cua.double_click({node_id:m[1]});await tab.playwright.locator('html[data-recorded-double=\"true\"]').waitFor({state:'attached',timeoutMs:3000});return true;"
   },
   {
     "label": "scroll",

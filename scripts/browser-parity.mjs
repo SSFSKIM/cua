@@ -21,6 +21,12 @@ function scenariosAt(dir) {
 function globRegex(glob) {
   return new RegExp('^'+glob.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*\*\//g,'\u0000').replace(/\*\*/g,'\u0001').replace(/\*/g,'[^/]*').replace(/\?/g,'[^/]').replaceAll('\u0000','(?:.*/)?').replaceAll('\u0001','.*')+'$');
 }
+// --scenarios: comma-separated globs over scenario paths, relative to the repository or to the scenarios directory.
+const SCENARIOS_DIR='test/browser-parity/scenarios';
+function scenarioMatcher(globs) {
+  const patterns=globs.split(',').map(g=>g.trim()).filter(Boolean).map(globRegex);
+  return relativePath=>patterns.some(p=>p.test(relativePath)||p.test(`${SCENARIOS_DIR}/${relativePath}`));
+}
 export async function main(argv=process.argv.slice(2)) {
   const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'}}});
   const [action,a,b]=positionals;
@@ -31,9 +37,13 @@ export async function main(argv=process.argv.slice(2)) {
     if(ma.backend!==mb.backend || ma.profile!==mb.profile || ma.device!==mb.device)throw new Error('Cannot compare different devices, profiles or fake/live backends');
     if(ma.service==='vendor'&&mb.service==='vendor'&&values.expected)throw new Error('Vendor determinism must not use expected differences');
     const expected=values.expected?readJson(resolve(values.expected)):[];
-    const result=compareRuns(jsonl(a),jsonl(b),{expected});
+    // A milestone's comparison covers its scenarios only: both runs are restricted to the same cases, and inside that
+    // subset a case or cell missing from either run is still a cardinality difference.
+    const inSubset=values.scenarios?scenarioMatcher(values.scenarios):null;
+    const rows=dir=>inSubset?jsonl(dir).filter(r=>typeof r.case==='string'&&inSubset(`${r.case}.mjs`)):jsonl(dir);
+    const result=compareRuns(rows(a),rows(b),{expected});
     for(const d of result.differences)console.log(JSON.stringify(d));
-    console.log(`${result.differences.length} ${values.expected?'unexpected differences':'differences'} (${result.cases} cases, ${result.cells} cells${values.expected?`, ${result.expected.length} expected`:''})`);
+    console.log(`${result.differences.length} ${values.expected?'unexpected differences':'differences'} (${result.cases} cases, ${result.cells} cells${values.expected?`, ${result.expected.length} expected`:''}${values.scenarios?`; scenarios ${values.scenarios}`:''})`);
     return result.ok?0:1;
   }
   if(!['prepare','run'].includes(action))throw new Error('Usage: browser-parity.mjs prepare|run|diff [options]');
@@ -64,7 +74,7 @@ export async function main(argv=process.argv.slice(2)) {
     fixture=local?await startFixture({port:0}):await fixtureProcess(prepared);
     trace=traceControl({device:values.device,home:prepared.home,path:join(prepared.home,'state',`parity-trace-${randomUUID()}.jsonl`)});
     let paths=scenariosAt(join(root,'test/browser-parity/scenarios'));
-    if(values.scenarios) {const pattern=globRegex(values.scenarios);paths=paths.filter(p=>pattern.test(relative(root,p))||pattern.test(relative(join(root,'test/browser-parity/scenarios'),p)));}
+    if(values.scenarios) {const matches=scenarioMatcher(values.scenarios);paths=paths.filter(p=>matches(relative(join(root,SCENARIOS_DIR),p)));}
     else if(local) paths=paths.filter(p=>p.includes('/examples/'));
     if(!paths.length)throw new Error('No scenarios matched');
     const scenarios=await Promise.all(paths.map(async p=>(await import(pathToFileURL(p))).default));

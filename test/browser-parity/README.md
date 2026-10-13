@@ -16,7 +16,7 @@ node scripts/browser-parity.mjs diff /tmp/parity/vendor-1 /tmp/parity/vendor-2
 
 `prepare` checks the clean parity clone out at the SHA, installs dependencies, requires the existing profile binding to be ready (never rebinds), checks fixture startup, then stops that check's fixture. It saves machine preparation under ignored `.doperpowers/sde/browser-parity/<device>.json`. Each `run` owns a fixture process, SSH forwarding pipe, trace activation and MCP processes; all stop at its end. Fixture shutdown closes active HTTP connections as well as the listener: otherwise a surviving Chrome keep-alive socket can send POSTs to an old fixture while a new run resets a different instance. It never changes the resident checkout or agent. A preexisting trace activation is refused, not overwritten. `meta.json` records commit, profile, service environment, attestation and accepted elicitation count/details (action and time, not approval text). `complete: false` cannot be diffed.
 
-Each connection checks `# Selected Browser` in the selection/documentation response and the presence/absence of `cua browser service <version>`. The vendor header is a standalone line (readable build 26.928.40906 BS:65410); the cua marker is checked in the documentation, not assumed to be on that line. Vendor-versus-vendor diffs refuse an allowance file. Other comparisons use `--expected test/browser-parity/expected-differences.json` explicitly.
+Each connection checks `# Selected Browser` in the selection/documentation response and the presence/absence of `cua browser service <version>`. The vendor header is a standalone line (readable build 26.928.40906 BS:65410); the cua marker is checked in the documentation, not assumed to be on that line. Vendor-versus-vendor diffs refuse an allowance file. Other comparisons use `--expected test/browser-parity/expected-differences.json` explicitly. `--scenarios` takes comma-separated globs (relative to the repository or to `scenarios/`) on `run` and on `diff`: a milestone's cua run covers its scenarios only, and `diff --scenarios <the same globs>` restricts both runs to those cases before comparing, so a case or cell missing from either run inside the subset is still a cardinality difference.
 
 ## Scenario contract for the inventory/corpus task
 
@@ -54,7 +54,7 @@ Binary cell results travel as MCP image blocks (not large JSON arrays subject to
 
 Trace comparison counts CDP methods as a multiset, ignoring event order/IDs/timing. Optional case `pollingAllowance:{'Runtime.callFunctionOn':3, 'DOM.*':2, 'Page.getLayoutMetrics':1}` allows only bounded count differences for those polling methods. Non-polling methods cannot receive allowances. The allowance declarations must agree between runs.
 
-An expected-difference entry is `{cases:['concern/case'], cells:['label'], kind:'semantic'|'trace', reason:'why'}`. It cannot waive cardinality, invalid evidence, changed comparison settings or a failing assertion. Keep entries narrowly scoped. `expected-differences.json` starts empty.
+An expected-difference entry is `{cases:['concern/case'], cells:['label'], kind:'semantic'|'trace', reason:'why'}`. It cannot waive cardinality, invalid evidence, changed comparison settings or a failing assertion. Keep entries narrowly scoped. `expected-differences.json` started empty; M1a added its first entry (`dialog_open` for a locator action while a dialog is open, `dialogs/alert` `blocked`).
 
 ## Fixture surface
 

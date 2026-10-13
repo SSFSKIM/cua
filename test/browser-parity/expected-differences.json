@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "cases": ["dialogs/alert"],
+    "cells": ["blocked"],
+    "kind": "semantic",
+    "reason": "A locator action while a JavaScript dialog is open: cua fails it at once with dialog_open and the sentence naming tab.getJsDialog(), where the vendor retries until its selector deadline (\"Playwright selector deadline exceeded\"). Decision Log 2026-10-13 (session, on the live dialog behaviour); acceptance 4."
+  }
+]

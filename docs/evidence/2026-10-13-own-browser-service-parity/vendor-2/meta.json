@@ -1,5 +1,5 @@
 {
-  "commit": "8758552bb93c08c69f28e896d29715f891192d03",
+  "commit": "a76b902be5ad18e8c6e09decab9dd8c1c9890f5c",
   "checkout": "/Users/new/Developer/GitHub/cua-parity",
   "home": "/Users/new/Library/Application Support/cua",
   "profile": "ssfs",
@@ -12,250 +12,262 @@
     "CUA_SHIM_SURFACES": "browser",
     "CUA_HOME": "/Users/new/Library/Application Support/cua"
   },
-  "started": "2026-10-13T17:56:28.430Z",
+  "started": "2026-10-13T19:02:50.117Z",
   "elicitations": [
     {
-      "t": "2026-10-13T17:56:36.527Z",
+      "t": "2026-10-13T19:02:53.597Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/doubleclick"
     },
     {
-      "t": "2026-10-13T17:56:44.422Z",
+      "t": "2026-10-13T19:02:57.366Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/locators"
     },
     {
-      "t": "2026-10-13T17:57:09.435Z",
+      "t": "2026-10-13T19:03:07.645Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/slow-budget"
     },
     {
-      "t": "2026-10-13T17:57:17.318Z",
+      "t": "2026-10-13T19:03:14.466Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/strict-error"
     },
     {
-      "t": "2026-10-13T17:57:22.327Z",
+      "t": "2026-10-13T19:03:19.291Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/wait-for"
+    },
+    {
+      "t": "2026-10-13T19:03:23.901Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/clipboard"
     },
     {
-      "t": "2026-10-13T17:57:27.281Z",
+      "t": "2026-10-13T19:03:28.196Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/cursor"
     },
     {
-      "t": "2026-10-13T17:57:33.069Z",
+      "t": "2026-10-13T19:03:33.019Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/export-rejections"
     },
     {
-      "t": "2026-10-13T17:57:38.208Z",
+      "t": "2026-10-13T19:03:37.012Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/history"
     },
     {
-      "t": "2026-10-13T17:57:39.104Z",
+      "t": "2026-10-13T19:03:37.912Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/history"
     },
     {
-      "t": "2026-10-13T17:57:42.126Z",
+      "t": "2026-10-13T19:03:40.362Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/logs"
     },
     {
-      "t": "2026-10-13T17:57:48.957Z",
+      "t": "2026-10-13T19:03:46.531Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m2-disabled"
     },
     {
-      "t": "2026-10-13T17:57:52.911Z",
+      "t": "2026-10-13T19:03:50.212Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m3-disabled"
     },
     {
-      "t": "2026-10-13T17:57:56.532Z",
+      "t": "2026-10-13T19:03:54.483Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m3-members"
     },
     {
-      "t": "2026-10-13T17:58:00.602Z",
+      "t": "2026-10-13T19:03:58.128Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/viewport"
     },
     {
-      "t": "2026-10-13T17:58:05.726Z",
+      "t": "2026-10-13T19:04:01.666Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "dialogs/alert"
     },
     {
-      "t": "2026-10-13T17:58:13.843Z",
+      "t": "2026-10-13T19:04:11.209Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "dialogs/prompt"
     },
     {
-      "t": "2026-10-13T17:58:21.958Z",
+      "t": "2026-10-13T19:04:18.140Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T17:58:22.943Z",
+      "t": "2026-10-13T19:04:19.114Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T17:58:28.603Z",
+      "t": "2026-10-13T19:04:25.242Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T17:58:31.331Z",
+      "t": "2026-10-13T19:04:27.959Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/media"
     },
     {
-      "t": "2026-10-13T17:58:32.375Z",
+      "t": "2026-10-13T19:04:28.856Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/media"
     },
     {
-      "t": "2026-10-13T17:58:35.581Z",
+      "t": "2026-10-13T19:04:32.200Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/context-loss"
     },
     {
-      "t": "2026-10-13T17:58:40.543Z",
+      "t": "2026-10-13T19:04:36.470Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/counter"
     },
     {
-      "t": "2026-10-13T17:58:45.172Z",
+      "t": "2026-10-13T19:04:41.046Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/late-completion"
     },
     {
-      "t": "2026-10-13T17:58:49.349Z",
+      "t": "2026-10-13T19:04:45.382Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/mutation"
     },
     {
-      "t": "2026-10-13T17:58:54.710Z",
+      "t": "2026-10-13T19:04:50.091Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/no-replay"
     },
     {
-      "t": "2026-10-13T17:58:59.840Z",
+      "t": "2026-10-13T19:04:54.685Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/read"
     },
     {
-      "t": "2026-10-13T17:59:08.229Z",
+      "t": "2026-10-13T19:05:00.440Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "examples/concurrency"
     },
     {
-      "t": "2026-10-13T17:59:15.570Z",
+      "t": "2026-10-13T19:05:07.930Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "examples/tabs"
     },
     {
-      "t": "2026-10-13T17:59:20.516Z",
+      "t": "2026-10-13T19:05:12.598Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/ax-disabled"
     },
     {
-      "t": "2026-10-13T17:59:24.047Z",
+      "t": "2026-10-13T19:05:16.558Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/coordinates"
     },
     {
-      "t": "2026-10-13T17:59:34.767Z",
+      "t": "2026-10-13T19:05:26.276Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/dom"
     },
     {
-      "t": "2026-10-13T17:59:44.967Z",
+      "t": "2026-10-13T19:05:34.655Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/locators"
     },
     {
-      "t": "2026-10-13T17:59:57.974Z",
+      "t": "2026-10-13T19:05:45.769Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/oopif"
     },
     {
-      "t": "2026-10-13T18:00:02.481Z",
+      "t": "2026-10-13T19:05:49.291Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/snapshot"
     },
     {
-      "t": "2026-10-13T18:00:10.247Z",
+      "t": "2026-10-13T19:05:56.073Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "screenshot/clip"
     },
     {
-      "t": "2026-10-13T18:00:13.757Z",
+      "t": "2026-10-13T19:05:59.315Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/discovery"
     },
     {
-      "t": "2026-10-13T18:00:25.523Z",
+      "t": "2026-10-13T19:06:09.123Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/lifecycle"
     },
     {
-      "t": "2026-10-13T18:00:38.309Z",
+      "t": "2026-10-13T19:06:23.191Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/lifecycle"
+    },
+    {
+      "t": "2026-10-13T19:06:27.640Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/manual-handoff-disabled"
     },
     {
-      "t": "2026-10-13T18:00:42.244Z",
+      "t": "2026-10-13T19:06:31.274Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/navigation"
     },
     {
-      "t": "2026-10-13T18:00:50.704Z",
+      "t": "2026-10-13T19:06:39.335Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "waits/page"
@@ -279,6 +291,11 @@
     },
     {
       "case": "actions/strict-error",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/wait-for",
       "service": "vendor",
       "header": "# Selected Browser"
     },
@@ -443,6 +460,11 @@
       "header": "# Selected Browser"
     },
     {
+      "case": "tabs/lifecycle",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
       "case": "tabs/manual-handoff-disabled",
       "service": "vendor",
       "header": "# Selected Browser"
@@ -464,6 +486,7 @@
     "actions/locators",
     "actions/slow-budget",
     "actions/strict-error",
+    "actions/wait-for",
     "capabilities/clipboard",
     "capabilities/cursor",
     "capabilities/export-authenticated",
@@ -500,5 +523,5 @@
     "tabs/navigation",
     "waits/page"
   ],
-  "finished": "2026-10-13T18:00:58.886Z"
+  "finished": "2026-10-13T19:06:47.556Z"
 }

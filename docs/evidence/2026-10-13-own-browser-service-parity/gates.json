@@ -1,12 +1,13 @@
 {
-  "commit": "8758552bb93c08c69f28e896d29715f891192d03",
+  "commit": "413ad53",
+  "liveCorpusCommit": "a76b902be5ad18e8c6e09decab9dd8c1c9890f5c",
   "node": "v22.23.2",
   "checks": [
     {
       "command": "HOME=/tmp/cua-scratch-home npm test",
       "exitCode": 0,
-      "tests": 1198,
-      "pass": 1164,
+      "tests": 1213,
+      "pass": 1179,
       "fail": 0,
       "skip": 34
     },
@@ -32,15 +33,16 @@
       "skipReason": "M0: own service assertions begin at M1a"
     },
     {
-      "command": "node --test test/browser-parity/noop-oracles.test.mjs",
+      "command": "node --test test/chrome-host-trace.test.mjs",
       "exitCode": 0,
-      "inertServiceCasesRejected": 25
+      "pass": 4,
+      "fail": 0
     },
     {
-      "command": "node --test test/browser-parity/handler-registry.test.mjs test/browser-parity/export-errors.test.mjs",
-      "exitCode": 0,
-      "pass": 3,
-      "fail": 0
+      "suite": "test/browser-parity/noop-oracles.test.mjs (included in npm test)",
+      "inertServiceCasesRejected": 26,
+      "individualMutationsRejected": 7,
+      "workingControlsPassed": 4
     }
   ]
 }

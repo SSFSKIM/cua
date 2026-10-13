@@ -1,78 +1,81 @@
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case actions/doubleclick ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case actions/locators ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case actions/slow-budget ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case actions/strict-error ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
+case actions/wait-for ok
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/clipboard ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/cursor ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/export-authenticated ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/export-rejections ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/history ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/logs ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/m2-disabled ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/m3-disabled ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/m3-members ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case capabilities/viewport ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case dialogs/alert ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case dialogs/prompt ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case downloads/ask-where-to-save ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case downloads/chooser ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case downloads/media ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case evaluate/context-loss ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case evaluate/counter ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case evaluate/late-completion ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case evaluate/mutation ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case evaluate/no-replay ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case evaluate/read ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case examples/concurrency ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case examples/tabs ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case input/ax-disabled ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case input/coordinates ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case input/dom ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case reads/locators ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case reads/oopif ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case reads/snapshot ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case screenshot/clip ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case tabs/discovery ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case tabs/lifecycle ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case tabs/manual-handoff-disabled ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case tabs/navigation ok
-attested: vendor (# Selected Browser) at 8758552bb93c08c69f28e896d29715f891192d03
+attested: vendor (# Selected Browser) at a76b902be5ad18e8c6e09decab9dd8c1c9890f5c
 case waits/page ok

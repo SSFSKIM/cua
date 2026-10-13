@@ -2,10 +2,10 @@
   "service": "vendor",
   "device": "mini",
   "profile": "ssfs",
-  "commit": "8758552bb93c08c69f28e896d29715f891192d03",
+  "commit": "a76b902be5ad18e8c6e09decab9dd8c1c9890f5c",
   "complete": true,
-  "cases": 39,
-  "executed": 37,
+  "cases": 40,
+  "executed": 38,
   "skipped": [
     {
       "case": "capabilities/export-authenticated",
@@ -16,7 +16,7 @@
       "reason": "human: Chrome Ask where to save requires a person; never change profile download preferences"
     }
   ],
-  "cells": 103,
+  "cells": 106,
   "failedAssertions": 0,
   "expectedErrorCells": [
     {
@@ -76,7 +76,7 @@
     }
   ],
   "trace": "unavailable: resident host intentionally remains on its pre-trace checkout",
-  "started": "2026-10-13T17:56:28.430Z",
-  "finished": "2026-10-13T18:00:58.886Z",
+  "started": "2026-10-13T19:02:50.117Z",
+  "finished": "2026-10-13T19:06:47.556Z",
   "cleanupErrors": []
 }

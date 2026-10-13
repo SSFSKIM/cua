@@ -1,4 +1,4 @@
-// Ported from readable chatgpt-26.928.40906 BS:48758-48800 (kt, ta, af, wO and lf, the deadline arithmetic of CDP calls); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
+// Ported from readable chatgpt-26.928.40906 BS:48758-48804 (kt, ta, af, wO and lf, the deadline arithmetic of CDP calls); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
 // Also: the clamp qe (BS:18546-18549) and the budgets of zO (BS:49779, $O), YO (BS:50015), qO (BS:49621), ZO
 // (BS:50034), pf/m1 (BS:50431, FJ) and n1 (BS:50226, uncapped).
 //

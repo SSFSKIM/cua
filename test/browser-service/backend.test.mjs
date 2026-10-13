@@ -102,6 +102,17 @@ test('notifications reach their handlers until unsubscribed; the backend answers
   ]);
 });
 
+test('a listener that throws does not close the connection or starve the other listeners', async () => {
+  const pipe = memoryPipe();
+  const backend = new Backend(pipe.stream);
+  const seen = [];
+  backend.on('onCDPEvent', () => { throw new Error('listener bug'); });
+  backend.on('onCDPEvent', params => seen.push(params.method));
+  pipe.deliver(frame({jsonrpc: '2.0', method: 'onCDPEvent', params: {source: {tabId: 1}, method: 'Page.loadEventFired'}}));
+  assert.deepEqual(seen, ['Page.loadEventFired']);
+  assert.equal(backend.closed, false);
+});
+
 test('the pipe closing rejects every pending request and every later one, and tells the close listeners once', async () => {
   const pipe = memoryPipe();
   const backend = new Backend(pipe.stream);

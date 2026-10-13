@@ -1,7 +1,7 @@
 // Ported from readable chatgpt-26.928.40906 BS:67812-68146 (class uh, the backend session transport); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
 // Also: Oi, the JSON-RPC peer (BS:10347-10485); wi, ih and N_, the u32 frames over nodeRepl.nativePipe
-// (BS:66590-66840); ah and sh, the connection (BS:66862-66905); discovery: Cte and Ste (BS:67722-67747), cL, wte, vte
-// and $_ (BS:67496-67638), Gg and Yr (BS:18301-18370); dh (BS:68147-68152); ph, the turn-ended tracker
+// (BS:66590-66850); ah and sh, the connection (BS:66864-66896); discovery: Cte and Ste (BS:67722-67747), cL, wte, vte
+// and $_ (BS:67496-67641), Gg and Yr (BS:18301-18370); dh (BS:68147-68152); ph, the turn-ended tracker
 // (BS:68154-68213); We and ht, the turn metadata (BS:35772-35803).
 //
 // The service's end of the backend protocol (the host's: src/chrome/host.mjs). A Backend is one socket to one backend,
@@ -138,7 +138,10 @@ export class Backend {
   #dispatch(message) {
     if ('method' in message) {
       if (message.id === undefined) {
-        for (const handler of [...(this.#handlers.get(message.method ?? '') ?? [])]) handler(message.params);
+        // A listener's failure is its own: the connection and the other listeners carry on.
+        for (const handler of [...(this.#handlers.get(message.method ?? '') ?? [])]) {
+          try { handler(message.params); } catch {}
+        }
         return;
       }
       const handler = Object.hasOwn(CLIENT_HANDLERS, message.method) ? CLIENT_HANDLERS[message.method] : null;
@@ -271,9 +274,8 @@ export class BackendApi {
   // refused: its identity gate is OpenAI's, and the service serves cua's host and MAWS only. The host needs no session
   // for getInfo, so with no turn known it goes without one (the vendor would fail it).
   async getInfo() {
-    const session = this.#sessionParamsOrNull();
-    const info = session
-      ? await this.#send('getInfo', {}, session)
+    const info = this.#sessionParamsOrNull()
+      ? await this.sendSessionRequest('getInfo', {})
       : await this.backend.request('getInfo', {});
     if (info?.agentRequestHeaderEnabled !== undefined) throw serviceError('unsupported_backend');
     this.clientInfo = info;

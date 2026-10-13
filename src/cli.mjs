@@ -316,6 +316,18 @@ const AGENT_OPTIONS = {
 // The installed agent's job as `remote enroll` reads it: the launchd job on macOS, the systemd unit on Linux.
 const installedAgentJob = () => (process.platform === 'darwin' ? launchd.installedJob().job : process.platform === 'linux' ? systemd.installedJob().job : undefined);
 
+export function agentInstallMessage(result, {http} = {}) {
+  return [
+    `installed the launchd job ${result.label} (${result.plist})`,
+    `  runs    ${result.programArguments.join(' ')}`,
+    `  node    ${result.node}; after upgrading or moving node, run cua agent install again${http ? ' (macOS\'s firewall judges this node binary for incoming connections: allow it if asked)' : ''}`,
+    `  chrome  ${result.chromeAccess}`,
+    `  log     ${result.log}`,
+    `  env     ${Object.entries(result.environment).map(([key, value]) => `${key}=${value}`).join(' ')}`,
+    `  status  ${describeRunning(result.status)}`,
+  ].join('\n');
+}
+
 async function agent(args) {
   const [command, ...rest] = args;
   if (!Object.hasOwn(AGENT_USAGE, command)) throw new UsageError('agent takes run, install, uninstall or status');
@@ -334,14 +346,7 @@ async function agent(args) {
   if (command === 'install') {
     const result = await launchd.installAgent({home: defaultHome(), http: values.http, surfaces: values.surfaces});
     if (values.json) return done({ok: true, ...result});
-    return done([
-      `installed the launchd job ${result.label} (${result.plist})`,
-      `  runs    ${result.programArguments.join(' ')}`,
-      `  node    ${result.node}; after upgrading or moving node, run cua agent install again${values.http ? ' (macOS\'s firewall judges this node binary for incoming connections: allow it if asked)' : ''}`,
-      `  log     ${result.log}`,
-      `  env     ${Object.entries(result.environment).map(([key, value]) => `${key}=${value}`).join(' ')}`,
-      `  status  ${describeRunning(result.status)}`,
-    ].join('\n'));
+    return done(agentInstallMessage(result, {http: values.http}));
   }
   if (command === 'uninstall') {
     const result = await launchd.uninstallAgent();

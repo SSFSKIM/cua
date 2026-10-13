@@ -30,7 +30,7 @@ const CLI = join(REPO, 'bin', 'cua.mjs');
 // The agents here never read the real console (CUA_AGENT_CONSOLE_CHECK=off): js must run whatever the test Mac's screen
 // shows. The console refusal itself is tested in mcp-http.test.mjs and remote-console.test.mjs.
 const AGENT_ENV = {CUA_SHIM_SECRETS: 'off', CUA_AGENT_CONSOLE_CHECK: 'off'};
-const cua = (args, home, env = {}) => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV, ...env}, encoding: 'utf8', timeout: 30_000});
+const cua = (args, home, env = {}) => spawnSync(process.execPath, [CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: home, ...AGENT_ENV, ...env}, encoding: 'utf8', timeout: 30_000});
 const INITIALIZE = {jsonrpc: '2.0', id: 0, method: 'initialize', params: {protocolVersion: '2025-03-26', capabilities: {}, clientInfo: {name: 'test', version: '0'}}};
 
 function emptyHome(t) {
@@ -49,7 +49,7 @@ function enroll(home) {
 // `ready` is what the agent prints once it serves: its listener by default, or the relay's hello (then `endpoint` is
 // null unless it also listens).
 async function startAgent(t, home, args = ['agent', 'run', '--http', '127.0.0.1:0'], env = {}, {node = [], ready = /listening on (http:\/\/\S+\/mcp)/} = {}) {
-  const child = spawn(process.execPath, [...node, CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV, ...env}, stdio: ['ignore', 'pipe', 'pipe']});
+  const child = spawn(process.execPath, [...node, CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: home, ...AGENT_ENV, ...env}, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';
   const exit = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal, stderr})));
   t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); });
@@ -264,7 +264,7 @@ test('runAgent hands the HTTP handler the real console check on macOS unless CUA
   for (const [env, platform, expected] of [[{}, 'darwin', checkConsole], [{CUA_AGENT_CONSOLE_CHECK: 'on'}, 'darwin', checkConsole],
     [{CUA_AGENT_CONSOLE_CHECK: 'off'}, 'darwin', undefined], [{}, 'linux', undefined], [{CUA_AGENT_CONSOLE_CHECK: 'on'}, 'linux', undefined]]) {
     let options;
-    await assert.rejects(runAgent({home, env, platform, http: '127.0.0.1:0', diagnostics: () => {},
+    await assert.rejects(runAgent({home, env: {...env, HOME: home}, platform, http: '127.0.0.1:0', diagnostics: () => {},
       createHttp: given => { options = given; throw stop; }}), stop);
     assert.equal(options.console, expected, JSON.stringify({env, platform}));
   }
@@ -800,7 +800,7 @@ test('without the ws package: --relay refuses before anything starts, while --ht
   assert.equal(cua(['remote', 'enroll', '--relay', 'ws://127.0.0.1:9/ws'], home).status, 0);
   const node = ['--import', WITHOUT_WS];
   for (const args of [['agent', 'run', '--relay'], ['agent', 'run', '--http', '127.0.0.1:0', '--relay']]) {
-    const r = spawnSync(process.execPath, [...node, CLI, ...args], {env: {...process.env, CUA_HOME: home, ...AGENT_ENV}, encoding: 'utf8', timeout: 30_000});
+    const r = spawnSync(process.execPath, [...node, CLI, ...args], {env: {...process.env, CUA_HOME: home, HOME: home, ...AGENT_ENV}, encoding: 'utf8', timeout: 30_000});
     assert.equal(r.status, 1, `${args.join(' ')}: ${r.stderr}`);
     assert.match(r.stderr, /relay_unavailable/);
     assert.match(r.stderr, /npm ci/);
@@ -821,7 +821,7 @@ test('a failure while stopping after a refusal is logged and does not replace th
   await new Promise(resolve => taken.listen(0, '127.0.0.1', resolve));
   t.after(() => taken.close());
   const diagnostics = [];
-  await assert.rejects(runAgent({home, env: AGENT_ENV, http: `127.0.0.1:${taken.address().port}`, diagnostics: line => diagnostics.push(line),
+  await assert.rejects(runAgent({home, env: {...AGENT_ENV, HOME: home}, http: `127.0.0.1:${taken.address().port}`, diagnostics: line => diagnostics.push(line),
     createHttp: () => ({handle: () => {}, close: async () => { throw new Error('close broke'); }})}), error => error.code === 'http_listen_failed');
   assert.ok(diagnostics.some(line => /close broke/.test(line)), diagnostics.join('\n'));
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
@@ -886,4 +886,27 @@ test('relay lifecycle publishes failures, connects, heartbeat freshness, recover
   assert.match(failures.at(-1).error, /ECONNREFUSED/);
   await failed.link.close();
   assert.equal(failures.at(-1).status, 'stopped');
+});
+
+test('the resident agent records Chrome readability at startup and refreshes it on profiles_list', {skip: !installedHomeSupported}, async t => {
+  const {chromeUserData} = await import('../src/profiles/chrome.mjs');
+  const {readAgentState} = await import('../src/remote/health.mjs');
+  const home = fakeInstalledHome(t);
+  const {clientCredential} = enroll(home);
+  const agent = await startAgent(t, home, undefined, {CUA_SHIM_SURFACES: 'browser'});
+  assert.equal(readAgentState(home).chrome.status, 'missing');
+  assert.equal(readAgentState(home).pid, agent.child.pid);
+  const userData = chromeUserData({userHome: home, env: {HOME: home}});
+  mkdirSync(userData, {recursive: true});
+  writeFileSync(join(userData, 'Local State'), '{}');
+  const initialized = await post(agent.endpoint, clientCredential, INITIALIZE);
+  const session = initialized.headers.get('mcp-session-id');
+  await initialized.text();
+  const response = await post(agent.endpoint, clientCredential, {jsonrpc: '2.0', id: 1, method: 'tools/call', params: {name: 'profiles_list', arguments: {}}}, session);
+  const messages = sseMessages(await response.text());
+  assert.equal(messages[0].result.structuredContent.status, 'ok');
+  assert.equal(readAgentState(home).chrome.status, 'readable');
+  assert.equal(readAgentState(home).node, process.execPath);
+  agent.child.kill('SIGTERM');
+  assert.equal((await agent.exit).code, 0);
 });

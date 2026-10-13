@@ -340,10 +340,10 @@ test('on a Mac never enrolled, with no job, every agent row reads skip with the 
   let consoleRead = false;
   const {launchctl, rows} = await agentSetup(t, {enrol: false});
   const r = await rows({checkConsole: async () => { consoleRead = true; return {onConsole: true, locked: true}; }});
-  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console', 'agent.relay']);
+  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console', 'agent.relay', 'chrome.agent']);
   for (const name of Object.keys(r)) {
     assert.equal(r[name].status, 'skip', name);
-    assert.match(r[name].detail, /cua remote enroll.*cua agent install/, name);
+    if (name !== 'chrome.agent') assert.match(r[name].detail, /cua remote enroll.*cua agent install/, name);
   }
   assert.deepEqual(launchctl.calls, []);
   assert.equal(consoleRead, false, 'a locked Mac that does no remote control is healthy');
@@ -596,4 +596,28 @@ test('agent.relay reports the agent snapshot without dialing, including when the
   assert.match(r['agent.relay'].detail, /relay.example.*failing since.*ECONNREFUSED/);
   record.relay({url, status: 'connected'});
   assert.equal((await rows())['agent.relay'].status, 'pass');
+});
+
+test('doctor reports the running agent process Chrome access with the installed plist node, not terminal access', async t => {
+  const {home, rows, launchctl} = await agentSetup(t, {install: {http: '127.0.0.1:7801'}});
+  let r = await rows();
+  assert.equal(r['chrome.agent'].status, 'blocked');
+  assert.ok(r['chrome.agent'].detail.includes(process.execPath));
+  const file = join(home, 'state', 'agent.json');
+  mkdirSync(join(home, 'state'), {recursive: true});
+  const record = {version: 1, pid: 4242, node: process.execPath, chrome: {checkedAt: '2026-10-13T00:00:00Z', userData: '/scratch/Chrome', status: 'unreadable', error: 'EPERM', profiles: []}};
+  writeFileSync(file, JSON.stringify(record));
+  r = await rows();
+  assert.equal(r['chrome.agent'].status, 'blocked');
+  assert.match(r['chrome.agent'].detail, /EPERM.*Full Disk Access/);
+  assert.ok(r['chrome.agent'].detail.includes(process.execPath));
+  record.chrome.status = 'readable'; record.chrome.error = null;
+  writeFileSync(file, JSON.stringify(record));
+  assert.equal((await rows())['chrome.agent'].status, 'pass');
+  record.node = '/old/node'; writeFileSync(file, JSON.stringify(record));
+  assert.equal((await rows())['chrome.agent'].status, 'blocked', 'node upgrades invalidate observations');
+  record.node = process.execPath; record.pid = 1; writeFileSync(file, JSON.stringify(record));
+  assert.equal((await rows())['chrome.agent'].status, 'blocked', 'restarts invalidate observations');
+  launchctl.running = false;
+  assert.equal((await rows())['chrome.agent'].status, 'blocked');
 });

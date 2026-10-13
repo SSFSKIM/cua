@@ -15,6 +15,7 @@
 // replaces anything; `install` on an installed job replaces the plist, boots the old job out, waits until launchd has
 // let it go, and bootstraps the new one. `launchctl` and the user's home are parameters, so tests never touch the real
 // launchd domain or ~/Library/LaunchAgents.
+import {agentChromeAccessHint} from './chrome-health.mjs';
 import {execFile} from 'node:child_process';
 import {chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -177,7 +178,7 @@ export async function installAgent({home, env = process.env, http, surfaces = DE
   const loaded = await launchctl(['bootstrap', `gui/${uid}`, plist]);
   if (loaded.code !== 0)
     fail('agent_bootstrap_failed', `launchctl bootstrap gui/${uid} ${plist} failed (exit ${loaded.code}): ${loaded.stderr.trim() || 'no detail'}`, {hint: `the plist stays in place; see cua agent status and ${log}`});
-  return {label: AGENT_LABEL, plist, node, cli, programArguments, environment, log, status: await agentStatus({userHome, uid, launchctl})};
+  return {label: AGENT_LABEL, plist, node, cli, programArguments, environment, log, chromeAccess: agentChromeAccessHint(node), status: await agentStatus({userHome, uid, launchctl})};
 }
 
 // Boots the job out (also when its plist is already gone) and removes the plist.

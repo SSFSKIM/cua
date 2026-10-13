@@ -129,7 +129,7 @@ const onAbort = (signal, fn) => {
 export function createMcpHttp({home, env = process.env, clientCredential, allowedOrigins = [], maxSessions = 1,
   idleMs = 15 * 60_000, bufferLimit = 16 * 1024 * 1024, keepaliveMs = 20_000, bodyLimit = 4 * 1024 * 1024,
   streamGraceMs = 90_000, abandonedMs = 60_000, console: consoleState = () => ({onConsole: true, locked: false}),
-  diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection}) {
+  diagnostics = line => process.stderr.write(`cua agent: ${line}\n`), open = openConnection, onProfilesList}) {
   const sessions = new Map();
   const ending = new Set();        // close promises of sessions on their way out
   const opening = new Set();       // opens in progress, each holding a place under the cap
@@ -353,7 +353,7 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
         diagnostics(`session ${evict.id}: evicted, being Idle, for a new session at the cap of ${maxSessions}`);
         await endSession(evict, 'eof');
       }
-      return open({home, env, sessionId, input, output, diagnostics: line => diagnostics(`session ${sessionId}: ${line}`),
+      return open({home, env, sessionId, input, output, onProfilesList, diagnostics: line => diagnostics(`session ${sessionId}: ${line}`),
         onWithdrawn: requestId => { if (session) withdraw(session, requestId); }});
     })();
     opening.add(opened);

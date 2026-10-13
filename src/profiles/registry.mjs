@@ -137,15 +137,16 @@ export function profileStatuses({home, chrome, route = chromeRoute(home)}) {
     const extension = directory === 'missing' ? 'absent' : directory === 'unreadable' ? 'unreadable' : chrome.extensionInstalled(chromeProfileDirectory);
     const reason = directory === 'missing' ? 'profile_directory_missing'
       : extension === 'absent' ? 'extension_not_installed'
-        : extension === 'unreadable' ? 'chrome_data_unreadable'
-          : !extensionInstanceId ? 'not_bound'
-            : effectiveRoute(boundOn) !== effectiveRoute(route) ? 'rebind_required' : null;
+        : extensionInstanceId && effectiveRoute(boundOn) !== effectiveRoute(route) ? 'rebind_required'
+          : extension === 'unreadable' ? 'chrome_data_unreadable'
+            : !extensionInstanceId ? 'not_bound' : null;
     return {key, chromeProfileDirectory, ready: reason === null, ...(reason ? {reason} : {}),
       ...(extensionInstanceId ? {extensionInstanceId} : {}), ...(boundAt ? {boundAt} : {}), ...unreadableCode(chrome, chromeProfileDirectory, extension)};
   });
 }
 
-// A bound profile whose files could not be read: only the live listing can make it ready.
+// A bound profile on the current route whose files could not be read: its exact live instance is sufficient.
+// Directory/name mapping (#21) labels bind candidates; it is not a second readiness gate for an existing binding.
 export const awaitsLiveEvidence = p => p.reason === 'chrome_data_unreadable' && Boolean(p.extensionInstanceId);
 
 // A bound, otherwise ready profile against the live Google Chrome backends' instance ids at this request (another
@@ -155,11 +156,14 @@ export const awaitsLiveEvidence = p => p.reason === 'chrome_data_unreadable' && 
 // which is either a new instance id or this profile's host alone not running (backends are usually unlabelled, so the
 // two cannot be told apart); backends_unlistable when the listing failed. A bound profile whose Chrome data this
 // process may not read is ready when its id is live (the live backend is the evidence) and stays chrome_data_unreadable
-// otherwise: without the files, a stale binding cannot be told from a removed extension.
-export function withLiveness(statuses, liveIds) {
+// otherwise: without the files, a stale binding cannot be told from a removed extension. liveReason names the
+// observed live-check outcome anyway, so a failed launch and an absent backend have different recovery guidance.
+export function withLiveness(statuses, liveIds, listingError) {
   return statuses.map(p => {
     if (awaitsLiveEvidence(p)) {
-      if (!liveIds?.includes(p.extensionInstanceId)) return p;
+      if (!liveIds?.includes(p.extensionInstanceId)) return {...p,
+        liveReason: !liveIds ? 'backends_unlistable' : !liveIds.length ? 'host_not_live' : 'binding_stale',
+        ...(listingError ? {listingError: listingError.code} : {})};
       const {reason, ...rest} = p;
       return {...rest, ready: true};
     }
@@ -212,5 +216,5 @@ export const reasonFor = (reason, route) => reasonsFor(route)[reason];
 
 // The registered profile's Chrome directory appears only where the user's step happens in that profile. `route` is the
 // home's Chrome route (src/chrome/route.mjs), for the wording only.
-export const reasonText = ({key, reason, extensionInstanceId, chromeProfileDirectory}, {route} = {}) => (reason === 'chrome_data_unreadable'
-  ? `${REASONS[reason]}; ${unreadableNext(route, Boolean(extensionInstanceId))}` : reasonFor(reason, route)).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);
+export const reasonText = ({key, reason, extensionInstanceId, chromeProfileDirectory, liveReason, listingError}, {route} = {}) => (reason === 'chrome_data_unreadable'
+  ? `${REASONS[reason]}; ${liveReason ? `${reasonFor(liveReason, route)}${listingError ? ` (${listingError})` : ''}` : unreadableNext(route, Boolean(extensionInstanceId))}` : reasonFor(reason, route)).replaceAll('<key>', () => key).replaceAll('<dir>', () => chromeProfileDirectory);

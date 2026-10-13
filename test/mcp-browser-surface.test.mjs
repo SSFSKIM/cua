@@ -266,7 +266,7 @@ test('profiles_list with unreadable Chrome data: a bound live profile is ready, 
   ]});
   assert.ok(response.result.content[0].text.startsWith(`${text}\n`), 'the text carries the same guidance');
   assertModelSeesText(response);
-  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*not confirmed live/);
+  assert.match(text, /school is not ready \(chrome_data_unreadable\): this process cannot read Chrome's data directory .*other backends are live/);
   assert.ok(text.includes(ACCESS_NOTE), 'the OS\'s access fix is named');
   assert.match(text, /work is not ready \(chrome_data_unreadable\): .*not bound yet/);
   assert.match(text, /Tell the user/);

@@ -50,7 +50,7 @@ function extensionRows({home, chrome, extension, notInstalled, installed}) {
   for (const p of statuses) {
     const name = `chrome.extension.${p.key}`;
     const where = `(Chrome profile "${p.chromeProfileDirectory}")`;
-    if (p.reason === 'chrome_data_unreadable')
+    if (p.chromeDataError)
       checks.push(result(name, 'blocked', `whether the ${extension} extension is installed is unknown: this process may not read Chrome's data directory (${p.chromeDataError}) ${where}; ${PERMISSION_HINT}`));
     else if (p.reason === 'profile_directory_missing' || p.reason === 'extension_not_installed')
       checks.push(result(name, 'blocked', `${p.reason === 'extension_not_installed' ? notInstalled : REASONS[p.reason]} ${where}`));

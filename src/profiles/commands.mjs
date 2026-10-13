@@ -36,7 +36,7 @@ export async function profileReadiness({home, chrome, listBackends}) {
     if (teardown && !teardown.confirmed) throw teardownUnconfirmed(teardown);
     return {profiles: withLiveness(statuses, backends.filter(isChromeBackend).map(b => b.instanceId))};
   } catch (error) {
-    return {profiles: withLiveness(statuses, null), listingError: {code: error?.code ?? 'error', message: String(error?.message ?? error)}};
+    return {profiles: withLiveness(statuses, null, error), listingError: {code: error?.code ?? 'error', message: String(error?.message ?? error)}};
   }
 }
 

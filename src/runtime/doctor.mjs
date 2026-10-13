@@ -61,6 +61,7 @@ import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
+import {agentChromeRow} from '../remote/chrome-health.mjs';
 import {relayHealthRow} from '../remote/health.mjs';
 import {agentLogPath, agentStatus} from '../remote/launchd.mjs';
 import * as systemd from '../remote/systemd.mjs';
@@ -243,13 +244,13 @@ export async function agentChecks({home, env = process.env, host, launchd = {}, 
   const status = await agentStatus(launchd);
   if (!device && !deviceError && !status.installed) {
     const notSetUp = 'this Mac is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install';
-    return AGENT_ROWS.map(name => result(name, 'skip', notSetUp));
+    return [...AGENT_ROWS.map(name => result(name, 'skip', notSetUp)), agentChromeRow(home, status)];
   }
   // One uid for launchd and the console, the one the seam names. The console check is the job's setting when there is
   // a job (the agent sees only its plist's environment), else doctor's own.
   const uid = launchd.uid ?? process.getuid();
   return [installedRow(status, device), runningRow(status, home, uid), enrolledRow(home, device, deviceError),
-    await consoleRow(status.job ? status.job.environment : env, uid, readConsole, status.job ? 'the agent\'s job' : 'this environment'), relayHealthRow(home, device?.relayUrl)];
+    await consoleRow(status.job ? status.job.environment : env, uid, readConsole, status.job ? 'the agent\'s job' : 'this environment'), relayHealthRow(home, device?.relayUrl), agentChromeRow(home, status)];
 }
 
 async function linuxAgentChecks({home, env, device, deviceError, unitSeams, checkDisplay}) {

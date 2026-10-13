@@ -25,6 +25,10 @@ export function createAgentState(home, {now = Date.now, diagnostics = () => {}} 
     } finally { try { rmSync(temp, {force: true}); } catch {} }
   }
   return {
+    chrome(observation) {
+      state.chrome = {...observation, checkedAt: new Date(now()).toISOString()};
+      save();
+    },
     relay({url, status, error = null}) {
       const at = new Date(now()).toISOString();
       const previous = state.relay?.url === url ? state.relay : null;

@@ -36,6 +36,10 @@ import {connectRelay, loadWebSocket} from './relay-link.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {createAgentState} from './health.mjs';
+import {observeAgentChrome} from './chrome-health.mjs';
+import {chromeFacts} from '../profiles/chrome.mjs';
+import {chromeRoute, extensionIdFor} from '../chrome/route.mjs';
+import {homedir} from 'node:os';
 
 export {connectRelay};
 
@@ -183,7 +187,11 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
       link?.refresh();
       return current()?.clientCredential ?? null;
     };
-    mcp = createHttp({home, env, clientCredential, ...limits, ...(consoleChecked ? {console: checkConsole} : {}), diagnostics});
+    const health = createAgentState(home, {diagnostics});
+    const observeChrome = () => health.chrome(observeAgentChrome({home,
+      chrome: chromeFacts({host: {platform}, env, userHome: env.HOME ?? homedir(), extensionId: extensionIdFor(chromeRoute(home))})}));
+    observeChrome();
+    mcp = createHttp({home, env, onProfilesList: observeChrome, clientCredential, ...limits, ...(consoleChecked ? {console: checkConsole} : {}), diagnostics});
     const served = `device ${device.deviceId}; at most ${limits.maxSessions} session${limits.maxSessions === 1 ? '' : 's'}, idle after ${limits.idleMs / 60_000} min`;
     if (address) {
       server = createHttpServer(nodeAdapter(mcp.handle));
@@ -202,7 +210,6 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
         const now = current();
         return now?.relayUrl ? {url: now.relayUrl, deviceCredential: now.deviceCredential, deviceId: now.deviceId} : null;
       };
-      const health = createAgentState(home, {diagnostics});
       link = await connectRelay({target, handle: mcp.handle, diagnostics, onState: health.relay});
       diagnostics(`serving through the relay (${served})`);
     }

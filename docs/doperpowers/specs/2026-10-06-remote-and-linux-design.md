@@ -504,6 +504,18 @@ cd ../cua-wt-70 && node bin/cua.mjs devices import ~/.config/cua-relay/macbook.m
 
 ## Decision Log
 
+- Decision (2026-10-13, #112): record Chrome readability in the resident agent at startup and each `profiles_list`,
+  in #110's shared atomic state file. On macOS doctor adds `chrome.agent` beside the calling process's existing file
+  rows, using the node path from the installed launchd plist and accepting observations only from that running pid
+  and node. Running that node under doctor's terminal would inherit the terminal's TCC context, not prove launchd's
+  access; this is why the permitted recorded-process approach is used. Missing/old observations block explicitly.
+  The row names the exact node and the owner's Full Disk Access step, as do install output (including JSON) and README;
+  no grants or restarts happen automatically. #21's directory/name mapping is bind-time labelling, not a readiness
+  prerequisite: an existing binding on the current route plus its exact live Chrome-family backend is sufficient
+  even without file access (this fallback already existed and is retained). An unreadable profile that cannot be
+  confirmed now exposes the precise live-check outcome and listing failure code; a wrong-route binding requires a
+  rebind and cannot bypass that rule through unreadability. No second plugin version bump after #110's 0.10.0.
+
 - Decision (2026-10-13, #110): the agent writes a versioned, atomic 0600 `$CUA_HOME/state/agent.json` beside its log,
   recording relay URL, status, first failure, last error and connection/update timestamps on each attempt outcome,
   connection/reconnection, ping and stop. Doctor only reads it: a connected record confirmed within 90 s passes

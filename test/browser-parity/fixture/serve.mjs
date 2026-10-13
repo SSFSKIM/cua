@@ -1,5 +1,6 @@
 // Loopback-only deterministic pages. Imported by tests, run directly by the mini harness.
 import {createServer} from 'node:http';
+import {corpusPages,imageSvg} from './corpus-pages.mjs';
 import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -9,6 +10,7 @@ const record = `fetch('/event',{method:'POST',headers:{'content-type':'applicati
 export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
   let state = {counter:0,events:[]};
   const pages = {
+    ...corpusPages,
     'dialogs': `<button id="alert" onclick="alert('fixture alert')">Alert</button><button id="confirm" onclick="document.querySelector('#result').textContent=confirm('fixture confirm')">Confirm</button><button id="prompt" onclick="document.querySelector('#result').textContent=prompt('fixture prompt','seed')">Prompt</button><output id="result"></output>`,
     'downloads': '<a id="download" href="/download" download="parity.txt">Download</a>',
     'chooser': `<input id="file" type="file"><output id="filename"></output><script>document.querySelector('#file').onchange=e=>{const name=e.target.files[0].name;document.querySelector('#filename').textContent=name;${record}({file:name})});}</script>`,
@@ -35,6 +37,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
         return send(200,state);
       }
       if (req.method !== 'GET') return send(405,{error:'method not allowed'});
+      if (url.pathname === '/image.svg') return send(200,imageSvg,'image/svg+xml');
       if (url.pathname === '/download') {res.setHeader('content-disposition','attachment; filename="parity.txt"');return send(200,'parity download\n','text/plain');}
       if (url.pathname.startsWith('/benchmark/')) {
         const name = url.pathname.slice('/benchmark/'.length);

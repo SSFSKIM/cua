@@ -2,9 +2,13 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 export const root = fileURLToPath(new URL('../../',import.meta.url));
 export const quote = text => "'"+String(text).replaceAll("'", "'\\''")+"'";
+export function assertPreparedProfile(result,key) {
+  if(!result.profiles?.some(p=>p.key===key && p.ready && p.extensionInstanceId))throw new Error(`prepare requires the already-bound ready profile ${key}; ask the controller to restore its connection (no rebinding)`);
+}
 const ssh = (device,script) => {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(device)) throw new Error('Invalid ssh device alias');
-  return {command:'ssh',args:['-o','BatchMode=yes',device,script]};
+  return {command:'ssh',args:['-o','BatchMode=yes',device,`export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:$PATH"
+${script}`]};
 };
 export function miniPrepareCommand({device,commit,profile}) {
   if(!/^[0-9a-f]{7,40}$/.test(commit)) throw new Error('prepare requires a commit SHA');
@@ -17,7 +21,7 @@ test -z "$(git status --porcelain)" || { echo 'parity clone is dirty' >&2; exit 
 git fetch -q origin
 git checkout --detach ${quote(commit)}
 npm ci --silent
-node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';const key=${JSON.stringify(profile)};const r=JSON.parse(execFileSync(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8'}));if(!r.profiles?.some(p=>p.key===key&&p.ready))execFileSync(process.execPath,['bin/cua.mjs','profiles','bind',key,'--json'],{stdio:'inherit'});`)}
+node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';const key=${JSON.stringify(profile)};const r=JSON.parse(execFileSync(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8'}));(${assertPreparedProfile.toString()})(r,key);`)}
 node --input-type=module -e ${quote(`import {defaultHome} from './src/runtime/layout.mjs';import {execFileSync} from 'node:child_process';console.log(JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),checkout:process.cwd(),home:defaultHome(),profile:${JSON.stringify(profile)},device:${JSON.stringify(device)},fixturePort:48732}))`)}`);
 }
 export function serveCommand({device,service,home,checkout=root}) {

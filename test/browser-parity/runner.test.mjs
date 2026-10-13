@@ -20,7 +20,7 @@ test('mini commands pin clone and environment with BatchMode without touching re
   const p = miniPrepareCommand({device:'mini',commit:'abcdef1',profile:"ss'fs"});
   assert.equal(p.command,'ssh'); assert.deepEqual(p.args.slice(0,3),['-o','BatchMode=yes','mini']);
   assert.match(p.args[3], /cua-parity/); assert.match(p.args[3], /git checkout --detach 'abcdef1'/);
-  assert.match(p.args[3], /npm ci/); assert.match(p.args[3], /profiles.*bind/);
+  assert.match(p.args[3], /npm ci/); assert.doesNotMatch(p.args[3], /'profiles','bind'/); assert.match(p.args[3], /already-bound ready profile/);
   assert.doesNotMatch(p.args[3], /agent install|launchctl|pkill/);
   const run = serveCommand({device:'mini',service:'cua',home:'/tmp/cua',checkout:'/tmp/parity'});
   assert.match(run.args[3], /CUA_BROWSER_SERVICE='cua'/);

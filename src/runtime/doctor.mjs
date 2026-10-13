@@ -47,7 +47,7 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, SERVICE_SUPPORT_DIRS, SKY_SERVICE} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -193,7 +193,7 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
   const owned = homeLayout(realHome(home));
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
+    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
     writeRoots: scopedWriteRoots({cwd: owned.run, cwdLabel: '$CUA_HOME/run', tmpdir: env.TMPDIR}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);

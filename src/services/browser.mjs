@@ -1,7 +1,12 @@
 // The trusted "browser" service: with the browser surface enabled, node_repl's trusted worker loads this module
 // (NODE_REPL_TRUSTED_SERVICES, registered by `cua serve` through buildLaunch) in place of the vendor's
-// @oai/browser-desktop service, and every request is delegated to that vendor module, named by the launcher in
-// CUA_BROWSER_VENDOR_SERVICE (never by agent input). The vendor service exports only handleRpc; it registers its
+// @oai/browser-desktop service, and every request is delegated to the browser service the launch selected
+// (CUA_BROWSER_SERVICE, never agent input): `vendor` (the default) the vendor module the launcher names in
+// CUA_BROWSER_VENDOR_SERVICE, `cua` cua's own service, src/browser-service/index.mjs
+// (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), which buildLaunch then adds to the trusted code
+// paths. It is imported only when selected: under the vendor selection its directory is not trusted. Both export only
+// handleRpc and follow the same REPL contract; cua's never answers the {ok:false} recovery envelope and rejects with a
+// BrowserServiceError carrying a code from its kept vocabulary. The vendor service registers its
 // turn-ended hook through globalThis.nodeRepl.addTurnEndedHandler when `setup` initialises it (browser-service.mjs, the
 // turn tracker `ph`), and the trusted worker gives this module and the vendor module the same nodeRepl, so delegating
 // handleRpc keeps its hooks and its task cleanup.
@@ -22,11 +27,13 @@
 // request handed to the vendor.
 //
 // Failing closed: an invalid, reserved (a device credential, secret_reserved) or unknown label, an unsafe or unreadable store file, secrets off or unavailable, a reference in
-// any other shape of an eligible command, or a vendor browser service other than the pinned version fails before
-// anything is entered. After substitution the vendor can fail on two channels: a rejected promise, and the resolved
-// envelope {ok:false, error} that executeWithRecovery returns for recovery errors (browser-service.mjs X2). A
-// substituted call that fails on either becomes one fixed, bounded diagnostic classified by the vendor's error class
-// and its enumerated reason, never its text; unsubstituted calls keep the vendor's own result and errors.
+// any other shape of an eligible command, or a selected browser service whose real version is missing, malformed or
+// other than that selection's pin (PINNED_VENDOR_VERSION for the vendor's package.json, PINNED_CUA_VERSION for
+// src/browser-service/VERSION) fails before anything is entered. After substitution the service can fail on two
+// channels: a rejected promise, and the resolved envelope {ok:false, error} that the vendor's executeWithRecovery
+// returns for recovery errors (browser-service.mjs X2). A substituted call that fails on either becomes one fixed,
+// bounded diagnostic classified by the service's error class and its enumerated reason or code, never its text;
+// unsubstituted calls keep the service's own result and errors.
 //
 // The default selection in MAWS (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md, "Discovery"). With
 // CUA_BROWSER_DEFAULT_INSTANCE in the launch environment (`cua serve` sets it to its first MAWS backend's instance id,
@@ -51,7 +58,12 @@ import {
 } from './secret-input.mjs';
 
 export const PINNED_VENDOR_VERSION = '0.1.1';
+export const PINNED_CUA_VERSION = '0.1.0';
 const VENDOR_PACKAGE = '@oai/browser-desktop';
+const CUA_SERVICE = 'the cua browser service';
+const CUA_SERVICE_MODULE = new URL('../browser-service/index.mjs', import.meta.url);
+const CUA_SERVICE_VERSION_FILE = new URL('../browser-service/VERSION', import.meta.url);
+const VERSION_SHAPE = /^\d+\.\d+\.\d+$/;
 
 const isString = value => typeof value === 'string';
 const isIndex = value => Number.isInteger(value) && value >= 0;
@@ -89,6 +101,13 @@ const SECURITY_REASONS = new Set([
 const RECOVERY_REASONS = new Set([
   'credential_delivery_in_progress', 'credential_observation_restricted', 'retained_data_restricted',
   'credential_state_unavailable', 'protected_command_failed', 'browser_security_restricted', 'browser_security_unavailable',
+]);
+// The kept vocabulary of cua's service (src/browser-service/errors.mjs KEPT_REASONS; a copy, because this module must
+// load under the vendor selection, where that directory is not trusted; a test keeps the two equal).
+export const SERVICE_REASONS = new Set([
+  'invalid_url', 'unsupported_protocol', 'tab_not_found', 'browser_not_found', 'dialog_open', 'tab_detached',
+  'strict_mode_violation', 'timeout', 'evaluate_interrupted', 'download_not_found', 'file_chooser_not_found',
+  'unsupported_command', 'unsupported_backend', 'browser_capability_unavailable',
 ]);
 
 // The substitution a request asks for: null to delegate it untouched, or the plan. Eligibility uses coerced keys
@@ -134,9 +153,10 @@ function substituted(plan, value) {
   return {method: request.method, params: {...request.params, action: {...request.params.action, [plan.rule.field]: value}}};
 }
 
-// A fixed classification of a vendor rejection, never its text.
+// A fixed classification of a service's rejection, never its text.
 function rejectionKind(error) {
   if (error !== null && typeof error === 'object') {
+    if (error.name === 'BrowserServiceError' && SERVICE_REASONS.has(error.code)) return `service:${error.code}`;
     if (error.name === 'BrowserUseSecurityError' && SECURITY_REASONS.has(error.reason)) return `security:${error.reason}`;
     if (error.name === 'BrowserCredentialRecoveryError' && RECOVERY_REASONS.has(error.details?.reason)) return `recovery:${error.details.reason}`;
     if (error.name === 'ZodError') return 'invalid_command';
@@ -153,15 +173,17 @@ function unqualifiedSelection(request) {
   return {method: request.method, clientTimeout: isPositiveInt(params.client_timeout_ms) ? params.client_timeout_ms : undefined};
 }
 
-// `loadVendor` resolves the vendor service module; `vendorVersion` its package version (or null); `secrets` reads a
-// label's value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store;
-// `defaultInstance` the extension instance an unqualified selection is rewritten to (null: none is).
-export function createBrowserService({loadVendor, vendorVersion, secrets, secretsUnavailable = null, defaultInstance = null}) {
-  let vendor = null;
-  const vendorService = () => (vendor ??= loadVendor());
+// `loadService` resolves the selected service module; `actualServiceVersion` its real version (or null);
+// `expectedVersion` the selection's pin and `serviceName` its name ('vendor' or 'cua'); `secrets` reads a label's
+// value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store; `defaultInstance`
+// the extension instance an unqualified selection is rewritten to (null: none is).
+export function createBrowserService({loadService, actualServiceVersion, expectedVersion, serviceName = 'vendor', secrets, secretsUnavailable = null, defaultInstance = null}) {
+  let loaded = null;
+  const selectedService = () => (loaded ??= loadService());
+  const pinned = `${serviceName === 'cua' ? CUA_SERVICE : VENDOR_PACKAGE} ${expectedVersion}`;
 
   async function selectDefault({method, clientTimeout}) {
-    const service = await vendorService();
+    const service = await selectedService();
     const listed = await service.handleRpc({method: 'execute', params: {type: 'list_browsers'}});
     const extensions = (Array.isArray(listed) ? listed : []).filter(b => b?.type === 'extension');
     const match = extensions.find(b => b.metadata?.extensionInstanceId === defaultInstance)
@@ -174,15 +196,15 @@ export function createBrowserService({loadVendor, vendorVersion, secrets, secret
     const selection = defaultInstance ? unqualifiedSelection(request) : null;
     if (selection) return selectDefault(selection);
     const plan = substitutionFor(request);
-    if (!plan) return (await vendorService()).handleRpc(request);
+    if (!plan) return (await selectedService()).handleRpc(request);
 
     const {reference} = plan;
     refuseUnusable(reference);
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
-    const service = await vendorService();
-    const version = await vendorVersion();
-    if (version !== PINNED_VENDOR_VERSION) throw new SecretInputError('unsupported_browser_runtime', `secret input in the browser is pinned to ${VENDOR_PACKAGE} ${PINNED_VENDOR_VERSION}; this runtime has ${/^\d+\.\d+\.\d+$/.test(version ?? '') ? version : 'an unknown version'}; ${NOTHING_ENTERED}`);
+    const service = await selectedService();
+    const version = await actualServiceVersion();
+    if (typeof version !== 'string' || !VERSION_SHAPE.test(version) || version !== expectedVersion) throw new SecretInputError('unsupported_browser_runtime', `secret input in the browser is pinned to ${pinned}; this runtime has ${VERSION_SHAPE.test(version ?? '') ? version : 'an unknown version'}; ${NOTHING_ENTERED}`);
     let value;
     try { value = await secrets.read(reference.label); } catch (error) { throw readFailure(error, reference.label); }
 
@@ -208,15 +230,40 @@ async function packageVersion(vendorPath) {
   } catch { return null; }
 }
 
-// The service as the trusted worker runs it, configured by the launch environment.
-export function browserServiceFromEnv(env = process.env) {
+// cua's service's version: the VERSION file beside it, or null when it is missing or malformed.
+async function cuaServiceVersion() {
+  try {
+    const text = (await readFile(CUA_SERVICE_VERSION_FILE, 'utf8')).trim();
+    return VERSION_SHAPE.test(text) ? text : null;
+  } catch { return null; }
+}
+
+// The browser service the launch selected (CUA_BROWSER_SERVICE): {name, loadService, actualServiceVersion,
+// expectedVersion}. Unset or empty is the vendor; an unknown name loads nothing.
+export function serviceSelection(env = process.env) {
+  const name = env.CUA_BROWSER_SERVICE || 'vendor';
+  if (name === 'cua') return {name, loadService: () => import(CUA_SERVICE_MODULE.href), actualServiceVersion: cuaServiceVersion, expectedVersion: PINNED_CUA_VERSION};
   const vendorPath = env.CUA_BROWSER_VENDOR_SERVICE;
-  return createBrowserService({
-    loadVendor: async () => {
+  if (name !== 'vendor') {
+    return {name, expectedVersion: PINNED_VENDOR_VERSION, actualServiceVersion: async () => null,
+      loadService: async () => { throw new Error('cua: the selected browser service is not known to this wrapper [browser_not_configured]'); }};
+  }
+  return {
+    name,
+    loadService: async () => {
       if (!vendorPath) throw new Error('cua: the vendor browser service is not configured for this runtime [browser_not_configured]');
       return import(pathToFileURL(vendorPath).href);
     },
-    vendorVersion: async () => vendorPath ? packageVersion(vendorPath) : null,
+    actualServiceVersion: async () => (vendorPath ? packageVersion(vendorPath) : null),
+    expectedVersion: PINNED_VENDOR_VERSION,
+  };
+}
+
+// The service as the trusted worker runs it, configured by the launch environment.
+export function browserServiceFromEnv(env = process.env) {
+  const {name, loadService, actualServiceVersion, expectedVersion} = serviceSelection(env);
+  return createBrowserService({
+    loadService, actualServiceVersion, expectedVersion, serviceName: name,
     defaultInstance: env.CUA_BROWSER_DEFAULT_INSTANCE || null,
     ...secretsFromEnv(env),
   });

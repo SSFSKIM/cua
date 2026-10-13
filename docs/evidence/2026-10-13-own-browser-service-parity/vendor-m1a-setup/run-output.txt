@@ -1,0 +1,13 @@
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case examples/concurrency ok
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case examples/tabs ok
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/discovery ok
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/lifecycle ok
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/manual-handoff-disabled ok
+attested: vendor (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/navigation ok

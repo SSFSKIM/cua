@@ -43,6 +43,32 @@ test('local CLI exercises MCP, deterministic elicitation acceptance, scenario ce
   assert.match(stdout,/0 differences/);
 });
 
+test('diff can be restricted to a scenario subset, and the cardinality check still holds inside it', async t => {
+  const root = mkdtempSync(join(tmpdir(),'parity-subset-')); t.after(() => rmSync(root,{recursive:true,force:true}));
+  const {mkdirSync, writeFileSync} = await import('node:fs');
+  const write = (name, cases) => {
+    mkdirSync(join(root,name));
+    writeFileSync(join(root,name,'meta.json'), JSON.stringify({complete:true,backend:'live',profile:'p',device:'d',service:name.startsWith('v')?'vendor':'cua'}));
+    writeFileSync(join(root,name,'results.jsonl'), cases.flatMap(c => [{case:c,cell:'one',ok:true,value:1,ms:1,trace:[]},{case:c,assertion:{ok:true}}]).map(r => JSON.stringify(r)).join('\n')+'\n');
+  };
+  write('vendor', ['tabs/discovery','tabs/navigation','examples/tabs','reads/locators']);
+  write('cua', ['tabs/discovery','tabs/navigation','examples/tabs']);
+  const diff = async (...extra) => {
+    try { return {code:0, ...(await exec(process.execPath,['scripts/browser-parity.mjs','diff',join(root,'vendor'),join(root,'cua'),...extra],{cwd:repo}))}; }
+    catch (e) { return {code:e.code, stdout:e.stdout}; }
+  };
+  const whole = await diff();
+  assert.equal(whole.code, 1); assert.match(whole.stdout, /"case":"reads\/locators".*missing case\/cell/);
+  const subset = await diff('--scenarios','tabs/*.mjs,examples/*.mjs');
+  assert.equal(subset.code, 0, subset.stdout); assert.match(subset.stdout, /^0 differences \(3 cases, 3 cells; scenarios tabs\/\*\.mjs,examples\/\*\.mjs\)$/m);
+  const repoRelative = await diff('--scenarios','test/browser-parity/scenarios/tabs/*.mjs');
+  assert.equal(repoRelative.code, 0, repoRelative.stdout); assert.match(repoRelative.stdout, /2 cases/);
+  const missing = await diff('--scenarios','reads/*.mjs');
+  assert.equal(missing.code, 1, 'a case of the subset absent from one run is still a cardinality difference');
+  const none = await diff('--scenarios','nothing/*.mjs');
+  assert.equal(none.code, 1); assert.match(none.stdout, /empty run/);
+});
+
 test('scenario asserts expected errors independently and fails bad assertions even without a comparison', async()=>{
   const {startFixture}=await import('./fixture/serve.mjs');
   const {StdioClient}=await import('../../scripts/browser-parity/mcp.mjs');

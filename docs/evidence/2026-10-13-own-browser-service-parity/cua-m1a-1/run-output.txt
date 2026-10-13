@@ -1,0 +1,13 @@
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case examples/concurrency ok
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case examples/tabs ok
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/discovery ok
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/lifecycle ok
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/manual-handoff-disabled ok
+attested: cua (# Selected Browser) at 4b880133bd199d180e6ae66d283548fc08765312
+case tabs/navigation ok

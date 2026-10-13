@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {connectionSecrets} from '../src/secrets/store.mjs';
@@ -179,6 +179,36 @@ test('a browser-only launch has no computer-use service or native helper configu
   assert.equal(env.SKY_CUA_SERVICE_PATH, undefined);
   assert.equal(env.CUA_SKY_VENDOR_SERVICE, undefined);
   assert.equal(env.CODEX_CLI_PATH, runtime.paths.codexCli, 'the runtime sandbox is kept whatever the surface');
+});
+
+test('CUA_BROWSER_SERVICE=cua selects cua\'s service and trusts its directory, and nothing wider', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const repo = realpathSync(new URL('..', import.meta.url).pathname);
+  assert.equal(BROWSER_SERVICE_IMPL_DIR, join(repo, 'src', 'browser-service'));
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: 'cua'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
+  assert.equal(env.CUA_BROWSER_SERVICE, 'cua');
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR]);
+  for (const wider of [repo, join(repo, 'src'), home]) assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(wider), wider);
+  assert.equal(env.CUA_BROWSER_VENDOR_SERVICE, runtime.paths.browserVendorService, 'the vendor stays configured for the switch back');
+  assert.equal(env.BROWSER_USE_AVAILABLE_BACKENDS, 'chrome');
+});
+
+test('the vendor selection, explicit or by default, trusts no cua service directory', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const explicit = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: 'vendor'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}).env;
+  assert.equal(explicit.CUA_BROWSER_SERVICE, 'vendor');
+  const unset = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: ''}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}).env;
+  assert.equal(unset.CUA_BROWSER_SERVICE, undefined, 'empty is unset: the wrapper\'s default');
+  for (const env of [explicit, unset]) assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(BROWSER_SERVICE_IMPL_DIR));
+});
+
+test('an unknown browser service selection is refused; without the browser surface the selection is ignored', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  for (const value of ['Cua', 'openai', ' cua', 'cua,vendor'])
+    assert.throws(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: value}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}), err => err.code === 'invalid_browser_service', value);
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: 'cua'}});
+  assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)), []);
+  assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(BROWSER_SERVICE_IMPL_DIR));
 });
 
 test('surfaces are canonical: computer by default, order-independent, and only the two vendor surfaces', t => {

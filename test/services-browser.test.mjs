@@ -5,7 +5,9 @@
 // what the wrapper returns or throws is what reaches model code. The live path is scripts/accept-chrome.mjs (opt-in).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createBrowserService, PINNED_VENDOR_VERSION} from '../src/services/browser.mjs';
+import {createBrowserService, serviceSelection, PINNED_CUA_VERSION, PINNED_VENDOR_VERSION, SERVICE_REASONS} from '../src/services/browser.mjs';
+import {KEPT_REASONS} from '../src/browser-service/errors.mjs';
+import {handleRpc as cuaHandleRpc} from '../src/browser-service/index.mjs';
 import {SecretStoreError} from '../src/secrets/store.mjs';
 
 const VALUES = {'WORK_PASSWORD': 'sentinel-Browser-5d2e', 'OTHER_LABEL': 'sentinel-Other-91fa'};
@@ -16,7 +18,7 @@ const axPaste = (text, extra = {}) => ax({kind: 'paste', element_index: 3, text,
 const axType = (text, extra = {}) => ax({kind: 'type_text', element_index: null, text, ...extra});
 const axSet = (value, extra = {}) => ax({kind: 'set_value', element_index: 5, value, ...extra});
 
-function harness({answer = () => ({ok: true, value: {}}), secretsUnavailable = null, read, version = PINNED_VENDOR_VERSION} = {}) {
+function harness({answer = () => ({ok: true, value: {}}), secretsUnavailable = null, read, version = PINNED_VENDOR_VERSION, expected = PINNED_VENDOR_VERSION, name = 'vendor'} = {}) {
   const received = [];
   const reads = [];
   const vendor = {handleRpc: async request => { received.push(structuredClone(request)); return answer(request); }};
@@ -27,7 +29,7 @@ function harness({answer = () => ({ok: true, value: {}}), secretsUnavailable = n
       return VALUES[label];
     }),
   };
-  const service = createBrowserService({loadVendor: async () => vendor, vendorVersion: async () => version, secrets, secretsUnavailable});
+  const service = createBrowserService({loadService: async () => vendor, actualServiceVersion: async () => version, expectedVersion: expected, serviceName: name, secrets, secretsUnavailable});
   return {service, received, reads};
 }
 
@@ -167,15 +169,27 @@ test('a reference in a shape other than the pinned one fails before input instea
   }
 });
 
-test('secret input is refused on a vendor browser service other than the pinned version, before any read', async () => {
-  for (const version of ['0.1.2', null]) {
-    const {service, received, reads} = harness({version});
-    const error = await rejection(service.handleRpc(fill(REF('WORK_PASSWORD'))));
-    assert.equal(error.code, 'unsupported_browser_runtime', String(version));
-    assert.match(error.message, /0\.1\.1/);
-    assert.deepEqual(received, []);
-    assert.deepEqual(reads, []);
-    assert.deepEqual(await service.handleRpc(fill('ordinary')), {ok: true, value: {}}, 'ordinary commands still delegate');
+test('secret input is refused on a browser service other than the selection\'s pinned version, before any read', async () => {
+  const selections = [
+    ['vendor', PINNED_VENDOR_VERSION, /@oai\/browser-desktop 0\.1\.1/, ['0.1.2', '0.1.0']],
+    ['cua', PINNED_CUA_VERSION, /the cua browser service 0\.1\.0/, ['0.1.1', '0.2.0']],
+  ];
+  for (const [selection, expected, pin, wrong] of selections) {
+    // A wrong version, a missing one and a malformed one all fail closed; only a well-formed one is repeated.
+    for (const version of [...wrong, null, 'v0.1.0\n', '../0.1.0']) {
+      const {service, received, reads} = harness({version, expected, name: selection});
+      const error = await rejection(service.handleRpc(fill(REF('WORK_PASSWORD'))));
+      const what = `${selection} ${JSON.stringify(version)}`;
+      assert.equal(error.code, 'unsupported_browser_runtime', what);
+      assert.match(error.message, pin, what);
+      assert.ok(error.message.includes(wrong.includes(version) ? `this runtime has ${version};` : 'this runtime has an unknown version;'), `${what}: ${error.message}`);
+      assert.deepEqual(received, [], what);
+      assert.deepEqual(reads, [], what);
+      assert.deepEqual(await service.handleRpc(fill('ordinary')), {ok: true, value: {}}, `${what}: ordinary commands still delegate`);
+    }
+    const {service, reads} = harness({version: expected, expected, name: selection});
+    assert.deepEqual(await service.handleRpc(fill(REF('WORK_PASSWORD'))), {ok: true, value: {}}, `${selection}: the pinned version passes`);
+    assert.deepEqual(reads, ['WORK_PASSWORD']);
   }
 });
 
@@ -190,6 +204,10 @@ test('a substituted command the vendor rejects becomes a bounded value-free clas
     ['security refusal with an unknown reason', named('BrowserUseSecurityError', {reason: value}), 'failed'],
     ['recovery error', named('BrowserCredentialRecoveryError', {details: {reason: 'protected_command_failed'}}), 'recovery:protected_command_failed'],
     ['schema error', named('ZodError'), 'invalid_command'],
+    ['cua service error', named('BrowserServiceError', {code: 'timeout'}), 'service:timeout'],
+    ['cua service error, dialog', named('BrowserServiceError', {code: 'dialog_open'}), 'service:dialog_open'],
+    ['cua service error with an unknown code', named('BrowserServiceError', {code: value}), 'failed'],
+    ['another error carrying a kept code', named('Error', {code: 'timeout'}), 'failed'],
   ];
   for (const [name, thrower, kind] of cases) {
     const {service} = harness({answer: thrower});
@@ -237,11 +255,11 @@ test('the wrapper never writes to the console or standard streams, on success or
 
 test('the vendor service loads once, and a load failure on a substituted call is reported without a value', async () => {
   let loads = 0;
-  const service = createBrowserService({loadVendor: async () => { loads++; return {handleRpc: async () => ({ok: true, value: {}})}; }, vendorVersion: async () => PINNED_VENDOR_VERSION, secrets: {read: async () => 'v'}});
+  const service = createBrowserService({loadService: async () => { loads++; return {handleRpc: async () => ({ok: true, value: {}})}; }, actualServiceVersion: async () => PINNED_VENDOR_VERSION, expectedVersion: PINNED_VENDOR_VERSION, secrets: {read: async () => 'v'}});
   await service.handleRpc({method: 'setup', params: {}});
   await service.handleRpc(fill(REF('WORK_PASSWORD')));
   assert.equal(loads, 1);
-  const broken = createBrowserService({loadVendor: async () => { throw new Error('cannot import'); }, vendorVersion: async () => PINNED_VENDOR_VERSION, secrets: {read: async () => VALUES['WORK_PASSWORD']}});
+  const broken = createBrowserService({loadService: async () => { throw new Error('cannot import'); }, actualServiceVersion: async () => PINNED_VENDOR_VERSION, expectedVersion: PINNED_VENDOR_VERSION, secrets: {read: async () => VALUES['WORK_PASSWORD']}});
   assertValueFree(await rejection(broken.handleRpc(fill(REF('WORK_PASSWORD')))));
 });
 
@@ -317,7 +335,7 @@ function selectionHarness({listing = LISTING, defaultInstance = 'maws:app-1'} = 
     }
     return {echo: type};
   }};
-  const service = createBrowserService({loadVendor: async () => vendor, vendorVersion: async () => PINNED_VENDOR_VERSION, secrets: {read: async () => assert.fail('no secret is read')}, defaultInstance});
+  const service = createBrowserService({loadService: async () => vendor, actualServiceVersion: async () => PINNED_VENDOR_VERSION, expectedVersion: PINNED_VENDOR_VERSION, secrets: {read: async () => assert.fail('no secret is read')}, defaultInstance});
   return {service, received};
 }
 
@@ -374,4 +392,31 @@ test('without a default instance (no MAWS backend configured) unqualified select
   const {service, received} = selectionHarness({defaultInstance: null});
   await service.handleRpc({method: 'execute', params: {type: 'get_default_browser'}});
   assert.deepEqual(received, [{method: 'execute', params: {type: 'get_default_browser'}}]);
+});
+
+// ---- the selection (CUA_BROWSER_SERVICE) ------------------------------------------------------------------------
+
+test('the wrapper\'s copy of the kept reasons is the cua service\'s vocabulary (it cannot import it under the vendor selection)', () => {
+  assert.deepEqual([...SERVICE_REASONS].sort(), [...KEPT_REASONS].sort());
+});
+
+test('CUA_BROWSER_SERVICE=cua selects cua\'s own service, its VERSION file and its pin', async () => {
+  const selected = serviceSelection({CUA_BROWSER_SERVICE: 'cua', CUA_BROWSER_VENDOR_SERVICE: '/vendor/scripts/browser-service.mjs'});
+  assert.equal(selected.name, 'cua');
+  assert.equal(selected.expectedVersion, PINNED_CUA_VERSION);
+  assert.equal(PINNED_CUA_VERSION, '0.1.0');
+  assert.equal(await selected.actualServiceVersion(), '0.1.0');
+  assert.equal((await selected.loadService()).handleRpc, cuaHandleRpc);
+});
+
+test('the vendor is the default selection, and an unknown selection loads nothing and has no version', async () => {
+  for (const env of [{}, {CUA_BROWSER_SERVICE: 'vendor'}, {CUA_BROWSER_SERVICE: ''}]) {
+    const selected = serviceSelection({...env, CUA_BROWSER_VENDOR_SERVICE: '/nonexistent/scripts/browser-service.mjs'});
+    assert.equal(selected.name, 'vendor', JSON.stringify(env));
+    assert.equal(selected.expectedVersion, PINNED_VENDOR_VERSION);
+    assert.equal(await selected.actualServiceVersion(), null, 'no package.json there');
+  }
+  const unknown = serviceSelection({CUA_BROWSER_SERVICE: 'openai'});
+  assert.equal(await unknown.actualServiceVersion(), null);
+  await assert.rejects(unknown.loadService(), /\[browser_not_configured\]$/);
 });

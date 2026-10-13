@@ -41,7 +41,7 @@ async function controlsClient(base,delayedKey) {
     async evaluate(fn){return fn(locate(selector));},
     async waitFor({timeoutMs}){for(const deadline=Date.now()+timeoutMs;!locate(selector);){if(Date.now()>deadline)throw new Error('fixture acknowledgement timed out');await pause(5);}},
   });
-  const tab={id:'fixture-tab',playwright:{locator}},browser={browserId:'fixture-browser',async nameSession(){}};
+  const tab={id:'fixture-tab',async goto(){},playwright:{locator}},browser={browserId:'fixture-browser',async nameSession(){},tabs:{new:async()=>tab}};
   let content=[];const boundaries={};
   const context={nodeRepl:{write:text=>content.push({type:'text',text})},cua:{getBrowser:async()=>browser,createBrowserTab:async()=>tab}};context.globalThis=context;
   return {boundaries,async drain(){await Promise.allSettled(pending);},async close(){},async call(name,args={}){

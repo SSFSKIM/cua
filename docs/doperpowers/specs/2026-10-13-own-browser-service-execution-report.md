@@ -6,7 +6,8 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 
 | milestone | branch | PR | state |
 |---|---|---|---|
-| M0 | feat/own-browser-service | https://github.com/SSFSKIM/cua/pull/121 | reviewed clean at 5393503 (reviewer-high), awaiting merge |
+| M0 | feat/own-browser-service | https://github.com/SSFSKIM/cua/pull/121 | merged |
+| M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | reviewed clean at aad5235 (reviewer-high), awaiting merge |
 
 ## Log
 
@@ -20,6 +21,9 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 - 2026-10-13 M0 task 3 (controller-dispatched sonnet benchmark controllers): three pilot runs set aside (hand-relabelled rows, early ground-truth read, REPL reset at end_task); three journaled vendor runs all-ok, committed 9e8ca75.
 - 2026-10-13 M0 whole-branch review (reviewer-high): 4 P2 (trace kept malformed identifier values; viewport reset, mark_tab, download_media effects unobserved); fixed in a76b902/413ad53; the fix introduced a fixture acknowledgment race (P2), fixed in c6b7805 with delayed-POST regressions; live pair refreshed: 0 differences (40 cases, 106 cells); re-review: no material findings.
 - 2026-10-13 M0 gates re-run by the plan-executor at 5393503: npm test 1184 pass / 0 fail / 34 skip; test:mods 32 pass; claude plugin validate passed with the known warning; diff of the committed vendor pair: 0 differences (40 cases, 106 cells).
+
+- 2026-10-13 M1a, split in two tasks (opus task-executors, sol task reviews). Task 1 (errors, budgets, backend, CDP controller): two fix waves (deadline through attachment and document reads; dialog recheck before dispatch; host-worded timeouts in shared attachment). Task 2 (index/COMMAND_HANDLERS, manifest, tabs, docs, switch, trust root, two-pin guard, real-client proof, live parity): found that only error.message crosses node_repl's RPC boundary (cua-side oracles corrected to sentences, 679a251) and that createBrowserTab needs M1b's snapshot (parity cases use tabs.new + goto until M1b); one fix wave (handler check before the documentation gate). Real-client proof first passed 22:13Z; live M1a parity 0 unexpected differences at 22:17Z. Whole-branch reviewer-high: one P2 (deadline not enforced after dispatch because the host awaits debugger.detach), fixed in aad5235; re-review "correct".
+- 2026-10-13 M1a gates at aad5235, three full runs by the plan-executor: 1303/0/37 once and 1302/1/37 twice, each failure a different pre-existing test outside M1a's files under full-suite load (test/extension-host.test.mjs "commands in flight when the user cancels debugging..." ECONNREFUSED; test/mcp-upstream.test.mjs "owned descendants ... are reaped"); both files pass 5/5 in isolation.
 
 ## Environmental friction
 

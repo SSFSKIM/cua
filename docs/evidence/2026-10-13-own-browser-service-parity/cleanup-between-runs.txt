@@ -1,1 +1,3 @@
-fixture processes after run 1: 0
+parity fixture processes: 0
+parity serve processes: 0
+trace activation: absent

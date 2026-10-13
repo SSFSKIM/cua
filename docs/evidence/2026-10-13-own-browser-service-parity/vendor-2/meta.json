@@ -1,5 +1,5 @@
 {
-  "commit": "a76b902be5ad18e8c6e09decab9dd8c1c9890f5c",
+  "commit": "c6b7805f978d993d22412ee5735522d24cdf27a1",
   "checkout": "/Users/new/Developer/GitHub/cua-parity",
   "home": "/Users/new/Library/Application Support/cua",
   "profile": "ssfs",
@@ -12,262 +12,262 @@
     "CUA_SHIM_SURFACES": "browser",
     "CUA_HOME": "/Users/new/Library/Application Support/cua"
   },
-  "started": "2026-10-13T19:02:50.117Z",
+  "started": "2026-10-13T20:59:52.924Z",
   "elicitations": [
     {
-      "t": "2026-10-13T19:02:53.597Z",
+      "t": "2026-10-13T20:59:57.029Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/doubleclick"
     },
     {
-      "t": "2026-10-13T19:02:57.366Z",
+      "t": "2026-10-13T21:00:03.131Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/locators"
     },
     {
-      "t": "2026-10-13T19:03:07.645Z",
+      "t": "2026-10-13T21:00:19.999Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/slow-budget"
     },
     {
-      "t": "2026-10-13T19:03:14.466Z",
+      "t": "2026-10-13T21:00:28.044Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/strict-error"
     },
     {
-      "t": "2026-10-13T19:03:19.291Z",
+      "t": "2026-10-13T21:00:34.272Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/wait-for"
     },
     {
-      "t": "2026-10-13T19:03:23.901Z",
+      "t": "2026-10-13T21:00:40.219Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/clipboard"
     },
     {
-      "t": "2026-10-13T19:03:28.196Z",
+      "t": "2026-10-13T21:00:46.309Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/cursor"
     },
     {
-      "t": "2026-10-13T19:03:33.019Z",
+      "t": "2026-10-13T21:00:53.657Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/export-rejections"
     },
     {
-      "t": "2026-10-13T19:03:37.012Z",
+      "t": "2026-10-13T21:00:58.893Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/history"
     },
     {
-      "t": "2026-10-13T19:03:37.912Z",
+      "t": "2026-10-13T21:00:59.856Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/history"
     },
     {
-      "t": "2026-10-13T19:03:40.362Z",
+      "t": "2026-10-13T21:01:03.414Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/logs"
     },
     {
-      "t": "2026-10-13T19:03:46.531Z",
+      "t": "2026-10-13T21:01:11.283Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m2-disabled"
     },
     {
-      "t": "2026-10-13T19:03:50.212Z",
+      "t": "2026-10-13T21:01:15.672Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m3-disabled"
     },
     {
-      "t": "2026-10-13T19:03:54.483Z",
+      "t": "2026-10-13T21:01:19.584Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m3-members"
     },
     {
-      "t": "2026-10-13T19:03:58.128Z",
+      "t": "2026-10-13T21:01:24.064Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/viewport"
     },
     {
-      "t": "2026-10-13T19:04:01.666Z",
+      "t": "2026-10-13T21:01:30.386Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "dialogs/alert"
     },
     {
-      "t": "2026-10-13T19:04:11.209Z",
+      "t": "2026-10-13T21:01:40.841Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "dialogs/prompt"
     },
     {
-      "t": "2026-10-13T19:04:18.140Z",
+      "t": "2026-10-13T21:01:49.754Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T19:04:19.114Z",
+      "t": "2026-10-13T21:01:50.985Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T19:04:25.242Z",
+      "t": "2026-10-13T21:02:00.650Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T19:04:27.959Z",
+      "t": "2026-10-13T21:02:03.914Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/media"
     },
     {
-      "t": "2026-10-13T19:04:28.856Z",
+      "t": "2026-10-13T21:02:05.642Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/media"
     },
     {
-      "t": "2026-10-13T19:04:32.200Z",
+      "t": "2026-10-13T21:02:09.765Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/context-loss"
     },
     {
-      "t": "2026-10-13T19:04:36.470Z",
+      "t": "2026-10-13T21:02:17.347Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/counter"
     },
     {
-      "t": "2026-10-13T19:04:41.046Z",
+      "t": "2026-10-13T21:02:28.155Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/late-completion"
     },
     {
-      "t": "2026-10-13T19:04:45.382Z",
+      "t": "2026-10-13T21:02:37.011Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/mutation"
     },
     {
-      "t": "2026-10-13T19:04:50.091Z",
+      "t": "2026-10-13T21:02:42.512Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/no-replay"
     },
     {
-      "t": "2026-10-13T19:04:54.685Z",
+      "t": "2026-10-13T21:02:48.393Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/read"
     },
     {
-      "t": "2026-10-13T19:05:00.440Z",
+      "t": "2026-10-13T21:02:57.077Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "examples/concurrency"
     },
     {
-      "t": "2026-10-13T19:05:07.930Z",
+      "t": "2026-10-13T21:03:06.544Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "examples/tabs"
     },
     {
-      "t": "2026-10-13T19:05:12.598Z",
+      "t": "2026-10-13T21:03:11.828Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/ax-disabled"
     },
     {
-      "t": "2026-10-13T19:05:16.558Z",
+      "t": "2026-10-13T21:03:16.599Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/coordinates"
     },
     {
-      "t": "2026-10-13T19:05:26.276Z",
+      "t": "2026-10-13T21:03:30.023Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/dom"
     },
     {
-      "t": "2026-10-13T19:05:34.655Z",
+      "t": "2026-10-13T21:03:42.121Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/locators"
     },
     {
-      "t": "2026-10-13T19:05:45.769Z",
+      "t": "2026-10-13T21:03:54.101Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/oopif"
     },
     {
-      "t": "2026-10-13T19:05:49.291Z",
+      "t": "2026-10-13T21:03:58.966Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/snapshot"
     },
     {
-      "t": "2026-10-13T19:05:56.073Z",
+      "t": "2026-10-13T21:04:06.627Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "screenshot/clip"
     },
     {
-      "t": "2026-10-13T19:05:59.315Z",
+      "t": "2026-10-13T21:04:11.667Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/discovery"
     },
     {
-      "t": "2026-10-13T19:06:09.123Z",
+      "t": "2026-10-13T21:04:22.434Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/lifecycle"
     },
     {
-      "t": "2026-10-13T19:06:23.191Z",
+      "t": "2026-10-13T21:04:38.403Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/lifecycle"
     },
     {
-      "t": "2026-10-13T19:06:27.640Z",
+      "t": "2026-10-13T21:04:43.334Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/manual-handoff-disabled"
     },
     {
-      "t": "2026-10-13T19:06:31.274Z",
+      "t": "2026-10-13T21:04:48.136Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/navigation"
     },
     {
-      "t": "2026-10-13T19:06:39.335Z",
+      "t": "2026-10-13T21:04:57.363Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "waits/page"
@@ -523,5 +523,5 @@
     "tabs/navigation",
     "waits/page"
   ],
-  "finished": "2026-10-13T19:06:47.556Z"
+  "finished": "2026-10-13T21:05:06.773Z"
 }

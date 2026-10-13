@@ -1,13 +1,13 @@
 {
-  "commit": "413ad53",
-  "liveCorpusCommit": "a76b902be5ad18e8c6e09decab9dd8c1c9890f5c",
+  "commit": "c6b7805f978d993d22412ee5735522d24cdf27a1",
+  "liveCorpusCommit": "c6b7805f978d993d22412ee5735522d24cdf27a1",
   "node": "v22.23.2",
   "checks": [
     {
       "command": "HOME=/tmp/cua-scratch-home npm test",
       "exitCode": 0,
-      "tests": 1213,
-      "pass": 1179,
+      "tests": 1218,
+      "pass": 1184,
       "fail": 0,
       "skip": 34
     },
@@ -33,16 +33,23 @@
       "skipReason": "M0: own service assertions begin at M1a"
     },
     {
-      "command": "node --test test/chrome-host-trace.test.mjs",
       "exitCode": 0,
       "pass": 4,
-      "fail": 0
+      "fail": 0,
+      "suite": "test/chrome-host-trace.test.mjs (included in npm test)"
     },
     {
       "suite": "test/browser-parity/noop-oracles.test.mjs (included in npm test)",
       "inertServiceCasesRejected": 26,
       "individualMutationsRejected": 7,
       "workingControlsPassed": 4
+    },
+    {
+      "suite": "test/browser-parity/fixture-ack.test.mjs (included in npm test)",
+      "delayedPostRegressions": 5,
+      "redBeforeFix": 5,
+      "pass": 5,
+      "fail": 0
     }
   ]
 }

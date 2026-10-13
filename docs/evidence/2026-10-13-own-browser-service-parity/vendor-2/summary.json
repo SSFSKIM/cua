@@ -2,7 +2,7 @@
   "service": "vendor",
   "device": "mini",
   "profile": "ssfs",
-  "commit": "a76b902be5ad18e8c6e09decab9dd8c1c9890f5c",
+  "commit": "c6b7805f978d993d22412ee5735522d24cdf27a1",
   "complete": true,
   "cases": 40,
   "executed": 38,
@@ -76,7 +76,7 @@
     }
   ],
   "trace": "unavailable: resident host intentionally remains on its pre-trace checkout",
-  "started": "2026-10-13T19:02:50.117Z",
-  "finished": "2026-10-13T19:06:47.556Z",
+  "started": "2026-10-13T20:59:52.924Z",
+  "finished": "2026-10-13T21:05:06.773Z",
   "cleanupErrors": []
 }

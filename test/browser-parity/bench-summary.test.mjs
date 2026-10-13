@@ -110,7 +110,6 @@ test('outcomes compare success counts, accepting more cua successes and rejectin
   assert.equal(summarize(dir).verdict, 'regression');
 });
 
-
 test('wall-time regression alone does not fail the tool-time verdict', t => {
   const report = summarize(fixture(t,[1000,1000,1000],[20000,22000,24000]));
   assert.equal(report.verdict, 'no regression');
@@ -134,7 +133,6 @@ test('unmeasured or invalid tool-call durations cannot silently count as zero', 
     assert.throws(() => summarize(dir), /tool-call duration|call.*ms/);
   }
 });
-
 
 test('setup and cleanup timing is diagnostic, accepts unmeasured calls, but their outcomes count', t => {
   const dir = fixture(t);
@@ -178,4 +176,22 @@ test('one available vendor run prints its descriptive measurements and incomplet
   assert.match(output.stdout,/vendor\/run-1 T1:.*"toolMs":1000.*"wallMs":10000/);
   assert.match(output.stdout,/incomplete: vendor has 1 of 3 runs/);
   assert.doesNotMatch(output.stdout,/verdict:/);
+});
+
+test('append-only deferred done markers use final scored outcomes without rewriting calls', t=>{
+  const dir=fixture(t);
+  const root=join(dir,'vendor/run-1'),path=join(root,'calls.jsonl');
+  const calls=readFileSync(path,'utf8').trim().split('\n').map(JSON.parse);
+  calls.find(r=>r.done).ok=null;
+  calls.push({task:'T1',scored:true,ok:true,t:'2026-10-13T00:00:30Z'});
+  writeFileSync(path,calls.map(JSON.stringify).join('\n')+'\n');
+  assert.equal(summarize(dir).verdict,'no regression');
+  calls.at(-1).ok=false;
+  writeFileSync(path,calls.map(JSON.stringify).join('\n')+'\n');
+  assert.throws(()=>summarize(dir),/score|inconsistent/);
+  calls.pop();
+  writeFileSync(path,calls.map(JSON.stringify).join('\n')+'\n');
+  assert.throws(()=>summarize(dir),/score|inconsistent/);
+  writeFileSync(join(root,'outcomes.json'),JSON.stringify({T1:{ok:null}}));
+  assert.throws(()=>summarize(dir),/outcome|inconsistent/);
 });

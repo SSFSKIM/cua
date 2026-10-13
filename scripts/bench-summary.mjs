@@ -28,9 +28,13 @@ function readService(dir, service) {
     const calls = readFileSync(join(root,'calls.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
     const outcomes = json(join(root,'outcomes.json')), tasks = new Map();
     for (const task of new Set([...calls.map(r => r.task),...Object.keys(outcomes)])) {
-      const rows = calls.filter(r => r.task === task), callRows = rows.filter(r => r.t), done = rows.filter(r => r.done);
+      const rows = calls.filter(r => r.task === task), callRows = rows.filter(r => r.t && r.scored !== true), done = rows.filter(r => r.done), scores = rows.filter(r => r.scored === true);
       const outcome = outcomes[task];
-      if (!callRows.length || done.length !== 1 || typeof outcome?.ok !== 'boolean' || typeof done[0].ok !== 'boolean' || outcome.ok !== done[0].ok) throw new Error(`${root}: task ${task} missing/inconsistent calls, done mark or outcome`);
+      if (!callRows.length || done.length !== 1 || typeof outcome?.ok !== 'boolean' || (done[0].ok !== null && typeof done[0].ok !== 'boolean') || (done[0].ok !== null && outcome.ok !== done[0].ok)) throw new Error(`${root}: task ${task} missing/inconsistent calls, done mark or outcome`);
+      if (scores.some(r => typeof r.ok !== 'boolean' || !Number.isFinite(Date.parse(r.t))) ||
+          (done[0].ok === null && !scores.length) || (scores.length && scores.at(-1).ok !== outcome.ok)) {
+        throw new Error(`${root}: task ${task} missing/inconsistent score audit and outcome`);
+      }
       const wallMs = Date.parse(done[0].done)-Date.parse(callRows[0].t);
       if (!validDuration(wallMs)) throw new Error(`${root}: task ${task} invalid wall duration`);
       const measured = callRows.every(r => validDuration(r.ms));

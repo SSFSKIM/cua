@@ -71,12 +71,41 @@ test('resolve times out with the vendor\'s sentence and the timeout code; no cal
   }
 });
 
-test('a zero budget makes one attempt', async () => {
-  const {browser, selectors} = setup([]);
+test('a zero budget makes one attempt, its dispatches bounded by the 3 s action budget (the controller\'s ruling)', async () => {
+  const {browser, selectors} = setup([el('p', {id: 'here', text: 'here'})]);
   const error = await rejection(selectors.resolve('#missing', TAB, {deadline: new Deadline(0)}));
   assert.equal(error.code, 'timeout');
   assert.match(error.message, /^Timed out after 0ms waiting for selector #missing: Browser Use encountered an error interacting with this webpage: Error: No element matched selector$/);
   assert.equal(evaluations(browser).length, 1);
+  const dispatched = browser.calls.filter(c => c.op === 'executeCdp' && c.method !== 'Runtime.releaseObject');
+  assert.ok(dispatched.length > 0);
+  for (const call of dispatched) assert.ok(call.timeoutMs > 2000 && call.timeoutMs <= 3000, `${call.method} carried ${call.timeoutMs}`);
+  const found = await selectors.resolve('#here', TAB, {deadline: new Deadline(0)});
+  assert.equal(await found.evaluate(e => e.textContent, {deadline: new Deadline(0)}), 'here');
+  assert.deepEqual((await selectors.resolveAll('p', TAB, {deadline: new Deadline(0)})).handles.length, 1);
+  assert.equal(await selectors.evaluateInFrame(TAB, () => 'ran', {deadline: new Deadline(0)}), 'ran');
+});
+
+test('a budget spent mid-command dispatches nothing further', async () => {
+  const {browser, selectors} = setup([]);
+  const deadline = new Deadline(150);
+  await rejection(selectors.resolve('#missing', TAB, {deadline}));
+  const after = browser.calls.filter(c => c.op === 'executeCdp' && c.method !== 'Runtime.releaseObject').length;
+  await rejection(selectors.resolve('#missing', TAB, {deadline}));
+  assert.equal(browser.calls.filter(c => c.op === 'executeCdp' && c.method !== 'Runtime.releaseObject').length, after);
+});
+
+test('failing reads leave no remote objects behind, polled or not', async () => {
+  const {browser, selectors} = setup([el('p', {id: 'p', text: 'p'})]);
+  await rejection(selectors.evaluateOnSelector('#missing', TAB, e => e.textContent, {deadline: new Deadline(250)}));
+  await rejection(selectors.evaluateOnSelector('#p', TAB, () => { throw new Error('boom'); }, {deadline: new Deadline(250)}));
+  await rejection(selectors.evaluateOnSelectorAll('#p', TAB, () => { throw new Error('boom'); }, {deadline: new Deadline(250)}));
+  await rejection(selectors.evaluateInFrame(TAB, () => { throw new Error('boom'); }, {deadline: new Deadline(250)}));
+  await rejection(selectors.resolve('#missing', TAB, {deadline: new Deadline(250)}));
+  const handle = await selectors.resolve('#p', TAB, {deadline: new Deadline(1000)});
+  await rejection(handle.evaluate(() => { throw new Error('boom'); }, {deadline: new Deadline(1000)}));
+  assert.equal(browser.objects.size, 0);
+  assert.ok(browser.cdpCalls().includes('Runtime.releaseObject'));
 });
 
 test('two visible matches are a strict-mode violation at once, with the vendor\'s sentence; one visible among them is the vendor\'s fallback unless strict', async () => {
@@ -107,13 +136,19 @@ test('an open dialog ends the polling with dialog_open', async () => {
 
 test('resolveAll returns a handle per match, and none at once when nothing matches', async () => {
   const {browser, selectors} = setup([el('li', {text: 'one'}), el('li', {text: 'two'}), el('li', {text: 'three', visible: false})]);
-  const handles = await selectors.resolveAll('li', TAB, {deadline: new Deadline(2000)});
+  const all = await selectors.resolveAll('li', TAB, {deadline: new Deadline(2000)});
+  const {handles} = all;
   assert.equal(handles.length, 3);
+  assert.deepEqual({...all, handles: undefined}, {target: {tabId: TAB}, frameId: MAIN, oopifFrameChain: [], selector: 'li',
+    documentBackendNodeId: browser.frame(MAIN).document.backendNodeId, handles: undefined});
   assert.deepEqual(handles.map(h => h.frameId), [MAIN, MAIN, MAIN]);
   assert.deepEqual(await Promise.all(handles.map(h => h.evaluate(e => e.textContent))), ['one', 'two', 'three']);
   assert.equal(browser.objects.size, 0);
   const started = Date.now();
-  assert.deepEqual(await selectors.resolveAll('#none', TAB, {deadline: new Deadline(2000)}), []);
+  const none = await selectors.resolveAll('#none', TAB, {deadline: new Deadline(2000)});
+  assert.deepEqual(none.handles, []);
+  assert.equal(none.frameId, MAIN);
+  assert.equal(browser.objects.size, 0);
   assert.ok(Date.now() - started < 300);
 });
 
@@ -193,9 +228,9 @@ test('resolveAll and the evaluations reach into frames too', async () => {
     iframe({id: 'o', frame: {id: 'OOPIF', url: 'https://oop.test/', access: 'oopif', elements: [el('li', {text: '3'})]}})]);
   const deadline = new Deadline(2000);
   const same = await selectors.resolveAll(`#f${ENTER_FRAME}li`, TAB, {deadline});
-  assert.deepEqual(same.map(h => h.frameId), ['SAME', 'SAME']);
+  assert.deepEqual(same.handles.map(h => h.frameId), ['SAME', 'SAME']);
   const oop = await selectors.resolveAll(`#o${ENTER_FRAME}li`, TAB, {deadline});
-  assert.deepEqual(oop.map(h => [h.frameId, h.target.targetId]), [['OOPIF', 'OOPIF']]);
+  assert.deepEqual(oop.handles.map(h => [h.frameId, h.target.targetId]), [['OOPIF', 'OOPIF']]);
   assert.equal(await selectors.evaluateOnSelectorAll(`#o${ENTER_FRAME}li`, TAB, elements => elements.length, {deadline}), 1);
 });
 
@@ -208,4 +243,21 @@ test('a browser session carries one locator engine over its controller, installi
   assert.equal(session.selectors.cdp, session.cdp);
   assert.equal(session.selectors.injected, session.injected);
   assert.equal(session.injected.installParams.expression, installExpression());
+});
+
+test('resolveAll names the frame the query ran in when nothing matches: a same-process frame, an out-of-process one, a missing one', async () => {
+  const {browser, selectors} = setup([iframe({id: 'f', frame: {id: 'SAME', elements: [el('p')]}}),
+    iframe({id: 'o', frame: {id: 'OOPIF', url: 'https://oop.test/', access: 'oopif', elements: []}})]);
+  const deadline = new Deadline(2000);
+  const same = await selectors.resolveAll(`#f${ENTER_FRAME}li`, TAB, {deadline});
+  assert.deepEqual(same.handles, []);
+  assert.equal(same.frameId, 'SAME');
+  assert.deepEqual(same.target, {tabId: TAB});
+  assert.equal(same.documentBackendNodeId, browser.frame('SAME').document.backendNodeId, 'the inner document, for evaluateAll to bind to');
+  const oop = await selectors.resolveAll(`#o${ENTER_FRAME}li`, TAB, {deadline});
+  assert.deepEqual([oop.handles, oop.frameId, oop.target], [[], 'OOPIF', {tabId: TAB, targetId: 'OOPIF'}]);
+  assert.equal(oop.documentBackendNodeId, browser.frame('OOPIF').document.backendNodeId);
+  const missing = await selectors.resolveAll(`#gone${ENTER_FRAME}li`, TAB, {deadline});
+  assert.deepEqual([missing.handles, missing.frameId], [[], MAIN], 'a frame not there: the world the query ran in');
+  assert.equal(browser.objects.size, 0);
 });

@@ -98,7 +98,8 @@ test('a page exception is the vendor\'s sentence; an expression that is not abou
   browser.calls.length = 0;
   const error = await rejection(injected.evaluateValue({tabId: TAB}, undefined, 'missing.call()', {deadline}));
   assert.equal(error.message, 'Browser Use encountered an error interacting with this webpage: ReferenceError: missing is not defined');
-  assert.deepEqual(setupCalls(browser), ['Runtime.evaluate']);
+  assert.deepEqual(setupCalls(browser), ['Runtime.evaluate', 'Runtime.releaseObject'], 'the exception\'s objects released, nothing retried');
+  assert.equal(browser.objects.size, 0);
   assert.equal(pageError({result: {}}), null);
   assert.equal(pageError({exceptionDetails: {text: 'Uncaught'}}).message, 'Browser Use encountered an error interacting with this webpage: Uncaught');
 });
@@ -161,4 +162,28 @@ test('the install expression over the vendored Playwright script defines the inj
   assert.equal(injected.isProtectedCredentialField(field('INPUT', {name: 'city'})), false);
   assert.equal(injected.isProtectedCredentialField(field('DIV', {type: 'password'})), false);
   assert.equal(HELPER_MISSING, 'Browser Use Playwright injected helper is missing');
+});
+
+test('a navigation while the first world is being made does not leave its dead context in use', async () => {
+  const {browser, injected} = setup([el('p', {text: 'old'})]);
+  browser.after('Page.createIsolatedWorld', () => browser.navigate(MAIN, {elements: [el('p', {text: 'new'})]}));
+  const started = Date.now();
+  assert.equal(await injected.evaluateValue({tabId: TAB}, undefined, title, {deadline: new Deadline(2000)}), 'new');
+  assert.ok(Date.now() - started < 500);
+  assert.ok(browser.cdpCalls().filter(m => m === 'Page.createIsolatedWorld').length >= 2, 'the world was made again for the new document');
+  browser.calls.length = 0;
+  assert.equal(await injected.evaluateValue({tabId: TAB}, undefined, title, {deadline: new Deadline(2000)}), 'new');
+  assert.deepEqual(setupCalls(browser), ['Runtime.evaluate'], 'and kept once made outside the race');
+});
+
+test('a world lost while the script is installed is made again: the next use succeeds, and a polling caller recovers', async () => {
+  const {browser, injected} = setup();
+  browser.after('Page.createIsolatedWorld', () => browser.destroyContexts(MAIN));
+  assert.equal(await injected.evaluateValue({tabId: TAB}, undefined, title, {deadline: new Deadline(2000)}), 'Hello');
+  assert.equal(browser.objects.size, 0);
+  const {SelectorEngine} = await import('../../src/browser-service/selectors.mjs');
+  const {browser: other, injected: fresh} = setup([el('p', {id: 'go', text: 'Go'})]);
+  other.after('Page.createIsolatedWorld', () => other.navigate(MAIN, {elements: [el('p', {id: 'go', text: 'Go'})], silent: true}));
+  const handle = await new SelectorEngine(fresh.cdp, fresh).resolve('#go', TAB, {deadline: new Deadline(2000)});
+  assert.ok(handle.backendNodeId > 0);
 });

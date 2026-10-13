@@ -89,6 +89,10 @@ export function resultValue(result) {
 const isHelperMissing = error => messageOf(error).includes(HELPER_MISSING)
   || /Cannot read properties of (?:undefined|null) \(reading ['"]incrementalAriaSnapshot['"]\)/.test(messageOf(error));
 const isContextLost = error => /Cannot find context|Execution context was destroyed|context.*destroyed|context.*not found/i.test(messageOf(error));
+const isWorldLost = error => isHelperMissing(error) || isContextLost(error);
+
+// The remote objects a Runtime result holds: its value's and its exception's.
+export const remoteObjects = result => [result?.result?.objectId, result?.exceptionDetails?.exception?.objectId];
 
 // The key of a target, or of a frame in it (ao); the keys a CDP source names (Ef); whether a key is under one (Af).
 export function targetKey(target, frameId) {
@@ -121,47 +125,59 @@ export class InjectedScripts {
   worlds = new Map();                 // targetKey(target, frameId) -> executionContextId
   installed = new Set();              // targetKey(target, frameId)
   mainFrames = new Map();             // targetKey(target) -> the target's main frame id
+  epoch = 0;                          // counts invalidations, so a world made or filled across one is not kept
 
   // --- evaluation --------------------------------------------------------------------------------------------------
 
-  // Runs `expression` in frame `frameId` of `target` (its main frame when null) with the script installed -> its value.
+  // Runs `expression` in frame `frameId` of `target` (its main frame when null) with the script installed -> its value;
+  // a page exception is thrown with its remote objects released.
   async evaluateValue(target, frameId, expression, options = {}) {
-    return resultValue(await this.evaluate(target, frameId, {expression, returnByValue: true, awaitPromise: true}, options));
+    return await this.valueOf(target, await this.evaluate(target, frameId, {expression, returnByValue: true, awaitPromise: true}, options));
+  }
+
+  // The value of a by-value Runtime result; on a page exception its remote objects (the only ones a by-value result
+  // holds) are released before the exception is thrown.
+  async valueOf(target, result) {
+    const error = pageError(result);
+    if (error == null) return result.result?.value;
+    await this.release(target, remoteObjects(result));
+    throw error;
   }
 
   // Runtime.evaluate of `params` in the frame's world, the script installed, guarded against its absence -> the
   // Runtime result with the world's executionContextId and the frame id it ran in. A world found gone or without the
-  // script is made again and the evaluation run once more (the selector expressions are ours and side-effect free).
+  // script, while installing or evaluating, is made again and the whole tried once more (the selector expressions are
+  // ours and side-effect free; no user script comes through here).
   async evaluate(target, frameId, params, options = {}) {
     checkSelectorDeadline(options.deadline);
     const frame = frameId ?? await this.mainFrameId(target, options);
-    await this.install(target, frame, options);
-    const attempt = async () => {
-      const evaluation = {...params, expression: `(() => {
+    const evaluation = {...params, expression: `(() => {
           if (!window.${INJECTED_GLOBAL}) {
             throw new Error(${JSON.stringify(HELPER_MISSING)});
           }
           return (${params.expression});
         })()`};
-      delete evaluation.timeout;
-      checkSelectorDeadline(options.deadline);
-      if (options.deadline != null) evaluation.timeout = options.deadline.timeoutMs();
-      return {...(await this.evaluateInWorld(target, frame, evaluation, options)), frameId: frame};
-    };
-    try {
-      const result = await attempt();
+    for (let attempt = 1; ; attempt++) {
+      let result;
+      try {
+        await this.install(target, frame, options);
+        delete evaluation.timeout;
+        checkSelectorDeadline(options.deadline);
+        if (options.deadline != null) evaluation.timeout = options.deadline.timeoutMs();
+        result = {...(await this.evaluateInWorld(target, frame, evaluation, options)), frameId: frame};
+      } catch (error) {
+        if (!isWorldLost(error)) throw error;
+        this.forgetWorld(target, frame);
+        if (attempt > 1) throw error;
+        checkSelectorDeadline(options.deadline);
+        continue;
+      }
       const error = pageError(result);
-      if (error == null || !(isHelperMissing(error) || isContextLost(error))) return result;
+      if (error == null || !isWorldLost(error) || attempt > 1) return result;
       this.forgetWorld(target, frame);
-      await this.release(target, [result.result?.objectId, result.exceptionDetails?.exception?.objectId]);
-    } catch (error) {
-      if (!(isHelperMissing(error) || isContextLost(error))) throw error;
-      this.forgetWorld(target, frame);
+      await this.release(target, remoteObjects(result));
+      checkSelectorDeadline(options.deadline);
     }
-    checkSelectorDeadline(options.deadline);
-    await this.install(target, frame, options);
-    checkSelectorDeadline(options.deadline);
-    return await attempt();
   }
 
   // Runtime.evaluate of `params` in the frame's world, nothing installed (callRuntimeEvaluateInExecutionTarget).
@@ -171,23 +187,33 @@ export class InjectedScripts {
     return {...(await this.cdp.callTarget(target, 'Runtime.evaluate', {...params, contextId: executionContextId}, callOptions(options))), executionContextId};
   }
 
-  // Installs the script in the frame's world unless it is there (ensurePlaywrightInjectedInTarget).
+  // Installs the script in the frame's world unless it is there (ensurePlaywrightInjectedInTarget). A world found gone
+  // meanwhile is forgotten, so the next use makes it again; an installation that raced a navigation is not recorded.
   async install(target, frameId, options = {}) {
     const key = targetKey(target, frameId);
     if (this.installed.has(key)) return;
     checkSelectorDeadline(options.deadline);
-    resultValue(await this.evaluateInWorld(target, frameId, this.installParams, options));
-    this.installed.add(key);
+    const epoch = this.epoch;
+    try {
+      await this.valueOf(target, await this.evaluateInWorld(target, frameId, this.installParams, options));
+    } catch (error) {
+      if (isWorldLost(error)) this.forgetWorld(target, frameId);
+      throw error;
+    }
+    if (this.epoch === epoch && this.worlds.has(key)) this.installed.add(key);
   }
 
-  // The frame's isolated world, made when it has none (playwrightFrameWorld) -> its executionContextId.
+  // The frame's isolated world, made when it has none (playwrightFrameWorld) -> its executionContextId. A world made
+  // while a navigation or a cleared context invalidated worlds is used once but not kept: it may be the old document's.
   async world(target, frameId, options = {}) {
     const key = targetKey(target, frameId);
     const known = this.worlds.get(key);
     if (known != null) return known;
     checkSelectorDeadline(options.deadline);
+    const epoch = this.epoch;
     const {executionContextId} = await this.cdp.callTarget(target, 'Page.createIsolatedWorld',
       {frameId, worldName: WORLD_NAME, grantUniveralAccess: false}, callOptions(options));
+    if (this.epoch !== epoch) return executionContextId;
     this.worlds.set(key, executionContextId);
     if (this.worlds.size > WORLD_LIMIT) {
       const oldest = this.worlds.keys().next().value;
@@ -238,12 +264,14 @@ export class InjectedScripts {
   }
 
   forgetWorld(target, frameId) {
+    this.epoch += 1;
     const key = targetKey(target, frameId);
     this.worlds.delete(key);
     this.installed.delete(key);
   }
 
   forget(matches, {mainFrames = true} = {}) {
+    this.epoch += 1;
     for (const key of [...this.worlds.keys()]) if (matches(key)) this.worlds.delete(key);
     for (const key of [...this.installed]) if (matches(key)) this.installed.delete(key);
     if (mainFrames) for (const key of [...this.mainFrames.keys()]) if (matches(key)) this.mainFrames.delete(key);

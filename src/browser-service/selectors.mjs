@@ -12,14 +12,18 @@
 //
 // The interface the reads, evaluate, snapshot and the actions build on, one SelectorEngine per CDP controller:
 //   resolve(selector, frame, {deadline, strict}) -> ElementHandle (backendNodeId, frameId, target, oopifFrameChain)
-//   resolveAll(selector, frame, {deadline}) -> ElementHandle[] (none is not an error)
+//   resolveAll(selector, frame, {deadline}) -> {handles: ElementHandle[], target, frameId, oopifFrameChain, selector,
+//     documentBackendNodeId}: every match (none is not an error) and the frame the query ran in, which evaluateAll
+//     binds the user's callback to even when nothing matched
 //   evaluateOnSelector(selector, frame, fn, {arg, deadline, strict}) -> {result, target, frameId, executionContextId,
 //     oopifFrameChain}: fn(element, injected, arg, scope) in the page, resolution and call in one evaluation
 //   evaluateOnSelectorAll(selector, frame, fn, {arg, deadline}) -> fn(elements, injected, arg)
 //   evaluateInFrame(frame, fn, {arg, deadline}) -> fn(injected, arg), unpolled
 //   ElementHandle.evaluate(fn, {arg, deadline}) -> fn(element, injected, arg) on the resolved element
-// `frame` is a tab id or {tabId, sessionId? | targetId?, frameId?}; `deadline` defaults to the 3 s action budget;
-// `retry: false` makes one attempt. Functions run in the page: they must not close over anything in node.
+// `frame` is a tab id or {tabId, sessionId? | targetId?, frameId?}; `deadline` defaults to the 3 s action budget, and
+// a zero budget makes one attempt whose dispatches get the 3 s; `retry: false` makes one attempt. Functions run in the
+// injected script's world: they must not close over anything in node, and no user script may be passed to them (they
+// are retried; user code goes to the page's world by the handles' backend nodes, dispatched once).
 //
 // Departures from Pf: every frame's script lives in the isolated world (injected.mjs), so CDP routing always carries
 // the frame id; a frame window's own injected script gets the root's credential check (the vendor's lacks it, and its
@@ -27,7 +31,7 @@
 // documents), the bound selector and credential flows built on it, telemetry and command timing.
 import {DEFAULT_ACTION_MS, Deadline} from './budgets.mjs';
 import {BrowserServiceError} from './errors.mjs';
-import {INJECTED_GLOBAL, INJECTED_OPTIONS, SELECTOR_DEADLINE_EXCEEDED, checkSelectorDeadline, pageError, resultValue, targetKey} from './injected.mjs';
+import {INJECTED_GLOBAL, INJECTED_OPTIONS, SELECTOR_DEADLINE_EXCEEDED, checkSelectorDeadline, pageError, remoteObjects, resultValue, targetKey} from './injected.mjs';
 
 export const ENTER_FRAME = ' >> internal:control=enter-frame >> ';                                                    // Cc
 export {SELECTOR_DEADLINE_EXCEEDED};
@@ -225,11 +229,15 @@ const elementExpression = (selector, strict) => `(() => {
   return element;
 })()`;
 
+// -> [the frame element of the frame the query ran in when it was entered in the page (else null), that frame's
+// document (the world's own when a frame on the way is missing), ...the matches].
 const elementsExpression = selector => `(() => {
   ${PRELUDE}
   const initialInjected = window.${INJECTED_GLOBAL};
   const scope = selectorScopeFor(initialInjected, initialInjected.parseSelector(${JSON.stringify(selector)}));
-  return scope ? scope.injected.querySelectorAll(scope.parsed, scope.root) : [];
+  if (!scope) return [null, document];
+  return [scope.frameChain.length ? scope.frameChain[scope.frameChain.length - 1].element : null, scope.root,
+    ...scope.injected.querySelectorAll(scope.parsed, scope.root)];
 })()`;
 
 const evaluateOneExpression = (selector, fn, arg, strict) => `(async () => {
@@ -295,7 +303,11 @@ function startOf(frame) {
   return {target, frameId: given.frameId ?? undefined, oopifFrameChain: []};
 }
 
-const objectsOf = result => [result.result?.objectId, result.exceptionDetails?.exception?.objectId];
+const objectsOf = remoteObjects;
+
+// The budget one attempt's dispatches get: the command's, or, for an explicit zero budget (one attempt, as the vendor's
+// loop makes it), the default action budget instead of the host's own bound (the controller's M1b ruling).
+const attemptBudget = deadline => (deadline.ms > 0 ? deadline : new Deadline(DEFAULT_ACTION_MS));
 
 // An element a selector resolved to, by its backend node: valid until its document changes.
 export class ElementHandle {
@@ -351,7 +363,7 @@ export class SelectorEngine {
       checkSelectorDeadline(bound);
       const result = await this.injected.evaluate(scope.target, scope.frameId,
         {expression: evaluateOneExpression(scope.selector, fn.toString(), arg, strict), awaitPromise: true, returnByValue: true}, {deadline: bound});
-      return {result: resultValue(result), target: scope.target, frameId: result.frameId, executionContextId: result.executionContextId, oopifFrameChain: scope.oopifFrameChain};
+      return {result: await this.injected.valueOf(scope.target, result), target: scope.target, frameId: result.frameId, executionContextId: result.executionContextId, oopifFrameChain: scope.oopifFrameChain};
     }, {deadline, retry});
   }
 
@@ -366,11 +378,11 @@ export class SelectorEngine {
 
   async evaluateInFrame(frame, fn, {arg, deadline = new Deadline(DEFAULT_ACTION_MS)} = {}) {
     const {target, frameId} = startOf(frame);
-    return await this.injected.evaluateValue(target, frameId, evaluateFrameExpression(fn.toString(), arg), {deadline});
+    return await this.injected.evaluateValue(target, frameId, evaluateFrameExpression(fn.toString(), arg), {deadline: attemptBudget(deadline)});
   }
 
   async evaluateOnHandle(handle, fn, {arg, deadline = new Deadline(DEFAULT_ACTION_MS)} = {}) {
-    const options = {deadline};
+    const options = {deadline: attemptBudget(deadline)};
     await this.injected.install(handle.target, handle.frameId, options);
     const executionContextId = await this.injected.world(handle.target, handle.frameId, options);
     const {object} = await this.cdp.callTarget(handle.target, 'DOM.resolveNode', {backendNodeId: handle.backendNodeId, executionContextId}, options);
@@ -383,18 +395,17 @@ export class SelectorEngine {
       }, options);
       return resultValue(result);
     } finally {
-      await this.injected.release(handle.target, [object.objectId, result?.exceptionDetails?.exception?.objectId]);
+      await this.injected.release(handle.target, [object.objectId, ...remoteObjects(result)]);
     }
   }
 
   // --- polling (Zv) -------------------------------------------------------------------------------------------------
 
   // Runs `attempt(deadline)` until it succeeds, a failure is final, or the deadline passes; every 100 ms. A zero budget
-  // is one attempt whose calls take the host's own bound (the vendor's qe of 0).
+  // is one attempt (the vendor's qe of 0), its dispatches bounded by the default action budget.
   async poll(selector, attempt, {deadline, retry = true}) {
     const startedAt = Date.now();
-    const bounded = deadline.ms > 0;
-    const bound = bounded ? deadline : undefined;
+    const bound = attemptBudget(deadline);
     while (true) {
       checkSelectorDeadline(bound);
       try {
@@ -407,7 +418,7 @@ export class SelectorEngine {
           throw new BrowserServiceError('timeout', `Timed out after ${deadline.ms}ms waiting for selector ${selector}: ${messageOf(error)}`, {cause: error});
         }
         checkSelectorDeadline(bound);
-        await sleep(Math.max(1, Math.min(POLL_MS, deadline.remaining())));
+        await sleep(Math.max(1, Math.min(POLL_MS, bound.remaining())));
       }
     }
   }
@@ -503,7 +514,9 @@ export class SelectorEngine {
     }
   }
 
-  // Every element the scope's selector matches, as handles; the remote objects are held in one group, released at once.
+  // Every element the scope's selector matches, as handles, with the frame the query ran in (also when nothing
+  // matched): {target, frameId, oopifFrameChain, selector, documentBackendNodeId, handles}. The remote objects are held
+  // in one group, released at once.
   async nodesFor(scope, selector, {deadline}) {
     const objectGroup = `cua-selectors-${++this.groups}`;
     try {
@@ -511,15 +524,19 @@ export class SelectorEngine {
         {expression: elementsExpression(scope.selector), returnByValue: false, objectGroup}, {deadline});
       const error = pageError(found);
       if (error != null) throw error;
-      const arrayId = found.result?.objectId;
-      if (arrayId == null) return [];
-      const {result: properties} = await this.cdp.callTarget(scope.target, 'Runtime.getProperties', {objectId: arrayId, ownProperties: true}, {deadline});
-      const elementIds = properties.filter(p => /^\d+$/.test(p.name) && p.value?.objectId != null)
-        .sort((a, b) => Number(a.name) - Number(b.name)).map(p => p.value.objectId);
-      if (elementIds.length === 0) return [];
-      const nodes = await Promise.all(elementIds.map(objectId => this.cdp.callTarget(scope.target, 'DOM.describeNode', {objectId}, {deadline})));
-      const frameId = scope.selector.includes(ENTER_FRAME) ? (await this.frameIdForElement(scope.target, elementIds[0], {deadline})) ?? found.frameId : found.frameId;
-      return nodes.map(({node}) => new ElementHandle(this, {backendNodeId: node.backendNodeId, frameId, target: scope.target, oopifFrameChain: scope.oopifFrameChain, selector}));
+      const {result: properties} = await this.cdp.callTarget(scope.target, 'Runtime.getProperties', {objectId: found.result.objectId, ownProperties: true}, {deadline});
+      const byIndex = new Map(properties.filter(p => /^\d+$/.test(p.name)).map(p => [Number(p.name), p.value?.objectId]));
+      const elementIds = [...byIndex.keys()].filter(i => i >= 2).sort((a, b) => a - b).map(i => byIndex.get(i));
+      const describe = objectId => this.cdp.callTarget(scope.target, 'DOM.describeNode', {objectId}, {deadline});
+      const frameElement = byIndex.get(0);
+      const [frameNode, documentNode, ...nodes] = await Promise.all([
+        frameElement == null ? undefined : describe(frameElement), describe(byIndex.get(1)), ...elementIds.map(describe),
+      ]);
+      const frameId = frameNode?.node.frameId ?? found.frameId;
+      return {
+        target: scope.target, frameId, oopifFrameChain: scope.oopifFrameChain, selector, documentBackendNodeId: documentNode.node.backendNodeId,
+        handles: nodes.map(({node}) => new ElementHandle(this, {backendNodeId: node.backendNodeId, frameId, target: scope.target, oopifFrameChain: scope.oopifFrameChain, selector})),
+      };
     } finally {
       await this.cdp.callTarget(scope.target, 'Runtime.releaseObjectGroup', {objectGroup}, {deadline: new Deadline(POLL_MS)}).catch(() => {});
     }

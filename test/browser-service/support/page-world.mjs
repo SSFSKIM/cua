@@ -90,6 +90,7 @@ class FakeElement {
 class FakeDocument {
   constructor(frame, elements) {
     this.frame = frame;
+    this.backendNodeId = nextBackendNodeId++;
     this.body = new FakeElement('body', {children: elements});
     this.adopt(this.body);
   }
@@ -123,6 +124,7 @@ export function pageWorld() {
   let nextObjectId = 1;
   let currentWorld = null;               // the world of the running evaluation (contentWindow reads use it)
   const failures = [];
+  const afters = [];
 
   const processKey = target => target.sessionId ?? target.targetId ?? `tab:${target.tabId}`;
   const processOf = target => {
@@ -191,7 +193,7 @@ export function pageWorld() {
     if (value === undefined) return {type: 'undefined'};
     if (value === null) return {type: 'object', subtype: 'null', value: null};
     if (byValue || typeof value !== 'object') return {type: typeof value, value: JSON.parse(JSON.stringify(value))};
-    return {type: 'object', ...(value instanceof FakeElement ? {subtype: 'node'} : Array.isArray(value) ? {subtype: 'array'} : {}), objectId: register(value, ctx, group)};
+    return {type: 'object', ...(value instanceof FakeElement || value instanceof FakeDocument ? {subtype: 'node'} : Array.isArray(value) ? {subtype: 'array'} : {}), objectId: register(value, ctx, group)};
   }
 
   async function run(ctx, work, byValue, group) {
@@ -250,6 +252,7 @@ export function pageWorld() {
     },
     'DOM.describeNode': (target, {objectId}) => {
       const element = objects.get(objectId)?.value;
+      if (element instanceof FakeDocument) return {node: {nodeId: 0, backendNodeId: element.backendNodeId, nodeName: '#document', localName: ''}};
       if (!(element instanceof FakeElement)) throw new Error('Could not find node with given id');
       return {node: {nodeId: 0, backendNodeId: element.backendNodeId, nodeName: element.tagName, localName: element.localName,
         ...(element.contentFrameId ? {frameId: element.contentFrameId} : {})}};
@@ -257,7 +260,7 @@ export function pageWorld() {
     'DOM.resolveNode': (target, {backendNodeId, executionContextId}) => {
       const process = processOf(target);
       for (const frame of process.frames.values()) {
-        for (const element of frame.document.descendants()) {
+        for (const element of [frame.document, ...frame.document.descendants()]) {
           if (element.backendNodeId !== backendNodeId) continue;
           const ctx = executionContextId == null ? worldOf(frame, '') : contexts.get(executionContextId);
           if (ctx == null) throw new Error('Cannot find context with specified id');
@@ -306,6 +309,9 @@ export function pageWorld() {
     },
     // `method`'s next `times` calls reject with `message`.
     fail(method, message, times = 1) { failures.push({method, message, times}); },
+    // `hook(target, params)` runs once, after the next `method` call is answered and before its answer is delivered
+    // (what happens in the page while an answer is on its way).
+    after(method, hook) { afters.push({method, hook}); },
     // A world's global object, by frame and name (for asserting what an expression installed).
     world(frameId, worldName) { return browser.frame(frameId).worlds.get(worldName); },
     event(source, method, params) { for (const l of listeners.onCDPEvent) l({source, method, params}); },
@@ -329,7 +335,10 @@ export function pageWorld() {
       const i = failures.findIndex(f => f.method === method && f.times > 0);
       if (i >= 0) { failures[i].times--; throw new Error(failures[i].message); }
       const handler = handlers[method];
-      return handler == null ? {} : await handler(target, commandParams ?? {});
+      const answer = handler == null ? {} : await handler(target, commandParams ?? {});
+      const j = afters.findIndex(a => a.method === method);
+      if (j >= 0) afters.splice(j, 1)[0].hook(target, commandParams ?? {});
+      return answer;
     },
   };
   return {api, browser};

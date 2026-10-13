@@ -1,12 +1,12 @@
 {
-  "commit": "081aad867796b1380df1e0ecf0b697c7782295df",
+  "commit": "8758552bb93c08c69f28e896d29715f891192d03",
   "node": "v22.23.2",
   "checks": [
     {
       "command": "HOME=/tmp/cua-scratch-home npm test",
       "exitCode": 0,
-      "tests": 1162,
-      "pass": 1128,
+      "tests": 1198,
+      "pass": 1164,
       "fail": 0,
       "skip": 34
     },
@@ -30,6 +30,17 @@
       "pass": 2,
       "skip": 1,
       "skipReason": "M0: own service assertions begin at M1a"
+    },
+    {
+      "command": "node --test test/browser-parity/noop-oracles.test.mjs",
+      "exitCode": 0,
+      "inertServiceCasesRejected": 25
+    },
+    {
+      "command": "node --test test/browser-parity/handler-registry.test.mjs test/browser-parity/export-errors.test.mjs",
+      "exitCode": 0,
+      "pass": 3,
+      "fail": 0
     }
   ]
 }

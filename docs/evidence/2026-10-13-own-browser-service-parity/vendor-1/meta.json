@@ -1,5 +1,5 @@
 {
-  "commit": "081aad867796b1380df1e0ecf0b697c7782295df",
+  "commit": "8758552bb93c08c69f28e896d29715f891192d03",
   "checkout": "/Users/new/Developer/GitHub/cua-parity",
   "home": "/Users/new/Library/Application Support/cua",
   "profile": "ssfs",
@@ -12,250 +12,250 @@
     "CUA_SHIM_SURFACES": "browser",
     "CUA_HOME": "/Users/new/Library/Application Support/cua"
   },
-  "started": "2026-10-13T17:09:50.830Z",
+  "started": "2026-10-13T17:50:59.702Z",
   "elicitations": [
     {
-      "t": "2026-10-13T17:09:58.008Z",
+      "t": "2026-10-13T17:51:03.604Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/doubleclick"
     },
     {
-      "t": "2026-10-13T17:10:05.069Z",
+      "t": "2026-10-13T17:51:08.604Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/locators"
     },
     {
-      "t": "2026-10-13T17:10:25.954Z",
+      "t": "2026-10-13T17:51:22.170Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/slow-budget"
     },
     {
-      "t": "2026-10-13T17:10:35.470Z",
+      "t": "2026-10-13T17:51:29.817Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "actions/strict-error"
     },
     {
-      "t": "2026-10-13T17:10:43.673Z",
+      "t": "2026-10-13T17:51:36.538Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/clipboard"
     },
     {
-      "t": "2026-10-13T17:10:50.493Z",
+      "t": "2026-10-13T17:51:41.241Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/cursor"
     },
     {
-      "t": "2026-10-13T17:10:57.602Z",
+      "t": "2026-10-13T17:51:48.037Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/export-rejections"
     },
     {
-      "t": "2026-10-13T17:11:04.747Z",
+      "t": "2026-10-13T17:51:53.774Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/history"
     },
     {
-      "t": "2026-10-13T17:11:06.320Z",
+      "t": "2026-10-13T17:51:54.773Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/history"
     },
     {
-      "t": "2026-10-13T17:11:10.186Z",
+      "t": "2026-10-13T17:51:57.941Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/logs"
     },
     {
-      "t": "2026-10-13T17:11:18.792Z",
+      "t": "2026-10-13T17:52:06.215Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m2-disabled"
     },
     {
-      "t": "2026-10-13T17:11:23.618Z",
+      "t": "2026-10-13T17:52:10.256Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m3-disabled"
     },
     {
-      "t": "2026-10-13T17:11:28.384Z",
+      "t": "2026-10-13T17:52:14.983Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/m3-members"
     },
     {
-      "t": "2026-10-13T17:11:33.281Z",
+      "t": "2026-10-13T17:52:19.841Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capabilities/viewport"
     },
     {
-      "t": "2026-10-13T17:11:40.422Z",
+      "t": "2026-10-13T17:52:26.109Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "dialogs/alert"
     },
     {
-      "t": "2026-10-13T17:11:53.393Z",
+      "t": "2026-10-13T17:52:36.747Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "dialogs/prompt"
     },
     {
-      "t": "2026-10-13T17:12:03.522Z",
+      "t": "2026-10-13T17:52:44.831Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T17:12:05.085Z",
+      "t": "2026-10-13T17:52:46.084Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T17:12:13.624Z",
+      "t": "2026-10-13T17:52:54.083Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/chooser"
     },
     {
-      "t": "2026-10-13T17:12:16.946Z",
+      "t": "2026-10-13T17:52:57.668Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/media"
     },
     {
-      "t": "2026-10-13T17:12:18.347Z",
+      "t": "2026-10-13T17:52:58.782Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "downloads/media"
     },
     {
-      "t": "2026-10-13T17:12:22.186Z",
+      "t": "2026-10-13T17:53:02.444Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/context-loss"
     },
     {
-      "t": "2026-10-13T17:12:29.350Z",
+      "t": "2026-10-13T17:53:08.802Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/counter"
     },
     {
-      "t": "2026-10-13T17:12:35.713Z",
+      "t": "2026-10-13T17:53:13.901Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/late-completion"
     },
     {
-      "t": "2026-10-13T17:12:42.784Z",
+      "t": "2026-10-13T17:53:19.157Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/mutation"
     },
     {
-      "t": "2026-10-13T17:12:49.120Z",
+      "t": "2026-10-13T17:53:24.478Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/no-replay"
     },
     {
-      "t": "2026-10-13T17:12:55.569Z",
+      "t": "2026-10-13T17:53:29.571Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "evaluate/read"
     },
     {
-      "t": "2026-10-13T17:13:04.476Z",
+      "t": "2026-10-13T17:53:35.734Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "examples/concurrency"
     },
     {
-      "t": "2026-10-13T17:13:13.953Z",
+      "t": "2026-10-13T17:53:44.028Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "examples/tabs"
     },
     {
-      "t": "2026-10-13T17:13:21.127Z",
+      "t": "2026-10-13T17:53:49.142Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/ax-disabled"
     },
     {
-      "t": "2026-10-13T17:13:26.496Z",
+      "t": "2026-10-13T17:53:52.771Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/coordinates"
     },
     {
-      "t": "2026-10-13T17:13:37.721Z",
+      "t": "2026-10-13T17:54:03.970Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "input/dom"
     },
     {
-      "t": "2026-10-13T17:13:49.096Z",
+      "t": "2026-10-13T17:54:15.287Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/locators"
     },
     {
-      "t": "2026-10-13T17:14:07.764Z",
+      "t": "2026-10-13T17:54:28.264Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/oopif"
     },
     {
-      "t": "2026-10-13T17:14:13.483Z",
+      "t": "2026-10-13T17:54:31.624Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "reads/snapshot"
     },
     {
-      "t": "2026-10-13T17:14:23.831Z",
+      "t": "2026-10-13T17:54:49.071Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "screenshot/clip"
     },
     {
-      "t": "2026-10-13T17:14:29.065Z",
+      "t": "2026-10-13T17:54:59.720Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/discovery"
     },
     {
-      "t": "2026-10-13T17:14:45.840Z",
+      "t": "2026-10-13T17:55:25.215Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/lifecycle"
     },
     {
-      "t": "2026-10-13T17:15:04.193Z",
+      "t": "2026-10-13T17:55:47.634Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/manual-handoff-disabled"
     },
     {
-      "t": "2026-10-13T17:15:09.674Z",
+      "t": "2026-10-13T17:55:57.258Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "tabs/navigation"
     },
     {
-      "t": "2026-10-13T17:15:20.791Z",
+      "t": "2026-10-13T17:56:12.262Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "waits/page"
@@ -500,5 +500,5 @@
     "tabs/navigation",
     "waits/page"
   ],
-  "finished": "2026-10-13T17:15:30.681Z"
+  "finished": "2026-10-13T17:56:27.488Z"
 }

@@ -8,10 +8,10 @@
 // family ("chrome", "edge"), the default (the preferred extension instance, else any extension), or the one best placed
 // for a URL (an extension with a tab open on it). One turn-ended hook (backend.mjs TurnEndedTracker) serves every
 // backend. Dropped from hh: the Codex config preferences and the in-app browser's session filtering and diagnostics.
+import {isIP} from 'node:net';
 import {BackendApi, discoverBackends, TurnEndedTracker, turnMetadata} from './backend.mjs';
 import {BrowserServiceError, serviceError} from './errors.mjs';
 import {browserCapabilities} from './manifest.mjs';
-import {isIP} from 'node:net';
 
 const OPEN_TABS_MS = 1000;                                           // Dte
 const BACKEND_TYPES = ['extension', 'iab', 'cdp', 'mcpapps'];        // Kg, Vg

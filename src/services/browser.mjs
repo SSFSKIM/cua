@@ -174,16 +174,16 @@ function unqualifiedSelection(request) {
 }
 
 // `loadService` resolves the selected service module; `actualServiceVersion` its real version (or null);
-// `expectedVersion` the selection's pin and `serviceName` its name ('vendor' or 'cua'); `secrets` reads a label's value (the file store); `secretsUnavailable`, when
-// set, is the launch's reason there is no store; `defaultInstance` the extension instance an unqualified selection is
-// rewritten to (null: none is).
+// `expectedVersion` the selection's pin and `serviceName` its name ('vendor' or 'cua'); `secrets` reads a label's
+// value (the file store); `secretsUnavailable`, when set, is the launch's reason there is no store; `defaultInstance`
+// the extension instance an unqualified selection is rewritten to (null: none is).
 export function createBrowserService({loadService, actualServiceVersion, expectedVersion, serviceName = 'vendor', secrets, secretsUnavailable = null, defaultInstance = null}) {
-  let vendor = null;
-  const vendorService = () => (vendor ??= loadService());
+  let loaded = null;
+  const selectedService = () => (loaded ??= loadService());
   const pinned = `${serviceName === 'cua' ? CUA_SERVICE : VENDOR_PACKAGE} ${expectedVersion}`;
 
   async function selectDefault({method, clientTimeout}) {
-    const service = await vendorService();
+    const service = await selectedService();
     const listed = await service.handleRpc({method: 'execute', params: {type: 'list_browsers'}});
     const extensions = (Array.isArray(listed) ? listed : []).filter(b => b?.type === 'extension');
     const match = extensions.find(b => b.metadata?.extensionInstanceId === defaultInstance)
@@ -196,13 +196,13 @@ export function createBrowserService({loadService, actualServiceVersion, expecte
     const selection = defaultInstance ? unqualifiedSelection(request) : null;
     if (selection) return selectDefault(selection);
     const plan = substitutionFor(request);
-    if (!plan) return (await vendorService()).handleRpc(request);
+    if (!plan) return (await selectedService()).handleRpc(request);
 
     const {reference} = plan;
     refuseUnusable(reference);
     checkShape(plan);
     if (secretsUnavailable) throw unavailable(secretsUnavailable);
-    const service = await vendorService();
+    const service = await selectedService();
     const version = await actualServiceVersion();
     if (typeof version !== 'string' || !VERSION_SHAPE.test(version) || version !== expectedVersion) throw new SecretInputError('unsupported_browser_runtime', `secret input in the browser is pinned to ${pinned}; this runtime has ${VERSION_SHAPE.test(version ?? '') ? version : 'an unknown version'}; ${NOTHING_ENTERED}`);
     let value;

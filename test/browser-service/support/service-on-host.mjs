@@ -69,9 +69,8 @@ export function scriptedPages({autoLoad = true, navigateError = null} = {}) {
   return {cdp, pages, page, sent, bind(extension) { ext = extension; }};
 }
 
-// -> {service, ext, runtime, pages, turnEnded(turn), setTurn(turn), requests()}: `requests()` are the backend methods
-// the host received (from the host's own log of the extension's calls is not enough: the service's requests are what
-// the host answers), read through the fake runtime's nativePipe.
+// -> {service, ext, runtime, pages, turnEnded(turn), setTurn(turn), requests()}: `requests()` lists, in order, the
+// methods of the backend requests the service sent the host, as written to the fake runtime's nativePipe.
 export async function serviceOnHost(t, {fake = {}, pages = scriptedPages(), env = {}, turn = {session_id: 'session-a', turn_id: 'turn-1'}} = {}) {
   const {ext, socketPath} = await startRealHost(t, {cdp: pages.cdp, ...fake});
   pages.bind(ext);

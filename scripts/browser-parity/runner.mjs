@@ -67,10 +67,9 @@ export async function runScenario(scenario,{client,fixtureURL,browserFixtureURL=
   const reset=await fetch(fixtureURL+'/reset',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(scenario.setup?.state ?? {})});
   if(!reset.ok) throw new Error('Fixture reset failed');
   const page=new URL(scenario.setup?.page ?? '/counter.html',browserFixtureURL+'/').href;
-  // The case's tab is made with the browser API's own create_tab and navigate_tab_url (cua.createBrowserTab adds a
-  // read of the new page's DOM snapshot, playwright_dom_snapshot, which a service serves only from M1b on); the
-  // snapshot read is covered by its own scenario (reads/snapshot).
-  const setup=`globalThis.fixtureURL=${JSON.stringify(browserFixtureURL)}; globalThis.browser=await cua.getBrowser({extensionInstanceId:${JSON.stringify(instanceId)}}); await browser.nameSession(${JSON.stringify(scenario.id)}); globalThis.tab=await browser.tabs.new(); await tab.goto(${JSON.stringify(page)});`;
+  // The case's tab is opened as the model opens one, with cua.createBrowserTab (which also reads the new page's DOM
+  // snapshot, playwright_dom_snapshot).
+  const setup=`globalThis.fixtureURL=${JSON.stringify(browserFixtureURL)}; globalThis.browser=await cua.getBrowser({extensionInstanceId:${JSON.stringify(instanceId)}}); await browser.nameSession(${JSON.stringify(scenario.id)}); globalThis.tab=await cua.createBrowserTab(browser.browserId,${JSON.stringify(page)});`;
   const bootstrap=async c=>parseCell(await c.call('js',{code:cellCode({code:setup}),timeout_ms:60000,title:`parity ${scenario.id} setup`}));
   const bootResult=await bootstrap(client);
   if(!bootResult.ok) {const row={case:scenario.id,assertion:{ok:false,reason:'setup failed',error:bootResult.error}};await emit(row);return row;}

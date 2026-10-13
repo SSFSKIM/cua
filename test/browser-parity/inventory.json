@@ -396,7 +396,8 @@
     "dispatch": "Rf",
     "milestone": "M1b",
     "cases": [
-      "reads/snapshot"
+      "reads/snapshot",
+      "reads/frames"
     ],
     "reachability": "always"
   },
@@ -421,7 +422,8 @@
       "evaluate/read",
       "evaluate/counter",
       "evaluate/context-loss",
-      "evaluate/late-completion"
+      "evaluate/late-completion",
+      "evaluate/budget"
     ],
     "reachability": "always"
   },
@@ -594,9 +596,12 @@
     "milestone": "M1b",
     "cases": [
       "reads/locators",
-      "reads/oopif"
+      "reads/oopif",
+      "reads/zero-budget",
+      "reads/frames"
     ],
-    "reachability": "always"
+    "reachability": "always",
+    "notes": "timeout_ms 0 is one resolution attempt bounded by 3 s in cua's service (the M1b ruling), for direct callers: the unchanged REPL client accepts only a positive timeout_ms, so reads/zero-budget pins its refusal of 0 on both services."
   },
   {
     "type": "playwright_locator_wait_for",

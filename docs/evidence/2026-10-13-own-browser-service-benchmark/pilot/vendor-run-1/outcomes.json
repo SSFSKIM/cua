@@ -1,0 +1,132 @@
+{
+ "T0": {
+  "ok": true,
+  "answer": "1 tab before (browser.user.openTabs count); profile ssfs ready via profiles_list; getBrowser 8 ms"
+ },
+ "T1": {
+  "ok": true,
+  "answer": "title \"Bench Home\"; #bench-id = BENCH-2026-10-05"
+ },
+ "T2": {
+  "ok": true,
+  "answer": "1437.50"
+ },
+ "T3": {
+  "ok": true,
+  "answer": "D (4th bar tallest, from fullPage screenshot)"
+ },
+ "T4": {
+  "ok": true,
+  "answer": "LATE-7f3a"
+ },
+ "T5": {
+  "ok": true,
+  "answer": "50,40,200,150"
+ },
+ "T6": {
+  "ok": true,
+  "answer": "42-Bravo-circle-11"
+ },
+ "T7": {
+  "ok": true,
+  "answer": "#deep-log fFx; #deep-echo fFx"
+ },
+ "T8": {
+  "ok": true,
+  "answer": "no <h1> on live example.com (count 0; title \"Example Domain\"); accepted per archive README ruling"
+ },
+ "miniwob/click-button": {
+  "ok": true,
+  "answer": "clicked first \"cancel\" button (two identical cancel buttons)",
+  "rawReward": 1,
+  "discountedReward": 0.9762666666666666
+ },
+ "miniwob/click-checkboxes": {
+  "ok": true,
+  "answer": "selected nothing, clicked Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9772833333333333
+ },
+ "miniwob/click-dialog": {
+  "ok": true,
+  "answer": "clicked .ui-dialog-titlebar-close",
+  "rawReward": 1,
+  "discountedReward": 0.9780944444444445
+ },
+ "miniwob/click-link": {
+  "ok": true,
+  "answer": "clicked link \"Auctor\"",
+  "rawReward": 1,
+  "discountedReward": 0.9786277777777778
+ },
+ "miniwob/click-option": {
+  "ok": true,
+  "answer": "selected HWtF5D, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9766666666666667
+ },
+ "miniwob/click-tab": {
+  "ok": true,
+  "answer": "clicked Tab #1",
+  "rawReward": 1,
+  "discountedReward": 0.9767
+ },
+ "miniwob/enter-text": {
+  "ok": true,
+  "answer": "typed Riley, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9754
+ },
+ "miniwob/enter-password": {
+  "ok": true,
+  "answer": "typed password in both fields, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9706388888888889
+ },
+ "miniwob/focus-text-2": {
+  "ok": true,
+  "answer": "clicked 3rd input",
+  "rawReward": 1,
+  "discountedReward": 0.9749055555555556
+ },
+ "miniwob/drag-box": {
+  "ok": true,
+  "answer": "dragged small box inside large (containment verified), Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9581722222222222
+ },
+ "miniwob/drag-items": {
+  "ok": true,
+  "answer": "dragged Kori to bottom: Mavis,Mireielle,Kalli,Cherye,Kori",
+  "rawReward": 1,
+  "discountedReward": 0.9669833333333333
+ },
+ "miniwob/scroll-text": {
+  "ok": true,
+  "answer": "typed \"non\" (last word read from textarea DOM), Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9326111111111111
+ },
+ "miniwob/use-slider": {
+  "ok": true,
+  "answer": "ArrowDown x73 from -8 to -81, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9610388888888889
+ },
+ "miniwob/simple-algebra": {
+  "ok": true,
+  "answer": "x = 54, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9765777777777778
+ },
+ "miniwob/email-inbox-delete": {
+  "ok": true,
+  "answer": "clicked trash on Cordelia email",
+  "rawReward": 1,
+  "discountedReward": 0.9750277777777778
+ },
+ "T9": {
+  "ok": true,
+  "answer": "closed own tab; 1 tab after (= 1 before); end_task -> {\"status\":\"ended\",\"ended\":true}"
+ }
+}

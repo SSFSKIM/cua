@@ -1,0 +1,177 @@
+{
+  "T0": {
+    "answer": "setup ok: profiles_list ssfs ready; browser cua ext id 1 selected; tabs before: 1",
+    "ok": true
+  },
+  "T1": {
+    "answer": "{\"title\":\"Bench Home\",\"benchId\":\"BENCH-2026-10-05\"}",
+    "ok": true
+  },
+  "T2": {
+    "answer": "1437.50",
+    "ok": true
+  },
+  "T3": {
+    "answer": "D",
+    "ok": true
+  },
+  "T4": {
+    "answer": "LATE-7f3a",
+    "ok": true
+  },
+  "T5": {
+    "answer": "50,40,200,150",
+    "ok": true
+  },
+  "T6": {
+    "answer": "42-Bravo-circle-11",
+    "ok": true
+  },
+  "T7": {
+    "answer": "{\"log\":\"fFx\",\"echo\":\"fFx\"}",
+    "ok": true
+  },
+  "T8": {
+    "answer": "no h1",
+    "ok": true
+  },
+  "miniwob/click-button": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9370055555555555,
+      "reason": "reward: 0.9370055555555555 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/click-checkboxes": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9801666666666666,
+      "reason": "reward: 0.9801666666666666 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/click-dialog": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9804055555555555,
+      "reason": "reward: 0.9804055555555555 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/click-link": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.96355,
+      "reason": "reward: 0.96355 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/click-option": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9778444444444444,
+      "reason": "reward: 0.9778444444444444 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/click-tab": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9803055555555555,
+      "reason": "reward: 0.9803055555555555 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/enter-text": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9775888888888888,
+      "reason": "reward: 0.9775888888888888 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/enter-password": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9785388888888888,
+      "reason": "reward: 0.9785388888888888 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/focus-text-2": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9773388888888889,
+      "reason": "reward: 0.9773388888888889 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/drag-box": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9423833333333334,
+      "reason": "reward: 0.9423833333333334 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/drag-items": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9694277777777778,
+      "reason": "reward: 0.9694277777777778 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/scroll-text": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9140666666666667,
+      "reason": "reward: 0.9140666666666667 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/use-slider": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.8987055555555555,
+      "reason": "reward: 0.8987055555555555 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/simple-algebra": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9722666666666666,
+      "reason": "reward: 0.9722666666666666 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "miniwob/email-inbox-delete": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9736277777777778,
+      "reason": "reward: 0.9736277777777778 (raw: 1)",
+      "success": true
+    },
+    "ok": true
+  },
+  "T9": {
+    "answer": "tabs before 1, after 1",
+    "ok": true
+  }
+}

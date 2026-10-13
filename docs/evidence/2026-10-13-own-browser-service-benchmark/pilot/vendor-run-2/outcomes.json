@@ -1,0 +1,133 @@
+{
+ "T0": {
+  "ok": true,
+  "answer": "1 tab before (browser.user.openTabs count); profile ssfs ready via profiles_list"
+ },
+ "T1": {
+  "ok": true,
+  "answer": "title \"Bench Home\"; #bench-id = BENCH-2026-10-05"
+ },
+ "T2": {
+  "ok": true,
+  "answer": "1437.50"
+ },
+ "T3": {
+  "ok": true,
+  "answer": "D (4th bar tallest, from fullPage screenshot)"
+ },
+ "T4": {
+  "ok": true,
+  "answer": "LATE-7f3a"
+ },
+ "T5": {
+  "ok": true,
+  "answer": "49,39,200,150"
+ },
+ "T6": {
+  "ok": true,
+  "answer": "42-Bravo-circle-11"
+ },
+ "T7": {
+  "ok": true,
+  "answer": "#deep-log fFx; #deep-echo fFx"
+ },
+ "T8": {
+  "ok": true,
+  "answer": "no <h1> on live example.com (count 0; title \"Example Domain\"); accepted per archive README ruling"
+ },
+ "miniwob/click-button": {
+  "ok": true,
+  "answer": "clicked first \"cancel\" button (two identical cancel buttons)",
+  "rawReward": 1,
+  "discountedReward": 0.9555
+ },
+ "miniwob/click-checkboxes": {
+  "ok": true,
+  "answer": "selected nothing, clicked Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9671388888888889
+ },
+ "miniwob/click-dialog": {
+  "ok": true,
+  "answer": "clicked .ui-dialog-titlebar-close",
+  "rawReward": 1,
+  "discountedReward": 0.9570888888888889
+ },
+ "miniwob/click-link": {
+  "ok": true,
+  "answer": "clicked link \"Auctor\"",
+  "rawReward": 1,
+  "discountedReward": 0.9139777777777778
+ },
+ "miniwob/click-option": {
+  "ok": true,
+  "answer": "selected HWtF5D, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9048111111111111
+ },
+ "miniwob/click-tab": {
+  "ok": true,
+  "answer": "clicked Tab #1",
+  "rawReward": 1,
+  "discountedReward": 0.8519833333333333
+ },
+ "miniwob/enter-text": {
+  "ok": true,
+  "answer": "typed Riley, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9064722222222222
+ },
+ "miniwob/enter-password": {
+  "ok": true,
+  "answer": "typed bWTa into both fields, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9432833333333334
+ },
+ "miniwob/focus-text-2": {
+  "ok": true,
+  "answer": "clicked 3rd input (#tt3)",
+  "rawReward": 1,
+  "discountedReward": 0.8916666666666666
+ },
+ "miniwob/drag-box": {
+  "ok": true,
+  "answer": "dragged small box to large box center, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.8497611111111111
+ },
+ "miniwob/drag-items": {
+  "ok": false,
+  "answer": "dragged Kori toward the bottom with a 4-point tab.cua.drag path; list order stayed Mavis,Kori,Mireielle,Kalli,Cherye",
+  "rawReward": -1,
+  "discountedReward": -1,
+  "reason": "episode ended with raw reward -1 (console: reward: -1 (raw: -1)); Kori did not move; no tool error"
+ },
+ "miniwob/scroll-text": {
+  "ok": true,
+  "answer": "typed last word \"non\", Submit",
+  "rawReward": 1,
+  "discountedReward": 0.8560444444444444
+ },
+ "miniwob/use-slider": {
+  "ok": true,
+  "answer": "slider from -8 to -81 via ArrowDown x73, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9199277777777778
+ },
+ "miniwob/simple-algebra": {
+  "ok": true,
+  "answer": "typed 54, Submit",
+  "rawReward": 1,
+  "discountedReward": 0.9753611111111111
+ },
+ "miniwob/email-inbox-delete": {
+  "ok": true,
+  "answer": "clicked trash of Cordelia thread",
+  "rawReward": 1,
+  "discountedReward": 0.9678277777777777
+ },
+ "T9": {
+  "ok": true,
+  "answer": "closed own tab; 1 tab after (= 1 before); end_task ended"
+ }
+}

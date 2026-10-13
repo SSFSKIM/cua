@@ -1,0 +1,237 @@
+{
+  "T0": {
+    "answer": {
+      "tabsBefore": 1,
+      "setup": "getBrowser extensionInstanceId; nameSession; listTabs"
+    },
+    "ok": true
+  },
+  "T1": {
+    "answer": {
+      "title": "Bench Home",
+      "benchId": "BENCH-2026-10-05"
+    },
+    "ok": true
+  },
+  "T2": {
+    "answer": "1437.50",
+    "ok": true
+  },
+  "T3": {
+    "answer": "D",
+    "ok": true
+  },
+  "T4": {
+    "answer": "LATE-7f3a",
+    "ok": true
+  },
+  "T5": {
+    "answer": "50,40,200,150",
+    "ok": true
+  },
+  "T6": {
+    "answer": "42-Bravo-circle-11",
+    "ok": true
+  },
+  "T7": {
+    "answer": {
+      "deepLog": "fFx",
+      "deepEcho": "fFx",
+      "note": "first #deep-echo read used value??textContent and returned empty string for a span (my read bug); follow-up inspect showed textContent fFx"
+    },
+    "ok": true
+  },
+  "T8": {
+    "answer": "no h1",
+    "ok": true
+  },
+  "miniwob/click-button": {
+    "answer": {
+      "note": "clicked first cancel button",
+      "logs": [
+        "reward: 0.965538888888889 (raw: 1)"
+      ],
+      "discountedReward": 0.965538888888889,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/click-checkboxes": {
+    "answer": {
+      "note": "selected nothing, clicked Submit",
+      "logs": [
+        "reward: 0.965538888888889 (raw: 1)",
+        "reward: 0.9794777777777778 (raw: 1)"
+      ],
+      "discountedReward": 0.9794777777777778,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/click-dialog": {
+    "answer": {
+      "note": "clicked dialog Close (x)",
+      "logs": [
+        "reward: 0.97685 (raw: 1)"
+      ],
+      "discountedReward": 0.97685,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/click-link": {
+    "answer": {
+      "note": "clicked .alink Auctor",
+      "logs": [
+        "reward: 0.9746444444444444 (raw: 1)"
+      ],
+      "discountedReward": 0.9746444444444444,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/click-option": {
+    "answer": {
+      "note": "selected HWtF5D, Submit",
+      "logs": [
+        "reward: 0.9707277777777777 (raw: 1)"
+      ],
+      "discountedReward": 0.9707277777777777,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/click-tab": {
+    "answer": {
+      "note": "clicked Tab #1",
+      "logs": [
+        "reward: 0.9798333333333333 (raw: 1)"
+      ],
+      "discountedReward": 0.9798333333333333,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/enter-text": {
+    "answer": {
+      "note": "typed Riley, Submit",
+      "logs": [
+        "reward: 0.9789944444444445 (raw: 1)"
+      ],
+      "discountedReward": 0.9789944444444445,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/enter-password": {
+    "answer": {
+      "note": "typed bWTa in both fields, Submit",
+      "logs": [
+        "reward: 0.9775833333333334 (raw: 1)"
+      ],
+      "discountedReward": 0.9775833333333334,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/focus-text-2": {
+    "answer": {
+      "note": "clicked 3rd textbox",
+      "logs": [
+        "reward: 0.9814611111111111 (raw: 1)"
+      ],
+      "discountedReward": 0.9814611111111111,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/drag-box": {
+    "answer": {
+      "note": "dragged small box into large, Submit",
+      "logs": [
+        "reward: 0.9149333333333334 (raw: 1)"
+      ],
+      "discountedReward": 0.9149333333333334,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/drag-items": {
+    "answer": {
+      "note": "dragged Kori to bottom; order Mavis,Mireielle,Kalli,Cherye,Kori",
+      "logs": [
+        "reward: 0.9733055555555555 (raw: 1)"
+      ],
+      "discountedReward": 0.9733055555555555,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/scroll-text": {
+    "answer": {
+      "note": "scrolled textarea to bottom, entered \"non\" (last word \"non.\" without period), Submit",
+      "logs": [
+        "reward: 0.91185 (raw: 1)"
+      ],
+      "discountedReward": 0.91185,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/use-slider": {
+    "answer": {
+      "note": "dragged slider to -81, Submit",
+      "logs": [
+        "reward: 0.8965888888888889 (raw: 1)"
+      ],
+      "discountedReward": 0.8965888888888889,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/simple-algebra": {
+    "answer": {
+      "note": "0 + x = 54 -> 54, Submit",
+      "logs": [
+        "reward: 0.9771111111111112 (raw: 1)"
+      ],
+      "discountedReward": 0.9771111111111112,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "miniwob/email-inbox-delete": {
+    "answer": {
+      "note": "clicked trash icon on Cordelia email",
+      "logs": [
+        "reward: 0.9471388888888889 (raw: 1)"
+      ],
+      "discountedReward": 0.9471388888888889,
+      "rawReward": 1,
+      "reason": "done, raw reward 1 (console)"
+    },
+    "ok": true
+  },
+  "T9": {
+    "answer": {
+      "tabsBefore": 1,
+      "tabsAfter": 1,
+      "closed": "own tab"
+    },
+    "ok": true
+  }
+}

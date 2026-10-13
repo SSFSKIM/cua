@@ -1,0 +1,16 @@
+{
+  "service": "vendor",
+  "commit": "9897fcc",
+  "profile": "ssfs",
+  "model": "claude-sonnet (benchmark controller subagent)",
+  "runtime": "26.928.40906-darwin-arm64",
+  "started": "2026-10-13T18:22:15.981Z",
+  "finished": "2026-10-13T18:25:49.448Z",
+  "attestation": {
+    "route": "resident-agent",
+    "residentCommit": "9897fcc",
+    "selectedBrowserHeader": "# Selected Browser\n- Name: cua\n- Type: extension\n- ID: 1",
+    "marker": null
+  },
+  "remoteDirectory": "/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cua-bench/vendor-run-3"
+}

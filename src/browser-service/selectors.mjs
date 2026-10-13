@@ -289,7 +289,7 @@ const isInheritingUrl = url => {                                                
 const frameList = tree => [tree.frame, ...(tree.childFrames ?? []).flatMap(frameList)];                             // o_
 
 // A failure no further attempt can mend (kf, and the M1a ruling on dialogs) -> the error to throw, or null.
-function finalError(error) {
+export function finalError(error) {
   if (error instanceof BrowserServiceError) return error.code === 'dialog_open' || error.code === 'strict_mode_violation' ? error : null;
   if (messageOf(error).includes('strict mode violation:')) return new BrowserServiceError('strict_mode_violation', messageOf(error), {cause: error});
   return null;
@@ -307,7 +307,7 @@ const objectsOf = remoteObjects;
 
 // The budget one attempt's dispatches get: the command's, or, for an explicit zero budget (one attempt, as the vendor's
 // loop makes it), the default action budget instead of the host's own bound (the controller's M1b ruling).
-const attemptBudget = deadline => (deadline.ms > 0 ? deadline : new Deadline(DEFAULT_ACTION_MS));
+export const attemptBudget = deadline => (deadline.ms > 0 ? deadline : new Deadline(DEFAULT_ACTION_MS));
 
 // An element a selector resolved to, by its backend node: valid until its document changes.
 export class ElementHandle {

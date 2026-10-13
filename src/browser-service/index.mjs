@@ -23,9 +23,13 @@ import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {DOCUMENTATION_HANDLERS, Documentation, documentationAddendum} from './docs.mjs';
 import {serviceError} from './errors.mjs';
 import {API_MANIFEST, disabledMemberIds} from './manifest.mjs';
+import {EVALUATE_HANDLERS} from './evaluate.mjs';
 import {NAVIGATION_HANDLERS} from './navigation.mjs';
+import {READ_HANDLERS} from './reads.mjs';
 import {BrowserSession} from './session.mjs';
+import {AX_HANDLERS, SNAPSHOT_HANDLERS} from './snapshot.mjs';
 import {TAB_HANDLERS} from './tabs.mjs';
+import {VISIBLE_DOM_HANDLERS} from './visible-dom.mjs';
 
 export const SERVICE_VERSION = '0.1.0';            // also the content of src/browser-service/VERSION
 
@@ -71,7 +75,8 @@ function browserCommand(type, run) {
 export const COMMAND_HANDLERS = new Map([
   ...Object.entries(SELECTION_HANDLERS),
   ...Object.entries(DOCUMENTATION_HANDLERS),
-  ...Object.entries({...TAB_HANDLERS, ...NAVIGATION_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
+  ...Object.entries({...TAB_HANDLERS, ...AX_HANDLERS, ...NAVIGATION_HANDLERS, ...READ_HANDLERS, ...EVALUATE_HANDLERS, ...SNAPSHOT_HANDLERS,
+    ...VISIBLE_DOM_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
 ]);
 
 // What one setup made: the backends, the documentation and a session per backend connection.

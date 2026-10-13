@@ -33,7 +33,7 @@ export const INJECTED_OPTIONS = Object.freeze({
 const WORLD_LIMIT = 50;                         // YY
 const RELEASE_MS = 100;                         // V1
 // The fields a read must not reveal the value of (Pn): hidden inputs and anything named like a credential.
-const CREDENTIAL_FIELDS = {
+export const CREDENTIAL_FIELDS = {
   attributes: ['type', 'autocomplete', 'id', 'name', 'placeholder', 'aria-label', 'title'],
   pattern: /user[-_ ]?name|e[-_ ]?mail|one[-_ ]?time[-_ ]?code|password|passcode|passwd|\botp\b|\b(?:2fa|mfa)\b|phone|mobile|\btel\b/i.source,
 };
@@ -41,7 +41,7 @@ const CREDENTIAL_FIELDS = {
 const VENDORED_SOURCE = readFileSync(new URL('./vendor/injected-script.js', import.meta.url), 'utf8');
 
 // Runs in the page (qi): whether `element` is a form field whose value a read must not return.
-function isProtectedCredentialField(element, fields) {
+export function isProtectedCredentialField(element, fields) {
   const tag = element.tagName.toLowerCase();
   if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') return false;
   if (element.getAttribute('type')?.toLowerCase() === 'hidden') return true;

@@ -80,6 +80,7 @@ class FakeElement {
   get textContent() { return this.ownText + this.children.map(c => c.textContent).join(''); }
   get innerText() { return this.visible ? this.textContent : ''; }
   getAttribute(name) { return Object.hasOwn(this.attrs, name) ? String(this.attrs[name]) : null; }
+  get attributes() { return Object.entries(this.attrs).map(([name, value]) => ({name, value: String(value)})); }
   *descendants() { for (const child of this.children) { yield child; yield* child.descendants(); } }
   scrollIntoView() {}
   getBoundingClientRect() { return {left: 10, top: 20, width: 300, height: 150}; }
@@ -228,7 +229,8 @@ export function pageWorld() {
       return {executionContextId: worldOf(frame, worldName).id};
     },
     'Runtime.evaluate': async (target, params) => {
-      const ctx = contexts.get(params.contextId);
+      // Without a context id, the target's main frame in the page's own world (Chrome's default context).
+      const ctx = params.contextId == null ? worldOf(processOf(target).frames.get(processOf(target).rootFrameId), '') : contexts.get(params.contextId);
       if (ctx == null || ctx.frame.process !== processOf(target)) throw new Error('Cannot find context with specified id');
       ctx.evaluations = (ctx.evaluations ?? 0) + 1;
       return await run(ctx, () => vm.runInContext(params.expression, ctx.context), params.returnByValue === true, params.objectGroup);
@@ -257,14 +259,14 @@ export function pageWorld() {
       return {node: {nodeId: 0, backendNodeId: element.backendNodeId, nodeName: element.tagName, localName: element.localName,
         ...(element.contentFrameId ? {frameId: element.contentFrameId} : {})}};
     },
-    'DOM.resolveNode': (target, {backendNodeId, executionContextId}) => {
+    'DOM.resolveNode': (target, {backendNodeId, executionContextId, objectGroup}) => {
       const process = processOf(target);
       for (const frame of process.frames.values()) {
         for (const element of [frame.document, ...frame.document.descendants()]) {
           if (element.backendNodeId !== backendNodeId) continue;
           const ctx = executionContextId == null ? worldOf(frame, '') : contexts.get(executionContextId);
           if (ctx == null) throw new Error('Cannot find context with specified id');
-          return {object: {type: 'object', subtype: 'node', objectId: register(element, ctx)}};
+          return {object: {type: 'object', subtype: 'node', objectId: register(element, ctx, objectGroup)}};
         }
       }
       throw new Error('No node with given id found');

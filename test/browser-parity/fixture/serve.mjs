@@ -53,7 +53,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
     } catch { send(400,{error:'invalid request'}); }
   });
   await new Promise((resolve,reject) => {server.once('error',reject);server.listen(port,host,resolve);});
-  return {server,url:`http://${host}:${server.address().port}`,close:() => new Promise(resolve => server.close(resolve))};
+  return {server,url:`http://${host}:${server.address().port}`,close:() => new Promise(resolve => {server.close(resolve);server.closeAllConnections();})};
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const portIndex = process.argv.indexOf('--port');

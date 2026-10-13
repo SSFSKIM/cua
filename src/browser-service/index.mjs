@@ -107,9 +107,10 @@ class ServiceRuntime {
   async executeAgentCommand(command) {
     if (this.disposed) throw new Error('Browser runtime is disposed');
     const {type, ...params} = command;
-    this.docs.assertRequiredDocumentationRead(type);
+    // A command this service does not serve is refused as such, before asking for documentation it could not use.
     const handler = COMMAND_HANDLERS.get(type);
     if (typeof handler !== 'function') throw serviceError('unsupported_command', type);
+    this.docs.assertRequiredDocumentationRead(type);
     return await handler(params, this);
   }
 

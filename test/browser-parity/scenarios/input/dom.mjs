@@ -9,7 +9,11 @@ export default {
   },
   {
     "label": "type",
-    "code": "const m=domText.split(\"\\n\").find(line=>line.includes(\"Pointer input\"))?.match(/node_id[=\\\" :]+(\\d+)[^\\n]*Pointer input/);if(!m)throw new Error('fixture input node missing from visible DOM');await tab.dom_cua.click({node_id:m[1]});await tab.dom_cua.type({text:'dom'});await tab.dom_cua.keypress({keys:['END']});return await tab.playwright.locator('#input').evaluate(e=>e.value);"
+    "code": "const m=domText.split(\"\\n\").find(line=>line.includes(\"Pointer input\"))?.match(/node_id[=\\\" :]+(\\d+)[^\\n]*Pointer input/);if(!m)throw new Error('fixture input node missing from visible DOM');await tab.dom_cua.click({node_id:m[1]});await tab.dom_cua.type({text:'dom'});return await tab.playwright.locator('#input').evaluate(e=>e.value);"
+  },
+  {
+    "label": "end-key",
+    "code": "await tab.dom_cua.keypress({keys:['HOME']});const before=await tab.playwright.locator('#input').evaluate(e=>e.selectionStart);await tab.dom_cua.keypress({keys:['END']});const after=await tab.playwright.locator('#input').evaluate(e=>e.selectionStart);return {before,after};"
   },
   {
     "label": "double",
@@ -17,8 +21,8 @@ export default {
   },
   {
     "label": "scroll",
-    "code": "await tab.dom_cua.scroll({x:0,y:400});return true;"
+    "code": "const before=await tab.playwright.evaluate('window.scrollY');await tab.dom_cua.scroll({x:0,y:400});const after=await tab.playwright.evaluate('window.scrollY');return {before,moved:after>before};"
   }
 ],
-  assert:expectValues({nodes:true,type:'dom',double:true,scroll:true},s=>s.events.some(e=>e.text==='dom')&&s.events.some(e=>e.double)),
+  assert:expectValues({nodes:true,type:'dom','end-key':{before:0,after:3},double:true,scroll:{before:0,moved:true}},s=>s.events.some(e=>e.text==='dom')&&s.events.some(e=>e.double)),
 };

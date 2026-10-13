@@ -1,6 +1,6 @@
 import {expectValues} from '../../support/assertions.mjs';
 export default {
-  id:"input/ax-disabled", milestone:"M1c", commands:["tab_ax_action"],
+  id:"input/ax-disabled", milestone:"M1b", commands:["tab_ax_action"],
   setup:{page:"/counter.html",state:{}},
   disabledAssertions:['tab_ax_action'],
   cells:[

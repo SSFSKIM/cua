@@ -41,3 +41,14 @@ test('control event acknowledgement consumes a successful fixture response and r
   assert.deepEqual(recorded,{counter:0,events:[{double:true}]});
   assert.deepEqual(await (await fetch(fixture.url+'/state')).json(),recorded);
 });
+
+test('reload and pending-load fixtures expose transitions instead of already-satisfied conditions',async t=>{
+  const fixture=await startFixture({port:0});t.after(()=>fixture.close());
+  const first=await (await fetch(fixture.url+'/reload.html')).text();
+  const second=await (await fetch(fixture.url+'/reload.html')).text();
+  assert.match(first,/id="reload-count">1</);assert.match(second,/id="reload-count">2</);
+  const loading=await (await fetch(fixture.url+'/loading.html')).text();assert.match(loading,/id="pending-load"/);assert.match(loading,/slow-resource.svg/);
+  const start=performance.now();const resource=await fetch(fixture.url+'/slow-resource.svg');await resource.text();
+  assert.equal(resource.status,200);assert.ok(performance.now()-start>=1000,'resource must leave an observable pending load');
+  assert.equal((await (await fetch(fixture.url+'/state')).json()).reloads,2);
+});

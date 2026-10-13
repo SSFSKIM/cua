@@ -679,7 +679,7 @@
     "type": "tab_ax_action",
     "schemaSource": "chatgpt-26.928.40906 BS:32880",
     "dispatch": "Rf",
-    "milestone": "M1c",
+    "milestone": "M1b",
     "cases": [
       "input/ax-disabled"
     ],

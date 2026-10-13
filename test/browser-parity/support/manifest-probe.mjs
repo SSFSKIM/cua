@@ -14,10 +14,10 @@ export function vendorPath() {
   const path=join(home,'runtimes',release,'cua_node/lib/node_modules/@oai/browser-desktop/scripts/browser-service.mjs');
   return existsSync(path)?path:null;
 }
-export function probe(path, commands=[]) {
+export function probe(path, registryCheck=null) {
   const home=mkdtempSync(join(tmpdir(),'cua-manifest-'));
   try {
-    const output=execFileSync(process.execPath,[fileURLToPath(new URL('./probe-worker.mjs',import.meta.url)),path,JSON.stringify(commands)],{
+    const output=execFileSync(process.execPath,[fileURLToPath(new URL('./probe-worker.mjs',import.meta.url)),path,JSON.stringify(registryCheck)],{
       env:{PATH:process.env.PATH,HOME:home,TMPDIR:home},encoding:'utf8',timeout:30000,maxBuffer:4*1024*1024});
     return JSON.parse(output.split('\n').find(l=>l.startsWith('MANIFEST ')).slice(9));
   } finally {rmSync(home,{recursive:true,force:true});}
@@ -42,8 +42,7 @@ export async function checkOwnService(inventory,current) {
   const milestones=['M0','M1a','M1b','M1c','M2','M3'];
   assert.ok(milestones.includes(current),`unknown current milestone ${current}`);
   const rows=inventory.filter(r=>milestones.indexOf(r.milestone)<=milestones.indexOf(current));
-  const result=probe(own,rows.map(r=>r.type));
-  for(const row of rows) assert.notEqual(result.commands[row.type]?.code,'unsupported_command',`missing handler ${row.type}`);
+  const result=probe(own,{inventory:rows,current});
   const vendor=vendorPath();
   if(!vendor) {console.log('# SKIP vendor module absent: own/vendor manifest comparison');return;}
   const expected=probe(vendor);

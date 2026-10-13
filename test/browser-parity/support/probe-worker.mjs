@@ -1,5 +1,6 @@
 import {EventEmitter} from 'node:events';
 import {pathToFileURL} from 'node:url';
+import {assertHandlerRegistry} from './handler-registry.mjs';
 const backendRequests=[];
 const info={type:'extension',family:'chrome',name:'cua',version:'0.3.0',capabilities:{browser:[{id:'viewport',description:'Viewport override'}],tab:[]},metadata:{extensionInstanceId:'parity-fake-extension',profileName:'scratch'}};
 class Pipe extends EventEmitter {
@@ -30,15 +31,12 @@ globalThis.nodeRepl={
 };
 try {
   const service=await import(pathToFileURL(process.argv[2]));
+  const registryCheck=JSON.parse(process.argv[3]??'null');
+  if(registryCheck)assertHandlerRegistry(service.COMMAND_HANDLERS,registryCheck.inventory,registryCheck.current);
   const setup=await service.handleRpc({method:'setup',params:{environment:'codex-app'}});
   const browsers=await service.handleRpc({method:'execute',params:{type:'list_browsers'}});
   if(browsers.length!==1)throw new Error(`expected one fake backend, got ${browsers.length}`);
   const browser=await service.handleRpc({method:'execute',params:{type:'get_browser',id:browsers[0].id}});
-  const commands={};
-  for(const type of JSON.parse(process.argv[3]??'[]')) {
-    try {await service.handleRpc({method:'execute',params:{type,browser_id:browser.id,tab_id:'999'}});commands[type]={ok:true};}
-    catch(e){commands[type]={code:e.code??e.reason??e.name,message:e.message};}
-  }
-  console.log('MANIFEST '+JSON.stringify({setup,capabilities:browser.capabilities,backendRequests,commands}));
+  console.log('MANIFEST '+JSON.stringify({setup,capabilities:browser.capabilities,backendRequests}));
   process.exit(0);
 } catch(e) {console.error(e.stack);process.exit(1);}

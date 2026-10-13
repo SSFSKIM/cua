@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const archive = new URL('../../../docs/evidence/2026-10-05-browser-route-benchmark/fixture/', import.meta.url);
-const html = body => `<!doctype html><meta charset="utf-8"><title>Browser parity fixture</title>${body}`;
+const html = (body,title="Browser parity fixture") => `<!doctype html><meta charset="utf-8"><title>${title}</title>${body}`;
 const record = `fetch('/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify`;
 export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
   let state = {counter:0,events:[]};
@@ -37,6 +37,15 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
         return send(200,state);
       }
       if (req.method !== 'GET') return send(405,{error:'method not allowed'});
+      if (url.pathname === '/reload.html') {
+        state.reloads=(state.reloads??0)+1;
+        return send(200,html(`<output id="reload-count">${state.reloads}</output>`,`Reload ${state.reloads}`),'text/html; charset=utf-8');
+      }
+      if (url.pathname === '/slow-resource.svg') {
+        await new Promise(resolve=>{const timer=setTimeout(resolve,1200);res.once('close',()=>{clearTimeout(timer);resolve();});});
+        if(res.destroyed)return;
+        return send(200,imageSvg,'image/svg+xml');
+      }
       if (url.pathname === '/image.svg') return send(200,imageSvg,'image/svg+xml');
       if (url.pathname === '/download') {res.setHeader('content-disposition','attachment; filename="parity.txt"');return send(200,'parity download\n','text/plain');}
       if (url.pathname.startsWith('/benchmark/')) {

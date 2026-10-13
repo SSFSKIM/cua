@@ -5,7 +5,7 @@ export default {
   cells:[
   {
     "label": "goto",
-    "code": "await tab.goto(fixtureURL+'/read.html');return new URL(await tab.url()).pathname;"
+    "code": "await tab.goto(fixtureURL+'/reload.html');return new URL(await tab.url()).pathname;"
   },
   {
     "label": "back",
@@ -17,8 +17,8 @@ export default {
   },
   {
     "label": "reload",
-    "code": "await tab.reload();return new URL(await tab.url()).pathname;"
+    "code": "const before=Number((await tab.title()).slice('Reload '.length));await tab.reload();const after=Number((await tab.title()).slice('Reload '.length));return {path:new URL(await tab.url()).pathname,reloaded:after===before+1};"
   }
 ],
-  assert:expectValues({goto:'/read.html',back:'/counter.html',forward:'/read.html',reload:'/read.html'}),
+  assert:expectValues({goto:'/reload.html',back:'/counter.html',forward:'/reload.html',reload:{path:'/reload.html',reloaded:true}},s=>s.reloads>=2),
 };

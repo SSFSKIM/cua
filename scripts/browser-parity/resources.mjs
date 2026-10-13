@@ -36,5 +36,5 @@ export function traceControl({device,home,path}) {
   }
   const node=code=>execute(remoteCommand(device,`node -e ${quote(code)}`));
   node(`const f=require('fs'); f.mkdirSync(${JSON.stringify(join(home,'state'))},{recursive:true});f.writeFileSync(${JSON.stringify(config)},${JSON.stringify(JSON.stringify({path}))},{flag:'wx',mode:384});`);
-  return {read:async()=>JSON.parse(node(`const f=require('fs');let s='';try{s=f.readFileSync(${JSON.stringify(path)},'utf8')}catch(e){if(e.code!=='ENOENT')throw e;}console.log(JSON.stringify(s.trim().split('\n').filter(Boolean).map(JSON.parse)));`)),close:()=>node(`const f=require('fs');f.unlinkSync(${JSON.stringify(config)});f.rmSync(${JSON.stringify(path)},{force:true});`)};
+  return {read:async()=>JSON.parse(node(`const f=require('fs');let s='';try{s=f.readFileSync(${JSON.stringify(path)},'utf8')}catch(e){if(e.code!=='ENOENT')throw e;}console.log(JSON.stringify(s.trim().split('\\n').filter(Boolean).map(JSON.parse)));`)),close:()=>node(`const f=require('fs');f.unlinkSync(${JSON.stringify(config)});f.rmSync(${JSON.stringify(path)},{force:true});`)};
 }

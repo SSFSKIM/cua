@@ -282,6 +282,8 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
 
   // ---- the two tools ----
 
+  const relayUnreachable = state => state.code === 'timeout' || state.code === 'relay_unreachable';
+
   async function list(msg) {
     let entries;
     try { entries = await devices.list(); } catch (error) {
@@ -290,9 +292,15 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
     const probed = await Promise.all(entries.map(async ({name, deviceId, relayUrl}) => {
       let state;
       try { state = await devices.probe(name); } catch (error) { state = {status: 'offline', code: error?.code ?? 'device_protocol'}; }
-      return {name, deviceId, relay: relayUrl, ...state};
+      const guidance = relayUnreachable(state)
+        ? `The relay origin ${relayUrl} is not answering (or its proxy cannot reach the device); check the relay host before the device: curl ${relayUrl}/, and the hosting provider's server list.`
+        : state.status === 'offline' && !state.code
+          ? 'The relay answered, but this device has no live link; on the device check cua agent status and cua doctor.' : null;
+      return {name, deviceId, relay: relayUrl, ...state, ...(guidance ? {guidance} : {})};
     }));
-    respond(msg.id, statusResult({status: 'ok', current: targetName(), devices: [{name: LOCAL, status: 'online'}, ...probed]}));
+    const outages = [...new Set(probed.map(d => d.relay))].filter(relay => probed.filter(d => d.relay === relay).every(relayUnreachable));
+    const guidance = outages.map(relay => `Every device on relay ${relay} reports timeout/relay_unreachable; check that relay host first, rather than restarting each device.`).join('\n');
+    respond(msg.id, statusResult({status: 'ok', current: targetName(), devices: [{name: LOCAL, status: 'online'}, ...probed], ...(guidance ? {guidance} : {})}));
   }
 
   async function switchTo(msg, wanted, signal) {

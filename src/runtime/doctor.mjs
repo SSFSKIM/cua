@@ -61,6 +61,7 @@ import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
+import {relayHealthRow} from '../remote/health.mjs';
 import {agentLogPath, agentStatus} from '../remote/launchd.mjs';
 import * as systemd from '../remote/systemd.mjs';
 import {checkConsole, consoleCheckFrom} from '../remote/console.mjs';
@@ -225,7 +226,7 @@ async function codexLoginCheck({home, runtime, untrusted, inspectLogin}) {
     : result('codex.login', 'blocked', `no Codex login in the server's own CODEX_HOME (${status.reason ?? status.state}); the ChatGPT extension route needs one: run cua login`);
 }
 
-const AGENT_ROWS = ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'];
+const AGENT_ROWS = ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console', 'agent.relay'];
 
 // The remote-control rows. `launchd` ({userHome, uid, launchctl}), `systemd` ({userHome, user, systemctl, loginctl}),
 // `checkConsole` and `checkDisplay` are seams: tests never read the real launchd domain, ~/Library/LaunchAgents, the
@@ -248,7 +249,7 @@ export async function agentChecks({home, env = process.env, host, launchd = {}, 
   // a job (the agent sees only its plist's environment), else doctor's own.
   const uid = launchd.uid ?? process.getuid();
   return [installedRow(status, device), runningRow(status, home, uid), enrolledRow(home, device, deviceError),
-    await consoleRow(status.job ? status.job.environment : env, uid, readConsole, status.job ? 'the agent\'s job' : 'this environment')];
+    await consoleRow(status.job ? status.job.environment : env, uid, readConsole, status.job ? 'the agent\'s job' : 'this environment'), relayHealthRow(home, device?.relayUrl)];
 }
 
 async function linuxAgentChecks({home, env, device, deviceError, unitSeams, checkDisplay}) {
@@ -258,7 +259,7 @@ async function linuxAgentChecks({home, env, device, deviceError, unitSeams, chec
     return AGENT_ROWS.map(name => result(name, 'skip', notSetUp));
   }
   return [unitInstalledRow(status, device), unitRunningRow(status, home), enrolledRow(home, device, deviceError, 'this machine'),
-    await displayRow(status.job ? {HOME: env.HOME ?? homedir(), ...status.job.environment} : env, status.job ? 'the agent\'s unit' : 'this environment', checkDisplay)];
+    await displayRow(status.job ? {HOME: env.HOME ?? homedir(), ...status.job.environment} : env, status.job ? 'the agent\'s unit' : 'this environment', checkDisplay), relayHealthRow(home, device?.relayUrl)];
 }
 
 // What is wrong with an installed job's program and its relay flag, whichever manager runs it.

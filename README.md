@@ -717,13 +717,18 @@ the relay (the agent reconnects with the new credential), and re-register the cl
 node bin/cua.mjs agent install --http <the Mac's address>:7801   # LAN or tailnet; add --surfaces <list> to narrow it
 node bin/cua.mjs agent install                                   # relay only (enrolled with --relay)
 node bin/cua.mjs agent status                                    # the job, the node it runs, running (pid)
-node bin/cua.mjs doctor                                          # agent.installed, agent.running, agent.enrolled, agent.console
+node bin/cua.mjs doctor                                          # agent.installed, agent.running, agent.enrolled, agent.console, agent.relay
 node bin/cua.mjs agent uninstall                                 # stop the job and remove it
 ```
 
 `agent install` writes `~/Library/LaunchAgents/com.ssfskim.cua.agent.plist` and loads it into your GUI session
 (`launchctl bootstrap gui/<uid>`). The job runs `<node> <this checkout>/bin/cua.mjs agent run`, with `--relay` when the
 Mac is enrolled with a relay and `--http <host:port>` when given; with neither it refuses (`agent_nothing_to_serve`).
+The passive doctor's `agent.relay` row reads `$CUA_HOME/state/agent.json`, beside the log: the relay URL,
+connection state, last error, first failure and last connection timestamps. Connects, reconnects, failures and relay
+pings update it atomically. A connected record confirmed within 90 s passes; failures, missing records (including an
+older agent) and stale records block with the cause. No enrolled relay means skip; doctor never dials.
+
 It starts at login, is restarted after a crash but not after a deliberate stop, logs to `$CUA_HOME/state/agent.log`,
 and its environment carries `CUA_HOME` (when set), `CUA_SHIM_SURFACES` (default `computer,browser`) and each of the
 agent's settings (`CUA_AGENT_*`, below) set in the environment `install` runs in. Running `install` again replaces the
@@ -909,6 +914,12 @@ those set into the job; an `install` without them leaves them out, back to the d
 bounds: a request body over 4 MB is `413`; a session whose undelivered server messages would pass 16 MB is closed.
 
 ### When the relay or the Mac is offline
+
+`devices_list` distinguishes `timeout` / `relay_unreachable` (the relay origin is not answering, or its proxy cannot
+reach the device) from a bare `offline` (the relay answered but the device has no link). When every registered device
+on one relay reports the former, one guidance line points to that relay host. Check `curl https://<relay>/` and the
+hosting provider (`hcloud server list`) before troubleshooting every device. `relay/README.md` documents rebuilding
+on the same IP and a loopback relay over SSH as a temporary recovery.
 
 What a standalone client (5) sees; through the plugin (4) the same conditions arrive as the codes in 4's table.
 

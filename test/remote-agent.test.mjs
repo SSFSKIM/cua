@@ -826,3 +826,22 @@ test('a failure while stopping after a refusal is logged and does not replace th
   assert.ok(diagnostics.some(line => /close broke/.test(line)), diagnostics.join('\n'));
   assert.equal(existsSync(join(home, 'state', 'agent.lock')), false);
 });
+
+test('relay lifecycle publishes failures, connects, heartbeat freshness, recovery and terminal close', {skip: NEEDS_WS}, async t => {
+  const states = [];
+  const relay = await fakeRelay(t, {pingMs: 10});
+  const {link} = await dial(t, relay.url, {onState: state => states.push(state)});
+  await until(() => states.filter(s => s.status === 'connected').length >= 2, 'open and ping health');
+  relay.connections[0].socket.close(1011, 'try again');
+  await until(() => relay.connections.length === 2 && states.at(-1).status === 'connected', 'recovery health');
+  assert.ok(states.some(s => s.status === 'failing' && /1011.*try again/.test(s.error)));
+  relay.connections[1].socket.close(4003, 'refused');
+  await link.stopped;
+  assert.deepEqual(states.at(-1), {url: relay.url, status: 'stopped', error: '4003: refused'});
+  const failures = [];
+  const failed = await dial(t, 'ws://127.0.0.1:1/ws', {onState: state => failures.push(state)});
+  await until(() => failures.filter(s => s.status === 'failing').length >= 2, 'each failed attempt');
+  assert.match(failures.at(-1).error, /ECONNREFUSED/);
+  await failed.link.close();
+  assert.equal(failures.at(-1).status, 'stopped');
+});

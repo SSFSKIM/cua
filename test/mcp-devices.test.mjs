@@ -137,7 +137,9 @@ test('devices_list: local first and current; each device probed online, locked, 
   const response = await h.client.call('devices_list').response;
   assert.equal(response.result.isError, false);
   assertModelSeesText(response);
-  assert.deepEqual(structured(response), {status: 'ok', current: 'local', devices: [
+  const {guidance, devices, ...summary} = structured(response);
+  assert.match(guidance, /Every device on relay http:\/\/127.0.0.1:1/);
+  assert.deepEqual({...summary, devices: devices.map(({guidance, ...device}) => device)}, {status: 'ok', current: 'local', devices: [
     {name: 'local', status: 'online'},
     {name: 'bare', deviceId: bare.deviceId, relay: bare.relayUrl, status: 'unauthorized', code: 'credential_missing'},
     {name: 'gone', deviceId: gone.deviceId, relay: 'http://127.0.0.1:1', status: 'offline', code: 'relay_unreachable'},
@@ -792,4 +794,24 @@ test('a connection closing while devices_use DELETEs the previous device\'s sess
   assert.equal(h.client.responsesFor(switching.id).length, 1, 'answered before closed settled');
   assert.equal(code(h.client.responsesFor(switching.id)[0]), 'connection_closing');
   heldDelete.res.destroy();
+});
+
+test('devices_list distinguishes an unreachable relay from an unlinked device and groups relay outages', async t => {
+  const entries = [
+    {name: 'a', deviceId: 'a', relayUrl: 'https://down.example'},
+    {name: 'b', deviceId: 'b', relayUrl: 'https://down.example'},
+    {name: 'c', deviceId: 'c', relayUrl: 'https://live.example'},
+  ];
+  const probes = {a: {status: 'offline', code: 'timeout'}, b: {status: 'offline', code: 'relay_unreachable'}, c: {status: 'offline'}};
+  const h = await local(t, userHome(t), {devices: {list: async () => entries, probe: async name => probes[name]}});
+  const response = await h.client.call('devices_list', {}).response;
+  const fields = structured(response);
+  assert.match(fields.devices.find(d => d.name === 'a').guidance, /relay origin.*not answering/i);
+  assert.match(fields.devices.find(d => d.name === 'c').guidance, /relay.*answered.*no live link/i);
+  assert.match(fields.guidance, /every device.*https:\/\/down.example/i);
+  assert.equal(fields.guidance.split('\n').length, 1);
+  assertModelSeesText(response, 'https://down.example');
+  probes.b = {status: 'online'};
+  const mixed = structured(await h.client.call('devices_list', {}).response);
+  assert.equal(mixed.guidance, undefined, 'a healthy device on the same relay rules out an all-device outage');
 });

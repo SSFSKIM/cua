@@ -82,6 +82,38 @@ A real domain later: point its DNS at the address, change the site line of `/etc
 without a restart; clients re-register on the new URL). Logs: `journalctl -u cua-relay` and `journalctl -u caddy`.
 The standing setup and its acceptance run: `docs/evidence/2026-10-06-hosted-relay-acceptance.md`.
 
+## Stopgap: hosted relay down, SSH still works
+
+First check `curl https://<relay>/` and `hcloud server list`. Rebuilding with `deploy/create-server.sh` reuses the
+reserved primary IP; restore the full devices table afterwards. While waiting, an already enrolled device can use a
+loopback relay tunneled through SSH. This temporarily moves its relay link, not its identity or credentials; agree
+with other clients before switching. No agent restart is needed. Keep the original relay URL for restoration.
+
+On the device, from its cua checkout (leave the relay running in this terminal):
+
+```sh
+# Hashes only; remote show does not print the client credential.
+(umask 077; { printf '{\n'; cua remote show --json | jq -r .devicesEntry; printf '}\n'; } > /tmp/cua-loopback-devices.json)
+node relay/server.mjs --port 7800 --devices /tmp/cua-loopback-devices.json
+```
+
+In another device terminal, `cua remote enroll --relay ws://127.0.0.1:7800/ws` moves the existing link; do not use
+`--rotate`. The running relay-enabled agent redials within about 30 s. On the client:
+
+```sh
+ssh -N -L 17800:127.0.0.1:7800 <device-ssh-host>
+cua devices add mini-local --relay http://127.0.0.1:17800 --device=<existing-device-id>
+```
+
+Run the second command in another terminal while the tunnel stays up. It reuses the existing device's stored
+credential (same device id), never copies it into the relay table. `devices_list`, then `devices_use mini-local`
+works normally. Both plaintext listeners are loopback-only; SSH protects the network leg.
+
+After the hosted relay and its devices table are restored, end the temporary task, move the device back with
+`cua remote enroll --relay wss://<original-relay>/ws`, verify `agent.relay` and the original client entry, and switch
+back. Stop only the temporary relay and tunnel you started, remove the hash table and `cua devices remove mini-local`.
+Do not restart the resident agent, Chrome or its hosts.
+
 ## Add a device
 
 On the Mac: `cua remote enroll --relay wss://<relay>/ws` (or, already enrolled, the same command updates the relay URL

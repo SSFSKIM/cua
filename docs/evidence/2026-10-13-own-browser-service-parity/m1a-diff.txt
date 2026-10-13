@@ -1,0 +1,21 @@
+M1a live parity on the mini (parity clone at 4b880133bd199d180e6ae66d283548fc08765312, profile ssfs; the host is the
+resident one, so host traces are empty). Scenarios: the M1a cases, tabs/*.mjs and examples/*.mjs.
+
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'tabs/*.mjs,examples/*.mjs' --out cua-m1a-1
+$ node scripts/browser-parity.mjs diff vendor-1 cua-m1a-1 --scenarios 'tabs/*.mjs,examples/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (6 cases, 30 cells, 0 expected; scenarios tabs/*.mjs,examples/*.mjs)
+exit 0
+
+The case setup changed at 4b88013 (a case's tab is made with browser.tabs.new() and tab.goto(page) instead of
+cua.createBrowserTab, whose closing DOM snapshot read is M1b's playwright_dom_snapshot). The control run shows the
+vendor's cells are unchanged by it:
+
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'tabs/*.mjs,examples/*.mjs' --out vendor-m1a-setup
+$ node scripts/browser-parity.mjs diff vendor-1 vendor-m1a-setup --scenarios 'tabs/*.mjs,examples/*.mjs'
+0 differences (6 cases, 30 cells; scenarios tabs/*.mjs,examples/*.mjs)
+$ node scripts/browser-parity.mjs diff vendor-m1a-setup cua-m1a-1 --scenarios 'tabs/*.mjs,examples/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (6 cases, 30 cells, 0 expected; scenarios tabs/*.mjs,examples/*.mjs)
+
+A first cua run at 6f468d0 failed every case's setup with "Unsupported browser command: playwright_dom_snapshot"
+(cua.createBrowserTab), which is what moved the setup. After the runs: no parity process left on the mini, the parity
+clone clean at 4b88013.

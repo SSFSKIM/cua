@@ -7,7 +7,8 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | milestone | branch | PR | state |
 |---|---|---|---|
 | M0 | feat/own-browser-service | https://github.com/SSFSKIM/cua/pull/121 | merged |
-| M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | reviewed clean at aad5235 (reviewer-high), awaiting merge |
+| M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | merged (7bae04d); flaky-test residue registered as #123 |
+| M1b | feat/own-browser-service-m1b | — | executing (task 1: injected script and selectors) |
 
 ## Log
 

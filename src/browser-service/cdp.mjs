@@ -18,7 +18,7 @@
 // CDP expressions, telemetry spans and Sentry tags, and the extension's Page.navigationBlocked classification (the
 // browser_navigation_blocked reason is not kept; cua's host never sends the event). Changed: an onCDPDetach naming a
 // frame target drops that frame's session only, where the vendor forgets the whole tab (and with it an open dialog).
-import {BrowserServiceError, isDeadlineError, serviceError} from './errors.mjs';
+import {BrowserServiceError, DEADLINE_EXCEEDED, isDeadlineError, serviceError} from './errors.mjs';
 
 const UNATTACHED = 'Debugger unattached';
 const RAW_EVENT_LIMIT = 1000;                 // yO
@@ -52,6 +52,12 @@ const callTimeout = options => (options.deadline ? options.deadline.timeoutMs(op
 const dispatchTimeout = options => { options.beforeDispatch?.(); return callTimeout(options); };
 const withinDeadline = (work, options) => (options.deadline ? options.deadline.race(work) : work);
 const afterChecking = async (options, start) => { checkDeadline(options); return await withinDeadline(start(), options); };
+// What an attachment made for a command may use of the command's options: its budget, never its dispatch hooks (the
+// no-replay rule's beforeDispatch marks the command's own dispatch, not the setup's).
+const setupOptions = options => ({
+  ...(options.deadline !== undefined ? {deadline: options.deadline} : {}),
+  ...(options.timeoutMs !== undefined ? {timeoutMs: options.timeoutMs} : {}),
+});
 
 const targetIdOf = info => (typeof info?.targetId === 'string' ? info.targetId : typeof info?.id === 'string' ? info.id : undefined);   // sf
 const inTab = (info, tabId) => !('tabId' in info) || info.tabId == null || info.tabId === tabId;                                    // ZX
@@ -253,12 +259,15 @@ export class CdpController extends Emitter {
     checkDeadline(options);
     const canRetry = retry && !isNested(target) && !this.initializingTabIds.has(target.tabId);
     try {
-      await withinDeadline(this.ensureAttachedTab(target.tabId, {timeoutMs: callTimeout(options)}), options);
+      await withinDeadline(this.ensureAttachedTab(target.tabId, setupOptions(options)), options);
     } catch (error) {
       if (isUnattached(error) && canRetry) return await this.executeTargetCdp(target, method, params, options, false);
       throw classified(error);
     }
     if (options.prepareDispatch != null) await afterChecking(options, options.prepareDispatch);
+    // A dialog may have opened, or the budget run out, while the tab was attached or the dispatch prepared.
+    this.throwIfJsDialogBlocksMethod(target.tabId, method);
+    checkDeadline(options);
     const attachment = this.attachedTabIds.has(target.tabId) ? this.tabAttachmentPromises.get(target.tabId) : undefined;
     const timeoutMs = dispatchTimeout(options);
     try {
@@ -281,7 +290,7 @@ export class CdpController extends Emitter {
     const n = numericTab(tabId, 'enableOopifAutoAttach');
     if (this.oopifAutoAttachTabIds.has(n)) return;
     checkDeadline(options);
-    await withinDeadline(this.ensureAttachedTab(n, {timeoutMs: callTimeout(options)}), options);
+    await withinDeadline(this.ensureAttachedTab(n, setupOptions(options)), options);
     if (this.oopifAutoAttachTabIds.has(n)) return;
     await this.enableOopifAutoAttachForTarget({tabId: n}, options);
     this.oopifAutoAttachTabIds.add(n);
@@ -313,7 +322,7 @@ export class CdpController extends Emitter {
       }
     }
     checkDeadline(options);
-    await this.ensureAttachedTab(n);
+    await withinDeadline(this.ensureAttachedTab(n, setupOptions(options)), options);
     const targets = await this.callTarget({tabId: n}, 'Target.getTargets', {}, options).catch(() => null);
     checkDeadline(options);
     const inThisTab = targets?.targetInfos.filter(info => inTab(info, n)) ?? [];
@@ -371,12 +380,12 @@ export class CdpController extends Emitter {
     return result.result?.value;
   }
 
-  // {href, readyState, painted?} of the tab's document, or undefined when it cannot be read.
+  // {href, readyState, painted?} of the tab's document, or undefined when it cannot be read (or `deadline` is spent).
   async readDocumentState(tabId, options = {}) {
     try {
       const state = await this.evaluateJavascript(tabId, options.includePaint === true
         ? "({ href: window.location.href, readyState: document.readyState, painted: performance.getEntriesByType('paint').some(entry => entry.name === 'first-paint' || entry.name === 'first-contentful-paint') })"
-        : '({ href: window.location.href, readyState: document.readyState })');
+        : '({ href: window.location.href, readyState: document.readyState })', setupOptions(options));
       const n = Number(tabId);
       if (Number.isFinite(n) && typeof state?.href === 'string' && state.href.length > 0) this.topLevelUrlsByTabId.set(n, state.href);
       return state;
@@ -571,12 +580,17 @@ export class CdpController extends Emitter {
     for (const [id, chooser] of this.fileChoosersById) if (chooser.tabId === tabId) this.fileChoosersById.delete(id);
   }
 
+  // Attaches the tab once for all callers. `options` ({deadline, timeoutMs}) is the budget of the caller that starts
+  // the attachment: every setup command (attach, focus emulation, the attach handlers' Page.enable and auto-attach) is
+  // given what is left of it at its own dispatch, and none is dispatched once it is spent.
   async ensureAttachedTab(tabId, options = {}) {
     if (this.attachedTabIds.has(tabId)) return;
     if (this.initializingTabIds.has(tabId)) throw new Error(UNATTACHED);
     let attaching = this.tabAttachmentPromises.get(tabId);
+    const joined = attaching != null;
     if (attaching == null) {
       attaching = (async () => {
+        checkDeadline(options);
         await this.api.attach(tabId);
         await this.enableFocusEmulation(tabId, options);
         if (this.tabAttachmentPromises.get(tabId) !== attaching) throw new Error('Debugger detached while attaching');
@@ -597,6 +611,9 @@ export class CdpController extends Emitter {
       await attaching;
     } catch (error) {
       if (this.tabAttachmentPromises.get(tabId) === attaching) this.forgetAttachedTab(tabId);
+      // Another caller's attachment ran out of that caller's budget: this caller attaches again on its own.
+      if (joined && error instanceof BrowserServiceError && error.code === 'timeout' && error.message === DEADLINE_EXCEEDED
+        && !options.deadline?.expired()) return await this.ensureAttachedTab(tabId, options);
       throw error;
     }
   }

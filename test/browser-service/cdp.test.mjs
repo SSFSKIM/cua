@@ -21,7 +21,8 @@ const TAB = 7;
 
 // A backend API (the BackendApi surface the controller uses) whose CDP answers come from `answers` (method -> value or
 // (params) => value) and whose scripted failures (`fail(method, message, times)`) reject the next calls of a method.
-function scriptedApi(answers = {}) {
+// `delays` (method or 'attach' -> ms) makes those answers take that long; every call records when it was dispatched.
+function scriptedApi(answers = {}, delays = {}) {
   const listeners = {onCDPEvent: [], onCDPDetach: []};
   const calls = [];
   const failures = [];
@@ -36,14 +37,20 @@ function scriptedApi(answers = {}) {
     cdpCalls: () => calls.filter(c => c.op === 'executeCdp').map(c => c.params.method),
     fail(method, message, times = 1) { failures.push({method, message, times}); },
     addEventListener(name, handler) { listeners[name].push(handler); return () => {}; },
-    async attach(tabId) { calls.push({op: 'attach', tabId}); answer('attach'); return {}; },
+    async attach(tabId) {
+      calls.push({op: 'attach', tabId, at: Date.now()});
+      if (delays.attach) await sleep(delays.attach);
+      answer('attach');
+      return {};
+    },
     async detach(tabId) { calls.push({op: 'detach', tabId}); return {}; },
     async attachTarget(tabId, targetId) { calls.push({op: 'attachTarget', tabId, targetId}); answer('attachTarget'); return {}; },
     async detachTarget(tabId, targetId) { calls.push({op: 'detachTarget', tabId, targetId}); return {}; },
     async getCommittedTabUrl(tabId) { calls.push({op: 'getCommittedTabUrl', tabId}); return 'https://committed.test/'; },
     async executeCdp(params) {
-      calls.push({op: 'executeCdp', params: structuredClone(params)});
+      calls.push({op: 'executeCdp', params: structuredClone(params), at: Date.now()});
       await settle();
+      if (delays[params.method]) await sleep(delays[params.method]);
       return answer(params.method, params);
     },
     event(source, method, params) { for (const l of listeners.onCDPEvent) l({source, method, params}); },
@@ -182,6 +189,81 @@ test('the Deadline reaches the backend as the call\'s timeoutMs; a spent one dis
   marked.executeCdp = params => { order.push(`send:${params.method}`); return original(params); };
   await marking.call(TAB, 'Runtime.callFunctionOn', {}, {beforeDispatch: () => order.push('dispatch'), prepareDispatch: async () => { order.push('prepare'); }});
   assert.deepEqual(order.slice(-3), ['prepare', 'dispatch', 'send:Runtime.callFunctionOn']);
+});
+
+test('a first attachment gives each setup command what the command has left, not the allowance it started with', async () => {
+  const api = scriptedApi({}, {attach: 20, 'Emulation.setFocusEmulationEnabled': 20, 'Page.enable': 20, 'Target.setAutoAttach': 20});
+  const cdp = new CdpController(api);
+  const deadline = new Deadline(400);
+  await cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}, {deadline});
+  const sent = api.calls.filter(c => c.op === 'executeCdp');
+  assert.deepEqual(sent.map(c => c.params.method), ['Emulation.setFocusEmulationEnabled', 'Page.enable', 'Target.setAutoAttach', 'Runtime.evaluate']);
+  for (const c of sent) assert.ok(c.params.timeoutMs <= deadline.at - c.at + 2, `${c.params.method}: timeoutMs ${c.params.timeoutMs} with ${deadline.at - c.at} ms left`);
+  const allowances = sent.map(c => c.params.timeoutMs);
+  assert.ok(allowances.every((ms, i) => i === 0 || ms < allowances[i - 1]), `each later command has less: ${allowances}`);
+});
+
+test('a deadline that runs out during the first attachment stops it: the caller gets timeout and nothing more is dispatched', async () => {
+  const api = scriptedApi({}, {attach: 10, 'Emulation.setFocusEmulationEnabled': 10, 'Page.enable': 60});
+  const cdp = new CdpController(api);
+  const deadline = new Deadline(50);
+  const error = await rejection(cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}, {deadline}));
+  assert.equal(error.code, 'timeout');
+  await sleep(150);
+  const sent = api.calls.filter(c => c.op === 'executeCdp').map(c => c.params.method);
+  assert.deepEqual(sent, ['Emulation.setFocusEmulationEnabled', 'Page.enable'].slice(0, sent.length), 'no auto-attach and no command after the budget ran out');
+  assert.ok(api.calls.every(c => c.at < deadline.at), 'every dispatch happened within the budget');
+  assert.equal(cdp.isTabAttached(TAB), false, 'the unfinished attachment is forgotten');
+  await cdp.call(TAB, 'Runtime.evaluate', {expression: '2'});
+  assert.equal(api.calls.at(-1).params.method, 'Runtime.evaluate', 'the next command attaches afresh');
+});
+
+test('a caller sharing an attachment whose starter ran out of budget attaches again on its own budget', async () => {
+  const api = scriptedApi({}, {attach: 10, 'Emulation.setFocusEmulationEnabled': 10, 'Page.enable': 60});
+  const cdp = new CdpController(api);
+  const [short, patient] = await Promise.allSettled([
+    cdp.call(TAB, 'Runtime.evaluate', {expression: 'short'}, {deadline: new Deadline(50)}),
+    cdp.call(TAB, 'Runtime.evaluate', {expression: 'patient'}, {deadline: new Deadline(2000)}),
+  ]);
+  assert.equal(short.reason?.code, 'timeout');
+  assert.equal(patient.status, 'fulfilled');
+  assert.equal(api.calls.filter(c => c.op === 'attach').length, 2);
+  assert.deepEqual(api.calls.filter(c => c.params?.method === 'Runtime.evaluate').map(c => c.params.commandParams.expression), ['patient']);
+});
+
+test('a deadline spent before the first attachment dispatches nothing at all', async () => {
+  const api = scriptedApi();
+  const cdp = new CdpController(api);
+  assert.equal((await rejection(cdp.call(TAB, 'Runtime.evaluate', {}, {deadline: new Deadline(0)}))).code, 'timeout');
+  assert.deepEqual(api.calls, []);
+});
+
+test('readDocumentState carries the deadline into its evaluation', async () => {
+  const {api, cdp} = await attached({'Runtime.evaluate': evaluated({href: 'https://fixture.test/', readyState: 'complete'})});
+  await cdp.readDocumentState(TAB, {deadline: new Deadline(700)});
+  assert.ok(api.calls.at(-1).params.timeoutMs <= 700, `timeoutMs ${api.calls.at(-1).params.timeoutMs}`);
+  assert.equal(await cdp.readDocumentState(TAB, {deadline: new Deadline(0)}), undefined);
+  assert.equal(api.calls.length, 1, 'a spent deadline reads nothing');
+});
+
+test('a dialog opening while the command is being prepared blocks it before dispatch', async () => {
+  const {api, cdp} = await attached();
+  const error = await rejection(cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}, {
+    prepareDispatch: async () => { api.event({tabId: TAB}, 'Page.javascriptDialogOpening', dialogOpening()); },
+    beforeDispatch: () => assert.fail('a blocked command is never marked dispatched'),
+  }));
+  assert.equal(error.code, 'dialog_open');
+  assert.deepEqual(cdp.dialogs.current(TAB), {id: '1', type: 'alert'});
+  assert.deepEqual(api.calls, []);
+});
+
+test('a dialog opening while the tab is being attached blocks the command that attached it', async () => {
+  let api;
+  api = scriptedApi({'Page.enable': () => { api.event({tabId: TAB}, 'Page.javascriptDialogOpening', dialogOpening({type: 'confirm'})); return {}; }});
+  const cdp = new CdpController(api);
+  const error = await rejection(cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}));
+  assert.equal(error.code, 'dialog_open');
+  assert.equal(api.cdpCalls().includes('Runtime.evaluate'), false);
 });
 
 test('send is the spec\'s entry point: a tab id or a target, the deadline, and preserveOnTimeout on the wire', async () => {

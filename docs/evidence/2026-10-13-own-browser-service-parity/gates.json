@@ -1,0 +1,35 @@
+{
+  "commit": "081aad867796b1380df1e0ecf0b697c7782295df",
+  "node": "v22.23.2",
+  "checks": [
+    {
+      "command": "HOME=/tmp/cua-scratch-home npm test",
+      "exitCode": 0,
+      "tests": 1162,
+      "pass": 1128,
+      "fail": 0,
+      "skip": 34
+    },
+    {
+      "command": "npm run test:mods",
+      "exitCode": 0,
+      "pass": 32,
+      "fail": 0
+    },
+    {
+      "command": "claude plugin validate .",
+      "exitCode": 0,
+      "warnings": [
+        "Known root CLAUDE.md project-context warning"
+      ]
+    },
+    {
+      "command": "node --test test/browser-parity/inventory.test.mjs",
+      "vendorInstalled": true,
+      "exitCode": 0,
+      "pass": 2,
+      "skip": 1,
+      "skipReason": "M0: own service assertions begin at M1a"
+    }
+  ]
+}

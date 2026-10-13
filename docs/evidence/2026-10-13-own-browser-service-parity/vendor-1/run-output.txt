@@ -1,0 +1,78 @@
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case actions/doubleclick ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case actions/locators ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case actions/slow-budget ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case actions/strict-error ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/clipboard ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/cursor ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/export-authenticated ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/export-rejections ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/history ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/logs ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/m2-disabled ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/m3-disabled ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/m3-members ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case capabilities/viewport ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case dialogs/alert ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case dialogs/prompt ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case downloads/ask-where-to-save ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case downloads/chooser ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case downloads/media ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case evaluate/context-loss ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case evaluate/counter ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case evaluate/late-completion ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case evaluate/mutation ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case evaluate/no-replay ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case evaluate/read ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case examples/concurrency ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case examples/tabs ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case input/ax-disabled ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case input/coordinates ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case input/dom ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case reads/locators ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case reads/oopif ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case reads/snapshot ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case screenshot/clip ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case tabs/discovery ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case tabs/lifecycle ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case tabs/manual-handoff-disabled ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case tabs/navigation ok
+attested: vendor (# Selected Browser) at 081aad867796b1380df1e0ecf0b697c7782295df
+case waits/page ok

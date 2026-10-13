@@ -1,0 +1,504 @@
+{
+  "commit": "081aad867796b1380df1e0ecf0b697c7782295df",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/Library/Application Support/cua",
+  "profile": "ssfs",
+  "device": "mini",
+  "fixturePort": 48732,
+  "service": "vendor",
+  "backend": "live",
+  "environment": {
+    "CUA_BROWSER_SERVICE": "vendor",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_HOME": "/Users/new/Library/Application Support/cua"
+  },
+  "started": "2026-10-13T17:09:50.830Z",
+  "elicitations": [
+    {
+      "t": "2026-10-13T17:09:58.008Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/doubleclick"
+    },
+    {
+      "t": "2026-10-13T17:10:05.069Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/locators"
+    },
+    {
+      "t": "2026-10-13T17:10:25.954Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/slow-budget"
+    },
+    {
+      "t": "2026-10-13T17:10:35.470Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/strict-error"
+    },
+    {
+      "t": "2026-10-13T17:10:43.673Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/clipboard"
+    },
+    {
+      "t": "2026-10-13T17:10:50.493Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/cursor"
+    },
+    {
+      "t": "2026-10-13T17:10:57.602Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/export-rejections"
+    },
+    {
+      "t": "2026-10-13T17:11:04.747Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/history"
+    },
+    {
+      "t": "2026-10-13T17:11:06.320Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/history"
+    },
+    {
+      "t": "2026-10-13T17:11:10.186Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/logs"
+    },
+    {
+      "t": "2026-10-13T17:11:18.792Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/m2-disabled"
+    },
+    {
+      "t": "2026-10-13T17:11:23.618Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/m3-disabled"
+    },
+    {
+      "t": "2026-10-13T17:11:28.384Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/m3-members"
+    },
+    {
+      "t": "2026-10-13T17:11:33.281Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capabilities/viewport"
+    },
+    {
+      "t": "2026-10-13T17:11:40.422Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "dialogs/alert"
+    },
+    {
+      "t": "2026-10-13T17:11:53.393Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "dialogs/prompt"
+    },
+    {
+      "t": "2026-10-13T17:12:03.522Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "downloads/chooser"
+    },
+    {
+      "t": "2026-10-13T17:12:05.085Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "downloads/chooser"
+    },
+    {
+      "t": "2026-10-13T17:12:13.624Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "downloads/chooser"
+    },
+    {
+      "t": "2026-10-13T17:12:16.946Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "downloads/media"
+    },
+    {
+      "t": "2026-10-13T17:12:18.347Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "downloads/media"
+    },
+    {
+      "t": "2026-10-13T17:12:22.186Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/context-loss"
+    },
+    {
+      "t": "2026-10-13T17:12:29.350Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/counter"
+    },
+    {
+      "t": "2026-10-13T17:12:35.713Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/late-completion"
+    },
+    {
+      "t": "2026-10-13T17:12:42.784Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/mutation"
+    },
+    {
+      "t": "2026-10-13T17:12:49.120Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/no-replay"
+    },
+    {
+      "t": "2026-10-13T17:12:55.569Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/read"
+    },
+    {
+      "t": "2026-10-13T17:13:04.476Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "examples/concurrency"
+    },
+    {
+      "t": "2026-10-13T17:13:13.953Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "examples/tabs"
+    },
+    {
+      "t": "2026-10-13T17:13:21.127Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/ax-disabled"
+    },
+    {
+      "t": "2026-10-13T17:13:26.496Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/coordinates"
+    },
+    {
+      "t": "2026-10-13T17:13:37.721Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/dom"
+    },
+    {
+      "t": "2026-10-13T17:13:49.096Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/locators"
+    },
+    {
+      "t": "2026-10-13T17:14:07.764Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/oopif"
+    },
+    {
+      "t": "2026-10-13T17:14:13.483Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/snapshot"
+    },
+    {
+      "t": "2026-10-13T17:14:23.831Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "screenshot/clip"
+    },
+    {
+      "t": "2026-10-13T17:14:29.065Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/discovery"
+    },
+    {
+      "t": "2026-10-13T17:14:45.840Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/lifecycle"
+    },
+    {
+      "t": "2026-10-13T17:15:04.193Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/manual-handoff-disabled"
+    },
+    {
+      "t": "2026-10-13T17:15:09.674Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/navigation"
+    },
+    {
+      "t": "2026-10-13T17:15:20.791Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "waits/page"
+    }
+  ],
+  "attestations": [
+    {
+      "case": "actions/doubleclick",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/locators",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/slow-budget",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/strict-error",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/clipboard",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/cursor",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/export-authenticated",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/export-rejections",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/history",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/logs",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/m2-disabled",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/m3-disabled",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/m3-members",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capabilities/viewport",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "dialogs/alert",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "dialogs/prompt",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "downloads/ask-where-to-save",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "downloads/chooser",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "downloads/media",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/context-loss",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/counter",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/late-completion",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/mutation",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/no-replay",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/read",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "examples/concurrency",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "examples/tabs",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/ax-disabled",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/coordinates",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/dom",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/locators",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/oopif",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/snapshot",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "screenshot/clip",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/discovery",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/manual-handoff-disabled",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/navigation",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "waits/page",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    }
+  ],
+  "complete": true,
+  "cases": [
+    "actions/doubleclick",
+    "actions/locators",
+    "actions/slow-budget",
+    "actions/strict-error",
+    "capabilities/clipboard",
+    "capabilities/cursor",
+    "capabilities/export-authenticated",
+    "capabilities/export-rejections",
+    "capabilities/history",
+    "capabilities/logs",
+    "capabilities/m2-disabled",
+    "capabilities/m3-disabled",
+    "capabilities/m3-members",
+    "capabilities/viewport",
+    "dialogs/alert",
+    "dialogs/prompt",
+    "downloads/ask-where-to-save",
+    "downloads/chooser",
+    "downloads/media",
+    "evaluate/context-loss",
+    "evaluate/counter",
+    "evaluate/late-completion",
+    "evaluate/mutation",
+    "evaluate/no-replay",
+    "evaluate/read",
+    "examples/concurrency",
+    "examples/tabs",
+    "input/ax-disabled",
+    "input/coordinates",
+    "input/dom",
+    "reads/locators",
+    "reads/oopif",
+    "reads/snapshot",
+    "screenshot/clip",
+    "tabs/discovery",
+    "tabs/lifecycle",
+    "tabs/manual-handoff-disabled",
+    "tabs/navigation",
+    "waits/page"
+  ],
+  "finished": "2026-10-13T17:15:30.681Z"
+}

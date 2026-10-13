@@ -1,0 +1,82 @@
+{
+  "service": "vendor",
+  "device": "mini",
+  "profile": "ssfs",
+  "commit": "081aad867796b1380df1e0ecf0b697c7782295df",
+  "complete": true,
+  "cases": 39,
+  "executed": 37,
+  "skipped": [
+    {
+      "case": "capabilities/export-authenticated",
+      "reason": "external: authenticated Google Workspace document and stable captioned YouTube fixture are not provided; fixture-host rejection contracts remain executable"
+    },
+    {
+      "case": "downloads/ask-where-to-save",
+      "reason": "human: Chrome Ask where to save requires a person; never change profile download preferences"
+    }
+  ],
+  "cells": 101,
+  "failedAssertions": 0,
+  "expectedErrorCells": [
+    {
+      "case": "actions/slow-budget",
+      "cell": "late",
+      "code": "Error"
+    },
+    {
+      "case": "actions/strict-error",
+      "cell": "strict",
+      "code": "Error"
+    },
+    {
+      "case": "capabilities/export-rejections",
+      "cell": "gsuite",
+      "code": "Error"
+    },
+    {
+      "case": "capabilities/export-rejections",
+      "cell": "youtube",
+      "code": "Error"
+    },
+    {
+      "case": "capabilities/history",
+      "cell": "history",
+      "code": "Error"
+    },
+    {
+      "case": "dialogs/alert",
+      "cell": "blocked",
+      "code": "Error"
+    },
+    {
+      "case": "evaluate/context-loss",
+      "cell": "reload",
+      "code": "Error"
+    },
+    {
+      "case": "evaluate/counter",
+      "cell": "submit",
+      "code": "Error"
+    },
+    {
+      "case": "evaluate/late-completion",
+      "cell": "late",
+      "code": "Error"
+    },
+    {
+      "case": "evaluate/mutation",
+      "cell": "mutate",
+      "code": "Error"
+    },
+    {
+      "case": "evaluate/no-replay",
+      "cell": "submit-navigate",
+      "code": "Error"
+    }
+  ],
+  "trace": "unavailable: resident host intentionally remains on its pre-trace checkout",
+  "started": "2026-10-13T17:09:50.830Z",
+  "finished": "2026-10-13T17:15:30.681Z",
+  "cleanupErrors": []
+}

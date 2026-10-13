@@ -67,6 +67,7 @@ test('trace activation is latched for a session and diagnostic failures never br
 test('trace omits malformed identifier values on rejected requests, accepted requests and notifications',async t=>{
   const s=setup(t);s.activate();const tab=await s.call('createTab');await s.call('attach',{tabId:tab.id});
   const poison={url:'https://example.test/private?credential=TRACE_SECRET_7x',credential:'TRACE_SECRET_7x'};
+  await assert.rejects(s.call('executeCdp',{target:{tabId:poison},method:'Runtime.evaluate',commandParams:{}}),/integer tabId/);
   await assert.rejects(s.call('executeCdp',{target:{tabId:poison,sessionId:[poison],targetId:poison},method:'Runtime.evaluate',commandParams:{}}));
   await assert.rejects(s.call('attach',{tabId:poison}));
   await s.call('executeCdp',{tabId:poison,target:{tabId:tab.id,sessionId:'CHILD-1'},method:'DOM.enable',commandParams:{}});

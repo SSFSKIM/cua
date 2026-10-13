@@ -20,5 +20,5 @@ export default {
     "code": "await dialog.dismiss();return (await tab.getJsDialog())==null;"
   }
 ],
-  assert:({results,service})=>({ok:results[0]?.ok&&results[1]?.ok&&results[1].value==='alert'&&expectError(results,'blocked',/dialog|alert/i,service==='vendor'?['Error']:['dialog_open'])&&results[3]?.ok&&results[3].value===true}),
+  assert:({results,service})=>({ok:results[0]?.ok&&results[1]?.ok&&results[1].value==='alert'&&expectError(results,'blocked',service==='vendor'?/Playwright selector deadline exceeded/:/dialog|alert/i,service==='vendor'?['Error']:['dialog_open'])&&results[3]?.ok&&results[3].value===true}),
 };

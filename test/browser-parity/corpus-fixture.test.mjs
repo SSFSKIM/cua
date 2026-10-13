@@ -20,3 +20,14 @@ test('dialog triggers return before opening the modal so CDP input does not time
   assert.equal(opened,false,'modal must not block Input.dispatchMouseEvent');
   assert.equal(scheduled.length,1);scheduled[0]();assert.equal(opened,true);
 });
+
+test('file chooser acknowledgement is published only after its independent fixture event is recorded',async t=>{
+  const {runInNewContext}=await import('node:vm');
+  const fixture=await startFixture({port:0});t.after(()=>fixture.close());
+  const html=await (await fetch(fixture.url+'/chooser.html')).text();
+  const input={},output={textContent:'',dataset:{}};let release;
+  runInNewContext(html.match(/<script>(.*?)<\/script>/s)[1],{document:{querySelector:selector=>selector==='#file'?input:output},fetch:()=>new Promise(resolve=>{release=resolve;})});
+  const pending=input.onchange({target:{files:[{name:'fixture.txt'}]}});
+  assert.equal(output.textContent,'');release();await pending;
+  assert.equal(output.textContent,'fixture.txt');assert.equal(output.dataset.recorded,'yes');
+});

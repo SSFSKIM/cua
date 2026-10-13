@@ -8,7 +8,7 @@ export default {
     {label:'path',code:"globalThis.uploadPath=await download.path({timeoutMs:10000});return typeof uploadPath==='string'&&uploadPath.length>0;"},
     {label:'chooser-page',code:"await tab.goto(fixtureURL+'/chooser.html');return true;"},
     {label:'chooser',code:"const waiting=tab.playwright.waitForEvent('filechooser',{timeoutMs:10000});const [value]=await Promise.all([waiting,tab.playwright.locator('#file').click()]);globalThis.chooser=value;return chooser.isMultiple();"},
-    {label:'set-files',code:"await chooser.setFiles([uploadPath]);return (await tab.playwright.locator('#filename').textContent()).length>0;"},
+    {label:'set-files',code:"await chooser.setFiles([uploadPath]);await tab.playwright.locator('#filename[data-recorded=yes]').waitFor({state:'visible',timeoutMs:3000});return (await tab.playwright.locator('#filename').textContent()).length>0;"},
   ],
   assert:expectValues({download:true,path:true,'chooser-page':true,chooser:false,'set-files':true},s=>s.events.some(e=>typeof e.file==='string'&&e.file.length>0)),
 };

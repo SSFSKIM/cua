@@ -29,7 +29,7 @@ export default {
   },
   {
     "label": "wait",
-    "code": "await tab.playwright.locator('#text').waitFor({state:'visible',timeoutMs:1000});return true;"
+    "code": "await tab.playwright.getByText('recorded',{exact:true}).waitFor({state:'visible',timeoutMs:1000});return true;"
   }
 ],
   assert:expectValues({fill:'alpha',press:'alpha beta',select:'b',check:true,click:true,double:true,wait:true},s=>s.events.some(e=>e.click===true)&&s.events.some(e=>e.double===true)&&s.events.some(e=>e.selected==='b')&&s.events.some(e=>e.checked===true)),

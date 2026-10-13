@@ -13,7 +13,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
     ...corpusPages,
     'dialogs': `<button id="alert" onclick="setTimeout(()=>alert('fixture alert'),100)">Alert</button><button id="confirm" onclick="setTimeout(()=>document.querySelector('#result').textContent=confirm('fixture confirm'),100)">Confirm</button><button id="prompt" onclick="setTimeout(()=>document.querySelector('#result').textContent=prompt('fixture prompt','seed'),100)">Prompt</button><output id="result"></output>`,
     'downloads': '<a id="download" href="/download" download="parity.txt">Download</a>',
-    'chooser': `<input id="file" type="file"><output id="filename"></output><script>document.querySelector('#file').onchange=e=>{const name=e.target.files[0].name;document.querySelector('#filename').textContent=name;${record}({file:name})});}</script>`,
+    'chooser': `<input id="file" type="file"><output id="filename"></output><script>document.querySelector('#file').onchange=async e=>{const name=e.target.files[0].name;await ${record}({file:name})});const out=document.querySelector('#filename');out.textContent=name;out.dataset.recorded='yes';}</script>`,
     'oopif': '<iframe id="outer" src="/frame.html"></iframe>',
     'frame': '<label>Nested input<input id="nested"></label><button id="frame-button">Frame button</button>',
     'popup': '<button id="popup" onclick="window.open(\'/counter.html\')">Open popup</button>',

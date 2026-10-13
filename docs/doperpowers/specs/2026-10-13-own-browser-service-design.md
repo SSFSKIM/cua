@@ -12,6 +12,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
 - [x] (2026-10-13) Design approved by the owner in a live brainstorming session (two rounds; rulings above).
 - [x] (2026-10-13) Independent design review and buildability review (both `doperpowers:adversarial-reviewer`): 4 P1 and 9 P2 findings folded (Decision Log, 2026-10-13 revision).
 - [ ] M0 — Inventory, parity harness, host trace, benchmark tooling, and the vendor baseline on the mini.
+  - [x] (2026-10-13 task 1, reviewed clean) host trace, fixture server, harness and comparator, bench-summary, controller brief; test-helper race fix.
 - [ ] M1a — Service skeleton: setup, manifest, errors and budgets, backend transport, CDP controller with dialog tracking, tabs and turn end; the switch, the trust root, the version guard.
 - [ ] M1b — Injected script, selector resolution, reads, evaluate, snapshot.
 - [ ] M1c — Pointer and locator actions, keyboard, screenshots, waits, DOM-CUA.

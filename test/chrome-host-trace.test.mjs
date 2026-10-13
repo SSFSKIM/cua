@@ -63,3 +63,34 @@ test('trace activation is latched for a session and diagnostic failures never br
   await s.call('getTabs', {}, 'bad-output');
   assert.equal(s.rows().length, 2);
 });
+
+test('trace omits malformed identifier values on rejected requests, accepted requests and notifications',async t=>{
+  const s=setup(t);s.activate();const tab=await s.call('createTab');await s.call('attach',{tabId:tab.id});
+  const poison={url:'https://example.test/private?credential=TRACE_SECRET_7x',credential:'TRACE_SECRET_7x'};
+  await assert.rejects(s.call('executeCdp',{target:{tabId:poison,sessionId:[poison],targetId:poison},method:'Runtime.evaluate',commandParams:{}}));
+  await assert.rejects(s.call('attach',{tabId:poison}));
+  await s.call('executeCdp',{tabId:poison,target:{tabId:tab.id,sessionId:'CHILD-1'},method:'DOM.enable',commandParams:{}});
+  const frame=`T-${tab.id}-f1`;await s.call('attachTarget',{tabId:tab.id,targetId:frame});
+  await s.call('executeCdp',{target:{tabId:tab.id,targetId:frame},method:'DOM.enable'});
+  await s.host.onExtensionNotification({method:'debugger.event',params:{debuggee:{tabId:tab.id,sessionId:poison},method:'Runtime.consoleAPICalled',params:{args:[poison]}}});
+  const rows=s.rows(),text=readFileSync(s.path,'utf8');
+  assert.doesNotMatch(text,/TRACE_SECRET_7x|example\.test|credential/);
+  assert.ok(rows.some(r=>r.ok===false&&r.method==='executeCdp'));
+  assert.deepEqual(rows.find(r=>r.ok&&r.target?.sessionId==='CHILD-1').target,{tabId:tab.id,sessionId:'CHILD-1'});
+  assert.deepEqual(rows.find(r=>r.ok&&r.target?.targetId===frame).target,{tabId:tab.id,targetId:frame});
+  assert.ok(rows.filter(r=>r.tabId!==undefined).every(r=>Number.isSafeInteger(r.tabId)));
+  assert.deepEqual(rows.find(r=>r.kind==='notification').target,{tabId:tab.id});
+});
+
+test('trace identifier slots exclude URLs, oversized tokens and non-scalar method values',async t=>{
+  const s=setup(t);s.activate();const tab=await s.call('createTab');await s.call('attach',{tabId:tab.id});
+  const poison='https://example.test/?credential=TRACE_SECRET_8y';
+  await s.call('getTabs',{},poison);
+  await assert.rejects(s.call({credential:'TRACE_SECRET_8y'}));
+  await assert.rejects(s.call(poison));
+  for(const bad of [poison,'x'.repeat(129),['TRACE_SECRET_8y'],{credential:'TRACE_SECRET_8y'}]) {
+    await assert.rejects(s.call('executeCdp',{target:{tabId:tab.id,targetId:bad},method:'DOM.enable'}));
+    await s.call('executeCdp',{target:{tabId:tab.id},method:bad}).catch(()=>{});
+  }
+  assert.doesNotMatch(readFileSync(s.path,'utf8'),/TRACE_SECRET_8y|example\.test|x{129}/);
+});

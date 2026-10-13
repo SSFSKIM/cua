@@ -25,6 +25,7 @@ export function probe(path, registryCheck=null) {
 export const members = manifest => Object.entries(manifest.interfaces).flatMap(([name, entries])=>Object.keys(entries).map(member=>`${name}.${member}`)).sort();
 export async function checkVendor(path, inventory) {
   const result=probe(path);
+  assert.deepEqual(result.sessionNames,['inventory/naming'],'name_session must reach the backend; success alone is not an oracle');
   assert.ok(result.backendRequests.includes('getInfo'),'manifest probe must select the fake cua extension backend');
   assert.deepEqual(result.capabilities.browser.map(c=>c.id),['viewport']);
   assert.deepEqual(result.capabilities.tab,[]);
@@ -43,6 +44,7 @@ export async function checkOwnService(inventory,current) {
   assert.ok(milestones.includes(current),`unknown current milestone ${current}`);
   const rows=inventory.filter(r=>milestones.indexOf(r.milestone)<=milestones.indexOf(current));
   const result=probe(own,{inventory:rows,current});
+  assert.deepEqual(result.sessionNames,['inventory/naming'],'name_session must reach the backend');
   const vendor=vendorPath();
   if(!vendor) {console.log('# SKIP vendor module absent: own/vendor manifest comparison');return;}
   const expected=probe(vendor);

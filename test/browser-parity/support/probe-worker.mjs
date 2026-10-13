@@ -1,12 +1,13 @@
 import {EventEmitter} from 'node:events';
 import {pathToFileURL} from 'node:url';
 import {assertHandlerRegistry} from './handler-registry.mjs';
-const backendRequests=[];
+const backendRequests=[],sessionNames=[];
 const info={type:'extension',family:'chrome',name:'cua',version:'0.3.0',capabilities:{browser:[{id:'viewport',description:'Viewport override'}],tab:[]},metadata:{extensionInstanceId:'parity-fake-extension',profileName:'scratch'}};
 class Pipe extends EventEmitter {
   write(frame) {
     const message=JSON.parse(Buffer.from(frame).subarray(4).toString());
     backendRequests.push(message.method);
+    if(message.method==='nameSession')sessionNames.push(message.params.name);
     if(message.id==null)return;
     let result;
     if(message.method==='getInfo')result=info;
@@ -37,6 +38,8 @@ try {
   const browsers=await service.handleRpc({method:'execute',params:{type:'list_browsers'}});
   if(browsers.length!==1)throw new Error(`expected one fake backend, got ${browsers.length}`);
   const browser=await service.handleRpc({method:'execute',params:{type:'get_browser',id:browsers[0].id}});
-  console.log('MANIFEST '+JSON.stringify({setup,capabilities:browser.capabilities,backendRequests}));
+  await service.handleRpc({method:'execute',params:{type:'get_browser_documentation',browser_id:browser.id}});
+  await service.handleRpc({method:'execute',params:{type:'name_session',browser_id:browser.id,name:'inventory/naming'}});
+  console.log('MANIFEST '+JSON.stringify({setup,capabilities:browser.capabilities,backendRequests,sessionNames}));
   process.exit(0);
 } catch(e) {console.error(e.stack);process.exit(1);}

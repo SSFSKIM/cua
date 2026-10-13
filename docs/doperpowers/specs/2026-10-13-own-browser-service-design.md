@@ -15,7 +15,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
   - [x] (2026-10-13 task 1, reviewed clean) host trace, fixture server, harness and comparator, bench-summary, controller brief; test-helper race fix.
   - [x] (2026-10-13 task 2, reviewed clean) inventory (88 rows) and test with the COMMAND_HANDLERS gate, corpus 39 cases / 103 cells with no-op-rejecting oracles, the live vendor pair on the mini: 0 differences.
   - [x] (2026-10-13 task 3) the vendor benchmark baseline: three journaled runs on the mini, all tasks ok in every run (`docs/evidence/2026-10-13-own-browser-service-benchmark/`, summary-vendor.txt); three pilot runs set aside under `pilot/`.
-- [ ] M1a — Service skeleton: setup, manifest, errors and budgets, backend transport, CDP controller with dialog tracking, tabs and turn end; the switch, the trust root, the version guard.
+- [x] (2026-10-13, whole-branch reviewer-high clean at aad5235) M1a — Service skeleton: setup, manifest, errors and budgets, backend transport, CDP controller with dialog tracking, tabs and turn end; the switch, the trust root, the version guard.
   - [x] (2026-10-13 task 1, reviewed clean after two fix waves) errors, budgets, backend transport, CDP controller.
   - [x] (2026-10-13 task 2, reviewed clean) index with COMMAND_HANDLERS, manifest, tabs, docs, the switch, trust root and two-pin guard; real-client error proof; live M1a parity on the mini: 0 unexpected differences.
 - [ ] M1b — Injected script, selector resolution, reads, evaluate, snapshot.

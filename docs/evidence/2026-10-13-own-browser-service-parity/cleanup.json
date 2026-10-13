@@ -1,0 +1,11 @@
+{
+  "device": "mini",
+  "checked": "2026-10-13T21:06:22.158586+00:00",
+  "parityCloneFixtureProcessesRemaining": 0,
+  "parityCloneServeProcessesRemaining": 0,
+  "traceActivationPresent": false,
+  "method": "ps matching harness entrypoints, process cwd verified with lsof, and absence check for the owned trace activation",
+  "residentAgentModified": false,
+  "residentCheckoutModified": false,
+  "profileRebound": false
+}

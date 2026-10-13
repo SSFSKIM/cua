@@ -1,0 +1,15 @@
+{
+ "service": "vendor",
+ "commit": "9897fcc",
+ "profile": "ssfs",
+ "model": "claude-sonnet (benchmark controller subagent)",
+ "runtime": "26.928.40906-darwin-arm64",
+ "started": "2026-10-13T16:18:47.750Z",
+ "finished": "2026-10-13T16:27:06.884Z",
+ "attestation": {
+  "route": "resident-agent",
+  "residentCommit": "9897fcc",
+  "selectedBrowserHeader": "# Selected Browser\n- Name: cua\n- Type: extension\n- ID: 1",
+  "marker": null
+ }
+}

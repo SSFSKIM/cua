@@ -1,0 +1,211 @@
+{"t": "2026-10-13T16:11:23.000Z", "task": "T0", "tool": "profiles_list", "kind": "other", "ok": true, "ms": null, "note": "mcp profiles_list: ssfs ready 3b45d47c-51f6-469b-a915-3d46ac5fb0ad; school extension_not_installed (timed outside REPL; t approx, ms not measured)"}
+{"t": "2026-10-13T16:11:31.742Z", "task": "T0", "tool": "getBrowser", "kind": "other", "ok": true, "ms": 8, "note": "cua.getBrowser ssfs extensionInstanceId; selected browser header: Name cua, Type extension, ID 1"}
+{"t": "2026-10-13T16:11:57.230Z", "task": "T0", "tool": "browser.nameSession", "kind": "other", "ok": true, "ms": 63, "note": "name session"}
+{"t": "2026-10-13T16:11:57.293Z", "task": "T0", "tool": "browser.user.openTabs", "kind": "observe", "ok": true, "ms": 10, "note": "count only: 1 tab before"}
+{"task": "T0", "done": "2026-10-13T16:12:03.832Z", "ok": true}
+{"t": "2026-10-13T16:12:03.832Z", "task": "T1", "tool": "browser.tabs.new", "kind": "action", "ok": true, "ms": 264, "note": "create own tab"}
+{"t": "2026-10-13T16:12:04.096Z", "task": "T1", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 1264, "note": "goto index.html"}
+{"t": "2026-10-13T16:12:05.360Z", "task": "T1", "tool": "tab.title", "kind": "observe", "ok": true, "ms": 25, "note": "title"}
+{"t": "2026-10-13T16:12:05.385Z", "task": "T1", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 45, "note": "#bench-id"}
+{"task": "T1", "done": "2026-10-13T16:12:05.430Z", "ok": true}
+{"t": "2026-10-13T16:12:19.884Z", "task": "T2", "tool": "locator.evaluateAll", "kind": "observe", "ok": true, "ms": 42, "note": "#inventory rows cells"}
+{"task": "T2", "done": "2026-10-13T16:12:19.926Z", "ok": true}
+{"t": "2026-10-13T16:12:28.819Z", "task": "T3", "tool": "tab.screenshot", "kind": "observe", "ok": true, "ms": 118, "note": "fullPage screenshot"}
+{"task": "T3", "done": "2026-10-13T16:12:34.316Z", "ok": true}
+{"t": "2026-10-13T16:12:34.316Z", "task": "T4", "tool": "locator.waitFor", "kind": "wait", "ok": true, "ms": 16, "note": "#late visible"}
+{"t": "2026-10-13T16:12:34.332Z", "task": "T4", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 6, "note": "#late"}
+{"task": "T4", "done": "2026-10-13T16:12:34.338Z", "ok": true}
+{"t": "2026-10-13T16:12:40.926Z", "task": "T5", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 41, "note": "#draw rect"}
+{"t": "2026-10-13T16:12:46.628Z", "task": "T5", "tool": "tab.cua.scroll", "kind": "action", "ok": true, "ms": 231, "note": "wheel scroll 500"}
+{"t": "2026-10-13T16:12:46.859Z", "task": "T5", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 41, "note": "#draw rect after scroll"}
+{"t": "2026-10-13T16:12:46.900Z", "task": "T5", "tool": "tab.cua.drag", "kind": "action", "ok": true, "ms": 237, "note": "drag canvas (50,40)->(250,190)"}
+{"t": "2026-10-13T16:12:47.137Z", "task": "T5", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 9, "note": "#draw-result -> 50,40,200,150"}
+{"task": "T5", "done": "2026-10-13T16:12:47.146Z", "ok": true}
+{"t": "2026-10-13T16:12:59.995Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 140, "note": "click #to-frame"}
+{"t": "2026-10-13T16:13:00.135Z", "task": "T6", "tool": "waitForLoadState", "kind": "wait", "ok": true, "ms": 56, "note": "load"}
+{"t": "2026-10-13T16:13:00.191Z", "task": "T6", "tool": "locator.waitFor", "kind": "wait", "ok": true, "ms": 21, "note": "#outer #qty-a"}
+{"t": "2026-10-13T16:13:00.212Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 323, "note": "click #qty-a"}
+{"t": "2026-10-13T16:13:00.535Z", "task": "T6", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 89, "note": "type 12 in #qty-a"}
+{"t": "2026-10-13T16:13:00.624Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 269, "note": "click #qty-b"}
+{"t": "2026-10-13T16:13:00.893Z", "task": "T6", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 22, "note": "type 7 in #qty-b"}
+{"t": "2026-10-13T16:13:00.915Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 278, "note": "click #qty-c"}
+{"t": "2026-10-13T16:13:01.193Z", "task": "T6", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 110, "note": "type 23 in #qty-c"}
+{"t": "2026-10-13T16:13:01.303Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 276, "note": "open dropdown"}
+{"t": "2026-10-13T16:13:01.579Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 300, "note": "choose Bravo"}
+{"t": "2026-10-13T16:13:01.879Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 265, "note": "radio circle"}
+{"t": "2026-10-13T16:13:02.144Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 282, "note": "click #phrase"}
+{"t": "2026-10-13T16:13:02.426Z", "task": "T6", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 659, "note": "type phrase"}
+{"t": "2026-10-13T16:13:03.085Z", "task": "T6", "tool": "locator.click", "kind": "action", "ok": true, "ms": 276, "note": "click #submit"}
+{"t": "2026-10-13T16:13:03.361Z", "task": "T6", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 14, "note": "#result -> 42-Bravo-circle-11"}
+{"task": "T6", "done": "2026-10-13T16:13:03.375Z", "ok": true}
+{"t": "2026-10-13T16:13:14.300Z", "task": "T7", "tool": "locator.click", "kind": "action", "ok": true, "ms": 294, "note": "focus #deep"}
+{"t": "2026-10-13T16:13:14.594Z", "task": "T7", "tool": "locator.press", "kind": "action", "ok": true, "ms": 16, "note": "press f"}
+{"t": "2026-10-13T16:13:14.610Z", "task": "T7", "tool": "locator.press", "kind": "action", "ok": true, "ms": 9, "note": "press F"}
+{"t": "2026-10-13T16:13:14.619Z", "task": "T7", "tool": "locator.press", "kind": "action", "ok": true, "ms": 7, "note": "press x"}
+{"t": "2026-10-13T16:13:14.626Z", "task": "T7", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 5, "note": "#deep-log -> fFx"}
+{"t": "2026-10-13T16:13:14.631Z", "task": "T7", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 20, "note": "#deep-echo -> fFx"}
+{"task": "T7", "done": "2026-10-13T16:13:14.651Z", "ok": true}
+{"t": "2026-10-13T16:13:22.008Z", "task": "T8", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 1951, "note": "goto example.com"}
+{"t": "2026-10-13T16:13:23.959Z", "task": "T8", "tool": "locator.count", "kind": "observe", "ok": true, "ms": 35, "note": "h1 count -> 0"}
+{"t": "2026-10-13T16:13:23.994Z", "task": "T8", "tool": "tab.title", "kind": "observe", "ok": true, "ms": 2, "note": "title -> Example Domain"}
+{"task": "T8", "done": "2026-10-13T16:13:23.996Z", "ok": true}
+{"t": "2026-10-13T16:13:37.184Z", "task": "miniwob/click-button", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 103, "note": "goto task URL"}
+{"t": "2026-10-13T16:13:37.287Z", "task": "miniwob/click-button", "tool": "locator.click", "kind": "action", "ok": true, "ms": 290, "note": "click START"}
+{"t": "2026-10-13T16:13:37.577Z", "task": "miniwob/click-button", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 11, "note": "#query"}
+{"t": "2026-10-13T16:13:37.588Z", "task": "miniwob/click-button", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 32, "note": "#area html"}
+{"t": "2026-10-13T16:13:41.570Z", "task": "miniwob/click-button", "tool": "locator.click", "kind": "action", "ok": true, "ms": 291, "note": "click cancel button"}
+{"t": "2026-10-13T16:13:41.861Z", "task": "miniwob/click-button", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 11, "note": "read WOB globals (read-only; returned empty object on vendor)"}
+{"t": "2026-10-13T16:13:41.872Z", "task": "miniwob/click-button", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 5, "note": "console reward line"}
+{"t": "2026-10-13T16:13:41.877Z", "task": "miniwob/click-button", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 12, "note": "START cover visible + episode id"}
+{"task": "miniwob/click-button", "done": "2026-10-13T16:14:29.081Z", "ok": true}
+{"t": "2026-10-13T16:14:42.694Z", "task": "miniwob/click-checkboxes", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 190, "note": "goto task URL"}
+{"t": "2026-10-13T16:14:42.884Z", "task": "miniwob/click-checkboxes", "tool": "locator.click", "kind": "action", "ok": true, "ms": 293, "note": "click START"}
+{"t": "2026-10-13T16:14:43.177Z", "task": "miniwob/click-checkboxes", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 6, "note": "#query"}
+{"t": "2026-10-13T16:14:43.183Z", "task": "miniwob/click-checkboxes", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 24, "note": "#area html"}
+{"t": "2026-10-13T16:14:46.976Z", "task": "miniwob/click-checkboxes", "tool": "locator.click", "kind": "action", "ok": true, "ms": 289, "note": "click Submit (none selected)"}
+{"t": "2026-10-13T16:14:47.265Z", "task": "miniwob/click-checkboxes", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 13, "note": "read WOB globals (read-only; empty object on vendor)"}
+{"t": "2026-10-13T16:14:47.278Z", "task": "miniwob/click-checkboxes", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:14:47.281Z", "task": "miniwob/click-checkboxes", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 14, "note": "START cover display + episode id"}
+{"task": "miniwob/click-checkboxes", "done": "2026-10-13T16:14:47.295Z", "ok": true}
+{"t": "2026-10-13T16:14:47.925Z", "task": "miniwob/click-dialog", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 45, "note": "goto task URL"}
+{"t": "2026-10-13T16:14:47.970Z", "task": "miniwob/click-dialog", "tool": "locator.click", "kind": "action", "ok": true, "ms": 290, "note": "click START"}
+{"t": "2026-10-13T16:14:48.260Z", "task": "miniwob/click-dialog", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 7, "note": "#query"}
+{"t": "2026-10-13T16:14:48.267Z", "task": "miniwob/click-dialog", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 26, "note": "#area html"}
+{"t": "2026-10-13T16:14:51.924Z", "task": "miniwob/click-dialog", "tool": "locator.click", "kind": "action", "ok": true, "ms": 285, "note": "click dialog close x"}
+{"t": "2026-10-13T16:14:52.209Z", "task": "miniwob/click-dialog", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 16, "note": "read WOB globals"}
+{"t": "2026-10-13T16:14:52.225Z", "task": "miniwob/click-dialog", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 5, "note": "console reward line"}
+{"t": "2026-10-13T16:14:52.230Z", "task": "miniwob/click-dialog", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 13, "note": "START cover display + episode id"}
+{"task": "miniwob/click-dialog", "done": "2026-10-13T16:14:52.243Z", "ok": true}
+{"t": "2026-10-13T16:14:52.442Z", "task": "miniwob/click-link", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 37, "note": "goto task URL"}
+{"t": "2026-10-13T16:14:52.479Z", "task": "miniwob/click-link", "tool": "locator.click", "kind": "action", "ok": true, "ms": 286, "note": "click START"}
+{"t": "2026-10-13T16:14:52.765Z", "task": "miniwob/click-link", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 7, "note": "#query"}
+{"t": "2026-10-13T16:14:52.772Z", "task": "miniwob/click-link", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 22, "note": "#area html"}
+{"t": "2026-10-13T16:14:56.329Z", "task": "miniwob/click-link", "tool": "locator.click", "kind": "action", "ok": true, "ms": 281, "note": "click link Auctor"}
+{"t": "2026-10-13T16:14:56.610Z", "task": "miniwob/click-link", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 12, "note": "read WOB globals"}
+{"t": "2026-10-13T16:14:56.622Z", "task": "miniwob/click-link", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:14:56.625Z", "task": "miniwob/click-link", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 11, "note": "START cover display + episode id"}
+{"task": "miniwob/click-link", "done": "2026-10-13T16:14:56.636Z", "ok": true}
+{"t": "2026-10-13T16:14:56.839Z", "task": "miniwob/click-option", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 47, "note": "goto task URL"}
+{"t": "2026-10-13T16:14:56.886Z", "task": "miniwob/click-option", "tool": "locator.click", "kind": "action", "ok": true, "ms": 291, "note": "click START"}
+{"t": "2026-10-13T16:14:57.177Z", "task": "miniwob/click-option", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 6, "note": "#query"}
+{"t": "2026-10-13T16:14:57.183Z", "task": "miniwob/click-option", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 25, "note": "#area html"}
+{"t": "2026-10-13T16:15:00.842Z", "task": "miniwob/click-option", "tool": "locator.click", "kind": "action", "ok": true, "ms": 285, "note": "click radio HWtF5D (#ch1)"}
+{"t": "2026-10-13T16:15:01.127Z", "task": "miniwob/click-option", "tool": "locator.click", "kind": "action", "ok": true, "ms": 272, "note": "click Submit"}
+{"t": "2026-10-13T16:15:01.399Z", "task": "miniwob/click-option", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 10, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:01.409Z", "task": "miniwob/click-option", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 1, "note": "console reward line"}
+{"t": "2026-10-13T16:15:01.410Z", "task": "miniwob/click-option", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 5, "note": "START cover display + episode id"}
+{"task": "miniwob/click-option", "done": "2026-10-13T16:15:01.415Z", "ok": true}
+{"t": "2026-10-13T16:15:01.507Z", "task": "miniwob/click-tab", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 49, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:01.556Z", "task": "miniwob/click-tab", "tool": "locator.click", "kind": "action", "ok": true, "ms": 287, "note": "click START"}
+{"t": "2026-10-13T16:15:01.843Z", "task": "miniwob/click-tab", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 9, "note": "#query"}
+{"t": "2026-10-13T16:15:01.852Z", "task": "miniwob/click-tab", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 23, "note": "#area html"}
+{"t": "2026-10-13T16:15:05.752Z", "task": "miniwob/click-tab", "tool": "locator.click", "kind": "action", "ok": true, "ms": 290, "note": "click Tab #1"}
+{"t": "2026-10-13T16:15:06.042Z", "task": "miniwob/click-tab", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 18, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:06.060Z", "task": "miniwob/click-tab", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 2, "note": "console reward line"}
+{"t": "2026-10-13T16:15:06.062Z", "task": "miniwob/click-tab", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 10, "note": "START cover display + episode id"}
+{"task": "miniwob/click-tab", "done": "2026-10-13T16:15:06.072Z", "ok": true}
+{"t": "2026-10-13T16:15:06.270Z", "task": "miniwob/enter-text", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 86, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:06.356Z", "task": "miniwob/enter-text", "tool": "locator.click", "kind": "action", "ok": true, "ms": 304, "note": "click START"}
+{"t": "2026-10-13T16:15:06.660Z", "task": "miniwob/enter-text", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 15, "note": "#query"}
+{"t": "2026-10-13T16:15:06.675Z", "task": "miniwob/enter-text", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 26, "note": "#area html"}
+{"t": "2026-10-13T16:15:10.274Z", "task": "miniwob/enter-text", "tool": "locator.click", "kind": "action", "ok": true, "ms": 271, "note": "click #tt"}
+{"t": "2026-10-13T16:15:10.545Z", "task": "miniwob/enter-text", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 261, "note": "type Riley"}
+{"t": "2026-10-13T16:15:10.806Z", "task": "miniwob/enter-text", "tool": "locator.click", "kind": "action", "ok": true, "ms": 285, "note": "click Submit"}
+{"t": "2026-10-13T16:15:11.092Z", "task": "miniwob/enter-text", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 13, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:11.105Z", "task": "miniwob/enter-text", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 2, "note": "console reward line"}
+{"t": "2026-10-13T16:15:11.107Z", "task": "miniwob/enter-text", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 8, "note": "START cover display + episode id"}
+{"task": "miniwob/enter-text", "done": "2026-10-13T16:15:11.116Z", "ok": true}
+{"t": "2026-10-13T16:15:11.203Z", "task": "miniwob/enter-password", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 59, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:11.262Z", "task": "miniwob/enter-password", "tool": "locator.click", "kind": "action", "ok": true, "ms": 297, "note": "click START"}
+{"t": "2026-10-13T16:15:11.560Z", "task": "miniwob/enter-password", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 9, "note": "#query"}
+{"t": "2026-10-13T16:15:11.569Z", "task": "miniwob/enter-password", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 26, "note": "#area html"}
+{"t": "2026-10-13T16:15:15.574Z", "task": "miniwob/enter-password", "tool": "locator.click", "kind": "action", "ok": true, "ms": 287, "note": "click #password"}
+{"t": "2026-10-13T16:15:15.861Z", "task": "miniwob/enter-password", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 195, "note": "type password in #password"}
+{"t": "2026-10-13T16:15:16.056Z", "task": "miniwob/enter-password", "tool": "locator.click", "kind": "action", "ok": true, "ms": 303, "note": "click #verify"}
+{"t": "2026-10-13T16:15:16.359Z", "task": "miniwob/enter-password", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 195, "note": "type password in #verify"}
+{"t": "2026-10-13T16:15:16.554Z", "task": "miniwob/enter-password", "tool": "locator.click", "kind": "action", "ok": true, "ms": 272, "note": "click Submit"}
+{"t": "2026-10-13T16:15:16.826Z", "task": "miniwob/enter-password", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 14, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:16.840Z", "task": "miniwob/enter-password", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:15:16.843Z", "task": "miniwob/enter-password", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 9, "note": "START cover display + episode id"}
+{"task": "miniwob/enter-password", "done": "2026-10-13T16:15:16.852Z", "ok": true}
+{"t": "2026-10-13T16:15:16.959Z", "task": "miniwob/focus-text-2", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 39, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:16.998Z", "task": "miniwob/focus-text-2", "tool": "locator.click", "kind": "action", "ok": true, "ms": 296, "note": "click START"}
+{"t": "2026-10-13T16:15:17.294Z", "task": "miniwob/focus-text-2", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 7, "note": "#query"}
+{"t": "2026-10-13T16:15:17.301Z", "task": "miniwob/focus-text-2", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 23, "note": "#area html"}
+{"t": "2026-10-13T16:15:21.530Z", "task": "miniwob/focus-text-2", "tool": "locator.click", "kind": "action", "ok": true, "ms": 295, "note": "click #tt3"}
+{"t": "2026-10-13T16:15:21.825Z", "task": "miniwob/focus-text-2", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 13, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:21.838Z", "task": "miniwob/focus-text-2", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:15:21.841Z", "task": "miniwob/focus-text-2", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 9, "note": "START cover display + episode id"}
+{"task": "miniwob/focus-text-2", "done": "2026-10-13T16:15:21.850Z", "ok": true}
+{"t": "2026-10-13T16:15:22.006Z", "task": "miniwob/drag-box", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 47, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:22.053Z", "task": "miniwob/drag-box", "tool": "locator.click", "kind": "action", "ok": true, "ms": 290, "note": "click START"}
+{"t": "2026-10-13T16:15:22.343Z", "task": "miniwob/drag-box", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 7, "note": "#query"}
+{"t": "2026-10-13T16:15:22.350Z", "task": "miniwob/drag-box", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 23, "note": "#area html"}
+{"t": "2026-10-13T16:15:29.381Z", "task": "miniwob/drag-box", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 19, "note": "small/large rects"}
+{"t": "2026-10-13T16:15:29.400Z", "task": "miniwob/drag-box", "tool": "tab.cua.drag", "kind": "action", "ok": true, "ms": 178, "note": "drag small box to large box center"}
+{"t": "2026-10-13T16:15:29.578Z", "task": "miniwob/drag-box", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 15, "note": "check containment"}
+{"t": "2026-10-13T16:15:29.593Z", "task": "miniwob/drag-box", "tool": "locator.click", "kind": "action", "ok": true, "ms": 283, "note": "click Submit"}
+{"t": "2026-10-13T16:15:29.876Z", "task": "miniwob/drag-box", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 10, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:29.886Z", "task": "miniwob/drag-box", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 1, "note": "console reward line"}
+{"t": "2026-10-13T16:15:29.887Z", "task": "miniwob/drag-box", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 24, "note": "START cover display + episode id"}
+{"task": "miniwob/drag-box", "done": "2026-10-13T16:15:29.911Z", "ok": true}
+{"t": "2026-10-13T16:15:30.052Z", "task": "miniwob/drag-items", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 137, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:30.189Z", "task": "miniwob/drag-items", "tool": "locator.click", "kind": "action", "ok": true, "ms": 292, "note": "click START"}
+{"t": "2026-10-13T16:15:30.481Z", "task": "miniwob/drag-items", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 17, "note": "#query"}
+{"t": "2026-10-13T16:15:30.498Z", "task": "miniwob/drag-items", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 42, "note": "#area html"}
+{"t": "2026-10-13T16:15:35.964Z", "task": "miniwob/drag-items", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 17, "note": "li rects"}
+{"t": "2026-10-13T16:15:35.981Z", "task": "miniwob/drag-items", "tool": "tab.cua.drag", "kind": "action", "ok": true, "ms": 286, "note": "drag Kori to bottom"}
+{"t": "2026-10-13T16:15:36.268Z", "task": "miniwob/drag-items", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 13, "note": "order check"}
+{"t": "2026-10-13T16:15:36.281Z", "task": "miniwob/drag-items", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 7, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:36.288Z", "task": "miniwob/drag-items", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:15:36.291Z", "task": "miniwob/drag-items", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 10, "note": "START cover display + episode id"}
+{"task": "miniwob/drag-items", "done": "2026-10-13T16:15:36.301Z", "ok": true}
+{"t": "2026-10-13T16:15:36.485Z", "task": "miniwob/scroll-text", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 38, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:36.523Z", "task": "miniwob/scroll-text", "tool": "locator.click", "kind": "action", "ok": true, "ms": 287, "note": "click START"}
+{"t": "2026-10-13T16:15:36.810Z", "task": "miniwob/scroll-text", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 7, "note": "#query"}
+{"t": "2026-10-13T16:15:36.817Z", "task": "miniwob/scroll-text", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 25, "note": "#area html"}
+{"t": "2026-10-13T16:15:48.252Z", "task": "miniwob/scroll-text", "tool": "locator.click", "kind": "action", "ok": true, "ms": 275, "note": "click #answer-input"}
+{"t": "2026-10-13T16:15:48.527Z", "task": "miniwob/scroll-text", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 135, "note": "type last word non"}
+{"t": "2026-10-13T16:15:48.662Z", "task": "miniwob/scroll-text", "tool": "locator.click", "kind": "action", "ok": true, "ms": 280, "note": "click Submit"}
+{"t": "2026-10-13T16:15:48.942Z", "task": "miniwob/scroll-text", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 11, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:48.953Z", "task": "miniwob/scroll-text", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:15:48.956Z", "task": "miniwob/scroll-text", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 8, "note": "START cover display + episode id"}
+{"task": "miniwob/scroll-text", "done": "2026-10-13T16:15:48.964Z", "ok": true}
+{"t": "2026-10-13T16:15:49.076Z", "task": "miniwob/use-slider", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 54, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:49.130Z", "task": "miniwob/use-slider", "tool": "locator.click", "kind": "action", "ok": true, "ms": 298, "note": "click START"}
+{"t": "2026-10-13T16:15:49.428Z", "task": "miniwob/use-slider", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 8, "note": "#query"}
+{"t": "2026-10-13T16:15:49.436Z", "task": "miniwob/use-slider", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 27, "note": "#area html"}
+{"t": "2026-10-13T16:15:55.360Z", "task": "miniwob/use-slider", "tool": "locator.click", "kind": "action", "ok": true, "ms": 283, "note": "focus slider handle"}
+{"t": "2026-10-13T16:15:55.643Z", "task": "miniwob/use-slider", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 7, "note": "#val after focus"}
+{"t": "2026-10-13T16:15:55.650Z", "task": "miniwob/use-slider", "tool": "locator.press", "kind": "action", "ok": true, "ms": 511, "note": "ArrowDown x73 (one aggregated row for 73 presses)"}
+{"t": "2026-10-13T16:15:56.161Z", "task": "miniwob/use-slider", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 3, "note": "#val after presses"}
+{"t": "2026-10-13T16:15:56.164Z", "task": "miniwob/use-slider", "tool": "locator.click", "kind": "action", "ok": true, "ms": 279, "note": "click Submit"}
+{"t": "2026-10-13T16:15:56.443Z", "task": "miniwob/use-slider", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 12, "note": "read WOB globals"}
+{"t": "2026-10-13T16:15:56.455Z", "task": "miniwob/use-slider", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 2, "note": "console reward line"}
+{"t": "2026-10-13T16:15:56.457Z", "task": "miniwob/use-slider", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 10, "note": "START cover display + episode id"}
+{"task": "miniwob/use-slider", "done": "2026-10-13T16:15:56.467Z", "ok": true}
+{"t": "2026-10-13T16:15:59.810Z", "task": "miniwob/simple-algebra", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 45, "note": "goto task URL"}
+{"t": "2026-10-13T16:15:59.855Z", "task": "miniwob/simple-algebra", "tool": "locator.click", "kind": "action", "ok": true, "ms": 288, "note": "click START"}
+{"t": "2026-10-13T16:16:00.143Z", "task": "miniwob/simple-algebra", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 6, "note": "#query"}
+{"t": "2026-10-13T16:16:00.149Z", "task": "miniwob/simple-algebra", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 17, "note": "#area html"}
+{"t": "2026-10-13T16:16:03.753Z", "task": "miniwob/simple-algebra", "tool": "locator.click", "kind": "action", "ok": true, "ms": 274, "note": "click #math-answer"}
+{"t": "2026-10-13T16:16:04.027Z", "task": "miniwob/simple-algebra", "tool": "locator.pressSequentially", "kind": "action", "ok": true, "ms": 71, "note": "type 54"}
+{"t": "2026-10-13T16:16:04.098Z", "task": "miniwob/simple-algebra", "tool": "locator.click", "kind": "action", "ok": true, "ms": 277, "note": "click Submit"}
+{"t": "2026-10-13T16:16:04.375Z", "task": "miniwob/simple-algebra", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 13, "note": "read WOB globals"}
+{"t": "2026-10-13T16:16:04.388Z", "task": "miniwob/simple-algebra", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:16:04.391Z", "task": "miniwob/simple-algebra", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 11, "note": "START cover display + episode id"}
+{"task": "miniwob/simple-algebra", "done": "2026-10-13T16:16:04.402Z", "ok": true}
+{"t": "2026-10-13T16:16:04.674Z", "task": "miniwob/email-inbox-delete", "tool": "tab.goto", "kind": "action", "ok": true, "ms": 56, "note": "goto task URL"}
+{"t": "2026-10-13T16:16:04.730Z", "task": "miniwob/email-inbox-delete", "tool": "locator.click", "kind": "action", "ok": true, "ms": 280, "note": "click START"}
+{"t": "2026-10-13T16:16:05.010Z", "task": "miniwob/email-inbox-delete", "tool": "locator.innerText", "kind": "observe", "ok": true, "ms": 4, "note": "#query"}
+{"t": "2026-10-13T16:16:05.015Z", "task": "miniwob/email-inbox-delete", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 17, "note": "#area html"}
+{"t": "2026-10-13T16:16:09.231Z", "task": "miniwob/email-inbox-delete", "tool": "locator.click", "kind": "action", "ok": true, "ms": 279, "note": "click trash of Cordelia thread"}
+{"t": "2026-10-13T16:16:09.510Z", "task": "miniwob/email-inbox-delete", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 16, "note": "read WOB globals"}
+{"t": "2026-10-13T16:16:09.526Z", "task": "miniwob/email-inbox-delete", "tool": "tab.dev.logs", "kind": "observe", "ok": true, "ms": 3, "note": "console reward line"}
+{"t": "2026-10-13T16:16:09.529Z", "task": "miniwob/email-inbox-delete", "tool": "locator.evaluate", "kind": "observe", "ok": true, "ms": 9, "note": "START cover display + episode id"}
+{"task": "miniwob/email-inbox-delete", "done": "2026-10-13T16:16:09.538Z", "ok": true}
+{"t": "2026-10-13T16:16:15.309Z", "task": "T9", "tool": "tab.close", "kind": "action", "ok": true, "ms": 6, "note": "close own tab"}
+{"t": "2026-10-13T16:16:15.315Z", "task": "T9", "tool": "browser.user.openTabs", "kind": "observe", "ok": true, "ms": 23, "note": "count only: 1 tab after (= 1 before)"}
+{"t": "2026-10-13T16:16:15.338Z", "task": "T9", "tool": "browser.tabs.list", "kind": "observe", "ok": true, "ms": 1, "note": "own tabs: 0 left"}
+{"t": "2026-10-13T16:16:25.696Z", "task": "T9", "tool": "end_task", "kind": "other", "ok": true, "ms": 1800, "note": "mcp end_task -> {\"status\":\"ended\",\"ended\":true}; ms approximate (timed outside REPL, includes shell round trip)"}
+{"task": "T9", "done": "2026-10-13T16:16:27.509Z", "ok": true}

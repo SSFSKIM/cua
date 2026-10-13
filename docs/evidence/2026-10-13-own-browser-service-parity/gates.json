@@ -1,0 +1,55 @@
+{
+  "commit": "c6b7805f978d993d22412ee5735522d24cdf27a1",
+  "liveCorpusCommit": "c6b7805f978d993d22412ee5735522d24cdf27a1",
+  "node": "v22.23.2",
+  "checks": [
+    {
+      "command": "HOME=/tmp/cua-scratch-home npm test",
+      "exitCode": 0,
+      "tests": 1218,
+      "pass": 1184,
+      "fail": 0,
+      "skip": 34
+    },
+    {
+      "command": "npm run test:mods",
+      "exitCode": 0,
+      "pass": 32,
+      "fail": 0
+    },
+    {
+      "command": "claude plugin validate .",
+      "exitCode": 0,
+      "warnings": [
+        "Known root CLAUDE.md project-context warning"
+      ]
+    },
+    {
+      "command": "node --test test/browser-parity/inventory.test.mjs",
+      "vendorInstalled": true,
+      "exitCode": 0,
+      "pass": 2,
+      "skip": 1,
+      "skipReason": "M0: own service assertions begin at M1a"
+    },
+    {
+      "exitCode": 0,
+      "pass": 4,
+      "fail": 0,
+      "suite": "test/chrome-host-trace.test.mjs (included in npm test)"
+    },
+    {
+      "suite": "test/browser-parity/noop-oracles.test.mjs (included in npm test)",
+      "inertServiceCasesRejected": 26,
+      "individualMutationsRejected": 7,
+      "workingControlsPassed": 4
+    },
+    {
+      "suite": "test/browser-parity/fixture-ack.test.mjs (included in npm test)",
+      "delayedPostRegressions": 5,
+      "redBeforeFix": 5,
+      "pass": 5,
+      "fail": 0
+    }
+  ]
+}

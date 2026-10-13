@@ -10,7 +10,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {existsSync, readFileSync, readdirSync, statSync} from 'node:fs';
+import {existsSync, readFileSync, readdirSync, statSync, writeFileSync} from 'node:fs';
 import {connect} from 'node:net';
 import {join} from 'node:path';
 import {
@@ -188,6 +188,40 @@ test('frame limits over the MAWS socket: a 2 MiB answer reaches the vendor; a ho
 
 // ---- the relay's peer check ------------------------------------------------------------------------------------------
 
+async function readConnectorResult(result, ms = 8000) {
+  let outcome;
+  await waitFor(() => {
+    try {
+      outcome = JSON.parse(readFileSync(result, 'utf8'));
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT' || error instanceof SyntaxError) return false;
+      throw error;
+    }
+  }, 'the connector\'s outcome', ms);
+  return outcome;
+}
+
+test('connector outcome waits for complete JSON publication, not just the created file', async t => {
+  const s = shortScratch('cua-rc-race-');
+  t.after(s.cleanup);
+  const result = join(s.dir, 'result.json');
+  // writeFileSync opens/truncates first; another process can observe this intermediate state.
+  writeFileSync(result, '');
+  const expected = {connected: true, replied: true, closed: false};
+  const timer = setTimeout(() => writeFileSync(result, JSON.stringify(expected)), 20);
+  t.after(() => clearTimeout(timer));
+  assert.deepEqual(await readConnectorResult(result), expected);
+});
+
+test('connector outcome publication wait remains bounded when JSON never completes', async t => {
+  const s = shortScratch('cua-rc-incomplete-');
+  t.after(s.cleanup);
+  const result = join(s.dir, 'result.json');
+  writeFileSync(result, '{');
+  await assert.rejects(readConnectorResult(result, 20), /timed out waiting for the connector's outcome/);
+});
+
 // Runs the connector (test/helpers/relay-connector.mjs) against `socketPath`, as this process's child or as an orphan,
 // and resolves what it saw: {pid, connected, replied, closed}.
 async function connectorOutcome(t, socketPath, {orphan}) {
@@ -201,8 +235,8 @@ async function connectorOutcome(t, socketPath, {orphan}) {
   const command = orphan ? `(${node} ${script} ${args} & echo $! > ${JSON.stringify(pidFile)})` : `echo $$ > ${JSON.stringify(pidFile)}; exec ${node} ${script} ${args}`;
   const child = spawn('/bin/sh', ['-c', command], {stdio: 'ignore'});
   t.after(() => child.kill());
-  await waitFor(() => existsSync(result), 'the connector\'s outcome', 8000);
-  return {pid: Number(readFileSync(pidFile, 'utf8')), ...JSON.parse(readFileSync(result, 'utf8'))};
+  const outcome = await readConnectorResult(result);
+  return {pid: Number(readFileSync(pidFile, 'utf8')), ...outcome};
 }
 
 test('an orphaned same-user process connecting to the relay is refused before anything is read: one log line with its pid, nothing reaches MAWS', relayOnly, async t => {

@@ -1,0 +1,111 @@
+#!/usr/bin/env node
+import {parseArgs} from 'node:util';
+import {mkdirSync,writeFileSync,appendFileSync,readFileSync,mkdtempSync,rmSync,readdirSync,existsSync} from 'node:fs';
+import {join,resolve,relative} from 'node:path';
+import {tmpdir} from 'node:os';
+import {pathToFileURL,fileURLToPath} from 'node:url';
+import {randomUUID} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {StdioClient,textOf} from './browser-parity/mcp.mjs';
+import {attest,runScenario} from './browser-parity/runner.mjs';
+import {compareRuns} from './browser-parity/compare.mjs';
+import {miniPrepareCommand,serveCommand,root,execute,remoteCommand,quote} from './browser-parity/topology.mjs';
+import {fixtureProcess,traceControl} from './browser-parity/resources.mjs';
+import {startFixture} from '../test/browser-parity/fixture/serve.mjs';
+const readJson=path=>JSON.parse(readFileSync(path,'utf8'));
+const preparedPath=device=>join(root,'.doperpowers/sde/browser-parity',`${device}.json`);
+const jsonl=dir=>readFileSync(join(dir,'results.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+function scenariosAt(dir) {
+  return readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?scenariosAt(join(dir,e.name)):e.name.endsWith('.mjs')?[join(dir,e.name)]:[]).sort();
+}
+function globRegex(glob) {
+  return new RegExp('^'+glob.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*\*\//g,'\u0000').replace(/\*\*/g,'\u0001').replace(/\*/g,'[^/]*').replace(/\?/g,'[^/]').replaceAll('\u0000','(?:.*/)?').replaceAll('\u0001','.*')+'$');
+}
+export async function main(argv=process.argv.slice(2)) {
+  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'}}});
+  const [action,a,b]=positionals;
+  if(action==='diff') {
+    if(!a||!b)throw new Error('diff requires two run directories');
+    const ma=readJson(join(a,'meta.json')),mb=readJson(join(b,'meta.json'));
+    if(ma.complete!==true||mb.complete!==true)throw new Error('Cannot compare incomplete runs');
+    if(ma.backend!==mb.backend || ma.profile!==mb.profile || ma.device!==mb.device)throw new Error('Cannot compare different devices, profiles or fake/live backends');
+    if(ma.service==='vendor'&&mb.service==='vendor'&&values.expected)throw new Error('Vendor determinism must not use expected differences');
+    const expected=values.expected?readJson(resolve(values.expected)):[];
+    const result=compareRuns(jsonl(a),jsonl(b),{expected});
+    for(const d of result.differences)console.log(JSON.stringify(d));
+    console.log(`${result.differences.length} ${values.expected?'unexpected differences':'differences'} (${result.cases} cases, ${result.cells} cells${values.expected?`, ${result.expected.length} expected`:''})`);
+    return result.ok?0:1;
+  }
+  if(!['prepare','run'].includes(action))throw new Error('Usage: browser-parity.mjs prepare|run|diff [options]');
+  if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device))throw new Error('Invalid device');
+  if(action==='prepare') {
+    if(values.device==='local')throw new Error('Local runs use only the fake backend; prepare is for the parity clone on a remote device');
+    const output=execute(miniPrepareCommand(values));
+    const meta=JSON.parse(output.trim().split('\n').at(-1));
+    const fixture=await fixtureProcess({...meta,device:values.device});
+    await fixture.close();
+    mkdirSync(resolve(preparedPath(values.device),'..'),{recursive:true});writeFileSync(preparedPath(values.device),JSON.stringify(meta,null,2)+'\n');
+    console.log(`prepared ${values.device} at ${meta.commit}, profile ${meta.profile}, fixture 48732`);return 0;
+  }
+  if(!values.out)throw new Error('run requires --out');
+  if(!['vendor','cua'].includes(values.service))throw new Error('Invalid service');
+  const out=resolve(values.out);mkdirSync(out,{recursive:true});
+  if(existsSync(join(out,'meta.json'))||existsSync(join(out,'results.jsonl')))throw new Error('Output directory already contains a run');
+  const local=values.device==='local';
+  const scratch=local?mkdtempSync(join(tmpdir(),'cua-parity-')):null;
+  const prepared=local?{device:'local',profile:'scratch',checkout:root,home:scratch,commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim()}:readJson(preparedPath(values.device));
+  const meta={...prepared,service:values.service,backend:local?'fake':'live',environment:{CUA_BROWSER_SERVICE:values.service,CUA_SHIM_SURFACES:'browser',CUA_HOME:prepared.home},started:new Date().toISOString(),elicitations:[],attestations:[],complete:false};
+  if(!local) {
+    const actual=execute(remoteCommand(values.device,`cd ${quote(prepared.checkout)} && git rev-parse HEAD`)).trim();
+    if(actual!==prepared.commit)throw new Error('Parity clone moved since prepare');
+  }
+  let fixture,trace,client,failed=false;const ownedClients=new Set();
+  try {
+    fixture=local?await startFixture({port:0}):await fixtureProcess(prepared);
+    trace=traceControl({device:values.device,home:prepared.home,path:join(prepared.home,'state',`parity-trace-${randomUUID()}.jsonl`)});
+    let paths=scenariosAt(join(root,'test/browser-parity/scenarios'));
+    if(values.scenarios) {const pattern=globRegex(values.scenarios);paths=paths.filter(p=>pattern.test(relative(root,p))||pattern.test(relative(join(root,'test/browser-parity/scenarios'),p)));}
+    else if(local) paths=paths.filter(p=>p.includes('/examples/'));
+    if(!paths.length)throw new Error('No scenarios matched');
+    const scenarios=await Promise.all(paths.map(async p=>(await import(pathToFileURL(p))).default));
+    if(new Set(scenarios.map(s=>s.id)).size!==scenarios.length)throw new Error('Duplicate scenario ids');
+    meta.cases=scenarios.map(s=>s.id);
+    writeFileSync(join(out,'results.jsonl'),'');
+    for(const scenario of scenarios) {
+      const connectClient=async()=>{
+        const connected=new StdioClient({...serveCommand({...prepared,service:values.service}),onElicitation:row=>meta.elicitations.push({...row,case:scenario.id})});
+        ownedClients.add(connected);
+        await connected.initialize();
+        const profileResult=await connected.call('profiles_list');
+        const profiles=profileResult.structuredContent?.profiles;
+        const profile=profiles?.find(p=>p.key===prepared.profile);
+        if(!profile?.ready||!profile.extensionInstanceId)throw new Error(`Prepared profile ${prepared.profile} is not ready`);
+        const selected=await connected.call('js',{code:`globalThis.browser=await cua.getBrowser({extensionInstanceId:${JSON.stringify(profile.extensionInstanceId)}}); nodeRepl.write(await browser.documentation());`,timeout_ms:60000,title:'Parity service attestation'});
+        if(selected.isError)throw new Error('Service selection failed');
+        const attestation=attest(textOf(selected),values.service);meta.attestations.push({case:scenario.id,...attestation});
+        console.log(`attested: ${values.service} (${attestation.header}) at ${meta.commit}${local?' [fake development runtime]':''}`);
+        return {client:connected,instanceId:profile.extensionInstanceId};
+      };
+      const connection=await connectClient();client=connection.client;
+      const result=await runScenario(scenario,{client,service:values.service,fixtureURL:fixture.url,browserFixtureURL:fixture.browserURL ?? fixture.url,instanceId:connection.instanceId,createClient:async()=>(await connectClient()).client,readTrace:trace.read,
+        emit:row=>appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n')});
+      console.log(`case ${scenario.id} ${result.assertion.ok?'ok':'FAIL '+(result.assertion.reason??'assertion')}`);
+      failed ||= !result.assertion.ok;for(const owned of ownedClients)await owned.close();ownedClients.clear();client=null;
+    }
+    writeFileSync(join(out,'host-trace.jsonl'),(await trace.read()).map(JSON.stringify).join('\n')+'\n');
+    meta.complete=true;
+  } catch(e) {meta.error=e.message;throw e;}
+  finally {
+    const cleanupErrors=[];
+    for(const owned of ownedClients)try{await owned.close();}catch(e){cleanupErrors.push(e.message);}
+    try{if(trace)trace.close();}catch(e){cleanupErrors.push(e.message);}
+    try{if(fixture)await fixture.close();}catch(e){cleanupErrors.push(e.message);}
+    if(cleanupErrors.length){meta.complete=false;meta.cleanupErrors=cleanupErrors;failed=true;}
+    meta.finished=new Date().toISOString();writeFileSync(join(out,'meta.json'),JSON.stringify(meta,null,2)+'\n');
+    if(scratch)rmSync(scratch,{recursive:true,force:true});
+  }
+  return failed?1:0;
+}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+  main().then(code=>{process.exitCode=code;},e=>{console.error(e.message);process.exitCode=1;});
+}

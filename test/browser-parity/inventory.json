@@ -1,0 +1,919 @@
+[
+  {
+    "type": "browser_management_call",
+    "schemaSource": "chatgpt-26.928.40906 BS:35469",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/m2-disabled"
+    ],
+    "reachability": "capability:management"
+  },
+  {
+    "type": "browser_management_get_audit_trail",
+    "schemaSource": "chatgpt-26.928.40906 BS:35491",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/m2-disabled"
+    ],
+    "reachability": "capability:management"
+  },
+  {
+    "type": "browser_user_claim_tab",
+    "schemaSource": "chatgpt-26.928.40906 BS:32409",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "browser_user_get_tab_context",
+    "schemaSource": "chatgpt-26.928.40906 BS:32452",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-members"
+    ],
+    "reachability": "disabled-on-extension",
+    "reachabilityReason": "Extension api.json unsupportedByDefaultIn excludes this member."
+  },
+  {
+    "type": "browser_user_history",
+    "schemaSource": "chatgpt-26.928.40906 BS:32507",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/history"
+    ],
+    "reachability": "capability:history"
+  },
+  {
+    "type": "browser_user_open_tabs",
+    "schemaSource": "chatgpt-26.928.40906 BS:32479",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "browser_viewport_reset",
+    "schemaSource": "chatgpt-26.928.40906 BS:35697",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/viewport"
+    ],
+    "reachability": "capability:viewport"
+  },
+  {
+    "type": "browser_viewport_set",
+    "schemaSource": "chatgpt-26.928.40906 BS:35713",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/viewport"
+    ],
+    "reachability": "capability:viewport"
+  },
+  {
+    "type": "browser_visibility_get",
+    "schemaSource": "chatgpt-26.928.40906 BS:35624",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/m2-disabled"
+    ],
+    "reachability": "capability:visibility"
+  },
+  {
+    "type": "browser_visibility_set",
+    "schemaSource": "chatgpt-26.928.40906 BS:35642",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/m2-disabled"
+    ],
+    "reachability": "capability:visibility"
+  },
+  {
+    "type": "close_tab",
+    "schemaSource": "chatgpt-26.928.40906 BS:32113",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "create_tab",
+    "schemaSource": "chatgpt-26.928.40906 BS:32075",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_click",
+    "schemaSource": "chatgpt-26.928.40906 BS:32924",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/coordinates"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_double_click",
+    "schemaSource": "chatgpt-26.928.40906 BS:32964",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/coordinates"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_drag",
+    "schemaSource": "chatgpt-26.928.40906 BS:33006",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/coordinates"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_keypress",
+    "schemaSource": "chatgpt-26.928.40906 BS:32982",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/coordinates"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_move",
+    "schemaSource": "chatgpt-26.928.40906 BS:33026",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/cursor"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_scroll",
+    "schemaSource": "chatgpt-26.928.40906 BS:33048",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/coordinates"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "cua_type",
+    "schemaSource": "chatgpt-26.928.40906 BS:33066",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/coordinates"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "dom_cua_click",
+    "schemaSource": "chatgpt-26.928.40906 BS:33092",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/dom"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "dom_cua_double_click",
+    "schemaSource": "chatgpt-26.928.40906 BS:33129",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/dom"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "dom_cua_get_visible_dom",
+    "schemaSource": "chatgpt-26.928.40906 BS:33146",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/snapshot"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "dom_cua_keypress",
+    "schemaSource": "chatgpt-26.928.40906 BS:33164",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/dom"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "dom_cua_scroll",
+    "schemaSource": "chatgpt-26.928.40906 BS:33184",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/dom"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "dom_cua_type",
+    "schemaSource": "chatgpt-26.928.40906 BS:33202",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "input/dom"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "get_browser",
+    "schemaSource": "chatgpt-26.928.40906 BS:31995",
+    "dispatch": "zN",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "get_browser_documentation",
+    "schemaSource": "chatgpt-26.928.40906 BS:32041",
+    "dispatch": "zN",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "get_browser_for_url",
+    "schemaSource": "chatgpt-26.928.40906 BS:32057",
+    "dispatch": "zN",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "get_default_browser",
+    "schemaSource": "chatgpt-26.928.40906 BS:32009",
+    "dispatch": "zN",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "get_documentation",
+    "schemaSource": "chatgpt-26.928.40906 BS:32025",
+    "dispatch": "zN",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "get_tab",
+    "schemaSource": "chatgpt-26.928.40906 BS:32096",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "list_browsers",
+    "schemaSource": "chatgpt-26.928.40906 BS:31979",
+    "dispatch": "zN",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "list_tabs",
+    "schemaSource": "chatgpt-26.928.40906 BS:32228",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "mark_tab",
+    "schemaSource": "chatgpt-26.928.40906 BS:32133",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "name_session",
+    "schemaSource": "chatgpt-26.928.40906 BS:32185",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/discovery"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "navigate_tab_back",
+    "schemaSource": "chatgpt-26.928.40906 BS:32354",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/navigation"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "navigate_tab_forward",
+    "schemaSource": "chatgpt-26.928.40906 BS:32371",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/navigation"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "navigate_tab_reload",
+    "schemaSource": "chatgpt-26.928.40906 BS:32388",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/navigation"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "navigate_tab_url",
+    "schemaSource": "chatgpt-26.928.40906 BS:32337",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/navigation"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_dom_snapshot",
+    "schemaSource": "chatgpt-26.928.40906 BS:33657",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/snapshot"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_download_path",
+    "schemaSource": "chatgpt-26.928.40906 BS:33762",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "downloads/chooser"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_evaluate",
+    "schemaSource": "chatgpt-26.928.40906 BS:32903",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "evaluate/mutation",
+      "evaluate/no-replay",
+      "evaluate/read",
+      "evaluate/counter",
+      "evaluate/context-loss",
+      "evaluate/late-completion"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_file_chooser_set_files",
+    "schemaSource": "chatgpt-26.928.40906 BS:33803",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "downloads/chooser"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_all_text_contents",
+    "schemaSource": "chatgpt-26.928.40906 BS:33485",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_click",
+    "schemaSource": "chatgpt-26.928.40906 BS:33224",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/locators",
+      "actions/slow-budget",
+      "actions/strict-error"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_count",
+    "schemaSource": "chatgpt-26.928.40906 BS:33368",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_dblclick",
+    "schemaSource": "chatgpt-26.928.40906 BS:33246",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/doubleclick"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_download_media",
+    "schemaSource": "chatgpt-26.928.40906 BS:33267",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "downloads/media"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_fill",
+    "schemaSource": "chatgpt-26.928.40906 BS:33288",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_get_attribute",
+    "schemaSource": "chatgpt-26.928.40906 BS:33549",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_inner_text",
+    "schemaSource": "chatgpt-26.928.40906 BS:33527",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_is_enabled",
+    "schemaSource": "chatgpt-26.928.40906 BS:33464",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_is_visible",
+    "schemaSource": "chatgpt-26.928.40906 BS:33444",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_press",
+    "schemaSource": "chatgpt-26.928.40906 BS:33308",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_press_sequentially",
+    "schemaSource": "chatgpt-26.928.40906 BS:33328",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_read_all",
+    "schemaSource": "chatgpt-26.928.40906 BS:33576",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_select_option",
+    "schemaSource": "chatgpt-26.928.40906 BS:33403",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_set_checked",
+    "schemaSource": "chatgpt-26.928.40906 BS:33424",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/locators"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_text_content",
+    "schemaSource": "chatgpt-26.928.40906 BS:33506",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/locators",
+      "reads/oopif"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_locator_wait_for",
+    "schemaSource": "chatgpt-26.928.40906 BS:33348",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "actions/wait-for"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_wait_for_download",
+    "schemaSource": "chatgpt-26.928.40906 BS:33741",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "downloads/ask-where-to-save",
+      "downloads/chooser"
+    ],
+    "reachability": "always",
+    "exclusions": [
+      {
+        "case": "downloads/ask-where-to-save",
+        "reason": "human: Chrome Ask where to save requires a person; never change profile download preferences"
+      }
+    ]
+  },
+  {
+    "type": "playwright_wait_for_file_chooser",
+    "schemaSource": "chatgpt-26.928.40906 BS:33783",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "downloads/chooser"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_wait_for_load_state",
+    "schemaSource": "chatgpt-26.928.40906 BS:33620",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "waits/page"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_wait_for_timeout",
+    "schemaSource": "chatgpt-26.928.40906 BS:33638",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "waits/page"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "playwright_wait_for_url",
+    "schemaSource": "chatgpt-26.928.40906 BS:33599",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "waits/page"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "selected_tab",
+    "schemaSource": "chatgpt-26.928.40906 BS:32203",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/lifecycle"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_ax_action",
+    "schemaSource": "chatgpt-26.928.40906 BS:32880",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "input/ax-disabled"
+    ],
+    "reachability": "disabled-on-extension",
+    "reachabilityReason": "Extension manifest disables the member; getAXState DOM fallback is client-side playwright.domSnapshot, not an AX wire dispatch."
+  },
+  {
+    "type": "tab_ax_get_state",
+    "schemaSource": "chatgpt-26.928.40906 BS:32805",
+    "dispatch": "Rf",
+    "milestone": "M1b",
+    "cases": [
+      "reads/snapshot"
+    ],
+    "reachability": "disabled-on-extension",
+    "reachabilityReason": "Extension manifest disables the member; getAXState DOM fallback is client-side playwright.domSnapshot, not an AX wire dispatch."
+  },
+  {
+    "type": "tab_bot_detection_report",
+    "schemaSource": "chatgpt-26.928.40906 BS:34786",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-disabled"
+    ],
+    "reachability": "capability:botDetection"
+  },
+  {
+    "type": "tab_browser_auth_handoff",
+    "schemaSource": "chatgpt-26.928.40906 BS:35023",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-disabled"
+    ],
+    "reachability": "capability:browserAuth"
+  },
+  {
+    "type": "tab_cdp_call",
+    "schemaSource": "chatgpt-26.928.40906 BS:34861",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/m2-disabled"
+    ],
+    "reachability": "capability:cdp"
+  },
+  {
+    "type": "tab_cdp_events",
+    "schemaSource": "chatgpt-26.928.40906 BS:34882",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/m2-disabled"
+    ],
+    "reachability": "capability:cdp"
+  },
+  {
+    "type": "tab_clipboard_read",
+    "schemaSource": "chatgpt-26.928.40906 BS:32720",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/clipboard"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_clipboard_read_text",
+    "schemaSource": "chatgpt-26.928.40906 BS:32663",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/clipboard"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_clipboard_write",
+    "schemaSource": "chatgpt-26.928.40906 BS:32758",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/clipboard"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_clipboard_write_text",
+    "schemaSource": "chatgpt-26.928.40906 BS:32681",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/clipboard"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_content_export",
+    "schemaSource": "chatgpt-26.928.40906 BS:32603",
+    "dispatch": "executeUnhandledCommand",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-members"
+    ],
+    "reachability": "disabled-on-extension",
+    "reachabilityReason": "Extension api.json unsupportedByDefaultIn excludes this member.",
+    "note": "Additional disabled client schema explicitly required by M3; not an Rf handler."
+  },
+  {
+    "type": "tab_content_export_gsuite",
+    "schemaSource": "chatgpt-26.928.40906 BS:32625",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/export-rejections",
+      "capabilities/export-authenticated"
+    ],
+    "reachability": "always",
+    "exclusions": [
+      {
+        "case": "capabilities/export-authenticated",
+        "reason": "external: authenticated Google Workspace document and stable captioned YouTube fixture are not provided; fixture-host rejection contracts remain executable"
+      }
+    ]
+  },
+  {
+    "type": "tab_content_export_youtube_transcript",
+    "schemaSource": "chatgpt-26.928.40906 BS:32644",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/export-rejections",
+      "capabilities/export-authenticated"
+    ],
+    "reachability": "always",
+    "exclusions": [
+      {
+        "case": "capabilities/export-authenticated",
+        "reason": "external: authenticated Google Workspace document and stable captioned YouTube fixture are not provided; fixture-host rejection contracts remain executable"
+      }
+    ]
+  },
+  {
+    "type": "tab_dev_logs",
+    "schemaSource": "chatgpt-26.928.40906 BS:32538",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "capabilities/logs"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_get_js_dialog",
+    "schemaSource": "chatgpt-26.928.40906 BS:32564",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "dialogs/alert",
+      "dialogs/prompt"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_handle_js_dialog",
+    "schemaSource": "chatgpt-26.928.40906 BS:32584",
+    "dispatch": "Rf",
+    "milestone": "M2",
+    "cases": [
+      "dialogs/alert",
+      "dialogs/prompt"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "tab_manual_handoff_request",
+    "schemaSource": "chatgpt-26.928.40906 BS:32145",
+    "dispatch": "Rf",
+    "milestone": "M1a",
+    "cases": [
+      "tabs/manual-handoff-disabled"
+    ],
+    "reachability": "disabled-on-extension",
+    "reachabilityReason": "Extension api.json unsupportedByDefaultIn excludes this member."
+  },
+  {
+    "type": "tab_page_assets_bundle",
+    "schemaSource": "chatgpt-26.928.40906 BS:35284",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-disabled"
+    ],
+    "reachability": "capability:pageAssets"
+  },
+  {
+    "type": "tab_page_assets_list",
+    "schemaSource": "chatgpt-26.928.40906 BS:35301",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-disabled"
+    ],
+    "reachability": "capability:pageAssets"
+  },
+  {
+    "type": "tab_screenshot",
+    "schemaSource": "chatgpt-26.928.40906 BS:32782",
+    "dispatch": "Rf",
+    "milestone": "M1c",
+    "cases": [
+      "screenshot/clip"
+    ],
+    "reachability": "always"
+  },
+  {
+    "type": "webmcp_invoke_tool",
+    "schemaSource": "chatgpt-26.928.40906 BS:32319",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-disabled"
+    ],
+    "reachability": "capability:webmcp"
+  },
+  {
+    "type": "webmcp_list_tools",
+    "schemaSource": "chatgpt-26.928.40906 BS:32293",
+    "dispatch": "Rf",
+    "milestone": "M3",
+    "cases": [
+      "capabilities/m3-disabled"
+    ],
+    "reachability": "capability:webmcp"
+  }
+]

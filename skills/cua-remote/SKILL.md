@@ -46,7 +46,8 @@ client's `/secret` field themselves.
 5. **The agent.** `cua agent install`: a launchd job in the GUI session on macOS, a systemd user unit on Linux (there,
    `sudo loginctl enable-linger "$USER"` once so it runs from boot, and `--display`/`--xauthority` when the installing
    shell has no X session). Run it again after node moves (a Homebrew or nvm upgrade).
-6. **Check.** `cua doctor --json`: the four `agent.*` rows (`installed`, `running`, `enrolled`, `console`) must pass.
+6. **Check.** `cua doctor --json`: the applicable `agent.*` rows (`installed`, `running`, `enrolled`, `console`, `relay`) must pass.
+   `agent.relay` reads the agent's recorded link state, not the network; a failing relay is not a stopped agent.
    On macOS the first drive asks for Accessibility and Screen Recording at the screen, so someone must be there once.
 7. **Hand off.** Give the client side `clientSecretKey` and `devicesAddCommand` (`clientRegisterCommand` for a client
    without the plugin; none of them is secret), and tell the owner the credential is in `~/cua-enroll.json`
@@ -80,7 +81,9 @@ server: no registration per device, no reconnect.
 |---|---|---|
 | `credential_missing` | the device's key is not in the store | step 1, or `cua devices import` |
 | `console_locked`, or status `locked` | the device's screen is locked, or another session is on its console | ask the owner to unlock it, then retry |
-| `device_offline` | the device is asleep, offline, or its agent stopped; or the relay is unreachable | on the device: `cua agent status`, `cua doctor` |
+| `devices_list`: `timeout` / `relay_unreachable` (relay unreachable) | the relay origin is not answering, or its proxy cannot reach the device; all devices affected on one relay points to that host | check `curl https://<relay>/` and `hcloud server list`; `relay/deploy/create-server.sh` rebuilds on the same IP (restore the devices table too); SSH stopgap: `relay/README.md` |
+| `devices_list`: bare `offline` (device offline behind a live relay) | the relay answered but the device has no live link | on the device: `cua agent status`, `cua doctor` |
+| `device_offline` from a call | either of the above, or a stream could not resume | use `devices_list` to distinguish relay failure from a device with no link |
 | `device_unauthorized` | wrong credential, or the relay's table lacks the device's line | check the stored key and the relay's table (Part A, 4) |
 | `session_limit` | another client holds the device (one session at a time) | wait a minute, or end the other task |
 | `device_session_ended` | the device ended the session mid-task; its REPL state is gone | bind apps and tabs again |

@@ -496,7 +496,10 @@ test('stdio serve reads the device registry and credentials under its $HOME: dev
   const server = launch(join(REPO, 'bin', 'cua.mjs'), home, ['serve'], env);
   await server.request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'e2e', version: '0'}});
   const listed = await server.call('devices_list');
-  assert.deepEqual(listed.result.structuredContent, {status: 'ok', current: 'local', devices: [
+  const {guidance, devices, ...summary} = listed.result.structuredContent;
+  assert.match(guidance, /Every device on relay http:\/\/127.0.0.1:1/);
+  assert.match(devices[1].guidance, /relay origin.*not answering/);
+  assert.deepEqual({...summary, devices: devices.map(({guidance, ...device}) => device)}, {status: 'ok', current: 'local', devices: [
     {name: 'local', status: 'online'},
     {name: 'mini', deviceId, relay: 'http://127.0.0.1:1', status: 'offline', code: 'relay_unreachable'},
   ]});

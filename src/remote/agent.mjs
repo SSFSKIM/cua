@@ -35,6 +35,7 @@ import {checkConsole, consoleCheckFrom} from './console.mjs';
 import {connectRelay, loadWebSocket} from './relay-link.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
 import {fail} from '../runtime/errors.mjs';
+import {createAgentState} from './health.mjs';
 
 export {connectRelay};
 
@@ -201,7 +202,8 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
         const now = current();
         return now?.relayUrl ? {url: now.relayUrl, deviceCredential: now.deviceCredential, deviceId: now.deviceId} : null;
       };
-      link = await connectRelay({target, handle: mcp.handle, diagnostics});
+      const health = createAgentState(home, {diagnostics});
+      link = await connectRelay({target, handle: mcp.handle, diagnostics, onState: health.relay});
       diagnostics(`serving through the relay (${served})`);
     }
 

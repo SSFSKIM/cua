@@ -1,3 +1,4 @@
+import {createAgentState} from '../src/remote/health.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
@@ -339,7 +340,7 @@ test('on a Mac never enrolled, with no job, every agent row reads skip with the 
   let consoleRead = false;
   const {launchctl, rows} = await agentSetup(t, {enrol: false});
   const r = await rows({checkConsole: async () => { consoleRead = true; return {onConsole: true, locked: true}; }});
-  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console']);
+  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console', 'agent.relay']);
   for (const name of Object.keys(r)) {
     assert.equal(r[name].status, 'skip', name);
     assert.match(r[name].detail, /cua remote enroll.*cua agent install/, name);
@@ -475,7 +476,7 @@ async function linuxSetup(t, {enrol = true, relayUrl, install = null, linger = '
 test('on Linux never enrolled, with no unit, every agent row reads skip; neither the manager nor the display is asked', async t => {
   const {systemctl, displays, rows} = await linuxSetup(t, {enrol: false});
   const r = await rows();
-  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console']);
+  assert.deepEqual(Object.keys(r), ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console', 'agent.relay']);
   for (const row of Object.values(r)) {
     assert.equal(row.status, 'skip', row.name);
     assert.match(row.detail, /this machine is not set up for remote control.*cua remote enroll, then cua agent install/);
@@ -485,7 +486,8 @@ test('on Linux never enrolled, with no unit, every agent row reads skip; neither
 });
 
 test('on Linux an installed, running unit passes every row, naming the unit, its display, linger, and that a lock is not read', async t => {
-  const {rows, displays, userHome} = await linuxSetup(t, {relayUrl: 'wss://relay.example/ws', install: {display: ':0', xauthority: '/home/me/.Xauthority'}, env: {DISPLAY: ':9'}});
+  const {home, rows, displays, userHome} = await linuxSetup(t, {relayUrl: 'wss://relay.example/ws', install: {display: ':0', xauthority: '/home/me/.Xauthority'}, env: {DISPLAY: ':9'}});
+  createAgentState(home).relay({url: 'wss://relay.example/ws', status: 'connected'});
   const r = await rows();
   for (const row of Object.values(r)) assert.equal(row.status, 'pass', `${row.name}: ${row.detail}`);
   assert.match(r['agent.installed'].detail, new RegExp(`^${agentUnitPath(userHome).replace(/[.]/g, '\\.')}: node .* agent run --relay, display :0$`));
@@ -580,4 +582,18 @@ test('the uid doctor names and reads the console for is the one launchd is asked
   assert.deepEqual(asked, {uid: UID});
   assert.match(r['agent.console'].detail, new RegExp(`uid ${UID}\\)`));
   assert.match(r['agent.running'].detail, new RegExp(`gui/${UID}/`));
+});
+
+test('agent.relay reports the agent snapshot without dialing, including when the job itself is green', async t => {
+  const url = 'wss://relay.example/ws';
+  const {home, rows} = await agentSetup(t, {relayUrl: url, install: {loadRelay: async () => {}}});
+  assert.equal((await rows())['agent.relay'].status, 'blocked');
+  const record = createAgentState(home);
+  record.relay({url, status: 'failing', error: 'ECONNREFUSED'});
+  let r = await rows();
+  assert.equal(r['agent.running'].status, 'pass');
+  assert.equal(r['agent.relay'].status, 'blocked');
+  assert.match(r['agent.relay'].detail, /relay.example.*failing since.*ECONNREFUSED/);
+  record.relay({url, status: 'connected'});
+  assert.equal((await rows())['agent.relay'].status, 'pass');
 });

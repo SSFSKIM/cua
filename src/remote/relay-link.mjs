@@ -42,7 +42,7 @@ export function loadWebSocket() {
 
 const seconds = ms => `${ms / 1000} s`;
 
-export async function connectRelay({target, handle, diagnostics = () => {},
+export async function connectRelay({target, handle, diagnostics = () => {}, onState = () => {},
   minBackoffMs = 1000, maxBackoffMs = 30_000, watchdogMs = 60_000, bodyLimit = 4 * 1024 * 1024}) {
   const WebSocket = await loadWebSocket();
   let delay = minBackoffMs;
@@ -55,12 +55,14 @@ export async function connectRelay({target, handle, diagnostics = () => {},
   const stopped = new Promise(resolve => { resolveStopped = resolve; });
 
   function later(why) {
+    onState({url: dialled, status: 'failing', error: why});
     diagnostics(`relay: ${why}; retrying in ${seconds(delay)}`);
     retry = setTimeout(dial, delay);
     delay = Math.min(delay * 2, maxBackoffMs);
   }
 
   function dial() {
+    if (stopping) return;
     retry = null;
     const to = target();
     dialled = to?.url ?? null;
@@ -87,9 +89,13 @@ export async function connectRelay({target, handle, diagnostics = () => {},
       watchdog.unref?.();
     };
     const send = frame => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame)); };
+    const active = () => !stopping && socket === ws && !ws.redial && ws.readyState === WebSocket.OPEN;
 
     ws.on('open', () => {
+      if (!active()) return;
       opened = true;
+      onState({url, status: 'connected'});
+      if (!active()) return;
       delay = minBackoffMs;
       connections++;
       send({t: 'hello', deviceId});
@@ -97,6 +103,9 @@ export async function connectRelay({target, handle, diagnostics = () => {},
       arm();
     });
     ws.on('ping', () => {
+      if (!active()) return;
+      onState({url, status: 'connected'});
+      if (!active()) return;
       arm();
       refresh();
     });
@@ -106,13 +115,15 @@ export async function connectRelay({target, handle, diagnostics = () => {},
       clearTimeout(watchdog);
       for (const channel of channels.values()) abort(channel);
       channels.clear();
-      if (socket === ws) socket = null;
+      if (socket !== ws) return;
+      socket = null;
       if (stopping) return;
       if (ws.redial) return dial();
       const reason = reasonBytes.toString('utf8');
       if (STOP_CODES.has(code)) {
-        diagnostics(`relay: closed with ${code} (${reason || STOP_CODES.get(code)}): ${STOP_CODES.get(code)}; not reconnecting`);
         stopping = true;
+        onState({url, status: 'stopped', error: `${code}: ${reason || STOP_CODES.get(code)}`});
+        diagnostics(`relay: closed with ${code} (${reason || STOP_CODES.get(code)}): ${STOP_CODES.get(code)}; not reconnecting`);
         return resolveStopped({code, reason});
       }
       const refused = !opened && /\b401\b/.test(failure ?? '') ? '; the relay does not know this device\'s credential: add the line cua remote show prints to its devices.json' : '';
@@ -204,6 +215,7 @@ export async function connectRelay({target, handle, diagnostics = () => {},
     if (stopping) return;
     const url = target()?.url ?? null;
     if (url === dialled) return;
+    onState({url, status: 'connecting'});
     diagnostics(`relay: the enrolled relay URL changed to ${url ?? 'none'}; dialling again`);
     dialled = url;   // once per change: later refreshes, before the old socket has closed, find nothing to do
     delay = minBackoffMs;
@@ -217,6 +229,7 @@ export async function connectRelay({target, handle, diagnostics = () => {},
   }
 
   const first = target();
+  onState({url: first?.url ?? null, status: 'connecting'});
   if (first) diagnostics(`relay: dialling ${first.url} as device ${first.deviceId}`);
   dial();
 
@@ -227,6 +240,7 @@ export async function connectRelay({target, handle, diagnostics = () => {},
     async close() {
       if (!stopping) {
         stopping = true;
+        onState({url: dialled, status: 'stopped', error: 'closed by the agent'});
         resolveStopped({code: 1000, reason: 'closed by the agent'});
       }
       clearTimeout(retry);

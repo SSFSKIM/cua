@@ -139,7 +139,7 @@ export function profileStatuses({home, chrome, route = chromeRoute(home)}) {
       : extension === 'absent' ? 'extension_not_installed'
         : extensionInstanceId && effectiveRoute(boundOn) !== effectiveRoute(route) ? 'rebind_required'
           : extension === 'unreadable' ? 'chrome_data_unreadable'
-          : !extensionInstanceId ? 'not_bound' : null;
+            : !extensionInstanceId ? 'not_bound' : null;
     return {key, chromeProfileDirectory, ready: reason === null, ...(reason ? {reason} : {}),
       ...(extensionInstanceId ? {extensionInstanceId} : {}), ...(boundAt ? {boundAt} : {}), ...unreadableCode(chrome, chromeProfileDirectory, extension)};
   });

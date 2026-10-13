@@ -318,13 +318,13 @@ const installedAgentJob = () => (process.platform === 'darwin' ? launchd.install
 
 export function agentInstallMessage(result, {http} = {}) {
   return [
-      `installed the launchd job ${result.label} (${result.plist})`,
-      `  runs    ${result.programArguments.join(' ')}`,
-      `  node    ${result.node}; after upgrading or moving node, run cua agent install again${http ? ' (macOS\'s firewall judges this node binary for incoming connections: allow it if asked)' : ''}`,
-      `  chrome  ${result.chromeAccess}`,
-      `  log     ${result.log}`,
-      `  env     ${Object.entries(result.environment).map(([key, value]) => `${key}=${value}`).join(' ')}`,
-      `  status  ${describeRunning(result.status)}`,
+    `installed the launchd job ${result.label} (${result.plist})`,
+    `  runs    ${result.programArguments.join(' ')}`,
+    `  node    ${result.node}; after upgrading or moving node, run cua agent install again${http ? ' (macOS\'s firewall judges this node binary for incoming connections: allow it if asked)' : ''}`,
+    `  chrome  ${result.chromeAccess}`,
+    `  log     ${result.log}`,
+    `  env     ${Object.entries(result.environment).map(([key, value]) => `${key}=${value}`).join(' ')}`,
+    `  status  ${describeRunning(result.status)}`,
   ].join('\n');
 }
 

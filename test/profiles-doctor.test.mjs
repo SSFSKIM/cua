@@ -97,3 +97,14 @@ test('Chrome data this process may not read is blocked with the Full Disk Access
   assert.match(checks['chrome.host.registered'].detail, /is unknown: this process may not read it .*\(EPERM\)/);
   assert.ok(checks['chrome.host.registered'].detail.includes(PERMISSION_FIX));
 });
+
+test('a wrong-route binding does not turn unreadable extension evidence into a doctor pass', async t => {
+  const {addProfile, bindProfile} = await import('../src/profiles/registry.mjs');
+  const s = scratch(); t.after(s.cleanup);
+  const chrome = fakeChromeFacts({Default: {directory: 'unreadable'}});
+  addProfile({home: s.dir, key: 'work', directory: 'Default', chrome});
+  bindProfile({home: s.dir, key: 'work', extensionInstanceId: 'instance', route: 'cua'});
+  const checks = byName(chromeChecks({home: s.dir, chrome, psText: '', userHome: s.dir, host: DARWIN}));
+  assert.equal(checks['chrome.extension.work'].status, 'blocked');
+  assert.match(checks['chrome.extension.work'].detail, /EPERM/);
+});

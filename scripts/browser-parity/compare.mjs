@@ -1,6 +1,10 @@
 import {isDeepStrictEqual} from 'node:util';
 
-const semantic = r => Object.fromEntries(['ok','value','error','assertion','skip'].filter(k => k in r).map(k => [k,r[k]]));
+// A page error's stack names lines and columns inside the service's own evaluated expressions (`<anonymous>:227:31`):
+// those positions are each service's layout, not the error. The sentence, the frames and their names still compare.
+const anonymousPositions = message => message.replace(/<anonymous>:\d+:\d+/g, '<anonymous>');
+const semantic = r => Object.fromEntries(['ok','value','error','assertion','skip'].filter(k => k in r)
+  .map(k => [k, k === 'error' && typeof r.error?.message === 'string' ? {...r.error, message: anonymousPositions(r.error.message)} : r[k]]));
 const polling = name => name === 'Runtime.callFunctionOn' || name.startsWith('DOM.') || name === 'Page.getLayoutMetrics';
 const counts = trace => {
   const out = {};

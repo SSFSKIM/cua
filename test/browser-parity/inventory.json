@@ -601,7 +601,7 @@
       "reads/frames"
     ],
     "reachability": "always",
-    "notes": "timeout_ms 0 is one resolution attempt bounded by 3 s in cua's service (the M1b ruling), for direct callers: the unchanged REPL client accepts only a positive timeout_ms, so reads/zero-budget pins its refusal of 0 on both services."
+    "notes": "timeout_ms 0 reaches the service (the REPL client sends commands without checking their schemas): one resolution attempt on both services, on cua with its dispatches bounded by 3 s (the M1b ruling); reads/zero-budget pins it for a present and a missing element."
   },
   {
     "type": "playwright_locator_wait_for",

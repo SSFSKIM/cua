@@ -7,6 +7,6 @@ export default {
     {label:'usable',code:"return await tab.title();"},
   ],
   assert({results,fixtureState,service}) {
-    return {ok:expectError(results,'late',service==='vendor'?/read.only|not (?:allowed|supported)|blocked|fetch|unsupported/i:/interrupt|timeout|timed out/i,['Error'])&&fixtureState.counter===(service==='vendor'?0:1)&&results[1]?.ok&&results[1].value==='Browser parity fixture'};
+    return {ok:expectError(results,'late',service==='vendor'?/read.only|not (?:allowed|supported)|blocked|fetch|unsupported/i:/interrupt|deadline|timeout|timed out/i,['Error'])&&fixtureState.counter===(service==='vendor'?0:1)&&results[1]?.ok&&results[1].value==='Browser parity fixture'};
   },
 };

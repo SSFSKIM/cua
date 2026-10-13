@@ -12,16 +12,21 @@ const peer={notify(){}};
 ext.onNotify=(method,params)=>host.onExtensionNotification({method,params});
 let emit=()=>{}, currentMeta={}, output=[], approved=false, approvalResolve;
 const call=(method,params={})=>host.handleBackendRequest(peer,{method,params:{...params,...currentMeta}});
-const browser={browserId:`browser-${randomUUID()}`,nameSession:name=>call('nameSession',{name}),
+const fakeTab=created=>{
+  let current='about:blank';
+  return {id:String(created.id),
+    async goto(url){await call('attach',{tabId:created.id});await call('executeCdp',{target:{tabId:created.id},method:'Page.navigate',commandParams:{url}});current=url;},
+    title:async()=> 'Browser parity fixture',url:async()=>current,close:()=>call('executeCdp',{target:{tabId:created.id},method:'Page.close'})};
+};
+const browser={browserId:`browser-${randomUUID()}`,nameSession:name=>call('nameSession',{name}),tabs:{new:async()=>fakeTab(await call('createTab'))},
   documentation:async()=>`# Selected Browser\n- Name: cua\n- Type: extension\n${process.env.CUA_BROWSER_SERVICE==='cua'?'cua browser service 0.1.0':''}`};
 const context=vm.createContext({setTimeout,clearTimeout,URL,Promise,fetch,console:{log:(...a)=>output.push(a.join(' '))},
   nodeRepl:{write:text=>output.push(text)},cua:{
     async getBrowser(){output.push(await browser.documentation());return browser;},
     async createBrowserTab(id,url){
-      const tab=await call('createTab');
-      await call('attach',{tabId:tab.id});
-      await call('executeCdp',{target:{tabId:tab.id},method:'Page.navigate',commandParams:{url}});
-      return {id:String(tab.id),title:async()=> 'Browser parity fixture',url:async()=>url,close:()=>call('executeCdp',{target:{tabId:tab.id},method:'Page.close'})};
+      const tab=await browser.tabs.new();
+      await tab.goto(url);
+      return tab;
     },
   }});
 const upstream={

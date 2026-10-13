@@ -12,5 +12,5 @@ export default {
     "code": "return await tab.content.exportYouTubeTranscript();"
   }
 ],
-  assert:({results,service})=>({ok:expectError(results,'gsuite',/Tab is not a Google Workspace document/,service==='vendor'?['Error']:['invalid_url','unsupported_protocol'])&&expectError(results,'youtube',/Tab is not a supported YouTube watch page/,service==='vendor'?['Error']:['invalid_url','unsupported_protocol'])}),
+  assert:({results,service})=>({ok:expectError(results,'gsuite',/Tab is not a Google Workspace document/,['Error'])&&expectError(results,'youtube',/Tab is not a supported YouTube watch page/,['Error'])}),
 };

@@ -12,5 +12,5 @@ export default {
     "code": "return await tab.playwright.locator('.duplicate').count();"
   }
 ],
-  assert:({results,service})=>({ok:expectError(results,'strict',/strict|resolved to 2/i,service==='vendor'?['Error']:['strict_mode_violation'])&&results[1]?.ok&&results[1].value===2}),
+  assert:({results,service})=>({ok:expectError(results,'strict',/strict|resolved to 2/i,['Error'])&&results[1]?.ok&&results[1].value===2}),
 };

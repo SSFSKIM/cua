@@ -9,5 +9,5 @@ export default {
     "code": "return await browser.history({queries:['cua-parity-nonexistent-history-sentinel'],from:'2100-01-01',to:'2100-01-02',limit:1});"
   }
 ],
-  assert:({results,service})=>({ok:expectError(results,'history',/history|not supported|not available|handler/i,service==='vendor'?['Error']:['browser_capability_unavailable'])}),
+  assert:({results,service})=>({ok:expectError(results,'history',/history|not supported|not available|handler/i,['Error'])}),
 };

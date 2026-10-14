@@ -84,7 +84,7 @@ try{
    const counter=join(dir,'tmp','counter'),release=join(dir,'tmp','release');
    const pending=client.call('js',{code:`let fs=await import('node:fs');fs.appendFileSync(${JSON.stringify(counter)},'x');while(!fs.existsSync(${JSON.stringify(release)}))await new Promise(r=>setTimeout(r,20));nodeRepl.write('released');`,title:'Owned interruption fixture'}).then(result=>({result}),error=>({error}));
    await until(()=>existsSync(counter));
-   if(probe.endsWith('child-exit-settles'))killOwnedKernel(client.child.pid,launch.cwd);
+   if(probe.endsWith('child-exit-settles'))killOwnedKernel(client.child.pid,launch.cwd,{host,nodePath:launch.nodePath});
    else client.child.stdin.end();
    writeFileSync(release,'release');let timer;
    const settled=await Promise.race([pending,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Interrupted request did not settle')),10000);})]).finally(()=>clearTimeout(timer));

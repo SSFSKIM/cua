@@ -93,6 +93,13 @@ function stubCdp(frames, {mainFrameId = 'MAIN', loaderId = 'L1'} = {}) {
           const world = worlds.get(params.contextId);
           if (world == null) throw new Error('Cannot find context with specified id');
           if (frames[world.frameId].fails) throw new Error('frame unreadable');
+          if (frames[world.frameId].pageThrows || (frames[world.frameId].lookupThrows && params.expression.includes('refToElement?.get'))) {
+            // A page exception holds a remote object even when the result was asked for by value.
+            const objectId = `obj-${nextObject++}`;
+            objects.set(objectId, new Error('boom'));
+            const exception = {type: 'object', subtype: 'error', className: 'Error', description: 'Error: boom', objectId};
+            return {result: exception, exceptionDetails: {exceptionId: 1, text: 'Uncaught', exception}};
+          }
           const value = vm.runInContext(params.expression, world.context);
           if (params.returnByValue) return {result: {type: 'object', value: JSON.parse(JSON.stringify(value))}};
           if (value == null) return {result: {type: 'object', subtype: 'null', value: null}};
@@ -205,4 +212,29 @@ test('the command takes only the tab: the client cannot send options', async () 
   const d = dom();
   const session = {visibleDom: new VisibleDom(stubCdp({MAIN: frameOf(d, [d.make('button', 'Go')])}))};
   assert.equal(await VISIBLE_DOM_HANDLERS.dom_cua_get_visible_dom({browser_id: 'b', tab_id: String(TAB)}, session), '<button node_id=1>Go</button>');
+});
+
+test('a listing whose page function throws releases the exception\'s remote object, in the top frame and in child frames', async () => {
+  const d = dom();
+  const frameAt = top => ({left: 0, right: 300, top, bottom: top + 100, width: 300, height: 100});
+  const frames = {
+    MAIN: frameOf(d, [d.make('button', 'Top', {}, {rect: TOP}),
+      new d.HTMLIFrameElement('https://fixture.test/a', 'A', {rect: frameAt(100)}),
+      new d.HTMLIFrameElement('https://fixture.test/b', 'B', {rect: frameAt(250)}),
+      new d.HTMLIFrameElement('https://fixture.test/c', 'C', {rect: frameAt(400)})]),
+    A: Object.assign(frameOf(d, []), {pageThrows: true}),
+    B: Object.assign(frameOf(d, []), {pageThrows: true}),
+    C: Object.assign(frameOf(d, []), {pageThrows: true}),
+  };
+  const cdp = stubCdp(frames);
+  const listing = new VisibleDom(cdp);
+  assert.equal(await listing.listing(TAB), '<button node_id=1>Top</button>');
+  assert.equal(cdp.objects.size, 0, 'the three child frames\' exceptions were released');
+  frames.A.pageThrows = frames.B.pageThrows = frames.C.pageThrows = false;
+  frames.MAIN.lookupThrows = true;
+  assert.equal(await listing.listing(TAB), '<button node_id=1>Top</button>', 'a frame element that cannot be looked up is skipped');
+  assert.equal(cdp.objects.size, 0, 'the frame lookups\' exceptions were released');
+  frames.MAIN.pageThrows = true;
+  await assert.rejects(listing.listing(TAB), /^Error: Error: boom$/);
+  assert.equal(cdp.objects.size, 0, 'the top frame\'s exception was released');
 });

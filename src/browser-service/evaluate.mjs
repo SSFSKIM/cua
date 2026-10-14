@@ -57,14 +57,37 @@ export function checkScript(script) {
 // further adapted objects only.
 export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}, isProtectedField = () => false) {
   const seen = new WeakSet();
-  const tagOf = current => Object.prototype.toString.call(current).slice(8, -1);
+  const tagOf = current => {
+    try {
+      return Object.prototype.toString.call(current).slice(8, -1);
+    } catch {
+      return '';
+    }
+  };
+  const hasOwn = Object.prototype.hasOwnProperty;
+  // At most maxArrayLength items of a collection, read by index (or by its iterator when it has no length) and never
+  // past the limit; a collection that throws partway gives the items it yielded before.
+  const bounded = (list, mapItem = item => item) => {
+    const output = [];
+    try {
+      if (typeof list.length === 'number') {
+        for (let index = 0; index < list.length && output.length < maxArrayLength; index += 1) output[output.length] = mapItem(list[index], index);
+      } else {
+        for (const item of list) {
+          if (output.length >= maxArrayLength) break;
+          output[output.length] = mapItem(item, output.length);
+        }
+      }
+    } catch {}
+    return output;
+  };
   const isNode = current => typeof current.nodeType === 'number' && typeof current.nodeName === 'string' && typeof current.cloneNode === 'function';
   const stringOrUndefined = v => (typeof v === 'string' ? v : undefined);
   const nodeSummary = node => (node == null ? null : node.nodeType === 1
     ? {id: node.id, tagName: node.tagName, textContent: node.textContent}
     : {name: stringOrUndefined(node.name), nodeName: node.nodeName, nodeType: node.nodeType, publicId: stringOrUndefined(node.publicId),
       systemId: stringOrUndefined(node.systemId), textContent: node.textContent});
-  const asArray = list => Array.from(list);
+  const asArray = list => bounded(list);
   const rect = r => ({bottom: r.bottom, height: r.height, left: r.left, right: r.right, top: r.top, width: r.width, x: r.x, y: r.y});
   const style = declaration => {
     const output = {};
@@ -74,7 +97,7 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     }
     return output;
   };
-  const mediaList = media => Array.from({length: media.length}, (_, index) => media.item(index) ?? '');
+  const mediaList = media => bounded(media, (item, index) => media.item(index) ?? '');
   const VALIDITY = ['badInput', 'customError', 'patternMismatch', 'rangeOverflow', 'rangeUnderflow', 'stepMismatch', 'tooLong', 'tooShort', 'typeMismatch', 'valid', 'valueMissing'];
   const RULE_TEXTS = ['conditionText', 'href', 'keyText', 'name', 'selectorText'];
   const cssRule = rule => {
@@ -86,15 +109,16 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
   const ADAPTERS = {
     NodeList: asArray, HTMLCollection: asArray, HTMLFormControlsCollection: asArray, HTMLOptionsCollection: asArray, RadioNodeList: asArray,
     StyleSheetList: asArray, CSSRuleList: asArray, DOMRectList: asArray,
-    DOMTokenList: list => Array.from(list, String),
+    DOMTokenList: list => bounded(list, String),
     NamedNodeMap: attributes => {
-      const owner = attributes.length > 0 ? attributes[0].ownerElement : null;
+      const read = bounded(attributes);
+      const owner = read.length > 0 ? read[0].ownerElement : null;
       const hidden = owner != null && isProtectedField(owner);
-      return Array.from(attributes).filter(a => !hidden || a.name.toLowerCase() !== 'value')
+      return read.filter(a => !hidden || a.name.toLowerCase() !== 'value')
         .map(a => ({name: a.name, nodeName: a.name, nodeValue: a.value, specified: true, value: a.value}));
     },
     DOMStringMap: dataset => Object.fromEntries(Object.keys(dataset).map(key => [key, dataset[key]])),
-    TimeRanges: ranges => Array.from({length: ranges.length}, (_, index) => ({end: ranges.end(index), start: ranges.start(index)})),
+    TimeRanges: ranges => bounded({length: ranges.length}, (item, index) => ({end: ranges.end(index), start: ranges.start(index)})),
     ValidityState: validity => Object.fromEntries(VALIDITY.map(name => [name, validity[name] === true])),
     DOMRect: rect, DOMRectReadOnly: rect,
     CSSStyleDeclaration: style, CSSStyleProperties: style, CSS2Properties: style,
@@ -122,7 +146,7 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     label: typeof t.label === 'string' ? t.label : '', language: typeof t.language === 'string' ? t.language : '',
     mode: typeof t.mode === 'string' ? t.mode : undefined, selected: t.selected === true});
   const adapterFor = tag => (Object.hasOwn(ADAPTERS, tag) ? ADAPTERS[tag]
-    : TRACK_LISTS.has(tag) ? tracks => Array.from(tracks, track)
+    : TRACK_LISTS.has(tag) ? tracks => bounded(tracks, track)
       : /^CSS[A-Za-z]*Rule$/.test(tag) ? cssRule : null);
   const serializeNonObject = current => {
     switch (typeof current) {
@@ -143,9 +167,16 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     if (isNode(current)) return serialize(nodeSummary(current), depth);
     const adapter = adapterFor(tagOf(current));
     if (adapter != null) return serialize(adapter(current), depth);
-    if (Array.isArray(current)) return current.slice(0, maxArrayLength).map(item => serialize(item, depth + 1));
+    if (Array.isArray(current)) {
+      const items = [];
+      for (let index = 0; index < current.length && index < maxArrayLength; index += 1) items[index] = serialize(current[index], depth + 1);
+      return items;
+    }
     const output = {};
-    for (const key of Object.keys(current).slice(0, maxObjectKeys)) {
+    let keys = 0;
+    for (const key in current) {
+      if (!hasOwn.call(current, key)) continue;
+      if (keys++ >= maxObjectKeys) break;
       const serialized = serialize(current[key], depth + 1);
       if (serialized !== undefined) output[key] = serialized;
     }
@@ -153,6 +184,20 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
   };
   const serialize = (current, depth) => (current == null || typeof current !== 'object' ? serializeNonObject(current) : serializeObject(current, depth));
   return serialize(value, 0);
+}
+
+// In the service: the projection's limits applied again to the by-value result, so a page that replaced the globals the
+// in-page projection uses (Array.prototype.slice, Object.keys, ...) cannot return more than the limits allow. A value the
+// in-page projection bounded passes unchanged (its markers are strings; a truncated string truncates to itself).
+export function boundResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}) {
+  const bound = (current, depth) => {
+    if (typeof current === 'string') return current.length > maxStringLength ? `${current.slice(0, maxStringLength)}[Truncated]` : current;
+    if (current == null || typeof current !== 'object') return current;
+    if (depth > maxDepth) return '[MaxDepth]';
+    if (Array.isArray(current)) return current.slice(0, maxArrayLength).map(item => bound(item, depth + 1));
+    return Object.fromEntries(Object.keys(current).slice(0, maxObjectKeys).map(key => [key, bound(current[key], depth + 1)]));
+  };
+  return bound(value, 0);
 }
 
 // The function declaration that runs `script` (a function body) with `binding` declared before it and its value
@@ -319,7 +364,7 @@ export class PageEvaluator {
       throw interrupted(error, deadline);
     }
     try {
-      return evaluationValue(result);
+      return boundResult(evaluationValue(result), RESULT_LIMITS);
     } finally {
       const owned = remoteObjects(result).filter(id => id != null);
       if (owned.length) await this.release(target, owned);

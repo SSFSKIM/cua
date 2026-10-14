@@ -191,6 +191,26 @@ test('the budget is the caller\'s up to 120 s; an explicit zero is one attempt b
   }
 });
 
+test('the limits hold on the service side whatever the page did to the globals the in-page projection uses', async () => {
+  const {evaluate} = setup([]);
+  const tampered = pageScript(() => {
+    Array.prototype.slice = function () { return this; };
+    Array.prototype.map = function () { return this; };
+    Object.keys = () => Array.from({length: 300}, (_, i) => `k${i}`);
+    const keys = {};
+    for (let i = 0; i < 300; i++) keys[`k${i}`] = i;
+    let deep = 'bottom';
+    for (let i = 0; i < 12; i++) deep = [deep];
+    return {list: Array.from({length: 2501}, (_, i) => i), deep, keys, long: 'x'.repeat(200010)};
+  });
+  const {value} = await evaluate({script: tampered});
+  assert.equal(value.list.length, 2000);
+  assert.ok(JSON.stringify(value.deep).includes('[MaxDepth]'), 'nesting is cut at the depth limit');
+  assert.ok(!JSON.stringify(value.deep).includes('bottom'));
+  assert.equal(Object.keys(value.keys).length, 200);
+  assert.equal(value.long, `${'x'.repeat(200000)}[Truncated]`);
+});
+
 test('a zero budget is one 3 s attempt across the selector\'s preparation and the script, in every form', async () => {
   for (const form of [{selector: 'li', selector_mode: 'all', all: true, slow: {'Runtime.getProperties': 2200}},
     {selector: '#one', all: false, slow: {'DOM.describeNode': 2200}}]) {

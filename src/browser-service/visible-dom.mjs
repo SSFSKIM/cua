@@ -389,14 +389,24 @@ export class VisibleDom {
 
   async frameListing(frame, maxChars, maxElements, viewportClip, deadline) {                                          // jz
     const result = await this.evaluate(frame.target, frame.frameId, frame.loaderId, listingExpression(maxChars, maxElements, viewportClip), {returnByValue: true, deadline});
-    if (result.exceptionDetails != null) throw new Error(exceptionText(result.exceptionDetails));
+    await this.throwPageError(frame.target, result);
     return listingOf(result.result?.value);
+  }
+
+  // A page exception's sentence thrown, its remote objects (held even by a by-value result) released first.
+  async throwPageError(target, result) {
+    if (result.exceptionDetails == null) return;
+    for (const objectId of new Set([result.result?.objectId, result.exceptionDetails.exception?.objectId])) {
+      if (objectId == null) continue;
+      await this.cdp.callTarget(target, 'Runtime.releaseObject', {objectId}, {deadline: new Deadline(CHILD_CALL_MS)}).catch(() => {});
+    }
+    throw new Error(exceptionText(result.exceptionDetails));
   }
 
   // The frame id of the frame element the listing numbered `ref`, or null (cR).
   async frameIdOf(frame, ref, deadline) {
     const result = await this.evaluate(frame.target, frame.frameId, frame.loaderId, elementExpression(ref), {returnByValue: false, deadline});
-    if (result.exceptionDetails != null) throw new Error(exceptionText(result.exceptionDetails));
+    await this.throwPageError(frame.target, result);
     const objectId = result.result?.objectId;
     if (typeof objectId !== 'string') return null;
     try {

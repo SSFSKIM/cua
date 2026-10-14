@@ -5,13 +5,16 @@
 // objects are stand-ins carrying the platform's Symbol.toStringTag and, like the real ones, prototype getters.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {RESULT_LIMITS, projectResult} from '../../src/browser-service/evaluate.mjs';
+import {RESULT_LIMITS, boundResult, projectResult} from '../../src/browser-service/evaluate.mjs';
 
 const project = (value, isProtectedField) => projectResult(value, RESULT_LIMITS, isProtectedField);
 // A platform object: `tag` its toStringTag, `getters` its prototype getters, `own` its own properties.
 const native = (tag, getters = {}, own = {}) => {
   const proto = {[Symbol.toStringTag]: tag};
-  for (const [name, value] of Object.entries(getters)) Object.defineProperty(proto, name, typeof value === 'function' && !name.startsWith('get') ? {value} : {get: () => value});
+  for (const name of Reflect.ownKeys(getters)) {
+    const value = getters[name];
+    Object.defineProperty(proto, name, typeof value === 'function' && (typeof name === 'symbol' || !name.startsWith('get')) ? {value} : {get: () => value});
+  }
   return Object.assign(Object.create(proto), own);
 };
 const listOf = (tag, items) => native(tag, {length: items.length, item(i) { return items[i] ?? null; }, [Symbol.iterator]: function* () { yield* items; }},
@@ -144,4 +147,46 @@ test('styles, media lists, CSS rules and style sheets as the vendor\'s CSS wrapp
   const foreign = native('CSSStyleSheet', {disabled: true, href: 'https://other.test/b.css', media: null, title: 't', type: 'text/css'});
   Object.defineProperty(Object.getPrototypeOf(foreign), 'cssRules', {get() { const e = new Error('Cannot access rules'); e.name = 'SecurityError'; throw e; }});
   assert.deepEqual(project(foreign), {disabled: true, href: 'https://other.test/b.css', media: null, title: 't', type: 'text/css', ruleAccessError: 'SecurityError'});
+});
+
+test('a collection is read only up to the array limit, and one that throws or never ends gives the prefix it yielded', () => {
+  const a = element({id: 'a'});
+  let reads = 0;
+  const endless = native('NodeList', {length: 1e9});
+  const proxy = new Proxy(endless, {get(target, key) {
+    if (typeof key === 'string' && /^\d+$/.test(key)) { reads += 1; return a; }
+    return Reflect.get(target, key);
+  }});
+  assert.equal(project(proxy).length, 2000);
+  assert.equal(reads, 2000, 'nothing past the limit was read');
+  const throwing = native('HTMLCollection', {length: 3000});
+  for (let i = 0; i < 1500; i++) throwing[i] = a;
+  Object.defineProperty(throwing, 1500, {get() { throw new Error('gone'); }});
+  assert.equal(project(throwing).length, 1500, 'the prefix before the throw');
+  assert.equal(project(listOf('NodeList', [a, a])).length, 2);
+  const prefix = native('DOMTokenList', {length: 5});
+  prefix[0] = 'x';
+  prefix[1] = 'y';
+  Object.defineProperty(prefix, 2, {get() { throw new Error('gone'); }});
+  assert.deepEqual(project(prefix), ['x', 'y']);
+  const iterated = native('TextTrackList', {[Symbol.iterator]: function* () { for (let i = 0; ; i++) yield {kind: `k${i}`}; }});
+  assert.equal(project(iterated).length, 2000, 'an endless iterator without a length stops at the limit');
+  const iterThrows = native('TextTrackList', {[Symbol.iterator]: function* () { yield {kind: 'one'}; throw new Error('gone'); }});
+  assert.deepEqual(project(iterThrows).map(t => t.kind), ['one']);
+});
+
+test('the service bounds the by-value result itself, and leaves an in-page projection unchanged', () => {
+  let deep = 'bottom';
+  for (let i = 0; i < 12; i++) deep = {next: deep};
+  const raw = {list: Array.from({length: 2501}, (_, i) => i), keys: Object.fromEntries(Array.from({length: 300}, (_, i) => [`k${i}`, i])),
+    long: 'y'.repeat(200005), deep};
+  const bounded = boundResult(raw, RESULT_LIMITS);
+  assert.equal(bounded.list.length, 2000);
+  assert.equal(Object.keys(bounded.keys).length, 200);
+  assert.equal(bounded.long, `${'y'.repeat(200000)}[Truncated]`);
+  assert.ok(JSON.stringify(bounded.deep).includes('[MaxDepth]') && !JSON.stringify(bounded.deep).includes('bottom'));
+  const projected = projectResult(raw, RESULT_LIMITS);
+  assert.deepEqual(boundResult(projected, RESULT_LIMITS), projected, 'a projected value is already within the limits');
+  assert.deepEqual(boundResult(projected, RESULT_LIMITS), bounded, 'and the two sides agree on the limits');
+  for (const scalar of [undefined, null, 1, true, 'x']) assert.equal(boundResult(scalar, RESULT_LIMITS), scalar);
 });

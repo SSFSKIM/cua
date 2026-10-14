@@ -37,6 +37,7 @@ export function parseCell(result) {
 // A cell is an async-function BODY, with an explicit return. Errors are data, never swallowed as success.
 const envelope = code => `(async()=>{try{return {ok:true,value:(await (async()=>{${code}\n})())??null};}catch(e){return {ok:false,error:{code:e.code??e.reason??e.name??'Error',message:String(e.message??e)}};}})()`;
 export function cellCode(cell) {
+  if(cell.raw) return cell.code;
   let expr;
   if(cell.join) expr=`await __parityPending[${JSON.stringify(cell.join)}]`;
   else if(cell.start) return `globalThis.__parityPending ??= {}; __parityPending[${JSON.stringify(cell.label)}]=${envelope(cell.code)}; nodeRepl.write(${JSON.stringify(RESULT_MARKER)}+JSON.stringify({ok:true,value:{started:${JSON.stringify(cell.label)}}}));`;
@@ -109,4 +110,12 @@ export async function runScenario(scenario,{client,fixtureURL,browserFixtureURL=
   // An expected cell error is the scenario's responsibility; lifecycle cleanup errors are never ignored.
   for(const [key,active] of clients) if(!dropped.has(key)) {try {const r=await active.call('end_task');if(r.isError) throw new Error(textOf(r));}catch(e){assertion={ok:false,reason:`cleanup failed: ${e.message}`};}}
   const row={case:scenario.id,assertion};await emit(row);return row;
+}
+
+// Raw host evidence is not the browser facade's RESULT_MARKER envelope. Do not synthesize optional fields.
+export function captureRawResult(result) {
+  const row = {};
+  for (const key of ['content','isError','structuredContent']) if (Object.hasOwn(result,key)) row[key]=result[key];
+  if (Object.hasOwn(result,'_meta')) row.meta=result._meta;
+  return row;
 }

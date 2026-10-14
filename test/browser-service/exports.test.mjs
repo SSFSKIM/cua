@@ -216,17 +216,17 @@ test('tab_content_export goes to the backend as it came, and cua\'s host refuses
 
 // --- the byte bound and the file name's length (Decision Log 2026-10-14, "M3 task 1 review, controller") -----------------
 
-test('an export the page declares larger than 50 MiB is refused in the page before its body is read; nothing is written', async t => {
+test('an export the page declares larger than 64 MiB is refused in the page before its body is read; nothing is written', async t => {
   let read = false;
   const big = {...pageResponse(''), headers: {get: name => (name === 'content-length' ? String(MAX_FILE_BYTES + 1) : null)}, arrayBuffer: async () => { read = true; return new ArrayBuffer(0); }};
   const {run, tmp} = await exportTab(t, {url: 'https://docs.google.com/document/d/DOC1/edit', page: () => ({fetch: async () => big})});
-  assert.match((await rejection(run({type: 'tab_content_export_gsuite', format: 'pdf'}))).message, /Exported content exceeds the 50 MiB limit$/);
+  assert.match((await rejection(run({type: 'tab_content_export_gsuite', format: 'pdf'}))).message, /Exported content exceeds the 64 MiB limit$/);
   assert.equal(read, false);
   assert.deepEqual(exportsIn(tmp), []);
 });
 
 // The handler in-process over a page double: what the page hands back is bounded on this side too (the page controls
-// its own globals), at exactly 50 MiB written, one byte more refused before it is decoded.
+// its own globals), at exactly 64 MiB written, one byte more refused before it is decoded.
 async function exportInProcess(t, base64) {
   const tmp = scratchTmp();
   const session = {
@@ -237,13 +237,13 @@ async function exportInProcess(t, base64) {
   return {tmp, run: () => EXPORT_HANDLERS.tab_content_export_gsuite({tab_id: '7', format: 'pdf'}, session)};
 }
 
-test('the trusted side writes an export of exactly 50 MiB and refuses one byte more before decoding it', async t => {
+test('the trusted side writes an export of exactly 64 MiB and refuses one byte more before decoding it', async t => {
   const exact = await exportInProcess(t, Buffer.alloc(MAX_FILE_BYTES, 1).toString('base64'));
   const {path} = await exact.run();
   assert.equal(statSync(path).size, MAX_FILE_BYTES);
   rmSync(path);
   const over = await exportInProcess(t, Buffer.alloc(MAX_FILE_BYTES + 1, 1).toString('base64'));
-  await assert.rejects(over.run(), {message: 'Exported content exceeds the 50 MiB limit'});
+  await assert.rejects(over.run(), {message: 'Exported content exceeds the 64 MiB limit'});
   assert.deepEqual(exportsIn(over.tmp), []);
 });
 
@@ -261,14 +261,16 @@ test('a long title is cut by UTF-8 bytes on a character boundary, so the file na
   }
 });
 
-test('a Markdown export whose invalid UTF-8 expands past 50 MiB when cleaned is refused with the export sentence; nothing is written', async t => {
-  // 17 MiB of 0xFF: each byte decodes to U+FFFD, three bytes re-encoded, 51 MiB.
-  const tmp = scratchTmp();
+test('a Markdown export whose invalid UTF-8 grows threefold when cleaned is written, as the vendor writes it', async t => {
+  // 17 MiB of 0xFF: each byte decodes to U+FFFD, three bytes re-encoded, 51 MiB (the vendor writes what $Y makes; the
+  // input bound keeps any cleaned export within 3 x 64 MiB).
+  scratchTmp();
   const session = {
     filesystem: LOCAL_FILESYSTEM,
     tabs: {get: async () => ({id: 7, url: 'https://docs.google.com/document/d/DOC1/edit', title: 'Expands'})},
     cdp: {evaluateJavascript: async () => ({base64: Buffer.alloc(17 * 1024 * 1024, 0xff).toString('base64')})},
   };
-  await assert.rejects(EXPORT_HANDLERS.tab_content_export_gsuite({tab_id: '7', format: 'md'}, session), {message: 'Exported content exceeds the 50 MiB limit'});
-  assert.deepEqual(exportsIn(tmp), []);
+  const {path} = await EXPORT_HANDLERS.tab_content_export_gsuite({tab_id: '7', format: 'md'}, session);
+  assert.equal(statSync(path).size, 3 * 17 * 1024 * 1024);
+  rmSync(path);
 });

@@ -7,7 +7,7 @@
 import {test, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdtempSync, readFileSync, readdirSync, rmSync} from 'node:fs';
+import {mkdtempSync, readFileSync, readdirSync, rmSync, statSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {PageAssets} from '../../src/browser-service/assets.mjs';
@@ -177,7 +177,7 @@ test('bundle() writes loaded resources from Chrome, fetches the rest inside the 
   assert.deepEqual(Object.keys(failures).sort(), [`${ORIGIN}/assets/wrong.png`, 'https://cdn.example/huge.webm']);
   assert.equal(failures[`${ORIGIN}/assets/wrong.png`].reason, 'Asset response type text/html is not valid for image');
   assert.equal(failures[`${ORIGIN}/assets/wrong.png`].contentType, 'text/html');
-  assert.deepEqual(failures['https://cdn.example/huge.webm'], {contentType: null, id: assetId('https://cdn.example/huge.webm'), name: 'huge.webm', reason: 'Asset exceeds the 50 MiB limit', url: 'https://cdn.example/huge.webm'});
+  assert.deepEqual(failures['https://cdn.example/huge.webm'], {contentType: null, id: assetId('https://cdn.example/huge.webm'), name: 'huge.webm', reason: 'Asset exceeds the 64 MiB limit', url: 'https://cdn.example/huge.webm'});
   assert.deepEqual({...result.summary, elapsedMs: typeof result.summary.elapsedMs}, {downloadedCount: 5, elapsedMs: 'number', failedCount: 2, requestedCount: 7});
   assert.equal(result.manifestPath, `${dir}/manifest.json`);
   assert.deepEqual(JSON.parse(readFileSync(result.manifestPath, 'utf8')), {assets: result.assets, failures: result.failures});
@@ -194,11 +194,11 @@ test('bundle() with kinds or asset ids takes only those; an inline SVG counts as
   assert.deepEqual(svg.summary.requestedCount, 1);
 });
 
-// --- the byte bounds on this side (Decision Log 2026-10-14, "M3 task 1 review, controller") --------------------------------
+// --- the byte bound on this side, and the acquisition pool -----------------------------------------------------------------
 
 // PageAssets in-process over a controller double: `cached` url -> base64 Chrome holds; `fetched` url -> base64 the page
 // hands back. Returns the bundle of every asset given ({url, kind}).
-async function bundleInProcess({assets, cached = {}, fetched = {}, limits}) {
+async function bundleInProcess({assets, cached = {}, fetched = {}}) {
   const tmp = mkdtempSync(join(BASE, 'cua-assets-'));
   made.push(tmp);
   process.env.TMPDIR = tmp;
@@ -220,39 +220,30 @@ async function bundleInProcess({assets, cached = {}, fetched = {}, limits}) {
       return {base64: fetched[url], contentType: 'image/png'};
     },
   };
-  const pageAssets = new PageAssets(cdp, LOCAL_FILESYSTEM, limits);
+  const pageAssets = new PageAssets(cdp, LOCAL_FILESYSTEM);
   const listed = assets.map(({url, kind = 'image'}) => ({id: assetId(url), kind, name: url.split('/').pop(), sources: [], url}));
   const inventoryId = pageAssets.createInventory({assets: listed, documentUrl: PAGE, inlineSvgs: [], tabId: 1});
   const result = await pageAssets.bundle({inventoryId, documentUrl: PAGE, tabId: 1});
   return {result, evaluated, tmp};
 }
 
-test('an asset Chrome or the page hands back larger than 50 MiB fails before it is decoded, and is not fetched again', async () => {
+test('an asset Chrome or the page hands back larger than 64 MiB fails before it is decoded, and is not fetched again', async () => {
   const over = Buffer.alloc(MAX_FILE_BYTES + 1, 1).toString('base64');
   const {result, evaluated} = await bundleInProcess({
     assets: [{url: `${ORIGIN}/cached.png`}, {url: `${ORIGIN}/fetched.png`}, {url: `${ORIGIN}/small.png`}],
     cached: {[`${ORIGIN}/cached.png`]: over}, fetched: {[`${ORIGIN}/fetched.png`]: over, [`${ORIGIN}/small.png`]: 'UE5H'},
   });
-  assert.deepEqual(result.failures.map(f => [f.name, f.reason]).sort(), [['cached.png', 'Asset exceeds the 50 MiB limit'], ['fetched.png', 'Asset exceeds the 50 MiB limit']]);
+  assert.deepEqual(result.failures.map(f => [f.name, f.reason]).sort(), [['cached.png', 'Asset exceeds the 64 MiB limit'], ['fetched.png', 'Asset exceeds the 64 MiB limit']]);
   assert.deepEqual(result.assets.map(a => a.name), ['small.png']);
   assert.ok(!evaluated.includes(`${ORIGIN}/cached.png`), 'an oversized cached copy is not fetched again');
   assert.deepEqual(readdirSync(result.directoryPath).sort(), [`${assetId(`${ORIGIN}/small.png`)}.png`, 'manifest.json']);
 });
 
-test('per asset the bound is inclusive; past the bundle\'s total the next asset fails with the bundle sentence', async () => {
-  const bytes = n => Buffer.alloc(n, 2).toString('base64');
-  const limits = {maxAssetBytes: 10, maxBundleBytes: 25};
-  const atBounds = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}],
-    cached: {[`${ORIGIN}/a.png`]: bytes(10), [`${ORIGIN}/b.png`]: bytes(10), [`${ORIGIN}/c.png`]: bytes(5)}});
-  assert.deepEqual({assets: atBounds.result.assets.length, failures: atBounds.result.failures}, {assets: 3, failures: []}, '10 + 10 + 5 = the bundle bound');
-  // e (over the per-asset bound) is acquired with a, b and c; d comes after the budget is spent.
-  const past = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/e.png`}, {url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}, {url: `${ORIGIN}/d.png`}],
-    cached: {[`${ORIGIN}/a.png`]: bytes(10), [`${ORIGIN}/b.png`]: bytes(10), [`${ORIGIN}/c.png`]: bytes(5), [`${ORIGIN}/d.png`]: bytes(1), [`${ORIGIN}/e.png`]: bytes(11)}});
-  const reasons = past.result.failures.map(f => f.reason).sort();
-  assert.deepEqual(reasons, ['Asset bundle exceeds the 200 MiB limit', 'Asset exceeds the 50 MiB limit']);
-  const written = past.result.assets.reduce((sum, a) => sum + readFileSync(a.path).length, 0);
-  assert.equal(written, 25, 'never more than the bundle bound written');
-  assert.deepEqual(past.result.failures.map(f => f.name).sort(), ['d.png', 'e.png']);
+test('an asset of exactly 64 MiB is written', async () => {
+  const {result} = await bundleInProcess({assets: [{url: `${ORIGIN}/a.png`}], cached: {[`${ORIGIN}/a.png`]: Buffer.alloc(MAX_FILE_BYTES, 4).toString('base64')}});
+  assert.deepEqual(result.failures, []);
+  assert.equal(statSync(result.assets[0].path).size, MAX_FILE_BYTES);
+  rmSync(result.assets[0].path);
 });
 
 // A controller double whose cached reads resolve only after a timer, counting the reads in flight.
@@ -279,12 +270,12 @@ function delayedCdp(sizes) {
   return {cdp, stats};
 }
 
-async function bundleDelayed(sizes, limits) {
+async function bundleDelayed(sizes) {
   const tmp = mkdtempSync(join(BASE, 'cua-assets-'));
   made.push(tmp);
   process.env.TMPDIR = tmp;
   const {cdp, stats} = delayedCdp(sizes);
-  const pageAssets = new PageAssets(cdp, LOCAL_FILESYSTEM, limits);
+  const pageAssets = new PageAssets(cdp, LOCAL_FILESYSTEM);
   const listed = Object.keys(sizes).map(url => ({id: assetId(url), kind: 'image', name: url.split('/').pop(), sources: [], url}));
   const inventoryId = pageAssets.createInventory({assets: listed, documentUrl: PAGE, inlineSvgs: [], tabId: 1});
   const result = await pageAssets.bundle({inventoryId, documentUrl: PAGE, tabId: 1});
@@ -297,13 +288,4 @@ test('at most four assets are acquired at once, and the bundle\'s order is the i
   assert.equal(stats.reads, 12);
   assert.equal(stats.maxInFlight, 4);
   assert.deepEqual(result.assets.map(a => a.name), Array.from({length: 12}, (_, i) => `a${i}.png`));
-});
-
-test('once the bundle budget is spent, the remaining assets fail with the bundle sentence without being read', async () => {
-  const sizes = Object.fromEntries(Array.from({length: 12}, (_, i) => [`${ORIGIN}/a${i}.png`, 1]));
-  const {result, stats} = await bundleDelayed(sizes, {maxAssetBytes: 10, maxBundleBytes: 2});
-  assert.ok(stats.reads <= 4, `${stats.reads} reads`);
-  assert.equal(result.assets.length, 2);
-  assert.equal(result.failures.length, 10);
-  assert.ok(result.failures.every(f => f.reason === 'Asset bundle exceeds the 200 MiB limit'));
 });

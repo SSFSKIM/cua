@@ -1,10 +1,11 @@
-// The exports' and page assets' byte bounds (src/browser-service/byte-bounds.mjs; cua's own, Decision Log 2026-10-14
-// "M3 task 1 review, controller"): 50 MiB per file, 200 MiB per bundle; the page's bounded body read stops at the bound
-// and refuses a declared larger length without reading; the trusted side sizes base64 without decoding it.
+// The exports' and page assets' byte bounds (src/browser-service/byte-bounds.mjs): 64 MiB per file, the vendor route's
+// own ceiling (Chrome's 64 MiB message to a native host, cua's host MAX_FROM_EXTENSION_BYTES), never below it; no bundle
+// total (the vendor has none). The page's bounded body read stops at the bound and refuses a declared larger length
+// without reading; the trusted side sizes base64 without decoding it.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ASSET_TOO_LARGE, BUNDLE_TOO_LARGE, EXPORT_TOO_LARGE, MAX_BUNDLE_BYTES, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage}
-  from '../../src/browser-service/byte-bounds.mjs';
+import {ASSET_TOO_LARGE, EXPORT_TOO_LARGE, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from '../../src/browser-service/byte-bounds.mjs';
+import {MAX_FROM_EXTENSION_BYTES} from '../../src/chrome/host.mjs';
 
 const MiB = 1024 * 1024;
 
@@ -28,11 +29,10 @@ function streamed(chunks, {length} = {}) {
   return {response, state};
 }
 
-test('the bounds are 50 MiB per file and 200 MiB per bundle, each with its fixed sentence', () => {
-  assert.equal(MAX_FILE_BYTES, 50 * MiB);
-  assert.equal(MAX_BUNDLE_BYTES, 200 * MiB);
-  assert.deepEqual([EXPORT_TOO_LARGE, ASSET_TOO_LARGE, BUNDLE_TOO_LARGE],
-    ['Exported content exceeds the 50 MiB limit', 'Asset exceeds the 50 MiB limit', 'Asset bundle exceeds the 200 MiB limit']);
+test('the file bound is 64 MiB, no less than the largest message the host takes from its peer, each kind with its fixed sentence', () => {
+  assert.equal(MAX_FILE_BYTES, 64 * MiB);
+  assert.ok(MAX_FILE_BYTES >= MAX_FROM_EXTENSION_BYTES, 'never tighter than what the route can carry');
+  assert.deepEqual([EXPORT_TOO_LARGE, ASSET_TOO_LARGE], ['Exported content exceeds the 64 MiB limit', 'Asset exceeds the 64 MiB limit']);
 });
 
 test('a base64 string is sized without decoding, padding counted', () => {
@@ -43,9 +43,9 @@ test('a base64 string is sized without decoding, padding counted', () => {
 
 test('the page reads a body of exactly the bound, and stops one byte past it', async () => {
   const MiBChunk = new Uint8Array(MiB).fill(1);
-  const exact = streamed(Array(50).fill(MiBChunk));
+  const exact = streamed(Array(64).fill(MiBChunk));
   assert.equal((await readBoundedBodyInPage(exact.response, MAX_FILE_BYTES, ASSET_TOO_LARGE)).byteLength, MAX_FILE_BYTES);
-  const over = streamed([...Array(50).fill(MiBChunk), new Uint8Array(1), MiBChunk]);
+  const over = streamed([...Array(64).fill(MiBChunk), new Uint8Array(1), MiBChunk]);
   await assert.rejects(readBoundedBodyInPage(over.response, MAX_FILE_BYTES, ASSET_TOO_LARGE), {message: ASSET_TOO_LARGE});
   assert.equal(over.state.read, MAX_FILE_BYTES + 1, 'nothing read past the first byte over');
   assert.equal(over.state.cancelled, true);

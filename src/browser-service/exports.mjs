@@ -10,11 +10,10 @@
 // subtitles are on (www.youtube.com/api/timedtext, as JSON), the subtitles then put back as they were. Each page call is
 // the controller's evaluate, bounded by the host's per-call budget as the vendor's are. tab_content_export (the in-app
 // browser's page export, extension-disabled) goes to the backend as the command came, as the vendor sends it, and cua's
-// host refuses it in its own words. Changed (cua's own bounds, byte-bounds.mjs): an exported document is at most 50 MiB,
-// bounded while the page reads it and again on this side before it is decoded; the title in its file name is cut to 200
-// UTF-8 bytes so the name stays under the filesystem's 255; the bound holds for the bytes written as well (a Markdown
-// export is re-encoded after cleaning). Dropped: nothing; neither feature has telemetry or a policy
-// check in the vendor.
+// host refuses it in its own words. Changed: an exported document is at most 64 MiB (the route's own ceiling,
+// byte-bounds.mjs), bounded while the page reads it and again on this side before it is decoded; the title in its file
+// name is cut to 200 UTF-8 bytes so the name stays under the filesystem's 255. Dropped: nothing; neither feature has
+// telemetry or a policy check in the vendor.
 import {randomUUID} from 'node:crypto';
 import {EXPORT_TOO_LARGE, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from './byte-bounds.mjs';
 import {tabIdOf} from './tabs.mjs';
@@ -347,9 +346,8 @@ export const EXPORT_HANDLERS = {
     const path = `${await exportsDirectory(session.filesystem)}/${name}-${randomUUID()}.${format}`;                 // zY
     const bytes = exportedBytes(exported, format);
     if (bytes.length === 0) throw new Error('Unable to export GSuite content for this tab');
-    // Cleaning Markdown re-encodes it, and invalid UTF-8 grows threefold as replacement characters: the bound is on
-    // what is written, too.
-    if (bytes.length > MAX_FILE_BYTES) throw new Error(EXPORT_TOO_LARGE);
+    // Cleaning Markdown re-encodes it, and invalid UTF-8 grows up to threefold as replacement characters; it is written
+    // as the vendor writes it, within 3 x MAX_FILE_BYTES by the bound on what arrived.
     try {
       await session.filesystem.writeFile(path, bytes);
     } catch (error) {

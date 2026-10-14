@@ -11,16 +11,15 @@
 // the page with the person's session there, whatever the asset's origin (only URLs the inventory found the page itself
 // loading, never one a caller names); a response whose type does not fit its kind, or that cannot be had, is a failure
 // in the result. A manifest.json lists both.
-// Changed: cua's own byte bounds (byte-bounds.mjs): an asset over 50 MiB, from Chrome or from the page, fails with
-// ASSET_TOO_LARGE (bounded while the page reads it and again on this side before decoding), and an asset that would take
-// the bundle past 200 MiB fails with BUNDLE_TOO_LARGE. At most ACQUIRING (4) assets are read at once (the vendor reads
-// them all at once), so what is in memory is bounded whatever the inventory's size, and none is read once the bundle's
-// budget is spent. Dropped: the approvals (ensurePageAssetDownloadAllowed and the cross-origin
-// ensurePageAssetFallbackFetchAllowed, with their elicitations and origin policy; the session's ruling of 2026-10-14
-// matches the vendor's effective behaviour on the cua route, its approval accepted) and the failure
-// telemetry (DM).
+// Changed: an asset over 64 MiB (the route's own ceiling, byte-bounds.mjs), from Chrome or from the page, fails with
+// ASSET_TOO_LARGE, bounded while the page reads it and again on this side before decoding; a bundle has no total, as the
+// vendor's has none. At most ACQUIRING (4) assets are read at once (the vendor reads them all at once), so what is in
+// memory is bounded whatever the inventory's size; no asset fails for it, each read keeps its own bound. Dropped: the
+// approvals (ensurePageAssetDownloadAllowed and the cross-origin ensurePageAssetFallbackFetchAllowed, with their
+// elicitations and origin policy; the session's ruling of 2026-10-14 matches the vendor's effective behaviour on the cua
+// route, its approval accepted) and the failure telemetry (DM).
 import {createHash, randomUUID} from 'node:crypto';
-import {ASSET_TOO_LARGE, BUNDLE_TOO_LARGE, MAX_BUNDLE_BYTES, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from './byte-bounds.mjs';
+import {ASSET_TOO_LARGE, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from './byte-bounds.mjs';
 import {tabIdOf} from './tabs.mjs';
 
 const STYLE_PROPERTIES = ['background-image', 'border-image-source', 'cursor', 'list-style-image', 'mask-image'];      // TM
@@ -293,31 +292,21 @@ async function assetContent(cdp, tabId, url, maxBytes) {
   return fetched;
 }
 
-// One inventory entry written into `directory` within the bundle's `budget` ({used, maxAssetBytes, maxBundleBytes})
-// -> {asset} or {failure} (YZ).
-async function bundleOne({budget, cdp, directory, entry, filesystem, tabId}) {
-  // Counts `size` bytes against the bundle, or refuses them.
-  const take = size => {
-    if (budget.used + size > budget.maxBundleBytes) throw new TooLarge(BUNDLE_TOO_LARGE);
-    budget.used += size;
-  };
+// One inventory entry written into `directory`, each asset at most `maxAssetBytes` -> {asset} or {failure} (YZ).
+async function bundleOne({cdp, directory, entry, filesystem, maxAssetBytes, tabId}) {
   try {
-    if (budget.used >= budget.maxBundleBytes) throw new TooLarge(BUNDLE_TOO_LARGE);
     if (entry.source === 'inline-svg') {
-      const size = Buffer.byteLength(entry.asset.markup);
-      if (size > budget.maxAssetBytes) throw new TooLarge(ASSET_TOO_LARGE);
-      take(size);
+      if (Buffer.byteLength(entry.asset.markup) > maxAssetBytes) throw new TooLarge(ASSET_TOO_LARGE);
       const path = `${directory}/${entry.asset.id}.svg`;
       await filesystem.writeFile(path, entry.asset.markup);
       return {asset: {contentType: 'image/svg+xml', id: entry.asset.id, kind: 'image', name: entry.asset.name, path, url: `inline-svg:${entry.asset.id}`}};
     }
     const asset = entry.asset;
-    const content = await assetContent(cdp, tabId, asset.url, budget.maxAssetBytes);
+    const content = await assetContent(cdp, tabId, asset.url, maxAssetBytes);
     const type = mimeType(content.contentType);
     if (!responseFits(asset, type)) {
       return {failure: failure({contentType: type, entry, reason: `Asset response type ${type ?? 'missing'} is not valid for ${asset.kind}`})};
     }
-    take(decodedLength(content.base64));
     const path = `${directory}/${asset.id}${extensionOf(asset.url)}`;
     await filesystem.writeFile(path, Uint8Array.from(atob(content.base64), c => c.charCodeAt(0)));
     return {asset: {contentType: content.contentType, id: asset.id, kind: asset.kind, name: asset.name, path, url: asset.url}};
@@ -329,16 +318,13 @@ async function bundleOne({budget, cdp, directory, entry, filesystem, tabId}) {
 // --- the capability ----------------------------------------------------------------------------------------------------
 
 export class PageAssets {
-  // `limits` the byte bounds, {maxAssetBytes, maxBundleBytes} (byte-bounds.mjs's by default).
-  constructor(cdp, filesystem, {maxAssetBytes = MAX_FILE_BYTES, maxBundleBytes = MAX_BUNDLE_BYTES} = {}) {
+  constructor(cdp, filesystem) {
     this.cdp = cdp;
     this.filesystem = filesystem;
-    this.limits = {maxAssetBytes, maxBundleBytes};
   }
 
   cdp;
   filesystem;
-  limits;
   inventoriesById = new Map();          // id -> {assetsById: Map(id -> {source, asset}), documentUrl, tabId}
 
   async list({documentUrl, tabId}) {
@@ -360,13 +346,12 @@ export class PageAssets {
     if (entries.length === 0) throw new Error('Asset bundle request matched no discovered assets');
     const directory = `${this.filesystem.tmpDir}/browser-use/assets/${randomUUID()}`;
     await this.filesystem.mkdir(directory, {recursive: true});
-    const budget = {used: 0, ...this.limits};
     const results = new Array(entries.length);
     let next = 0;
     const worker = async () => {
       while (next < entries.length) {
         const index = next++;
-        results[index] = await bundleOne({budget, cdp: this.cdp, directory, entry: entries[index], filesystem: this.filesystem, tabId});
+        results[index] = await bundleOne({cdp: this.cdp, directory, entry: entries[index], filesystem: this.filesystem, maxAssetBytes: MAX_FILE_BYTES, tabId});
       }
     };
     await Promise.all(Array.from({length: Math.min(ACQUIRING, entries.length)}, worker));

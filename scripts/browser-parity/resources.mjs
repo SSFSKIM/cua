@@ -38,3 +38,17 @@ export function traceControl({device,home,path}) {
   node(`const f=require('fs'); f.mkdirSync(${JSON.stringify(join(home,'state'))},{recursive:true});f.writeFileSync(${JSON.stringify(config)},${JSON.stringify(JSON.stringify({path}))},{flag:'wx',mode:384});`);
   return {read:async()=>JSON.parse(node(`const f=require('fs');let s='';try{s=f.readFileSync(${JSON.stringify(path)},'utf8')}catch(e){if(e.code!=='ENOENT')throw e;}console.log(JSON.stringify(s.trim().split('\\n').filter(Boolean).map(JSON.parse)));`)),close:()=>node(`const f=require('fs');f.unlinkSync(${JSON.stringify(config)});f.rmSync(${JSON.stringify(path)},{force:true});`)};
 }
+
+// A remote fixture owns a scratch home/socket until stdin EOF. Read one safe readiness record; never persist stderr.
+export async function ownedJsonProcess(command,{timeoutMs=60000}={}) {
+  const child=spawn(command.command,command.args,{cwd:command.cwd,env:command.env,stdio:['pipe','pipe','pipe']});
+  child.stderr.resume();const exited=new Promise(resolve=>child.once('close',(code,signal)=>resolve({code,signal})));
+  const lines=createInterface({input:child.stdout});let ready;
+  try {ready=await new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(new Error('Owned fixture readiness timed out')),timeoutMs);
+    const finish=(error,value)=>{clearTimeout(timer);error?reject(error):resolve(value);};
+    child.once('error',error=>finish(error));child.once('exit',()=>finish(new Error('Owned fixture exited before readiness')));
+    lines.once('line',line=>{try{const value=JSON.parse(line);if(!value.ready)throw new Error('Fixture not ready');finish(null,value);}catch(error){finish(error);}});
+  });}catch(error){child.stdin.end();child.kill('SIGTERM');throw error;}finally{lines.close();}
+  return {...ready,async close(){child.stdin.end();let timer;const status=await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),10000);})]);clearTimeout(timer);if(!status){child.kill('SIGTERM');throw new Error('Owned fixture cleanup unconfirmed');}if(status.code!==0)throw new Error('Owned fixture cleanup failed');}};
+}

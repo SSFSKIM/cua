@@ -1,6 +1,7 @@
 // Dependency-free average-luminance hash. JPEG needs only block DC coefficients (a 1/8-scale
 // thumbnail), not an IDCT or chroma. Baseline and the first progressive DC scan are supported.
 // This is diagnostic similarity, not pixel equality; dimensions always compare exactly.
+import {createHash} from 'node:crypto';
 import {inflateSync} from 'node:zlib';
 function averageHash(pixels,width,height) {
   const sums=Array(64).fill(0),counts=Array(64).fill(0);
@@ -110,4 +111,29 @@ export function imageHash(bytes) {
   if(data.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex')))return {$image:'ahash64',...png(data)};
   if(data[0]===255&&data[1]===216)return {$image:'ahash64',...jpeg(data)};
   throw new Error('Unsupported image encoding (expected PNG or JPEG)');
+}
+
+// Exact transport oracle, separate from screenshot similarity. No pixel transformation is allowed by default.
+// PNG/JPEG use the same decoders as screenshots. WebP's lossless/lossy frame headers encode decoded dimensions;
+// exact bytes include its compressed pixel stream, so a corrupt/changed stream cannot compare equal.
+export function exactImage(bytes, {mimeType} = {}) {
+  const data=Buffer.from(bytes); let width,height,detected;
+  if(data.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'))) {({width,height}=png(data));detected='image/png';}
+  else if(data[0]===255 && data[1]===216) {({width,height}=jpeg(data));detected='image/jpeg';}
+  else if(data.toString('ascii',0,4)==='RIFF' && data.toString('ascii',8,12)==='WEBP') {
+    if(data.length<30 || data.readUInt32LE(4)+8!==data.length) throw new Error('Truncated WebP image');
+    for(let pos=12;pos+8<=data.length;) {
+      const kind=data.toString('ascii',pos,pos+4),size=data.readUInt32LE(pos+4),start=pos+8;
+      if(start+size>data.length)throw new Error('Truncated WebP chunk');
+      if(kind==='VP8 ' && size>=10 && data.subarray(start+3,start+6).equals(Buffer.from([0x9d,1,0x2a]))) {
+        width=data.readUInt16LE(start+6)&0x3fff;height=data.readUInt16LE(start+8)&0x3fff;
+      } else if(kind==='VP8L' && size>=5 && data[start]===0x2f) {
+        const bits=data.readUInt32LE(start+1);width=(bits&0x3fff)+1;height=((bits>>>14)&0x3fff)+1;
+      }
+      pos=start+size+(size%2);
+    }
+    bounded(width,height);detected='image/webp';
+  } else throw new Error('Unsupported deterministic image encoding');
+  if(mimeType!==undefined && mimeType!==detected)throw new Error(`Image MIME mismatch: declared ${mimeType}, decoded ${detected}`);
+  return {$image:'sha256',sha256:createHash('sha256').update(data).digest('hex'),width,height,mimeType:detected};
 }

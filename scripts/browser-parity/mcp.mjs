@@ -3,8 +3,8 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 export class StdioClient {
   // `answer(msg)` decides an elicitation (default: accept, as the parity runs do); `onElicitation(row, msg)` records it.
-  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),clientName = 'cua-browser-parity'}) {
-    this.clientName = clientName;
+  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),onNotification = () => {},clientName = 'cua-browser-parity'}) {
+    this.clientName = clientName; this.answer=answer;
     this.child = spawn(command,args,{env,cwd,stdio:['pipe','pipe','pipe']});
     this.pending = new Map(); this.nextId=0; this.timeoutMs=timeoutMs; this.closed=false;
     this.exited = new Promise(resolve => this.child.once('close',(code,signal) => {this.closed=true;this.failAll(new Error(`MCP exited (${code ?? signal})`));resolve({code,signal});}));
@@ -13,19 +13,24 @@ export class StdioClient {
     this.child.once('error',e => this.failAll(e));
     this.child.stdin.on('error',e => this.failAll(e));
     const lines = createInterface({input:this.child.stdout});
-    lines.on('line',line => {
+    lines.on('line',async line => {
       let msg; try {msg=JSON.parse(line);} catch {this.failAll(new Error('Non-JSON MCP stdout'));return;}
       if (msg.method && msg.id !== undefined) {
         if (msg.method === 'elicitation/create') {
           // Vendor approvals are schema-form requests. Record action only, never prompt text or supplied secrets.
-          const result = answer(msg);
-          const row = {t:new Date().toISOString(),method:msg.method,action:result.action};
-          onElicitation(row,msg);
-          this.write({jsonrpc:'2.0',id:msg.id,result});
+          try {
+            const result = await this.answer(msg);
+            const row = {t:new Date().toISOString(),method:msg.method,action:result?.action};
+            onElicitation(row,msg);
+            this.write({jsonrpc:'2.0',id:msg.id,result});
+          } catch {
+            this.write({jsonrpc:'2.0',id:msg.id,error:{code:-32603,message:'Harness elicitation handler failed'}});
+          }
         } else if (msg.method === 'ping') this.write({jsonrpc:'2.0',id:msg.id,result:{}});
         else this.write({jsonrpc:'2.0',id:msg.id,error:{code:-32601,message:'Unsupported client request'}});
         return;
       }
+      if (msg.method && msg.id === undefined) onNotification(msg);
       if (!msg.method && msg.id !== undefined) {
         const p = this.pending.get(msg.id); if (!p) return;
         this.pending.delete(msg.id); clearTimeout(p.timer);
@@ -38,11 +43,14 @@ export class StdioClient {
   request(method,params={},timeoutMs=this.timeoutMs) {
     if(this.closed) return Promise.reject(new Error('MCP connection is closed'));
     const id=++this.nextId;
-    return new Promise((resolve,reject) => {
+    const promise=new Promise((resolve,reject) => {
       const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error(`MCP ${method} timed out`));},timeoutMs);
       this.pending.set(id,{resolve,reject,timer}); this.write({jsonrpc:'2.0',id,method,params});
     });
+    promise.requestId=id; return promise;
   }
+  setElicitationAnswer(answer) {if(typeof answer!=='function')throw new Error('answer must be a function');this.answer=answer;}
+  cancel(requestId,reason='parity cancellation') {this.write({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId,reason}});}
   async initialize() {
     const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities:{elicitation:{form:{}}},clientInfo:{name:this.clientName,version:'1'}});
     this.write({jsonrpc:'2.0',method:'notifications/initialized'});return value;

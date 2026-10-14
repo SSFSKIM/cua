@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import scenarios from './scenarios/index.mjs';
 
 const inventoryUrl = new URL('./inventory.json', import.meta.url);
 const surfaceUrl = new URL('../../docs/doperpowers/research/2026-10-14-own-repl-host/surface-inventory.md', import.meta.url);
@@ -290,7 +291,7 @@ test('selected-stage completeness reports later contracts as pending, never cove
   const flag = process.argv.find(arg => arg.startsWith('--through='));
   const index = process.argv.indexOf('--through');
   const through = flag?.slice('--through='.length) ?? (index < 0 ? process.env.CUA_REPL_PARITY_THROUGH ?? 'M0' : process.argv[index + 1]);
-  const executableCases = new Set(); // Task 3: the validated runnable scenario registry, not inventory IDs.
+  const executableCases = new Set(scenarios.map(scenario => scenario.id));
   const stage = stageInventory(inventory(), through, executableCases);
   t.diagnostic(`through ${through}: ${stage.due.length} due; ${stage.covered.length} executable-linked; ${stage.uncovered.length} uncovered (not live parity evidence)`);
   for (const milestone of milestones) {

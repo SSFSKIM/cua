@@ -1,8 +1,9 @@
-import {imageHash} from './image-hash.mjs';
+import {imageHash,exactImage} from './image-hash.mjs';
 // Only schema-known volatile fields are masked; text (especially snapshots) is exact.
-const idKinds = {taskId:'task', turnId:'turn', tabId:'tab', tab_id:'tab', browserId:'browser', browser_id:'browser', extensionInstanceId:'browser', sessionId:'session', session_id:'session', targetId:'target', requestId:'request', loaderId:'loader', frameId:'frame'};
+const idKinds = {'cua/taskId':'task', 'cua/callId':'call', 'cua/sessionId':'session',taskId:'task', turnId:'turn', tabId:'tab', tab_id:'tab', browserId:'browser', browser_id:'browser', extensionInstanceId:'browser', sessionId:'session', session_id:'session', targetId:'target', requestId:'request', loaderId:'loader', frameId:'frame'};
 const timestamps = new Set(['timestamp','createdAt','updatedAt','startedAt','finishedAt']);
-export function createNormalizer() {
+export function createNormalizer({imageMode='live'}={}) {
+  const hash=imageMode==='exact'?exactImage:imageHash;
   const maps = new Map();
   const id = (kind, value) => {
     if (!maps.has(kind)) maps.set(kind,new Map());
@@ -14,10 +15,10 @@ export function createNormalizer() {
     const visit = (v, key = '', path = '') => {
       if (masks.includes(path)) return '<masked>';
       if (v === null || v === undefined) return v ?? null;
-      if (v?.type === 'image' && typeof v.data === 'string') return imageHash(Buffer.from(v.data,'base64'));
-      if (v?.$imageData) return imageHash(v.$imageData);
-      if (v?.type === 'Buffer' && Array.isArray(v.data)) return imageHash(v.data);
-      if (typeof v === 'string' && /^data:image\/(png|jpeg);base64,/.test(v)) return imageHash(Buffer.from(v.split(',')[1],'base64'));
+      if (v?.type === 'image' && typeof v.data === 'string') return hash(Buffer.from(v.data,'base64'),{mimeType:v.mimeType});
+      if (v?.$imageData) return hash(v.$imageData);
+      if (v?.type === 'Buffer' && Array.isArray(v.data)) return hash(v.data);
+      if (typeof v === 'string' && /^data:image\/(png|jpeg);base64,/.test(v)) return hash(Buffer.from(v.split(',')[1],'base64'));
       if (timestamps.has(key)) return '<timestamp>';
       const kind = ids[path] ?? idKinds[key];
       if (kind && (typeof v === 'string' || typeof v === 'number')) return id(kind,v);

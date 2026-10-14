@@ -12,7 +12,8 @@
 //     window survived and its text was observed there); and their timing under the same latency rule.
 // The ssh pipe itself (ssh.*), approval requests (approval.*; the harness answers at once, so these time the request,
 // not a human), the harness's own guards and setup (guard.*, setup.*) and anything only one side has are reported and
-// not judged. There is no verdict unless each side has three runs, each complete, attested and covering its whole plan
+// not judged, except that an operation only the candidate has fails when any of its samples failed (the runner writes
+// some rows, such as a cold connection's end_task, only on failure). There is no verdict unless each side has three runs, each complete, attested and covering its whole plan
 // (summary.mjs coverageProblems), the baseline the vendor host's and the candidate cua's, on a like machine, runtime,
 // native service, sandbox policy and plan.
 import {attestation, operationRank, summarize} from './summary.mjs';
@@ -57,7 +58,14 @@ function judgeOperation(op, baseline, candidate) {
   const c = figures(candidate.summary.operations.find(o => o.op === op), candidate, net);
   const basis = net ? (baseline.ssh !== null && candidate.ssh !== null ? 'wall median net of ssh.roundtrip median' : 'wall median (no ssh.roundtrip to net out)') : 'wall median';
   const base = {op, kind: 'latency', basis, baseline: b, candidate: c, limitMs: null};
-  if (NOT_JUDGED.test(op) || !b) return {...base, basis: null, verdict: 'not judged', reasons: b ? [] : ['only the candidate has this operation']};
+  // A row the runner writes only on failure (a cold connection's end_task) has no baseline counterpart on a clean
+  // baseline: an operation only the candidate has fails when any of its samples failed, and is reported otherwise.
+  if (!b) {
+    const failed = c.samples - c.ok - c.invalid;
+    return {...base, basis: null, verdict: failed ? 'fail' : 'not judged',
+      reasons: [failed ? `only the candidate has this operation, and ${failed} of its ${c.samples} samples failed` : 'only the candidate has this operation']};
+  }
+  if (NOT_JUDGED.test(op)) return {...base, basis: null, verdict: 'not judged', reasons: []};
   if (!c) return {...base, verdict: 'fail', reasons: ['no candidate samples']};
   const reasons = [];
   if (c.ok * valid(b) < b.ok * valid(c)) reasons.push(`${c.ok}/${valid(c)} succeeded, the baseline ${b.ok}/${valid(b)}`);
@@ -94,7 +102,8 @@ function judgeMethod(op, baseline, candidate) {
   const timing = judgeOperation(op, baseline, candidate);
   const base = {...timing, kind: 'method', baseline: timing.baseline && {...timing.baseline, outcomes: listed(tally(b))},
     candidate: timing.candidate && {...timing.candidate, outcomes: listed(tally(c))}};
-  if (!b.length) return {...base, verdict: 'not judged', reasons: ['only the candidate has this method case']};
+  if (!b.length) return c.some(r => r.ok !== true) ? {...base, verdict: 'fail', reasons: [`only the candidate has this method case, and ${c.filter(r => r.ok !== true).length} of its ${c.length} samples failed`]}
+    : {...base, verdict: 'not judged', reasons: ['only the candidate has this method case']};
   if (!c.length) return {...base, verdict: 'fail', reasons: ['no candidate samples']};
   const outcome = methodOutcome(b, c);
   const reasons = [...(outcome && outcome !== 'better' ? [outcome] : []), ...timing.reasons.filter(r => !/succeeded, the baseline/.test(r)),

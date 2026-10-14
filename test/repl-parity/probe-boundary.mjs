@@ -11,7 +11,7 @@ import {createNormalizer} from '../../scripts/browser-parity/normalize.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
-import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
+import {boundaryPreflightEnv,boundaryServeEnv,failingSandboxScript} from './fixture-launch.mjs';
 import boundaryScenarios from './scenarios/boundaries.mjs';
 import {ownedProcesses,killOwnedKernel,alive} from '../../scripts/repl-parity/processes.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Boundary probes are remote-only');
@@ -25,8 +25,8 @@ const text=r=>(r.content??[]).filter(c=>c.type==='text').map(c=>c.text).join('\n
 async function record(label,result){rows.push({case:id,cell:label,ok:true,...await normalizeRawResult(result,{normalize})});return result;}
 async function open({sandbox='scoped',witness=false,brokenSandbox=false}={}){
  const control=join(dir,`connection-${clients.length+1}`);mkdirSync(control);
- const sandboxFailure=join(control,'failing-sandbox');if(brokenSandbox){writeFileSync(sandboxFailure,'#!/bin/sh\nprintf invoked > '+JSON.stringify(join(control,'sandbox-invoked'))+'\nprintf \'fixture sandbox launcher refused\\n\' >&2\nexit 73\n');chmodSync(sandboxFailure,0o700);}
- const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:{PATH:process.env.PATH,HOME:process.env.HOME,...desktopSessionEnv(process.env),TMPDIR:join(dir,'tmp'),CUA_HOME:process.env.CUA_HOME,CUA_REPL_HOST:host,CUA_PARITY_REMOTE:'1',CUA_PARITY_EXPECTED:JSON.stringify(facts),CUA_PARITY_CONTROL_DIR:control,CUA_PARITY_SANDBOX:sandbox,CUA_PARITY_BANNER_WITNESS:witness?'1':'0',CUA_PARITY_BROKEN_SANDBOX:brokenSandbox?sandboxFailure:''}});
+ const sandboxFailure=join(control,'failing-sandbox');if(brokenSandbox){writeFileSync(sandboxFailure,failingSandboxScript(join(control,'sandbox-invoked')));chmodSync(sandboxFailure,0o700);}
+ const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:boundaryServeEnv(process.env,{tmp:join(dir,'tmp'),home:process.env.CUA_HOME,host,facts,control,sandbox,witness,brokenSandbox:brokenSandbox?sandboxFailure:''})});
  clients.push({client,control,sandbox,witness,brokenSandbox});return client;
 }
 async function js(client,label,code,timeoutMs){return record(label,await client.call('js',{code,title:'Owned boundary fixture',...(timeoutMs?{timeout_ms:timeoutMs}:{})}));}
@@ -40,7 +40,7 @@ async function close(client){
 }
 async function negativePreflight(kind){
  const scratch=prepareCapabilityHome({source:process.env.CUA_HOME});let launched=false;
- const env={PATH:process.env.PATH,HOME:scratch.userHome,TMPDIR:join(dir,'tmp'),CUA_HOME:scratch.dir,CUA_REPL_HOST:host,CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off',CUA_SHIM_SANDBOX:'scoped'};
+ const env=boundaryPreflightEnv(process.env,{scratch,tmp:join(dir,'tmp'),host});
  if(kind==='trusted-write-root-overlap')env.TMPDIR=resolveRuntime({home:scratch.dir}).paths.moduleDir;
  let code;try{
   const connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input:new PassThrough(),output:new PassThrough(),chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:launch=>{launched=true;return launch;},...(kind==='linux-fail-closed'?{probeUserns:async()=>({status:'fail',detail:'harness-controlled unavailable namespace'})}:{})});

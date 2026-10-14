@@ -97,6 +97,14 @@ test('host-axis scripted outcomes count observed hosts without relabelling the c
   assert.match(run.stdout,/verdict: equal: every scripted episode passes on both hosts/);
 });
 
+test('host-axis scripted summary requires one host identity per episode and per host group',t=>{
+  const dir=hostEvidence(t),edit=(group,n,change)=>{const path=join(dir,group,`ep-${n}/meta.json`),meta=JSON.parse(readFileSync(path,'utf8'));change(meta);writeFileSync(path,JSON.stringify(meta));};
+  edit('vendor',3,meta=>{meta.hostAttestations[0].serverInfo.version='1.0.1';});
+  assert.throws(()=>summarizeScripted(dir,{axis:'host'}),/vendor group mixes host identities/);
+  edit('vendor',3,meta=>{meta.hostAttestations[0].serverInfo.version='1.0.0';meta.hostAttestations.push({...meta.hostAttestations[0],serverInfo:{name:'node-repl',version:'0.9.0'}});});
+  assert.throws(()=>summarizeScripted(dir,{axis:'host'}),/host attestation.*mixed host identities/);
+});
+
 test('host-axis scripted summary rejects unattested host claims and service/connection mismatches',t=>{
   const dir=hostEvidence(t),path=join(dir,'vendor/ep-1/meta.json'),valid=JSON.parse(readFileSync(path,'utf8'));
   for(const change of [

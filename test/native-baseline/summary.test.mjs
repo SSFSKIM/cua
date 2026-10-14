@@ -122,3 +122,12 @@ test('a run recorded with host attestation must cover its whole plan; a legacy r
   assert.ok(problems.includes('run-1 covers 0 task.act samples, the plan 10'), problems.join(' | '));
   assert.deepEqual(summarize(readRuns(fixture(t, [meta(1)]))).problems, []);
 });
+
+test('a run answers as one host identity, and every pooled run as the same one', t => {
+  const attest = version => ({host: 'vendor', serverInfo: {name: 'node_repl', version}, _meta: null});
+  const run = attestations => ({host: 'vendor', connections: attestations.length, plan: {samples: 30, cold: 5, tasks: 10}, sandbox: {mode: 'scoped', explicit: false}, hostAttestations: attestations});
+  const hostProblems = runs => summarize(readRuns(fixture(t, runs))).problems.filter(p => !/ covers | lacks /.test(p));
+  assert.deepEqual(hostProblems([meta(1, run([attest('1'), attest('1')])), meta(2, run([attest('1')]))]), []);
+  assert.ok(hostProblems([meta(1, run([attest('1'), attest('2')]))]).some(p => /^run-1: host attestation .*mixed host identities \(node_repl 1, node_repl 2\)/.test(p)));
+  assert.ok(hostProblems([meta(1, run([attest('1')])), meta(2, run([attest('2')]))]).some(p => /run-2 differs in host/.test(p)));
+});

@@ -16,6 +16,8 @@ export function validateAxis(axis) {
 }
 // Capture both initialize and a real tool result on every connection. An env
 // selection or an old cached handshake alone is not answering-host evidence.
+// Every connection of a run must answer as one host identity (serverInfo name
+// and version); -> that identity, which a pooled group must share across runs.
 export function validateHostAttestations(meta, host, root) {
   const fail = () => {throw new Error(`${root}: host attestation missing or mismatched (requested ${host}); remeasure unattested evidence`);};
   if (meta.host !== host || !Array.isArray(meta.hostAttestations) || !meta.hostAttestations.length) fail();
@@ -28,6 +30,14 @@ export function validateHostAttestations(meta, host, root) {
       if (info.name !== 'cua-repl-host' || marker?.host !== 'cua' || marker.version !== info.version) fail();
     } else if (info.name === 'cua-repl-host' || (observed._meta !== null && Object.hasOwn(observed._meta,'cua/replHost'))) fail();
   }
+  const identities = [...new Set(meta.hostAttestations.map(a => `${a.serverInfo.name} ${a.serverInfo.version}`))].sort();
+  if (identities.length !== 1) throw new Error(`${root}: host attestation shows mixed host identities (${identities.join(', ')}) within one run; remeasure it`);
+  return identities[0];
+}
+// The runs pooled into one host group must all have answered as the same host identity (vendor and cua groups may differ).
+export function assertOneHostIdentity(group, identities) {
+  const distinct = [...new Set(identities)].sort();
+  if (distinct.length > 1) throw new Error(`${group} group mixes host identities (${distinct.join(', ')}); pool only runs of one host version`);
 }
 export function summaryArgs(args, {defaultDir} = {}) {
   const {values,positionals} = parseArgs({args,allowPositionals:true,options:{axis:{type:'string',default:'service'}}});
@@ -48,14 +58,14 @@ const stats = rows => ({toolMs:spread(rows.map(r => r.toolMs)),wallMs:spread(row
 function readGroup(dir, group, axis) {
   const service = axis === 'host' ? 'cua' : group;
   if (!existsSync(join(dir,group))) return null;
-  const runs = [];
+  const runs = [], identities = [];
   for (let n=1;n<=3;n++) {
     const root = join(dir,group,`run-${n}`);
     if (!existsSync(root)) continue;
     const meta = json(join(root,'meta.json'));
     for (const k of ['service','commit','profile','model','runtime','started','finished']) if (!meta[k]) throw new Error(`${root}: missing meta.${k}`);
     if (meta.service !== service) throw new Error(`${root}: service attestation mismatch`);
-    if (axis === 'host') validateHostAttestations(meta,group,root);
+    if (axis === 'host') identities.push(validateHostAttestations(meta,group,root));
     const calls = readFileSync(join(root,'calls.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
     const outcomes = json(join(root,'outcomes.json')), tasks = new Map();
     for (const task of new Set([...calls.map(r => r.task),...Object.keys(outcomes)])) {
@@ -76,6 +86,7 @@ function readGroup(dir, group, axis) {
     if (!tasks.size) throw new Error(`${root}: no tasks`);
     runs.push({service,...(axis === 'host' ? {host:group} : {}),run:n,meta,tasks});
   }
+  if (axis === 'host') assertOneHostIdentity(group,identities);
   return runs;
 }
 export function summarize(dir, {axis = 'service'} = {}) {

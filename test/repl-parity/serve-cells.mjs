@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
+import {cellsServeEnv} from './fixture-launch.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false}={}) {
@@ -24,8 +24,7 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   const facts=executionFacts({source});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
   output=attestedOutput(output,facts);
   const scratch=prepareCapabilityHome({source});
-  const env={...desktopSessionEnv(process.env),PATH:process.env.PATH,HOME:scratch.userHome,TMPDIR:process.env.TMPDIR,
-    CUA_HOME:scratch.dir,CUA_SHIM_SANDBOX:sandbox,CUA_REPL_HOST:host,CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off'};
+  const env=cellsServeEnv(process.env,{scratch,sandbox,host});
   let connection;
   try {
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,

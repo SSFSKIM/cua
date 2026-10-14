@@ -261,6 +261,21 @@ test('host axis refuses missing, mismatched or mixed observed host metadata inst
   assert.throws(()=>summarize(fixture(t),{axis:'host'}),/host attestation|service attestation/i);
 });
 
+test('host axis requires one observed host identity per run and per pooled host group; the groups may differ',t=>{
+  const dir=hostFixture(t),edit=(group,n,change)=>{const path=join(dir,group,`run-${n}/meta.json`),meta=JSON.parse(readFileSync(path,'utf8'));change(meta);writeFileSync(path,JSON.stringify(meta));};
+  const version=v=>meta=>{for(const a of meta.hostAttestations){a.serverInfo.version=v;if(a._meta?.['cua/replHost'])a._meta['cua/replHost'].version=v;}};
+  // cua's group at another version than vendor's is a legitimate comparison.
+  for(const n of [1,2,3])edit('cua',n,version('2.0.0'));
+  assert.equal(summarize(dir,{axis:'host'}).verdict,'no regression');
+  // A second connection of one run answered by another version.
+  edit('vendor',1,meta=>meta.hostAttestations.push({...meta.hostAttestations[0],serverInfo:{name:'node-repl',version:'1.0.1'}}));
+  assert.throws(()=>summarize(dir,{axis:'host'}),/host attestation.*mixed host identities/);
+  edit('vendor',1,meta=>meta.hostAttestations.pop());
+  // One run of a group answered by another version than the others.
+  edit('cua',2,version('2.0.1'));
+  assert.throws(()=>summarize(dir,{axis:'host'}),/cua group mixes host identities \(cua-repl-host 2\.0\.0, cua-repl-host 2\.0\.1\)/);
+});
+
 test('host axis validates actual browser service and labels partial groups as hosts, not services',t=>{
   const dir=hostFixture(t),path=join(dir,'vendor/run-1/meta.json'),meta=JSON.parse(readFileSync(path,'utf8'));
   writeFileSync(path,JSON.stringify({...meta,service:'vendor'}));

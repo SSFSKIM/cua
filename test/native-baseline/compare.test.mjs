@@ -155,6 +155,16 @@ test('method samples are timed under the same rule: median within max(10%, 500 m
   assert.match(renderComparison(result), /\| method\.setValue \| 3 \| .* \| 3 \| .* \| 20\.0 \/ 20\.0 \/ 20\.0 \| 59000\.0 \/ 59000\.0 \/ 59000\.0 \| 520\.0 \| fail \|/);
 });
 
+test('a failure only the candidate records fails: a cold connection whose cleanup failed is not "not judged"', t => {
+  // The runner writes cold.<label>.end_task only when that connection's end_task failed; a clean baseline has none.
+  const failed = r => (r.op === 'cold.hit.total' && r.sample === 2 ? [r, {op: 'cold.hit.end_task', sample: 2, planned: 'hit', ok: false, error: 'end_task failed'}] : [r]);
+  const cua = [1, 2, 3].map(n => ({meta: meta('cua', n), rows: rows().flatMap(failed)}));
+  const result = judge(t, three('vendor'), cua);
+  assert.equal(op(result, 'cold.hit.end_task').verdict, 'fail');
+  assert.match(op(result, 'cold.hit.end_task').reasons.join(), /only the candidate has this operation, and 3 of its 3 samples failed/);
+  assert.equal(result.verdict, 'FAIL');
+});
+
 test('an operation the candidate lacks fails; one only the candidate has is reported', t => {
   const result = judge(t, three('vendor'), three('cua', {tweak: r => (r.op === 'cold.miss.initialize' ? {...r, op: 'cold.miss.renamed'} : r)}));
   assert.equal(op(result, 'cold.miss.initialize').verdict, 'fail');

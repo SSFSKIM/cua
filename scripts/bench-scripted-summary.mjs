@@ -6,18 +6,19 @@
 import {readFileSync,readdirSync,existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {validateAxis,validateHostAttestations,summaryArgs} from './bench-summary.mjs';
+import {validateAxis,validateHostAttestations,assertOneHostIdentity,summaryArgs} from './bench-summary.mjs';
 const GROUPS=['vendor','cua'];
 const jsonl=path=>readFileSync(path,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
 const pathText=path=>Array.isArray(path)?path.map(p=>`(${p.x},${p.y})`).join('->'):null;
 function readEpisodes(dir,group,axis) {
   const service=axis==='host'?'cua':group,root=join(dir,group);
   const names=existsSync(root)?readdirSync(root).filter(n=>/^ep-\d+$/.test(n)).sort((a,b)=>a.slice(3)-b.slice(3)):[];
-  return names.map(name=>{
+  const identities=[];
+  const episodes=names.map(name=>{
     const at=join(root,name),meta=JSON.parse(readFileSync(join(at,'meta.json'),'utf8'));
     if(meta.complete!==true)throw new Error(`${group}/${name}: incomplete run`);
     if(meta.corpus!=='bench'||meta.service!==service||!meta.attestations?.length||meta.attestations.some(a=>a.service!==service))throw new Error(`${group}/${name}: service attestation mismatch`);
-    if(axis==='host')validateHostAttestations(meta,group,at);
+    if(axis==='host')identities.push(validateHostAttestations(meta,group,at));
     const rows=jsonl(join(at,'results.jsonl')),episode=Number(name.slice(3));
     return [...new Set(rows.map(r=>r.case))].sort().map(c=>{
       const outcome=rows.find(r=>r.case===c&&r.cell==='outcome'),drag=rows.find(r=>r.case===c&&r.cell==='drag'),assertion=rows.find(r=>r.case===c&&r.assertion)?.assertion;
@@ -25,6 +26,8 @@ function readEpisodes(dir,group,axis) {
       return {case:c,service,...(axis==='host'?{host:group}:{}),episode,done:value.done===true,raw:value.raw,reward:value.reward,path:pathText(drag?.ok?drag.value?.path:null),ok:assertion?.ok===true};
     });
   }).flat();
+  if(axis==='host')assertOneHostIdentity(group,identities);
+  return episodes;
 }
 export function summarizeScripted(dir,{axis='service'}={}) {
   validateAxis(axis);

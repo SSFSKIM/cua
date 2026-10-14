@@ -1,0 +1,3 @@
+{"case":"acceptance/nytimes","cell":"open","ok":true,"value":{"url":"https://www.nytimes.com/","title":"The New York Times - Breaking News, US News, World News and Videos"},"ms":1221.5511250000004,"trace":[]}
+{"case":"acceptance/nytimes","cell":"opinion","ok":true,"value":{"before":"https://www.nytimes.com/","after":"https://www.nytimes.com/section/opinion","title":"Opinion - The New York Times"},"ms":1271.4736250000005,"trace":[]}
+{"case":"acceptance/nytimes","assertion":{"ok":true}}

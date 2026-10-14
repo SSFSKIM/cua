@@ -1,0 +1,28 @@
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case actions/doubleclick ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case actions/locators ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case actions/slow-budget ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case actions/strict-error ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case actions/wait-for ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case input/coordinates ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case input/dom ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case input/long-type ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case input/queued-shortcuts ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case input/rich-text ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case screenshot/clip ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case screenshot/modes ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case waits/networkidle ok
+attested: cua (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case waits/page ok

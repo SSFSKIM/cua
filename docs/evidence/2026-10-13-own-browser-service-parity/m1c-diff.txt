@@ -1,0 +1,81 @@
+M1c live parity on the mini (parity clone at 2638024, profile ssfs; the host is the resident one, so host traces are empty).
+Scenarios of the M1c diff: actions/*, input/coordinates, input/dom, input/rich-text, input/long-type,
+input/queued-shortcuts, screenshot/*, waits/* (14 cases; downloads/media moved to M2).
+
+Runs:
+  vendor-m1c-1   vendor, the M1c cases, parity clone at 2638024: the fresh vendor baseline (the corpus' M1c cases
+                 changed: five new cases, and actions/slow-budget reloads its page in the cell).
+  cua-m1c-1      cua, the same cases, same commit.
+  cua-m1c-m1ab   cua, the M1a and M1b cases at the same commit (a regression check of the earlier milestones'
+                 cases after M1c's changes), against vendor-m1b-2.
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit 2638024e90cd72bebb3de693f8e7211b248df431 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out vendor-m1c-1
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out cua-m1c-1
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --out cua-m1c-m1ab
+
+The M1c diff:
+$ node scripts/browser-parity.mjs diff vendor-m1c-1 cua-m1c-1 --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (14 cases, 31 cells, 1 expected; scenarios actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs)
+exit 0
+
+The earlier milestones' cases at the M1c head, against the M1b vendor baseline:
+$ node scripts/browser-parity.mjs diff vendor-m1b-2 cua-m1c-m1ab --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (20 cases, 70 cells, 7 expected; scenarios tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs)
+exit 0
+
+The expected difference accepted in the M1c diff: actions/slow-budget late (the clamp's maximum is 120,000 ms on cua).
+
+Acceptance 2 (actions/slow-budget, the cell reloads slow.html, then locator('#late').click({timeoutMs: 15000})):
+  cua     ok, value true (the click waited >= 5 s; #late appears at 8 s), cell 8515 ms including the reload
+  vendor  "Playwright selector deadline exceeded / waiting on click for selector #late", no click recorded
+
+Per-cell ms (diagnostic, not judged; each a whole REPL round trip over ssh). The vendor run went through a network
+spell of 240 ms to 1 s round trips on a relayed Tailscale path (see below), so its larger figures are mostly network:
+  case cell                                   vendor     cua
+  actions/doubleclick double                     798     293
+  actions/locators fill                          892     109
+  actions/locators press                         768     316
+  actions/locators select                        293      24
+  actions/locators check                         690     368
+  actions/locators click                        3169     301
+  actions/slow-budget late                     14337    8515
+  actions/strict-error strict                    103     103
+  actions/strict-error usable                    118      36
+  actions/wait-for visible                     15573     814
+  input/coordinates type                         611     327
+  input/coordinates end-key                      323     129
+  input/coordinates double                       559     445
+  input/coordinates drag                         219     456
+  input/coordinates scroll                      1289     391
+  input/dom nodes                                590      94
+  input/dom type                                3293     315
+  input/dom end-key                             8809     127
+  input/dom double                               979     376
+  input/dom scroll                               613     253
+  input/long-type long                          1168     517
+  input/queued-shortcuts copy                  39088      98
+  input/queued-shortcuts queued                 2593      95
+  input/rich-text markdown                       705     412
+  screenshot/clip clip                            77     120
+  screenshot/modes viewport                     1395     212
+  screenshot/modes full                          528     218
+  waits/networkidle idle                       34282    1939
+  waits/page url                                2292     803
+  waits/page load                               2004    1262
+  waits/page delay                               430     301
+
+The long cua_type (input/long-type, 55,999 characters, one paste): cua 517 ms, vendor 1,168 ms for the whole cell
+(click, type, the fixture acknowledgment, the read-back). cua's 10 s aggregate typing bound did not come near firing,
+so it is not raised (the session's ruling: raise it to the vendor's per-call sum only if it fires where the vendor
+completes).
+
+Network: this Mac's path to the mini was relayed through DERP (lax) for most of the session, with round trips of
+240 ms to 1 s and stretches of "no reply"; five earlier attempts (whole-corpus vendor runs and a first M1c subset)
+ended on ssh connect timeouts, a broken multiplexed session or an MCP call timeout, none on a case. Each aborted run's
+trace activation was removed by its own trace id; no parity process was left on the mini. The kept runs went through
+a harness-only ssh wrapper (ControlMaster over one connection, no ~/.ssh/config change) after a latency gate. The
+diff is therefore scoped to the M1c cases plus a cua regression run of the M1a/M1b cases, not a whole-corpus vendor
+run.
+
+After the runs: no parity process on the mini, no trace activation, the parity clone clean at 2638024.

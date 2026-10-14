@@ -539,6 +539,15 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Execute M0 as five tasks in one PR: (1) HostSelection/HostIdentity, job persistence, cache identity and Node-floor validation; (2) the case inventory and its test; (3) the ParityRun harness (raw cells, MCP capture, comparator, exact image oracle, `serve-cells.mjs`, remote capability-host lane); (4) BenchmarkRun and the host axis; (5) the Linux native-baseline extension and M0's live runs. Tasks 2 and 4 touch disjoint files and may run in sibling worktrees merged back before review; task 3 consumes 1 and 2, task 5 consumes 1 and 3.
+  Rationale: M0 spans production selection code, a large declarative inventory, harness code and live evidence; one executor cannot hold all of it, and the interfaces (HostIdentity, inventory rows, ParityRun) are the natural review frontiers.
+  Date/Author: 2026-10-14, plan-executor pre-flight.
+- Decision: M0's vendor `cells` runs (mini and Linux) run in the same isolated no-services lane (`test/repl-parity/serve-cells.mjs`, no-op banner, pinned node_repl invoked directly) that M1's own-host `cells` run uses, so `diff $E/m0/vendor-1 $E/m1/cua --through M1` compares like with like.
+  Rationale: Concrete Steps diff M1's own-host run against M0's vendor-1; a production-banner vendor run would differ by the facade, which M1 does not ship.
+  Date/Author: 2026-10-14, plan-executor pre-flight.
+- Decision: Executor routing follows the dispatching session's brief: opus `doperpowers:task-executor` for ports and production selection code; `astra`/`sol-xhigh` for bounded harness, inventory and documentation work, holding the task-executor contract; task reviews `doperpowers:task-reviewer`; each milestone PR `doperpowers:reviewer-high`.
+  Rationale: Owner's temporary routing note, carried by the brief; the Agent tool here has no effort parameter, so agents run at their defaults.
+  Date/Author: 2026-10-14, plan-executor pre-flight.
 - Decision: Gate own-host selection on the resolved browser service with original-setting provenance, including independent profiles listing; implicit vendor routes with no override select vendor with `vendor_browser_route`; an explicit `CUA_REPL_HOST=cua` there refuses with a route diagnostic (session ruling 2026-10-14: an explicit choice is never silently downgraded), as does the explicit contradictory pair.
   Rationale: Connection launch currently stamps a resolved value as if explicit. Blind per-platform defaults break unregistered/ChatGPT homes; the shared route matrix and doctor provenance preserve compatibility instead of adding cloud support.
   Date/Author: 2026-10-14, verified review finding 1, execution-spec revision.

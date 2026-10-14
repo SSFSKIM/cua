@@ -43,8 +43,8 @@ const REQUESTS = {requestStage: 'Request'};                                     
 const KEEP_DEBUGGER = {preserveOnTimeout: true};
 // A paused request the service releases on its own is given RELEASE_MS for at most RELEASE_ATTEMPTS answers; when
 // none lands, the tab's Fetch domain is disabled (Chrome then lets every paused request go on, measured with a headless
-// Chromium probe, M2 task 1 review) and set up again, each on RECOVERY_MS; when even that fails the tab is detached,
-// which releases them with the debugger. A paused navigation is never left behind, except while a JavaScript dialog
+// Chromium probe, M2 task 1 review) and set up again, each on RECOVERY_MS; when either fails the tab is detached,
+// which releases them with the debugger and sets interception up afresh at the next attachment. A paused navigation is never left behind, except while a JavaScript dialog
 // blocks the tab's commands (the vendor's gap, recorded).
 const RELEASE_MS = 3000, RELEASE_ATTEMPTS = 3, RECOVERY_MS = 3000, CLEANUP_MS = 3000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -175,9 +175,15 @@ export class DocumentResponses extends Emitter {                                
         const interceptors = this.requestInterceptorsByTab.has(tabId);
         this.forgetTab(tabId);
         this.emit('released', tabId);
+        // Interception back on for what follows (a later wait, an active media download); a tab that cannot have it
+        // back is detached, so its next attachment sets it up afresh.
         const deadline = new Deadline(this.recoveryMs);
-        await this.ensureInterceptionReady(tabId, {deadline}).catch(() => {});
-        if (interceptors) await this.configureRequestInterception(tabId, {deadline}).catch(() => {});
+        try {
+          await this.ensureInterceptionReady(tabId, {deadline});
+          if (interceptors) await this.configureRequestInterception(tabId, {deadline});
+        } catch {
+          await this.cdp.detach(tabId).catch(() => {});
+        }
       })().finally(() => { this.recoveriesByTab.delete(tabId); });
       this.recoveriesByTab.set(tabId, recovery);
     }

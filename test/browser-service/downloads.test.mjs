@@ -314,6 +314,25 @@ test('a release that hangs is recovered after the release budget; a recovery Chr
   assert.equal(responses.hasOwnedPausedResponses(5), false);
 });
 
+test('a recovery whose re-arming fails detaches the tab: document interception or the media download\'s request stage', async () => {
+  for (const failing of ['documents', 'requests']) {
+    const {cdp} = scriptedController();
+    const responses = new DocumentResponses(cdp, {releaseMs: 100, recoveryMs: 100});
+    await responses.ensureInterceptionReady(5);
+    if (failing === 'requests') await responses.addRequestInterceptor(5, () => {});
+    cdp.answers['Fetch.continueResponse'] = never;
+    cdp.answers['Fetch.enable'] = params => {
+      const requests = params.patterns.length === 2;
+      if (failing === 'documents' || requests) throw new Error('Internal error');
+      return {};
+    };
+    cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 5}, params: pausedResponse({requestId: 'hung', headers: [header('content-type', 'text/html')]})});
+    await waitFor(() => cdp.detached.includes(5), `the tab to be detached (${failing})`);
+    assert.ok(methods(cdp).includes('Fetch.disable'), failing);
+    assert.equal(responses.setupByTab.has(5), false, `${failing}: the next attachment sets interception up afresh`);
+  }
+});
+
 test('a download\'s release that hangs: the wait times out in its own words, and its cleanup releases the response', async () => {
   const {cdp, api} = scriptedController();
   const responses = new DocumentResponses(cdp, {releaseMs: 100, recoveryMs: 100});

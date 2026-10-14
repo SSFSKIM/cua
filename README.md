@@ -31,7 +31,7 @@ serves a client on another machine (see Remote control). The design and its stat
 - For Chrome only: Google Chrome with the cua extension in each profile you want to use (from the Chrome Web Store once
   it is listed, or loaded unpacked from the checkout's `extension/`) and `cua chrome register` run once (see Chrome).
   No account or login is needed. cua never installs the extension for you. (The ChatGPT extension route, until its
-  removal, needs OpenAI's extension and a Codex login of the server's own instead.)
+  removal, needs OpenAI's extension, a Codex login of the server's own and `CUA_BROWSER_SERVICE=vendor` instead.)
 
 A clean Mac without ChatGPT installed has been shown, in a macOS 27 VM (`docs/evidence/clean-machine-acceptance.md`).
 There, the pinned helper started from cua's release tree, macOS asked for Accessibility and Screen Recording on the

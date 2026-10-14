@@ -48,3 +48,14 @@ for method: getUserHistory" on both; it was cua's "Unsupported browser command" 
 capabilities/m3-disabled (pageAssets, webmcp, botDetection, browserAuth absent from the client on both),
 capabilities/m3-members, capabilities/page-assets, capabilities/export-authenticated's executable half,
 reads/visible-dom-dense.
+
+Added after M3 task 2's review: the off-screen button moved before the grid (corpus-pages.mjs), so its absence from
+the listing is the visibility rule and never the 200-element cap. Parity clone at ecda595, each run its own fresh ssh;
+the three download cases were not re-run (the mini's Downloads consent still holds them).
+$ node scripts/browser-parity.mjs prepare --device mini --commit ecda5953ff5111580f39ce67efd66d575e28575c --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'reads/visible-dom-dense.mjs' --out vendor-m3-dense-2
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'reads/visible-dom-dense.mjs' --out cua-m3-dense-2
+$ node scripts/browser-parity.mjs diff vendor-m3-dense-2 cua-m3-dense-2 --scenarios 'reads/visible-dom-dense.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (1 cases, 1 cells, 0 expected; scenarios reads/visible-dom-dense.mjs)
+  Both listings: 200 lines, the grid starting at line 25 and cut at g174; "Offscreen button" absent though it now
+  precedes the grid. Fixture, ssh pipe and serve processes stopped with each run (none left on the mini).

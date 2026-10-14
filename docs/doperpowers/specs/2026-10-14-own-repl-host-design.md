@@ -80,8 +80,8 @@ that decided it. MAWS client mode does not override an enabled macOS computer su
 | Explicit host vendor | vendor | vendor | `explicit` |
 | Explicit host cua, eligible surface/service combination | cua | cua | `explicit` |
 
-Reject invalid nonempty settings before launch. An explicitly contradictory pair `CUA_REPL_HOST=cua` and `CUA_BROWSER_SERVICE=vendor` refuses with a migration diagnostic. An implicitly resolved vendor browser service instead selects vendor host with `vendor_browser_route`, even
-if an own-host preference was supplied: route compatibility precedes that preference, and doctor reports the constraint, not a conflict. With a cua browser route, explicitly selecting own host for macOS computer remains unsupported until #117 and refuses before input. For
+Reject invalid nonempty settings before launch. An explicitly contradictory pair `CUA_REPL_HOST=cua` and `CUA_BROWSER_SERVICE=vendor` refuses with a migration diagnostic. An implicitly resolved vendor browser service with no host override selects vendor host with `vendor_browser_route`. An explicit
+`CUA_REPL_HOST=cua` on such a home refuses before launch with a diagnostic naming the route and the registration that decided it (and how to move the home to the cua route); an explicit choice is never silently downgraded, as with macOS computer below. With a cua browser route, explicitly selecting own host for macOS computer remains unsupported until #117 and refuses before input. For
 eligible sessions without an override, M0–M4 retain `staged_vendor_default`; only M5 activates the defaults above.
 
 The macOS helper's code-signing/ancestry authorization (`parentIdentity`, `ancestorIdentities`, `trustedProcessRequirement`, `allowedRelayRequirement`, `parentProcessIsCodex`) accepts the existing vendor node_repl peer path, not an arbitrary direct Node socket peer. Browser
@@ -539,7 +539,7 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
-- Decision: Gate own-host selection on the resolved browser service with original-setting provenance, including independent profiles listing; implicit vendor routes select vendor with `vendor_browser_route`, only explicit contradictory pairs refuse.
+- Decision: Gate own-host selection on the resolved browser service with original-setting provenance, including independent profiles listing; implicit vendor routes with no override select vendor with `vendor_browser_route`; an explicit `CUA_REPL_HOST=cua` there refuses with a route diagnostic (session ruling 2026-10-14: an explicit choice is never silently downgraded), as does the explicit contradictory pair.
   Rationale: Connection launch currently stamps a resolved value as if explicit. Blind per-platform defaults break unregistered/ChatGPT homes; the shared route matrix and doctor provenance preserve compatibility instead of adding cloud support.
   Date/Author: 2026-10-14, verified review finding 1, execution-spec revision.
 - Decision: Separate live-screenshot average-hash similarity from deterministic emitImage byte/pixel conformance, including WebP and all input forms.

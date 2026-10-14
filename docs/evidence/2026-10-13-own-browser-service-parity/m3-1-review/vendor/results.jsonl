@@ -1,0 +1,8 @@
+{"case":"capabilities/export-rejections","cell":"gsuite","ok":false,"error":{"code":"Error","message":"Tab is not a Google Workspace document"},"ms":60.34195799999998,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"youtube","ok":false,"error":{"code":"Error","message":"Tab is not a supported YouTube watch page"},"ms":38.25420800000029,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"format","ok":false,"error":{"code":"Error","message":"tab_content_export_gsuite requires supported format"},"ms":31.497999999999593,"trace":[]}
+{"case":"capabilities/export-rejections","assertion":{"ok":true}}
+{"case":"capabilities/page-assets","cell":"absent","ok":true,"value":true,"ms":23.724500000000262,"trace":[]}
+{"case":"capabilities/page-assets","cell":"list","ok":true,"value":{"kind":"image","name":"cross-asset.png","sources":[{"kind":"resource","property":"fetch"}],"crossOrigin":true},"ms":89.92033400000037,"trace":[]}
+{"case":"capabilities/page-assets","cell":"bundle","ok":true,"value":{"assets":[{"kind":"image","name":"cross-asset.png","contentType":"image/png"}],"failures":[],"contentMatches":true,"summary":{"downloadedCount":1,"failedCount":0,"requestedCount":1}},"ms":271.3860829999994,"trace":[]}
+{"case":"capabilities/page-assets","assertion":{"ok":true}}

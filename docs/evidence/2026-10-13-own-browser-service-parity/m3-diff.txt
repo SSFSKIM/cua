@@ -1,0 +1,61 @@
+M3 live parity on the mini (parity clone at a91c143, profile ssfs, Tailscale direct; the host is the resident one, so
+host traces are empty). M3 task 2's gate: a fresh whole-corpus vendor run and the whole-corpus cua run at the M3 head.
+
+Runs (each its own fresh ssh; every fixture, ssh pipe and serve process stopped with its run, checked after the last):
+  vendor-m3-dense, cua-m3-dense   reads/visible-dom-dense alone, first, to validate the new case: ok on both.
+  vendor-m3-1     vendor, the whole corpus (59 cases, 151 cells): 56/59 ok.
+  cua-m3-1        cua, the whole corpus: 56/59 ok.
+  vendor-m3-dl    vendor, the three failing download cases again: the same three failures (reproducible).
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit a91c1430b6481aed09281e7cadf5a8e889d2fc4b --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'reads/visible-dom-dense.mjs' --out vendor-m3-dense
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'reads/visible-dom-dense.mjs' --out cua-m3-dense
+$ node scripts/browser-parity.mjs diff vendor-m3-dense cua-m3-dense --scenarios 'reads/visible-dom-dense.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (1 cases, 1 cells, 0 expected; scenarios reads/visible-dom-dense.mjs)
+  The listing is byte-identical on both services: 200 lines (the cap reached inside the grid at g174), select values
+  b/y/1, the credential value "<redacted>", shadow and nested-shadow content listed, the closed shadow root and the
+  off-screen, hidden and invisible buttons absent.
+
+$ node scripts/browser-parity.mjs run --service vendor --device mini --out vendor-m3-1
+$ node scripts/browser-parity.mjs run --service cua --device mini --out cua-m3-1
+$ node scripts/browser-parity.mjs diff vendor-m3-1 cua-m3-1 --expected test/browser-parity/expected-differences.json
+{"kind":"assertion","side":"a","case":"downloads/chooser","message":"case assertion failed"}
+{"kind":"assertion","side":"a","case":"downloads/media","message":"case assertion failed"}
+{"kind":"assertion","side":"a","case":"downloads/two-tabs","message":"case assertion failed"}
+{"kind":"assertion","side":"b","case":"downloads/chooser","message":"case assertion failed"}
+{"kind":"assertion","side":"b","case":"downloads/media","message":"case assertion failed"}
+{"kind":"assertion","side":"b","case":"downloads/two-tabs","message":"case assertion failed"}
+6 unexpected differences (59 cases, 151 cells, 12 expected)
+exit 1
+The six are the case assertions of downloads/chooser, downloads/media and downloads/two-tabs, failing on BOTH sides
+with identical cell results (every cell value and error equal across services; only "assertion failed" on each side):
+the cell that reads the downloaded file with node:fs times out ("js execution timed out; kernel reset").
+Diagnosis (a probe case through the same harness on cua, not kept as a corpus case): the download completes and
+download.path() answers at once (~/Downloads/parity (N).txt); fs.stat and fs.realpath of it answer; fs.readFile of it
+hangs (no answer in 5 s). Reading file contents under ~/Downloads blocks in the REPL kernel: a macOS privacy (TCC)
+consent for the Downloads folder is pending or newly required for the process the kernel runs as on the mini. The
+same three cases passed in vendor-m2-1 / cua-m2-2 earlier today, so this is the machine, not either service. Not
+clicked through (agent rule); the owner must answer or grant it, then these three cases re-run.
+
+Every other case of the corpus (56 cases, all but those three):
+$ node scripts/browser-parity.mjs diff vendor-m3-1 cua-m3-1 --scenarios '<the 56 scenario files>' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (56 cases, 143 cells, 12 expected; scenarios: the 56 files below)
+exit 0
+The scenario list: actions/concurrent-fill.mjs,actions/doubleclick.mjs,actions/locators.mjs,actions/overlay.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,capabilities/clipboard-page.mjs,capabilities/clipboard.mjs,capabilities/cursor.mjs,capabilities/export-authenticated.mjs,capabilities/export-rejections.mjs,capabilities/history.mjs,capabilities/logs.mjs,capabilities/m2-disabled.mjs,capabilities/m3-disabled.mjs,capabilities/m3-members.mjs,capabilities/page-assets.mjs,capabilities/viewport.mjs,dialogs/alert.mjs,dialogs/paused-response.mjs,dialogs/prompt.mjs,downloads/ask-where-to-save.mjs,downloads/blocked-navigation.mjs,evaluate/attributes.mjs,evaluate/budget.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,examples/concurrency.mjs,examples/tabs.mjs,input/ax-disabled.mjs,input/coordinates.mjs,input/dom.mjs,input/long-type.mjs,input/oopif-type.mjs,input/queued-shortcuts.mjs,input/rich-text.mjs,reads/frames.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,reads/visible-dom-dense.mjs,reads/zero-budget.mjs,screenshot/clip.mjs,screenshot/modes.mjs,tabs/discovery.mjs,tabs/lifecycle.mjs,tabs/manual-handoff-disabled.mjs,tabs/navigation.mjs,waits/networkidle.mjs,waits/page.mjs,waits/zero-budget.mjs
+
+M3's own cases, all agreeing: capabilities/history now reaches the host on cua as on the vendor ("No handler registered
+for method: getUserHistory" on both; it was cua's "Unsupported browser command" in m2-diff), capabilities/export-rejections,
+capabilities/m3-disabled (pageAssets, webmcp, botDetection, browserAuth absent from the client on both),
+capabilities/m3-members, capabilities/page-assets, capabilities/export-authenticated's executable half,
+reads/visible-dom-dense.
+
+Added after M3 task 2's review: the off-screen button moved before the grid (corpus-pages.mjs), so its absence from
+the listing is the visibility rule and never the 200-element cap. Parity clone at ecda595, each run its own fresh ssh;
+the three download cases were not re-run (the mini's Downloads consent still holds them).
+$ node scripts/browser-parity.mjs prepare --device mini --commit ecda5953ff5111580f39ce67efd66d575e28575c --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'reads/visible-dom-dense.mjs' --out vendor-m3-dense-2
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'reads/visible-dom-dense.mjs' --out cua-m3-dense-2
+$ node scripts/browser-parity.mjs diff vendor-m3-dense-2 cua-m3-dense-2 --scenarios 'reads/visible-dom-dense.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (1 cases, 1 cells, 0 expected; scenarios reads/visible-dom-dense.mjs)
+  Both listings: 200 lines, the grid starting at line 25 and cut at g174; "Offscreen button" absent though it now
+  precedes the grid. Fixture, ssh pipe and serve processes stopped with each run (none left on the mini).

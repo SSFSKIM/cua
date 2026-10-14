@@ -16,11 +16,16 @@
 // removed). Commands dispatch through COMMAND_HANDLERS, the map from wire type to the function execute runs (the
 // inventory's handler gate reads it): the selection and documentation commands with the runtime, every other command
 // with the BrowserSession of the backend its browser_id names. A type without a handler rejects unsupported_command.
+// After each submitted cell, the sessions that ran commands in it report their WebMCP tool changes as one "Browser
+// notifications" content item (webmcp.mjs), through the runtime's after-submitted-code hook, as the vendor's do.
 // Dropped from VN: telemetry, Sentry, the identity fetch, site status and the security wrapper, the credential
-// recovery and observation machinery, the response-meta and notification hooks (WebMCP's arrive with M3), and the
+// recovery and observation machinery, the response-meta hook (the Codex confirmation policies), and the
 // executeUnhandledCommand fallback for any command without a handler (viewport.mjs registers the backend's
 // capability commands by name).
 import {ACTION_HANDLERS} from './actions.mjs';
+import {ASSET_HANDLERS} from './assets.mjs';
+import {AUTH_HANDOFF_HANDLERS} from './authhandoff.mjs';
+import {BOT_DETECTION_HANDLERS} from './botdetect.mjs';
 import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {CHOOSER_HANDLERS} from './chooser.mjs';
 import {CLIPBOARD_HANDLERS} from './clipboard.mjs';
@@ -30,6 +35,8 @@ import {DOCUMENTATION_HANDLERS, Documentation, documentationAddendum} from './do
 import {DOWNLOAD_HANDLERS} from './downloads.mjs';
 import {serviceError} from './errors.mjs';
 import {EVALUATE_HANDLERS} from './evaluate.mjs';
+import {EXPORT_HANDLERS} from './exports.mjs';
+import {HISTORY_HANDLERS} from './history.mjs';
 import {INPUT_HANDLERS} from './input.mjs';
 import {API_MANIFEST, browserCapabilities, disabledMemberIds} from './manifest.mjs';
 import {NAVIGATION_HANDLERS} from './navigation.mjs';
@@ -38,10 +45,12 @@ import {READ_HANDLERS} from './reads.mjs';
 import {SCREENSHOT_HANDLERS} from './screenshot.mjs';
 import {BrowserSession} from './session.mjs';
 import {AX_HANDLERS, SNAPSHOT_HANDLERS} from './snapshot.mjs';
+import {TAB_CONTEXT_HANDLERS} from './tab-context.mjs';
 import {TAB_HANDLERS} from './tabs.mjs';
 import {VIEWPORT_HANDLERS} from './viewport.mjs';
 import {VISIBLE_DOM_HANDLERS} from './visible-dom.mjs';
 import {WAIT_HANDLERS} from './waits.mjs';
+import {WEBMCP_HANDLERS, browserNotifications} from './webmcp.mjs';
 
 export const SERVICE_VERSION = '0.1.0';            // also the content of src/browser-service/VERSION
 
@@ -77,6 +86,7 @@ function browserCommand(type, run) {
         const tab = await session.tabs.claim(tabId);
         session.tabs.recordAcquired(tab.id);
       }
+      runtime.commandSessions.add(session);
       return await run(params, session);
     } catch (error) {
       throw blockedByExtensionUi(error, session.clientInfo);
@@ -89,12 +99,15 @@ export const COMMAND_HANDLERS = new Map([
   ...Object.entries(DOCUMENTATION_HANDLERS),
   ...Object.entries({...TAB_HANDLERS, ...AX_HANDLERS, ...NAVIGATION_HANDLERS, ...READ_HANDLERS, ...EVALUATE_HANDLERS, ...SNAPSHOT_HANDLERS,
     ...VISIBLE_DOM_HANDLERS, ...ACTION_HANDLERS, ...INPUT_HANDLERS, ...WAIT_HANDLERS, ...SCREENSHOT_HANDLERS, ...DIALOG_HANDLERS,
-    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS, ...CLIPBOARD_HANDLERS, ...DEVLOG_HANDLERS, ...VIEWPORT_HANDLERS, ...RAW_CDP_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
+    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS, ...CLIPBOARD_HANDLERS, ...DEVLOG_HANDLERS, ...VIEWPORT_HANDLERS, ...RAW_CDP_HANDLERS,
+    ...EXPORT_HANDLERS, ...ASSET_HANDLERS, ...BOT_DETECTION_HANDLERS, ...TAB_CONTEXT_HANDLERS, ...HISTORY_HANDLERS, ...AUTH_HANDOFF_HANDLERS,
+    ...WEBMCP_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
 ]);
 
 // What one setup made: the backends, the documentation and a session per backend connection.
 class ServiceRuntime {
   constructor(runtime, {undocumentedApiMembers, excludedDocumentation}) {
+    this.nodeRepl = runtime;
     this.env = runtime.env ?? {};
     this.disabledMemberIds = disabledMemberIds(this.env);
     this.context = new BrowserContext(runtime);
@@ -104,11 +117,13 @@ class ServiceRuntime {
     });
   }
 
+  nodeRepl;
   env;
   disabledMemberIds;
   context;
   docs;
   sessions = new Map();          // BackendApi -> BrowserSession
+  commandSessions = new Set();   // the sessions that ran a command since the last cell's notifications (the vendor's E_)
   disposed = false;
   disposing;
 
@@ -117,11 +132,22 @@ class ServiceRuntime {
     if (session == null) {
       session = new BrowserSession(browser.api, browser.id, browser.info, {
         preferredWindowId: this.context.preferredWindowIdFor(browser.info), capabilities: browserCapabilities(this.env, browser.info.capabilities),
+        requestMeta: () => this.nodeRepl.requestMeta,
       });
       this.sessions.set(browser.api, session);
-      browser.api.addCloseListener(() => { this.sessions.delete(browser.api); });
+      browser.api.addCloseListener(() => {
+        this.sessions.delete(browser.api);
+        this.commandSessions.delete(session);
+      });
     }
     return session;
+  }
+
+  // The "Browser notifications" content item after a cell, of the sessions that ran commands in it (HN), or ''.
+  async notifications() {
+    const sessions = [...this.commandSessions];
+    this.commandSessions.clear();
+    return this.disposed ? '' : await browserNotifications(sessions);
   }
 
   async executeAgentCommand(command) {
@@ -148,11 +174,29 @@ class ServiceRuntime {
 // default the global one, read at each setup.
 export function createBrowserService({runtime} = {}) {
   let current = null;            // the promise of the last setup's ServiceRuntime (the vendor's ig)
+  let notifying = false;         // the after-cell hook is registered (the vendor's GN)
+
+  // After every submitted cell, the browser notifications of the last setup's runtime as a content item (the vendor's
+  // addAfterSubmittedCodeHook in VN); a runtime without the hook gets none.
+  const registerNotifications = nodeRepl => {
+    if (notifying || typeof nodeRepl?.addAfterSubmittedCodeHook !== 'function') return;
+    nodeRepl.addAfterSubmittedCodeHook({
+      timeoutMs: 12000,
+      run: async () => {
+        try {
+          const text = await (await current?.catch(() => null))?.notifications();
+          if (text) nodeRepl.emitContentItem(text);
+        } catch {}
+      },
+    });
+    notifying = true;
+  };
 
   const methods = {
     async setup({environment, undocumentedApiMembers, excludedDocumentation} = {}) {
       if (!ENVIRONMENTS.includes(environment)) throw new Error('Invalid browser service environment');
       if (environment !== 'codex-app') throw new Error(`Browser service environment is not supported by the cua browser service: ${environment}`);
+      registerNotifications(runtime ?? globalThis.nodeRepl);
       const previous = current;
       current = (async () => {
         await (await previous?.catch(() => null))?.dispose();

@@ -40,3 +40,18 @@ test('the slow document records its request and its answer 800 ms later, and its
   assert.deepEqual((await (await fetch(server.url+'/state')).json()).events, [{requested:'abc'},{responded:'abc'}]);
   for (const page of ['clipboard-page','paused-navigation']) assert.equal((await fetch(`${server.url}/${page}.html`)).status,200,page);
 });
+
+test('the page-assets page fetches a cross-origin asset from the second listener, which allows the fixture origin with credentials and records each request', async t => {
+  const {crossAsset} = await import('./fixture/serve.mjs');
+  const server = await startFixture({port:0}); t.after(() => server.close());
+  assert.notEqual(new URL(server.assetURL).origin, new URL(server.url).origin);
+  const page = await (await fetch(`${server.url}/page-assets.html`)).text();
+  assert.ok(page.includes(`${server.assetURL}/cross-asset.png`), 'the page names the second origin');
+  const response = await fetch(`${server.assetURL}/cross-asset.png`, {headers: {origin: server.url}});
+  assert.equal(response.status, 200);
+  assert.deepEqual(Object.fromEntries(['content-type', 'cache-control', 'access-control-allow-origin', 'access-control-allow-credentials'].map(h => [h, response.headers.get(h)])),
+    {'content-type': 'image/png', 'cache-control': 'no-store', 'access-control-allow-origin': server.url, 'access-control-allow-credentials': 'true'});
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), crossAsset);
+  assert.equal((await fetch(`${server.assetURL}/other.png`)).status, 404);
+  assert.deepEqual((await (await fetch(`${server.url}/state`)).json()).events, [{asset: 'cross'}]);
+});

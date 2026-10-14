@@ -219,7 +219,8 @@
     "dispatch": "Rf",
     "milestone": "M1b",
     "cases": [
-      "reads/snapshot"
+      "reads/snapshot",
+      "reads/visible-dom-dense"
     ],
     "reachability": "always"
   },
@@ -893,7 +894,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capabilities/page-assets"
     ],
     "reachability": "capability:pageAssets"
   },
@@ -903,7 +905,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capabilities/page-assets"
     ],
     "reachability": "capability:pageAssets"
   },

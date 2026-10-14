@@ -71,8 +71,9 @@ export function scriptedPages({autoLoad = true, navigateError = null} = {}) {
 
 // -> {service, ext, runtime, pages, home, turnEnded(turn), setTurn(turn), requests()}: `home` is the host's (its trace
 // activation lives there); `requests()` lists, in order, the methods of the backend requests the service sent the
-// host, as written to the fake runtime's nativePipe.
-export async function serviceOnHost(t, {fake = {}, pages = scriptedPages(), env = {}, turn = {session_id: 'session-a', turn_id: 'turn-1'}} = {}) {
+// host, as written to the fake runtime's nativePipe. `runtimeHooks` adds members to the fake runtime (a test's own
+// fetch, config or content-item hooks).
+export async function serviceOnHost(t, {fake = {}, pages = scriptedPages(), env = {}, turn = {session_id: 'session-a', turn_id: 'turn-1'}, runtimeHooks = {}} = {}) {
   const {ext, socketPath, home} = await startRealHost(t, {cdp: pages.cdp, ...fake});
   pages.bind(ext);
   const turnHandlers = new Set();
@@ -100,6 +101,7 @@ export async function serviceOnHost(t, {fake = {}, pages = scriptedPages(), env 
       return () => turnHandlers.delete(handler);
     },
   };
+  Object.assign(runtime, runtimeHooks);
   const service = createBrowserService({runtime});
   t.after(() => service.dispose());
   return {

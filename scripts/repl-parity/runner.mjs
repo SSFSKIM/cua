@@ -27,7 +27,7 @@ export class AttestedConnections {
   async close(){for(const {client} of this.clients){const status=await client.close();if(status.code!==0)throw new Error(`Harness connection cleanup failed (${status.code??status.signal})`);}}
 }
 export async function runRawScenario(scenario,{client,emit,checkout}) {
-  const results=[],timings=[],normalize=createNormalizer({imageMode:'exact',schemaFields:false});
+  const results=[],timings=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});
   await client.call('js_reset');
   for(const cell of scenario.cells){
     if(cell.answer)client.setElicitationAnswer(()=>cell.answer);
@@ -46,7 +46,7 @@ export async function runRawScenario(scenario,{client,emit,checkout}) {
     timings.push(performance.now()-start);results.push(result);
     const raw=await normalize(captureRawResult(result),{ids:{'meta.cua/taskId':'task','meta.cua/callId':'call','meta.cua/sessionId':'session'}});
     // A tool error is raw outcome data; only independent assertions decide if the error was expected.
-    await emit({case:scenario.id,cell:cell.label,ok:true,...raw,ms:performance.now()-start});
+    await emit({case:scenario.id,cell:cell.label,ok:true,...raw,...(scenario.screenshotTolerance!==undefined?{screenshotTolerance:scenario.screenshotTolerance}:{}),ms:performance.now()-start});
   }
   let assertion;try{assertion=await scenario.assert({results,timings});if(!assertion||typeof assertion.ok!=='boolean')throw new Error('Invalid independent assertion');}catch(e){assertion={ok:false,reason:e.message};}
   await emit({case:scenario.id,assertion});return assertion;

@@ -30,9 +30,9 @@ add('reset/preserves-task-id',['nodeRepl.write("before");',{label:'reset',op:'re
 for(const [id,timeout] of [['default-30000',undefined],['explicit-short',50]])add(`timeouts/${id}`,[{label:'timeout',code:'let timeoutBinding=1; await new Promise(()=>{});',...(timeout?{timeoutMs:timeout}:{})},'nodeRepl.write(typeof timeoutBinding);'],(r,t)=>r[0].isError===true&&includes('undefined')(r)&&t[0]>=(timeout?timeout:29000)&&t[0]<(timeout?5000:45000));
 add('timeouts/fresh-heap',[{label:'timeout',code:'let timeoutBinding=1; await new Promise(()=>{});',timeoutMs:50},'nodeRepl.write(typeof timeoutBinding);'],r=>r[0].isError===true&&includes('undefined')(r));
 add('output/write-values',['nodeRepl.write("text");nodeRepl.write(42);nodeRepl.write({fixture:true});'],r=>includes('text')(r)&&includes('42')(r)&&includes('fixture')(r));
-add('output/write-ids',['nodeRepl.write("A","same");nodeRepl.write("B","other");nodeRepl.write("C","same");'],r=>!r[0].isError&&text(r[0]).includes('A')&&text(r[0]).includes('C'));
+add('output/write-ids',['nodeRepl.write("A","same");nodeRepl.write("B","other");nodeRepl.write("C","same");'],r=>!r[0].isError&&JSON.stringify(r[0].content)===JSON.stringify([{type:'text',text:'AC'},{type:'text',text:'B'}]));
 add('output/console-grouping-newlines',['console.log("line-one");nodeRepl.write("write");console.log("line-two");'],includes('line-one'));
-add('output/ordered-content',['nodeRepl.write("first");console.log("second");nodeRepl.write("third");'],r=>{const t=text(r[0]);return !r[0].isError&&t.indexOf('first')<t.indexOf('second')&&t.indexOf('second')<t.indexOf('third');});
+add('output/ordered-content',['nodeRepl.write("first");console.log("second");nodeRepl.write("third");'],r=>!r[0].isError&&JSON.stringify(r[0].content)===JSON.stringify([{type:'text',text:'firstsecond\nthird'}]));
 add('lifecycle/running-cancellation-eventual-result',[{label:'running',code:'await new Promise(r=>setTimeout(r,300));nodeRepl.write("completed-after-cancel");',cancelAfterMs:100}],includes('completed-after-cancel'));
 add('lifecycle/control-traffic-while-running',[{label:'running',code:'await new Promise(r=>setTimeout(r,300));nodeRepl.write("completed");',ping:true}],includes('completed'));
 for(const format of ['png','jpeg','webp']) {
@@ -56,6 +56,6 @@ for(const format of ['png','jpeg','webp']) {
 }
 const imageURL=`data:image/png;base64,${readFileSync(new URL('../fixtures/pattern.png',import.meta.url)).toString('base64')}`;
 add('output/image-acknowledgement',[`await nodeRepl.emitImage(${JSON.stringify(imageURL)});nodeRepl.write('acknowledged');`],r=>includes('acknowledged')(r)&&r[0].content.some(c=>c.type==='image'));
-for(const id of ['ordered-images','unawaited-emissions'])add(`output/${id}`,[`nodeRepl.write('before');${id==='ordered-images'?'await ':''}nodeRepl.emitImage(${JSON.stringify(imageURL)});nodeRepl.write('after');`],r=>!r[0].isError&&r[0].content.some(c=>c.type==='image')&&text(r[0]).includes('after'));
+for(const id of ['ordered-images','unawaited-emissions'])add(`output/${id}`,[`nodeRepl.write('before');${id==='ordered-images'?'await ':''}nodeRepl.emitImage(${JSON.stringify(imageURL)});nodeRepl.write('after');`],r=>!r[0].isError&&r[0].content.length===2&&r[0].content[0].type==='text'&&r[0].content[0].text==='beforeafter'&&r[0].content[1].type==='image');
 for(const [id,value] of [['invalid-url','"https://example.invalid/image.png"'],['empty-url','""'],['unknown-bytes','new Uint8Array([1,2,3])'],['empty-bytes','new Uint8Array()'],['invalid-object','({other:true})'],['invalid-mime','({bytes:new Uint8Array([1,2]),mimeType:"text/plain"})'],['rejected-promise','Promise.reject(new Error("fixture-image-rejection"))']])add(`images/${id}`,[`await nodeRepl.emitImage(${value});`],err);
 export default scenarios;

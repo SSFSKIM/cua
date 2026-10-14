@@ -20,8 +20,13 @@ export function validateAttestations(meta) {
 export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
   validateAttestations(a.meta);validateAttestations(b.meta);
   if(a.meta.host==='vendor'&&b.meta.host==='vendor'&&expected.length)throw new Error('No expected differences allowed for vendor determinism');
-  if(expected.length)throw new Error('Expected differences must be implemented as exact case/field transformations before use');
-  const differences=[];
+  // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents.
+  // M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
+  if(!Array.isArray(expected)||expected.some(e=>!e.reason||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||typeof e.cua.value.version!=='string'))throw new Error('Invalid exact identity field allowance');
+  const accepted=[];
+  const differences=[];const fakeCases=new Set([...a.rows,...b.rows].filter(r=>r.fake).map(r=>r.case));
+  for(const id of fakeCases)differences.push({kind:'evidence',case:id,message:'double output cannot establish live host parity'});
+  if(!isDeepStrictEqual(a.tools,b.tools))differences.push({kind:'tools',message:'effective tool contract changed'});
   for(const key of ['platform','suite','service','backend','sandbox','surfaces'])if(!isDeepStrictEqual(a.meta[key],b.meta[key]))differences.push({kind:'configuration',field:key});
   const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});
@@ -36,7 +41,16 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     if(!r.meta||!Object.hasOwn(r.meta,'codex/nodeReplExecutionDurationMs'))return r;
     const meta={...r.meta};delete meta['codex/nodeReplExecutionDurationMs'];return {...r,meta};
   });
-  const result=compareRuns(semanticRows(a.rows),semanticRows(b.rows));
+  const left=semanticRows(a.rows).map(r=>({...r,...(r.meta?{meta:{...r.meta}}:{})})),right=semanticRows(b.rows).map(r=>({...r,...(r.meta?{meta:{...r.meta}}:{})}));
+  if(a.meta.host!==b.meta.host)for(const x of left){
+    const y=right.find(r=>r.case===x.case&&r.cell===x.cell);if(!y||!x.cell)continue;
+    const allowance=expected.find(e=>e.cases.includes(x.case)&&e.cells.includes(x.cell));if(!allowance)continue;
+    const vendor=a.meta.host==='vendor'?x:y,own=a.meta.host==='cua'?x:y;
+    if(vendor.meta&&Object.hasOwn(vendor.meta,'cua/replHost'))continue;
+    if(!isDeepStrictEqual(own.meta?.['cua/replHost'],allowance.cua.value))continue;
+    delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
+  }
+  const result=compareRuns(left,right);
   differences.push(...result.differences);
-  return {...result,differences,ok:!differences.length};
+  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }

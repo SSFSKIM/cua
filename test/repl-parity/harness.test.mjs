@@ -65,3 +65,20 @@ test('a run cannot mix host versions across individually valid reconnects',()=>{
  const meta=run().meta;meta.connections.push('c2');meta.hostAttestations.push({connection:'c2',host:'vendor',serverInfo:{name:'node_repl',version:'2'},_meta:null});
  assert.throws(()=>validateAttestations(meta),/mixed|version/i);
 });
+
+test('fake backend rows never count as live host coverage',()=>{
+ const a=run(),b=run();a.rows[0].fake=b.rows[0].fake=true;
+ const result=compareParityRuns(a,b);assert.equal(result.ok,false);assert.equal(result.cases,0);
+});
+test('expected host identity differences need exact case, cell, field and observed values',()=>{
+ const a=run(),b=run();b.meta.host='cua';b.meta.hostAttestations=[{connection:'c1',host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},_meta:{'cua/replHost':{host:'cua',version:'1'}}}];b.rows[0].meta['cua/replHost']={host:'cua',version:'1'};
+ const expected=[{reason:'Deliberate host identity',cases:[scenario.id],cells:['one'],field:'meta.cua/replHost',vendor:{present:false},cua:{present:true,value:{host:'cua',version:'1'}}}];
+ assert.equal(compareParityRuns(a,b).ok,false);assert.equal(compareParityRuns(a,b,{expected}).ok,true);
+ b.rows[0].content[0].text='changed document';assert.equal(compareParityRuns(a,b,{expected}).ok,false);
+ assert.throws(()=>compareParityRuns(a,b,{expected:[{...expected[0],field:'content.0.text'}]}),/field|identity/);
+});
+
+test('effective tool schema drift invalidates parity instead of counting the cell outcomes',()=>{
+ const a=run(),b=run();a.tools={tools:[{name:'js',inputSchema:{type:'object'}}]};b.tools={tools:[{name:'js',inputSchema:{type:'string'}}]};
+ const result=compareParityRuns(a,b);assert.equal(result.ok,false);assert.equal(result.cases,0);
+});

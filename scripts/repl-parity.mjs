@@ -25,7 +25,7 @@ export async function main(argv=process.argv.slice(2)){
  }
  if(action==='diff'){
   if(!a||!b)throw new Error('diff needs two run directories');
-  const load=dir=>({meta:json(join(dir,'meta.json')),rows:readFileSync(join(dir,'results.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)});
+  const load=dir=>({meta:json(join(dir,'meta.json')),tools:json(join(dir,'tools.json')),rows:readFileSync(join(dir,'results.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse)});
   const left=load(a),right=load(b);
   if(v.expected&&left.meta.host==='vendor'&&right.meta.host==='vendor')throw new Error('No expected-differences file permitted for vendor determinism');
   const caseIds=v.through?caseSchedule().filter(c=>c.milestone<=v.through&&c.platforms.includes(left.meta.platform)&&inSuite(c.id,left.meta.suite)).map(c=>c.id):selectScenarios(scenarios,inventory,{suite:left.meta.suite,through:left.meta.through??undefined,platform:left.meta.platform}).scenarios.map(c=>c.id);

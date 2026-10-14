@@ -15,7 +15,7 @@ const counts = trace => {
 function imageEqual(a,b,tolerance) {
   if (a?.$image === 'sha256' || b?.$image === 'sha256') return isDeepStrictEqual(a,b);
   if (a?.$image && b?.$image) {
-    if (a.width !== b.width || a.height !== b.height || a.$image !== b.$image) return false;
+    if (a.width !== b.width || a.height !== b.height || a.$image !== b.$image || a.mimeType !== b.mimeType) return false;
     if (!/^[0-9a-f]{16}$/.test(a.hash) || !/^[0-9a-f]{16}$/.test(b.hash)) return false;
     return (BigInt('0x'+a.hash)^BigInt('0x'+b.hash)).toString(2).replaceAll('0','').length <= tolerance;
   }

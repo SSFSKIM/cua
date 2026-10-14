@@ -1,10 +1,10 @@
-// Evaluate once per device REPL, then await bench.init({service, run}). The journal
+// Evaluate once per device REPL, then await bench.init({experimentId, host, service, run}). The journal
 // lives under os.tmpdir(), which the device sandbox permits; /tmp is not equivalent.
 (() => {
   if (globalThis.bench) throw new Error('bench is already loaded; use the existing recorder');
   const calls = [], outcomes = Object.create(null), completed = new Map();
   let current = null, fileSystem, directory, callsPath, outcomesPath, initialized = false, runKey;
-  const ready = () => {if (!initialized) throw new Error('Await bench.init({service, run}) before recording');};
+  const ready = () => {if (!initialized) throw new Error('Await bench.init({experimentId, host, service, run}) before recording');};
   const task = () => {
     ready();
     if (current === null) throw new Error('Call bench.start(task) before recording');
@@ -51,16 +51,19 @@
   };
   const state = () => ({directory,completed:[...completed.keys()],currentTask:current});
   globalThis.bench = {
-    async init({service,run,fs,os} = {}) {
+    async init({experimentId,host,service,run,fs,os} = {}) {
+      // Lowercase ASCII keeps distinct ids distinct on case-insensitive Mac volumes.
+      if (typeof experimentId !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(experimentId)) throw new Error('experimentId must be a nonempty lowercase path-safe id (letters, digits, dot, underscore, hyphen; start with a letter or digit)');
+      if (!['vendor','cua'].includes(host)) throw new Error('init requires attested host vendor|cua');
       if (!['vendor','cua'].includes(service) || !Number.isInteger(run) || run < 1 || run > 3) throw new Error('init requires service vendor|cua and run 1|2|3');
-      const key = `${service}-run-${run}`;
+      const key = JSON.stringify([experimentId,host,service,run]);
       if (initialized) {
         if (runKey !== key) throw new Error('Use a fresh REPL before selecting a different run');
         return state();
       }
       fileSystem = fs ?? await import('node:fs');
       const system = os ?? await import('node:os');
-      directory = `${system.tmpdir().replace(/\/+$/,'')}/cua-bench/${key}`;
+      directory = `${system.tmpdir().replace(/\/+$/,'')}/cua-bench/${experimentId}/${host}/${service}/run-${run}`;
       callsPath = `${directory}/calls.jsonl`;
       outcomesPath = `${directory}/outcomes.json`;
       fileSystem.mkdirSync(directory,{recursive:true,mode:0o700});

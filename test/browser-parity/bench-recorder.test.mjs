@@ -8,13 +8,13 @@ import {execFileSync} from 'node:child_process';
 import vm from 'node:vm';
 const source = readFileSync(new URL('./bench-recorder.js',import.meta.url),'utf8');
 const epoch = Date.parse('2026-10-13T00:00:00Z');
-async function recorder(t, {baseDir, fileSystem = fs} = {}) {
+async function recorder(t, {baseDir, fileSystem = fs, experimentId = 'host-parity', host = 'vendor', service = 'cua', run = 1} = {}) {
   if (!baseDir) {baseDir=fs.mkdtempSync(join(tmpdir(),'bench-recorder-'));t.after(()=>fs.rmSync(baseDir,{recursive:true,force:true}));}
   const clock = {wall:epoch,mono:100};
   class ClockDate extends Date {constructor(...args) {super(...(args.length ? args : [clock.wall]));} static now() {return clock.wall;}}
   const context = vm.createContext({Date:ClockDate,performance:{now:()=>clock.mono}});
   vm.runInContext(source,context);
-  const state=await context.bench.init({service:'vendor',run:1,fs:fileSystem,os:{tmpdir:()=>baseDir}});
+  const state=await context.bench.init({experimentId,host,service,run,fs:fileSystem,os:{tmpdir:()=>baseDir}});
   return {bench:context.bench,clock,baseDir,directory:state.directory,state};
 }
 const rows = bench => bench.dump().calls.trim().split('\n').map(JSON.parse);
@@ -138,9 +138,9 @@ test('reopening recovers a done row if interruption prevented the outcome snapsh
 test('default node imports use os.tmpdir rather than the hard-coded /tmp path', t=>{
   const baseDir=fs.mkdtempSync(join(tmpdir(),'bench-recorder-imports-'));
   t.after(()=>fs.rmSync(baseDir,{recursive:true,force:true}));
-  const code=`await import(${JSON.stringify(new URL('./bench-recorder.js',import.meta.url).href)});const state=await bench.init({service:'vendor',run:1});bench.start('T1');await bench.call('tab.title','observe',async()=>42);bench.done(42,true);console.log(JSON.stringify(state));`;
+  const code=`await import(${JSON.stringify(new URL('./bench-recorder.js',import.meta.url).href)});const state=await bench.init({experimentId:'host-parity',host:'vendor',service:'cua',run:1});bench.start('T1');await bench.call('tab.title','observe',async()=>42);bench.done(42,true);console.log(JSON.stringify(state));`;
   const result=JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',code],{encoding:'utf8',env:{...process.env,TMPDIR:baseDir,TMP:baseDir,TEMP:baseDir}}));
-  assert.equal(result.directory,join(baseDir,'cua-bench/vendor-run-1'));
+  assert.equal(result.directory,join(baseDir,'cua-bench/host-parity/vendor/cua/run-1'));
   assert.equal(JSON.parse(readFileSync(join(result.directory,'outcomes.json'),'utf8')).T1.answer,42);
 });
 
@@ -155,4 +155,55 @@ test('score audit recovers final correctness if a reset interrupts the outcome s
   assert.throws(()=>first.bench.score('T1',true),/interrupted score snapshot/);
   const resumed=await recorder(t,{baseDir:first.baseDir});
   assert.equal(JSON.parse(readFileSync(join(resumed.directory,'outcomes.json'),'utf8')).T1.ok,true);
+});
+
+// Dropping any tuple component from the path would resume completed work from a
+// different comparison, host, service or attempt rather than start a clean run.
+test('only the entire experiment/host/service/run tuple may resume a journal',async t=>{
+  const first=await recorder(t);
+  first.bench.start('T0');
+  await first.bench.call('cua.getBrowser','other',async()=>42);
+  first.bench.done('ready',true);
+  const previous=readFileSync(join(first.directory,'calls.jsonl'),'utf8');
+  for (const identity of [{experimentId:'other-experiment'},{host:'cua'},{service:'vendor'},{run:2}]) {
+    const other=await recorder(t,{baseDir:first.baseDir,...identity});
+    assert.notEqual(other.directory,first.directory);
+    assert.deepEqual([...other.state.completed],[]);
+    assert.equal(other.state.currentTask,null);
+    assert.equal(readFileSync(join(other.directory,'calls.jsonl'),'utf8'),'');
+    other.bench.start('T0');
+    other.bench.done('separate run',true);
+  }
+  const resumed=await recorder(t,{baseDir:first.baseDir});
+  assert.deepEqual([...resumed.state.completed],['T0']);
+  assert.equal(readFileSync(join(resumed.directory,'calls.jsonl'),'utf8'),previous);
+  assert.throws(()=>resumed.bench.start('T0'),/complete/);
+});
+
+test('an initialized recorder refuses every changed identity component',async t=>{
+  const {bench}=await recorder(t);
+  const identity={experimentId:'host-parity',host:'vendor',service:'cua',run:1};
+  for(const change of [{experimentId:'other'},{host:'cua'},{service:'vendor'},{run:2}]) {
+    await assert.rejects(bench.init({...identity,...change}),/fresh REPL/);
+  }
+  assert.equal((await bench.init(identity)).directory,bench.directory);
+});
+
+test('experiment and host are required and cannot escape or alias the journal namespace',async t=>{
+  const baseDir=fs.mkdtempSync(join(tmpdir(),'bench-recorder-invalid-'));
+  t.after(()=>fs.rmSync(baseDir,{recursive:true,force:true}));
+  for(const experimentId of [undefined,'','..','.','../other','a/b','a\\b','/absolute']) {
+    const context=vm.createContext({performance});vm.runInContext(source,context);
+    await assert.rejects(context.bench.init({experimentId,host:'vendor',service:'cua',run:1,fs,os:{tmpdir:()=>baseDir}}),/experimentId/);
+  }
+  for(const host of [undefined,'','other','../cua']) {
+    // Pass explicit undefined to init, rather than the helper's valid default.
+    const context=vm.createContext({performance});vm.runInContext(source,context);
+    await assert.rejects(context.bench.init({experimentId:'host-parity',host,service:'cua',run:1,fs,os:{tmpdir:()=>baseDir}}),/host/);
+  }
+});
+
+test('experiment ids are canonical lowercase so case-insensitive Mac filesystems cannot merge runs',async t=>{
+  const first=await recorder(t);
+  await assert.rejects(recorder(t,{baseDir:first.baseDir,experimentId:'HOST-PARITY'}),/experimentId/);
 });

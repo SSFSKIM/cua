@@ -18,18 +18,18 @@
       "hit"
     ]
   },
-  "started": "2026-10-14T17:56:13.334Z",
+  "started": "2026-10-14T18:15:50.801Z",
   "elicitations": [
     {
-      "t": "2026-10-14T17:56:35.281Z",
-      "at": 21975.097875,
+      "t": "2026-10-14T18:16:12.226Z",
+      "at": 21458.374875,
       "app": "com.apple.TextEdit",
       "action": "accept"
     }
   ],
   "complete": true,
-  "spikeWaitMs": 545,
-  "commit": "9a6b25ab679a08ab448a5497277773cb095c6c6d",
+  "spikeWaitMs": 1026,
+  "commit": "2a590527f2489516422239e9ae45100bc107f154",
   "checkout": "/Users/new/Developer/GitHub/cua-parity",
   "home": "/Users/new/Library/Application Support/cua",
   "runtime": {
@@ -69,7 +69,7 @@
       {
         "path": "~/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
         "origin": "pinned runtime",
-        "ageSeconds": 8,
+        "ageSeconds": 6,
         "startedDuringRun": true
       }
     ]
@@ -78,5 +78,5 @@
     "serves": 0,
     "textEditRunning": false
   },
-  "finished": "2026-10-14T17:57:21.483Z"
+  "finished": "2026-10-14T18:17:07.801Z"
 }

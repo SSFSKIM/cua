@@ -219,7 +219,8 @@
     "dispatch": "Rf",
     "milestone": "M1b",
     "cases": [
-      "reads/snapshot"
+      "reads/snapshot",
+      "reads/visible-dom-dense"
     ],
     "reachability": "always"
   },

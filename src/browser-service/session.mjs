@@ -6,9 +6,10 @@
 // resolution, selectors.mjs), the page's evaluate (evaluate.mjs), the visible-DOM listing with its node ids
 // (visible-dom.mjs), the agent's cursor (cursor.mjs), the virtual clipboard with its page bridges (clipboard.mjs), the
 // pointer and key input the actions dispatch through (input.mjs), on this machine's platform (keys: ControlOrMeta,
-// the macOS editing commands), each tab's console log (devlogs.mjs), the page asset inventories (assets.mjs), and the
-// filesystem the files a command returns are written to (filesystem.mjs). `capabilities` are the ones the backend
-// announced, less those the launch disabled (manifest.mjs browserCapabilities). It hooks the turn's end into the
+// the macOS editing commands), each tab's console log (devlogs.mjs), the page asset inventories (assets.mjs), each
+// tab's WebMCP tools (webmcp.mjs), and the filesystem the files a command returns are written to (filesystem.mjs);
+// `requestMeta()` is the current call's request metadata from the node_repl runtime. `capabilities` are the ones the
+// backend announced, less those the launch disabled (manifest.mjs browserCapabilities). It hooks the turn's end into the
 // backend API (the page clipboard bridges removed, then the turn's tabs detached before the host hears turnEnded) and
 // disposes itself when the connection closes. The later milestones add their parts here. Dropped from rh: the
 // credential observation gate, the security and preferences objects (no site policy, no Codex config), the orbit
@@ -27,15 +28,17 @@ import {PLATFORM} from './keyboard.mjs';
 import {SelectorEngine} from './selectors.mjs';
 import {TabRegistry} from './tabs.mjs';
 import {VisibleDom} from './visible-dom.mjs';
+import {WebMcp} from './webmcp.mjs';
 
 export class BrowserSession {
   // `api` the backend's BackendApi, `browserId` the id the service lists it under, `clientInfo` its getInfo answer.
-  constructor(api, browserId, clientInfo, {preferredWindowId, platform = PLATFORM, capabilities = clientInfo.capabilities, filesystem = LOCAL_FILESYSTEM} = {}) {
+  constructor(api, browserId, clientInfo, {preferredWindowId, platform = PLATFORM, capabilities = clientInfo.capabilities, filesystem = LOCAL_FILESYSTEM, requestMeta = () => undefined} = {}) {
     this.api = api;
     this.browserId = browserId;
     this.clientInfo = clientInfo;
     this.capabilities = {browser: capabilities?.browser ?? [], tab: capabilities?.tab ?? []};
     this.filesystem = filesystem;
+    this.requestMeta = requestMeta;
     this.cdp = new CdpController(api);
     this.dev = new DevLogs(this.cdp);
     this.documentResponses = new DocumentResponses(this.cdp);
@@ -50,6 +53,7 @@ export class BrowserSession {
     this.clipboard = new Clipboard();
     this.input = new CuaInput(this.cdp, this.cursor, this.visibleDom, {platform});
     this.pageAssets = new PageAssets(this.cdp, filesystem);
+    this.webmcp = new WebMcp(this);
     this.removeCloseListener = api.addCloseListener(() => {
       this.transportClosed = true;
       return this.dispose();
@@ -65,6 +69,7 @@ export class BrowserSession {
   clientInfo;
   capabilities;
   filesystem;
+  requestMeta;
   cdp;
   dev;
   documentResponses;
@@ -79,6 +84,7 @@ export class BrowserSession {
   clipboard;
   input;
   pageAssets;
+  webmcp;
   removeCloseListener;
   transportClosed = false;
   disposePromise;

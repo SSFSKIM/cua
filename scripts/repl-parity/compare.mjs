@@ -1,5 +1,5 @@
 import {compareRuns} from '../browser-parity/compare.mjs';
-import {assessAssertions} from './vendor-defects.mjs';
+import {assessAssertions,vendorDefects} from './vendor-defects.mjs';
 import {normalizeHostDiagnostic} from './diagnostics.mjs';
 import {isDeepStrictEqual} from 'node:util';
 export function validateAttestations(meta) {
@@ -22,9 +22,10 @@ export function validateAttestations(meta) {
 export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
   validateAttestations(a.meta);validateAttestations(b.meta);
   if(a.meta.host==='vendor'&&b.meta.host==='vendor'&&expected.length)throw new Error('No expected differences allowed for vendor determinism');
-  // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents.
-  // M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
-  if(!Array.isArray(expected)||expected.some(e=>!e.reason||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||typeof e.cua.value.version!=='string'))throw new Error('Invalid exact identity field allowance');
+  // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents, and the declared
+  // security departures below. M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
+  validateExpected(expected);
+  const departures=expected.filter(e=>e.kind==='security-departure');expected=expected.filter(e=>e.kind!=='security-departure');
   const accepted=[];
   const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
   const differences=[];const fakeCases=new Set([...a.rows,...b.rows].filter(r=>ids?.includes(r.case)&&r.fake).map(r=>r.case));
@@ -54,6 +55,15 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
   const leftAssertions=assessAssertions(a.meta,left),rightAssertions=assessAssertions(b.meta,right);
+  if(a.meta.host!==b.meta.host)for(const d of departures){
+    if(a.meta.platform!==d.platform||b.meta.platform!==d.platform||!ids?.includes(d.case))continue;
+    const [vendorRows,ownRows,vendorAssessment]=a.meta.host==='vendor'?[left,right,leftAssertions]:[right,left,rightAssertions];
+    if(!departureHolds(d,{vendorRows,ownRows,vendorAssessment}))continue;
+    // The case's two departing rows leave the comparison and its assertion rows become one shared projection, so the
+    // shared comparator still sees the case; the evidence rows and the vendor-defect accounting are untouched.
+    for(const rows of [left,right]){for(let i=rows.length-1;i>=0;i--)if(inDeparture(d,rows[i]))rows.splice(i,1);rows.push({case:d.case,assertion:{ok:true},securityDeparture:d.id});}
+    accepted.push({case:d.case,cells:d.cells,field:d.field,kind:d.kind,issue:d.issue,reason:d.reason});
+  }
   // Exempt only the assessed row object, never every assertion sharing its case ID.
   const recordedAssertionFailures={a:new Set(leftAssertions.recordedAssertionRows),b:new Set(rightAssertions.recordedAssertionRows)};
   const vendorDefects=[...new Map([...leftAssertions.vendorDefects,...rightAssertions.vendorDefects].map(d=>[d.id,d])).values()];
@@ -64,4 +74,34 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     if(!differences.some(d=>d.kind==='assertion'&&d.side===side&&d.case===row.case&&d.cell===row.cell))differences.push({kind:'assertion',side,case:row.case,cell:row.cell,message:'undeclared assertion failure'});
   }
   return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,allAssertionsPassed:!differences.length&&!vendorDefects.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
+}
+
+// The expected-differences file: exact identity-slot allowances (field meta.cua/replHost, both sides' values named) and
+// declared security departures in cua's favour. A departure names one case on one platform: the vendor side must be
+// exactly the declared vendor defect it names (test/repl-parity/vendor-defects.json), the own side must be exactly the
+// passing outcome it names (its assertion, its boundary observation and its refused call's normalized result), and
+// only that case's assertion row and the two rows it is computed from are then exempt. Anything else is refused.
+const DEPARTURE_KEYS=['kind','id','issue','reason','case','platform','field','cells','vendorDefect','cua'];
+export function validateExpected(expected){
+ if(!Array.isArray(expected))throw new Error('Invalid expected differences');
+ for(const e of expected){
+  if(e?.kind==='security-departure'){
+   const defect=vendorDefects.find(v=>v.id===e.vendorDefect);
+   const ok=Object.keys(e).every(k=>DEPARTURE_KEYS.includes(k))&&typeof e.id==='string'&&/^#\d+$/.test(e.issue)&&e.reason&&typeof e.case==='string'&&['darwin','linux'].includes(e.platform)&&e.field==='assertion'
+    &&defect&&defect.case===e.case&&defect.platform===e.platform&&e.cua?.assertion?.ok===true&&Object.keys(e.cua.assertion).length===1
+    &&e.cua.observation&&typeof e.cua.observation==='object'&&typeof e.cua.result?.cell==='string'&&e.cua.result.isError===true&&Array.isArray(e.cua.result.content)
+    &&isDeepStrictEqual(e.cells,[e.cua.result.cell,'boundary']);
+   if(!ok)throw new Error('Invalid security departure: it must name an issue, one case and platform, the assertion field, the declared vendor defect and the exact passing own-host outcome');
+   continue;
+  }
+  if(!e?.reason||e.kind!==undefined||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||typeof e.cua.value.version!=='string')throw new Error('Invalid exact identity field allowance');
+ }
+}
+const inDeparture=(d,row)=>row.case===d.case&&(Object.hasOwn(row,'assertion')&&!Object.hasOwn(row,'cell')||d.cells.includes(row.cell));
+function departureHolds(d,{vendorRows,ownRows,vendorAssessment}){
+ if(!vendorAssessment.vendorDefects.some(v=>v.id===d.vendorDefect&&v.case===d.case))return false;
+ const own=ownRows.filter(r=>inDeparture(d,r)),assertion=own.filter(r=>!Object.hasOwn(r,'cell')),observation=own.filter(r=>r.cell==='boundary'),result=own.filter(r=>r.cell===d.cua.result.cell);
+ if(assertion.length!==1||observation.length!==1||result.length!==1||vendorRows.filter(r=>inDeparture(d,r)).length!==own.length)return false;
+ return isDeepStrictEqual(assertion[0].assertion,d.cua.assertion)&&observation[0].ok===true&&isDeepStrictEqual(observation[0].value,d.cua.observation)
+  &&result[0].ok===true&&result[0].isError===true&&isDeepStrictEqual(result[0].content,d.cua.result.content);
 }

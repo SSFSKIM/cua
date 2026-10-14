@@ -17,7 +17,10 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
     env.NODE_REPL_UNTRUSTED_ENV_ALLOWLIST='';
     return {...launch,command:env.CUA_REPL_NODE_REPL_PATH,args:[],env};
   }
+  // The own host (src/repl-host/supervisor.mjs) under its owned names: the same no-op banner, no services or rpc and no
+  // cell environment, so both hosts run the identical lane.
   env.CUA_REPL_TRUSTED_SERVICES='{}';env.CUA_REPL_TRUSTED_RPC_ENABLED='0';env.CUA_REPL_JS_BANNER=banner;
+  env.CUA_REPL_UNTRUSTED_ENV_ALLOWLIST='';
   return {...launch,env};
 }
 export async function serveCells({source,host='vendor',sandbox='scoped',witness=false,brokenSandbox=false,controlDir,input=process.stdin,output=process.stdout}={}) {

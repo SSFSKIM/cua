@@ -15,7 +15,7 @@
 // launch first, saying which root and which path, and also one whose write roots would cover CODEX_HOME.
 import {lstatSync, readlinkSync, realpathSync} from 'node:fs';
 import {basename, dirname, isAbsolute, join, relative, resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 
@@ -135,12 +135,20 @@ export const sandboxConflictHint = platform => 'keep CUA_HOME and the cua checko
   + `(the default CUA_HOME, ${DEFAULT_HOME_TEXT[platform] ?? DEFAULT_HOME_TEXT.darwin}, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled`;
 export const SANDBOX_CONFLICT_HINT = sandboxConflictHint(process.platform);
 
+// The trusted code roots of `launch` (src/runtime/launch.mjs), by the host it runs: cua's own host names them
+// CUA_REPL_TRUSTED_CODE_PATHS (its own code among them), the vendor's NODE_REPL_TRUSTED_CODE_PATHS. Each host's launch
+// carries only its own name, and the other is never read for it.
+export function trustedCodePathsOf(launch) {
+  const key = launch.replHost?.host === 'cua' ? 'CUA_REPL_TRUSTED_CODE_PATHS' : 'NODE_REPL_TRUSTED_CODE_PATHS';
+  return (launch.env[key] ?? '').split(':').filter(Boolean);
+}
+
 // Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
-// its NODE_REPL_TRUSTED_CODE_PATHS or its CODEX_HOME.
+// its trusted code paths (trustedCodePathsOf) or its CODEX_HOME.
 export function assertSandboxFits(mode, launch) {
   if (mode !== 'scoped') return;
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: (launch.env.NODE_REPL_TRUSTED_CODE_PATHS ?? '').split(':'), codexHome: launch.env.CODEX_HOME}),
+    protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
@@ -159,4 +167,58 @@ export async function assertSandboxConfines(mode, {platform, probe = bwrapUserns
   const why = found.status === 'missing' ? 'bubblewrap (bwrap) is not installed'
     : `bubblewrap cannot create an unprivileged user namespace here (bwrap --ro-bind / / true: ${found.detail})`;
   fail('sandbox_unavailable', `CUA_SHIM_SANDBOX=scoped, but ${why}, and the runtime would then run JavaScript cells with no sandbox at all; nothing was started`, {hint: SANDBOX_UNAVAILABLE_HINT});
+}
+
+// The sandbox cua's own REPL host runs its children under: the retained Codex launcher (`codex sandbox`, the relocated
+// CodexCLI.app on macOS, the relocated codex on Linux) until #115 replaces it, given the policy the vendor's node_repl
+// derives from the same per-call `codex/sandbox-state-meta`. The argv template is the recovered one
+// (docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Default timeout and launch
+// templates"), rendered as the pinned node_repl renders it (its live kernel command lines, observed 2026-10-14):
+//   codex sandbox -c shell_environment_policy.inherit="all" -c default_permissions="node_repl"
+//     -c permissions.node_repl={filesystem = {"<read path>" = "read", ..., ":root" = "read", ...}, network = {enabled = false}}
+//     -- <node> --experimental-vm-modules <script> <args>...
+// Filesystem entries are the host's own read paths (its Node's directory, its code, its module directories) and the
+// profile's, keyed and sorted as a TOML table (byte order); the network is always off. A state that is absent (the
+// default mode) reads everything and writes nothing; a disabled profile runs the child with no sandbox at all (the
+// `disabled` mode, an explicit choice); a state this host cannot render is refused, never run unconfined.
+const SPECIAL_KEYS = {root: ':root', minimal: ':minimal', tmpdir: ':tmpdir', slash_tmp: ':slash_tmp'};
+const ACCESS = ['read', 'write', 'none'];
+
+export class SandboxStateError extends Error {}
+
+// `state`: the call's `codex/sandbox-state-meta` value, or undefined when the call sent none. -> {disabled: true, cwd}
+// or {filesystem: [[key, access]...], cwd}; `cwd` is the sandboxCwd path (null without a state). Throws
+// SandboxStateError for a value the vendor's would refuse or this host cannot render.
+export function sandboxPolicy(state, {readPaths = []} = {}) {
+  const filesystem = new Map(readPaths.filter(Boolean).map(path => [path, 'read']));
+  if (state === undefined) return {filesystem: sortedEntries(filesystem.set(':root', 'read')), cwd: null};
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) throw new SandboxStateError(`invalid type: ${state === null ? 'null' : Array.isArray(state) ? 'sequence' : typeof state}, expected struct SandboxState`);
+  const {permissionProfile: profile, sandboxCwd} = state;
+  if (typeof sandboxCwd !== 'string') throw new SandboxStateError('missing field `sandboxCwd`');
+  let cwd;
+  try { cwd = fileURLToPath(sandboxCwd); } catch { throw new SandboxStateError('sandboxCwd must be an absolute file URI'); }
+  if (profile?.type === 'disabled') return {disabled: true, cwd};
+  if (profile?.type !== 'managed' || profile.file_system?.type !== 'restricted' || !Array.isArray(profile.file_system.entries))
+    throw new SandboxStateError('unsupported permission profile: only managed restricted and disabled profiles are supported');
+  for (const entry of profile.file_system.entries) {
+    if (!ACCESS.includes(entry?.access)) throw new SandboxStateError(`unsupported filesystem access ${JSON.stringify(entry?.access)}`);
+    const path = entry.path;
+    if (path?.type === 'special' && path.value?.kind === 'project_roots' && path.value.subpath == null) filesystem.set(':workspace_roots', {'.': entry.access});
+    else if (path?.type === 'special' && Object.hasOwn(SPECIAL_KEYS, path.value?.kind)) filesystem.set(SPECIAL_KEYS[path.value.kind], entry.access);
+    else if (path?.type === 'path' && typeof path.path === 'string' && isAbsolute(path.path)) filesystem.set(path.path, entry.access);
+    else throw new SandboxStateError(`unsupported filesystem path ${JSON.stringify(path)}`);
+  }
+  return {filesystem: sortedEntries(filesystem), cwd};
+}
+
+const sortedEntries = map => [...map].sort(([a], [b]) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+const tomlString = value => JSON.stringify(value);
+const tomlValue = value => (typeof value === 'string' ? tomlString(value)
+  : `{${Object.entries(value).map(([k, v]) => `${tomlString(k)} = ${tomlString(v)}`).join(', ')}}`);
+
+// The launcher argv for `command` ([executable, ...args]) under a non-disabled `policy` (sandboxPolicy).
+export function sandboxArgs(policy, command) {
+  const filesystem = policy.filesystem.map(([key, access]) => `${tomlString(key)} = ${tomlValue(access)}`).join(', ');
+  return ['sandbox', '-c', 'shell_environment_policy.inherit="all"', '-c', 'default_permissions="node_repl"',
+    '-c', `permissions.node_repl={filesystem = {${filesystem}}, network = {enabled = false}}`, '--', ...command];
 }

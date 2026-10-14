@@ -5,7 +5,8 @@ import {join, dirname} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
-import {buildLaunch, browserServiceFor, browserSelectionFor, replHostFor, ownHostNode, ownHostUnavailable, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, browserServiceFor, browserSelectionFor, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {assertSandboxFits} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
@@ -446,7 +447,7 @@ test('the own host\'s Node is the first of CUA_NODE, the running node and node o
   for (const bad of ['node', 'bin/node', '~/node']) assert.equal(outcome(() => ownHostNode({ambient: {CUA_NODE: bad}, execPath: v26})).code, 'invalid_setting', bad);
 });
 
-test('the launch records the host it runs; an explicit cua host resolves its Node, then fails clearly until the own host lands, never launching vendor', t => {
+test('the launch records the host it runs; an explicit cua host runs the own supervisor on the resolved user Node, never the vendor\'s', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
   const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
   assert.deepEqual(vendor.replHost, {host: 'vendor', reason: 'macos_native_peer_requires_vendor'});
@@ -457,15 +458,58 @@ test('the launch records the host it runs; an explicit cua host resolves its Nod
   assert.deepEqual(explicitVendor.env, vendor.env, 'an explicit vendor launch is the vendor launch');
 
   writeCuaRecord(home);
-  const node = fakeNode(dir, 'n/node', '24.1.0');
+  const node = realpathSync(fakeNode(dir, 'n/node', '24.1.0'));
   const browserOnly = {surfaces: BROWSER, services: {browser: BROWSER_SERVICE}};
-  const own = outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, ...browserOnly}));
-  assert.equal(own.code, 'repl_host_unavailable');
-  assert.match(own.message, /cua's own REPL host/);
-  assert.match(own.message, /CUA_REPL_HOST=vendor/);
-  assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: 'node'}, ...browserOnly})).code, 'invalid_setting', 'the Node is resolved before the launch is refused');
+  const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, ...browserOnly});
+  assert.deepEqual(own.replHost, {host: 'cua', reason: 'explicit'});
+  assert.equal(own.command, node);
+  assert.deepEqual(own.args, ['--disable-sigusr1', REPL_HOST_SUPERVISOR]);
+  assert.equal(own.cwd, join(home, 'run', SESSION));
+  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: '/not/consulted'}, ownNode: node, ...browserOnly}).command, node,
+    'a Node the connection resolved once is used as given');
+  assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: 'node'}, ...browserOnly})).code, 'invalid_setting');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua'}})).code, 'repl_host_refused', 'macOS computer');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'own'}, ...browserOnly})).code, 'invalid_repl_host');
+});
+
+test('the own host\'s environment: the same allowlist and surface, service and secret settings, its own settings under owned names, no vendor host path', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  writeCuaRecord(home);
+  const node = realpathSync(fakeNode(dir, 'n/node', '24.1.0'));
+  const p = runtime.paths;
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
+  assert.deepEqual(env, {
+    HOME: '/Users/someone', USER: 'someone', LOGNAME: 'someone', TMPDIR: '/var/folders/x/T/', LANG: 'en_US.UTF-8',
+    __CF_USER_TEXT_ENCODING: '0x1F5:0x0:0x0',
+    PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    CODEX_HOME: join(home, 'state', 'codex'),
+    CUA_REPL_ENABLED_SURFACES: 'browser',
+    CUA_REPL_NODE_PATH: node,
+    CUA_REPL_TRUSTED_SERVICES: JSON.stringify({browser: BROWSER_SERVICE}),
+    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, p.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
+    CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
+    NODE_REPL_DISABLE_ANALYTICS: '1',
+    CODEX_CLI_PATH: p.codexCli,
+    CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService,
+    BROWSER_USE_AVAILABLE_BACKENDS: 'chrome',
+    CUA_BROWSER_SERVICE: 'cua',
+    BROWSER_USE_BACKEND_PATHS: env.BROWSER_USE_BACKEND_PATHS,
+    CUA_SECRETS_UNAVAILABLE: 'secrets_disabled',
+  });
+  assert.equal(Object.keys(env).some(k => k.startsWith('NODE_REPL_') && k !== 'NODE_REPL_DISABLE_ANALYTICS'), false, 'none of the vendor host\'s own settings');
+  assert.equal(env.CUA_REPL_NODE_REPL_PATH, undefined);
+});
+
+test('the scoped preflight protects the own host\'s trusted roots, its own code among them', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  writeCuaRecord(home);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+  assertSandboxFits('scoped', launch);
+  const overlap = outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR)}}));
+  assert.equal(overlap.code, 'sandbox_conflict');
+  assert.match(overlap.message, new RegExp(`the trusted code path ${REPL_HOST_DIR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assertSandboxFits('scoped', {...launch, replHost: {host: 'vendor', reason: 'explicit'}, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR), CUA_REPL_TRUSTED_CODE_PATHS: undefined}});
 });
 
 test('a launch given the connection\'s selections uses them, not a fresh resolution: the route may move under an open connection', t => {
@@ -508,11 +552,8 @@ test('connections, the profiles listing and doctor agree with the selection tabl
   };
   const BROWSER_SETTINGS = {'service unset': {}, 'MAWS client mode': {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, 'service vendor': {CUA_BROWSER_SERVICE: 'vendor'}, 'service cua': {CUA_BROWSER_SERVICE: 'cua'}};
   const HOSTS = {'host unset': {}, 'host vendor': {CUA_REPL_HOST: 'vendor'}, 'host cua': {CUA_REPL_HOST: 'cua'}};
-  // What every consumer must show: replHostFor's selection, and for an own-host selection the launch's refusal until M1.
-  const expected = ({platform, surfaces, env, home}) => {
-    const r = outcome(() => replHostFor({platform, surfaces, ambient: env, browserSelection: surfaces.includes('browser') ? browserSelectionFor(env, home) : null}));
-    return r.host === 'cua' ? outcome(ownHostUnavailable) : r;
-  };
+  // What every consumer must show: replHostFor's selection, the own host's included.
+  const expected = ({platform, surfaces, env, home}) => outcome(() => replHostFor({platform, surfaces, ambient: env, browserSelection: surfaces.includes('browser') ? browserSelectionFor(env, home) : null}));
   const doctorStubs = {inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
     inspectChrome: async () => [], inspectLogin: async () => ({state: 'logged-out'}), inspectLinux: async () => [], verifySignatures: async () => []};
   const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})`);

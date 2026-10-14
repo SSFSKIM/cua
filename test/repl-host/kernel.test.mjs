@@ -162,3 +162,9 @@ test('the kernel refuses to start without its bootstrap arguments', {skip}, asyn
   assert.deepEqual(await missing.exited, {code: 1, signal: null});
   assert.match(missing.stderr(), /node_repl failed to switch to working directory "\/nonexistent-cua-kernel-dir"/);
 });
+
+kernelTest('the harness gives up on a message that never comes instead of hanging the suite', async (t, kernel) => {
+  const started = Date.now();
+  await assert.rejects(kernel.next(m => m.type === 'never-sent', 0, {timeoutMs: 150}), /no expected kernel message within 150 ms/);
+  assert.ok(Date.now() - started < 5000);
+});

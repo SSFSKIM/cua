@@ -13,6 +13,8 @@ import {fileURLToPath} from 'node:url';
 import {ownHostNode} from '../../src/runtime/launch.mjs';
 
 export const KERNEL = fileURLToPath(new URL('../../src/repl-host/kernel.mjs', import.meta.url));
+// How long next() waits for a matching message: well past any cell these tests run.
+export const NEXT_TIMEOUT_MS = 15_000;
 
 // -> {node} or {skip: reason}.
 export function kernelNode() {
@@ -55,17 +57,24 @@ export function startKernel(t, {node, env = {}, sessionId = 'kernel-test', args}
   });
 
   const send = message => child.stdin.write(`${JSON.stringify(message)}\n`);
-  // The next received message (from `from` on) matching `predicate` -> {message, index}; rejects on child exit.
-  async function next(predicate, from = 0) {
-    for (;;) {
-      const index = received.findIndex((m, i) => i >= from && predicate(m, i));
-      if (index !== -1) return {message: received[index], index};
-      const done = await Promise.race([changed().then(() => false), exited.then(() => true)]);
-      if (done) {
+  // The next received message (from `from` on) matching `predicate` -> {message, index}; rejects on child exit or
+  // after `timeoutMs` without one, so a kernel that never answers fails its test instead of hanging the suite.
+  async function next(predicate, from = 0, {timeoutMs = NEXT_TIMEOUT_MS} = {}) {
+    let timer;
+    const deadline = new Promise(resolve => { timer = setTimeout(() => resolve('deadline'), timeoutMs); });
+    try {
+      for (;;) {
+        const index = received.findIndex((m, i) => i >= from && predicate(m, i));
+        if (index !== -1) return {message: received[index], index};
+        const woke = await Promise.race([changed().then(() => 'message'), exited.then(() => 'exit'), deadline]);
+        if (woke === 'message') continue;
         const late = received.findIndex((m, i) => i >= from && predicate(m, i));
         if (late !== -1) return {message: received[late], index: late};
-        throw new Error(`kernel exited before the expected message; stderr: ${stderr}`);
+        throw new Error(woke === 'exit' ? `kernel exited before the expected message; stderr: ${stderr}`
+          : `no expected kernel message within ${timeoutMs} ms; stderr: ${stderr}`);
       }
+    } finally {
+      clearTimeout(timer);
     }
   }
 

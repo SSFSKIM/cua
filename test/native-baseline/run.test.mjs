@@ -1,0 +1,216 @@
+// A whole native-baseline run on Linux, against doubles only: a scripted device (the shell side) and an MCP client
+// whose js tool evaluates each cell against the gedit desktop of ./gedit-double.mjs. It checks what a run records
+// (every operation in order, the method cases' outcomes, each connection's host attestation), that the requested host
+// must be the one that answered, and that the run's own gedit processes are ended whatever happens.
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {run} from '../../scripts/native-baseline.mjs';
+import {geditDesktop} from './gedit-double.mjs';
+import {textEdit} from './textedit-double.mjs';
+
+const AsyncFunction = (async () => {}).constructor;
+const RELEASE = '26.928.40906-linux-arm64';
+const HOME = '/home/admin/.local/share/cua';
+globalThis.__baselineTransitionMs = 200;
+globalThis.__baselineWindowMs = 200;
+
+// The device: preflight facts, the handshake record (cleared on request), and the Linux operations over the desktop.
+function fakeDevice({host = 'vendor', geditRunning = false} = {}) {
+  const desktop = geditDesktop();
+  Object.assign(desktop.cua, {
+    async getState() { return {apps: [{}, {}], browsers: [], errors: []}; },
+    async listApps() { return [{isRunning: true}, {isRunning: false}]; },
+  });
+  const state = {desktop, record: true, clears: 0, spawned: [], terminated: [], scripts: []};
+  const record = `${HOME}/state/handshake/${RELEASE}/${host === 'cua' ? 'cua@0.1.0' : `vendor@${RELEASE}`}/computer@2025-06-18.json`;
+  const pre = {platform: 'linux', node: 'v22.23.3', commit: 'c0ffee1', dirty: false, checkout: '/home/admin/Developer/GitHub/cua-parity', home: HOME, release: RELEASE,
+    handshakeRecord: record, runtimeRoot: `${HOME}/runtimes/${RELEASE}`, spikeRunning: false, serves: 0,
+    hardware: {model: null, chip: 'arm64, 4 CPUs', memoryBytes: 8e9}, os: {name: 'Ubuntu', version: '24.04.5 LTS', build: '7.0.0-38-generic'},
+    display: {pixels: '1024 x 768', resolution: '1024 x 768', scale: 1, depth: 24}, x: {display: ':0', xauthority: '~/.Xauthority', xauthorityPresent: true, bus: 'unix:path=/run/user/1000/bus'},
+    gedit: 'gedit - Version 46.2', geditRunning};
+  const remote = script => {
+    state.scripts.push(script);
+    if (script === 'true') return '';
+    if (/hostIdentity/.test(script)) return JSON.stringify(pre);
+    if (/cua-116-\[s\]pike/.test(script)) return 'idle';
+    if (/^(rm -f|if \[ -f)/.test(script)) { if (script.startsWith('rm -f')) { state.record = false; state.clears++; } return state.record ? 'present' : 'absent'; }
+    throw new Error(`unexpected script: ${script.slice(0, 80)}`);
+  };
+  let n = 0;
+  const device = {
+    spawnGedit(role) {
+      const dir = `/tmp/cua-native-baseline-Run00${n}`, file = `${dir}/${role}-00000${n}.txt`, pid = 5000 + n++;
+      const entry = {pid, dir, file, role, id: desktop.open(file)};
+      state.spawned.push(entry);
+      return {pid, dir, file, role};
+    },
+    targetState(entry) { const w = state.spawned.find(e => e.pid === entry.pid); return desktop.windows.get(w.id).crashed || desktop.windows.get(w.id).closed ? 'exited' : 'survived'; },
+    terminate(entries) {
+      const result = {terminated: [], notOwned: [], gone: [], removed: []};
+      for (const entry of entries) {
+        const w = desktop.windows.get(state.spawned.find(e => e.pid === entry.pid).id);
+        if (w.crashed || w.closed) result.gone.push(entry.pid); else { w.closed = true; result.terminated.push(entry.pid); state.terminated.push(entry.pid); }
+        result.removed.push(entry.dir);
+      }
+      return result;
+    },
+    helpers: () => [{path: '~/.local/share/cua/runtimes/r/sky_linux_arm64', origin: 'pinned runtime', ageSeconds: 3}],
+    leftovers: () => ({serves: 0, geditRunning: [...desktop.windows.values()].filter(w => !w.crashed && !w.closed).length}),
+    crashReports: () => ({files: 1, newest: '2026-10-07T02:00:00.000Z'}),
+  };
+  return {state, pre, io: {remote, device: () => device, connect: options => fakeClient(options, desktop.cua, state)}};
+}
+
+// The MCP client: initialize answers as the answering host does, js evaluates the cell, end_task acknowledges.
+function fakeClient(options, cua, state) {
+  const own = state.answeringHost === 'cua';
+  const meta = own ? {'cua/replHost': {host: 'cua', version: '0.1.0'}, 'cua/taskId': 't'} : {'cua/taskId': 't'};
+  state.serves = [...(state.serves ?? []), options.args.at(-1)];
+  state.options = options;
+  return {
+    elicited: [],
+    // A serve that launched its runtime records the handshake for the next connection.
+    async initialize() { state.record = true; return {protocolVersion: '2025-06-18', serverInfo: own ? {name: 'cua-repl-host', version: '0.1.0'} : {name: 'node_repl', version: '0.1.0'}}; },
+    async request(method, params) {
+      if (method === 'tools/list') return {tools: []};
+      assert.equal(method, 'tools/call');
+      assert.equal(params.name, 'js');
+      const written = [];
+      Object.assign(globalThis, {cua, nodeRepl: {write: text => written.push(text)}});
+      try { await new AsyncFunction(params.arguments.code)(); } finally { delete globalThis.cua; delete globalThis.nodeRepl; }
+      return {content: [{type: 'text', text: `# Native apps\n${written.join('\n')}`}], _meta: meta};
+    },
+    async call(name) { assert.equal(name, 'end_task'); return {content: [], structuredContent: {status: 'ended'}}; },
+    async close() {},
+  };
+}
+
+function outDir(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'native-run-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  return join(dir, 'run-1');
+}
+const results = out => readFileSync(join(out, 'results.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+const metaOf = out => JSON.parse(readFileSync(join(out, 'meta.json'), 'utf8'));
+const plan = {samples: 3, cold: 2, tasks: 2, log: () => {}};
+
+test('a Linux vendor-host run records every operation, the method cases and one host attestation per connection', async t => {
+  const {state, io} = fakeDevice();
+  state.answeringHost = 'vendor';
+  const out = outDir(t);
+  assert.equal(await run({device: 'cua-linux', out, host: 'vendor', ...plan, io}), 0);
+  const meta = metaOf(out), rows = results(out);
+  assert.equal(meta.complete, true, meta.error);
+  assert.equal(meta.platform, 'linux');
+  assert.equal(meta.host, 'vendor');
+  assert.equal(meta.connections, 3);
+  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/taskId': 't'}})));
+  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', DISPLAY: ':0', XAUTHORITY: '~/.Xauthority'});
+  // The cold plan: a planned miss clears the record first; each connection is labelled by the record it found.
+  assert.equal(state.clears, 1);
+  const ops = [...new Set(rows.map(r => r.op))];
+  assert.deepEqual(ops, ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
+    'warm.noop', 'warm.getState', 'warm.listApps', 'setup.findWindow', 'bind.getApp', 'warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total',
+    'setup.findTarget', 'method.typeText', 'method.paste', 'method.paste.format', 'method.setValue', 'method.selectText', 'method.scroll.pages', 'end_task']);
+  assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
+  assert.equal(rows.filter(r => r.op === 'task.total').length, 2);
+  assert.deepEqual(rows.find(r => r.op === 'task.total' && r.sample === 2).outcome, 'typed with pressKey, verified, cleared');
+  const method = name => { const {outcome, methodError, target} = rows.find(r => r.op === name); return {outcome, methodError, target}; };
+  assert.deepEqual(method('method.typeText'), {outcome: 'threw', methodError: 'Resource temporarily unavailable (os error 11)', target: 'exited'});
+  assert.deepEqual(method('method.paste'), {outcome: 'threw', methodError: 'Resource temporarily unavailable (os error 11)', target: 'exited'});
+  assert.deepEqual(method('method.setValue'), {outcome: 'threw', methodError: 'setValue is unavailable on Linux; use click, pressKey, and typeText.', target: 'survived'});
+  // Nothing typed with typeText or paste reached the scratch window; the scratch window was ended at cleanup.
+  const scratch = state.spawned.find(e => e.role === 'scratch');
+  assert.ok(!state.desktop.calls.some(c => c.id === scratch.id && c.method === 'type_text'));
+  assert.deepEqual(state.terminated, [scratch.pid]);
+  assert.deepEqual(meta.gedit.owned.map(e => e.role), ['scratch', 'victim', 'victim']);
+  assert.deepEqual(meta.leftovers, {serves: 0, geditRunning: 0});
+  assert.equal(meta.service.helpers[0].origin, 'pinned runtime');
+  // No row carries a window title or the typed text.
+  assert.doesNotMatch(JSON.stringify(rows), /scratch-0|the quick brown fox|cuabaselinemarker/);
+});
+
+test('a run whose connections answer another host than the one requested is not complete', async t => {
+  const {state, io} = fakeDevice({host: 'cua'});
+  state.answeringHost = 'vendor';
+  const out = outDir(t);
+  assert.equal(await run({device: 'cua-linux', out, host: 'cua', ...plan, io}), 1);
+  const meta = metaOf(out);
+  assert.equal(meta.complete, false);
+  assert.match(meta.error, /host attestation missing or mismatched \(requested cua\)/);
+  assert.ok(state.serves.every(s => /CUA_REPL_HOST=cua /.test(s)));
+});
+
+test('the run refuses to start while gedit runs on the device: no window is opened, nothing is typed', async t => {
+  const {state, io} = fakeDevice({geditRunning: true});
+  state.answeringHost = 'vendor';
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', ...plan, io}), /gedit is running on the device/);
+  assert.equal(state.spawned.length, 0);
+});
+
+test('a cell that times out stops all further input, and the run still ends its own gedit', async t => {
+  const {state, io} = fakeDevice();
+  state.answeringHost = 'vendor';
+  const connect = io.connect;
+  io.connect = options => {
+    const client = connect(options);
+    const request = client.request.bind(client);
+    client.request = async (method, params) => (/__observations\+\+;\nif \(before\.includes/.test(params?.arguments?.code ?? '') ? Promise.reject(new Error('MCP tools/call timed out')) : request(method, params));
+    return client;
+  };
+  const out = outDir(t);
+  assert.equal(await run({device: 'cua-linux', out, host: 'vendor', ...plan, io}), 1);
+  const meta = metaOf(out);
+  assert.match(meta.stopped, /task 1 timed out/);
+  assert.ok(!results(out).some(r => r.op === 'task.clear' || r.op.startsWith('method.')));
+  assert.deepEqual(state.terminated, [state.spawned[0].pid]);
+});
+
+// The macOS path through the same loop: TextEdit's approval (accepted only for that exact request), its launch panel,
+// the scratch document, the guarded series, the delete-without-saving task and quitting the TextEdit the run launched.
+test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
+  const app = textEdit();
+  const state = {record: true, scripts: [], answeringHost: 'vendor'};
+  const approval = {method: 'elicitation/create', params: {message: 'Allow Computer Use to use "TextEdit"?', mode: 'form', requestedSchema: {type: 'object', properties: {}},
+    _meta: {connector_id: 'computer-use', codex_approval_kind: 'mcp_tool_call', tool_params: {app: 'com.apple.TextEdit'}}}};
+  let launched = false;
+  const cua = {
+    async getState() { return {apps: [{}], browsers: [], errors: []}; },
+    async listApps() { return [{isRunning: true}]; },
+    async getApp(bundle) {
+      const answer = state.options.answer(approval);
+      state.options.onElicitation({t: new Date().toISOString(), method: approval.method, action: answer.action}, approval);
+      if (answer.action !== 'accept' || bundle !== 'com.apple.TextEdit') throw new Error('declined');
+      launched = true;
+      return app;
+    },
+  };
+  const release = '26.928.40906-darwin-arm64', home = '/Users/someone/Library/Application Support/cua';
+  const pre = {platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
+    handshakeRecord: `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
+    hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 17179869184}, os: {name: 'macOS', version: '27.0', build: '26A428'},
+    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false};
+  const remote = script => {
+    if (script === 'true') return '';
+    if (/hostIdentity/.test(script)) return JSON.stringify(pre);
+    if (/cua-116-\[s\]pike/.test(script)) return 'idle';
+    if (script.startsWith('rm -f')) state.record = false;
+    return state.record ? 'present' : 'absent';
+  };
+  const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit})};
+  const out = outDir(t);
+  const code = await run({device: 'mini', out, host: 'vendor', ...plan, io: {remote, device: () => device, connect: options => fakeClient(options, cua, state)}});
+  const meta = metaOf(out), rows = results(out);
+  assert.equal(code, 0, meta.error);
+  assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
+    'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'setup.newDocument', 'warm.getAXState', 'guard.scratch', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.close', 'task.total', 'end_task']);
+  assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
+  assert.deepEqual(meta.textEdit, {runningBefore: false, launchedByRun: true, quitByRun: true});
+  assert.deepEqual(meta.leftovers, {serves: 0, textEditRunning: false});
+  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
+  assert.equal(meta.hostAttestations.length, 3);
+  assert.equal(app.windows.length, 1);
+});

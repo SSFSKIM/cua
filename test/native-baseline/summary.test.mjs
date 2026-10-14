@@ -68,7 +68,21 @@ test('summarize pools every run per operation: latency over successful samples, 
   assert.deepEqual(op('warm.getScreenshot').details, {bytes: {median: 1500, min: 1000, max: 2000}, format: {values: ['jpeg']}, sha256: {distinct: 6}});
   assert.equal(op('task.total').ok, 27);
   assert.deepEqual(op('task.total').details, {actions: {median: 4, min: 4, max: 4}});
-  assert.deepEqual(summary.attestation, {device: 'mini', commit: 'abc1234', release: '26.928.40906-darwin-arm64', hardware: 'Mac14,12, Apple M2 Pro, 16 GiB', os: 'macOS 27.0 (26A428)', display: '2560 x 1440 points at scale 2 (5120 x 2880 pixels)', service: 'computer surface, answered by vendor (helper: pinned runtime)'});
+  // A run recorded before host attestation (the 2026-10-14 Mac baseline) has no requested host and no sample plan here.
+  assert.deepEqual(summary.attestation, {device: 'mini', commit: 'abc1234', host: null, release: '26.928.40906-darwin-arm64', hardware: 'Mac14,12, Apple M2 Pro, 16 GiB', os: 'macOS 27.0 (26A428)', display: '2560 x 1440 points at scale 2 (5120 x 2880 pixels)', service: 'computer surface, answered by vendor (helper: pinned runtime)', plan: null});
+});
+
+test('a run that requests a host must attest it on every connection it opened', t => {
+  const vendor = {host: 'vendor', connections: 2, plan: {samples: 30, cold: 5, tasks: 10}, hostAttestations: [1, 2].map(() => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: null}))};
+  const attested = summarize(readRuns(fixture(t, [meta(1, vendor), meta(2, vendor), meta(3, vendor)])));
+  assert.deepEqual(attested.problems, []);
+  assert.equal(attested.attestation.host, 'vendor (initialize: node_repl 0.1.0)');
+  assert.equal(attested.attestation.plan, '5 cold, 30 warm, 10 tasks');
+  const short = {...vendor, connections: 3};
+  const marked = {...vendor, hostAttestations: [{host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/replHost': {host: 'cua', version: '0.1.0'}}}, vendor.hostAttestations[1]]};
+  const problems = summarize(readRuns(fixture(t, [meta(1, vendor), meta(2, short), meta(3, marked)]))).problems;
+  assert.ok(problems.includes('run-2: 3 connections opened, 2 attested'), problems.join(' | '));
+  assert.ok(problems.some(p => /^run-3: host attestation missing or mismatched \(requested vendor\)/.test(p)), problems.join(' | '));
 });
 
 test('an incomplete run or one that disagrees on commit, release or service is a problem, never silently pooled', t => {

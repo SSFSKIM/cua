@@ -1,108 +1,145 @@
 #!/usr/bin/env node
-// The native (sky) performance baseline (#114): what today's vendor engine costs, recorded before cua's own REPL host
-// (#116) and native engine (#117) replace it. It drives the real pinned runtime as the browser parity harness does
-// (scripts/browser-parity.mjs): `cua serve` of the parity clone on the device over an ssh stdio pipe, an MCP client,
-// js cells, every sample journaled. The surface is the native one (CUA_SHIM_SURFACES=computer); the scratch app is
-// TextEdit, which must not be running when a run starts (so every TextEdit window the run sees is its own).
+// The native (sky) performance baseline (#114, #116): what the native surface costs through a given REPL host, recorded
+// before cua's own REPL host (#116) and native engine (#117) replace the vendor's, and compared after. It drives the real
+// pinned runtime as the browser parity harness does (scripts/browser-parity.mjs): `cua serve` of the parity clone on the
+// device over an ssh stdio pipe, an MCP client, js cells, every sample journaled. The surface is the native one
+// (CUA_SHIM_SURFACES=computer) and the REPL host is the requested one (--host vendor|cua, CUA_REPL_HOST, independent of
+// the browser service, which a computer-only serve does not use). The platform comes from the device: macOS drives
+// TextEdit (scripts/native-baseline/macos.mjs), which must not be running when a run starts; Linux drives gedit in the X
+// session (scripts/native-baseline/linux.mjs, --display, default :0), and no gedit may be running either. Either way
+// every window the run touches is its own.
 //
-//   node scripts/native-baseline.mjs run --device mini --out docs/evidence/<date>-native-baseline/run-1
-//   node scripts/native-baseline.mjs summary docs/evidence/<date>-native-baseline
+//   node scripts/native-baseline.mjs run --device <alias> --host vendor|cua --out docs/evidence/<dir>/run-1
+//   node scripts/native-baseline.mjs summary docs/evidence/<dir>
+//   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //
 // A run writes results.jsonl (one row per sample: op, sample, ok, wallMs, inCellMs and the sample's counts) and
-// meta.json (what it ran against: commit, runtime release, hardware, OS, display, the helper that answered, approvals,
-// processes left). `summary` pools the run-* directories into summary.md (scripts/native-baseline/summary.mjs).
+// meta.json (what it ran against: platform, commit, Node, runtime release, hardware, OS, display, the requested host and
+// what answered each connection (hostAttestations: initialize's serverInfo and the first js result's _meta), the helper,
+// approvals, the processes it owned and what was left). `summary` pools the run-* directories into summary.md
+// (scripts/native-baseline/summary.mjs); `compare` judges cua's runs against the vendor's (compare.mjs, acceptance 8).
 // What a run measures, in order:
 //   ssh.roundtrip        `ssh <device> true`, the pipe's own cost, to read the cold numbers against
 //   cold.<miss|hit>.*    a fresh `cua serve`: initialize, tools/list, the first js cell (bootstrap and API document);
-//                        the handshake record is cleared before a planned miss and kept for a hit, and each connection
-//                        is labelled by the record observed just before it started
+//                        the selected host's handshake record is cleared before a planned miss and kept for a hit, and
+//                        each connection is labelled by the record observed just before it started
 //   warm.noop, warm.getState, warm.listApps     on one warm connection
-//   bind.getApp          the first cua.getApp(TextEdit): approval (answered by the harness, timed apart as
-//                        approval.elicitation) and the launch
-//   warm.getAXState, warm.getScreenshot         full tree and screenshot of a new, empty scratch document; a sample
-//                        whose target was not that document is invalidated (each tree sample checks its own; the
-//                        screenshot series is bracketed by guard.scratch)
-//   task.act/verify/close/total                 new document, typeText a fixed sentence, verify it in the full tree,
-//                        close it with its keep-or-delete sheet's Delete button
+//   the target's part (the platform adapter): binding the app (bind.getApp; on macOS its approval, answered by the
+//                        harness and timed apart as approval.elicitation), warm.getAXState and warm.getScreenshot of
+//                        the run's own scratch window, the observe -> act -> verify task (task.*), and on Linux the
+//                        method cases (method.*: typeText and paste on windows of their own, the binder's refusals)
 //   end_task
-// Nothing a cell returns is screen content: counts, lengths, booleans and hashes only (scripts/native-baseline/cells.mjs).
-// A cell that times out stops all further GUI input (a permission prompt may be waiting; the harness never answers one).
+// Nothing a cell returns is screen content: counts, lengths, booleans, ids, hashes and the vendor's error sentences
+// (scripts/native-baseline/cells.mjs, linux-cells.mjs). A cell that times out stops all further GUI input (something
+// may be waiting on the device; the harness never answers a permission prompt).
 import {parseArgs} from 'node:util';
 import {appendFileSync, existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {StdioClient, textOf} from './browser-parity/mcp.mjs';
 import {execute, remoteCommand} from './browser-parity/topology.mjs';
-import {isTextEditApproval} from './accept/lib.mjs';
 import * as cells from './native-baseline/cells.mjs';
-import {classifyHelpers, handshakeScript, HELPER_SCRIPT, leftoverScript, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
-import {readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
+import {linuxAdapter} from './native-baseline/linux.mjs';
+import {macosAdapter} from './native-baseline/macos.mjs';
+import {handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
+import {hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
+import {compare, renderComparison} from './native-baseline/compare.mjs';
 
 // Cold connections cycle through this plan; each is labelled by the record it found.
 const COLD_PLAN = ['miss', 'hit', 'miss', 'hit', 'hit'];
 const CELL_MS = 60_000;
 const BIND_MS = 120_000;
+const ADAPTERS = {darwin: macosAdapter, linux: linuxAdapter};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const round = ms => Math.round(ms * 1000) / 1000;
 
 class Stop extends Error {}
 
-export async function run({device, out, samples = 30, cold = 5, tasks = 10, spikeWaitMs = 3 * 3600_000}) {
+// What answered one connection (the hostAttestation ruling, docs/doperpowers/specs/2026-10-14-own-repl-host-design.md
+// Decision Log): initialize's serverInfo as returned, and the _meta of the connection's first real js result (null when
+// it had none). The observed host is cua when either carries cua's own marker, else vendor; scripts/bench-summary.mjs
+// validateHostAttestations judges it against the requested host.
+export function hostAttestationOf(serverInfo, toolResult) {
+  const meta = toolResult?._meta ?? null;
+  const own = meta?.['cua/replHost']?.host === 'cua' || serverInfo?.name === 'cua-repl-host';
+  return {host: own ? 'cua' : 'vendor', serverInfo: serverInfo ?? null, _meta: meta};
+}
+
+// The live device: scripts over `ssh <device>`, the parity clone's serve over an ssh stdio pipe. Tests pass doubles.
+const liveIo = device => ({
+  remote: script => execute(remoteCommand(device, script)).trim(),
+  connect: options => new StdioClient(options),
+});
+
+export async function run({device, out, host, samples = 30, cold = 5, tasks = 10, display = ':0', spikeWaitMs = 3 * 3600_000, io = liveIo(device), log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
+  if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   const dir = resolve(out);
   if (existsSync(join(dir, 'meta.json')) || existsSync(join(dir, 'results.jsonl'))) throw new Error('Output directory already contains a run');
-  mkdirSync(dir, {recursive: true});
-  writeFileSync(join(dir, 'results.jsonl'), '');
-  const remote = script => execute(remoteCommand(device, script)).trim();
-  const emit = row => { appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(row) + '\n'); return row; };
-  const meta = {device, protocolVersion: PROTOCOL_VERSION, environment: {CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'},
-    plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), elicitations: [], complete: false};
-  const clients = new Set();
-  let stopped = null;   // why no further GUI input is sent
-  let warm = null;      // the warm connection, while it is open
+  const remote = io.remote;
 
   // Waits for the device's cua-116-spike work to finish: two measurements must not share the helper.
   const waitStarted = Date.now();
   while (remote(SPIKE_SCRIPT) === 'running') {
     if (Date.now() - waitStarted > spikeWaitMs) throw new Error('a cua-116-spike process is still running on the device');
-    console.log('waiting for cua-116-spike on the device to finish');
+    log('waiting for cua-116-spike on the device to finish');
     await sleep(30_000);
   }
-  meta.spikeWaitMs = Date.now() - waitStarted;
-  const pre = JSON.parse(remote(preflightScript()).split('\n').at(-1));
-  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, runtime: {release: pre.release}, hardware: pre.hardware, os: pre.os, display: pre.display});
-  meta.textEdit = {runningBefore: pre.textEditRunning};
+  const pre = JSON.parse(remote(preflightScript({host, display})).split('\n').at(-1));
+  const adapter = ADAPTERS[pre.platform];
+  if (!adapter) throw new Error(`the native baseline has no adapter for ${pre.platform}`);
   if (pre.dirty) throw new Error('the parity clone is dirty');
   if (!pre.release) throw new Error('no runtime installed in the device home');
-  if (pre.textEditRunning) throw new Error('TextEdit is running on the device: its windows may be the owner\'s; quit it (or wait) and re-run');
+  const refusal = adapter.refuse(pre);
+  if (refusal) throw new Error(refusal);
   if (pre.serves) throw new Error('a serve of the parity clone is already running on the device');
-  console.log(`device ${device}: ${pre.hardware.model} ${pre.os.version}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}`);
+
+  mkdirSync(dir, {recursive: true});
+  writeFileSync(join(dir, 'results.jsonl'), '');
+  const emit = row => { appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(row) + '\n'); return row; };
+  const linux = pre.platform === 'linux';
+  const meta = {device, platform: pre.platform, host, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
+    environment: {CUA_REPL_HOST: host, CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? {DISPLAY: display, XAUTHORITY: '~/.Xauthority'} : {})},
+    plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false};
+  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, runtime: {release: pre.release}, hardware: pre.hardware, os: pre.os, display: pre.display});
+  adapter.start(meta, pre);
+  log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}`);
+  const ops = io.device ? io.device(adapter, {pre, display}) : adapter.device(remote, {pre, display});
+
+  const clients = new Set();
+  let stopped = null;   // why no further GUI input is sent
+  let warm = null;      // the warm connection, while it is open
 
   // The computer-use helpers running now, each with its age; one that started during this run was launched by it.
   const runStarted = Date.now();
   const helperAttestation = () => {
-    const helpers = classifyHelpers(remote(HELPER_SCRIPT), pre.runtimeRoot).map(h => ({...h, startedDuringRun: h.ageSeconds !== null && h.ageSeconds * 1000 < Date.now() - runStarted}));
+    const helpers = ops.helpers().map(h => ({...h, startedDuringRun: h.ageSeconds !== null && h.ageSeconds * 1000 < Date.now() - runStarted}));
     return {helper: helpers.length ? [...new Set(helpers.map(h => h.origin))].join(', ') : 'none observed', helpers};
   };
   meta.helperAtStart = helperAttestation();
   const connect = () => {
-    const client = new StdioClient({...serveCommand({device, checkout: pre.checkout, home: pre.home}), clientName: 'cua-native-baseline',
-      answer: msg => (isTextEditApproval(msg) ? {action: 'accept', content: {}} : {action: 'decline'}),
+    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, host, platform: pre.platform, display}), clientName: 'cua-native-baseline',
+      answer: adapter.answer,
       onElicitation: (row, msg) => {
         const entry = {t: row.t, at: performance.now(), app: msg.params?._meta?.tool_params?.app ?? null, action: row.action};
         meta.elicitations.push(entry); client.elicited.push(entry);
       }});
     client.elicited = [];
+    client.attested = false;
+    meta.connections++;
     clients.add(client);
     return client;
   };
-  // A js cell: harness wall time around the call, and the cell's own report.
+  const initialize = async client => { client.serverInfo = (await client.initialize())?.serverInfo ?? null; };
+  // A js cell: harness wall time around the call, and the cell's own report. A connection's first result attests the
+  // host that answered it.
   const js = async (client, code, timeoutMs = CELL_MS) => {
     const started = performance.now();
     let result;
     try { result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000); } catch (error) {
       return {wallMs: performance.now() - started, started, failure: error.message, timedOut: /timed out/.test(error.message)};
     }
+    if (!client.attested) { meta.hostAttestations.push(hostAttestationOf(client.serverInfo, result)); client.attested = true; }
     const text = textOf(result), cell = cells.parseCell(text);
     const timedOut = !cell && /timed? ?out|timeout/i.test(text);
     return {wallMs: performance.now() - started, started, text, cell, isError: result.isError === true, timedOut,
@@ -116,35 +153,25 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
       ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
   };
   const row = (op, sample, r, extra = {}) => emit(record(op, sample, r, extra));
+  const stop = reason => { stopped = reason; throw new Stop(reason); };
   // A cell whose answer did not come stops the GUI work: something may be waiting on a human.
   const guard = (r, what) => {
-    if (r.timedOut) { stopped = `${what} timed out; a permission prompt may be waiting on the device (never answered by the harness)`; throw new Stop(stopped); }
+    if (r.timedOut) stop(`${what} timed out; no further input was sent (a prompt may be waiting on the device, never answered by the harness)`);
     return r;
   };
-  // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
-  const quitTextEdit = async () => {
-    if (!meta.textEdit.launchedByRun || meta.textEdit.quitByRun || !warm) return;
-    const quit = await js(warm, cells.QUIT_TEXTEDIT);
-    let running = true;
-    for (let i = 0; i < 10 && running; i++) { await sleep(500); running = remote(leftoverScript(pre.checkout)).split(' ')[1] !== '0'; }
-    meta.textEdit.quitByRun = Boolean(quit.cell?.ok) && !running;
-    if (!meta.textEdit.quitByRun) meta.textEdit.quitError = quit.cell?.error ?? quit.failure ?? 'TextEdit still running after super+q';
-  };
   // `hold`: the rows are returned, not written, for a caller that validates the series afterwards.
-  const measure = async (client, op, n, code, {hold = false} = {}) => {
+  const measure = async (op, n, code, {hold = false} = {}) => {
     const rows = [];
     for (let sample = 1; sample <= n; sample++) {
-      const r = record(op, sample, guard(await js(client, code), `${op} sample ${sample}`));
+      const r = record(op, sample, guard(await js(warm, code), `${op} sample ${sample}`));
       rows.push(hold ? r : emit(r));
     }
-    console.log(`${op}: ${rows.filter(r => r.ok).length}/${n} ok`);
+    log(`${op}: ${rows.filter(r => r.ok).length}/${n} ok`);
     return rows;
   };
-  // The scratch document in front, checked between series (op guard.scratch, not charged to any sample).
-  const scratchGuard = async (client, sample) => {
-    const r = row('guard.scratch', sample, guard(await js(client, cells.SCRATCH_GUARD), 'the scratch guard'));
-    return r.ok && r.scratchInFront === true;
-  };
+  // What the platform adapter works with: the warm connection's cells, the rows and the device.
+  const ctx = {meta, pre, device: ops, samples, tasks, log, emit, record, row, guard, stop, measure, helperAttestation,
+    js: (code, timeoutMs) => js(warm, code, timeoutMs), elicited: () => warm.elicited.splice(0), warmOpen: () => warm !== null, stopped: () => stopped !== null};
 
   try {
     for (let sample = 1; sample <= 5; sample++) {
@@ -162,7 +189,7 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
       let totalWritten = false;
       const phase = (name, wallMs, extra = {}) => emit({op: `cold.${label}.${name}`, sample, wallMs: round(wallMs), planned, ...extra});
       try {
-        await client.initialize();
+        await initialize(client);
         const t1 = performance.now();
         phase('initialize', t1 - t0, {ok: true});
         await client.request('tools/list');
@@ -185,67 +212,24 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
       } finally {
         await client.close(); clients.delete(client);
       }
-      console.log(`cold ${sample}: handshake ${label} (planned ${planned})`);
+      log(`cold ${sample}: handshake ${label} (planned ${planned})`);
     }
 
     // The warm connection.
     const client = warm = connect();
-    await client.initialize();
+    await initialize(client);
     await client.request('tools/list');
     const first = await js(client, cells.FIRST, BIND_MS);
     if (!first.cell?.ok) throw new Error(`the warm connection's first cell failed: ${first.failure ?? first.cell?.error}`);
-    await measure(client, 'warm.noop', samples, cells.NOOP);
-    await measure(client, 'warm.getState', samples, cells.GET_STATE);
-    const listed = await measure(client, 'warm.listApps', samples, cells.LIST_APPS);
+    await measure('warm.noop', samples, cells.NOOP);
+    await measure('warm.getState', samples, cells.GET_STATE);
+    const listed = await measure('warm.listApps', samples, cells.LIST_APPS);
     // An engine that answers no inventory call is not driven any further: no app is bound or launched.
     if (!listed.some(r => r.ok)) throw new Error(`the native engine answered no listApps call (${listed[0]?.error}); no GUI step was attempted`);
 
-    // The first getApp of a TextEdit that is not running launches it; on the mini that call fails with timeoutReached
-    // after about 5 s (TextEdit comes up with only its out-of-process Open panel) and the next one binds. Both are
-    // recorded: the first as bind.getApp, the retry as bind.getApp.retry.
-    const bind = guard(await js(client, cells.BIND, BIND_MS), 'cua.getApp(TextEdit)');
-    const approvals = client.elicited.splice(0);
-    row('bind.getApp', 1, bind, {approvals: approvals.length, textEditLaunched: !pre.textEditRunning});
-    approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: round(a.at - bind.started), app: a.app, action: a.action,
-      note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    meta.textEdit.launchedByRun = !pre.textEditRunning && remote(leftoverScript(pre.checkout)).split(' ')[1] !== '0';
-    let bound = bind;
-    if (!bind.cell?.ok && /timeoutReached/.test(bind.cell?.error ?? '')) {
-      bound = guard(await js(client, cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
-      row('bind.getApp.retry', 1, bound, {approvals: client.elicited.splice(0).length});
-    }
-    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...helperAttestation()};
-    if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
+    await adapter.gui(ctx);
 
-    const scratch = guard(await js(client, cells.NEW_DOCUMENT), 'the scratch document');
-    row('setup.newDocument', 1, scratch);
-    if (!scratch.cell?.ok) throw new Error(`no scratch document: ${scratch.cell?.error ?? scratch.failure}`);
-    // Each full-tree sample checks its own target. Screenshot samples cannot without paying for a tree read, so the
-    // series is bracketed by the scratch guard: run only with the scratch document in front, and every sample is
-    // invalidated when it is no longer in front afterwards.
-    await measure(client, 'warm.getAXState', samples, cells.AX_FULL);
-    if (!await scratchGuard(client, 1)) throw new Error('the scratch document is not in front before the screenshot series');
-    const shots = await measure(client, 'warm.getScreenshot', samples, cells.SCREENSHOT, {hold: true});
-    const stillInFront = await scratchGuard(client, 2);
-    for (const shot of shots) emit(stillInFront || !shot.ok ? shot : {...shot, ok: false, invalid: 'the scratch document was not in front after the screenshot series'});
-    if (!stillInFront) throw new Error('the scratch document is not in front after the screenshot series');
-
-    for (let sample = 1; sample <= tasks; sample++) {
-      const steps = [];
-      const act = guard(await js(client, cells.TASK_ACT), `task ${sample}`);
-      steps.push(row('task.act', sample, act));
-      if (act.cell?.ok) steps.push(row('task.verify', sample, guard(await js(client, cells.TASK_VERIFY), `task ${sample}`)));
-      const close = guard(await js(client, cells.TASK_CLOSE), `task ${sample}`);
-      steps.push(row('task.close', sample, close));
-      const ok = steps.length === 3 && steps.every(s => s.ok);
-      const sum = key => round(steps.reduce((total, s) => total + (s[key] ?? 0), 0));
-      emit({op: 'task.total', sample, ok, wallMs: sum('wallMs'), inCellMs: sum('inCellMs'), cells: steps.length, actions: sum('actions'), observations: sum('observations'),
-        outcome: ok ? 'typed text verified, document closed without saving' : steps.find(s => !s.ok)?.error ?? 'failed'});
-      console.log(`task ${sample}: ${ok ? 'ok' : 'FAIL'}`);
-      if (!close.cell?.ok && act.cell?.ok) { stopped = `task ${sample}'s document could not be confirmed closed: ${close.cell?.error ?? close.failure}`; throw new Stop(stopped); }
-    }
-
-    await quitTextEdit();
+    if (adapter.beforeEnd) await adapter.beforeEnd(ctx);
     const started = performance.now();
     const ended = await client.call('end_task');
     emit({op: 'end_task', sample: 1, ok: ended.isError !== true, wallMs: round(performance.now() - started), ...(ended.isError ? {error: textOf(ended).slice(0, 300)} : {})});
@@ -254,17 +238,20 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     meta.error = error.message;
     if (!(error instanceof Stop)) console.error(error.message);
   } finally {
-    // After a failure TextEdit is quit only from the scratch document, never from a window the run cannot vouch for.
-    if (!stopped && !meta.complete) { try { await quitTextEdit(); } catch {} }
+    try { await adapter.cleanup(ctx); } catch (error) { meta.cleanupError = error.message; meta.complete = false; }
     for (const client of clients) { try { await client.close(); } catch {} }
-    const [serves, textEdit] = remote(leftoverScript(pre.checkout)).split(' ').map(Number);
-    meta.leftovers = {serves, textEditRunning: textEdit > 0};
-    if (serves || (textEdit > 0 && !pre.textEditRunning)) meta.complete = false;
+    try {
+      meta.leftovers = adapter.leftovers(ops);
+      if (adapter.leftBehind(meta.leftovers, pre)) meta.complete = false;
+    } catch (error) { meta.leftovers = {error: error.message}; meta.complete = false; }
     if (stopped) { meta.complete = false; meta.stopped = stopped; }
+    // Every connection must have attested the requested host; an unattested or mixed run is not a measurement of it.
+    const attestation = hostProblem(meta, 'this run');
+    if (attestation) { meta.complete = false; meta.error ??= attestation; meta.attestationProblem = attestation; }
     meta.finished = new Date().toISOString();
     writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
   }
-  console.log(`${meta.complete ? 'complete' : `INCOMPLETE: ${meta.stopped ?? meta.error ?? 'leftover processes'}`}; leftovers: ${meta.leftovers.serves} serve(s), TextEdit ${meta.leftovers.textEditRunning ? 'running' : 'not running'}`);
+  log(`${meta.complete ? 'complete' : `INCOMPLETE: ${meta.stopped ?? meta.error ?? 'leftover processes'}`}; leftovers: ${JSON.stringify(meta.leftovers)}`);
   return meta.complete ? 0 : 1;
 }
 
@@ -275,16 +262,30 @@ export function summary(dir) {
   return result.problems.length ? 1 : 0;
 }
 
+// Compares the vendor host's runs under `baselineDir` with cua's under `candidateDir` (scripts/native-baseline/compare.mjs);
+// prints the comparison, or writes it to `out`. -> 0 only on a PASS verdict.
+export function compareDirs(baselineDir, candidateDir, {out} = {}) {
+  const result = compare(readRuns(resolve(baselineDir)), readRuns(resolve(candidateDir)));
+  const text = renderComparison(result);
+  if (out) writeFileSync(resolve(out), text); else process.stdout.write(text);
+  for (const problem of result.problems) console.error(`problem: ${problem}`);
+  console.error(`verdict: ${result.verdict}`);
+  return result.verdict === 'PASS' ? 0 : 1;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
-    device: {type: 'string'}, out: {type: 'string'}, samples: {type: 'string', default: '30'}, cold: {type: 'string', default: '5'}, tasks: {type: 'string', default: '10'}}});
-  const [action, dir] = positionals;
+    device: {type: 'string'}, host: {type: 'string'}, display: {type: 'string', default: ':0'}, out: {type: 'string'},
+    samples: {type: 'string', default: '30'}, cold: {type: 'string', default: '5'}, tasks: {type: 'string', default: '10'}}});
+  const [action, dir, other] = positionals;
   if (action === 'summary') { if (!dir) throw new Error('summary requires the evidence directory'); return summary(dir); }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs run --device <alias> --out <dir> | summary <dir>');
+  if (action === 'compare') { if (!dir || !other) throw new Error('compare requires <vendor-dir> <cua-dir>'); return compareDirs(dir, other, {out: values.out}); }
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs run --device <alias> --host vendor|cua [--display :0] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>]');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
+  if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');
   const count = name => { const n = Number(values[name]); if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };
-  return run({device: values.device, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
+  return run({device: values.device, host: values.host, display: values.display, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

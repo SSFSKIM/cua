@@ -54,9 +54,14 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
   const leftAssertions=assessAssertions(a.meta,left),rightAssertions=assessAssertions(b.meta,right);
-  const recordedAssertionFailures={a:leftAssertions.vendorDefects.map(d=>d.case),b:rightAssertions.vendorDefects.map(d=>d.case)};
+  // Exempt only the assessed row object, never every assertion sharing its case ID.
+  const recordedAssertionFailures={a:new Set(leftAssertions.recordedAssertionRows),b:new Set(rightAssertions.recordedAssertionRows)};
   const vendorDefects=[...new Map([...leftAssertions.vendorDefects,...rightAssertions.vendorDefects].map(d=>[d.id,d])).values()];
   const result=compareRuns(left,right,{raw:true,recordedAssertionFailures});
   differences.push(...result.differences);
+  // Keep assessment independently authoritative even if the shared comparison's indexing changes.
+  for(const [side,assessment] of [['a',leftAssertions],['b',rightAssertions]])for(const row of assessment.unexpectedFailures){
+    if(!differences.some(d=>d.kind==='assertion'&&d.side===side&&d.case===row.case&&d.cell===row.cell))differences.push({kind:'assertion',side,case:row.case,cell:row.cell,message:'undeclared assertion failure'});
+  }
   return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,allAssertionsPassed:!differences.length&&!vendorDefects.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }

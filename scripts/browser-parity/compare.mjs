@@ -27,7 +27,7 @@ function imageEqual(a,b,tolerance,{raw=false,path='',mcpImage=false}={}) {
   }
   return isDeepStrictEqual(a,b);
 }
-export function compareRuns(a, b, {expected = [], raw = false, recordedAssertionFailures = {a:[],b:[]}} = {}) {
+export function compareRuns(a, b, {expected = [], raw = false, recordedAssertionFailures = {a:new Set(),b:new Set()}} = {}) {
   const differences = [], accepted = [];
   if (!Array.isArray(expected) || expected.some(e => !e.reason || !Array.isArray(e.cases) || !Array.isArray(e.cells) || !['semantic','trace'].includes(e.kind))) throw new Error('Invalid expected-differences entry');
   const add = d => {
@@ -43,7 +43,7 @@ export function compareRuns(a, b, {expected = [], raw = false, recordedAssertion
       if (r.cell && (typeof r.ok !== 'boolean' || (!r.ok && (!r.error || typeof r.error.message !== 'string')))) add({kind:'configuration',side,case:r.case,cell:r.cell,message:'invalid cell result'});
       if (Object.entries(r.pollingAllowance ?? {}).some(([name,n])=>!polling(name)||!Number.isSafeInteger(n)||n<0)) add({kind:'configuration',side,case:r.case,message:'invalid polling allowance'});
       if (r.screenshotTolerance !== undefined && (!Number.isInteger(r.screenshotTolerance)||r.screenshotTolerance<0||r.screenshotTolerance>64)) add({kind:'configuration',side,case:r.case,message:'invalid screenshot tolerance'});
-      if (r.assertion && r.assertion.ok !== true && !recordedAssertionFailures[side]?.includes(r.case)) add({kind:'assertion', side, case:r.case, message:'case assertion failed'});
+      if (Object.hasOwn(r,'assertion') && r.assertion?.ok !== true && !recordedAssertionFailures[side]?.has(r)) add({kind:'assertion', side, case:r.case, cell:r.cell, message:'case assertion failed'});
       out.set(key,r);
     }
     for (const id of new Set(rows.map(r => r.case))) if (!out.has(JSON.stringify([id,null]))) add({kind:'cardinality',side,case:id,message:'missing case assertion'});

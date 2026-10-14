@@ -17,3 +17,33 @@ test('undeclared failures and changed defect observations still fail the run and
  const own=run();own.meta.host='cua';assert.equal(assessAssertions(own.meta,own.rows).unexpectedFailures.length,1);
  const changed=run();changed.rows[0].content[0].text='different output';assert.equal(compareParityRuns(run(),changed).ok,false);
 });
+
+test('an undeclared reset assertion in the same case remains fatal even in identical journals',()=>{
+ const a=run();a.meta.caseCells[id].unshift('reset');a.rows.unshift({case:id,cell:'reset',ok:true,content:[{type:'text',text:'js kernel reset'}],isError:false,assertion:{ok:false,reason:'undeclared reset failure'}});
+ const assessment=assessAssertions(a.meta,a.rows);assert.equal(assessment.vendorDefects.length,1);assert.equal(assessment.unexpectedFailures.length,1);
+ const diff=compareParityRuns(a,structuredClone(a));assert.equal(diff.ok,false);assert.equal(diff.cases,0);assert.equal(diff.recordedCases,0);assert.ok(diff.differences.some(d=>d.kind==='assertion'&&d.cell==='reset'));
+});
+
+test('copying the declared failure onto a cell row cannot create another recognised defect',()=>{
+ const a=run();a.rows[0].assertion=structuredClone(a.rows.at(-1).assertion);
+ const assessment=assessAssertions(a.meta,a.rows);assert.equal(assessment.vendorDefects.length,1);assert.equal(assessment.unexpectedFailures.length,1);assert.equal(compareParityRuns(a,structuredClone(a)).ok,false);
+});
+
+test('the shared comparator exempts only the exact recognised assertion object',async()=>{
+ const {compareRuns}=await import('../../scripts/browser-parity/compare.mjs');
+ const a=run(),b=run();a.rows[0].assertion={ok:false,reason:'undeclared cell failure'};b.rows[0].assertion={...a.rows[0].assertion};
+ const result=compareRuns(a.rows,b.rows,{raw:true,recordedAssertionFailures:{a:new Set([a.rows.at(-1)]),b:new Set([b.rows.at(-1)])}});
+ assert.equal(result.ok,false);assert.equal(result.differences.filter(d=>d.kind==='assertion').length,2);
+});
+
+test('the committed Linux journal rejects an additional same-case reset failure',async()=>{
+ const {readFileSync}=await import('node:fs');const root=new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m0/linux-vendor-1/',import.meta.url);
+ const evidence={meta:JSON.parse(readFileSync(new URL('meta.json',root))),tools:JSON.parse(readFileSync(new URL('tools.json',root))),rows:readFileSync(new URL('results.jsonl',root),'utf8').trim().split('\n').map(JSON.parse)};
+ const reset=evidence.rows.find(r=>r.case===id&&r.cell==='reset');assert.ok(reset);reset.assertion={ok:false,reason:'undeclared reset failure'};
+ assert.equal(assessAssertions(evidence.meta,evidence.rows).unexpectedFailures.length,1);
+ const result=compareParityRuns(evidence,structuredClone(evidence));assert.equal(result.ok,false);assert.equal(result.recordedCases,0);
+});
+
+test('malformed falsy assertions cannot hide beside a recognised defect',()=>{
+ for(const assertion of [false,null,0,'']){const a=run();a.rows[0].assertion=assertion;assert.equal(assessAssertions(a.meta,a.rows).unexpectedFailures.length,1);assert.equal(compareParityRuns(a,structuredClone(a)).ok,false);}
+});

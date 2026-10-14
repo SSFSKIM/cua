@@ -8,6 +8,7 @@
 //
 // Steps, in order (each PASS, FAIL or SKIP; a step that needs an earlier one's tab is FAIL when that one failed):
 //   profiles   profiles_list lists key maws first, ready, with a maws:… instance
+//   service    the default browser's documentation shows the service CUA_BROWSER_SERVICE selects (cua's marker or not)
 //   createTab  cua.getBrowser() selects that instance; createBrowserTab(page) shows the page's document marker
 //   locator    #name filled with "x", #submit clicked: #state reads submitted:x
 //   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset
@@ -29,15 +30,16 @@ import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {configuredBackends} from '../../src/chrome/client-mode.mjs';
-import {openSession} from './mcp-session.mjs';
+import {openSession, resultText} from './mcp-session.mjs';
 import {DOWNLOAD_CELL, deleteFixtureDownload, dialogCell, downloadEvidence, fileChooserCell, parseFeatureResult} from './linux-chrome-features.mjs';
 import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/original/elicitation.mjs';
 import {REPORT_BODY, startFeaturesPage} from './features-page.mjs';
 import {imageSize} from './chrome-cells.mjs';
+import {DOCUMENTATION_CELL, serviceAttestation} from './service-attest.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const RESULT_TAG = 'CUA_FEATURES_RESULT ';
-export const STEPS = ['profiles', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation'];
+export const STEPS = ['profiles', 'service', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation'];
 const js = value => JSON.stringify(value);
 
 // One cell: its body runs in an async function; its return value is the step's detail, a throw its error.
@@ -197,6 +199,10 @@ export async function runHarness({other = null} = {}) {
       const entry = PROFILES_ENTRY(reply.result.structuredContent?.profiles);
       maws = entry.ok ? entry.maws : null;
       return {ok: entry.ok, detail: reply.result.structuredContent};
+    });
+    await check('service', async () => {
+      const reply = await session.js(DOCUMENTATION_CELL(), 60_000);
+      return failed(reply) ? {ok: false, detail: reply} : serviceAttestation(resultText(reply));
     });
     let createdTab = false;
     const tabOk = await check('createTab', async () => {

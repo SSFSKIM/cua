@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Live fixture: run ON the Linux browser machine in its X session, through cua's own Chrome host (not --vendor).
 // Needs a ready bound profile and cua chrome register. This script opens only its own tab, accepts only its page's
-// origin-access elicitation, and reports downloads, JavaScript dialogs, file chooser and connection cleanup.
+// origin-access elicitation, and reports which browser service answered (CUA_BROWSER_SERVICE), downloads, JavaScript
+// dialogs, file chooser and connection cleanup.
 //   node scripts/accept/linux-chrome-features.mjs [<profile key>]   JSON report; exit 0 when all required steps pass
 // API citations below are BS = the pinned readable browser-service.mjs in
 // /Users/new/codex-app-src/readable/chatgpt-26.928.40906/cua_node/@oai/browser-desktop/scripts/.
@@ -18,6 +19,7 @@ import {openSession, resultText} from './mcp-session.mjs';
 import {cuaHostStep, ownedTabs} from './linux-chrome-lib.mjs';
 import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/original/elicitation.mjs';
 import {startFeaturesPage, REPORT_BODY, REPORT_SHA256} from './features-page.mjs';
+import {DOCUMENTATION_CELL, serviceAttestation} from './service-attest.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const RESULT_TAG = 'CUA_FEATURES_RESULT ';
@@ -188,6 +190,10 @@ export async function runAcceptance(key = 'me') {
     profile = listed?.profiles?.find(p => p.key === key);
     if (!step(`profiles_list reports ${key} ready`, profile?.ready === true && !!profile.extensionInstanceId, failedReply(profilesReply) ? profilesReply : listed)) throw new Error('profile is not ready');
     await check(`${key}'s cua host serves at its pre-listed socket`, async () => cuaHostStep({home, instanceId: profile.extensionInstanceId, psLines: psLines(), exists: existsSync, readJson}));
+    await check('the selected browser service answers', async () => {
+      const reply = await session.js(DOCUMENTATION_CELL(profile.extensionInstanceId), 60_000);
+      return failedReply(reply) ? {ok: false, detail: resultText(reply).slice(0, 300)} : serviceAttestation(resultText(reply));
+    });
 
     const documentVerified = await check('open a tab and verify its document marker', async () => {
       const detail = await js(session, `

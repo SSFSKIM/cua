@@ -18,7 +18,7 @@ const runCell = async (code, cua) => {
 };
 
 test('the report keeps the spec\'s step order, and M3\'s four steps run in it', () => {
-  assert.deepEqual(STEPS, ['profiles', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation']);
+  assert.deepEqual(STEPS, ['profiles', 'service', 'createTab', 'locator', 'viewport', 'popup', 'download', 'alert', 'confirm', 'chooser', 'cleanup', 'isolation']);
   assert.deepEqual(Object.keys(FEATURE_STEPS), ['download', 'alert', 'confirm', 'chooser']);
   assert.ok(Object.values(FEATURE_STEPS).every(step => typeof step === 'function'));
   for (const code of [DOWNLOAD, ALERT, CONFIRM, CHOOSER('/tmp/x.txt')]) assert.match(code, /const fixtureTab = m\.tab;/);

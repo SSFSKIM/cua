@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M0 owns the vendor-side scenarios for every case due by M1, including the twelve process-control and confinement cases task 3 first left pending (late-reply and reset generation fencing with a fresh banner, EOF/no-replay, child-exit settlement, owned-group teardown, default/scoped/disabled confinement, trusted-root overlap, Linux fail-closed, no unsandboxed fallback). Task 3 completes them and re-records the vendor pairs on mini and cua-linux, so `--through M1` runs against a complete vendor control and M1's executor builds the subject, never its own oracle. Worker-error secret cases and M2+ service/elicitation/document/facade cases stay visibly pending until their milestones.
+  Rationale: M0 "establishes the oracle"; letting M1 write the scenarios it is graded by would weaken the differential, and Concrete Steps diff M1 against `m0/vendor-1`.
+  Date/Author: 2026-10-14, plan-executor ruling on M0 task 3's DONE_WITH_CONCERNS.
 - Decision: Revise Design's output-assembly sentence from "execution order" to the vendor's observed grouping: text grouped per write name (names by first appearance, concatenated within a name) and placed before images/content items, order within each group preserved, awaited or not. M1's supervisor reproduces it and the M1 diff against `m0/vendor-1` enforces it through `cells/output/write-ids`, `cells/output/ordered-images` and `cells/output/unawaited-emissions` (all due M1; `cells/output/ordered-content` asserts the console/write grouping).
   Rationale: Spec text predated the vendor probe; the Design itself asked M0/M1 to compare the Rust-side assembly rather than trust extraction.
   Date/Author: 2026-10-14, dispatching session ruling from M0 task 3's raw vendor evidence, recorded by the plan-executor.

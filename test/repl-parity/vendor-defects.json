@@ -1,0 +1,13 @@
+[
+  {
+    "id": "linux-vendor-sandbox-launcher-fail-open",
+    "host": "vendor",
+    "platform": "linux",
+    "runtimeRelease": "26.928.40906-linux-arm64",
+    "case": "cells/confinement/no-unsandboxed-fallback",
+    "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage.",
+    "assertion": {"ok": false, "reason": "failed sandbox launch must be refused with no out-of-policy write"},
+    "observation": {"kind": "sandbox-launch-failure", "codeExecuted": true, "toolError": false, "outsideWrite": true, "launcherInvoked": true},
+    "result": {"cell": "refused", "isError": false, "content": [{"type": "text", "text": "{\"outsideWrite\":true}"}]}
+  }
+]

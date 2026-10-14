@@ -10,6 +10,7 @@ import scenarios from '../test/repl-parity/scenarios/index.mjs';
 import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {AttestedConnections,runRawScenario} from './repl-parity/runner.mjs';
 import {runSecretCase} from '../test/repl-parity/fixtures/secret-cases.mjs';
+import {declaredVendorDefect,assessAssertions} from './repl-parity/vendor-defects.mjs';
 import {runBoundaryScenario} from './repl-parity/boundaries.mjs';
 import {remoteCapabilityLane} from './repl-parity/capability.mjs';
 import {compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
@@ -49,24 +50,26 @@ export async function main(argv=process.argv.slice(2)){
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
  const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:'no-services',profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,s.cells.map(c=>c.label)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),complete:false,connections:[],hostAttestations:[]};
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
- const pool=new AttestedConnections(v.host);let failed=false;const resources=[];
+ const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
+ const emit=row=>{const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
  try{
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));
   for(const scenario of selected){
-    if(scenario.backend==='host-boundary'){const result=await runBoundaryScenario(scenario,{prepared,host:v.host});pool.addObservations(result.observations,scenario.id);const assertion=scenario.assert({results:result.rows.filter(r=>r.cell==='boundary').map(r=>r.value)});if(!assertion.ok)throw new Error(`${scenario.id}: boundary assertion failed`);for(const row of result.rows)appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');continue;}
+    if(scenario.backend==='host-boundary'){const result=await runBoundaryScenario(scenario,{prepared,host:v.host});pool.addObservations(result.observations,scenario.id);const assertion=scenario.assert({results:result.rows.filter(r=>r.cell==='boundary').map(r=>r.value)});for(const row of result.rows)emit(row.assertion?{...row,assertion}:row);continue;}
     if(scenario.backend==='secret-double'){
-      const result=await runSecretCase(scenario.id);for(const row of [{case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true}])appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');continue;
+      const result=await runSecretCase(scenario.id);for(const row of [{case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true}])emit(row);continue;
     }
     if(scenario.backend!==lane){
       if(scenario.backend!=='capability-host')throw new Error(`Backend not configured: ${scenario.backend}`);
       const resource=await remoteCapabilityLane({...prepared,host:v.host});resources.push(resource);client=await pool.open(resource.command);lane='capability-host';
     }
-    const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit:r=>appendFileSync(join(out,'results.jsonl'),JSON.stringify(r)+'\n')});if(!assertion.ok)failed=true;
+    const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit});if(!assertion.ok)failed=true;
   }
+  const assertions=assessAssertions(meta,runRows);failed=assertions.unexpectedFailures.length>0;Object.assign(meta,{vendorDefects:assertions.vendorDefects,coveredCases:assertions.coveredCases,recordedCases:assertions.recordedCases});
   const ended=await client.call('end_task');if(ended.isError)throw new Error('Task cleanup failed');
   await pool.close();for(const resource of resources.reverse())await resource.close();resources.length=0;Object.assign(meta,pool.metadata(),{complete:true});validateAttestations(meta);
  }finally{try{if(!meta.complete)await pool.close();for(const resource of resources.reverse())await resource.close();}finally{Object.assign(meta,pool.metadata());save(join(out,'meta.json'),meta);}}
- console.log(JSON.stringify({out,cases:selected.length,pending:pending.length,complete:meta.complete,assertions:failed?'FAIL':'PASS'}));if(failed)process.exitCode=1;
+ console.log(JSON.stringify({out,cases:selected.length,pending:pending.length,complete:meta.complete,assertions:failed?'FAIL':meta.vendorDefects?.length?'RECORDED_VENDOR_DEFECT':'PASS',coveredCases:meta.coveredCases,recordedVendorDefects:meta.vendorDefects?.length??0}));if(failed)process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.error(e.message);process.exitCode=1;});

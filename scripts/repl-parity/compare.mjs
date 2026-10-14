@@ -1,4 +1,5 @@
 import {compareRuns} from '../browser-parity/compare.mjs';
+import {assessAssertions} from './vendor-defects.mjs';
 import {normalizeHostDiagnostic} from './diagnostics.mjs';
 import {isDeepStrictEqual} from 'node:util';
 export function validateAttestations(meta) {
@@ -52,7 +53,10 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     if(!isDeepStrictEqual(own.meta?.['cua/replHost'],allowance.cua.value))continue;
     delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
-  const result=compareRuns(left,right,{raw:true});
+  const leftAssertions=assessAssertions(a.meta,left),rightAssertions=assessAssertions(b.meta,right);
+  const recordedAssertionFailures={a:leftAssertions.vendorDefects.map(d=>d.case),b:rightAssertions.vendorDefects.map(d=>d.case)};
+  const vendorDefects=[...new Map([...leftAssertions.vendorDefects,...rightAssertions.vendorDefects].map(d=>[d.id,d])).values()];
+  const result=compareRuns(left,right,{raw:true,recordedAssertionFailures});
   differences.push(...result.differences);
-  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,doubleCases:fakeCases.size,differences,ok:!differences.length};
+  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,allAssertionsPassed:!differences.length&&!vendorDefects.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }

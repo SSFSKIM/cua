@@ -4,7 +4,7 @@ import {isDeepStrictEqual} from 'node:util';
 // those positions are each service's layout, not the error. The sentence, the frames and their names still compare.
 // Only a stack frame line (`    at <anonymous>:L:C` or `    at name (<anonymous>:L:C)`) is masked.
 const anonymousPositions = message => message.replace(/^(\s+at (?:[^\n]* \()?<anonymous>):\d+:\d+(\)?)$/gm, '$1$2');
-const semantic = r => Object.fromEntries(['ok','value','error','assertion','skip','content','isError','structuredContent','meta'].filter(k => k in r)
+const semantic = r => Object.fromEntries(['ok','value','error','assertion','skip','content','isError','structuredContent','meta','vendorDefect'].filter(k => k in r)
   .map(k => [k, k === 'error' && typeof r.error?.message === 'string' ? {...r.error, message: anonymousPositions(r.error.message)} : r[k]]));
 const polling = name => name === 'Runtime.callFunctionOn' || name.startsWith('DOM.') || name === 'Page.getLayoutMetrics';
 const counts = trace => {
@@ -27,7 +27,7 @@ function imageEqual(a,b,tolerance,{raw=false,path='',mcpImage=false}={}) {
   }
   return isDeepStrictEqual(a,b);
 }
-export function compareRuns(a, b, {expected = [], raw = false} = {}) {
+export function compareRuns(a, b, {expected = [], raw = false, recordedAssertionFailures = {a:[],b:[]}} = {}) {
   const differences = [], accepted = [];
   if (!Array.isArray(expected) || expected.some(e => !e.reason || !Array.isArray(e.cases) || !Array.isArray(e.cells) || !['semantic','trace'].includes(e.kind))) throw new Error('Invalid expected-differences entry');
   const add = d => {
@@ -43,7 +43,7 @@ export function compareRuns(a, b, {expected = [], raw = false} = {}) {
       if (r.cell && (typeof r.ok !== 'boolean' || (!r.ok && (!r.error || typeof r.error.message !== 'string')))) add({kind:'configuration',side,case:r.case,cell:r.cell,message:'invalid cell result'});
       if (Object.entries(r.pollingAllowance ?? {}).some(([name,n])=>!polling(name)||!Number.isSafeInteger(n)||n<0)) add({kind:'configuration',side,case:r.case,message:'invalid polling allowance'});
       if (r.screenshotTolerance !== undefined && (!Number.isInteger(r.screenshotTolerance)||r.screenshotTolerance<0||r.screenshotTolerance>64)) add({kind:'configuration',side,case:r.case,message:'invalid screenshot tolerance'});
-      if (r.assertion && r.assertion.ok !== true) add({kind:'assertion', side, case:r.case, message:'case assertion failed'});
+      if (r.assertion && r.assertion.ok !== true && !recordedAssertionFailures[side]?.includes(r.case)) add({kind:'assertion', side, case:r.case, message:'case assertion failed'});
       out.set(key,r);
     }
     for (const id of new Set(rows.map(r => r.case))) if (!out.has(JSON.stringify([id,null]))) add({kind:'cardinality',side,case:id,message:'missing case assertion'});

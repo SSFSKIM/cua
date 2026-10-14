@@ -12,6 +12,7 @@ import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-hom
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
+import boundaryScenarios from './scenarios/boundaries.mjs';
 import {ownedProcesses,killOwnedKernel,alive} from '../../scripts/repl-parity/processes.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Boundary probes are remote-only');
 const probe=process.argv[2],id=`cells/${probe}`,host=process.env.CUA_REPL_HOST??'vendor';
@@ -24,7 +25,7 @@ const text=r=>(r.content??[]).filter(c=>c.type==='text').map(c=>c.text).join('\n
 async function record(label,result){rows.push({case:id,cell:label,ok:true,...await normalizeRawResult(result,{normalize})});return result;}
 async function open({sandbox='scoped',witness=false,brokenSandbox=false}={}){
  const control=join(dir,`connection-${clients.length+1}`);mkdirSync(control);
- const sandboxFailure=join(control,'failing-sandbox');if(brokenSandbox){writeFileSync(sandboxFailure,'#!/bin/sh\nprintf \'fixture sandbox launcher refused\\n\' >&2\nexit 73\n');chmodSync(sandboxFailure,0o700);}
+ const sandboxFailure=join(control,'failing-sandbox');if(brokenSandbox){writeFileSync(sandboxFailure,'#!/bin/sh\nprintf invoked > '+JSON.stringify(join(control,'sandbox-invoked'))+'\nprintf \'fixture sandbox launcher refused\\n\' >&2\nexit 73\n');chmodSync(sandboxFailure,0o700);}
  const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:{PATH:process.env.PATH,HOME:process.env.HOME,...desktopSessionEnv(process.env),TMPDIR:join(dir,'tmp'),CUA_HOME:process.env.CUA_HOME,CUA_REPL_HOST:host,CUA_PARITY_REMOTE:'1',CUA_PARITY_EXPECTED:JSON.stringify(facts),CUA_PARITY_CONTROL_DIR:control,CUA_PARITY_SANDBOX:sandbox,CUA_PARITY_BANNER_WITNESS:witness?'1':'0',CUA_PARITY_BROKEN_SANDBOX:brokenSandbox?sandboxFailure:''}});
  clients.push({client,control,sandbox,witness,brokenSandbox});return client;
 }
@@ -58,8 +59,10 @@ try{
   assert.equal(result.isError,false);const value=JSON.parse(text(result));assert.deepEqual(value,{cwdWrite:sandbox!=='default',outsideWrite:sandbox==='disabled',network:sandbox==='disabled'});proof={kind:'sandbox-behavior',mode:sandbox,...value};
  }else if(probe==='confinement/no-unsandboxed-fallback'){
   const client=await open({brokenSandbox:true});await record('reset',await client.call('js_reset'));
-  const marker=join(dir,'tmp','must-not-run');const result=await js(client,'refused',`(await import('node:fs')).writeFileSync(${JSON.stringify(marker)},'executed');nodeRepl.write('UNCONFINED');`);
-  assert.equal(result.isError,true);assert.equal(existsSync(marker),false);proof={kind:'sandbox-launch-failure',codeExecuted:false,toolError:true};
+  const marker=join(dir,'tmp','must-not-run'),outside=join(dir,'outside-policy');
+  const result=await js(client,'refused',`let fs=await import('node:fs');fs.writeFileSync(${JSON.stringify(marker)},'executed');let outsideWrite=false;try{fs.writeFileSync(${JSON.stringify(outside)},'executed');outsideWrite=true;}catch{}nodeRepl.write(JSON.stringify({outsideWrite}));`);
+  const outsideWrite=existsSync(outside);proof={kind:'sandbox-launch-failure',codeExecuted:existsSync(marker),toolError:result.isError===true,
+    ...(process.platform==='linux'?{outsideWrite,launcherInvoked:existsSync(join(clients.at(-1).control,'sandbox-invoked'))}:outsideWrite?{outsideWrite}:{} )};
  }else if(probe==='timeouts/late-reply-generation-fence'||probe==='reset/generation-fence'){
   const client=await open(),marker=join(dir,'tmp','stale');
   const schedule=`let oldBinding=1;let fs=await import('node:fs');setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'stale');nodeRepl.write('STALE');},1000);`;
@@ -96,7 +99,7 @@ try{
   }
  }else throw new Error('Unknown boundary probe');
  for(const {client} of clients)await close(client);
- rows.push({case:id,cell:'boundary',ok:true,value:proof,evidenceKind:proof.kind},{case:id,assertion:{ok:true}});
+ rows.push({case:id,cell:'boundary',ok:true,value:proof,evidenceKind:proof.kind},{case:id,assertion:boundaryScenarios.find(s=>s.id===id).assert({results:[proof]})});
  const observations=pool.metadata();for(const [i,a] of observations.hostAttestations.entries())a.fixture={sandbox:clients[i].sandbox,bannerWitness:clients[i].witness,brokenSandbox:clients[i].brokenSandbox};
  console.log(JSON.stringify({rows,observations,executionFacts:facts}));
 }catch(error){process.stderr.write(`Boundary ${probe} failed: ${error.message}\n`);process.exitCode=1;}

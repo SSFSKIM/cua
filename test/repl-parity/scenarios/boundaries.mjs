@@ -24,7 +24,7 @@ function outcome(tail,value){
  if(tail.startsWith('lifecycle/'))return value.settled===true&&value.executions===1&&value.reconnected===tail.endsWith('eof-settles-no-replay');
  const mode=tail.split('/')[1];
  if(['default','scoped','disabled'].includes(mode))return value.mode===mode&&value.cwdWrite===(mode!=='default')&&value.outsideWrite===(mode==='disabled')&&value.network===(mode==='disabled');
- if(mode==='no-unsandboxed-fallback')return value.codeExecuted===false&&value.toolError===true;
+ if(mode==='no-unsandboxed-fallback')return value.codeExecuted===false&&value.toolError===true&&value.outsideWrite!==true&&value.launcherInvoked!==false;
  return value.launched===false&&value.code===(mode==='trusted-write-root-overlap'?'sandbox_conflict':'sandbox_unavailable');
 }
-export default ids.map(tail=>({...plan.get(`cells/${tail}`),backend:'host-boundary',cells:[...steps[tail].map(label=>({label,op:'probe-step'})),{label:'boundary',op:'boundary',probe:tail}],assert:({results})=>({ok:results.length===1&&outcome(tail,results[0])===true})}));
+export default ids.map(tail=>({...plan.get(`cells/${tail}`),backend:'host-boundary',cells:[...steps[tail].map(label=>({label,op:'probe-step'})),{label:'boundary',op:'boundary',probe:tail}],assert:({results})=>{const ok=results.length===1&&outcome(tail,results[0])===true;return {ok,...(!ok?{reason:tail==='confinement/no-unsandboxed-fallback'?'failed sandbox launch must be refused with no out-of-policy write':'boundary safety condition failed'}:{})};}}));

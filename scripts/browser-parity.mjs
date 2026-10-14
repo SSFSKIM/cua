@@ -23,18 +23,30 @@ function scenariosAt(dir) {
 function globRegex(glob) {
   return new RegExp('^'+glob.replace(/[.+^${}()|[\]\\]/g,'\\$&').replace(/\*\*\//g,'\u0000').replace(/\*\*/g,'\u0001').replace(/\*/g,'[^/]*').replace(/\?/g,'[^/]').replaceAll('\u0000','(?:.*/)?').replaceAll('\u0001','.*')+'$');
 }
-// --scenarios: comma-separated globs over scenario paths, relative to the repository or to the scenarios directory.
+// --scenarios: comma-separated globs over scenario paths, relative to the repository or to the corpus's directory.
 const SCENARIOS_DIR='test/browser-parity/scenarios';
-function scenarioMatcher(globs) {
+// --corpus bench: the scripted benchmark episodes (bench/scenarios/, the M5 drag check), cases for one live device's
+// outcomes rather than for a differential diff, kept apart so the parity corpus and its inventory never include them.
+const CORPORA={parity:SCENARIOS_DIR,bench:'test/browser-parity/bench/scenarios'};
+export function corpusRoot(corpus='parity') {
+  if(!Object.hasOwn(CORPORA,corpus))throw new Error('Invalid corpus');
+  return CORPORA[corpus];
+}
+function scenarioMatcher(globs,dir=SCENARIOS_DIR) {
   const patterns=globs.split(',').map(g=>g.trim()).filter(Boolean).map(globRegex);
-  return relativePath=>patterns.some(p=>p.test(relativePath)||p.test(`${SCENARIOS_DIR}/${relativePath}`));
+  return relativePath=>patterns.some(p=>p.test(relativePath)||p.test(`${dir}/${relativePath}`));
 }
 // The capability-host group (scenarios/capability-host/) runs only against the capability host (`--backend
 // capability-host`), and that backend runs nothing else: the group needs the optional capabilities only that test
 // backend announces, and the ordinary corpus needs a page engine its scripted pages do not have. Otherwise a remote
 // run takes the corpus and a local one the examples, unless `scenarios` (globs) narrows either.
 export const CAPABILITY_GROUP='capability-host/';
-export function selectScenarioPaths(relativePaths,{local,backend,scenarios}={}) {
+export function selectScenarioPaths(relativePaths,{local,backend,scenarios,corpus='parity'}={}) {
+  if(corpus==='bench') {
+    // Its pages are the benchmark fixture's MiniWoB tasks, which need a real browser: no fake or capability backend.
+    if(local||backend!==undefined)throw new Error('The bench corpus runs on a live device');
+    return scenarios?relativePaths.filter(scenarioMatcher(scenarios,CORPORA.bench)):relativePaths;
+  }
   const capability=backend==='capability-host';
   let paths=relativePaths.filter(p=>p.startsWith(CAPABILITY_GROUP)===capability);
   if(scenarios) {const matches=scenarioMatcher(scenarios);paths=paths.filter(matches);}
@@ -42,7 +54,7 @@ export function selectScenarioPaths(relativePaths,{local,backend,scenarios}={}) 
   return paths;
 }
 export async function main(argv=process.argv.slice(2)) {
-  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'},backend:{type:'string'}}});
+  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},corpus:{type:'string',default:'parity'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'},backend:{type:'string'}}});
   const [action,a,b]=positionals;
   if(action==='diff') {
     if(!a||!b)throw new Error('diff requires two run directories');
@@ -73,6 +85,7 @@ export async function main(argv=process.argv.slice(2)) {
   }
   if(!values.out)throw new Error('run requires --out');
   if(!['vendor','cua'].includes(values.service))throw new Error('Invalid service');
+  const corpusDir=corpusRoot(values.corpus);
   const out=resolve(values.out);mkdirSync(out,{recursive:true});
   if(existsSync(join(out,'meta.json'))||existsSync(join(out,'results.jsonl')))throw new Error('Output directory already contains a run');
   const local=values.device==='local';
@@ -87,7 +100,7 @@ export async function main(argv=process.argv.slice(2)) {
   const localCommit=()=>execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   const prepared=capability?{device:'local',profile:'capability-host',checkout:root,home:capabilityHome.dir,commit:localCommit(),runtime:capabilityHome.release}
     :local?{device:'local',profile:'scratch',checkout:root,home:scratch,commit:localCommit()}:readJson(preparedPath(values.device));
-  const meta={...prepared,service:values.service,backend:capability?'capability-host':local?'fake':'live',environment:{CUA_BROWSER_SERVICE:values.service,CUA_SHIM_SURFACES:'browser',CUA_HOME:prepared.home},started:new Date().toISOString(),elicitations:[],attestations:[],complete:false};
+  const meta={...prepared,...(values.corpus!=='parity'?{corpus:values.corpus}:{}),service:values.service,backend:capability?'capability-host':local?'fake':'live',environment:{CUA_BROWSER_SERVICE:values.service,CUA_SHIM_SURFACES:'browser',CUA_HOME:prepared.home},started:new Date().toISOString(),elicitations:[],attestations:[],complete:false};
   if(!local) {
     const actual=execute(remoteCommand(values.device,`cd ${quote(prepared.checkout)} && git rev-parse HEAD`)).trim();
     if(actual!==prepared.commit)throw new Error('Parity clone moved since prepare');
@@ -97,8 +110,8 @@ export async function main(argv=process.argv.slice(2)) {
     fixture=local?await startFixture({port:0}):await fixtureProcess(prepared);
     if(capability)capabilityHost=await startCapabilityHost({home:capabilityHome.dir});
     trace=traceControl({device:values.device,home:prepared.home,path:join(prepared.home,'state',`parity-trace-${randomUUID()}.jsonl`)});
-    const scenarioRoot=join(root,SCENARIOS_DIR);
-    const paths=selectScenarioPaths(scenariosAt(scenarioRoot).map(p=>relative(scenarioRoot,p)),{local,backend:values.backend,scenarios:values.scenarios}).map(p=>join(scenarioRoot,p));
+    const scenarioRoot=join(root,corpusDir);
+    const paths=selectScenarioPaths(scenariosAt(scenarioRoot).map(p=>relative(scenarioRoot,p)),{local,backend:values.backend,scenarios:values.scenarios,corpus:values.corpus}).map(p=>join(scenarioRoot,p));
     if(!paths.length)throw new Error('No scenarios matched');
     const scenarios=await Promise.all(paths.map(async p=>(await import(pathToFileURL(p))).default));
     if(new Set(scenarios.map(s=>s.id)).size!==scenarios.length)throw new Error('Duplicate scenario ids');

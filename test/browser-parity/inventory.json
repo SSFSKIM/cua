@@ -893,7 +893,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capabilities/page-assets"
     ],
     "reachability": "capability:pageAssets"
   },
@@ -903,7 +904,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capabilities/page-assets"
     ],
     "reachability": "capability:pageAssets"
   },

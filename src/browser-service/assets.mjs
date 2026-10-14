@@ -8,18 +8,22 @@
 // kept for the tab's current URL. bundle() writes an inventory's file assets (fonts, images, stylesheets, videos and the
 // inline SVGs; never scripts or other responses), all or those of the given kinds or ids, to a fresh directory under the
 // temporary directory's browser-use/assets: each from Chrome's own copy of the loaded resource, else by one fetch inside
-// the page with its credentials, and that only from the page's own origin; a response whose type does not fit its kind,
-// or that cannot be had, is a failure in the result. A manifest.json lists both.
-// Changed: the page fetch is limited to the page's own origin, where the vendor fetches any origin after an approval
-// (ensurePageAssetFallbackFetchAllowed, its elicitation and origin policy), which cua drops; the asset fails instead.
-// Dropped: the bundle's approval (ensurePageAssetDownloadAllowed) and the failure telemetry (DM).
+// the page with the person's session there, whatever the asset's origin (only URLs the inventory found the page itself
+// loading, never one a caller names); a response whose type does not fit its kind, or that cannot be had, is a failure
+// in the result. A manifest.json lists both.
+// Changed: cua's own byte bounds (byte-bounds.mjs): an asset over 50 MiB, from Chrome or from the page, fails with
+// ASSET_TOO_LARGE (bounded while the page reads it and again on this side before decoding), and an asset that would take
+// the bundle past 200 MiB fails with BUNDLE_TOO_LARGE. Dropped: the approvals (ensurePageAssetDownloadAllowed and the
+// cross-origin ensurePageAssetFallbackFetchAllowed, with their elicitations and origin policy; the session's ruling of
+// 2026-10-14 matches the vendor's effective behaviour on the cua route, its approval accepted) and the failure
+// telemetry (DM).
 import {createHash, randomUUID} from 'node:crypto';
+import {ASSET_TOO_LARGE, BUNDLE_TOO_LARGE, MAX_BUNDLE_BYTES, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from './byte-bounds.mjs';
 import {tabIdOf} from './tabs.mjs';
 
 const STYLE_PROPERTIES = ['background-image', 'border-image-source', 'cursor', 'list-style-image', 'mask-image'];      // TM
 const RESOURCE_TIMING = 'performance.getEntriesByType("resource").map((entry) => ({\n        initiatorType: "initiatorType" in entry ? entry.initiatorType : undefined,\n        name: entry.name,\n      }))';
 const INLINE_SVGS = 'Array.from(document.querySelectorAll("svg")).map((svg, index) => ({\n        markup: svg.outerHTML,\n        name:\n          svg.getAttribute("aria-label") ||\n          svg.querySelector("title")?.textContent?.trim() ||\n          svg.id ||\n          "svg-" + (index + 1),\n      }))';
-const PAGE_FETCH_REFUSED = 'cua fetches page assets only from the page\'s own origin';
 
 // --- the inventory -----------------------------------------------------------------------------------------------------
 
@@ -236,61 +240,79 @@ function mimeTypeIn(frameTree, url) {                                           
   return null;
 }
 
-// In the page: one GET of the asset with the page's credentials, the body as base64 (ZZ). Serialised with toString.
-async function fetchAssetInPage({url}) {
+// In the page: one GET of the asset with the page's credentials, the body (read within `maxBytes` by `readBody`) as
+// base64 (ZZ). Serialised with toString.
+async function fetchAssetInPage({url, maxBytes, tooLarge}, readBody) {
   const response = await fetch(url, {credentials: 'include', method: 'GET'});
   if (!response.ok) throw new Error(`Asset request failed with HTTP ${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const bytes = await readBody(response, maxBytes, tooLarge);
   const chunk = 32768;
   let binary = '';
   for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   return {base64: btoa(binary), contentType: response.headers.get('content-type')};
 }
 
-const sameOrigin = (url, pageUrl) => {
-  try { return new URL(url).origin === new URL(pageUrl).origin; } catch { return false; }
-};
+// An asset over its byte bound: the bundle records it with the fixed sentence, and does not fetch it again.
+class TooLarge extends Error {
+  constructor(sentence) { super(sentence); }
+}
 
-// The asset's bytes: Chrome's copy of the loaded resource (eQ), else, from the page's own origin only, a fetch inside
-// the page (QZ) -> {base64, contentType}.
-async function assetContent(cdp, tabId, url, pageUrl) {
+// The asset's bytes: Chrome's copy of the loaded resource (eQ), else a fetch inside the page (QZ) -> {base64,
+// contentType}, at most `maxBytes` either way.
+async function assetContent(cdp, tabId, url, maxBytes) {
   const frameId = (await cdp.call(tabId, 'Page.getFrameTree')).frameTree?.frame?.id ?? null;                           // tQ
   let loadedError;
   try {
     if (frameId == null) throw new Error('Unable to determine frame id');
     await cdp.call(tabId, 'Page.enable');
     const [content, tree] = await Promise.all([cdp.call(tabId, 'Page.getResourceContent', {frameId, url}), cdp.call(tabId, 'Page.getResourceTree')]);
+    const size = content.base64Encoded === true ? decodedLength(content.content) : Buffer.byteLength(content.content);
+    if (size > maxBytes) throw new TooLarge(ASSET_TOO_LARGE);
     return {
       base64: content.base64Encoded === true ? content.content : btoa(Array.from(new TextEncoder().encode(content.content), b => String.fromCharCode(b)).join('')),
       contentType: mimeTypeIn(tree.frameTree, url),
     };
   } catch (error) {
+    if (error instanceof TooLarge) throw error;
     loadedError = error;
   }
+  let fetched;
   try {
-    if (!sameOrigin(url, pageUrl)) throw new Error(PAGE_FETCH_REFUSED);
-    const fetched = await cdp.evaluateJavascript(tabId, `(${fetchAssetInPage.toString()})(${JSON.stringify({url})})`, {awaitPromise: true});
+    const args = JSON.stringify({url, maxBytes, tooLarge: ASSET_TOO_LARGE});
+    fetched = await cdp.evaluateJavascript(tabId, `(${fetchAssetInPage.toString()})(${args},${readBoundedBodyInPage.toString()})`, {awaitPromise: true});
     if (fetched == null) throw new Error('Unable to bundle asset');
-    return fetched;
   } catch (error) {
+    if (messageOf(error).endsWith(ASSET_TOO_LARGE)) throw new TooLarge(ASSET_TOO_LARGE);
     throw new Error(`Loaded resource fetch failed: ${messageOf(loadedError)}; page fetch failed: ${messageOf(error)}`, {cause: error});
   }
+  if (typeof fetched.base64 !== 'string' || decodedLength(fetched.base64) > maxBytes) throw new TooLarge(ASSET_TOO_LARGE);
+  return fetched;
 }
 
-// One inventory entry written into `directory` -> {asset} or {failure} (YZ).
-async function bundleOne({cdp, directory, entry, filesystem, pageUrl, tabId}) {
+// One inventory entry written into `directory` within the bundle's `budget` ({used, maxAssetBytes, maxBundleBytes})
+// -> {asset} or {failure} (YZ).
+async function bundleOne({budget, cdp, directory, entry, filesystem, tabId}) {
+  // Counts `size` bytes against the bundle, or refuses them.
+  const take = size => {
+    if (budget.used + size > budget.maxBundleBytes) throw new TooLarge(BUNDLE_TOO_LARGE);
+    budget.used += size;
+  };
   try {
     if (entry.source === 'inline-svg') {
+      const size = Buffer.byteLength(entry.asset.markup);
+      if (size > budget.maxAssetBytes) throw new TooLarge(ASSET_TOO_LARGE);
+      take(size);
       const path = `${directory}/${entry.asset.id}.svg`;
       await filesystem.writeFile(path, entry.asset.markup);
       return {asset: {contentType: 'image/svg+xml', id: entry.asset.id, kind: 'image', name: entry.asset.name, path, url: `inline-svg:${entry.asset.id}`}};
     }
     const asset = entry.asset;
-    const content = await assetContent(cdp, tabId, asset.url, pageUrl);
+    const content = await assetContent(cdp, tabId, asset.url, budget.maxAssetBytes);
     const type = mimeType(content.contentType);
     if (!responseFits(asset, type)) {
       return {failure: failure({contentType: type, entry, reason: `Asset response type ${type ?? 'missing'} is not valid for ${asset.kind}`})};
     }
+    take(decodedLength(content.base64));
     const path = `${directory}/${asset.id}${extensionOf(asset.url)}`;
     await filesystem.writeFile(path, Uint8Array.from(atob(content.base64), c => c.charCodeAt(0)));
     return {asset: {contentType: content.contentType, id: asset.id, kind: asset.kind, name: asset.name, path, url: asset.url}};
@@ -302,13 +324,16 @@ async function bundleOne({cdp, directory, entry, filesystem, pageUrl, tabId}) {
 // --- the capability ----------------------------------------------------------------------------------------------------
 
 export class PageAssets {
-  constructor(cdp, filesystem) {
+  // `limits` the byte bounds, {maxAssetBytes, maxBundleBytes} (byte-bounds.mjs's by default).
+  constructor(cdp, filesystem, {maxAssetBytes = MAX_FILE_BYTES, maxBundleBytes = MAX_BUNDLE_BYTES} = {}) {
     this.cdp = cdp;
     this.filesystem = filesystem;
+    this.limits = {maxAssetBytes, maxBundleBytes};
   }
 
   cdp;
   filesystem;
+  limits;
   inventoriesById = new Map();          // id -> {assetsById: Map(id -> {source, asset}), documentUrl, tabId}
 
   async list({documentUrl, tabId}) {
@@ -330,7 +355,8 @@ export class PageAssets {
     if (entries.length === 0) throw new Error('Asset bundle request matched no discovered assets');
     const directory = `${this.filesystem.tmpDir}/browser-use/assets/${randomUUID()}`;
     await this.filesystem.mkdir(directory, {recursive: true});
-    const results = await Promise.all(entries.map(entry => bundleOne({cdp: this.cdp, directory, entry, filesystem: this.filesystem, pageUrl: documentUrl, tabId})));
+    const budget = {used: 0, ...this.limits};
+    const results = await Promise.all(entries.map(entry => bundleOne({budget, cdp: this.cdp, directory, entry, filesystem: this.filesystem, tabId})));
     const assets = results.flatMap(r => (r.asset == null ? [] : [r.asset]));
     const failures = results.flatMap(r => (r.failure == null ? [] : [r.failure]));
     const manifestPath = `${directory}/manifest.json`;

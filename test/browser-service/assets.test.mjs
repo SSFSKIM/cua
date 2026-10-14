@@ -10,6 +10,9 @@ import {createHash} from 'node:crypto';
 import {mkdtempSync, readFileSync, readdirSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {PageAssets} from '../../src/browser-service/assets.mjs';
+import {MAX_FILE_BYTES} from '../../src/browser-service/byte-bounds.mjs';
+import {LOCAL_FILESYSTEM} from '../../src/browser-service/filesystem.mjs';
 import {COMMAND_HANDLERS} from '../../src/browser-service/index.mjs';
 import {evaluateInPage, pageResponse} from './support/page-vm.mjs';
 import {execute, readyBrowser, rejection, scriptedPages, serviceOnHost} from './support/service-on-host.mjs';
@@ -65,7 +68,7 @@ function assetPages({resources, cached = {}, fetchable = {}} = {}) {
             fetched.push({url, credentials: init.credentials});
             const r = fetchable[url];
             if (r == null) throw new TypeError('Failed to fetch');
-            return pageResponse(r.body, {headers: {'content-type': r.contentType}});
+            return pageResponse(r.body, {headers: {'content-type': r.contentType, ...(r.length == null ? {} : {'content-length': String(r.length)})}});
           }}, params);
         }
     }
@@ -139,10 +142,10 @@ test('bundle() refuses an inventory of another page, unknown ids, unsupported ki
   assert.equal((await rejection(bundle({}))).message, 'Asset inventory is no longer valid for this page');
 });
 
-test('bundle() writes loaded resources from Chrome, fetches the rest from the page\'s own origin only, and lists every failure', async t => {
+test('bundle() writes loaded resources from Chrome, fetches the rest inside the page whatever its origin, and lists every failure', async t => {
   const png = Buffer.from('PNGDATA').toString('base64');
   const {run, pages, tmp} = await assetTab(t, {
-    resources: [...RESOURCES, {name: `${ORIGIN}/assets/wrong.png`, initiatorType: 'img'}],
+    resources: [...RESOURCES, {name: `${ORIGIN}/assets/wrong.png`, initiatorType: 'img'}, {name: 'https://cdn.example/huge.webm', initiatorType: 'video'}],
     cached: {
       [`${ORIGIN}/assets/a.png`]: {content: png, base64Encoded: true, mimeType: 'image/png'},
       [`${ORIGIN}/assets/style.css`]: {content: 'body{color:red}', base64Encoded: false, mimeType: 'text/css'},
@@ -151,6 +154,7 @@ test('bundle() writes loaded resources from Chrome, fetches the rest from the pa
     fetchable: {
       [`${ORIGIN}/assets/font.woff2`]: {body: 'WOFF2', contentType: 'font/woff2'},
       'https://cdn.example/b.jpg': {body: 'JPEG', contentType: 'image/jpeg'},
+      'https://cdn.example/huge.webm': {body: 'never read', contentType: 'video/webm', length: MAX_FILE_BYTES + 1},
     },
   });
   const {id} = await run({type: 'tab_page_assets_list'});
@@ -166,17 +170,18 @@ test('bundle() writes loaded resources from Chrome, fetches the rest from the pa
   const svg = byUrl[`inline-svg:${assetId(`0:${SVG}`)}`];
   assert.deepEqual(svg, {contentType: 'image/svg+xml', id: assetId(`0:${SVG}`), kind: 'image', name: 'Logo', path: `${dir}/${assetId(`0:${SVG}`)}.svg`, url: `inline-svg:${assetId(`0:${SVG}`)}`});
   assert.equal(readFileSync(svg.path, 'utf8'), SVG);
-  assert.deepEqual(pages.fetched, [{url: `${ORIGIN}/assets/font.woff2`, credentials: 'include'}], 'one page fetch, same origin, never the CDN');
+  assert.equal(readFileSync(byUrl['https://cdn.example/b.jpg'].path, 'utf8'), 'JPEG', 'a cross-origin asset the page loaded, fetched with the page\'s session');
+  assert.deepEqual(pages.fetched.map(f => f.url).sort(), [`${ORIGIN}/assets/font.woff2`, 'https://cdn.example/b.jpg', 'https://cdn.example/huge.webm']);
+  assert.ok(pages.fetched.every(f => f.credentials === 'include'));
   const failures = Object.fromEntries(result.failures.map(f => [f.url, f]));
-  assert.deepEqual(Object.keys(failures).sort(), [`${ORIGIN}/assets/wrong.png`, 'https://cdn.example/b.jpg']);
+  assert.deepEqual(Object.keys(failures).sort(), [`${ORIGIN}/assets/wrong.png`, 'https://cdn.example/huge.webm']);
   assert.equal(failures[`${ORIGIN}/assets/wrong.png`].reason, 'Asset response type text/html is not valid for image');
   assert.equal(failures[`${ORIGIN}/assets/wrong.png`].contentType, 'text/html');
-  assert.equal(failures['https://cdn.example/b.jpg'].reason, 'Loaded resource fetch failed: No resource with given URL found; page fetch failed: cua fetches page assets only from the page\'s own origin');
-  assert.equal(failures['https://cdn.example/b.jpg'].contentType, null);
-  assert.deepEqual({...result.summary, elapsedMs: typeof result.summary.elapsedMs}, {downloadedCount: 4, elapsedMs: 'number', failedCount: 2, requestedCount: 6});
+  assert.deepEqual(failures['https://cdn.example/huge.webm'], {contentType: null, id: assetId('https://cdn.example/huge.webm'), name: 'huge.webm', reason: 'Asset exceeds the 50 MiB limit', url: 'https://cdn.example/huge.webm'});
+  assert.deepEqual({...result.summary, elapsedMs: typeof result.summary.elapsedMs}, {downloadedCount: 5, elapsedMs: 'number', failedCount: 2, requestedCount: 7});
   assert.equal(result.manifestPath, `${dir}/manifest.json`);
   assert.deepEqual(JSON.parse(readFileSync(result.manifestPath, 'utf8')), {assets: result.assets, failures: result.failures});
-  assert.deepEqual(readdirSync(dir).length, 5, 'four assets and the manifest');
+  assert.deepEqual(readdirSync(dir).length, 6, 'five assets and the manifest');
 });
 
 test('bundle() with kinds or asset ids takes only those; an inline SVG counts as an image', async t => {
@@ -187,4 +192,63 @@ test('bundle() with kinds or asset ids takes only those; an inline SVG counts as
   const svg = await run({type: 'tab_page_assets_bundle', inventoryId: id, assetIds: [assetId(`0:${SVG}`)]});
   assert.deepEqual(svg.assets.map(a => a.kind), ['image']);
   assert.deepEqual(svg.summary.requestedCount, 1);
+});
+
+// --- the byte bounds on this side (Decision Log 2026-10-14, "M3 task 1 review, controller") --------------------------------
+
+// PageAssets in-process over a controller double: `cached` url -> base64 Chrome holds; `fetched` url -> base64 the page
+// hands back. Returns the bundle of every asset given ({url, kind}).
+async function bundleInProcess({assets, cached = {}, fetched = {}, limits}) {
+  const tmp = mkdtempSync(join(BASE, 'cua-assets-'));
+  made.push(tmp);
+  process.env.TMPDIR = tmp;
+  const evaluated = [];
+  const cdp = {
+    async call(tabId, method, params) {
+      switch (method) {
+        case 'Page.getFrameTree': return {frameTree: {frame: {id: 'F1'}}};
+        case 'Page.getResourceContent':
+          if (cached[params.url] == null) throw new Error('No resource with given URL found');
+          return {content: cached[params.url], base64Encoded: true};
+        case 'Page.getResourceTree': return {frameTree: {frame: {id: 'F1'}, resources: Object.keys(cached).map(url => ({url, mimeType: 'image/png'}))}};
+        default: return {};
+      }
+    },
+    async evaluateJavascript(tabId, expression) {
+      const url = Object.keys(fetched).find(u => expression.includes(JSON.stringify(u).slice(1, -1)));
+      evaluated.push(url);
+      return {base64: fetched[url], contentType: 'image/png'};
+    },
+  };
+  const pageAssets = new PageAssets(cdp, LOCAL_FILESYSTEM, limits);
+  const listed = assets.map(({url, kind = 'image'}) => ({id: assetId(url), kind, name: url.split('/').pop(), sources: [], url}));
+  const inventoryId = pageAssets.createInventory({assets: listed, documentUrl: PAGE, inlineSvgs: [], tabId: 1});
+  const result = await pageAssets.bundle({inventoryId, documentUrl: PAGE, tabId: 1});
+  return {result, evaluated, tmp};
+}
+
+test('an asset Chrome or the page hands back larger than 50 MiB fails before it is decoded, and is not fetched again', async () => {
+  const over = Buffer.alloc(MAX_FILE_BYTES + 1, 1).toString('base64');
+  const {result, evaluated} = await bundleInProcess({
+    assets: [{url: `${ORIGIN}/cached.png`}, {url: `${ORIGIN}/fetched.png`}, {url: `${ORIGIN}/small.png`}],
+    cached: {[`${ORIGIN}/cached.png`]: over}, fetched: {[`${ORIGIN}/fetched.png`]: over, [`${ORIGIN}/small.png`]: 'UE5H'},
+  });
+  assert.deepEqual(result.failures.map(f => [f.name, f.reason]).sort(), [['cached.png', 'Asset exceeds the 50 MiB limit'], ['fetched.png', 'Asset exceeds the 50 MiB limit']]);
+  assert.deepEqual(result.assets.map(a => a.name), ['small.png']);
+  assert.ok(!evaluated.includes(`${ORIGIN}/cached.png`), 'an oversized cached copy is not fetched again');
+  assert.deepEqual(readdirSync(result.directoryPath).sort(), [`${assetId(`${ORIGIN}/small.png`)}.png`, 'manifest.json']);
+});
+
+test('per asset the bound is inclusive; past the bundle\'s total the next asset fails with the bundle sentence', async () => {
+  const bytes = n => Buffer.alloc(n, 2).toString('base64');
+  const limits = {maxAssetBytes: 10, maxBundleBytes: 25};
+  const atBounds = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}],
+    cached: {[`${ORIGIN}/a.png`]: bytes(10), [`${ORIGIN}/b.png`]: bytes(10), [`${ORIGIN}/c.png`]: bytes(5)}});
+  assert.deepEqual({assets: atBounds.result.assets.length, failures: atBounds.result.failures}, {assets: 3, failures: []}, '10 + 10 + 5 = the bundle bound');
+  const past = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}, {url: `${ORIGIN}/d.png`}, {url: `${ORIGIN}/e.png`}],
+    cached: {[`${ORIGIN}/a.png`]: bytes(10), [`${ORIGIN}/b.png`]: bytes(10), [`${ORIGIN}/c.png`]: bytes(5), [`${ORIGIN}/d.png`]: bytes(1), [`${ORIGIN}/e.png`]: bytes(11)}});
+  const reasons = past.result.failures.map(f => f.reason).sort();
+  assert.deepEqual(reasons, ['Asset bundle exceeds the 200 MiB limit', 'Asset exceeds the 50 MiB limit']);
+  const written = past.result.assets.reduce((sum, a) => sum + readFileSync(a.path).length, 0);
+  assert.ok(written <= 25 && written >= 21, `never more than the bundle bound written (${written})`);
 });

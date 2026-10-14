@@ -7,6 +7,9 @@ import {fileURLToPath} from 'node:url';
 const archive = new URL('../../../docs/evidence/2026-10-05-browser-route-benchmark/fixture/', import.meta.url);
 const html = (body,title="Browser parity fixture") => `<!doctype html><meta charset="utf-8"><title>${title}</title>${body}`;
 const record = `fetch('/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify`;
+// The cross-origin asset of /page-assets.html, served by the second listener (another port, so another origin): the
+// page fetches it once with its credentials, so it is in the page's resource timing but not in Chrome's resource tree.
+export const crossAsset = Buffer.from('cua parity cross-origin asset\n');
 export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
   let state = {counter:0,events:[]};
   const pages = {
@@ -21,6 +24,8 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
     'popup': '<button id="popup" onclick="window.open(\'/counter.html\')">Open popup</button>',
     'slow': `<main id="target"></main><script>${eventScript}setTimeout(()=>{document.querySelector('#target').innerHTML='<button id="late">Late element</button>';document.querySelector('#late').onclick=()=>record({late:true});},8000)</script>`,
     'strict': '<button class="duplicate">Same</button><button class="duplicate">Same</button>',
+    // ASSET_ORIGIN is the second listener's origin, filled in per request.
+    'page-assets': `<p id="status">loading</p><script>fetch('ASSET_ORIGIN/cross-asset.png',{credentials:'include',cache:'no-store'}).then(r=>r.arrayBuffer()).then(b=>{const s=document.querySelector('#status');s.textContent='loaded '+b.byteLength;s.dataset.loaded='yes';})</script>`,
     'counter': `<button id="post" onclick="fetch('/counter',{method:'POST'})">Post once</button><button id="navigate" onclick="fetch('/counter',{method:'POST'}).then(()=>location.href='/counter.html?navigated=1')">Post and navigate</button><div id="value">Counter fixture</div>`,
   };
   const server = createServer(async (req,res) => {
@@ -69,11 +74,28 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
       let page = pages[name];
       // A different site, not merely a different port, forces the frame out of process under site isolation.
       if(name === 'oopif' || name === 'oopif-input') page = page.replace('/frame.html',`http://localhost:${server.address().port}/frame.html`);
+      if(name === 'page-assets') page = page.replace('ASSET_ORIGIN',`http://${host}:${assetServer.address().port}`);
       return send(200,html(page),'text/html; charset=utf-8');
     } catch { send(400,{error:'invalid request'}); }
   });
+  // The second listener: one cross-origin asset, readable by the fixture's pages with credentials (CORS), each request
+  // recorded in the shared state.
+  const assetServer = createServer((req,res) => {
+    const url = new URL(req.url,'http://assets');
+    if (req.method !== 'GET' || url.pathname !== '/cross-asset.png') {res.writeHead(404,{'content-type':'application/json'});return res.end('{"error":"not found"}');}
+    state.events.push({asset:'cross'});
+    res.writeHead(200,{'content-type':'image/png','cache-control':'no-store','access-control-allow-origin':req.headers.origin ?? '*','access-control-allow-credentials':'true','vary':'Origin'});
+    res.end(crossAsset);
+  });
   await new Promise((resolve,reject) => {server.once('error',reject);server.listen(port,host,resolve);});
-  return {server,url:`http://${host}:${server.address().port}`,close:() => new Promise(resolve => {server.close(resolve);server.closeAllConnections();})};
+  try {
+    await new Promise((resolve,reject) => {assetServer.once('error',reject);assetServer.listen(0,host,resolve);});
+  } catch (error) {
+    await new Promise(resolve => server.close(resolve));
+    throw error;
+  }
+  const closeOne = listener => new Promise(resolve => {listener.close(resolve);listener.closeAllConnections();});
+  return {server,url:`http://${host}:${server.address().port}`,assetURL:`http://${host}:${assetServer.address().port}`,close:() => Promise.all([closeOne(server),closeOne(assetServer)]).then(() => {})};
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const portIndex = process.argv.indexOf('--port');

@@ -10,8 +10,12 @@
 // subtitles are on (www.youtube.com/api/timedtext, as JSON), the subtitles then put back as they were. Each page call is
 // the controller's evaluate, bounded by the host's per-call budget as the vendor's are. tab_content_export (the in-app
 // browser's page export, extension-disabled) goes to the backend as the command came, as the vendor sends it, and cua's
-// host refuses it in its own words. Dropped: nothing; neither feature has telemetry or a policy check in the vendor.
+// host refuses it in its own words. Changed (cua's own bounds, byte-bounds.mjs): an exported document is at most 50 MiB,
+// bounded while the page reads it and again on this side before it is decoded; the title in its file name is cut to 200
+// UTF-8 bytes so the name stays under the filesystem's 255. Dropped: nothing; neither feature has telemetry or a policy
+// check in the vendor.
 import {randomUUID} from 'node:crypto';
+import {EXPORT_TOO_LARGE, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from './byte-bounds.mjs';
 import {tabIdOf} from './tabs.mjs';
 
 const EXPORT_GSUITE = 'tab_content_export_gsuite';                                                                   // N1
@@ -71,16 +75,33 @@ export function exportFileName(title, fallback = 'ExportedContent') {
   return name.length === 0 ? fallback : name;
 }
 
+const TITLE_BYTES = 200;
+
+// `text` cut to at most `maxBytes` of UTF-8 on a character boundary.
+export function truncateUtf8(text, maxBytes) {
+  if (Buffer.byteLength(text) <= maxBytes) return text;
+  let bytes = 0;
+  let end = 0;
+  for (const char of text) {
+    const size = Buffer.byteLength(char);
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    end += char.length;
+  }
+  return text.slice(0, end);
+}
+
 // Markdown without the reference definitions of inline data images Docs appends (xf).
 export function withoutInlineDataImages(markdown) {
   return markdown.replace(/^\s*\[[^\]]+\]:\s*<data:[^>]+>\s*\n?/gm, '').trim();
 }
 
-// In the page: one GET of the export URL, the body as base64 (qY). Serialised into the page with toString.
-async function fetchExportInPage({exportUrl}) {
+// In the page: one GET of the export URL, the body (read within `maxBytes` by `readBody`) as base64 (qY). Serialised
+// into the page with toString.
+async function fetchExportInPage({exportUrl, maxBytes, tooLarge}, readBody) {
   const response = await fetch(exportUrl, {method: 'GET'});
   if (!response.ok) throw new Error('GSuite export request failed with HTTP ' + response.status);
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const bytes = await readBody(response, maxBytes, tooLarge);
   const chunk = 32768;
   let binary = '';
   for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
@@ -88,8 +109,10 @@ async function fetchExportInPage({exportUrl}) {
 }
 
 async function fetchExport(session, tabId, exportUrl) {                                                               // WY, jY
-  const result = await session.cdp.evaluateJavascript(tabId, `(${fetchExportInPage.toString()})(${JSON.stringify({exportUrl})})`, {awaitPromise: true});
+  const args = JSON.stringify({exportUrl, maxBytes: MAX_FILE_BYTES, tooLarge: EXPORT_TOO_LARGE});
+  const result = await session.cdp.evaluateJavascript(tabId, `(${fetchExportInPage.toString()})(${args},${readBoundedBodyInPage.toString()})`, {awaitPromise: true});
   if (result?.base64 == null) throw new Error('Unable to export GSuite content for this tab');
+  if (typeof result.base64 !== 'string' || decodedLength(result.base64) > MAX_FILE_BYTES) throw new Error(EXPORT_TOO_LARGE);
   return result;
 }
 
@@ -319,7 +342,8 @@ export const EXPORT_HANDLERS = {
     if (doc == null) throw new Error('Tab is not a Google Workspace document');
     if (!FORMATS_BY_DOC_TYPE[doc.docType].has(format)) throw new Error('GSuite export type is not supported for this tab');
     const exported = await fetchExport(session, tabId, googleExportUrl(doc, format));
-    const path = `${await exportsDirectory(session.filesystem)}/${exportFileName(tab.title)}-${randomUUID()}.${format}`;   // zY
+    const name = truncateUtf8(exportFileName(tab.title), TITLE_BYTES).trimEnd() || 'ExportedContent';
+    const path = `${await exportsDirectory(session.filesystem)}/${name}-${randomUUID()}.${format}`;                 // zY
     const bytes = exportedBytes(exported, format);
     if (bytes.length === 0) throw new Error('Unable to export GSuite content for this tab');
     try {

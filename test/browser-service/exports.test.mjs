@@ -5,11 +5,13 @@
 // directory's browser-use/exports. tab_content_export goes to the backend as the vendor's does, and cua's host refuses it.
 import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import {COMMAND_HANDLERS} from '../../src/browser-service/index.mjs';
-import {googleWorkspaceDocument, googleExportUrl, youtubeVideoId} from '../../src/browser-service/exports.mjs';
+import {MAX_FILE_BYTES} from '../../src/browser-service/byte-bounds.mjs';
+import {EXPORT_HANDLERS, googleWorkspaceDocument, googleExportUrl, youtubeVideoId} from '../../src/browser-service/exports.mjs';
+import {LOCAL_FILESYSTEM} from '../../src/browser-service/filesystem.mjs';
 import {evaluateInPage, pageResponse} from './support/page-vm.mjs';
 import {execute, readyBrowser, rejection, scriptedPages, serviceOnHost} from './support/service-on-host.mjs';
 
@@ -210,4 +212,51 @@ test('a tab that moved to another video while its captions were read is not expo
 test('tab_content_export goes to the backend as it came, and cua\'s host refuses it in its words', async t => {
   const {run} = await exportTab(t, {url: 'https://example.com/'});
   assert.equal((await rejection(run({type: 'tab_content_export'}))).message, 'cua does not support command "tab_content_export".');
+});
+
+// --- the byte bound and the file name's length (Decision Log 2026-10-14, "M3 task 1 review, controller") -----------------
+
+test('an export the page declares larger than 50 MiB is refused in the page before its body is read; nothing is written', async t => {
+  let read = false;
+  const big = {...pageResponse(''), headers: {get: name => (name === 'content-length' ? String(MAX_FILE_BYTES + 1) : null)}, arrayBuffer: async () => { read = true; return new ArrayBuffer(0); }};
+  const {run, tmp} = await exportTab(t, {url: 'https://docs.google.com/document/d/DOC1/edit', page: () => ({fetch: async () => big})});
+  assert.match((await rejection(run({type: 'tab_content_export_gsuite', format: 'pdf'}))).message, /Exported content exceeds the 50 MiB limit$/);
+  assert.equal(read, false);
+  assert.deepEqual(exportsIn(tmp), []);
+});
+
+// The handler in-process over a page double: what the page hands back is bounded on this side too (the page controls
+// its own globals), at exactly 50 MiB written, one byte more refused before it is decoded.
+async function exportInProcess(t, base64) {
+  const tmp = scratchTmp();
+  const session = {
+    filesystem: LOCAL_FILESYSTEM,
+    tabs: {get: async () => ({id: 7, url: 'https://docs.google.com/document/d/DOC1/edit', title: 'Big'})},
+    cdp: {evaluateJavascript: async () => ({base64})},
+  };
+  return {tmp, run: () => EXPORT_HANDLERS.tab_content_export_gsuite({tab_id: '7', format: 'pdf'}, session)};
+}
+
+test('the trusted side writes an export of exactly 50 MiB and refuses one byte more before decoding it', async t => {
+  const exact = await exportInProcess(t, Buffer.alloc(MAX_FILE_BYTES, 1).toString('base64'));
+  const {path} = await exact.run();
+  assert.equal(statSync(path).size, MAX_FILE_BYTES);
+  rmSync(path);
+  const over = await exportInProcess(t, Buffer.alloc(MAX_FILE_BYTES + 1, 1).toString('base64'));
+  await assert.rejects(over.run(), {message: 'Exported content exceeds the 50 MiB limit'});
+  assert.deepEqual(exportsIn(over.tmp), []);
+});
+
+test('a long title is cut by UTF-8 bytes on a character boundary, so the file name stays under 255 bytes', async t => {
+  for (const title of ['x'.repeat(300), '한'.repeat(300), `${'a'.repeat(199)}😀${'b'.repeat(100)}`]) {
+    const {run} = await exportTab(t, {url: 'https://docs.google.com/document/d/DOC1/edit', title, page: () => ({fetch: async () => pageResponse('%PDF')})});
+    const {path} = await run({type: 'tab_content_export_gsuite', format: 'docx'});
+    const base = basename(path);
+    assert.ok(Buffer.byteLength(base) < 255, `${Buffer.byteLength(base)} bytes`);
+    assert.match(base, /-[0-9a-f-]{36}\.docx$/);
+    const name = base.replace(/-[0-9a-f-]{36}\.docx$/, '');
+    assert.ok(title.startsWith(name) && name.length > 0, 'a prefix of the title');
+    assert.ok(!name.includes('�') && Buffer.byteLength(name) <= 200, 'no split character');
+    assert.equal(readFileSync(path, 'utf8'), '%PDF');
+  }
 });

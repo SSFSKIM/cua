@@ -1,0 +1,33 @@
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/concurrent-fill ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/doubleclick ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/locators ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/overlay ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/slow-budget ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/strict-error ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case actions/wait-for ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case input/coordinates ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case input/dom ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case input/long-type ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case input/queued-shortcuts ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case input/rich-text ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case screenshot/clip ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case screenshot/modes ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case waits/networkidle ok
+attested: cua (# Selected Browser) at af759c7d060ddbf9e5f63d11f050cebb530d4ba9
+case waits/page ok
+EXIT 0

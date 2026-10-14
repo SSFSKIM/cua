@@ -79,3 +79,76 @@ diff is therefore scoped to the M1c cases plus a cua regression run of the M1a/M
 run.
 
 After the runs: no parity process on the mini, no trace activation, the parity clone clean at 2638024.
+
+--- 2026-10-14: the M1c whole-branch review fixes, re-run live ---
+
+Code under test: 2f1fead (the fixes), then af759c7 (actions/concurrent-fill's two-service oracle; service code
+unchanged). Profile ssfs; the host is the resident one, so host traces are empty. Each run used a fresh ssh connection
+per serve (the harness's plain BatchMode ssh, no multiplexing). Tailscale: the mini relayed (DERP lax) at the
+first prepare, direct by the cua run. No run aborted.
+
+New and changed cases: actions/overlay (new: a covered button's click lands on the overlay on both services, the
+vendor having no in-document hit test), actions/concurrent-fill (new: two fills in one cell), screenshot/modes (now a
+2,400 px page; the full-page JPEG must be at least 2,400 px high and taller than the viewport's).
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit 2f1fead71277c2c82c4e20f19fc9de28e79eea14 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out vendor-m1c-2
+  16 cases; all ok but actions/concurrent-fill, whose first oracle expected each value in its own field on both services:
+  on the vendor the fills crossed (the race the review found is the vendor's own). The case was given a two-service
+  oracle and an expected-differences entry (af759c7), then re-run alone on the vendor:
+$ node scripts/browser-parity.mjs prepare --device mini --commit af759c7d060ddbf9e5f63d11f050cebb530d4ba9 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'actions/concurrent-fill.mjs' --out vendor-m1c-3
+  case actions/concurrent-fill ok    (value ["","onetwo"]: both pastes in the field focused last)
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out cua-m1c-2
+  16 cases, all ok (actions/concurrent-fill value ["one","two"]); exit 0
+
+The diffs:
+$ node scripts/browser-parity.mjs diff vendor-m1c-1 cua-m1c-2 --scenarios 'actions/doubleclick.mjs,actions/locators.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/clip.mjs,waits/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (13 cases, 29 cells, 1 expected; the unchanged cases against the earlier vendor baseline)
+$ node scripts/browser-parity.mjs diff vendor-m1c-2 cua-m1c-2 --scenarios 'actions/doubleclick.mjs,actions/locators.mjs,actions/overlay.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (15 cases, 32 cells, 1 expected)
+$ node scripts/browser-parity.mjs diff vendor-m1c-3 cua-m1c-2 --scenarios 'actions/concurrent-fill.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (1 cases, 1 cells, 1 expected)
+Expected differences accepted: actions/slow-budget late (the 120 s clamp), actions/concurrent-fill both (the fill race).
+
+screenshot/modes on the tall page: vendor viewport 2560x1181, full page 2560x2451 (the image sizes the comparator
+records); cua the same sizes, hashes within tolerance.
+
+Per-cell ms (diagnostic, not judged), vendor (vendor-m1c-2, concurrent-fill from vendor-m1c-3) then cua (cua-m1c-2):
+  actions/concurrent-fill both                 721     602
+  actions/doubleclick double                   618     374
+  actions/locators fill                        252     112
+  actions/locators press                       548     310
+  actions/locators select                      206     139
+  actions/locators check                       574     309
+  actions/locators click                       442     302
+  actions/overlay click                        528     342
+  actions/slow-budget late                    5242    8533
+  actions/strict-error strict                  101     205
+  actions/strict-error usable                   30      79
+  actions/wait-for visible                    1067     850
+  input/coordinates type                       546     309
+  input/coordinates end-key                    316      44
+  input/coordinates double                     432     283
+  input/coordinates drag                       327     207
+  input/coordinates scroll                     326     196
+  input/dom nodes                             7768     167
+  input/dom type                               543     404
+  input/dom end-key                            233     100
+  input/dom double                             506     296
+  input/dom scroll                             446     206
+  input/long-type long                         848     510
+  input/queued-shortcuts copy                  241     100
+  input/queued-shortcuts queued                301     206
+  input/rich-text markdown                     849     341
+  screenshot/clip clip                         113     185
+  screenshot/modes viewport                    229    5992
+  screenshot/modes full                        231     341
+  waits/networkidle idle                      2272    2049
+  waits/page url                               934     922
+  waits/page load                             1402    1253
+  waits/page delay                             407     305
+One outlier: cua screenshot/modes viewport 5,992 ms in cua-m1c-2; two re-runs of that case alone gave 105 and 216 ms
+(viewport) and 138 and 117 ms (full), so it did not repeat.
+
+Cleanup after the runs, on the mini: parity fixture processes 0, parity serve processes 0, trace activation absent.

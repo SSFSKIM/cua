@@ -1964,7 +1964,7 @@ export const API_MANIFEST = {
       ]
     },
     "LocatorDownloadMediaOptions": {
-      "text": "type LocatorDownloadMediaOptions = {\n  timeoutMs?: number; // Download timeout in milliseconds; defaults to 120000, excluding permission prompts.\n};",
+      "text": "type LocatorDownloadMediaOptions = {\n  timeoutMs?: number; // Download timeout in milliseconds; defaults to 120000.\n};",
       "references": []
     },
     "LocatorEvaluateFunction": {

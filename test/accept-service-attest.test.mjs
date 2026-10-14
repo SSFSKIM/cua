@@ -8,16 +8,16 @@ import {DOCUMENTATION_CELL, serviceAttestation} from '../scripts/accept/service-
 const vendorDoc = '# Selected Browser\n\n- Name: Chrome\n';
 const cuaDoc = '# Selected Browser\n\n- Name: Chrome\n- Service: cua browser service 0.1.0\n';
 
-test('the cua selection passes only when cua\'s marker is in the documentation', () => {
-  assert.deepEqual(serviceAttestation(cuaDoc, {CUA_BROWSER_SERVICE: 'cua'}), {ok: true, detail: {requested: 'cua', served: 'cua browser service 0.1.0'}});
-  assert.deepEqual(serviceAttestation(vendorDoc, {CUA_BROWSER_SERVICE: 'cua'}), {ok: false, detail: {requested: 'cua', served: 'vendor'}});
+test('the cua selection, named or by default, passes only when cua\'s marker is in the documentation', () => {
+  for (const env of [{CUA_BROWSER_SERVICE: 'cua'}, {}, {CUA_BROWSER_SERVICE: ''}]) {
+    assert.deepEqual(serviceAttestation(cuaDoc, env), {ok: true, detail: {requested: 'cua', served: 'cua browser service 0.1.0'}});
+    assert.deepEqual(serviceAttestation(vendorDoc, env), {ok: false, detail: {requested: 'cua', served: 'vendor'}});
+  }
 });
 
-test('the vendor selection, named or by default, passes only without the marker', () => {
-  for (const env of [{CUA_BROWSER_SERVICE: 'vendor'}, {}, {CUA_BROWSER_SERVICE: ''}]) {
-    assert.deepEqual(serviceAttestation(vendorDoc, env), {ok: true, detail: {requested: 'vendor', served: 'vendor'}});
-    assert.equal(serviceAttestation(cuaDoc, env).ok, false);
-  }
+test('the vendor selection passes only without the marker', () => {
+  assert.deepEqual(serviceAttestation(vendorDoc, {CUA_BROWSER_SERVICE: 'vendor'}), {ok: true, detail: {requested: 'vendor', served: 'vendor'}});
+  assert.equal(serviceAttestation(cuaDoc, {CUA_BROWSER_SERVICE: 'vendor'}).ok, false);
 });
 
 test('text without the selected-browser header attests nothing', () => {

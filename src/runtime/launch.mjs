@@ -18,7 +18,8 @@
 //                                            `computer,browser`, from the caller's `surfaces`
 //   NODE_REPL_NODE_PATH, NODE_REPL_NODE_MODULE_DIRS    relocated vendor node and its module tree
 //   NODE_REPL_TRUSTED_CODE_PATHS             the vendor module tree and, with services registered, each service's
-//                                            directory and the owned modules services import (src/secrets). Never
+//                                            directory and the owned modules services import (src/secrets), and under
+//                                            the cua browser service src/browser-service (below). Never
 //                                            CODEX_HOME or run/: the runtime writes there, and the trusted worker
 //                                            imports anything under a trusted path
 //   NODE_REPL_TRUSTED_SERVICES               only when services are registered (`cua serve` registers SKY_SERVICE for
@@ -35,11 +36,12 @@
 //   CUA_SKY_VENDOR_SERVICE                   computer surface: vendor sky service module, for the trusted wrapper
 //   CUA_BROWSER_VENDOR_SERVICE               browser surface: vendor @oai/browser-desktop service module, for the
 //                                            trusted browser wrapper (src/services/browser.mjs) to delegate to
-//   CUA_BROWSER_SERVICE                      browser surface, when the caller's environment sets it: which browser
-//                                            service the wrapper delegates to, `vendor` (the default when unset) or
-//                                            `cua` (src/browser-service/, whose real directory is then added to
-//                                            NODE_REPL_TRUSTED_CODE_PATHS, and nothing wider); any other value is
-//                                            refused
+//   CUA_BROWSER_SERVICE                      browser surface: which browser service the wrapper delegates to, always
+//                                            written out: `cua` (the default when the caller's environment leaves it
+//                                            unset or empty; src/browser-service/, whose real directory is then added
+//                                            to NODE_REPL_TRUSTED_CODE_PATHS, and nothing wider) or `vendor` (the
+//                                            pinned vendor module, kept one release for rollback and removed by #116);
+//                                            any other value is refused
 //   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the vendor service considers Chrome backends only. Its
 //                                            network and security behaviour is the vendor default (no
 //                                            BROWSER_USE_DISABLE_AMBIENT_NETWORK or BROWSER_USE_SECURITY_MODE)
@@ -92,10 +94,11 @@ const ownedPath = relative => realpathSync(fileURLToPath(new URL(relative, impor
 export const SKY_SERVICE = ownedPath('../services/sky.mjs');
 export const BROWSER_SERVICE = ownedPath('../services/browser.mjs');
 export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
-// cua's own browser service (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md): trusted only when the
-// launch selects it.
+// cua's own browser service (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md): the default selection,
+// trusted only when the launch selects it.
 export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
-const BROWSER_SERVICES = ['vendor', 'cua'];
+const BROWSER_SERVICES = ['cua', 'vendor'];
+export const DEFAULT_BROWSER_SERVICE = 'cua';
 
 // `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
 // CUA_BROWSER_BACKENDS configured any.
@@ -137,7 +140,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (enabled.includes('computer')) Object.assign(env, linux ? {OAI_SKY_LINUX_BIN: p.skyLinuxBin} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp}, {CUA_SKY_VENDOR_SERVICE: p.skyVendorService});
   if (enabled.includes('browser')) {
     Object.assign(env, {CUA_BROWSER_VENDOR_SERVICE: p.browserVendorService, BROWSER_USE_AVAILABLE_BACKENDS: 'chrome'});
-    if (browserService) env.CUA_BROWSER_SERVICE = browserService;
+    env.CUA_BROWSER_SERVICE = browserService;
     const paths = launchBackendPaths(home, {clientHosts: browserBackends?.hostPaths ?? null});
     if (paths) env.BROWSER_USE_BACKEND_PATHS = paths.join(':');
     if (browserBackends) {
@@ -152,10 +155,9 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }
 
-// The browser service the caller selected: null when unset or empty (the wrapper's default, the vendor), else exactly
-// `vendor` or `cua`.
+// The browser service the caller selected: cua's own when unset or empty, else exactly `cua` or `vendor`.
 function browserServiceSelection(value) {
-  if (value === undefined || value === '') return null;
+  if (value === undefined || value === '') return DEFAULT_BROWSER_SERVICE;
   if (!BROWSER_SERVICES.includes(value)) fail('invalid_browser_service', `CUA_BROWSER_SERVICE must be ${BROWSER_SERVICES.join(' or ')}`);
   return value;
 }

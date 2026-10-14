@@ -45,7 +45,9 @@ client's `/secret` field themselves.
    one (`relay/README.md`, Hosting), merge this device's line in (replacing one with the same device id), send that.
 5. **The agent.** `cua agent install`: a launchd job in the GUI session on macOS, a systemd user unit on Linux (there,
    `sudo loginctl enable-linger "$USER"` once so it runs from boot, and `--display`/`--xauthority` when the installing
-   shell has no X session). Run it again after node moves (a Homebrew or nvm upgrade).
+   shell has no X session). Run it again after node moves (a Homebrew or nvm upgrade). The job's environment is fixed
+   at install: the browser service is cua's own unless `CUA_BROWSER_SERVICE=vendor` was set for `install` (OpenAI's,
+   kept one release as a rollback), so install again to switch.
 6. **Check.** `cua doctor --json`: the applicable `agent.*` rows (`installed`, `running`, `enrolled`, `console`, `relay`) must pass.
    `agent.relay` reads the agent's recorded link state, not the network; a failing relay is not a stopped agent.
    On macOS the first drive asks for Accessibility and Screen Recording at the screen, so someone must be there once.
@@ -73,7 +75,10 @@ server: no registration per device, no reconnect.
    command prints the credential; never read the config or the store yourself.
 3. **Drive** with the plugin's tools (`mcp__plugin_cua_cua_repl__*`): `devices_list` shows each device's status and
    the current target; `devices_use <name>` switches every tool to it and returns its host notes and its `js` and
-   `profiles_list` descriptions (its surface rules), which then apply.
+   `profiles_list` descriptions (its surface rules), which then apply. They follow that device's checkout and browser
+   service: with cua's own, a locator action, wait or `evaluate` takes its `timeoutMs` up to 120 s and `evaluate` acts
+   on the page, sent once; a device on an older checkout or on the vendor service caps them at 3 s and evaluates
+   read-only, and says so.
    Work as usual, `end_task` when done (it also frees the device for other clients), then `devices_use local` to
    drive this machine again; a switch while a task is open is refused `task_open`.
 

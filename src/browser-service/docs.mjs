@@ -3,11 +3,12 @@
 // check (BS:37773-37798); k_ and D_ (BS:66044-66068, the two documentation commands); jee (BS:66560-66570, the
 // launch's addendum).
 //
-// The first-use documentation (a first version: the guidance texts are the vendor's for now, docs-content.mjs, and
-// are rewritten for cua in M5). A selected browser's documentation is "# Selected Browser" with the browser and the
-// service marker `cua browser service <version>` (the parity harness's attestation checks it), then the guidance
-// documents its backend type and API members call for, the lookup catalogue, its capabilities, the API reference
-// generated from the manifest, and the launch's addendum. A document a command requires (requiredFor) must have been
+// The first-use documentation. A selected browser's documentation is "# Selected Browser" with the browser and the
+// service marker `cua browser service <version>` (the parity harness's and the live runners' attestation checks it),
+// then the guidance documents its backend type and API members call for (docs-content.mjs: the vendor's where its text
+// still holds, and cua's own "cua-browser-service": the Chrome rules, the lifted budgets, evaluate in the page with
+// the no-replay rule, the prompts cua does not make, and the errors as the model sees them), the lookup catalogue, its
+// capabilities, the API reference generated from the manifest, and the launch's addendum. A document a command requires (requiredFor) must have been
 // read, through the browser documentation or by name, before that command runs. Dropped from the vendor: the
 // orbit/cloud renames and GaaS instruction overrides, and the Codex app's confirmation-policy override read from the
 // request meta.
@@ -140,7 +141,7 @@ export function apiReference(manifest, browserType, hidden = new Set()) {
     for (const ref of references) if (!reached.has(ref)) queue.push(ref);
   }
   const lines = ['# API Reference', '', 'Use this as the supported `agent.browsers.*` surface.', '', '```ts', '// Returned by setupBrowserRuntime().', '// browser was selected during bootstrap.',
-    '// timeoutMs on locator, wait and evaluate calls is in milliseconds: 3000 by default, at most 120000; 0 makes one attempt.'];
+    '// timeoutMs on locator, wait and evaluate calls is in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000.'];
   for (const [name, members] of Object.entries(manifest.interfaces)) {
     if (reached.has(name)) lines.push(`interface ${name} {`, ...declarations(name, members, browserType, hidden).map(({text}) => `  ${text}`), '}', '');
   }

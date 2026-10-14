@@ -1,0 +1,5 @@
+{"case":"input/oopif-type","cell":"type","ok":true,"value":{"child":"oopif","parentPaste":false},"ms":901.6687499999998,"trace":[]}
+{"case":"input/oopif-type","assertion":{"ok":true}}
+{"case":"waits/zero-budget","cell":"load","ok":true,"value":"complete","ms":1051.0610830000005,"trace":[]}
+{"case":"waits/zero-budget","cell":"idle","ok":true,"value":"complete","ms":46.44079199999942,"trace":[]}
+{"case":"waits/zero-budget","assertion":{"ok":true}}

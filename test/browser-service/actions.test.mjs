@@ -19,7 +19,8 @@ import {FAKE_INJECTED_SOURCE, el, iframe, pageWorld} from './support/page-world.
 const TAB = 6;
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 
-function setup(elements, {onInput} = {}) {
+// `slow(request)` -> extra ms before the fake page answers a call (a page that takes its time).
+function setup(elements, {onInput, slow} = {}) {
   const {api, browser} = pageWorld();
   browser.tab(TAB, {elements});
   const pastes = [];
@@ -32,7 +33,15 @@ function setup(elements, {onInput} = {}) {
       pastes.push({target: request.target, contextId: params.contextId, args: JSON.parse(params.expression.match(/await pageFunction\((.*)\);\n/)[1])});
       return {result: {type: 'object', value: {ok: true, data: {}}}};
     }
-    const answer = await execute(request, options);
+    browser.dispatchedAt ??= [];
+    browser.dispatchedAt.push({method, at: Date.now()});
+    const extra = slow?.(request) ?? 0;
+    const answering = (async () => {
+      if (extra > 0) await new Promise(resolve => setTimeout(resolve, extra));
+      return await execute(request, options);
+    })();
+    // As the backend does: a call is abandoned when its deadline passes (backend.mjs Backend.request).
+    const answer = options?.deadline ? await options.deadline.race(answering) : await answering;
     if (method.startsWith('Input.')) onInput?.(request.target, params);
     return answer;
   };
@@ -224,6 +233,27 @@ test('two fills started together each prepare and paste in one operation, the pa
   const steps = browser.calls.filter(c => c.method === 'Runtime.evaluate' && !c.params.expression.includes('PlaywrightInjected.InjectedScript')
     && (c.params.expression.includes('const pageFunction') || c.params.expression.includes('needsinput'))).map(c => (c.params.expression.includes('const pageFunction') ? 'paste' : 'prepare'));
   assert.deepEqual(steps, ['prepare', 'paste', 'prepare', 'paste']);
+});
+
+test('a zero-budget shortcut queued behind another focuses within the shortcut\'s own 3 s attempt, not a fresh one', async () => {
+  const field = el('input', {id: 'text', type: 'text', value: 'abc'});
+  // The reviewer's timings: the queue is held 2,850 ms and the page takes 350 ms to answer the focusing.
+  const {browser, run, pastes, session} = setup([field], {slow: request => (request.method === 'Runtime.evaluate'
+    && request.commandParams.expression.includes('to.be.focused') ? 350 : 0)});
+  session.clipboard.write([{entries: [{mime_type: 'text/plain', text: 'clip'}]}], 'test');
+  let release;
+  const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
+  setTimeout(() => release(), 2850);
+  const started = Date.now();
+  const error = await rejection(run('playwright_locator_press', {selector: '#text', value: 'Control+v', timeout_ms: 0}));
+  await busy;
+  const settledAt = Date.now() - started;
+  assert.equal(error.code, 'timeout');
+  assert.ok(settledAt < 3150, `ended with the shortcut's attempt budget (${settledAt} ms)`);
+  const late = browser.dispatchedAt.filter(d => d.at - started > 3050 && d.method !== 'Runtime.releaseObject');
+  assert.deepEqual(late, [], 'nothing dispatched after the attempt budget');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(pastes.length, 0);
 });
 
 test('fill selects the field\'s text and pastes the value over it in the locator\'s world; a value set directly needs no paste', async () => {

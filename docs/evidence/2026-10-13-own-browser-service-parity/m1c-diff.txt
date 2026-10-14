@@ -152,3 +152,24 @@ One outlier: cua screenshot/modes viewport 5,992 ms in cua-m1c-2; two re-runs of
 (viewport) and 138 and 117 ms (full), so it did not repeat.
 
 Cleanup after the runs, on the mini: parity fixture processes 0, parity serve processes 0, trace activation absent.
+
+--- 2026-10-14: the departures in cua's favour, each a case and an expected difference ---
+
+At 84fae86 (corpus only; service code as at 2f1fead). Profile ssfs; fresh ssh per serve; Tailscale relayed at the
+prepare; neither run aborted.
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit 84fae86c2c7119f8ee82b6d04eb9f5c0278b4b9c --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'input/oopif-type.mjs,waits/zero-budget.mjs' --out vendor-m1c-departures
+  case input/oopif-type ok     (type: {"child":"","parentPaste":true}: the vendor's paste reaches the parent page at the
+                                frame element; the child's field stays empty)
+  case waits/zero-budget ok    (load: "Timed out waiting for load in tab N."; idle: "Timed out waiting for networkidle in
+                                tab N.")
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'input/oopif-type.mjs,waits/zero-budget.mjs' --out cua-m1c-departures
+  case input/oopif-type ok     (type: {"child":"oopif","parentPaste":false})
+  case waits/zero-budget ok    (load: "complete"; idle: "complete")
+$ node scripts/browser-parity.mjs diff vendor-m1c-departures cua-m1c-departures --scenarios 'input/oopif-type.mjs,waits/zero-budget.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (2 cases, 3 cells, 3 expected; scenarios input/oopif-type.mjs,waits/zero-budget.mjs)
+Without the allowance file the same diff lists exactly those three cells (input/oopif-type type, waits/zero-budget load
+and idle): 3 differences (2 cases, 3 cells).
+
+Cleanup on the mini after the runs: parity fixture and serve processes 0.

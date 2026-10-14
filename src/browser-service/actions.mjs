@@ -17,7 +17,7 @@
 // Dropped from Pf: the synthetic document-scoped click (MCP-app documents), the in-app browser's input target tokens
 // and box-model frame geometry, telemetry and command timing, the bound selector, the download source policy check.
 import {DOWNLOAD_MS, Deadline, PRESS_SEQUENTIALLY_MS, clamp} from './budgets.mjs';
-import {serviceError} from './errors.mjs';
+import {BrowserServiceError, serviceError} from './errors.mjs';
 import {checkSelectorDeadline} from './injected.mjs';
 import {pointThroughQuad} from './input.mjs';
 import {attemptBudget} from './selectors.mjs';
@@ -367,9 +367,9 @@ async function clickLocator(session, params, clickCount) {
 
 // Focuses the locator's element -> {executionContextId, target} of the world it was focused from. The resolution polls
 // within `deadline` when one is given (a clipboard shortcut's, which already began), else its own caller-sized budget.
-async function focusLocator(session, params, {requireEditable, selectText, deadline, inputTargetToken}) {
+async function focusLocator(session, params, {requireEditable, selectText, deadline, inputTargetToken, retry = true}) {
   const {executionContextId, target} = await session.selectors.evaluateOnSelector(params.selector, tabIdOf(params.tab_id), focusElement,
-    {arg: {requireEditable, selectText, retargetInput: requireEditable || selectText === true, inputTargetToken}, deadline: deadline ?? budgetOf(params)});
+    {arg: {requireEditable, selectText, retargetInput: requireEditable || selectText === true, inputTargetToken}, deadline: deadline ?? budgetOf(params), retry});
   return {executionContextId, target, inputTargetToken};
 }
 
@@ -412,9 +412,18 @@ export const ACTION_HANDLERS = {
     if (typeof params.value !== 'string' || !params.value) throw new Error('playwright_locator_press requires value');
     const tabId = tabIdOf(params.tab_id);
     const deadline = dispatchBudget(params);
-    // Inside a shortcut the focusing resolves within the shortcut's deadline; an explicit zero stays one attempt.
+    // Inside a shortcut the focusing resolves within the shortcut's deadline. An explicit zero stays one attempt, within
+    // the shortcut's own attempt budget (never a fresh one), and fails with the one-attempt sentence.
     const zero = clamp(params.timeout_ms) === 0;
-    const focus = async (forPaste, within) => await focusLocator(session, params, {requireEditable: false, deadline: zero ? new Deadline(0) : within});
+    const focus = async (forPaste, within) => {
+      if (!zero) return await focusLocator(session, params, {requireEditable: false, deadline: within});
+      try {
+        return await focusLocator(session, params, {requireEditable: false, deadline: within, retry: false});
+      } catch (error) {
+        if (error instanceof BrowserServiceError) throw error;
+        throw new BrowserServiceError('timeout', `Timed out after 0ms waiting for selector ${params.selector}: ${messageOf(error)}`, {cause: error});
+      }
+    };
     if (await performClipboardShortcut({commandType: 'playwright_locator_press', deadline, session, keys: params.value, tabId, focusTarget: focus})) return {};
     const focused = await focus();
     await pressKeys(session.cdp, focused.target, params.value, {deadline, platform: session.platform});

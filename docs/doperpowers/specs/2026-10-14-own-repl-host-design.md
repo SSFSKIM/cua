@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Executors must not change device-global configuration. The marked `CUA_NODE` block M1 task 2 added to cua-linux's `~/.bashrc` is removed and restored from its backup. The checksum-verified Node 24.18.0 under `~/.local/share/cua-parity-node` stays as a harness-owned asset. The parity harness passes `CUA_NODE` in its own remote command environment, recorded by `prepare`. The own host's fail-closed departures stand as recorded under M1 task 2: missing sandbox `_meta` defaults to read-only, and a sandboxed call without `CODEX_CLI_PATH` refuses. Any parity case that exercises them gets a scoped expected-differences entry.
+  Rationale: A shell-profile export reaches every cua checkout on the VM, and after M5 it would silently choose the Node for the resident agent.
+  Date/Author: 2026-10-14, dispatching session ruling, recorded by the plan-executor.
 - Decision: M1 task 2 as built:
   - Vendor behaviour was measured by probing the pinned node_repl on the mini, not inferred. That covers result ordering, error sentences, the exact `codex sandbox` argv, the exit diagnostic and the image rules.
   - The own host fails closed where the vendor fails open. A call with no sandbox `_meta` defaults to read-only, and with no `CODEX_CLI_PATH` sandboxed calls refuse.
@@ -636,6 +639,8 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (M5 input, 2026-10-14): the cua-linux VM's system Node is 22.23.3, and its sshd accepts no user environment. Once Linux defaults to the own host at M5, how the resident agent resolves Node becomes a product question: an install-time check plus a `CUA_NODE` setting in the agent's own launcher or job environment, never a shell profile.
+  Evidence: M1 task 2 report; session ruling recorded in the Decision Log the same day.
 - Observation (2026-10-14): the parity fixtures carry `CUA_NODE` through `serve-cells.mjs`, the boundary probe's child serves and the capability lane only when it is already set in the device's ssh environment; the controller Mac's value is deliberately not forwarded (it names a Mac path).
   Evidence: M0 whole-branch fix ad21892 (`test/repl-parity/fixture-launch.mjs`). M1 on the mini needs no override (PATH Node 24.18.0); M4 on cua-linux (Node 22.23.3) must set `CUA_NODE` in the remote command environment.
 - Observation (2026-10-14): on Linux the vendor node_repl fails open when its sandbox launcher fails at runtime. With a harness-owned `CODEX_CLI_PATH` whose `sandbox` exits 73, the vendor host returned `isError:false` and wrote a sentinel outside cwd and TMPDIR (inside the harness-owned directory). On the mini the same injected failure is refused.

@@ -5,6 +5,7 @@
 // objects are stand-ins carrying the platform's Symbol.toStringTag and, like the real ones, prototype getters.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {RESULT_LIMITS, boundResult, projectResult} from '../../src/browser-service/evaluate.mjs';
 
 const project = (value, isProtectedField) => projectResult(value, RESULT_LIMITS, isProtectedField);
@@ -202,4 +203,40 @@ test('a bare attribute is the vendor\'s read-only attribute; a credential field\
   assert.equal(project(attr('VALUE', 'hunter2', field), e => e === field), null);
   assert.deepEqual(project([attr('value', 'kept', plain)], e => e === field), [{name: 'value', nodeName: 'value', nodeValue: 'kept', specified: true, value: 'kept'}]);
   assert.deepEqual(project({nodeType: 2, name: 'plain'}), {nodeType: 2, name: 'plain'}, 'an ordinary object is not taken for an attribute');
+});
+
+// The projection run in a realm of its own (the page's) on what `make` returns there, after `tamper` changed that
+// realm's globals; the intrinsics are captured first, as the evaluate wrapper captures them before the user's script.
+function projectInRealm(tamper, make) {
+  const context = vm.createContext({limits: RESULT_LIMITS});
+  vm.runInContext('globalThis.intrinsics = {defineProperty: Object.defineProperty};', context);
+  vm.runInContext(tamper, context);
+  context.made = vm.runInContext(`(${make})()`, context);
+  return {result: vm.runInContext(`(${projectResult})(made, limits, undefined, intrinsics)`, context), page: context};
+}
+
+test('an iterator is never asked for an item past the limit, even one that would then never return', () => {
+  const {result, page} = projectInRealm('', `() => {
+    globalThis.calls = 0;
+    return {[Symbol.toStringTag]: 'TextTrackList', [Symbol.iterator]() {
+      return {next() { globalThis.calls += 1; if (globalThis.calls > 2000) for (;;) {} return {done: false, value: {kind: 'k'}}; }};
+    }};
+  }`);
+  assert.equal(result.length, 2000);
+  assert.equal(page.calls, 2000);
+});
+
+test('a page setter on Array.prototype cannot keep a collection read going past the limit, nor swallow its items', () => {
+  const {result, page} = projectInRealm(`Object.defineProperty(Array.prototype, 0, {set(v) { globalThis.swallowed = (globalThis.swallowed ?? 0) + 1; }, configurable: true});`, `() => {
+    globalThis.reads = 0;
+    const element = {nodeType: 1, nodeName: 'P', id: 'a', tagName: 'P', textContent: 'p', cloneNode() {}};
+    return new Proxy({[Symbol.toStringTag]: 'NodeList', length: 3000}, {get(target, key) {
+      if (typeof key === 'string' && /^[0-9]+$/.test(key)) { globalThis.reads += 1; return element; }
+      return target[key];
+    }});
+  }`);
+  assert.equal(page.reads, 2000, 'no more reads than the limit');
+  assert.equal(result.length, 2000);
+  assert.deepEqual(JSON.parse(JSON.stringify(result[0])), {id: 'a', tagName: 'P', textContent: 'p'}, 'the first item was written past the page setter');
+  assert.equal(page.swallowed, undefined);
 });

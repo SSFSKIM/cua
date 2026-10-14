@@ -56,8 +56,12 @@ export function checkScript(script) {
 // wrappers' toJSON shapes; the location as {} (the vendor's has no own keys). `isProtectedField(element)` names the
 // fields whose value attribute the attribute list leaves out. An adapter's output holds values, node summaries and
 // further adapted objects only.
-export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}, isProtectedField = () => false) {
+export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}, isProtectedField = () => false,
+  {defineProperty} = {defineProperty: Object.defineProperty}) {
   const seen = new WeakSet();
+  // Writes an own property, past any setter the page put on Array.prototype or Object.prototype; `defineProperty` is
+  // captured before the caller's script ran.
+  const put = (target, key, item) => { defineProperty(target, key, {value: item, writable: true, enumerable: true, configurable: true}); };
   const tagOf = current => {
     try {
       return Object.prototype.toString.call(current).slice(8, -1);
@@ -66,17 +70,23 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     }
   };
   const hasOwn = Object.prototype.hasOwnProperty;
-  // At most maxArrayLength items of a collection, read by index (or by its iterator when it has no length) and never
-  // past the limit; a collection that throws partway gives the items it yielded before.
+  // At most maxArrayLength items of a collection, read by index (or by its iterator when it has no length), counted
+  // apart from the output so nothing is read or asked for past the limit; a collection that throws partway gives the
+  // items it yielded before.
   const bounded = (list, mapItem = item => item) => {
     const output = [];
+    let count = 0;
     try {
       if (typeof list.length === 'number') {
-        for (let index = 0; index < list.length && output.length < maxArrayLength; index += 1) output[output.length] = mapItem(list[index], index);
+        const length = list.length;
+        for (; count < length && count < maxArrayLength; count += 1) put(output, count, mapItem(list[count], count));
       } else {
-        for (const item of list) {
-          if (output.length >= maxArrayLength) break;
-          output[output.length] = mapItem(item, output.length);
+        const iterator = list[Symbol.iterator]();
+        while (count < maxArrayLength) {
+          const step = iterator.next();
+          if (step.done) break;
+          put(output, count, mapItem(step.value, count));
+          count += 1;
         }
       }
     } catch {}
@@ -99,7 +109,7 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     const output = {};
     for (let index = 0; index < Math.min(declaration.length, maxObjectKeys); index += 1) {
       const name = declaration.item(index);
-      output[name] = declaration.getPropertyValue(name);
+      put(output, name, declaration.getPropertyValue(name));
     }
     return output;
   };
@@ -108,8 +118,8 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
   const RULE_TEXTS = ['conditionText', 'href', 'keyText', 'name', 'selectorText'];
   const cssRule = rule => {
     const output = {cssText: rule.cssText, type: rule.type};
-    for (const name of RULE_TEXTS) if (typeof rule[name] === 'string') output[name] = rule[name];
-    if (rule.style != null) output.style = style(rule.style);
+    for (const name of RULE_TEXTS) if (typeof rule[name] === 'string') put(output, name, rule[name]);
+    if (rule.style != null) put(output, 'style', style(rule.style));
     return output;
   };
   const ADAPTERS = {
@@ -131,9 +141,9 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     CSSStyleSheet: sheet => {
       const output = {disabled: sheet.disabled === true, href: sheet.href, media: sheet.media == null ? null : mediaList(sheet.media), title: sheet.title, type: sheet.type};
       try {
-        output.ruleCount = sheet.cssRules.length;
+        put(output, 'ruleCount', sheet.cssRules.length);
       } catch (error) {
-        output.ruleAccessError = error instanceof Error ? error.name || error.message : String(error);
+        put(output, 'ruleAccessError', error instanceof Error ? error.name || error.message : String(error));
       }
       return output;
     },
@@ -176,7 +186,8 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     if (adapter != null) return serialize(adapter(current), depth);
     if (Array.isArray(current)) {
       const items = [];
-      for (let index = 0; index < current.length && index < maxArrayLength; index += 1) items[index] = serialize(current[index], depth + 1);
+      const length = current.length;
+      for (let index = 0; index < length && index < maxArrayLength; index += 1) put(items, index, serialize(current[index], depth + 1));
       return items;
     }
     const output = {};
@@ -185,7 +196,7 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
       if (!hasOwn.call(current, key)) continue;
       if (keys++ >= maxObjectKeys) break;
       const serialized = serialize(current[key], depth + 1);
-      if (serialized !== undefined) output[key] = serialized;
+      if (serialized !== undefined) put(output, key, serialized);
     }
     return output;
   };
@@ -213,12 +224,13 @@ function userFunction(script, binding) {
   return `async function (...__cuaArguments) {
   const __name = (target) => target;
   ${binding}
+  const __cuaIntrinsics = {defineProperty: Object.defineProperty};
   const __cuaValue = await (async function () {
     "use strict";
 ${script}
   }).apply(globalThis, __cuaArguments);
   return (${projectResult.toString()})(__cuaValue, ${JSON.stringify(RESULT_LIMITS)},
-    element => (${isProtectedCredentialField.toString()})(element, ${JSON.stringify(CREDENTIAL_FIELDS)}));
+    element => (${isProtectedCredentialField.toString()})(element, ${JSON.stringify(CREDENTIAL_FIELDS)}), __cuaIntrinsics);
 }`;
 }
 

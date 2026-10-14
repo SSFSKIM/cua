@@ -1,4 +1,5 @@
 import {compareRuns} from '../browser-parity/compare.mjs';
+import {normalizeHostDiagnostic} from './diagnostics.mjs';
 import {isDeepStrictEqual} from 'node:util';
 export function validateAttestations(meta) {
   if(meta.complete!==true)throw new Error('Incomplete parity run');
@@ -38,7 +39,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     if(run.rows.some(r=>ids?.includes(r.case)&&!run.meta.caseIds?.includes(r.case)))differences.push({kind:'cardinality',side,message:'undeclared case'});
   }
   // Keep raw duration values in evidence; omit only this schema-known volatile field from comparison.
-  const semanticRows=rows=>rows.filter(r=>ids?.includes(r.case)).map(r=>{
+  const semanticRows=rows=>rows.filter(r=>ids?.includes(r.case)).map(normalizeHostDiagnostic).map(r=>{
     if(!r.meta||!Object.hasOwn(r.meta,'codex/nodeReplExecutionDurationMs'))return r;
     const meta={...r.meta};delete meta['codex/nodeReplExecutionDurationMs'];return {...r,meta};
   });

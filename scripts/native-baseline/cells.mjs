@@ -5,6 +5,8 @@
 // screen reaches the MCP result except what getApp displays by design (the harness never stores a cell's other output).
 // A measured sample whose target was not the scratch document returns `invalid` (a reason) instead of failing: the
 // harness keeps it out of the statistics and the summary lists it.
+// The envelope, FIRST, NOOP, GET_STATE, LIST_APPS and SCREENSHOT serve every platform; the rest are TextEdit's (macOS,
+// ./macos.mjs). Linux's gedit cells are in ./linux-cells.mjs.
 export const MARKER = 'CUA_NATIVE_BASELINE ';
 export const TEXTEDIT = 'com.apple.TextEdit';
 // Typed into each scratch document: correctly spelled and capitalized, so TextEdit's autocorrection has nothing to change.

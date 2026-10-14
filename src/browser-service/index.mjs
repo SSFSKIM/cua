@@ -21,6 +21,8 @@
 // executeUnhandledCommand fallback for any command without a handler (viewport.mjs registers the backend's
 // capability commands by name).
 import {ACTION_HANDLERS} from './actions.mjs';
+import {ASSET_HANDLERS} from './assets.mjs';
+import {BOT_DETECTION_HANDLERS} from './botdetect.mjs';
 import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {CHOOSER_HANDLERS} from './chooser.mjs';
 import {CLIPBOARD_HANDLERS} from './clipboard.mjs';
@@ -30,6 +32,7 @@ import {DOCUMENTATION_HANDLERS, Documentation, documentationAddendum} from './do
 import {DOWNLOAD_HANDLERS} from './downloads.mjs';
 import {serviceError} from './errors.mjs';
 import {EVALUATE_HANDLERS} from './evaluate.mjs';
+import {EXPORT_HANDLERS} from './exports.mjs';
 import {INPUT_HANDLERS} from './input.mjs';
 import {API_MANIFEST, browserCapabilities, disabledMemberIds} from './manifest.mjs';
 import {NAVIGATION_HANDLERS} from './navigation.mjs';
@@ -38,6 +41,7 @@ import {READ_HANDLERS} from './reads.mjs';
 import {SCREENSHOT_HANDLERS} from './screenshot.mjs';
 import {BrowserSession} from './session.mjs';
 import {AX_HANDLERS, SNAPSHOT_HANDLERS} from './snapshot.mjs';
+import {TAB_CONTEXT_HANDLERS} from './tab-context.mjs';
 import {TAB_HANDLERS} from './tabs.mjs';
 import {VIEWPORT_HANDLERS} from './viewport.mjs';
 import {VISIBLE_DOM_HANDLERS} from './visible-dom.mjs';
@@ -89,7 +93,8 @@ export const COMMAND_HANDLERS = new Map([
   ...Object.entries(DOCUMENTATION_HANDLERS),
   ...Object.entries({...TAB_HANDLERS, ...AX_HANDLERS, ...NAVIGATION_HANDLERS, ...READ_HANDLERS, ...EVALUATE_HANDLERS, ...SNAPSHOT_HANDLERS,
     ...VISIBLE_DOM_HANDLERS, ...ACTION_HANDLERS, ...INPUT_HANDLERS, ...WAIT_HANDLERS, ...SCREENSHOT_HANDLERS, ...DIALOG_HANDLERS,
-    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS, ...CLIPBOARD_HANDLERS, ...DEVLOG_HANDLERS, ...VIEWPORT_HANDLERS, ...RAW_CDP_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
+    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS, ...CLIPBOARD_HANDLERS, ...DEVLOG_HANDLERS, ...VIEWPORT_HANDLERS, ...RAW_CDP_HANDLERS,
+    ...EXPORT_HANDLERS, ...ASSET_HANDLERS, ...BOT_DETECTION_HANDLERS, ...TAB_CONTEXT_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
 ]);
 
 // What one setup made: the backends, the documentation and a session per backend connection.

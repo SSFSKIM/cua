@@ -285,6 +285,7 @@ export class BackendApi {
 
   getUserTabs() { return this.sendSessionRequest('getUserTabs', {}); }
   claimUserTab(tabId) { return this.sendSessionRequest('claimUserTab', {tabId}); }
+  executeTabRead(request) { return this.sendSessionRequest('executeTabRead', request); }
   createTab(preferredWindowId) { return this.sendSessionRequest('createTab', preferredWindowId == null ? {} : {preferredWindowId}); }
   markTab(tabId, status) { return this.sendSessionRequest('markTab', {tabId, status}); }
   nameSession(name) { return this.sendSessionRequest('nameSession', {name}); }

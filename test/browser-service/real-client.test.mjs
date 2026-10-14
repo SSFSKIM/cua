@@ -139,10 +139,20 @@ test('a download and a file chooser through the client: waitForEvent, path() and
   assert.deepEqual(pages.sent.filter(s => s.method === 'DOM.setFileInputFiles').map(s => s.params), [{backendNodeId: 9, files: ['/tmp/upload.txt']}]);
 });
 
-test('a later milestone\'s command and a missing tab reach model code as the service\'s rejections', {skip: !CLIENT && 'vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof'}, async t => {
+// The cells of the corpus' capabilities/export-rejections, m3-members and m3-disabled cases, on a tab that is neither a
+// Google Workspace document nor a YouTube watch page.
+test('the content exports\' refusals, the M3 members and capabilities the extension route lacks, and a missing tab, as model code sees them', {skip: !CLIENT && 'vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof'}, async t => {
   const {browser} = await realClient(t);
   const tab = await browser.tabs.new();
-  assert.equal((await rejectionOf(tab.content.exportYouTubeTranscript())).message, 'Unsupported browser command: tab_content_export_youtube_transcript');
+  assert.equal((await rejectionOf(tab.content.exportGsuite('pdf'))).message, 'Tab is not a Google Workspace document');
+  assert.equal((await rejectionOf(tab.content.exportYouTubeTranscript())).message, 'Tab is not a supported YouTube watch page');
+  assert.equal((await rejectionOf(tab.content.exportGsuite('html'))).message, 'tab_content_export_gsuite requires supported format');
+  assert.deepEqual({exported: tab.content.export, context: browser.user.getTabContext}, {exported: undefined, context: undefined});
+  const capabilities = (await tab.capabilities.list()).map(c => c.id);
+  for (const id of ['pageAssets', 'botDetection']) {
+    assert.ok(!capabilities.includes(id), id);
+    assert.equal((await rejectionOf(tab.capabilities.get(id))).message, `Capability is not available: ${id}`);
+  }
   assert.equal((await rejectionOf(browser.tabs.get('4242'))).message, `Tab not found: 4242. Existing tabs: ${tab.id}||about:blank`);
 });
 

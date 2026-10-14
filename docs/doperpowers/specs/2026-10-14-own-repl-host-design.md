@@ -1,0 +1,560 @@
+# cua's own REPL host and a vendor-compatible cua JS API (#116; child 3 of #114)
+
+## Purpose
+
+The owner and other people installing cua on Macs and Linux should be able to use its computer and browser APIs without the vendor's REPL implementation, with no capability or performance regression. This child replaces the JavaScript
+execution host and model-facing facade, not the native engine or sandbox launcher. The API learned from the first call, the skills, MAWS adapter and remote-device protocol remain compatible. A user sees the change in `cua doctor`'s
+`repl.host` row, then uses the same `cua` calls; the differential harness proves that the selected host actually answered and reports `0 unexpected differences`.
+
+The approved migration is per surface: Linux sessions and browser-only macOS sessions use cua's host after M5; macOS sessions containing `computer` keep the vendor host until #117 replaces the native helper. This is a step toward full
+independence, not a claim that #116 removes every vendor component. `CUA_REPL_HOST=cua|vendor` makes selection explicit. The owner approved this design on 2026-10-14; the sections below record it for execution, not reopen it.
+
+## Progress
+
+- [x] (2026-10-14) Owner approved scope, vendor-shaped ports, document rule, retained sandbox and per-surface migration.
+- [x] (2026-10-14) Research inputs committed at `92b279c`, over main `018f3c6`; recovered-source index and surface inventory read alongside the retained code.
+- [x] (2026-10-14) Living spec authored and self-reviewed for acceptance coverage, interface dependencies and load-bearing declarations.
+- [ ] Independent technical/buildability review by `doperpowers:adversarial-reviewer`; execution has not begun.
+- [ ] M0 — Differential harness, complete inventory, host selector (vendor default), Linux native baseline.
+- [ ] M1 — Kernel and supervisor; raw cell semantics on the mini.
+- [ ] M2 — Trusted worker and privileged API; owned browser service and MAWS on the own host.
+- [ ] M3 — Owned cua API and documentation; complete facade coverage and profiles listing.
+- [ ] M4 — Linux native path, approvals and native baseline comparison.
+- [ ] M5 — Per-surface defaults, final parity/performance/remote proofs, documentation and plugin release.
+
+## Scope, inheritance and evidence
+
+This is child 3, board #116, of independence composite #114. The parent contract is full independence with no regression, preserving the model-facing API; siblings are the browser service #113, sandbox/app-server removal #115, native engine
+#117 and pre-distribution clean-room rewrite #120. The composite is recorded on the board rather than a checked-in parent spec. Code parent pin is main `018f3c6` (merged #113 M5); research pin is `92b279c`. This owner-requested standalone
+living spec lives under `specs/`; it does not edit the shared composite or main checkout.
+
+Authoritative inputs under `docs/doperpowers/research/2026-10-14-own-repl-host/`:
+
+- `surface-inventory.md`, Tables 1–3: included contracts, explicit exclusions and exact document edits. Do not replace it with a shorter guessed inventory.
+- `research-B-node-repl-host.txt`, Questions 1–6: process model, three wires, cell semantics, trust boundary, retained dependencies and consumer seams.
+- `node-repl-embedded-INDEX.md`: nine recovered sources, inner messages, base MCP schemas/descriptions, 23 `NODE_REPL_*` settings, sandbox template and Rust-only gaps.
+- `research-A-js-api.txt`, Q2/Q3/Q4/Q7 (including the explicit-parse addendum): document construction, service delegation and observable client behavior.
+- `07-ordinary-node.txt`, `08-vendor-node.txt`: both direct Node peers connected to the native socket and received `socket closed before response`; vendor Node alone does not solve the peer requirement.
+
+Citations use build **chatgpt-26.928.40906**. `NR:<file>:<line>` means the recovered source at `~/codex-app-src/readable/chatgpt-26.928.40906/node_repl-embedded/`, with its `.provenance.txt` sidecar. `R/cua_node/@oai/cua/...:<line>` means
+the readable package under that same build root, not an installed/minified line. Research B's strings-dump coordinates and research A's binary-LF coordinates are not NR line numbers. The index supplies the conversion; do not mix them.
+
+The scope is the whole first-call-declared computer/browser API for macOS and Linux, plus the whole browser manifest: **22 interfaces, 147 members, 66 named types**, including capabilities. Table 1 totals **222 included member-contract rows
+and 103 type rows**; Table 2 has **16 excluded member-contract rows**, with separate provider, package and document exclusions. There are zero excluded browser-manifest members. A disabled or undocumented member remains implemented and is
+exposed only when the service advertises support. Browser management `windows`, browserAuth/OTP, history, botDetection, CDP, WebMCP and generic DOM-only tabs remain included.
+
+Excluded: `iab`, `mcpapps`, the Windows OS binder, vendor cloud/account APIs, legacy package-root export, telemetry/Statsig/Sentry and cloud-browser instruction files, exactly as Table 2 enumerates. Audio and the hidden
+`js_add_node_module_dir` tool are not enabled cua surfaces. Exclusion is not permission to delete similarly named included capabilities, confirmations-policy user-data categories or extension tab mentions. Keeping the entire dormant package
+would be simpler to copy but would retain the vendor dependencies this child exists to remove.
+
+## Design
+
+### Keep the proxy; replace the host below it
+
+`src/mcp/server.mjs`, `upstream.mjs`, `lazy-runtime.mjs`, `connection.mjs`, `task.mjs` and `surface.mjs` retain their responsibilities: client protocol, task queue, metadata, cancellation forwarding, elicitation forwarding, local tools,
+idle restart, process-group ownership and output redaction. `src/profiles/inventory.mjs` remains the separate bounded browser-only client. Sandbox metadata is in **`src/runtime/sandbox.mjs`**, not `src/mcp/sandbox.mjs`.
+
+`src/repl-host/supervisor.mjs` is a Node process selected by `buildLaunch` in place of vendor Node → `cua-repl.mjs` → Rust `node_repl`. The existing anchor still owns its process group. The supervisor speaks MCP JSON-RPC 2.0,
+newline-delimited on stdio, and owns kernel/worker children; stdout is protocol-only. It implements `initialize`, `ping`, `tools/list`, `tools/call` and the tools `js`, `js_reset`, `turn_ended`. `end_task`, secrets/profiles/devices tools
+remain cua-proxy tools. Rebuilding that proxy would duplicate already-proven ownership and remote behavior without advancing independence.
+
+Use the recovered schemas and verbatim base descriptions in the embedded index, including omitted versus present fields, title length 1–80, timeout minimum 1, no schema `default`, reset annotations and private turn metadata. The existing
+effective cua tool text and `src/mcp/surface.mjs` host rules still layer above the base tools; the vendor launcher currently supplies overrides and cannot simply disappear with its effective text. M0 records both base and effective
+contracts; M1 reproduces the effective retained tool surface, documenting only approved branding/exclusion departures. The core API document is a different output, not a replacement for MCP instructions.
+
+The own host uses the user's Node **≥24**, resolved to an absolute executable before constructing the allowlisted environment, with `--experimental-vm-modules` for the kernel. Vendor-routed sessions keep the pinned vendor Node. Do not infer
+a patched JavaScript engine from the vendor distribution's `24.21.0-cua.1` name: its binary identifies as `24.21.0`. Keeping vendor Node for the own host would preserve distribution coupling and, as the peer spike shows, would not restore
+native socket authorization.
+
+### Selection is a connection fact, not an opportunistic fallback
+
+`replHostFor(session)` in `src/runtime/launch.mjs` returns the host and its reason; the same decision feeds launch, doctor, handshake records, profiles listing and evidence. Resolve it once per connection, including idle relaunches; resolve
+a new browser-only profile-listing connection independently. MAWS client mode does not override an explicitly enabled computer surface.
+
+| Session | M0–M4 default | M5 default | Reason at M5 |
+|---|---|---|---|
+| Linux, computer/browser/both | vendor | cua | `linux` |
+| macOS, browser only (including MAWS and profiles listing) | vendor | cua | `browser_only` |
+| macOS, computer or computer,browser | vendor | vendor | `macos_native_peer_requires_vendor` |
+| Explicit `CUA_REPL_HOST=cua\|vendor` | explicit choice | explicit choice | `explicit` |
+
+Reject other nonempty values before launch. An explicit own-host choice is never silently changed to vendor: on macOS with `computer`, report the unsupported native-peer combination and point to #117 rather than attempting input or claiming
+native parity. The override is a diagnostic/rollback control, not a bypass of code-signing checks. Until M5 the absent/empty value returns vendor with `staged_vendor_default`.
+
+The macOS helper's code-signing/ancestry authorization (`parentIdentity`, `ancestorIdentities`, `trustedProcessRequirement`, `allowedRelayRequirement`, `parentProcessIsCodex`) accepts the existing vendor node_repl peer path, not an
+arbitrary direct Node socket peer. Browser sockets have a different same-user/ancestry contract and must remain in the existing owning process tree. A single immediate global cutover was the strongest simpler alternative; it loses macOS
+computer use and is rejected.
+
+The own route uses cua's browser service, not the vendor browser service's cloud/config/telemetry paths. Keep the unmodified vendor route available for rollback and macOS native staging; do not broaden the own privileged API to run the
+legacy browser service. A conflicting explicit vendor-browser choice on an own-host session fails with a migration diagnostic; `CUA_REPL_HOST=vendor` remains the way to use that route during staging. README's older promise that #116 removes
+all vendor modules is superseded by this bounded staging, not by editing installed files.
+
+Handshake cache identity includes selected host **and host/API version**, in addition to runtime release, surfaces and requested protocol version. A cached vendor handshake must never answer for cua, or an old cua version for a new one.
+`initialize.serverInfo` names `cua-repl-host` with its version; own tool results carry `_meta['cua/replHost'] = {host:'cua', version}`. Live runners verify both, not just environment variables; the vendor control records its actual
+serverInfo and absence of the cua marker. This deliberate difference is enumerated, never normalized away before attestation.
+
+### Kernel and sandbox
+
+`src/repl-host/kernel.mjs` ports `NR:kernel.js:120-740,742-1492,1501-1872`: Meriyah parsing, synthetic `@prev` modules (modules supplying prior cell bindings), `vm.SourceTextModule` evaluation and committing redeclarable persistent
+bindings. Preserve top-level await and dynamic import, refusal of static imports and `process`/`node:process`, the built-ins used by the API, and disabled string/Wasm code generation. An async-function wrapper is not equivalent: it loses
+top-level lexical persistence and ordinary-error partial bindings.
+
+Immutable `nodeRepl` and `tmpDir` cell globals expose only `cwd`, `homeDir`, `tmpDir`, frozen allowlisted `env`, per-execution `requestMeta`, `write`, `emitImage` and configured `rpc` (`NR:kernel.js:1586-1642`;
+`NR:worker-runtime.js:230-332`). The first successful banner import runs cua's owned bootstrap rather than `await import("@oai/cua/tinyskyAlt")`; reset/timeout produces a fresh bootstrap. M1 has no production services/banner; M2 temporarily
+uses the unmodified vendor facade as a testable intermediate; M3 switches that import to `src/cua-api/bootstrap.mjs`.
+
+Keep `codex sandbox` from the relocated CodexCLI.app (Linux: relocated codex) for both confined children until #115. The recovered argv template is the contract, not a shell command to interpolate:
+
+```text
+$CODEX_CLI_PATH sandbox
+  -c 'shell_environment_policy.inherit="all"'
+  -c 'default_permissions="node_repl"'
+  -c 'permissions.node_repl={filesystem={...},network={enabled=false}}'
+  [-c 'features.use_legacy_landlock=true']
+  [--allow-unix-socket <path>]...
+  -- <user-node> --experimental-vm-modules <script> <args>...
+```
+
+The `...` is the policy derived from cua's existing `codex/sandbox-state-meta`, not a literal argument or an unspecified new policy. Kernel arguments remain session id and working directory; trusted worker receives cwd. Scoped means
+account-readable filesystem, writes only run directory and valid absolute TMPDIR, no child network; default denies writes and network; disabled is the existing unconfined path. Linux computer sessions retain disabled by default for
+X11/AT-SPI. Both children follow the same policy; trusted does not mean unsandboxed.
+
+`src/runtime/sandbox.mjs` must validate the selected host's trusted roots when names change, including the own code roots, and continue refusing write-root overlap and unavailable Linux confinement before launch. Client sandbox overrides
+remain replaced by the proxy's metadata. No silent unsandboxed fallback. The sandbox does not hide the secret store from authorized cell reads; retain the established trust model rather than claim a new secrecy boundary.
+
+### Supervisor, execution order and lifecycle
+
+The supervisor supplies the Rust-only behavior listed in the embedded index: child launch/reset, execution timers, MCP result assembly, service routing, socket bridge, elicitation and turn deduplication. Internal messages retain the
+recovered names and shapes; the worker/kernel JSONL is distinct from both MCP JSON-RPC and native service framing. `trusted_service_request` routes to worker `service`, `trusted_service_hooks` to `run_hooks`; replies correlate by execution
+and request id.
+
+Default execution budget is **30,000 ms**. `suspend_timeout`/`resume_timeout` exclude trusted approval/startup waits and resume the remaining budget, including nested suspension. Track background privileged work, then run
+after-submitted-code hooks on success **and ordinary error**, then settle the cell. Preserve `submitted_code_complete`'s phase boundary and positive per-hook timeouts rather than ending the execution at the first returned promise. The
+recovered kernel drains submitted-code background work before sending that phase-complete message and running separately budgeted hooks; use the vendor probe to pin the supervisor timer transition. A killed/timed-out execution cannot run
+code in its dead kernel; reset and stale-reply handling must not let its late work complete a new execution.
+
+The host state and linearization points (the single moments at which ownership changes) are:
+
+| State / event | Transition and observable result |
+|---|---|
+| ready + valid js | Allocate execution id and generation, enter running; start budget before submitted code. |
+| running + output/image/service/elicitation | Route under that execution id; MCP control replies stay live. |
+| running + submitted_code_complete | Submitted-code/background phase has drained; enter hook phase under hook budgets, retaining success or error outcome. |
+| running/draining + exec_result | Assemble ordered result once; clear timer and pending execution; ready. |
+| running + cancellation notification | Record/forward control, do not claim the cell stopped; its eventual result still settles. |
+| running/draining + timeout | Invalidate generation before terminating/recreating execution children; return timeout result once, bindings gone. |
+| ready + js_reset | Invalidate heap generation, reset children/state as parity requires, acknowledge; task id unchanged. |
+| ready + turn_ended | Reserve session/turn dedup key before handlers start; await one completion, repeated requests share/receive its acknowledgement. |
+| any + EOF/termination/unexpected child exit | Stop admission, settle pending work honestly, close owned sockets/children; uncertain execution is not replayed. |
+
+The outer task queue already serializes js/reset and waits before turn end; do not add a competing task state machine. After-code hooks are sequential; turn-ended handlers are concurrent and best-effort under their own positive timeouts,
+with one acknowledged completion per session/turn (`NR:privileged-node-repl.js:14-55,639-647`; `NR:trusted-worker.js:197-230`). Browser hooks currently use 12,000 ms after code and 4,000 ms at turn end. Keep cua's outer 5-second completion
+deadline, terminal failure behavior, 15-minute idle stop and owned-group teardown.
+
+`write` contributes `{kind:'write',text,item_id?}` and console contributes line events; named-item grouping and newline normalization follow `NR:kernel.js:1542-1584`. `emit_image` is an acknowledged inner request, not a new MCP streaming
+extension. Package text, named documents, images and `emitContentItem` output in execution order, including unawaited tracked emissions; preserve isError, structured content and response meta. Compare the Rust-side assembly against the
+vendor in M0/M1: extraction alone does not establish every ordering/error sentence.
+
+### Trusted services and privileged APIs
+
+`src/repl-host/trusted-worker.mjs`, `worker-runtime.mjs` and `privileged-node-repl.mjs` port the corresponding NR files. `CUA_REPL_TRUSTED_SERVICES` maps enabled services to their absolute real paths; `CUA_REPL_TRUSTED_CODE_PATHS` lists
+trusted real roots. Replace the host's `NODE_REPL_*` configuration with owned names, not ambient inheritance. The worker installs privileged `nodeRepl` before lazily importing and caching `handleRpc`; `registerHooks` realpaths every file
+dependency and rejects escapes (`NR:trusted-worker.js:19-60,83-99,134-189`).
+
+Keep `src/services/sky.mjs`, `browser.mjs`, `secret-input.mjs` and `src/secrets/` as the trusted substitution boundary. Native requests remain `rpc('sky',{type:'setup'|'execute',method?,args?})`; browser requests remain
+`rpc('browser',{method:'setup'|'execute'|'executeWithRecovery',params})`. Only `error.message` (or String of a non-Error) crosses worker → kernel; the kernel creates a plain Error. Rich error serialization was rejected because it changes
+the existing contract and can expose a substituted secret through stack/cause/custom fields.
+
+The privileged API retained is `createElicitation`, `withSuspendedTimeout`, `setResponseMeta`, `requestMeta`, `env`, `nativePipe`, `launchServices.openApplication`, `addTurnEndedHandler`, `addAfterSubmittedCodeHook`, `emitContentItem`, and
+base output/context methods. Cells get none of these privileges merely by importing a module. `NR:privileged-node-repl.js:65-129,200-472,528-601` and the browser service's hook registrations are the port anchors.
+
+The supervisor opens nativePipe Unix sockets **outside** the child sandbox and relays bytes as base64 JSONL. The worker sees the frozen `{write,on,off,end}` interface, only data/close/error events; no invented `destroy` or end-event
+contract. Validate absolute socket paths, connect timeout (cua sets 1,000 ms), correlation and close/error propagation. This preserves scoped browser access and MAWS ancestry; letting the worker open sockets directly does neither.
+
+`createElicitation` forwards `elicitation/create` to the MCP client and returns accept/decline/cancel with content/meta intact; unsupported client form capability and malformed replies fail without granting approval. Preserve proxy-owned
+accepted-response persistence. `launchServices.openApplication` stays implemented and boundary-tested on macOS; native production use remains vendor-routed until #117. Do not launch shared helpers for unit tests or kill them during
+teardown.
+
+M4 reads the retained Linux Sky path and approval persistence callers before deciding whether `config`, `readToml`, `writeToml` are needed. Implement only reachable storage operations, preserving session cleanup and safe path rules from
+`NR:privileged-node-repl-config.js:133-240`; if no caller exists, record that evidence and omit them. No speculative Codex config client. Drop privileged fetch, telemetry, app-server and CODEX_HOME RPCs with no retained caller; a required
+local approval store is not an account/config RPC. The retained Sky analytics-disable flag may remain as a vendor-service input even though own-host configuration is renamed.
+
+### Owned facade and first-call documentation
+
+`src/cua-api/` ports the tinyskyAlt facade and browser client, not Sky's native engine. `bootstrap.mjs` installs global `cua`, aliases `initialize` to `getState`, installs browser `agent` when enabled, and initializes only enabled surfaces.
+`create-tinysky-alt.mjs`, `bootstrap-emitter.mjs`, platform binders, browser facade, `sky.mjs` and `browser-client.mjs` keep the vendor concerns separate. Table 1 is the contract for signatures, returns, validation, absence, capabilities
+and errors; internal filenames may follow these concerns without recreating dormant exports.
+
+Port anchors: `R/cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/globals.js:3-27`, `create_tinysky_alt.js:16-141`, `create_bootstrap_emitter.js:10-101`, `create_browser_api.js:26-289`; the Sky facade is
+`R/cua_node/@oai/cua/dist/project/cua/sky_js/src/sky.js:6-127`. Browser client below means `R/cua_node/@oai/cua/dist/lib/js/oai_js_browser/dist/skill/scripts/browser-client.js`.
+
+Retain FunctionAgentTransport and Command.toJSON (browser client:495-509,10013-10046); string evaluate uses `return (${text});` (6717-6764), not statement-list evaluation. Keep recovery-envelope validation and its exact invalid-response
+sentence (189-242,10272-10284), locator same-tab checks/diagnostics and collection caches (6685-6715,6777-7628), initial snapshot before returning a created/bound tab, and manifest/disabled-member proxies across get/has/ownKeys/descriptors
+(10061-10212). Preserve screenshot Uint8Array and emit:false, allSettled inventory failures, Linux window binding, platform input guards and DOM-only Tab behavior; do not invent downscaling, client-wide 3-second timers or visible-DOM
+options.
+
+Zod is either replaced with explicit equivalent validation at **actual parse sites** or vendored, executor's choice in M3, recorded with parity proof and no runtime dependency. The sites are tabs.content, DOM node IDs, botDetection and
+browserAuth request/results, user tab context, CDP/assets/WebMCP/management/visibility/viewport results and the side-effect envelope, enumerated by research A's Q7 addendum. Command.toJSON stores a schema but does not parse it; validating
+every command would introduce refusals the vendor does not make. Blanket schema generation was rejected for that reason.
+
+`docs/cua-api/core.md` contains the first-call document. Keep surviving vendor prose verbatim, replace product names ChatGPT/Codex/Orbit with cua **in prose only**, and remove only the excluded sentences/clauses in Tables 2–3. Keep
+“Computer Use Confirmations Policy”, its valid requestMeta override and the auxiliary “Other Browser APIs” document; do not replace policy with newly authored guidance. Protocol keys, JS identifiers, URLs and service name `sky` are not
+automatic rename targets. The core document is not pruned merely because one surface is disabled.
+
+Bootstrap writes `cua.core`, `cua.browser.<id>`, `cua.state` in the vendor order; core once, selected-browser docs once per browser, state automatically unless emit:false. `rewriteDocumentation` re-emits cached documents but suppresses
+duplicate emission for the same requestMeta object. Selected-browser docs stay generated by `src/browser-service/docs.mjs`; preserve #113's approved service guidance and Table 3's retained lookup/capability documents, without reintroducing
+the vendor limits or cloud catalogs. Own MCP host notes stay in `src/mcp/surface.mjs`. Freely rewriting the prose was rejected by the owner because the first-call document is a model-facing compatibility surface.
+
+### Ports, parser and distribution
+
+Every port opens with `// Ported from readable chatgpt-26.928.40906 NR:<file>:<a>-<b> (...)` or the corresponding full `R/...:<a>-<b>` citation, naming this spec. Document ports carry an equivalent source comment. Read the source and
+sidecar; do not cite inferred string-dump lines as source. This port joins #120's clean-room scope: internal research preview copying is permitted by the owner, distribution waits for that rewrite. No claim of distribution rights is made
+here.
+
+Vendor **Meriyah 7.0.0**, identified by `NR:meriyah.umd.min.js:1-5`, like the existing injected-script pipeline: exact devDependency pin, `scripts/extract-meriyah.mjs`, committed `src/repl-host/vendor/meriyah/` asset, sibling `VERSION`,
+license and mismatch refusal. The recovered header specifies **ISC**; retain that actual license (and any MIT-licensed dependencies if used), not a guessed license for the proprietary ports. No new runtime dependency. A hand-written parser
+or a newer unpinned parser would change the hardest cell semantics without advancing this milestone's goal.
+
+## Verification and acceptance
+
+The oracle is the same-cell differential run through real `cua serve` sessions: vendor host plus vendor facade versus own host plus owned facade, **both using cua's browser service**. It isolates the host/API change from #113's intentional
+service changes. `scripts/repl-parity.mjs` reuses browser-parity topology, MCP, runner and compare modules, extending rather than cloning them. A raw-cell mode is required: the existing runner's async-function envelope cannot prove lexical
+persistence, top-level imports or a real thrown-cell error.
+
+`test/repl-parity/inventory.json` has one stable row per Table 1 included member, linked type contracts, and rows for every cell behavior and secret substitution below. `test/repl-parity/inventory.test.mjs` checks exact membership against
+the committed surface inventory, unique IDs, due milestone, executable cases and final M5 completeness. Types are checked by the cases that consume/return them. Disabled capabilities need executable hidden-member assertions plus
+advertised-capability cases through the existing capability host, not skips masquerading as implementation. Computer behavior runs live on Linux; macOS-only binder behavior uses source-grounded service doubles, with macOS native production
+explicitly deferred to #117.
+
+Raw evidence retains ordered MCP content, isError, structuredContent and meta when present. Compare text/error sentences exactly, images with the existing 64-bit average hash and exact dimensions/MIME, named write grouping and document
+bytes; ms is excluded. Preserve field absence rather than coercing undefined to null. Schema-known dynamic IDs map by creation order; only declared volatile fields are masked. Store hashes/counts rather than image bytes, never owner window
+text, bookmarks or credentials. Fixture text and scratch gedit observations may be compared in memory; committed reports contain only safe projections.
+
+`test/repl-parity/expected-differences.json` lists each deliberate branding/exclusion/identity departure with reason and exact case/field scope. It cannot waive missing rows, failed independent assertions or arbitrary document differences.
+Document comparison is byte-for-byte against a deterministic **Table 3 transformation of the vendor document**, with that transformation separately checked against the pinned source; compare generated selected-browser docs on the same
+service/backend and normalize only declared identity slots. Vendor-versus-vendor determinism uses no allowances. Fake output is labeled fake and cannot satisfy live parity.
+
+The harness records commit, Node, runtime release, host and API versions, platform, surfaces, sandbox, service, backend, profile, serverInfo and result attestation per connection; mismatch fails before counting coverage. Every live runner,
+including native baseline, Linux acceptance, MAWS and remote acceptance, must attest the answering host. Instrument wrappers/metadata capture, not consumer assertions or skill behavior. Cached initialization alone is insufficient: require
+the marker on a real own-host call.
+
+Acceptance, using the Concrete Steps commands and harness-owned scratch fixtures:
+
+1. On the mini, consecutive raw cells persist/redeclare bindings, await at top level and dynamically import; static imports and process access refuse with vendor sentences. A thrown error leaves the task usable and completed bindings behave
+like the vendor. Both runs have the same ordered outputs, isError and error sentences; the cell suite reports `0 unexpected differences`. **M1; final M5.**
+2. A default-budget cell times out at the vendor's 30,000 ms behavior; a shortened timeout is tested too. The next cell has fresh bindings/bootstrap, js_reset clears bindings but preserves `cua/taskId`, running cancellation does not pretend
+to stop work, and end_task acknowledges once after hooks. Elicitation accept/decline/cancel, suspended budgets, success/error hooks, write IDs, image ordering and emit:false match. **M1 host half, M2 service half, M3 facade half; final
+M5.**
+3. Every included member/type contract has its executable proof; capability-hidden members are absent under get/in/keys/descriptors and work when advertised. The whole browser corpus (currently 59 cases) runs through the own host on
+mini/ssfs with `0 unexpected differences`; browser API rows also run on Linux. The inventory test fails if a row/case is removed. **M0 inventory, M2 browser baseline, M3 facade, M4 Linux; final M5.**
+4. A fresh first call emits the transformed vendor core bytes and confirmations policy; selecting a browser emits its generated docs before state. emit:false does not suppress first-use docs; rewriteDocumentation suppresses same-requestMeta
+duplicates and rewrites on a later request. `profiles_list` works through the own browser-only host without tab titles/URLs in its output. **M3; final M5.**
+5. In the cua-linux VM, the own worker drives pinned `sky_linux` over stdio against a scratch gedit window: bind, observe AX, act, verify, screenshot and end_task succeed. Native inventory rows, approval/persistence paths that exist on
+Linux, and `linux-native.mjs` pass; Linux Chrome and feature runners print `status: PASS`. **M4; final M5.**
+6. Trusted services refuse an import outside real roots; cells cannot obtain privileged APIs through the bridge. Scoped/default/disabled behavior and Linux fail-closed preflight remain unchanged. Whole-field secret references substitute
+only inside the existing wrappers; errors and reports contain labels, never values, including worker rejection paths. No own-route telemetry/account/app-server call occurs. **M1 confinement, M2 trust, M3 browser substitution, M4 native
+substitution; final M5.**
+7. The unchanged MAWS live probe passes against the own host: profile identity, popup adoption, cursor, raised-budget human takeover, cleanup and isolation. MAWS's unchanged `pnpm e2e:browser-cua` remains green but is not treated as
+own-host evidence. Remote selection, js/reset, elicitation and end_task work with the existing cua-remote skill; no uncertain cell is replayed. **M2 MAWS; M5 remote and repeat.**
+8. The three own-host browser benchmark runs in browser-only mode have equal-or-better outcomes and satisfy #113's tool-time rule against its M5 cua-service result: each judged task's median within max(10%, 500 ms), or faster. Report wall
+time separately and #130's scripted-outcome check separately; do not relabel that as model performance. Linux native before/after runs retain outcomes, sample counts and report latency medians/p95/max; apply the same per-operation median
+tolerance, separating approval wait and SSH overhead. **M0 baseline, M4 native comparison, M5 browser benchmark.**
+9. With the override unset, doctor and real calls agree with the M5 selection table; explicit vendor remains usable, invalid values refuse, macOS computer sessions remain vendor and cache entries cannot cross host/version. Linux and
+browser-only macOS own calls attest `cua-repl-host` plus `cua/replHost`. **M0 selector/cache tests, M5 switch.**
+10. `HOME=<scratch> npm test`, `npm run test:mods`, `claude plugin validate .` pass; README describes ownership, Node floor, sandbox and staged macOS limitation, plugin version is one minor above main's at M5, shipped package contains the
+owned document/parser, and Outcomes records #117/#120 residue. **Every PR gates; M5 final acceptance.**
+
+## Constraints binding every milestone
+
+Repository SSFSKIM/cua; authoring branch `feat/own-repl-host`, worktree `/Users/new/Developer/GitHub/cua-wt-repl-host`, base main `018f3c6`, research commit `92b279c`. Do not touch `/Users/new/Developer/GitHub/cua`. M0 uses this branch;
+later milestones branch from main after the preceding PR merges, `feat/own-repl-host-m1` through `-m5`, re-pointing the same worktree. No attribution footers. Each milestone is one PR against main, reviewed at `doperpowers:reviewer-high`
+and merged by the session. Board writes only through issue-tracker scripts. Executors follow the owner's temporary routing note: GPT routes for bounded work, opus for ports; no implied change to persistent agent configuration.
+
+Inherited binding contracts: #114 no capability/performance regression and vendor-compatible API; #113 owned browser-service/extension-host/MAWS contracts unchanged; #115 owns replacement of the retained sandbox launcher; #117 owns macOS
+native migration; #120 owns clean-room replacement before distribution. The standalone Phase A/B invariant “vendor runtime files unchanged” remains literal: selection replaces a host, never patches installed files. Trusted substitution,
+scoped/disabled semantics and accepted-approval persistence stay as described above; obsolete Keychain/broker designs are not restored.
+
+Never read or print `~/.config/claude-secrets`, any `auth.json`, `PLAYWRIGHT_MCP_EXTENSION_TOKEN`, `~/.config/hcloud` or secret values. Never launch or kill the owner's Chrome, helpers or hosts, read the owner's local Chrome profile, click
+TCC consent or answer a password prompt. Nothing logs AX text of the owner's windows, bookmark names/URLs, pictures or page credentials. Secret tests use synthetic sentinels in temporary HOME only and emit labels/counts/booleans. Terminate
+only harness-owned processes; shared native helpers remain untouched.
+
+Live proof is only through harness-owned runs on mini/ssfs, the parity clone over `ssh -o BatchMode=yes mini`, and cua-linux Tart VM (`192.168.64.3`, `ssh cua-linux`), inside its X session environment. No executor restarts/reconfigures the
+mini's resident agent or touches its resident checkout; the M5 update is the session's step. Local tests use doubles, never the installed runtime, real Chrome or external network. Optional vendor-dependent checks skip visibly when absent
+and do not count as live evidence; loopback harness fixtures follow #113's existing convention.
+
+Every port carries its provenance header. Meriyah and any vendored validator follow the exact-pin/extractor/VERSION/mismatch-refusal rule; no new runtime dependency. Gates before every PR are the three acceptance-10 commands. Update
+implementation-coupled argv/env tests (`test/runtime-launch.test.mjs`, `test/services-sky-trust.test.mjs`, `test/fixtures/installed-home.mjs`) for the intentional replacement; keep consumer suites, skills, MAWS e2e and remote acceptance
+behavior unchanged. Fake-upstream and fake-browser facades are lifecycle doubles, never proof of REPL semantics.
+
+## Plan of Work
+
+### M0 — Establish the oracle and the pre-switch Linux baseline
+
+At the end, the existing vendor route can be measured twice with identical coverage, and no default session has switched. Add `scripts/repl-parity.mjs`, support under `scripts/repl-parity/`, `test/repl-parity/inventory.json`, scenarios,
+comparator/inventory tests and expected-differences file. Reuse `scripts/browser-parity/{topology,mcp,runner,compare,normalize,image-hash,resources,capability-home}.mjs` and the existing fixture/capability host; extend MCP capture for raw
+results, controllable elicitation responses and cancellation. Make raw-cell execution bypass the existing async envelope. Add `test/repl-parity/serve-cells.mjs`, the isolated launch fixture defined in M1, before that milestone consumes it.
+Produce interface **ParityRun** and the complete case inventory, including all semantics listed in acceptance 1–2 and secret boundary rows. Each case has a due milestone; `--through M1` selects only cases due by M1 in both run and diff. A
+later row remains visibly pending, never counted as covered.
+
+Add **HostSelection** and **HostIdentity** in launch/connection/lazy-runtime and profiles listing, defaulting to vendor everywhere. Cache keys must distinguish future own identity already; schema/version tests prove stale entries miss.
+`CUA_REPL_HOST=cua` may name an unavailable implementation until M1 but must fail clearly rather than invoke vendor. Pin Node floor/launch validation and metadata capture without changing defaults. Production override becomes useful as each
+supported stage lands. Add host-axis comparison to `scripts/bench-summary.mjs` and `scripts/bench-scripted-summary.mjs`: `--axis host` groups by attested REPL host while retaining actual browser service metadata. Their existing service axis
+remains unchanged; never relabel cua-service evidence as vendor-service evidence to satisfy an old schema.
+
+Reuse `scripts/native-baseline.mjs` and its support from `feat/native-baseline` / PR #133 (inspected head `3134e83`), currently in `/Users/new/Developer/GitHub/cua-wt-browser-service`. Bring its reviewed tooling through main (or an explicitly recorded dependency
+commit) before consuming it; do not write that worktree. Extend its Mac/TextEdit assumptions to Linux/gedit and host selection, and add the `compare <vendor-dir> <cua-dir>` command using acceptance 8’s verdict, retaining journals, cold
+hit/miss labeling, warm samples, tool/in-cell timing, approval wait, helper attestation and owned cleanup. Existing `docs/evidence/2026-10-14-native-baseline/summary.md` is a **Mac** baseline, not a Linux substitute.
+
+Record three Linux vendor-host runs **before the switch**, using pinned sky_linux and scratch gedit, under `docs/evidence/2026-10-14-own-repl-host-native/vendor/`. No owner windows or screenshot bytes in reports. The Linux runner's known
+GTK3 typeText/paste problem is a baseline fact, not an excuse to fake parity: keep its safe pressKey outcome task and add explicit method cases/errors for the included API. Preserve a comparable environment for M4.
+
+Consumes existing browser-parity and native-baseline tooling; produces ParityRun, HostSelection/Identity and baseline artifacts for all later milestones. Does not implement host/API or change browser/native engines. Proves acceptance 3's
+inventory, 8's baseline and 9's selection/cache groundwork. Vendor-versus-vendor runs on mini and Linux, no allowances, must pass cardinality and independent assertions; comparator mutation tests must reject reordered/missing content,
+changed error/isError/meta/document, missing case and failed outcome.
+
+M0 also makes the capability-host lane remote-capable: scratch homes and fake backend sockets live on the mini or VM, with the real selected REPL host there. The existing local capability-home helper must not copy this Mac’s installed runtime or reach its profile. Local unit runs use doubles only. M3 consumes this lane to prove advertised optional APIs as well as the real Chrome lane’s hidden-member behavior.
+
+### M1 — Execute real persistent cells without services
+
+At the end, an explicitly selected own host evaluates raw cells and resets correctly under the same confinement policy, while defaults still select vendor. Add supervisor, kernel, base worker-runtime, tool-contract module and parser
+vendoring under `src/repl-host/`; wire `buildLaunch` to the owned supervisor on user Node. Implement protocol negotiation/correlation, image assembly, execution timers/generation fencing and EOF/group lifecycle. Port the kernel rather than
+imitating it with eval or async IIFEs. Produce **HostMcp**, **KernelWire** and **CellRuntime** for M2.
+
+Update runtime launch, sandbox root validation and implementation fixtures so real own-host tests exercise the new code with spawn/sandbox doubles, not the fake echo process. Add Node floor checks and extraction mismatch tests. Test
+default/scoped/disabled argv construction and refusal paths without executing the vendor sandbox in unit tests. The real mini raw-cell run uses M0’s isolated `test/repl-parity/serve-cells.mjs` launch fixture around the real cua proxy. It
+supplies a no-op banner and no services to each supervisor; on the vendor side it invokes the pinned node_repl directly rather than the thin launcher that overwrites its banner. Browser-only outer settings remain valid. This is a labeled
+no-services parity lane, not an empty-surface production setting or a new user override. M2 service-hook cases use isolated trusted fixture services; M3 document cases use normal production bootstrap.
+
+Consumes M0 ParityRun and HostSelection/Identity. Does not ship services, facade, native socket bridge or defaults. Proves acceptance 1, host portions of 2/6/9; timeout resets, ordinary errors preserve usable task, raw
+declarations/redeclarations and output/image ordering compare with `0 unexpected differences` on mini. The actual 30,000 ms default is exercised, not inferred from schema alone. The first-cell production facade remains deferred, visibly
+excluded from this milestone's case subset.
+
+### M2 — Put the owned browser service behind the trusted worker
+
+At the end, the own supervisor runs real browser sessions and MAWS through the retained trusted wrapper/service, still using the vendor facade as the temporary banner import. Port trusted-worker and privileged-node-repl; complete base
+runtime shared with the kernel. Implement **TrustedServiceWire**, **PrivilegedRuntime**, nativePipe, elicitation, timeout suspension, response meta, hooks and turn deduplication. The transient vendor facade import is explicit test-stage
+coupling removed by M3, not a second shipped API promise.
+
+Touch `src/repl-host/`, `src/runtime/launch.mjs`, `src/runtime/sandbox.mjs` and trust/lifecycle tests; use `src/services/browser.mjs` and `src/browser-service/index.mjs` unchanged at their public seams. Assert hook unregister behavior,
+after-code execution after throws, sequential/concurrent ordering and hook deadlines; drain unawaited privileged operations. Test malicious realpath/symlink escapes, plain-message-only errors, accept/decline/cancel, nested budget suspension
+and socket terminal events. LaunchServices is implemented through a mocked OS boundary; no macOS helper attempt is needed.
+
+Consumes HostMcp, KernelWire, CellRuntime and ParityRun; produces PrivilegedRuntime/TrustedServiceWire consumed by M3/M4. Does not add app-server, telemetry, legacy browser service support or native rollout. Proves service halves of
+acceptance 2/6, the 59-case browser corpus against vendor-host plus cua-service, and acceptance 7's MAWS live probe and unchanged MAWS regression suite. Both mini and MAWS sessions must attest the own host, not only `cua browser service`.
+
+### M3 — Own the facade and the document the model learns
+
+At the end, the own route imports no vendor REPL facade; ordinary `cua`/`agent` calls, bootstrap documents and bounded profiles listing use the owned code. Add the modules under `src/cua-api/` and `docs/cua-api/` described in Design,
+switching the banner to **CuaBootstrap**. Port every included inventory member, both platform binders and the browser manifest runtime, not just the 59 service cases. Preserve source-specific validation and conditional members; record the
+Zod choice with parse-site tests.
+
+Implement **CoreDocumentation** and byte fixtures derived from Table 3, including confirmations override, auxiliary document and selected-browser lookups. Include docs in package files so an installed plugin works without the source tree.
+`src/profiles/inventory.mjs` must use HostSelection and return the same bounded `CUABACKENDS` inventory; instrument its answering-host proof without exposing tab titles/URLs. Preserve secret wrapper request shapes, version pin checks and
+the RPC error boundary.
+
+Consumes PrivilegedRuntime/TrustedServiceWire and ParityRun; produces CuaBootstrap/CoreDocumentation for Linux integration. Does not redesign browser service guidance, add APIs/caps, rewrite skills or implement native Sky. Proves acceptance
+3–4 and browser portions of 6 through the real own client: full inventory assertions, advertised and hidden capabilities, locator diagnostics/caches, evaluate/recovery validation, initial snapshots, doc order/bytes and profiles_list. macOS
+binder-only cases run against doubles; native Linux rows become live in M4.
+
+### M4 — Make the Linux native route real
+
+At the end, Linux computer-only and combined sessions explicitly selecting cua run the unchanged Sky service and `sky_linux` helper through the owned worker. Trace the retained Sky module's Linux calls and approval persistence; record the
+config/readToml/writeToml caller audit and implement only the needed **ApprovalStorage** subset. Preserve session cleanup on close/idle semantics and ensure the helper is a supervised stdio child, not an unowned daemon. Keep platform
+default sandbox disabled for Linux computer and scoped for browser-only.
+
+Touch own privileged storage/launch code, Linux parity cases and the native-baseline adapter; no Sky binary patches or new native engine. Existing `scripts/accept/linux-native.mjs`, `linux-chrome.mjs` and `linux-chrome-features.mjs` run
+unchanged in behavior under host-attesting wrappers. Use the cua-linux VM inside its X environment. Compare all native rows, including unsupported platform operations and observable vendor errors, not only successful screenshot capture;
+never “fix” a vendor failure by weakening the oracle.
+
+Consumes CuaBootstrap, PrivilegedRuntime, ParityRun and the M0 Linux baseline. Produces Linux native evidence and ApprovalStorage (or an explicit no-callers verdict). Proves acceptance 5, native portions of 3/6, and 8's native comparison
+with three matched own-host runs and the same sample plan. Run browser inventory rows on Linux too. Does not switch defaults, exercise macOS native via the own host or replace Codex sandbox. Failure of parity/performance holds M5; record a
+real blocker rather than substituting the Mac baseline.
+
+### M5 — Switch supported sessions and prove the whole feature
+
+At the end, the default table is live, doctor explains it, installed clients find all owned assets, and all acceptance results are recorded. Change absent/empty override selection only now; finish `src/runtime/doctor.mjs`'s `repl.host` row,
+README runtime/sandbox/Chrome/configuration/licensing sections, package Node floor and assets, `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` one minor above current main. Add the dated Phase A/B revision to
+`docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`; do not imply vendor runtime deletion.
+
+The session, not an executor, updates the mini resident checkout/agent to the reviewed M5 head. Browser benchmarks must run through a **browser-only own-host** session; an unchanged computer,browser resident configuration on macOS still
+selects vendor. Reuse the model controller brief and M5 cua-service evidence from #113, three serial unattended runs, then #130's scripted outcomes. Attest the runtime actually serving each connection. If the resident route cannot provide
+browser-only sessions, use the harness-owned browser-only route and remeasure its vendor-host control rather than compare unlike routes.
+
+Consumes every prior interface and evidence set. Execute acceptance 1–10 as written, not merely unit tests: full mini and Linux parity/inventory, docs/profiles, MAWS probe and unchanged e2e, native before/after, browser tool-time benchmark,
+scripted outcomes, remote skill acceptance, both selector lanes/cache/doctor, package contents and three gates. `test/repl-parity/inventory.test.mjs` now rejects every uncovered row. Record which macOS computer sessions remain vendor,
+#117's switch work, #120's provenance list, measured results and lessons in Outcomes. No macOS native bypass, sandbox replacement or clean-room implementation is bundled into this release.
+
+## Concrete Steps
+
+Authoring/execution worktree is `/Users/new/Developer/GitHub/cua-wt-repl-host`. These are execution commands, not claims they have run at authoring. `$SHA` is the reviewed milestone head; `$E` is
+`docs/evidence/2026-10-14-own-repl-host-parity`; run directories must be new. M0 implements the repl-parity flags below and records the prepared Linux profile as `$LINUX_PROFILE` (selected from readiness output, never guessed).
+
+```sh
+cd /Users/new/Developer/GitHub/cua-wt-repl-host
+HOME=/tmp/cua-repl-test-home npm test
+npm run test:mods
+claude plugin validate .
+# all pass; only declared platform/vendor-absent skips and the known CLAUDE.md warning
+node --test test/repl-parity/                         # inventory and comparator, no live runtime
+node scripts/extract-meriyah.mjs                    # M1: exact 7.0.0 asset/version; mismatch fails
+```
+
+M0 prepares remote parity clones, preserving existing profile bindings; subsequent milestones prepare the new SHA, never the resident checkout. `--suite` and `--through` restrict both runs and diff to the same milestone's exact case set; no
+missing case within that set may be ignored.
+
+```sh
+node scripts/repl-parity.mjs prepare --device mini --commit "$SHA" --profile ssfs
+node scripts/repl-parity.mjs prepare --device cua-linux --commit "$SHA" --profile "$LINUX_PROFILE"
+node scripts/repl-parity.mjs run --host vendor --device mini --suite cells --out "$E/m0/vendor-1"
+node scripts/repl-parity.mjs run --host vendor --device mini --suite cells --out "$E/m0/vendor-2"
+node scripts/repl-parity.mjs diff "$E/m0/vendor-1" "$E/m0/vendor-2"
+# 0 differences; no expected-differences file allowed for vendor determinism
+node scripts/repl-parity.mjs run --host cua --device mini --suite cells --through M1 --out "$E/m1/cua"
+node scripts/repl-parity.mjs diff "$E/m0/vendor-1" "$E/m1/cua" --through M1 --expected test/repl-parity/expected-differences.json
+# attested cua-repl-host + cua/replHost, then 0 unexpected differences
+```
+
+M2 adds `--repl-host` to the existing browser harness without changing its corpus or service selector. Both sides below use `--service cua`; `vendor` means the REPL host, not browser service. M3 repeats with owned bootstrap; M5 repeats full
+acceptance.
+
+```sh
+node scripts/browser-parity.mjs prepare --device mini --commit "$SHA" --profile ssfs
+node scripts/browser-parity.mjs run --device mini --service cua --repl-host vendor --out "$E/m2/browser-vendor-host"
+node scripts/browser-parity.mjs run --device mini --service cua --repl-host cua --out "$E/m2/browser-cua-host"
+node scripts/browser-parity.mjs diff "$E/m2/browser-vendor-host" "$E/m2/browser-cua-host"
+# 0 differences over all 59 existing cases; host identity is attested separately
+node scripts/repl-parity.mjs run --host vendor --device mini --suite api --out "$E/m3/vendor"
+node scripts/repl-parity.mjs run --host cua --device mini --suite api --out "$E/m3/cua"
+node scripts/repl-parity.mjs diff "$E/m3/vendor" "$E/m3/cua" --expected test/repl-parity/expected-differences.json
+node scripts/repl-parity.mjs run --host cua --device mini --suite docs-profiles --out "$E/m3/docs-profiles"
+# independent document byte assertions, profiles inventory and host attestation all pass
+```
+
+M0's Linux native baseline and M4's comparison use the same reviewed script with its M0 Linux extension. `prepare` records the VM's checkout, Node, X environment, profile and display; do not paste desktop credentials into shell commands. M0
+records `vendor`, M4 records `cua`, each with three runs at the default 5 cold/30 warm/10 task sample plan.
+
+```sh
+for n in 1 2 3; do
+  node scripts/native-baseline.mjs run --device cua-linux --host vendor --out "docs/evidence/2026-10-14-own-repl-host-native/vendor/run-$n"
+done
+# M4 repeats with --host cua and /cua/run-$n
+node scripts/native-baseline.mjs compare docs/evidence/2026-10-14-own-repl-host-native/vendor docs/evidence/2026-10-14-own-repl-host-native/cua
+node scripts/repl-parity.mjs run --host vendor --device cua-linux --suite all --out "$E/m4/vendor"
+node scripts/repl-parity.mjs run --host cua --device cua-linux --suite all --out "$E/m4/cua"
+node scripts/repl-parity.mjs diff "$E/m4/vendor" "$E/m4/cua" --expected test/repl-parity/expected-differences.json
+```
+
+On the VM, working directory is the prepared `~/Developer/GitHub/cua-parity` clone, inside its X session environment. Run through the harness runner wrapper so host attestation is captured, with these unchanged inner commands:
+
+```sh
+CUA_REPL_HOST=cua CUA_SHIM_SURFACES=computer node scripts/accept/linux-native.mjs
+CUA_REPL_HOST=cua CUA_BROWSER_SERVICE=cua CUA_SHIM_SURFACES=browser node scripts/accept/linux-chrome.mjs "$LINUX_PROFILE"
+CUA_REPL_HOST=cua CUA_BROWSER_SERVICE=cua CUA_SHIM_SURFACES=browser node scripts/accept/linux-chrome-features.mjs
+# each prints status PASS and exits 0; no screenshot file requested
+```
+
+On the mini parity clone, `$MAWS_CHECKOUT` is a prepared MAWS worktree and `$CUA_HOME` a scratch installed home outside TMPDIR; only harness-owned MAWS is started. M2 and M5 run:
+
+```sh
+CUA_REPL_HOST=cua CUA_SHIM_SURFACES=browser CUA_BROWSER_SERVICE=cua MAWS_CHECKOUT="$MAWS_CHECKOUT" CUA_HOME="$CUA_HOME" \
+  node docs/evidence/2026-10-13-own-browser-service-parity/m4/maws-live/run.mjs --out /tmp/cua-repl-maws.json
+# verdict passes, own host and service attested
+# In that MAWS worktree: pnpm e2e:browser-cua   (unchanged fake-host regression, not host proof)
+```
+
+M5's remote acceptance uses the existing `skills/cua-remote/SKILL.md` workflow: `devices_list`, `devices_use` the prepared cua-linux device, js observe/act/verify on the scratch app, js_reset, end_task, switch away; repeat a browser-only
+mini session. Capture own-host attestation through the harness transport, not a new model tool. Active-task switching must still refuse `task_open`; elicitation remains live; disconnect never replays a potentially executed cell. Run the
+existing remote consumer suites in `npm test` unchanged.
+
+M5 benchmark outputs use the existing controller brief `test/browser-parity/bench-controller-brief.md`, fixture task set and MiniWoB pin, with host/surfaces attestation added to run metadata. `$BENCH` holds the three #113 M5
+cua-service/vendor-host control runs in `vendor/` and the three own-host runs in `cua/`; M0’s `--axis host` reads those as host groups and validates `service:cua` on both. Archive source evidence remains unchanged. Old baseline host
+identity must be established from its recorded commit/runtime route; if it cannot be attested, remeasure the matched control instead of inventing a marker.
+
+```sh
+node scripts/bench-summary.mjs "$BENCH" --axis host     # verdict: no regression (tool time)
+for host in vendor cua; do
+  for n in 1 2 3; do
+    node scripts/browser-parity.mjs run --device mini --service cua --repl-host "$host" --corpus bench --out "$E/m5/scripted/$host/ep-$n"
+  done
+done
+node scripts/bench-scripted-summary.mjs "$E/m5/scripted" --axis host
+# #130 scripted outcome verdict reported separately, equal episode counts and actual host attestation
+node scripts/repl-parity.mjs run --host cua --device mini --suite all --out "$E/m5/mini"
+node scripts/repl-parity.mjs run --host cua --device cua-linux --suite all --out "$E/m5/linux"
+# compare each with a matched vendor-host all-suite run, then rerun the three PR gates above
+```
+
+M5 additionally runs `node bin/cua.mjs doctor --json` in each prepared session environment with override unset, `cua`, `vendor` and an invalid value; checks `repl.host` against real answered calls, repeats a cached handshake across
+selections/version and inspects `npm pack --dry-run --json` for core docs and parser assets. Record commands, commit and safe verdicts in the evidence directories and Progress; never report a pending or fake run as completed live proof.
+
+## Interfaces and Dependencies
+
+These names are the milestone boundaries, not a demand for one class per name. Their producer/consumer order is binding.
+
+| Interface | Producer → consumers | Contract |
+|---|---|---|
+| HostSelection | M0 → M1–M5 | `replHostFor({platform,surfaces,ambient}) -> {host:'cua'\|'vendor',reason}`; Design's defaults and refusal rules, frozen per connection. `buildLaunch` retains `{command,args,env,cwd}`. |
+| HostIdentity | M0 → M1–M5 | Owned host/API version plus selected host in cache identity; M1 emits `serverInfo:{name:'cua-repl-host',version}` and result `_meta['cua/replHost']:{host:'cua',version}`. |
+| ParityRun | M0 → M1–M5 | `prepare/run/diff`; `--host vendor\|cua`, `--device mini\|cua-linux\|local`, `--suite cells\|api\|docs-profiles\|all`, `--through M0\|M1\|M2\|M3\|M4\|M5`, `--out`, `--expected`; local means doubles only. `all` is platform-applicable cases, not silent platform skips. |
+| HostMcp | M1 → M2–M5 | JSON-RPC 2.0 over stdio, exact recovered tool schemas/effective retained text, ordered MCP content, bidirectional control traffic and correlation; no local cua tool duplication. |
+| KernelWire | M1 → M2 | Inner JSONL with execution/generation ownership: exec, submitted_code_complete, exec_result, emit_image and image replies; M2 adds service/hooks, elicitation, timer and native-pipe routing from the NR index. |
+| CellRuntime | M1 → M2/M3 | Frozen/immutable cell-facing nodeRepl and tmpDir, persistent cell semantics; rpc only when configured, no privileged globals. |
+| TrustedServiceWire | M2 → M3/M4 | Existing sky/browser handleRpc shapes, JSON serialization, string-only error boundary; service/result output merged before caller settles. |
+| PrivilegedRuntime | M2 → M3/M4 | Privileged methods listed in Design, frozen nativePipe socket contract, unregister-returning hooks and per-execution requestMeta; full allowlisted launch env only in worker. |
+| CuaBootstrap | M3 → M4/M5 | `src/cua-api/bootstrap.mjs` imports/installs cua and optional agent; Table 1 object/return/absence contracts and enabled-surface checks. |
+| CoreDocumentation | M3 → M4/M5 | `docs/cua-api/core.md` plus retained auxiliary/policy text; Table 3 bytes, named output order and requestMeta-identity suppression. |
+| ApprovalStorage | M4 → M5 | Only the audited Linux/approval caller-required config/TOML subset; no app-server/account bridge; no-callers verdict is an allowed complete result. |
+
+Parity inventory rows carry `{id,kind,source,platforms,milestone,cases}`; member IDs derive from Table 1 object/member, type links use its named types. Cell semantics include persistent/redeclared bindings, awaits/imports, process denial,
+timeouts/reset, thrown-cell recovery, ordered output/images, emit:false, write IDs, rewriteDocumentation, three elicitation actions, running cancellation, task identity and turn hooks. Secret rows cover native text methods and browser
+fill/AX actions at their existing supported shapes, refusal-before-read and sanitized post-read errors; unsupported fields/evaluate strings never substitute.
+
+Parity result rows add `{content,isError,structuredContent?,meta?}` to the existing case/cell/assertion journal; omitted fields stay omitted. Run metadata has requested and observed HostIdentity, service/backend and complete flag;
+incomplete/mixed-host runs refuse comparison. `browser-parity --repl-host` and native-baseline `--host` are independent of browser-service selection. Reuse the 64-bit hash implementation, fixture state assertions and lifecycle helpers, but
+never reduce raw results to the old `CUA_PARITY_RESULT` marker alone.
+
+Owned environment names start with `CUA_REPL_`: trusted services/roots, node path/module directories, banner, untrusted env allowlist, RPC enablement and native-pipe connect budget. Only retained settings get an owned counterpart; do not
+mechanically recreate all 23 vendor variables. Existing surface/browser/secret variables retain their wrapper meanings. Vendor launches retain vendor names. Launch passes only owned/allowlisted values and protects both host-specific
+trusted-root sets; ambient NODE_OPTIONS/NODE_REPL overrides cannot redirect it.
+
+Dependencies retained: Node ≥24 for own execution; built-in vm/modules, filesystem, child processes and sockets; existing `ws`; pinned Meriyah 7.0.0 dev-only extraction; optional dev-only vendored validator; unchanged Codex sandbox,
+sky.js/sky_linux until siblings replace them; owned browser service/extension host. The new docs directory must be included in package files. This is not an installer-pruning milestone: runtime resolution still supplies retained
+sandbox/native artifacts.
+
+## Decision Log
+
+- Decision: Technical spec and execution section receive an independent `doperpowers:adversarial-reviewer` buildability review before handoff; each milestone PR receives `doperpowers:reviewer-high`, with the session merging after verified findings are resolved.
+  Rationale: The ports cross execution, trust and lifecycle boundaries; tests against a fake echo host cannot establish compatibility. A code-only review at the end misses unbuildable milestone seams. Review is selected, not claimed completed.
+  Date/Author: 2026-10-14, spec author under the owner's approved verification call.
+- Decision: Record the owner's 2026-10-14 rulings as binding: enabled computer/browser scope, whole manifest/capabilities, explicit Table 2 exclusions, verbatim surviving document prose with product rebranding, confirmations retained, sandbox kept until #115 and per-surface default migration.
+  Rationale: Preserve what users and models actually use while removing dormant vendor dependencies. Broad package copying and newly authored docs were rejected; the authoritative inventory makes the narrower boundary complete rather than approximate.
+  Date/Author: 2026-10-14, owner; transcribed at authoring.
+- Decision: Mac computer sessions stay on vendor node_repl until #117; own host uses user Node, vendor Node stays only in vendor-routed sessions.
+  Rationale: Both direct ordinary and vendor-Node socket probes closed before a response; vendor Node alone is not the authorized supervisor ancestry. A global switch would break native use; re-signing, relay impersonation or patching the helper is not this design.
+  Date/Author: 2026-10-14, owner following peer-authorization spike.
+- Decision: Port Meriyah 7.0.0 through an exact-pin extractor (actual recovered license ISC); M3 may use explicit validation at enumerated parse sites or a vendored validator, never a new runtime dependency.
+  Rationale: Preserve parser/client behavior without binding installations to a package tree. Generic schema validation and an unpinned parser change semantics; Table 1 and differential tests govern the implementation choice.
+  Date/Author: 2026-10-14, approved design, version/license grounded during authoring.
+- Decision: Interpret byte-for-byte documentation parity against the explicitly transformed vendor text, and keep #113's already-approved service guidance; keep vendor browser behavior only on the vendor-host lane during staging.
+  Rationale: Literal equality to unedited vendor branding contradicts the owner's edits; importing cloud/config bridges contradicts the own-route exclusions. Narrow transformed-byte fixtures and recorded departures preserve both requirements, unlike ignoring document diffs or broadening the host.
+  Date/Author: 2026-10-14, authoring reconciliation of the approved inputs.
+- Decision: Use browser-only raw-host probes in M1, the real `src/runtime/sandbox.mjs` path, and a Linux adapter/baseline in M0; do not treat the Mac baseline or async-wrapped browser cells as these proofs.
+  Rationale: Current launch rejects empty surfaces, the requested mcp sandbox path does not exist, existing runner cells are async-function bodies and #133's evidence is Mac/TextEdit. These are execution corrections, not changes to the approved architecture.
+  Date/Author: 2026-10-14, source inspection during self-review.
+
+## Surprises & Discoveries
+
+- Observation: Direct vendor Node is rejected by the macOS native helper just like ordinary Node.
+  Evidence: `07-ordinary-node.txt` and `08-vendor-node.txt` both show connect, ping, socket-end and `socket closed before response`; the code-signing/ancestry findings explain the staged default, not a new universal claim about every possible peer.
+- Observation: Existing local parity and fake-upstream success cannot prove persistent REPL compatibility.
+  Evidence: `scripts/browser-parity/runner.mjs` wraps code in async functions; `test/fixtures/fake-upstream-process.mjs` echoes most js source. M0 adds raw-cell capture and M1 executes the real owned kernel.
+- Observation: Native baseline evidence exists, but only for the mini's Mac helper.
+  Evidence: `docs/evidence/2026-10-14-native-baseline/summary.md` on PR #133 records Mac14,12/macOS 27, three vendor runs with no errors; `scripts/native-baseline.mjs` assumes TextEdit. Linux/gedit measurement remains M0 work.
+- Observation: Renaming trusted-root variables also changes a security check's input.
+  Evidence: `src/runtime/sandbox.mjs` currently reads `launch.env.NODE_REPL_TRUSTED_CODE_PATHS` in `assertSandboxFits`; M1 must preserve that overlap check for the owned key rather than merely rename the worker parser.
+- Observation: Both existing benchmark summaries bind directory names to browser-service attestation.
+  Evidence: `scripts/bench-summary.mjs` and `scripts/bench-scripted-summary.mjs` reject service mismatches. M0 adds an explicit host comparison axis; M5 never rewrites the service identity to make old tooling accept a host comparison.
+
+## Outcomes & Retrospective
+
+Pending — written at finish.

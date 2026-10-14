@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The own host resolves its Node in this order, taking the first candidate whose `--version` is ≥24: (1) an explicit `CUA_NODE` (absolute path to a Node executable); (2) `process.execPath` of the running cua process; (3) `node` on PATH. If none qualifies, selection of the own host refuses before launch with a diagnostic naming the floor, each candidate tried with its version, and the `CUA_NODE` override. Never the vendor Node, never a silent downgrade to the vendor host. Local own-host runs on this Mac use `CUA_NODE=/opt/homebrew/bin/node` (v26); the mini's PATH node (v24.18.0) needs no override.
+  Rationale: Design says "the user's Node ≥24, resolved to an absolute executable" without an order; this Mac's PATH node is v22. Same no-downgrade rule as the explicit route refusal.
+  Date/Author: 2026-10-14, dispatching session ruling, recorded by the plan-executor.
 - Decision: Execute M0 as five tasks in one PR: (1) HostSelection/HostIdentity, job persistence, cache identity and Node-floor validation; (2) the case inventory and its test; (3) the ParityRun harness (raw cells, MCP capture, comparator, exact image oracle, `serve-cells.mjs`, remote capability-host lane); (4) BenchmarkRun and the host axis; (5) the Linux native-baseline extension and M0's live runs. Tasks 2 and 4 touch disjoint files and may run in sibling worktrees merged back before review; task 3 consumes 1 and 2, task 5 consumes 1 and 3.
   Rationale: M0 spans production selection code, a large declarative inventory, harness code and live evidence; one executor cannot hold all of it, and the interfaces (HostIdentity, inventory rows, ParityRun) are the natural review frontiers.
   Date/Author: 2026-10-14, plan-executor pre-flight.

@@ -6,12 +6,14 @@
 // document) is neither: it is kept out of the statistics and listed apart. Numeric details a row carries (AX text
 // length, element count, screenshot bytes, action count…) are summarised as median and range, string details by their
 // values when there are few (the screenshot format) or their count otherwise. Runs that are incomplete or disagree on what
-// they ran against (commit, REPL host, runtime release, hardware, OS, display, service, sample plan) are reported as
-// problems, and so is a run whose answering host is not attested on every connection it opened (scripts/bench-summary.mjs
-// validateHostAttestations; a run recorded before host attestation has no requested host and is summarised as such).
+// they ran against (commit, REPL host, runtime release, hardware, OS, display, service, sandbox, sample plan) are reported
+// as problems, and so is a run whose answering host is not attested on every connection it opened (scripts/bench-summary.mjs
+// validateHostAttestations), or, recorded with host attestation, one that lacks its sandbox policy or falls short of its
+// plan (coverageProblems). A run recorded before host attestation has no requested host and is summarised as such.
 import {readFileSync, readdirSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {validateHostAttestations} from '../bench-summary.mjs';
+import {METHOD_CASES} from './linux-cells.mjs';
 
 // The order operations are reported in; anything else follows alphabetically.
 export const OPERATION_ORDER = [
@@ -48,7 +50,7 @@ export function readRuns(dir) {
 }
 
 const GiB = 1024 ** 3;
-const ATTESTED = ['device', 'commit', 'host', 'release', 'hardware', 'os', 'display', 'service', 'plan'];
+const ATTESTED = ['device', 'commit', 'host', 'release', 'hardware', 'os', 'display', 'service', 'sandbox', 'plan'];
 // The answering host a run attests: the requested host and what its connections' initialize named, or null for a run
 // recorded before host attestation.
 function hostAttested(meta) {
@@ -68,8 +70,29 @@ export function attestation(meta) {
     os: os.version ? `${os.name ?? 'macOS'} ${os.version}${os.build ? ` (${os.build})` : ''}` : null,
     display: display.resolution ? `${display.resolution} points at scale ${display.scale ?? '?'}${display.pixels ? ` (${display.pixels} pixels)` : ''}` : null,
     service: service.surface ? `${service.surface} surface, answered by ${service.answered ?? '?'}${service.helper ? ` (helper: ${service.helper})` : ''}` : null,
+    sandbox: meta.sandbox?.mode ? `${meta.sandbox.mode} (${meta.sandbox.explicit ? 'CUA_SHIM_SANDBOX' : 'platform default'})` : null,
     plan: plan.samples ? `${plan.cold} cold, ${plan.samples} warm, ${plan.tasks} tasks` : null,
   };
+}
+
+// What a complete run of `plan` must have recorded, per operation (the task's verify step runs only after a successful
+// act, so it is bounded, not fixed): a run whose rows fall short is not evidence of its plan, whatever `complete` says.
+// Cold connections are counted across their observed hit/miss labels.
+export function coverageProblems(run) {
+  const {meta, rows, name} = run, plan = meta.plan ?? {};
+  if (!plan.samples || !plan.cold || !plan.tasks) return [`${name} records no sample plan`];
+  const count = op => rows.filter(r => r.op === op).length;
+  const linux = meta.platform === 'linux';
+  const expected = [['ssh.roundtrip', 5], ['warm.noop', plan.samples], ['warm.getState', plan.samples], ['warm.listApps', plan.samples],
+    [linux ? 'setup.findWindow' : 'setup.newDocument', 1], ['bind.getApp', 1], ['warm.getAXState', plan.samples], ['warm.getScreenshot', plan.samples],
+    ['task.act', plan.tasks], [linux ? 'task.clear' : 'task.close', plan.tasks], ['task.total', plan.tasks],
+    ...(linux ? Object.keys(METHOD_CASES).map(op => [op, 1]) : []), ['end_task', 1]];
+  const problems = expected.filter(([op, n]) => count(op) !== n).map(([op, n]) => `${name} covers ${count(op)} ${op} sample${count(op) === 1 ? '' : 's'}, the plan ${n}`);
+  const cold = rows.filter(r => /^cold\.(miss|hit)\.total$/.test(r.op)).length;
+  if (cold !== plan.cold) problems.push(`${name} covers ${cold} cold connections, the plan ${plan.cold}`);
+  const verified = count('task.verify'), acted = rows.filter(r => r.op === 'task.act' && r.ok === true).length;
+  if (verified !== acted) problems.push(`${name} covers ${verified} task.verify samples for ${acted} successful task.act`);
+  return problems;
 }
 
 // The problem with a run's host attestation, or null: every connection the run opened attested the requested host.
@@ -106,6 +129,11 @@ export function summarize(runs) {
     if (run.meta.complete !== true) problems.push(`${run.name} is incomplete${run.meta.error ? ` (${run.meta.error})` : ''}`);
     const host = hostProblem(run.meta, run.name);
     if (host) problems.push(host);
+    // Evidence recorded with host attestation must also record its sandbox policy and cover its whole plan.
+    if (run.meta.host !== undefined) {
+      if (!run.meta.sandbox?.mode) problems.push(`${run.name} records no sandbox policy`);
+      problems.push(...coverageProblems(run));
+    }
     const own = attestation(run.meta);
     for (const key of ATTESTED) if (own[key] !== first[key]) problems.push(`${run.name} differs in ${key} (${own[key]}, not ${first[key]})`);
   }
@@ -137,7 +165,7 @@ export function renderMarkdown(summary) {
     `Runs: ${summary.runs.map(r => `${r.name} (${r.started ?? '?'} to ${r.finished ?? '?'}${r.complete ? '' : ', incomplete'})`).join('; ')}.`, '',
     '| Attested | Value |', '|---|---|',
     `| Device | ${a.device ?? '–'} |`, `| Host commit | ${a.commit ?? '–'} |`, `| REPL host | ${a.host ?? 'not attested (recorded before host attestation)'} |`, `| Runtime release | ${a.release ?? '–'} |`,
-    `| Hardware | ${a.hardware ?? '–'} |`, `| OS | ${a.os ?? '–'} |`, `| Display | ${a.display ?? '–'} |`, `| Service | ${a.service ?? '–'} |`, `| Sample plan | ${a.plan ?? '–'} |`, '',
+    `| Hardware | ${a.hardware ?? '–'} |`, `| OS | ${a.os ?? '–'} |`, `| Display | ${a.display ?? '–'} |`, `| Service | ${a.service ?? '–'} |`, `| Sandbox | ${a.sandbox ?? '–'} |`, `| Sample plan | ${a.plan ?? '–'} |`, '',
     'Milliseconds. Latency columns cover successful samples only (invalidated samples, whose target was not the scratch document, are counted apart); wall is the harness\'s time around the MCP call (it includes the ssh pipe), in-cell is `performance.now()` inside the cell on the device.', '',
     '| Operation | Samples | OK | Invalid | Errors | Wall median | Wall p95 | Wall max | In-cell median | In-cell p95 | In-cell max |',
     '|---|---|---|---|---|---|---|---|---|---|---|',
@@ -153,6 +181,6 @@ export function renderMarkdown(summary) {
   const errors = summary.operations.flatMap(o => o.errors.map(e => `- ${o.op}, ${e.run} sample ${e.sample}: ${e.error}`));
   lines.push('', '## Errors', '', ...(errors.length ? errors : ['None.']));
   lines.push('', '## Problems', '', ...(summary.problems.length ? summary.problems.map(p => `- ${p}`)
-    : ['No problems: every run is complete and attests the same commit, REPL host, release, hardware, OS, display, service and sample plan.']));
+    : ['No problems: every run is complete and attests the same commit, REPL host, release, hardware, OS, display, service, sandbox and sample plan.']));
   return lines.join('\n') + '\n';
 }

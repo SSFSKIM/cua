@@ -18,8 +18,7 @@ globalThis.__baselineTransitionMs = 200;
 globalThis.__baselineWindowMs = 200;
 
 // The device: preflight facts, the handshake record (cleared on request), and the Linux operations over the desktop.
-function fakeDevice({host = 'vendor', geditRunning = false} = {}) {
-  const desktop = geditDesktop();
+function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDesktop()} = {}) {
   Object.assign(desktop.cua, {
     async getState() { return {apps: [{}, {}], browsers: [], errors: []}; },
     async listApps() { return [{isRunning: true}, {isRunning: false}]; },
@@ -30,7 +29,7 @@ function fakeDevice({host = 'vendor', geditRunning = false} = {}) {
     handshakeRecord: record, runtimeRoot: `${HOME}/runtimes/${RELEASE}`, spikeRunning: false, serves: 0,
     hardware: {model: null, chip: 'arm64, 4 CPUs', memoryBytes: 8e9}, os: {name: 'Ubuntu', version: '24.04.5 LTS', build: '7.0.0-38-generic'},
     display: {pixels: '1024 x 768', resolution: '1024 x 768', scale: 1, depth: 24}, x: {display: ':0', xauthority: '~/.Xauthority', xauthorityPresent: true, bus: 'unix:path=/run/user/1000/bus'},
-    gedit: 'gedit - Version 46.2', geditRunning};
+    gedit: 'gedit - Version 46.2', geditRunning, sandbox: {mode: 'disabled', explicit: false}};
   const remote = script => {
     state.scripts.push(script);
     if (script === 'true') return '';
@@ -107,6 +106,7 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   assert.equal(meta.platform, 'linux');
   assert.equal(meta.host, 'vendor');
   assert.equal(meta.connections, 3);
+  assert.deepEqual(meta.sandbox, {mode: 'disabled', explicit: false});
   assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/taskId': 't'}})));
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', DISPLAY: ':0', XAUTHORITY: '~/.Xauthority'});
   // The cold plan: a planned miss clears the record first; each connection is labelled by the record it found.
@@ -192,7 +192,7 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   const pre = {platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
     handshakeRecord: `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
     hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 17179869184}, os: {name: 'macOS', version: '27.0', build: '26A428'},
-    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false};
+    display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}};
   const remote = script => {
     if (script === 'true') return '';
     if (/hostIdentity/.test(script)) return JSON.stringify(pre);
@@ -213,4 +213,21 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.equal(meta.hostAttestations.length, 3);
   assert.equal(app.windows.length, 1);
+});
+
+test('a method case whose read-back fails is recorded as failed, never as text that went in', async t => {
+  const {state, io} = fakeDevice({desktop: geditDesktop({typeTextWorks: true, readBackFails: true})});
+  state.answeringHost = 'vendor';
+  const out = outDir(t);
+  await run({device: 'cua-linux', out, host: 'vendor', ...plan, io});
+  const row = results(out).find(r => r.op === 'method.typeText');
+  assert.deepEqual({ok: row.ok, outcome: row.outcome, target: row.target, inserted: row.inserted}, {ok: false, outcome: 'returned', target: 'survived', inserted: undefined});
+  assert.match(row.error, /read-back failed: Computer Use server error: accessibility tree unavailable/);
+});
+
+test('a run refuses a device whose sandbox policy cannot be resolved', async t => {
+  const {state, pre, io} = fakeDevice();
+  state.answeringHost = 'vendor';
+  pre.sandbox = {mode: null, error: 'CUA_SHIM_SANDBOX must be scoped, disabled or default'};
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', ...plan, io}), /sandbox policy.*CUA_SHIM_SANDBOX must be/);
 });

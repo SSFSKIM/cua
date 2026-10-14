@@ -179,9 +179,16 @@ export const linuxAdapter = {
       }
       const r = guard(await js(code), op);
       const state = device.targetState(target, {waitMs: ownWindow ? 5000 : 0});
-      let inserted = {};
-      if (ownWindow && state === 'survived' && r.cell?.value?.outcome === 'returned') inserted = guard(await js(linux.INSERTED), `${op}'s read-back`).cell?.value ?? {};
-      row(op, 1, r, {target: state, ...inserted});
+      // Where the method returned and its window survived, whether its text went in is read back. A read-back that fails
+      // leaves the sample without that observation: it is recorded as failed, never as text that went in.
+      let readBack = {}, readBackError = null;
+      if (ownWindow && state === 'survived' && r.cell?.value?.outcome === 'returned') {
+        const back = guard(await js(linux.INSERTED), `${op}'s read-back`);
+        if (back.cell?.ok && typeof back.cell.value?.inserted === 'boolean') readBack = {inserted: back.cell.value.inserted};
+        else readBackError = back.cell?.error ?? back.failure ?? 'no read-back result';
+      }
+      const sample = ctx.record(op, 1, r, {target: state, ...readBack});
+      emit(readBackError ? {...sample, ok: false, error: `read-back failed: ${readBackError}`} : sample);
       if (ownWindow) meta.gedit.ended.push(...device.terminate([target]).terminated);
       ctx.log(`${op}: ${r.cell?.value?.outcome ?? 'failed'}${r.cell?.value?.methodError ? ` (${r.cell.value.methodError})` : ''}, window ${state}`);
     }

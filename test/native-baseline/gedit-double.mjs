@@ -6,7 +6,8 @@
 // takes one X keysym (or ctrl+a) and edits the buffer; `ignoreKeys` makes it reach nothing.
 const CHARS = {space: ' ', minus: '-', underscore: '_', period: '.'};
 
-export function geditDesktop({ignoreKeys = false, typeTextWorks = false} = {}) {
+// `readBackFails`: once typeText or paste has inserted into a window, reading that window's tree fails.
+export function geditDesktop({ignoreKeys = false, typeTextWorks = false, readBackFails = false} = {}) {
   const windows = new Map();   // id -> {id, file, title, text, selected, crashed, closed}
   const calls = [];
   let nextId = 0x1600001;
@@ -17,11 +18,11 @@ export function geditDesktop({ignoreKeys = false, typeTextWorks = false} = {}) {
   };
   const insert = (w, text) => { w.text = w.selected ? text : w.text + text; w.selected = false; };
   function bind(id) {
-    const tree = () => { const w = live(id); return `Accessibility source: at_spi\n0 frame ${w.title}\n\t1 scroll pane\n\t\t2 text (editable, focused) ${w.text}`; };
+    const tree = () => { const w = live(id); if (readBackFails && w.typed) throw new Error('Computer Use server error: accessibility tree unavailable'); return `Accessibility source: at_spi\n0 frame ${w.title}\n\t1 scroll pane\n\t\t2 text (editable, focused) ${w.text}`; };
     const typed = text => {
       calls.push({id, method: 'type_text', text});
       const w = live(id);
-      if (typeTextWorks) { insert(w, text); return Promise.resolve(); }
+      if (typeTextWorks) { insert(w, text); w.typed = true; return Promise.resolve(); }
       w.crashed = true;
       return Promise.reject(new Error('Resource temporarily unavailable (os error 11)'));
     };

@@ -45,7 +45,8 @@ export function xDisplayFacts(text) {
 
 // One JSON line: the platform, the clone's commit and cleanliness, the Node that runs the serve, the home and runtime
 // release a serve there uses, the handshake record's path for the native surface and the selected host
-// (src/repl-host/identity.mjs hostIdentity, as src/mcp/lazy-runtime.mjs handshakeRecords keys it), the machine and what
+// (src/repl-host/identity.mjs hostIdentity, as src/mcp/lazy-runtime.mjs handshakeRecords keys it), the sandbox policy
+// the serve resolves in this environment (src/runtime/sandbox.mjs sandboxModeFrom, computer surface), the machine and what
 // is running that the run must know about (a cua-116-spike process, serves of the clone, the scratch app). macOS: model,
 // chip, memory, macOS, main display, TextEdit. Linux: CPU and memory, distribution and kernel, the X display (DISPLAY
 // `display`, the cookie in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
@@ -59,6 +60,7 @@ import {arch, cpus, homedir, release as kernel, totalmem} from 'node:os';
 import {join} from 'node:path';
 import {defaultHome, homeLayout, readPointer} from './src/runtime/layout.mjs';
 import {hostIdentity} from './src/repl-host/identity.mjs';
+import {sandboxModeFrom} from './src/runtime/sandbox.mjs';
 const sh = (c, a, env) => { try { return execFileSync(c, a, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, ...(env ? {env} : {})}).trim(); } catch { return ''; } };
 const read = path => { try { return readFileSync(path, 'utf8'); } catch { return ''; } };
 const home = defaultHome(), release = readPointer(home), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
@@ -69,6 +71,7 @@ const common = {
   runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null,
   spikeRunning: sh('pgrep', ['-f', 'cua-116-[s]pike']) !== '',
   serves: sh('pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
+  sandbox: (() => { try { return {mode: sandboxModeFrom(process.env, {platform: process.platform, surfaces: ['computer']}), explicit: process.env.CUA_SHIM_SANDBOX !== undefined}; } catch (e) { return {mode: null, error: e.message}; } })(),
 };
 let own;
 if (process.platform === 'linux') {

@@ -14,7 +14,8 @@
 //   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //
 // A run writes results.jsonl (one row per sample: op, sample, ok, wallMs, inCellMs and the sample's counts) and
-// meta.json (what it ran against: platform, commit, Node, runtime release, hardware, OS, display, the requested host and
+// meta.json (what it ran against: platform, commit, Node, runtime release, sandbox policy, hardware, OS, display, the
+// requested host and
 // what answered each connection (hostAttestations: initialize's serverInfo and the first js result's _meta), the helper,
 // approvals, the processes it owned and what was left). `summary` pools the run-* directories into summary.md
 // (scripts/native-baseline/summary.mjs); `compare` judges cua's runs against the vendor's (compare.mjs, acceptance 8).
@@ -90,6 +91,7 @@ export async function run({device, out, host, samples = 30, cold = 5, tasks = 10
   if (!adapter) throw new Error(`the native baseline has no adapter for ${pre.platform}`);
   if (pre.dirty) throw new Error('the parity clone is dirty');
   if (!pre.release) throw new Error('no runtime installed in the device home');
+  if (!pre.sandbox?.mode) throw new Error(`the serve's sandbox policy could not be resolved on the device (${pre.sandbox?.error ?? 'not reported'})`);
   const refusal = adapter.refuse(pre);
   if (refusal) throw new Error(refusal);
   if (pre.serves) throw new Error('a serve of the parity clone is already running on the device');
@@ -101,7 +103,7 @@ export async function run({device, out, host, samples = 30, cold = 5, tasks = 10
   const meta = {device, platform: pre.platform, host, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
     environment: {CUA_REPL_HOST: host, CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? {DISPLAY: display, XAUTHORITY: '~/.Xauthority'} : {})},
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false};
-  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, runtime: {release: pre.release}, hardware: pre.hardware, os: pre.os, display: pre.display});
+  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
   adapter.start(meta, pre);
   log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}`);
   const ops = io.device ? io.device(adapter, {pre, display}) : adapter.device(remote, {pre, display});

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // The scripted benchmark check's summary (M5): reads <dir>/<vendor|cua>/ep-<n>/, one `browser-parity.mjs run --corpus
 // bench` per episode, and prints each episode's raw reward and drag path, each task's pass count per service, and the
-// verdict: a cua miss in a task where the vendor passes every episode is a defect. An incomplete or unattested run,
-// or unequal episode counts, get no verdict.
+// verdict: a cua miss in a task where the vendor passes every episode is a defect. A service with no episodes, an
+// incomplete or unattested run, or a case whose episode counts differ between the services get no verdict.
 import {readFileSync,readdirSync,existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -25,7 +25,11 @@ function readEpisodes(dir,service) {
   }).flat();
 }
 export function summarizeScripted(dir) {
-  const episodes=SERVICES.flatMap(service=>readEpisodes(dir,service));
+  const episodes=SERVICES.flatMap(service=>{
+    const read=readEpisodes(dir,service);
+    if(!read.length)throw new Error(`no ${service} episodes under ${join(dir,service)} (expected ${service}/ep-<n>/ runs)`);
+    return read;
+  });
   const cases=[...new Set(episodes.map(e=>e.case))].sort();
   const count=(c,service)=>episodes.filter(e=>e.case===c&&e.service===service);
   const tasks={},defects=[],below=[],missed=[];

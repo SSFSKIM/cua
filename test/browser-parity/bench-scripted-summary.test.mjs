@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {summarizeScripted} from '../../scripts/bench-scripted-summary.mjs';
@@ -47,4 +49,21 @@ test('incomplete, unattested or unequal evidence gets no verdict', t => {
   assert.throws(()=>summarizeScripted(evidence(t,{attested:()=>'vendor'})),/cua\/ep-1.*attest/);
   const dir=evidence(t);rmSync(join(dir,'cua','ep-5'),{recursive:true});
   assert.throws(()=>summarizeScripted(dir),/episodes/);
+});
+test('no verdict without episodes from both services: an empty or one-sided directory is refused', t => {
+  const empty=mkdtempSync(join(tmpdir(),'bench-scripted-empty-'));t.after(()=>rmSync(empty,{recursive:true,force:true}));
+  assert.throws(()=>summarizeScripted(empty),/no vendor episodes/);
+  for(const missing of ['vendor','cua']) {
+    const dir=evidence(t);rmSync(join(dir,missing),{recursive:true});
+    assert.throws(()=>summarizeScripted(dir),new RegExp(`no ${missing} episodes`));
+  }
+  const script=fileURLToPath(new URL('../../scripts/bench-scripted-summary.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,[script,empty],{encoding:'utf8'});
+  assert.equal(run.status,1);assert.equal(run.stdout,'');assert.match(run.stderr,/no vendor episodes/);
+});
+test('a case on one service only is refused', t => {
+  const dir=evidence(t);
+  const path=join(dir,'cua','ep-1','results.jsonl');
+  writeFileSync(path,readFileSync(path,'utf8').split('\n').filter(l=>!l.includes('bench/drag-items')).join('\n'));
+  assert.throws(()=>summarizeScripted(dir),/bench\/drag-items: unequal episodes \(vendor 5, cua 4\)/);
 });

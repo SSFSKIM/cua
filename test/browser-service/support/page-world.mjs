@@ -9,6 +9,11 @@
 // of Playwright's API the engine calls, over these DOMs. Selector grammar: parts joined by " >> "; a part is `#id`,
 // `.class`, a tag name, `text=<substring>` or `nth=<n>`; a later part matches among the earlier part's descendants.
 //
+// For the locator actions (actions.mjs) the fake script also answers the element states editable and checked, fill,
+// selectText, focusNode, retarget, expect('to.be.focused') and selectOptions over fields with values, checked boxes,
+// options and focus; elements have a settable bounding rect; DOM.getFrameOwner, DOM.getContentQuads and
+// DOM.getNodeForLocation (browser.hitTest) answer from the elements' rects. Input.* calls are recorded and answered {}.
+//
 // The worlds behave as Chrome's do for these tests: Page.createIsolatedWorld returns the frame's context for the name
 // until the frame's document changes; a frame element's contentWindow, read from an isolated world, is the child
 // frame's window in the caller's world (a context of its own, made on first use); a cross-origin child's
@@ -46,9 +51,39 @@ export const FAKE_INJECTED_SOURCE = `var PlaywrightInjected = {InjectedScript: c
   }
   elementState(element, state) {
     if (!element.isConnected) return {matches: false, received: 'error:notconnected'};
-    if (state === 'visible') return {matches: element.visible, received: element.visible ? 'visible' : 'hidden'};
+    if (state === 'visible' || state === 'hidden') return {matches: state === 'visible' ? element.visible : !element.visible, received: element.visible ? 'visible' : 'hidden'};
     if (state === 'enabled') return {matches: !element.disabled, received: element.disabled ? 'disabled' : 'enabled'};
+    if (state === 'editable') {
+      if (!['input', 'textarea'].includes(element.localName)) throw new Error('Element is not an <input>, <textarea>, <select> or [contenteditable] and does not have a role allowing [aria-readonly]');
+      return {matches: !element.disabled && !element.readOnly, received: element.disabled ? 'disabled' : element.readOnly ? 'readOnly' : 'editable'};
+    }
+    if (state === 'checked') {
+      if (element.type !== 'checkbox' && element.type !== 'radio') throw new Error('Not a checkbox or radio button');
+      return {matches: !!element.checked, received: element.checked ? 'checked' : 'unchecked', isRadio: element.type === 'radio'};
+    }
     throw new Error('Unexpected element state: ' + state);
+  }
+  retarget(node) { return node; }
+  fill(node, value) {
+    if (node.localName === 'input' && node.type === 'date') { node.value = value; return 'done'; }
+    if (node.localName !== 'input' && node.localName !== 'textarea') throw new Error('Element is not an <input>, <textarea> or [contenteditable] element');
+    this.selectText(node);
+    return 'needsinput';
+  }
+  selectText(node) { node.focus(); node.selectionStart = 0; node.selectionEnd = String(node.value ?? '').length; return 'done'; }
+  focusNode(node) { if (!node.isConnected) return 'error:notconnected'; node.focus(); return 'done'; }
+  async expect(node, {expression}) {
+    if (expression !== 'to.be.focused') throw new Error('Unexpected expect: ' + expression);
+    return {matches: node.ownerDocument.activeElement === node && !node.refusesFocus};
+  }
+  selectOptions(node, options) {
+    if (node.localName !== 'select') throw new Error('Element is not a <select> element');
+    const found = node.children.filter((option, index) => options.some(o => (o.value === undefined || o.value === option.attrs.value)
+      && (o.label === undefined || o.label === option.ownText) && (o.index === undefined || o.index === index)));
+    if (found.length === 0) return 'error:optionsnotfound';
+    node.value = found[0].attrs.value;
+    node.events.push('input', 'change');
+    return [node.value];
   }
   strictModeViolationError(parsed, matches) {
     const error = new Error('strict mode violation: ' + parsed.parts.map(p => p.source).join(' >> ') + ' resolved to ' + matches.length + ' elements');
@@ -61,7 +96,7 @@ export const FAKE_INJECTED_SOURCE = `var PlaywrightInjected = {InjectedScript: c
 let nextBackendNodeId = 100;
 
 class FakeElement {
-  constructor(localName, {id = '', cls = [], text = '', visible = true, disabled = false, attrs = {}, children = []} = {}) {
+  constructor(localName, {id = '', cls = [], text = '', visible = true, disabled = false, attrs = {}, children = [], rect, type, value, checked, readOnly} = {}) {
     this.localName = localName;
     this.tagName = localName.toUpperCase();
     this.id = id;
@@ -74,16 +109,26 @@ class FakeElement {
     this.backendNodeId = nextBackendNodeId++;
     this.ownerDocument = null;
     this.connected = true;
+    this.rect = rect ?? {left: 10, top: 20, width: 300, height: 150};
+    this.type = type ?? attrs.type;
+    this.value = value;
+    this.checked = checked;
+    this.readOnly = readOnly ?? false;
+    this.events = [];
+    this.scrolls = [];
     for (const child of children) child.parent = this;
   }
+  focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; }
+  matches(selector) { return selector === ':focus' && this.ownerDocument?.activeElement === this; }
+  getRootNode() { return this.ownerDocument; }
   get isConnected() { return this.connected && this.ownerDocument != null; }
   get textContent() { return this.ownText + this.children.map(c => c.textContent).join(''); }
   get innerText() { return this.visible ? this.textContent : ''; }
   getAttribute(name) { return Object.hasOwn(this.attrs, name) ? String(this.attrs[name]) : null; }
   get attributes() { return Object.entries(this.attrs).map(([name, value]) => ({name, value: String(value)})); }
   *descendants() { for (const child of this.children) { yield child; yield* child.descendants(); } }
-  scrollIntoView() {}
-  getBoundingClientRect() { return {left: 10, top: 20, width: 300, height: 150}; }
+  scrollIntoView(options) { this.scrolls.push(options); }
+  getBoundingClientRect() { return {...this.rect}; }
   get clientWidth() { return 300; }
   get clientHeight() { return 150; }
 }
@@ -93,15 +138,24 @@ class FakeDocument {
     this.frame = frame;
     this.backendNodeId = nextBackendNodeId++;
     this.body = new FakeElement('body', {children: elements});
+    this.activeElement = this.body;
     this.adopt(this.body);
   }
+  hasFocus() { return true; }
   adopt(element) {
     element.ownerDocument = this;
     for (const child of element.children) this.adopt(child);
   }
-  get defaultView() { return {frameElement: this.frame.frameElement, document: this}; }
+  get defaultView() { return {frameElement: this.frame.frameElement, document: this, ...FRAME_CLASSES}; }
   *descendants() { yield this.body; yield* this.body.descendants(); }
 }
+
+// The element classes a page expression tests with instanceof against its view.
+const FRAME_CLASSES = {
+  HTMLElement: FakeElement,
+  HTMLIFrameElement: {[Symbol.hasInstance]: element => element instanceof FakeElement && element.localName === 'iframe'},
+  HTMLFrameElement: {[Symbol.hasInstance]: element => element instanceof FakeElement && element.localName === 'frame'},
+};
 
 export const el = (localName, options) => new FakeElement(localName, options);
 
@@ -132,6 +186,11 @@ export function pageWorld() {
     const process = processes.get(processKey(target));
     if (process == null) throw new Error(`No target ${JSON.stringify(target)}`);
     return process;
+  };
+
+  const elementWhere = (process, predicate) => {
+    for (const frame of process.frames.values()) for (const element of frame.document.descendants()) if (predicate(element)) return element;
+    return null;
   };
 
   function buildFrame(process, spec, parentFrameId, frameElement) {
@@ -252,12 +311,13 @@ export function pageWorld() {
       for (const [objectId, object] of objects) if (object.group === objectGroup) objects.delete(objectId);
       return {};
     },
-    'DOM.describeNode': (target, {objectId}) => {
-      const element = objects.get(objectId)?.value;
+    'DOM.describeNode': (target, {objectId, backendNodeId}) => {
+      const element = backendNodeId != null ? elementWhere(processOf(target), e => e.backendNodeId === backendNodeId) : objects.get(objectId)?.value;
       if (element instanceof FakeDocument) return {node: {nodeId: 0, backendNodeId: element.backendNodeId, nodeName: '#document', localName: ''}};
       if (!(element instanceof FakeElement)) throw new Error('Could not find node with given id');
       return {node: {nodeId: 0, backendNodeId: element.backendNodeId, nodeName: element.tagName, localName: element.localName,
-        ...(element.contentFrameId ? {frameId: element.contentFrameId} : {})}};
+        ...(element.contentFrameId ? {frameId: element.contentFrameId} : {}),
+        attributes: Object.entries(element.attrs).flatMap(([name, value]) => [name, String(value)])}};
     },
     'DOM.resolveNode': (target, {backendNodeId, executionContextId, objectGroup}) => {
       const process = processOf(target);
@@ -270,6 +330,22 @@ export function pageWorld() {
         }
       }
       throw new Error('No node with given id found');
+    },
+    'DOM.getFrameOwner': (target, {frameId}) => {
+      const element = elementWhere(processOf(target), e => e.contentFrameId === frameId);
+      if (element == null) throw new Error('Frame with the given id was not found.');
+      return {backendNodeId: element.backendNodeId};
+    },
+    'DOM.getContentQuads': (target, {backendNodeId}) => {
+      const element = elementWhere(processOf(target), e => e.backendNodeId === backendNodeId);
+      if (element == null) throw new Error('No node with given id found');
+      const {left, top, width, height} = element.rect;
+      return {quads: [[left, top, left + width, top, left + width, top + height, left, top + height]]};
+    },
+    'DOM.getNodeForLocation': (target, {x, y}) => {
+      const element = browser.hitTest?.(target, x, y);
+      if (element == null) throw new Error('No node found at given location');
+      return {backendNodeId: element.backendNodeId, ...(element.contentFrameId ? {frameId: element.contentFrameId} : {})};
     },
     'Target.getTargets': (target) => ({targetInfos: [
       {targetId: `PAGE-${target.tabId}`, type: 'page', url: 'https://fixture.test/', attached: true, tabId: target.tabId},
@@ -317,6 +393,8 @@ export function pageWorld() {
     // A world's global object, by frame and name (for asserting what an expression installed).
     world(frameId, worldName) { return browser.frame(frameId).worlds.get(worldName); },
     event(source, method, params) { for (const l of listeners.onCDPEvent) l({source, method, params}); },
+    // DOM.getNodeForLocation's answer: (target, x, y) -> the element there, or null.
+    hitTest: null,
     cdpCalls: () => calls.filter(c => c.op === 'executeCdp').map(c => c.method),
   };
 

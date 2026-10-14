@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync, realpathSync, symlinkSync} from 'node:fs';
 import {join, dirname} from 'node:path';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {buildLaunch, browserServiceFor, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {connectionSecrets} from '../src/secrets/store.mjs';
@@ -203,6 +204,47 @@ test('the vendor selection, the one-release rollback, is explicit and trusts no 
   assert.equal(env.CUA_BROWSER_SERVICE, 'vendor');
   assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS]);
   assert.equal(env.CUA_BROWSER_VENDOR_SERVICE, runtime.paths.browserVendorService);
+});
+
+// The default follows the home's Chrome route (spec 2026-10-13-own-browser-service-design.md, Decision Log, M5 task 1):
+// only a home on the ChatGPT extension route alone gets the vendor's service, which that route needs.
+test('unset, the browser service follows the home\'s route in all four record states; an explicit value always wins', t => {
+  const state = records => {
+    const s = scratch();
+    t.after(s.cleanup);
+    const home = realpathSync(s.dir);
+    if (records.includes('vendor')) writeVendorRecord(home, {at: 1000});
+    if (records.includes('cua')) writeCuaRecord(home, {at: records.includes('vendor-last') ? 500 : 2000});
+    return home;
+  };
+  const none = state([]);
+  const vendor = state(['vendor']);
+  const cua = state(['cua']);
+  const both = state(['vendor', 'cua']);
+  const bothVendorLast = state(['vendor', 'cua', 'vendor-last']);
+  for (const ambient of [{}, {CUA_BROWSER_SERVICE: ''}]) {
+    assert.deepEqual(browserServiceFor(ambient, none), {service: 'cua', reason: 'no_registration'});
+    assert.deepEqual(browserServiceFor(ambient, vendor), {service: 'vendor', reason: 'chatgpt_extension_route'});
+    assert.deepEqual(browserServiceFor(ambient, cua), {service: 'cua', reason: 'cua_route'});
+    assert.deepEqual(browserServiceFor(ambient, both), {service: 'cua', reason: 'cua_route'}, 'both records: cua');
+    assert.deepEqual(browserServiceFor(ambient, bothVendorLast), {service: 'cua', reason: 'cua_route'}, 'both records: cua, whichever was written last');
+  }
+  for (const home of [none, vendor, cua, both]) {
+    assert.deepEqual(browserServiceFor({CUA_BROWSER_SERVICE: 'cua'}, home), {service: 'cua', reason: 'explicit'});
+    assert.deepEqual(browserServiceFor({CUA_BROWSER_SERVICE: 'vendor'}, home), {service: 'vendor', reason: 'explicit'});
+  }
+  assert.throws(() => browserServiceFor({CUA_BROWSER_SERVICE: 'openai'}, none), err => err.code === 'invalid_browser_service');
+});
+
+test('a home on the ChatGPT extension route launches the vendor\'s service by default, written out, with no cua service directory trusted', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  writeVendorRecord(home);
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
+  assert.equal(env.CUA_BROWSER_SERVICE, 'vendor');
+  assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(BROWSER_SERVICE_IMPL_DIR));
+  const explicit = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: 'cua'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}).env;
+  assert.equal(explicit.CUA_BROWSER_SERVICE, 'cua', 'an explicit value wins over the route');
+  assert.ok(explicit.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(BROWSER_SERVICE_IMPL_DIR));
 });
 
 test('an unknown browser service selection is refused; without the browser surface the selection is ignored', t => {

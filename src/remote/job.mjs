@@ -3,10 +3,11 @@
 // `--relay` when the device has a relay URL and `--http <host:port>` when given, the log $CUA_HOME/state/agent.log, and
 // the environment: CUA_HOME when it is set, CUA_SHIM_SURFACES (default computer,browser: remote use is for the browser
 // as much as the desktop) and each of the agent's own settings (CUA_AGENT_MAX_SESSIONS, _IDLE_MINUTES,
-// _ALLOWED_ORIGINS, _CONSOLE_CHECK) and of its sessions' CUA_RUNTIME_IDLE_MS and CUA_BROWSER_SERVICE (src/mcp/server.mjs;
-// `vendor` is the browser service's one-release rollback, which a job's fixed environment could not otherwise take) set
-// in the environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it. Every check that can
-// refuse runs here, before a service manager is touched. `--relay` is refused
+// _ALLOWED_ORIGINS, _CONSOLE_CHECK) and of its sessions' CUA_RUNTIME_IDLE_MS and CUA_BROWSER_SERVICE (src/mcp/server.mjs)
+// set in the environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it. CUA_BROWSER_SERVICE
+// only when given (cua or vendor, the one-release rollback a job's fixed environment could not otherwise take), never a
+// resolved default: unset, each launch resolves it from the home's route (src/runtime/launch.mjs browserServiceFor).
+// Every check that can refuse runs here, before a service manager is touched. `--relay` is refused
 // (relay_unavailable) when this checkout cannot load the ws package the relay path needs: such a job would refuse at
 // every start and be restarted every 10 s.
 import {fileURLToPath} from 'node:url';
@@ -32,7 +33,7 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
   limitsFrom(env);
   consoleCheckFrom(env);
   runtimeIdleFrom(env);
-  browserServiceFrom(env);
+  const browserService = browserServiceFrom(env);
   const device = readDevice(home);
   if (!device) fail('remote_not_enrolled', `${machine} is not enrolled for remote control`, {hint: 'run cua remote enroll first'});
   if (device.relayUrl) checkRelayUrl(device.relayUrl);
@@ -40,7 +41,10 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
   const args = [...(device.relayUrl ? ['--relay'] : []), ...(http ? ['--http', http] : [])];
   if (!args.length)
     fail('agent_nothing_to_serve', 'the agent would have nothing to serve: no relay is enrolled and no --http address was given', {hint: `give --http <${machine === 'this Mac' ? 'this Mac\'s' : 'this machine\'s'} LAN address>:7801, or enrol a relay with cua remote enroll --relay <wss url>`});
-  const settings = Object.fromEntries([...AGENT_SETTINGS, 'CUA_RUNTIME_IDLE_MS', 'CUA_BROWSER_SERVICE'].filter(key => env[key] !== undefined).map(key => [key, env[key]]));
+  const settings = {
+    ...Object.fromEntries([...AGENT_SETTINGS, 'CUA_RUNTIME_IDLE_MS'].filter(key => env[key] !== undefined).map(key => [key, env[key]])),
+    ...(browserService ? {CUA_BROWSER_SERVICE: browserService} : {}),
+  };
   return {
     programArguments: [node, cli, 'agent', 'run', ...args],
     environment: {...(env.CUA_HOME ? {CUA_HOME: resolve(env.CUA_HOME)} : {}), CUA_SHIM_SURFACES: named, ...settings},

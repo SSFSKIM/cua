@@ -46,8 +46,9 @@ client's `/secret` field themselves.
 5. **The agent.** `cua agent install`: a launchd job in the GUI session on macOS, a systemd user unit on Linux (there,
    `sudo loginctl enable-linger "$USER"` once so it runs from boot, and `--display`/`--xauthority` when the installing
    shell has no X session). Run it again after node moves (a Homebrew or nvm upgrade). The job's environment is fixed
-   at install: the browser service is cua's own unless `CUA_BROWSER_SERVICE=vendor` was set for `install` (OpenAI's,
-   kept one release as a rollback), so install again to switch.
+   at install: a `CUA_BROWSER_SERVICE` set for `install` (`vendor`, OpenAI's service, is the one-release rollback) is
+   kept until you install again; unset, each launch picks the service from the device's Chrome registration (cua's,
+   or OpenAI's on a ChatGPT-extension-only home), and `cua doctor`'s `browser.service` row says which.
 6. **Check.** `cua doctor --json`: the applicable `agent.*` rows (`installed`, `running`, `enrolled`, `console`, `relay`) must pass.
    `agent.relay` reads the agent's recorded link state, not the network; a failing relay is not a stopped agent.
    On macOS the first drive asks for Accessibility and Screen Recording at the screen, so someone must be there once.

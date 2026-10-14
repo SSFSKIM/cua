@@ -31,7 +31,8 @@ serves a client on another machine (see Remote control). The design and its stat
 - For Chrome only: Google Chrome with the cua extension in each profile you want to use (from the Chrome Web Store once
   it is listed, or loaded unpacked from the checkout's `extension/`) and `cua chrome register` run once (see Chrome).
   No account or login is needed. cua never installs the extension for you. (The ChatGPT extension route, until its
-  removal, needs OpenAI's extension, a Codex login of the server's own and `CUA_BROWSER_SERVICE=vendor` instead.)
+  removal, needs OpenAI's extension, a Codex login of the server's own and OpenAI's browser service instead, which cua
+  selects by itself on a home registered with `cua chrome register --vendor`.)
 
 A clean Mac without ChatGPT installed has been shown, in a macOS 27 VM (`docs/evidence/clean-machine-acceptance.md`).
 There, the pinned helper started from cua's release tree, macOS asked for Accessibility and Screen Recording on the
@@ -295,13 +296,15 @@ the Chrome route with the same results, apart from recorded differences in cua's
 belonged to OpenAI's products: the per-URL site-status check that ended a session on sites OpenAI blocks, the
 telemetry, the Codex app-server and its stored grants, and every approval prompt of its own. It lifts two of the
 vendor's limits: a locator action, wait or `evaluate` takes the caller's `timeoutMs` up to 120 s (3 s by default), and
-`evaluate` runs in the page's own world as Playwright's does. For one release `CUA_BROWSER_SERVICE=vendor` selects
-OpenAI's service instead, as a rollback (Configuration); it is removed with the vendor module (issue #116).
+`evaluate` runs in the page's own world as Playwright's does. OpenAI's service stays for one release, removed with the
+vendor module (issue #116): `CUA_BROWSER_SERVICE=vendor` selects it as a rollback, and a home on the ChatGPT extension
+route gets it by default, since cua's service refuses that extension's backends (Configuration; `cua doctor`'s
+`browser.service` row names the selection and why).
 
 With the browser surface the model gets a fifth tool, `profiles_list`, whose description carries the Chrome rules:
 select only a profile `profiles_list` returned and never pick one for you, use Playwright locators for input, give a
 slow wait its own `timeoutMs` and the `js` call a `timeout_ms` above it, expect `evaluate` to act on the page and run
-once, give tab creation a long limit (see Operating guidance for agents). Under `CUA_BROWSER_SERVICE=vendor` the
+once, give tab creation a long limit (see Operating guidance for agents). Under OpenAI's service (`vendor`) the
 description teaches that service's 3 s cap and read-only evaluation instead. The browser API is in the `js`
 description, and in full in the document the first `js` call returns.
 
@@ -316,8 +319,8 @@ node bin/cua.mjs doctor                              # chrome.* rows pass; codex
 ```
 
 Until the cua extension is listed on the Chrome Web Store, the route cua used before stays available: OpenAI's
-ChatGPT extension and its native host, which need a Codex login and OpenAI's browser service,
-`CUA_BROWSER_SERVICE=vendor` (see "ChatGPT extension route (until removal)"); a later version removes it. A `CUA_HOME`
+ChatGPT extension and its native host, which need a Codex login and OpenAI's browser service (see "ChatGPT extension
+route (until removal)"); a later version removes it. A `CUA_HOME`
 uses one route at a time, whichever `cua chrome register` ran last; a home where neither ran is on the ChatGPT
 extension route, so run `cua chrome register` once.
 
@@ -536,8 +539,8 @@ unavailable."; the agent's next `profiles_list` then names the cause. Three rule
   close a leftover tab yourself.
 
 cua's browser service asks nothing of you: no dialog for a new website origin, a download, an upload or the history,
-and no site is refused by a policy of its own; the permission Claude Code applies to the `js` call is the gate. (Under
-`CUA_BROWSER_SERVICE=vendor`, OpenAI's service asks for access to each new website origin, as a dialog (an MCP
+and no site is refused by a policy of its own; the permission Claude Code applies to the `js` call is the gate. (OpenAI's
+service, `vendor`, asks for access to each new website origin, as a dialog (an MCP
 elicitation) that the plugin's Elicitation hook accepts, like an app approval.) `end_task` completes the task as for
 native work, and on the cua route cua's host then settles the task's
 tabs as the browser API teaches the agent: a tab the agent created and did not mark is closed, a tab marked
@@ -566,7 +569,7 @@ this service existed, node_repl's process group also ran `codex app-server` in t
 (`$CUA_HOME/state/codex`), which keeps its own state there and does its own fetching
 (`docs/evidence/2026-10-07-s0-no-header-spike.md`); replacing the runtime's sandbox and app-server is issue #115.
 
-Under `CUA_BROWSER_SERVICE=vendor` OpenAI's service behaves as it does in Codex: it makes its site-status and telemetry
+OpenAI's service (`vendor`) behaves as it does in Codex: it makes its site-status and telemetry
 calls to OpenAI's endpoints, reads policy through `codex app-server`, which writes its sqlite, skills and cache state in
 that `CODEX_HOME` and contacts port-443 endpoints, and on the ChatGPT extension route looks up the signed-in caller's
 identity before every browser request. cua switches none of that off (no ambient-network or security override).
@@ -609,10 +612,14 @@ anything in for you. A home is on this route after `cua chrome register --vendor
 route ever ran in it. The profile commands, `profiles_list` and the agent's API are the same on both routes; bindings
 made on one route must be made again on the other.
 
-This route needs OpenAI's browser service: set `CUA_BROWSER_SERVICE=vendor` in the server's environment, and in the
-shell that runs `cua profiles list` and `bind`. cua's own service, the default, refuses the ChatGPT extension's
-backends (they announce OpenAI's agent request headers, which only OpenAI's service serves), so with it their
-profiles are not found live. The vendor selection is kept for one release; issue #116 removes it.
+This route needs OpenAI's browser service: cua's own refuses the ChatGPT extension's backends (they announce OpenAI's
+agent request headers, which only OpenAI's service serves), so with it their profiles are not found live. With
+`CUA_BROWSER_SERVICE` unset, a home registered with `cua chrome register --vendor` and not with `cua chrome register`
+gets OpenAI's service by itself, at every launch, `cua profiles list` and `bind` included. A home with no
+registration at all gets cua's, so where you rely on the ChatGPT desktop app's own host without any registration,
+set `CUA_BROWSER_SERVICE=vendor` in the server's environment and in the shell that runs `cua profiles list` and
+`bind`. `cua doctor`'s `browser.service` row says which service a launch gets and why. The vendor selection is kept for
+one release; issue #116 removes it.
 
 #### The server's Codex login (optional)
 
@@ -781,8 +788,8 @@ older agent) and stale records block with the cause. No enrolled relay means ski
 
 It starts at login, is restarted after a crash but not after a deliberate stop, logs to `$CUA_HOME/state/agent.log`,
 and its environment carries `CUA_HOME` (when set), `CUA_SHIM_SURFACES` (default `computer,browser`) and each of the
-agent's settings (`CUA_AGENT_*`, below), `CUA_RUNTIME_IDLE_MS` and `CUA_BROWSER_SERVICE` (Configuration; `vendor` is the
-browser service's one-release rollback) set in the environment `install` runs in. Running `install` again replaces the
+agent's settings (`CUA_AGENT_*`, below) and `CUA_RUNTIME_IDLE_MS` set in the environment `install` runs in, and
+`CUA_BROWSER_SERVICE` only when you set it there (Configuration; unset, each launch resolves it from the home's route). Running `install` again replaces the
 job. A GUI-session job is the point: TCC grants and the screen belong
 to that session. It can be installed over SSH while you are logged in at the Mac (the job still runs in your GUI
 session), but a first-use permission prompt needs someone at the screen. The relay path needs the `ws` package: run `npm ci` in the checkout,
@@ -1175,13 +1182,13 @@ Chrome (browser surface):
   all; downloads and file choosers wait up to 120 s). On a slow page, raise `timeoutMs` (for example
   `locator('#late').click({timeoutMs: 15000})`) rather than looping short waits, and give the `js` call a `timeout_ms`
   above the longest budget it awaits: a cell that hits its `timeout_ms` resets the kernel and loses the tab handle.
-  Under `CUA_BROWSER_SERVICE=vendor` the old cap holds: 3 s whatever `timeoutMs` says, which can only shorten it (spike,
+  Under OpenAI's service (`vendor`) the old cap holds: 3 s whatever `timeoutMs` says, which can only shorten it (spike,
   issue #25), so there the way to wait longer is a loop of short waits up to a deadline of your own.
 - **`evaluate` acts on the page, once.** `evaluate` on a page or locator runs in the page's main world, as the page's
   own scripts do: it can change the DOM, call `fetch` with the page's cookies and navigate (there is no `require`). A
   script is sent once and never re-run: if it times out or the page navigates or loses its context meanwhile, the call
   fails saying the script may have run, and a timeout cannot roll back what it already did, so inspect the page before
-  running it again (a form it may have submitted, say). Under `CUA_BROWSER_SERVICE=vendor` evaluation is read-only:
+  running it again (a form it may have submitted, say). Under OpenAI's service (`vendor`) evaluation is read-only:
   no `fetch`, no `require`, and its objects are non-extensible.
 - **A failed call is a plain `Error` with the service's sentence.** Model code sees no error code: match on the
   sentence (`A <type> JavaScript dialog is active in this tab.`, `Playwright selector deadline exceeded`, `strict mode
@@ -1326,7 +1333,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_HOME` | `~/Library/Application Support/cua`; on Linux `${XDG_DATA_HOME:-~/.local/share}/cua` | the installed runtime, its config and approvals (`state/codex`), the runtime's recorded handshake answers (`state/handshake`), and per-connection directories (`run/`: each connection's working directory and a record of the process that owns it; a process killed before it could remove them is found dead by the next `cua serve` or `cua doctor`, which removes its entries and says so, `doctor` in its `run.stale` row) |
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host, no login needed; or, until its removal, the ChatGPT extension route with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
-| `CUA_BROWSER_SERVICE` | `cua` | with the browser surface: the browser service behind the browser API. `cua`, cua's own (`src/browser-service/`, see Chrome): no network call or approval prompt of its own, `timeoutMs` up to 120 s (3 s by default; `timeoutMs: 0` is one attempt bounded by 3 s) on locator actions, waits and `evaluate`, and `evaluate` in the page's own world, never run twice (it fails saying the script may have run when something interrupts it after it was sent). `vendor`, OpenAI's from the pinned runtime, kept for one release as the rollback and needed by the ChatGPT extension route; issue #116 removes it. Any other value refuses the connection (`invalid_browser_service`). Read by `cua serve` and by `cua profiles list` and `bind`, whose listing launch uses the same service. Model code sees a failed call of either service as a plain `Error` carrying the service's sentence; cua's error code stays on the trusted side, where only the wrapper's classification of a failed `{{secret:…}}` input reads it |
+| `CUA_BROWSER_SERVICE` | `cua`, or `vendor` on a ChatGPT extension route home | with the browser surface: the browser service behind the browser API. `cua`, cua's own (`src/browser-service/`, see Chrome): no network call or approval prompt of its own, `timeoutMs` up to 120 s (3 s by default; `timeoutMs: 0` is one attempt bounded by 3 s) on locator actions, waits and `evaluate`, and `evaluate` in the page's own world, never run twice (it fails saying the script may have run when something interrupts it after it was sent). `vendor`, OpenAI's from the pinned runtime, kept for one release as the rollback and for the ChatGPT extension route; issue #116 removes it. Unset or empty, each launch resolves it from the home's Chrome registration: `vendor` when only `cua chrome register --vendor` registered it, `cua` otherwise (the cua route, or no registration); `cua doctor`'s `browser.service` row says which and why. Any other value refuses the connection (`invalid_setting` at start). Read by `cua serve` and by `cua profiles list` and `bind`, whose listing launch uses the same service; `cua agent install` carries it into the job only when set. Model code sees a failed call of either service as a plain `Error` carrying the service's sentence; cua's error code stays on the trusted side, where only the wrapper's classification of a failed `{{secret:…}}` input reads it |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |
 | `CUA_SHIM_MODEL` | the client's name from `initialize` | model label sent in the runtime's turn metadata |
@@ -1466,7 +1473,7 @@ agent's actions on that tab (clicks, typing, scripts) and lets reads through. A 
 until its budget runs out: with the default 3 s the agent sees `Playwright selector deadline exceeded` rather than
 MAWS's "A person is using this tab; wait and retry", and waiting a few seconds and retrying is the answer to both; with
 a raised `timeoutMs` (`click({timeoutMs: 15000})`) the action goes through once the person lets go
-(`docs/evidence/2026-10-13-own-browser-service-parity/m4/`). Under `CUA_BROWSER_SERVICE=vendor` the budget is 3 s
+(`docs/evidence/2026-10-13-own-browser-service-parity/m4/`). Under OpenAI's service (`vendor`) the budget is 3 s
 whatever `timeoutMs` says.
 
 To try a cua checkout inside MAWS without replacing the installed plugin, point MAWS's Settings › Engine binary at a

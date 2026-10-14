@@ -13,11 +13,11 @@ export function surfacesFrom(value = 'computer') {
   return SURFACES.filter(s => named.includes(s));
 }
 
-// CUA_BROWSER_SERVICE, as the launch reads it (src/runtime/launch.mjs): `cua` when unset or empty, else exactly `cua`
-// or `vendor`.
+// The CUA_BROWSER_SERVICE the caller set: null when unset or empty (the launch then resolves it from the home's route,
+// src/runtime/launch.mjs browserServiceFor), else exactly `cua` or `vendor`.
 export function browserServiceFrom(env) {
   const value = env.CUA_BROWSER_SERVICE;
-  if (value === undefined || value === '') return 'cua';
+  if (value === undefined || value === '') return null;
   if (value !== 'cua' && value !== 'vendor') fail('invalid_setting', 'CUA_BROWSER_SERVICE must be cua or vendor');
   return value;
 }
@@ -224,7 +224,7 @@ const BROWSER_POINTER = {
   vendor: '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab).',
 };
 
-// `browserService`: the browser service the launch selects (settingsFrom: cua unless the vendor is named).
+// `browserService`: the browser service the connection's launch selects (src/mcp/connection.mjs).
 export function jsRulesFor(surfaces, {platform = process.platform, browserService = 'cua'} = {}) {
   const computer = !surfaces.includes('computer') ? [] : platform === 'linux' ? LINUX_COMPUTER_RULES : COMPUTER_RULES;
   return [JS_TITLE, ...computer, ...(surfaces.includes('browser') ? [BROWSER_POINTER[browserService]] : [])].join('\n');

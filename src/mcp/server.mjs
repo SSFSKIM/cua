@@ -435,11 +435,11 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   const hostNotes = env.CUA_SHIM_HOST_NOTES === 'none' ? '' : (env.CUA_SHIM_HOST_NOTES ?? hostNotesFor(surfaces, {platform, devices}));
   const secrets = env.CUA_SHIM_SECRETS ?? 'on';
   if (!['on', 'off'].includes(secrets)) fail('invalid_setting', 'CUA_SHIM_SECRETS must be on or off');
-  // The browser service the launch selects (src/runtime/launch.mjs), whose rules the model is taught: cua's own unless
-  // the vendor is named. Read with the browser surface only, as the launch reads it.
-  const browserService = surfaces.includes('browser') ? browserServiceFrom(env) : 'cua';
+  // CUA_BROWSER_SERVICE is checked here with the browser surface, as the launch reads it; which service a launch gets
+  // (and so which rules the model is taught) is the launch's resolution (src/mcp/connection.mjs).
+  if (surfaces.includes('browser')) browserServiceFrom(env);
   return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform,
-    runtimeIdleMs: runtimeIdleFrom(env), browserService};
+    runtimeIdleMs: runtimeIdleFrom(env)};
 }
 
 

@@ -8,6 +8,7 @@ import {AGENT_LABEL, agentPlistPath, agentStatus, installAgent, installedJob, pa
 import {enrollDevice} from '../src/remote/device.mjs';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
 import {UID, fakeLaunchctl, printed} from './fixtures/fake-launchctl.mjs';
+import {writeVendorRecord} from './fixtures/route-records.mjs';
 
 const NODE = '/opt/node & <co>/bin/node';
 const CLI = '/Users/me/"cua"/bin/cua\'s.mjs';
@@ -83,6 +84,19 @@ test('install carries the agent\'s settings from its environment into the job wh
     await assert.rejects(install({http: '127.0.0.1:7801', env: {CUA_HOME: home, ...bad}}), {code: 'invalid_setting'}, JSON.stringify(bad));
   assert.equal(readFileSync(plist, 'utf8'), before, 'a refused setting changes nothing');
   assert.equal(launchctl.calls.length, calls);
+});
+
+test('install writes CUA_BROWSER_SERVICE into the job only when it was given, never the route-resolved default', async t => {
+  const {home, install, plist} = setup(t);
+  writeVendorRecord(home);   // a home whose default would resolve to the vendor's service
+  for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_BROWSER_SERVICE: ''}]) {
+    await install({http: '127.0.0.1:7801', env});
+    assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_BROWSER_SERVICE)}: re-resolved at each launch`);
+  }
+  for (const service of ['cua', 'vendor']) {
+    await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_BROWSER_SERVICE: service}});
+    assert.equal(readPlist(readFileSync(plist, 'utf8')).environment.CUA_BROWSER_SERVICE, service, `${service}: carried as given`);
+  }
 });
 
 test('install refuses a relay URL that is not wss: or loopback ws: before writing anything', async t => {

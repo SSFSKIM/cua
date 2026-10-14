@@ -30,14 +30,19 @@ export function readCuaRecord(home) {
   return record?.schema === 1 && record.route === 'cua' && isObject(record.browsers) ? record : null;
 }
 
+// The vendor record, or null when it is absent, not one, or names no browser (what `unregister --vendor` leaves).
+export function readVendorRecord(home) {
+  const record = readJson(vendorRecordFile(realHome(home)));
+  return record?.schema === 1 && isObject(record.browsers) && Object.keys(record.browsers).length ? record : null;
+}
+
 const writtenAt = path => { try { return statSync(path).mtimeMs; } catch { return null; } };
 
 // -> 'cua' | 'vendor' | null
 export function chromeRoute(home) {
   const root = realHome(home);
   const cua = readCuaRecord(root) ? writtenAt(cuaRecordFile(root)) : null;
-  const vendorRecord = readJson(vendorRecordFile(root));
-  const vendor = vendorRecord?.schema === 1 && isObject(vendorRecord.browsers) && Object.keys(vendorRecord.browsers).length ? writtenAt(vendorRecordFile(root)) : null;
+  const vendor = readVendorRecord(root) ? writtenAt(vendorRecordFile(root)) : null;
   if (cua !== null && (vendor === null || cua > vendor)) return 'cua';
   return vendor !== null ? 'vendor' : null;
 }

@@ -20,6 +20,7 @@ import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {createFakeMawsExtension} from './helpers/fake-maws-peer.mjs';
+import {writeVendorRecord} from './fixtures/route-records.mjs';
 
 const supported = installedHomeSupported;
 const INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'lazy-e2e', version: '0'}};
@@ -182,6 +183,30 @@ test('the record is the runtime\'s raw answers; a MAWS session and a plain one r
   assert.doesNotMatch(profiles(plainTools), /In MAWS/);
   assert.deepEqual(mawsTools.map(tool => tool.name), plainTools.map(tool => tool.name));
   assert.equal(await maws.end(), 0, maws.diagnostics.join('\n'));
+});
+
+// The Chrome rules the model is taught follow the browser service the connection's launch selects: on a home on the
+// ChatGPT extension route the default resolves to the vendor's service, whose 3 s cap and read-only evaluate it teaches.
+test('profiles_list and js teach the rules of the service the launch resolves: cua\'s by default, the vendor\'s on a ChatGPT extension route home', {skip: !supported}, async t => {
+  const home = fakeInstalledHome(t);
+  const env = {CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off'};
+  const toolsOn = async extra => {
+    const server = served(t, home, {env: {...env, ...extra}});
+    await server.request('initialize', INIT);
+    const tools = Object.fromEntries((await server.request('tools/list')).result.tools.map(tool => [tool.name, tool.description]));
+    assert.equal(await server.end(), 0, server.diagnostics.join('\n'));
+    return tools;
+  };
+  const cua = await toolsOn({});
+  assert.match(cua.profiles_list, /wait up to their timeoutMs: 3 s by default, at most 120 s/);
+  assert.match(cua.js, /budgets up to 120 s, evaluate in the page/);
+  writeVendorRecord(home);
+  const vendor = await toolsOn({});
+  assert.match(vendor.profiles_list, /stop at 3 s \(timeoutMs can only shorten it\)/);
+  assert.match(vendor.profiles_list, /evaluate is read-only/);
+  assert.match(vendor.js, /the 3 s cap, read-only evaluate/);
+  const explicit = await toolsOn({CUA_BROWSER_SERVICE: 'cua'});
+  assert.match(explicit.profiles_list, /at most 120 s/, 'an explicit value wins over the route');
 });
 
 // MAWS (src/chrome/client-mode.mjs): the socket is dialled at once; launches and readiness listings wait for its hello.

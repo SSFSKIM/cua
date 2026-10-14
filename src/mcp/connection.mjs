@@ -131,7 +131,9 @@ export async function openConnection({home, env = process.env, sessionId, input,
       return [...(browserBackends?.entries() ?? []), ...list];
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings,
+      // The rules the model is taught are those of the service the planned launch resolved (src/runtime/launch.mjs).
+      browserService: planned.env.CUA_BROWSER_SERVICE ?? 'cua'});
   } catch (error) {
     await release();
     throw error;

@@ -37,11 +37,12 @@
 //   CUA_BROWSER_VENDOR_SERVICE               browser surface: vendor @oai/browser-desktop service module, for the
 //                                            trusted browser wrapper (src/services/browser.mjs) to delegate to
 //   CUA_BROWSER_SERVICE                      browser surface: which browser service the wrapper delegates to, always
-//                                            written out: `cua` (the default when the caller's environment leaves it
-//                                            unset or empty; src/browser-service/, whose real directory is then added
-//                                            to NODE_REPL_TRUSTED_CODE_PATHS, and nothing wider) or `vendor` (the
-//                                            pinned vendor module, kept one release for rollback and removed by #116);
-//                                            any other value is refused
+//                                            written out (browserServiceFor): the caller's value when it sets one,
+//                                            else resolved from the home's Chrome route. `cua` is src/browser-service/,
+//                                            whose real directory is then added to NODE_REPL_TRUSTED_CODE_PATHS, and
+//                                            nothing wider; `vendor` is the pinned vendor module, kept one release for
+//                                            rollback and for the ChatGPT extension route, removed by #116. Any other
+//                                            value is refused
 //   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the vendor service considers Chrome backends only. Its
 //                                            network and security behaviour is the vendor default (no
 //                                            BROWSER_USE_DISABLE_AMBIENT_NETWORK or BROWSER_USE_SECURITY_MODE)
@@ -79,6 +80,7 @@ import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
+import {readCuaRecord, readVendorRecord} from '../chrome/route.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -98,7 +100,6 @@ export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 // trusted only when the launch selects it.
 export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
 const BROWSER_SERVICES = ['cua', 'vendor'];
-export const DEFAULT_BROWSER_SERVICE = 'cua';
 
 // `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
 // CUA_BROWSER_BACKENDS configured any.
@@ -108,7 +109,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   if (secretsDir !== undefined && (typeof secretsDir !== 'string' || !isAbsolute(secretsDir))) fail('invalid_secrets_dir', 'the secret store directory must be an absolute path');
   if (secretsProjectDir !== undefined && (typeof secretsProjectDir !== 'string' || !isAbsolute(secretsProjectDir) || !secretsDir)) fail('invalid_secrets_dir', 'the project secret store directory must be an absolute path beside the global one');
-  const browserService = enabled.includes('browser') ? browserServiceSelection(ambient.CUA_BROWSER_SERVICE) : null;
+  const browserService = enabled.includes('browser') ? browserServiceFor(ambient, home).service : null;
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
   const linux = runtime.manifest.platform === 'linux';
@@ -155,11 +156,22 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
 }
 
-// The browser service the caller selected: cua's own when unset or empty, else exactly `cua` or `vendor`.
-function browserServiceSelection(value) {
-  if (value === undefined || value === '') return DEFAULT_BROWSER_SERVICE;
-  if (!BROWSER_SERVICES.includes(value)) fail('invalid_browser_service', `CUA_BROWSER_SERVICE must be ${BROWSER_SERVICES.join(' or ')}`);
-  return value;
+// The browser service a launch from `home` gets, and why -> {service: 'cua' | 'vendor', reason}. A CUA_BROWSER_SERVICE
+// the caller sets wins (`explicit`; exactly `cua` or `vendor`). Unset or empty, it follows the home's Chrome route
+// records (src/chrome/route.mjs): the vendor's service only for a home on the ChatGPT extension route alone (a vendor
+// record and no cua one: `chatgpt_extension_route`), because cua's service refuses that extension's backends; cua's
+// otherwise (`cua_route` when the cua record exists, with or without a vendor one; `no_registration`). Resolved at each
+// launch, so a later `cua chrome register` moves the next launch. When #79 removes the vendor route this collapses to a
+// blanket `cua` default.
+export function browserServiceFor(ambient, home) {
+  const value = ambient.CUA_BROWSER_SERVICE;
+  if (value !== undefined && value !== '') {
+    if (!BROWSER_SERVICES.includes(value)) fail('invalid_browser_service', `CUA_BROWSER_SERVICE must be ${BROWSER_SERVICES.join(' or ')}`);
+    return {service: value, reason: 'explicit'};
+  }
+  if (readCuaRecord(home)) return {service: 'cua', reason: 'cua_route'};
+  if (readVendorRecord(home)) return {service: 'vendor', reason: 'chatgpt_extension_route'};
+  return {service: 'cua', reason: 'no_registration'};
 }
 
 // The enabled surfaces in the vendor launcher's terms: a non-empty set of known surface names, in canonical order.

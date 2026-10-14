@@ -23,6 +23,9 @@
 // extension, the io.github.ssfskim.cua registration and this home's launcher, the sockets of cua's hosts that accept a
 // connection), codex.login is `skip` (that route needs no Codex login) and chrome.host.config, the OpenAI host's
 // configuration, is not reported. On the vendor route and with no registration they are as before.
+// `browser.service` names the browser service a launch with the browser surface gets here and why (launch.mjs
+// browserServiceFor): CUA_BROWSER_SERVICE when set, else the home's route (the vendor's only on the ChatGPT extension
+// route alone). It describes a choice, so it is `pass`, or `fail` for a value every launch would refuse.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
@@ -47,7 +50,7 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, browserServiceFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -141,6 +144,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
+  checks.push(browserServiceCheck(home, env));
   checks.push(route === 'cua' ? result('codex.login', 'skip', 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)')
     : await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home, host, env, route}));
@@ -149,6 +153,24 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const report = {ok: !checks.some(c => c.status === 'fail'), checks};
   if (runtime) report.runtime = {release: runtime.release, root: runtime.root, paths: runtime.paths};
   return report;
+}
+
+const SERVICE_NAMES = {cua: 'cua (cua\'s own browser service)', vendor: 'vendor (OpenAI\'s, from the pinned runtime)'};
+const SERVICE_REASONS = {
+  explicit: service => `CUA_BROWSER_SERVICE=${service}`,
+  cua_route: () => 'CUA_BROWSER_SERVICE is unset and this home has cua\'s Chrome registration (the cua extension route), whether or not a ChatGPT extension registration is there too',
+  no_registration: () => 'CUA_BROWSER_SERVICE is unset and this home has no Chrome registration',
+  chatgpt_extension_route: () => 'CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route, which needs it (cua\'s own service refuses that extension\'s backends)',
+};
+
+function browserServiceCheck(home, env) {
+  try {
+    const {service, reason} = browserServiceFor(env, home);
+    return result('browser.service', 'pass', `${SERVICE_NAMES[service]}: ${SERVICE_REASONS[reason](service)}. A launch with the browser surface uses it; CUA_BROWSER_SERVICE=cua or vendor chooses`);
+  } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    return result('browser.service', 'fail', `${error.message}; every launch with the browser surface is refused (invalid_browser_service)`);
+  }
 }
 
 // sandbox.userns as it bears on this setup. A scoped connection is itself refused where the probe fails, so its row

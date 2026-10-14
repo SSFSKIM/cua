@@ -259,15 +259,12 @@ test('under the vendor browser service, the rollback, profiles_list and js teach
   }
 });
 
-test('CUA_BROWSER_SERVICE picks the browser rules the model is taught: cua\'s unless the vendor is named', () => {
-  const browser = {CUA_SHIM_SURFACES: 'browser'};
-  assert.equal(settingsFrom(browser).browserService, 'cua');
-  assert.equal(settingsFrom({...browser, CUA_BROWSER_SERVICE: ''}).browserService, 'cua');
-  assert.equal(settingsFrom({...browser, CUA_BROWSER_SERVICE: 'cua'}).browserService, 'cua');
-  assert.equal(settingsFrom({...browser, CUA_BROWSER_SERVICE: 'vendor'}).browserService, 'vendor');
+test('CUA_BROWSER_SERVICE is checked at start with the browser surface: cua, vendor, or unset (the launch resolves it)', () => {
+  for (const value of [undefined, '', 'cua', 'vendor']) settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: value});
   for (const bad of ['openai', 'Cua', ' vendor'])
     assert.throws(() => settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: bad}), error => error.code === 'invalid_setting', bad);
-  assert.equal(settingsFrom({CUA_BROWSER_SERVICE: 'openai'}).surfaces.join(), 'computer', 'without the browser surface the selection is not read, as the launch ignores it');
+  assert.deepEqual(settingsFrom({CUA_BROWSER_SERVICE: 'openai'}).surfaces, ['computer'], 'without the browser surface the selection is not read, as the launch ignores it');
+  assert.equal('browserService' in settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: 'vendor'}), false, 'the rules follow the launch the connection plans, not the variable alone');
 });
 
 test('CUA_SHIM_SURFACES selects computer (default), browser or both, and anything else is refused', () => {

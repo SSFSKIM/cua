@@ -28,6 +28,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
   - [x] (2026-10-14 task 1, reviewed clean after two fix waves) dialogs, downloads (incl. download_media's result) with release recovery and exclusive ownership, the file chooser.
   - [x] (2026-10-14 task 2, reviewed clean after one fix wave) clipboard bridge and commands, dev logs, viewport/visibility/management, raw CDP gate (a supplied target validated as the vendor's), cua_move; whole-corpus vendor-m2-1 vs cua-m2-2: 0 unexpected over the landed cases; download ownership pinned as a departure.
 - [ ] M3 — Optional features: exports, page assets, WebMCP, bot-detection report, auth handoff, user history.
+  - [ ] (2026-10-14) whole-branch reviewer-high clean at 64adc37; the live gate holds 0 unexpected over 56 of 59 cases; the three download cases await the owner's Downloads consent on the mini and a re-run on both services.
   - [x] (2026-10-14 task 1, reviewed clean after two fix waves) exports (in-page fetch), page assets (cross-origin in page context, byte bounds), bot-detection report, user tab context.
   - [x] (2026-10-14 task 2, reviewed clean after one fix wave) WebMCP, local auth handoff (vendor BX validation), history, the no-network proof (asset fallback included), the dense visible-DOM case; whole corpus 0 unexpected over 56 cases, the three download cases held for the mini's Downloads consent.
 - [ ] M4 — MAWS client mode and Linux parity.

@@ -11,7 +11,7 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | M1b | feat/own-browser-service-m1b | https://github.com/SSFSKIM/cua/pull/124 | merged (af649ba) |
 | M1c | feat/own-browser-service-m1c | https://github.com/SSFSKIM/cua/pull/125 | merged (cfa4f63) |
 | M2 | feat/own-browser-service-m2 | https://github.com/SSFSKIM/cua/pull/126 | merged (ec576a8) |
-| M3 | feat/own-browser-service-m3 | — | executing (task 1: exports, assets, bot-detection) |
+| M3 | feat/own-browser-service-m3 | (opening) | reviewed clean at 64adc37 (reviewer-high); three download cases await the mini's Downloads consent |
 
 ## Log
 
@@ -35,9 +35,12 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 
 - 2026-10-14 M2 in two tasks (opus executors, sol task reviews). Task 1 (dialogs, downloads with document-response interception, chooser): two fix waves (release recovery with Fetch.disable/re-arm/detach, chooser disarm deferred past a dialog, media setup on the action's deadline, exclusive download ownership, detach on failed re-arm). Task 2 (clipboard bridge, dev logs, viewport/visibility/management, raw CDP gate, cua_move, corpus pins for the document-response pause, trace test, whole-corpus live runs): one fix (raw CDP empty target). Whole-branch reviewer-high: two P2 (raw callers' request-stage pauses consumed; failed media interceptor removal), fixed in a0e50be; final verdict "correct". Live: fresh whole-corpus vendor-m2-1 (56/56 ok) vs cua-m2-2: 0 unexpected over the 51 landed cases (139 cells, 12 expected); downloads/two-tabs a departure (1 expected). Gates at a0e50be re-run by the plan-executor: 1581/0/8, test:mods 32, plugin validate ok.
 
+- 2026-10-14 M3 in two tasks (opus executors, sol task reviews). Task 1 (exports in page, page assets, bot detection, user tab context): two fix waves plus a follow-up (session's cross-origin assets ruling; byte bounds first 50/200 MiB, then aligned to the vendor route's 64 MiB ceiling per the session's requirement; title truncation fixing ENAMETOOLONG). Task 2 (WebMCP, local auth handoff, history, no-network proof, dense visible DOM, whole-corpus gate): one fix wave (no-network proof now runs the asset fallback; BX submit check; dense off-screen oracle). Whole-branch reviewer-high: "correct", no material findings. Live: whole corpus at a91c143 0 unexpected over 56 cases (143 cells, 12 expected); the three download cases fail identically on both services because the mini's ssh session cannot read ~/Downloads (a macOS privacy consent pending for the owner). Gates at 64adc37 re-run by the plan-executor: 1642/0/8 on a re-run (first run one failure in test/mcp-upstream.test.mjs "the anchor leads the group…", a pre-existing load-sensitive test untouched by the branch, 3/3 in isolation); test:mods 32; plugin validate ok.
+
 ## Environmental friction
 
 - The Agent tool here has no effort parameter: astra executors ran at their default (high), not the brief's medium.
 - Benchmark controllers cannot write files from the device REPL outside the mini's $TMPDIR, and end_task resets the device REPL: solved by the journaling recorder plus scp.
 - The cua-linux VM is not running (relevant to M4).
 - 2026-10-14: the Tailscale path to the mini ran through a DERP relay (240 ms to 1 s, drops) for a period, aborting several whole-corpus parity runs; later direct (~9 ms).
+- 2026-10-14: the mini's ssh session cannot read ~/Downloads (macOS privacy consent pending on the console); the owner answers it, the three download cases are re-run after.

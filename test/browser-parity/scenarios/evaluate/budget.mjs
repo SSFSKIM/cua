@@ -5,7 +5,9 @@ export default {
   id:'evaluate/budget',milestone:'M1b',commands:['playwright_evaluate'],
   setup:{page:'/read.html',state:{}},
   cells:[
-    {label:'wait',code:"return await tab.playwright.evaluate(async()=>{await new Promise(resolve=>setTimeout(resolve,4000));return 'waited';},undefined,{timeoutMs:6000});",timeoutMs:20000},
+    // The vendor's deadline sentence names the milliseconds its budget had left at dispatch ("Timed out after 2992ms
+    // waiting for CDP command Runtime.evaluate."), which varies by run; the cell masks the number.
+    {label:'wait',code:"try{return await tab.playwright.evaluate(async()=>{await new Promise(resolve=>setTimeout(resolve,4000));return 'waited';},undefined,{timeoutMs:6000});}catch(e){throw new Error(String(e.message).replace(/\\d+ms/g,'<n>ms'));}",timeoutMs:20000},
     {label:'usable',code:"return await tab.title();"},
   ],
   assert:({results,service})=>({ok:(service==='vendor'?expectError(results,'wait',/deadline|timed out|timeout/i):results[0]?.ok===true&&results[0].value==='waited')

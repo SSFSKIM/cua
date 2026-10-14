@@ -82,8 +82,10 @@ test('the call\'s request meta reaches the cell sorted and without the sandbox s
 test('a timeout answers once, kills the kernel and its launcher, fences its late work and leaves a fresh heap', own, async t => {
   const host = await startHost(t, {node});
   const marker = join(host.tmp, 'stale');
+  const started = Date.now();
   const timedOut = await host.js(`let oldBinding=1;let fs=await import('node:fs');setTimeout(()=>{fs.writeFileSync(${JSON.stringify(marker)},'stale');nodeRepl.write('STALE');},1300);await new Promise(()=>{});`, {timeoutMs: 1000});
   assert.deepEqual(timedOut, {content: [{type: 'text', text: 'js execution timed out; kernel reset, rerun your request'}], isError: true, _meta: {[REPL_HOST_META_KEY]: MARKER}});
+  assert.ok(Date.now() - started < 1000 + 800, `the timeout answers promptly after its budget (${Date.now() - started} ms)`);
   const [first] = launches(host.codexHome);
   assert.equal(alive(first.pid), false, 'the timed-out kernel\'s launcher is gone');
   await delay(600);

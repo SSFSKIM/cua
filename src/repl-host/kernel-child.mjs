@@ -8,14 +8,15 @@
 // (sentence, field order and tail shape observed on the pinned node_repl, 2026-10-14). `kernel_pid` is the spawned
 // child's, which under the sandbox is the launcher's, not the kernel Node's.
 //
-// The kernel's stdin, stdout and stderr are real pipes (FIFOs opened then unlinked at once), as the vendor's are: Node's
-// own child pipes are Unix socket pairs, which the Linux sandbox's network filter makes unreadable and unwritable inside
-// it (observed on cua-linux, 2026-10-14: the kernel saw EOF on stdin at once and its output was lost).
+// On Linux the kernel's stdin, stdout and stderr are real pipes (FIFOs opened then unlinked at once), as the vendor's
+// are: Node's own child pipes are Unix socket pairs, which the Linux sandbox's network filter makes unreadable and
+// unwritable inside it (observed on cua-linux, 2026-10-14: the kernel saw EOF on stdin at once and its output was
+// lost). macOS keeps Node's pipes: its sandbox passes them, and there libuv sees no end-of-file on a FIFO whose writers
+// have all closed (observed on this Mac, 2026-10-14), so a FIFO would hide the kernel's end.
 //
 // The child stays in the supervisor's process group, the group cua's proxy owns (src/mcp/upstream.mjs). Stopping it
-// SIGKILLs the child and every process descending from it, so a kernel under a sandbox launcher (which runs it as its
-// own child) or a kernel busy in synchronous code is gone, not orphaned; a descendant started after the listing stays
-// in the owned group for the proxy's teardown.
+// freezes and SIGKILLs the child and every process descending from it (killProcessTree), so a kernel under a sandbox
+// launcher (which runs it as its own child) or a kernel busy in synchronous code is gone, not orphaned.
 import {spawn, execFileSync} from 'node:child_process';
 import {closeSync, constants as fsConstants, mkdtempSync, openSync, rmSync} from 'node:fs';
 import {Socket} from 'node:net';
@@ -59,6 +60,21 @@ export function stderrTail() {
 export const exitDiagnostic = ({pid, status, tail, reason = 'stdout_eof', streamError = null}) =>
   `${KERNEL_EXIT_SENTENCE}\n\nnode_repl diagnostics: ${JSON.stringify({kernel_pid: pid ?? null, kernel_status: status, kernel_stderr_tail: tail, reason, stream_error: streamError})}`;
 
+// SIGKILLs `root` and every process descending from it. The tree is frozen first (SIGSTOP, root first, then each
+// newly listed descendant until a listing finds no new one), so nothing in it can fork or exit, and so leave the tree,
+// between a listing and the kill: a launcher killed first would orphan the kernel it had just started.
+export function killProcessTree(root, {list = descendantsOf, signal = (pid, name) => { try { process.kill(pid, name); return true; } catch { return false; } }} = {}) {
+  const frozen = new Set();
+  if (signal(root, 'SIGSTOP')) frozen.add(root);
+  for (let pass = 0; pass < 8; pass++) {
+    const found = list(root).filter(pid => !frozen.has(pid));
+    if (!found.length) break;
+    for (const pid of found) if (signal(pid, 'SIGSTOP')) frozen.add(pid);
+  }
+  for (const pid of frozen) signal(pid, 'SIGKILL');
+  return [...frozen];
+}
+
 // Every process descending from `pid`, from one `ps` listing.
 export function descendantsOf(pid) {
   let listing;
@@ -97,25 +113,25 @@ export function kernelPipes() {
 // Starts a kernel child. `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print
 // plain text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when
 // `stop()` ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
-export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = kernelPipes}) {
+export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
   let exitInfo = null;
   let spawnError = null;
   let child = null;
-  let io;
+  let fifos = null;
   try {
-    io = pipes();
-    child = spawnProcess(command, args, {env, cwd, stdio: io.child});
+    fifos = pipes?.() ?? null;
+    child = spawnProcess(command, args, {env, cwd, stdio: fifos?.child ?? ['pipe', 'pipe', 'pipe']});
   } catch (error) {
     spawnError = error;
   } finally {
-    for (const fd of io?.child ?? []) closeSync(fd);
+    for (const fd of fifos?.child ?? []) closeSync(fd);
   }
-  const stdin = io && new Socket({fd: io.parent.stdin, readable: false, writable: true});
-  const stdout = io && new Socket({fd: io.parent.stdout, readable: true, writable: false});
-  const stderr = io && new Socket({fd: io.parent.stderr, readable: true, writable: false});
+  const stdin = fifos ? new Socket({fd: fifos.parent.stdin, readable: false, writable: true}) : child?.stdin;
+  const stdout = fifos ? new Socket({fd: fifos.parent.stdout, readable: true, writable: false}) : child?.stdout;
+  const stderr = fifos ? new Socket({fd: fifos.parent.stderr, readable: true, writable: false}) : child?.stderr;
   const exited = child ? new Promise(resolve => {
     child.once('exit', (code, signal) => { exitInfo = {code, signal}; resolve(exitInfo); });
     child.once('error', error => { spawnError ??= error; resolve(null); });
@@ -137,12 +153,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     let timer;
     return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, ms); })]).finally(() => clearTimeout(timer));
   };
-  const killTree = () => {
-    if (!child?.pid) return;
-    for (const pid of [child.pid, ...descendantsOf(child.pid)]) {
-      try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
-    }
-  };
+  const killTree = () => { if (child?.pid) killProcessTree(child.pid); };
 
   async function end() {
     if (ended) return;

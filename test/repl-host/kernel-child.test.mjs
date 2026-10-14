@@ -2,7 +2,7 @@
 // and exit status as the vendor's diagnostic words them (observed on the pinned node_repl, 2026-10-14).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {exitDiagnostic, exitStatus, startKernelChild, stderrTail} from '../../src/repl-host/kernel-child.mjs';
+import {exitDiagnostic, exitStatus, kernelPipes, killProcessTree, startKernelChild, stderrTail} from '../../src/repl-host/kernel-child.mjs';
 
 test('the stderr tail keeps the last 20 non-empty lines, each cut to 512 characters, a trailing CR dropped', () => {
   const tail = stderrTail();
@@ -24,19 +24,50 @@ test('exit status and diagnostic in the vendor\'s words and key order', () => {
     'node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: {"kernel_pid":5841,"kernel_status":"exited(code=73)","kernel_stderr_tail":"fixture sandbox launcher refused","reason":"stdout_eof","stream_error":null}');
 });
 
-test('the child\'s stdin, stdout and stderr are pipes, not sockets, and carry its JSON lines both ways', async () => {
+// The child's view of its stdio and one JSON line each way, with `options` for startKernelChild.
+async function stdioSeen(options = {}) {
   const messages = [];
   let ended;
   const done = new Promise(resolve => { ended = resolve; });
-  const script = 'const fs=require("fs");const kinds=[0,1,2].map(fd=>fs.fstatSync(fd).isFIFO()&&!fs.fstatSync(fd).isSocket());'
+  const script = 'const fs=require("fs");const kinds=[0,1,2].map(fd=>fs.fstatSync(fd).isFIFO()?"fifo":fs.fstatSync(fd).isSocket()?"socket":"other");'
     + 'process.stdin.once("data",d=>{process.stdout.write(JSON.stringify({kinds,echo:JSON.parse(String(d))})+"\\n");process.stderr.write("bye\\n");process.exit(3);});';
   const child = startKernelChild({command: process.execPath, args: ['-e', script], env: {PATH: '/usr/bin:/bin'}, cwd: process.cwd()},
-    {onMessage: m => messages.push(m), onEnd: ended});
+    {onMessage: m => messages.push(m), onEnd: ended, ...options});
   assert.equal(child.send({ping: 1}), true);
-  const {expected, diagnostic} = await done;
-  assert.deepEqual(messages, [{kinds: [true, true, true], echo: {ping: 1}}]);
+  return {messages, ...await done};
+}
+
+test('real pipes (FIFOs) carry the kernel\'s JSON lines and stderr both ways', async () => {
+  const {messages, expected, diagnostic} = await stdioSeen({pipes: kernelPipes});
+  assert.deepEqual(messages, [{kinds: ['fifo', 'fifo', 'fifo'], echo: {ping: 1}}]);
   assert.equal(expected, false);
   assert.match(diagnostic, /"kernel_status":"exited\(code=3\)","kernel_stderr_tail":"bye"/);
+});
+
+test('the kernel gets real pipes on Linux, whose sandbox blocks socket pairs, and Node\'s own pipes on macOS', async () => {
+  const {messages} = await stdioSeen();
+  const kind = process.platform === 'linux' ? 'fifo' : 'socket';
+  assert.deepEqual(messages[0].kinds, [kind, kind, kind]);
+});
+
+test('a process tree is frozen before it is killed, so a child started meanwhile is killed too', () => {
+  const tree = {10: [11], 11: [12]};
+  const signals = [];
+  let listings = 0;
+  const list = root => {
+    listings++;
+    const out = [];
+    const walk = pid => { for (const c of tree[pid] ?? []) { out.push(c); walk(c); } };
+    walk(root);
+    if (listings === 1) tree[12] = [13];   // a fork lands after the first listing
+    return out;
+  };
+  const killed = killProcessTree(10, {list, signal: (pid, name) => { signals.push([pid, name]); return true; }});
+  assert.deepEqual(killed.sort(), [10, 11, 12, 13]);
+  assert.deepEqual(signals.slice(0, 1), [[10, 'SIGSTOP']], 'the root is frozen before anything is listed');
+  const kills = signals.filter(([, name]) => name === 'SIGKILL').map(([pid]) => pid);
+  assert.deepEqual(kills.sort(), [10, 11, 12, 13]);
+  assert.ok(signals.findIndex(([, n]) => n === 'SIGKILL') > signals.findLastIndex(([, n]) => n === 'SIGSTOP'), 'nothing is killed until the whole tree is frozen');
 });
 
 test('a launcher that cannot start is reported as the vendor reports a Node runtime that cannot start', async () => {

@@ -32,12 +32,15 @@ test('nodeRepl and tmpDir are immutable cell globals exposing only the base cont
   ok((await kernel.exec('nodeRepl.write(Object.keys(nodeRepl).sort().join(","));')).result, 'cwd,emitImage,env,homeDir,requestMeta,tmpDir,write');
   ok((await kernel.exec('nodeRepl.write([nodeRepl.cwd, nodeRepl.homeDir, nodeRepl.tmpDir, tmpDir].join("|"));')).result,
     [kernel.cwd, kernel.cwd, kernel.cwd, kernel.cwd].join('|'));
-  const refusals = ['nodeRepl = {}', 'globalThis.nodeRepl = {}', 'tmpDir = "/elsewhere"', 'delete globalThis.tmpDir', 'nodeRepl.write = () => {}',
+  const refusals = ['nodeRepl = {}', 'globalThis.nodeRepl = {}', 'tmpDir = "/elsewhere"', 'nodeRepl.write = () => {}',
     'nodeRepl.extra = 1', 'nodeRepl.env.EXTRA = "x"'];
   ok((await kernel.exec('const original = nodeRepl;')).result);
   for (const attempt of refusals) {
     ok((await kernel.exec(`let refusedAs; try { ${attempt}; } catch (error) { refusedAs = error.name; } nodeRepl.write(refusedAs);`)).result, 'TypeError');
   }
+  // Deleting the locked global is refused with a TypeError on Node 26; Node 24's vm global ignores it silently. Either
+  // way the global stays (checked below), which is the contract.
+  ok((await kernel.exec('let deleteRefusedAs; try { delete globalThis.tmpDir; } catch (error) { deleteRefusedAs = error.name; } nodeRepl.write(String(deleteRefusedAs === undefined || deleteRefusedAs === "TypeError") + typeof tmpDir);')).result, 'truestring');
   ok((await kernel.exec('nodeRepl.write(nodeRepl === original && tmpDir === nodeRepl.tmpDir && typeof nodeRepl.write === "function");')).result, 'true');
   ok((await kernel.exec('nodeRepl.write(typeof nodeRepl.rpc);')).result, 'undefined');
 });

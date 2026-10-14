@@ -89,3 +89,16 @@ event with its page held by the paused navigation; diagnostic only.
 
 Cleanup: every run's fixture, ssh pipe and serve processes stopped with the run (checked after the last run: no
 browser-parity, fixture or parity-clone process on the mini); the paused-response case closes its kept tab itself.
+
+Added after the session's ruling on download ownership (the departure of M2 task 1's review): downloads/two-tabs,
+two tabs with their own download waits downloading the same URL in one cell. Parity clone at cc2341e; each run its
+own ssh. A first vendor trial (not kept) and vendor-m2-two-tabs agree: one download reaches both waits (same path);
+cua-m2-two-tabs: two downloads, two paths, each the fixture's file.
+$ node scripts/browser-parity.mjs prepare --device mini --commit cc2341ea15b5666e77e06dd2b51b060705bdb415 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'downloads/two-tabs.mjs' --out vendor-m2-two-tabs
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'downloads/two-tabs.mjs' --out cua-m2-two-tabs
+$ node scripts/browser-parity.mjs diff vendor-m2-two-tabs cua-m2-two-tabs --scenarios 'downloads/two-tabs.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (1 cases, 2 cells, 1 expected; scenarios downloads/two-tabs.mjs)
+exit 0
+Without the allowance file the one difference is the departure itself: both {samePath:true,contents:true} (vendor) against
+{samePath:false,contents:true} (cua). Per-cell ms (vendor / cua): second-tab 337 / 206, both 635 / 518.

@@ -1,0 +1,3 @@
+{"case":"downloads/two-tabs","cell":"second-tab","ok":true,"value":true,"ms":413.7319579999994,"trace":[]}
+{"case":"downloads/two-tabs","cell":"both","ok":true,"value":{"samePath":true,"contents":true},"ms":634.7117079999989,"trace":[]}
+{"case":"downloads/two-tabs","assertion":{"ok":true}}

@@ -10,7 +10,8 @@ export default {
     {label:'second-tab',code:"globalThis.second=await browser.tabs.new();await second.goto(fixtureURL+'/downloads.html');return true;"},
     {label:'both',timeoutMs:30000,code:check+"const [a,b]=await Promise.all([tab.playwright.waitForEvent('download',{timeoutMs:10000}),second.playwright.waitForEvent('download',{timeoutMs:10000}),tab.playwright.locator('#download').click(),second.playwright.locator('#download').click()]);const [pathA,pathB]=await Promise.all([a.path({timeoutMs:10000}),b.path({timeoutMs:10000})]);const [textA,textB]=await Promise.all([read(pathA),read(pathB)]);return {samePath:pathA===pathB,contents:textA==='parity download\\n'&&textB==='parity download\\n'};"},
   ],
-  // cua: two downloads, each the fixture's file. The vendor: one download reaching both waits (recorded live).
+  // cua: two downloads, each the fixture's file. The vendor: one download reaching both waits, one path (live on the
+  // mini, vendor-m2-two-tabs and the first trial alike).
   assert:({results,service})=>{
     const [second,both]=results;
     const expected=service==='vendor'?{samePath:true,contents:true}:{samePath:false,contents:true};

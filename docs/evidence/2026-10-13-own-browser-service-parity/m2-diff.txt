@@ -1,0 +1,91 @@
+M2 live parity on the mini (parity clone, profile ssfs; the host is the resident one, so host traces are empty: the
+trace's record of the document-response pause is proven by test/browser-service/trace-document-responses.test.mjs).
+The whole corpus, both services, 56 cases / 144 cells: the fresh whole-corpus vendor run owed since M1c, then cua.
+
+Runs:
+  vendor-m2-1   vendor, the whole corpus, parity clone at ebb4bd2: 56/56 cases ok.
+  cua-m2-1      cua, the whole corpus, same commit: 54/56 ok. dialogs/alert's cua oracle was wrong (it anchored the
+                sentence without the REPL client's "Error: " prefix and "waiting on" line, which the vendor side of the
+                same oracle already allowed for); capabilities/export-rejections is M3's (below). Kept as found.
+  cua-m2-2      cua, the whole corpus, parity clone at d185a78 (the oracle fixed; no service change): 55/56 ok, the
+                one failure M3's export-rejections.
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit ebb4bd2ad1b810216ff76820010401200e66cc8e --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --out vendor-m2-1
+$ node scripts/browser-parity.mjs run --service cua --device mini --out cua-m2-1
+$ node scripts/browser-parity.mjs prepare --device mini --commit d185a785f40646de83bab3f854d547cad3db5895 --profile ssfs
+$ node scripts/browser-parity.mjs run --service cua --device mini --out cua-m2-2
+
+Every case of the milestones landed (M0 to M2; the corpus less its five M3 cases):
+$ node scripts/browser-parity.mjs diff vendor-m2-1 cua-m2-2 --scenarios '<the 51 non-M3 scenario files>' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (51 cases, 139 cells, 12 expected; scenarios actions/concurrent-fill.mjs,actions/doubleclick.mjs,actions/locators.mjs,actions/overlay.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,capabilities/clipboard-page.mjs,capabilities/clipboard.mjs,capabilities/cursor.mjs,capabilities/logs.mjs,capabilities/m2-disabled.mjs,capabilities/viewport.mjs,dialogs/alert.mjs,dialogs/paused-response.mjs,dialogs/prompt.mjs,downloads/ask-where-to-save.mjs,downloads/blocked-navigation.mjs,downloads/chooser.mjs,downloads/media.mjs,evaluate/attributes.mjs,evaluate/budget.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,examples/concurrency.mjs,examples/tabs.mjs,input/ax-disabled.mjs,input/coordinates.mjs,input/dom.mjs,input/long-type.mjs,input/oopif-type.mjs,input/queued-shortcuts.mjs,input/rich-text.mjs,reads/frames.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,reads/zero-budget.mjs,screenshot/clip.mjs,screenshot/modes.mjs,tabs/discovery.mjs,tabs/lifecycle.mjs,tabs/manual-handoff-disabled.mjs,tabs/navigation.mjs,waits/networkidle.mjs,waits/page.mjs,waits/zero-budget.mjs)
+exit 0
+The scenario list: actions/concurrent-fill.mjs,actions/doubleclick.mjs,actions/locators.mjs,actions/overlay.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,capabilities/clipboard-page.mjs,capabilities/clipboard.mjs,capabilities/cursor.mjs,capabilities/logs.mjs,capabilities/m2-disabled.mjs,capabilities/viewport.mjs,dialogs/alert.mjs,dialogs/paused-response.mjs,dialogs/prompt.mjs,downloads/ask-where-to-save.mjs,downloads/blocked-navigation.mjs,downloads/chooser.mjs,downloads/media.mjs,evaluate/attributes.mjs,evaluate/budget.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,examples/concurrency.mjs,examples/tabs.mjs,input/ax-disabled.mjs,input/coordinates.mjs,input/dom.mjs,input/long-type.mjs,input/oopif-type.mjs,input/queued-shortcuts.mjs,input/rich-text.mjs,reads/frames.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,reads/zero-budget.mjs,screenshot/clip.mjs,screenshot/modes.mjs,tabs/discovery.mjs,tabs/lifecycle.mjs,tabs/manual-handoff-disabled.mjs,tabs/navigation.mjs,waits/networkidle.mjs,waits/page.mjs,waits/zero-budget.mjs
+
+The whole corpus, M3's cases included:
+$ node scripts/browser-parity.mjs diff vendor-m2-1 cua-m2-2 --expected test/browser-parity/expected-differences.json
+{"kind":"assertion","side":"b","case":"capabilities/export-rejections","message":"case assertion failed"}
+{"case":"capabilities/export-rejections","cell":"gsuite","kind":"semantic","a":{"ok":false,"error":{"code":"Error","message":"Tab is not a Google Workspace document"}},"b":{"ok":false,"error":{"code":"Error","message":"Unsupported browser command: tab_content_export_gsuite"}}}
+{"case":"capabilities/export-rejections","cell":"youtube","kind":"semantic","a":{"ok":false,"error":{"code":"Error","message":"Tab is not a supported YouTube watch page"}},"b":{"ok":false,"error":{"code":"Error","message":"Unsupported browser command: tab_content_export_youtube_transcript"}}}
+{"case":"capabilities/export-rejections","kind":"assertion","a":{"assertion":{"ok":true}},"b":{"assertion":{"ok":false}}}
+{"case":"capabilities/history","cell":"history","kind":"semantic","a":{"ok":false,"error":{"code":"Error","message":"No handler registered for method: getUserHistory"}},"b":{"ok":false,"error":{"code":"Error","message":"Unsupported browser command: browser_user_history"}}}
+5 unexpected differences (56 cases, 144 cells, 12 expected)
+exit 1
+All five are M3 commands cua does not serve yet (tab_content_export_gsuite, tab_content_export_youtube_transcript,
+browser_user_history: "Unsupported browser command: <type>"); M3's corpus diff takes them. The other three M3 cases
+(m3-disabled, m3-members, export-authenticated's executable half) already agree.
+
+Pinned live on both services (Decision Log 2026-10-14, the session on the document-response pause):
+  downloads/blocked-navigation bare   a goto to /download with no download wait armed fails, on both:
+      "Browser Use cannot open http://127.0.0.1:48732/download in tab <tab>. Browser reported: net::ERR_BLOCKED_BY_CLIENT"
+      (the cell masks the run's tab id); the tab stays usable; with a wait armed the same goto downloads the file.
+  dialogs/paused-response             a document response that arrives while an alert is open stays paused after the
+      alert is dismissed: 2.5 s later the tab still has the first document's title and committed URL, on both; the
+      navigation completes only after the turn's end detaches the tab (an observer client then sees the "Arrived" page
+      and closes it). In the first vendor trial (not kept) a page call during the pause, a locator count, hung until its
+      3 s deadline ("Timed out after 3000ms waiting for CDP command Runtime.evaluate."): the tab's page is unreachable
+      until the detach, not merely un-navigated.
+  dialogs/alert blocked               M1a's dialog_open expected difference, end to end through the dialog handlers:
+      cua "Error: A alert JavaScript dialog is active in this tab. Use `tab.getJsDialog()` to get it and dismiss it first."
+      at once (29 ms), the vendor "Error: Playwright selector deadline exceeded" after its deadline (608 ms).
+
+Per-cell ms of the M2 cases (diagnostic, not judged; each a whole REPL round trip over ssh; Tailscale was direct):
+  case cell                                        vendor     cua
+  capabilities/clipboard-page page-reads               444     336
+  capabilities/clipboard-page page-writes              534     332
+  capabilities/clipboard text                          128     135
+  capabilities/clipboard rich                          109      29
+  capabilities/cursor move                             439      89
+  capabilities/logs start                               99      25
+  capabilities/logs trigger                            394      46
+  capabilities/logs logs                                99      46
+  capabilities/m2-disabled disabled                     73      22
+  capabilities/viewport round-trip                     168      41
+  dialogs/alert open                                   408     419
+  dialogs/alert get                                     49      65
+  dialogs/alert blocked                                608      29
+  dialogs/alert dismiss                                594     122
+  dialogs/paused-response start                        630     394
+  dialogs/paused-response dialog                      2564    2628
+  dialogs/paused-response dismiss                     4814      37
+  dialogs/paused-response paused                      2659    2555
+  dialogs/paused-response mark                          72      25
+  dialogs/paused-response end                          128      90
+  dialogs/paused-response release-primary                1       9
+  dialogs/paused-response arrived                     3615    2439
+  dialogs/prompt open                                  410     393
+  dialogs/prompt accept                                217     131
+  downloads/blocked-navigation bare                    273      75
+  downloads/blocked-navigation usable                  332     195
+  downloads/blocked-navigation armed                   306     200
+  downloads/chooser download                           456     408
+  downloads/chooser path                                80      88
+  downloads/chooser chooser-page                       270     103
+  downloads/chooser chooser                            410     408
+  downloads/chooser set-files                          192      34
+  downloads/media media                                515     477
+The vendor's paused-response dismiss (4,814 ms against cua's 37) is the vendor waiting for Chrome's dialog-closed
+event with its page held by the paused navigation; diagnostic only.
+
+Cleanup: every run's fixture, ssh pipe and serve processes stopped with the run (checked after the last run: no
+browser-parity, fixture or parity-clone process on the mini); the paused-response case closes its kept tab itself.

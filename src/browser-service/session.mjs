@@ -1,18 +1,19 @@
 // Ported from readable chatgpt-26.928.40906 BS:64664-64840 (class rh, the service's state for one backend); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
 //
 // One BrowserSession per backend connection, made the first time a command names its browser: the backend's CDP
-// controller (cdp.mjs), its tabs (tabs.mjs), the locator engine over the controller (the injected script's
-// installation, injected.mjs, and selector resolution, selectors.mjs), the page's evaluate (evaluate.mjs), the
-// visible-DOM listing with its node ids (visible-dom.mjs), the agent's cursor (cursor.mjs), the virtual clipboard
-// (clipboard.mjs) and the pointer and key input the actions dispatch through (input.mjs), on this machine's platform
-// (keys: ControlOrMeta, the macOS editing commands). It hooks the turn's end into the backend API (the turn's tabs are
-// detached before the host hears turnEnded) and disposes itself when the connection closes. The later milestones add
-// their parts here (downloads, the clipboard's page bridge, ...). Dropped from rh: the credential observation gate, the
-// security and preferences objects (no site policy, no Codex config), the orbit session follow, site instructions and
-// the AX tree.
+// controller (cdp.mjs), the document responses its tabs pause and the downloads over them (downloads.mjs), its tabs
+// (tabs.mjs), the locator engine over the controller (the injected script's installation, injected.mjs, and selector
+// resolution, selectors.mjs), the page's evaluate (evaluate.mjs), the visible-DOM listing with its node ids
+// (visible-dom.mjs), the agent's cursor (cursor.mjs), the virtual clipboard (clipboard.mjs) and the pointer and key
+// input the actions dispatch through (input.mjs), on this machine's platform (keys: ControlOrMeta, the macOS editing
+// commands). It hooks the turn's end into the backend API (the turn's tabs are detached before the host hears
+// turnEnded) and disposes itself when the connection closes. The later milestones add their parts here (the
+// clipboard's page bridge, ...). Dropped from rh: the credential observation gate, the security and preferences
+// objects (no site policy, no Codex config), the orbit session follow, site instructions and the AX tree.
 import {CdpController} from './cdp.mjs';
 import {Clipboard} from './clipboard.mjs';
 import {Cursor} from './cursor.mjs';
+import {DocumentResponses, Downloads} from './downloads.mjs';
 import {PageEvaluator} from './evaluate.mjs';
 import {InjectedScripts} from './injected.mjs';
 import {CuaInput} from './input.mjs';
@@ -28,6 +29,8 @@ export class BrowserSession {
     this.browserId = browserId;
     this.clientInfo = clientInfo;
     this.cdp = new CdpController(api);
+    this.documentResponses = new DocumentResponses(this.cdp);
+    this.downloads = new Downloads(api, this.documentResponses);
     this.tabs = new TabRegistry(api, this.cdp, {preferredWindowId});
     this.injected = new InjectedScripts(this.cdp);
     this.selectors = new SelectorEngine(this.cdp, this.injected);
@@ -48,6 +51,8 @@ export class BrowserSession {
   browserId;
   clientInfo;
   cdp;
+  documentResponses;
+  downloads;
   tabs;
   injected;
   selectors;

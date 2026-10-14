@@ -6,7 +6,7 @@
 // frame's session, re-attaches once when the backend answers "Debugger unattached", and turns the backend's events
 // into one stream (`event`, `tabAttached`, `tabDetached`) and a raw event queue per tab. It tracks JavaScript dialogs:
 // while one is open in a tab every command to the tab but Page.handleJavaScriptDialog fails with dialog_open, and a
-// beforeunload dialog is accepted at once (answering the others is M2's dialogs.mjs). Every call carries the command's
+// beforeunload dialog is accepted at once (dialogs.mjs answers the others). Every call carries the command's
 // Deadline (budgets.mjs) as the backend's timeoutMs.
 //
 // Options of a call: {deadline, timeoutMs, preserveOnTimeout, beforeDispatch, prepareDispatch}. `beforeDispatch()` runs
@@ -88,8 +88,9 @@ function numericTab(tabId, what) {
   return n;
 }
 
-// The vendor's 36-line emitter (Qn): listeners run in order, synchronously, over a copy of the list.
-class Emitter {
+// The vendor's 36-line emitter (Qn): listeners run in order, synchronously, over a copy of the list. The download
+// parts (downloads.mjs) extend it too, as the vendor's yf and Mf extend Qn.
+export class Emitter {
   listeners = {};
   addListener(name, listener) {
     (this.listeners[name] ??= []).push(listener);

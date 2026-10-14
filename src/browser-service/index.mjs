@@ -21,7 +21,10 @@
 // executeUnhandledCommand fallback for capability commands (M2 registers browser_viewport_* explicitly).
 import {ACTION_HANDLERS} from './actions.mjs';
 import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
+import {CHOOSER_HANDLERS} from './chooser.mjs';
+import {DIALOG_HANDLERS} from './dialogs.mjs';
 import {DOCUMENTATION_HANDLERS, Documentation, documentationAddendum} from './docs.mjs';
+import {DOWNLOAD_HANDLERS} from './downloads.mjs';
 import {serviceError} from './errors.mjs';
 import {EVALUATE_HANDLERS} from './evaluate.mjs';
 import {INPUT_HANDLERS} from './input.mjs';
@@ -80,7 +83,8 @@ export const COMMAND_HANDLERS = new Map([
   ...Object.entries(SELECTION_HANDLERS),
   ...Object.entries(DOCUMENTATION_HANDLERS),
   ...Object.entries({...TAB_HANDLERS, ...AX_HANDLERS, ...NAVIGATION_HANDLERS, ...READ_HANDLERS, ...EVALUATE_HANDLERS, ...SNAPSHOT_HANDLERS,
-    ...VISIBLE_DOM_HANDLERS, ...ACTION_HANDLERS, ...INPUT_HANDLERS, ...WAIT_HANDLERS, ...SCREENSHOT_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
+    ...VISIBLE_DOM_HANDLERS, ...ACTION_HANDLERS, ...INPUT_HANDLERS, ...WAIT_HANDLERS, ...SCREENSHOT_HANDLERS, ...DIALOG_HANDLERS,
+    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
 ]);
 
 // What one setup made: the backends, the documentation and a session per backend connection.

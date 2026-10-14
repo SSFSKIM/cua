@@ -8,7 +8,8 @@
 // String(error)} and the kernel rejects `new Error(response.error)`; a value crosses as JSON. So only the message
 // reaches the client: a BrowserServiceError's code stays in the trusted worker (where the wrapper classifies it).
 //
-// dialog_open and unsupported_command come from the real dispatch and the CDP controller. The locator commands'
+// dialog_open and unsupported_command come from the real dispatch and the CDP controller; the dialog commands (M2) answer
+// a dialog end to end through the client. The locator commands'
 // timeout and strict-mode rejections are M1b/M1c's to produce; until then a test double registered in
 // COMMAND_HANDLERS throws them with the vendor's sentences as the live vendor run recorded them
 // (docs/evidence/2026-10-13-own-browser-service-parity/vendor-1/results.jsonl, actions/slow-budget and
@@ -94,10 +95,54 @@ test('dialog_open reaches model code through the client with the vendor\'s sente
   assert.ok(!error.message.includes('invalid recovery response'));
 });
 
+test('a dialog is reported, blocks a locator action with dialog_open, and is dismissed through the client (acceptance 4)', {skip: !CLIENT && 'vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof'}, async t => {
+  const {browser, ext, pages} = await realClient(t);
+  const tab = await browser.tabs.new();
+  await tab.goto('https://example.com/dialogs');
+  assert.equal(await tab.getJsDialog(), undefined);
+  ext.cdpEvent({tabId: Number(tab.id)}, 'Page.javascriptDialogOpening', {type: 'alert', message: 'Hello', url: 'https://example.com/dialogs', hasBrowserHandler: true});
+  await waitFor(async () => (await tab.getJsDialog()) != null, 'the dialog to be reported');
+  const dialog = await tab.getJsDialog();
+  assert.equal(dialog.type, 'alert');
+  const blocked = await rejectionOf(tab.playwright.locator('#confirm').click({timeoutMs: 500}));
+  assert.match(blocked.message, /^A alert JavaScript dialog is active in this tab\. Use `tab\.getJsDialog\(\)` to get it and dismiss it first\./);
+  const dismissing = dialog.dismiss();
+  await waitFor(() => pages.sent.some(s => s.method === 'Page.handleJavaScriptDialog'), 'the answer to reach Chrome');
+  ext.cdpEvent({tabId: Number(tab.id)}, 'Page.javascriptDialogClosed', {result: true, userInput: ''});
+  await dismissing;
+  assert.equal(await tab.getJsDialog(), undefined, 'the client reports no dialog as undefined');
+  assert.deepEqual(pages.sent.filter(s => s.method === 'Page.handleJavaScriptDialog').map(s => s.params), [{accept: true}]);
+});
+
+test('a download and a file chooser through the client: waitForEvent, path() and setFiles() (acceptance 4)', {skip: !CLIENT && 'vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof'}, async t => {
+  const {browser, ext, pages} = await realClient(t);
+  const tab = await browser.tabs.new();
+  await tab.goto('https://example.com/downloads');
+  const tabId = Number(tab.id);
+  const url = 'https://example.com/files/parity.txt';
+  const downloading = tab.playwright.waitForEvent('download', {timeoutMs: 5000});
+  await new Promise(resolve => setTimeout(resolve, 50));
+  ext.cdpEvent({tabId}, 'Fetch.requestPaused', {requestId: 'R1', frameId: 'F', resourceType: 'Document', request: {url, method: 'GET', headers: {}},
+    responseStatusCode: 200, responseHeaders: [{name: 'Content-Disposition', value: 'attachment'}]});
+  await waitFor(() => pages.sent.some(s => s.method === 'Fetch.continueResponse' && s.params.requestId === 'R1'), 'the download to be let through');
+  ext.downloadCreated({id: 5, url, filename: ''});
+  ext.downloadChanged(5, {filename: '/Users/agent/Downloads/parity.txt', state: 'complete'});
+  const download = await downloading;
+  assert.equal(await download.path(), '/Users/agent/Downloads/parity.txt');
+
+  const choosing = tab.playwright.waitForEvent('filechooser', {timeoutMs: 5000});
+  await waitFor(() => pages.sent.some(s => s.method === 'Page.setInterceptFileChooserDialog' && s.params.enabled), 'the chooser interception');
+  ext.cdpEvent({tabId}, 'Page.fileChooserOpened', {frameId: 'F', mode: 'selectSingle', backendNodeId: 9});
+  const chooser = await choosing;
+  assert.equal(chooser.isMultiple(), false);
+  await chooser.setFiles(['/tmp/upload.txt']);
+  assert.deepEqual(pages.sent.filter(s => s.method === 'DOM.setFileInputFiles').map(s => s.params), [{backendNodeId: 9, files: ['/tmp/upload.txt']}]);
+});
+
 test('a later milestone\'s command and a missing tab reach model code as the service\'s rejections', {skip: !CLIENT && 'vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof'}, async t => {
   const {browser} = await realClient(t);
   const tab = await browser.tabs.new();
-  assert.equal((await rejectionOf(tab.getJsDialog())).message, 'Unsupported browser command: tab_get_js_dialog');
+  assert.equal((await rejectionOf(tab.content.exportYouTubeTranscript())).message, 'Unsupported browser command: tab_content_export_youtube_transcript');
   assert.equal((await rejectionOf(browser.tabs.get('4242'))).message, `Tab not found: 4242. Existing tabs: ${tab.id}||about:blank`);
 });
 

@@ -170,7 +170,7 @@ export function iframe({id = '', name = '', visible = true, frame}) {
 
 // -> {api, browser}: `api` the backend API for a CdpController; `browser` the pages, worlds and objects behind it.
 export function pageWorld() {
-  const listeners = {onCDPEvent: [], onCDPDetach: []};
+  const listeners = {onCDPEvent: [], onCDPDetach: [], onDownloadChange: []};
   const calls = [];
   const processes = new Map();           // key -> {key, tabId, rootFrameId, frames: Map(frameId -> frame)}
   const contexts = new Map();            // executionContextId -> {id, frame, worldName, global, context}
@@ -393,6 +393,8 @@ export function pageWorld() {
     // A world's global object, by frame and name (for asserting what an expression installed).
     world(frameId, worldName) { return browser.frame(frameId).worlds.get(worldName); },
     event(source, method, params) { for (const l of listeners.onCDPEvent) l({source, method, params}); },
+    // The host's onDownloadChange {id, filename, url, status} (Chrome's download items, as the host relays them).
+    downloadChange(change) { for (const l of listeners.onDownloadChange) l(change); },
     // DOM.getNodeForLocation's answer: (target, x, y) -> the element there, or null.
     hitTest: null,
     cdpCalls: () => calls.filter(c => c.op === 'executeCdp').map(c => c.method),
@@ -400,6 +402,7 @@ export function pageWorld() {
 
   const api = {
     addEventListener(name, handler) { listeners[name].push(handler); return () => {}; },
+    matchesCurrentSessionId: () => true,
     async attach(tabId) { calls.push({op: 'attach', tabId}); return {}; },
     async detach(tabId) { calls.push({op: 'detach', tabId}); return {}; },
     async attachTarget(tabId, targetId) {

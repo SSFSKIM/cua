@@ -10,6 +10,7 @@ import {ACTION_HANDLERS} from '../../src/browser-service/actions.mjs';
 import {CdpController} from '../../src/browser-service/cdp.mjs';
 import {Clipboard} from '../../src/browser-service/clipboard.mjs';
 import {Cursor} from '../../src/browser-service/cursor.mjs';
+import {DocumentResponses, Downloads} from '../../src/browser-service/downloads.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
 import {InjectedScripts} from '../../src/browser-service/injected.mjs';
 import {CuaInput} from '../../src/browser-service/input.mjs';
@@ -57,7 +58,7 @@ function setup(elements, {onInput, slow} = {}) {
   const mouse = () => input('Input.dispatchMouseEvent').map(c => c.params);
   const keys = () => input('Input.dispatchKeyEvent').map(c => `${c.params.type} ${c.params.key}`);
   const node = id => [...browser.frame(`MAIN-${TAB}`).document.descendants()].find(e => e.id === id);
-  return {browser, session, run, mouse, keys, input, moves, pastes, node};
+  return {api, browser, session, run, mouse, keys, input, moves, pastes, node};
 }
 
 test('click scrolls the element into view, then presses and releases at its centre, the cursor aimed there first', async () => {
@@ -360,11 +361,7 @@ test('waitFor waits for each state and refuses an unknown one', async () => {
 });
 
 test('downloadMedia finds the element\'s media URL and frame, arms the download and clicks a download link for it', async () => {
-  const media = () => Object.assign(el('img', {id: 'image'}), {currentSrc: 'https://fixture.test/media/image.svg'});
-  const without = setup([media()]);
-  assert.equal((await rejection(without.run('playwright_locator_download_media', {selector: '#image'}))).code, 'unsupported_command',
-    'the downloads half arrives with M2');
-  const image = media();
+  const image = Object.assign(el('img', {id: 'image'}), {currentSrc: 'https://fixture.test/media/image.svg'});
   const {run, session} = setup([image]);
   const calls = [];
   session.downloads = {
@@ -378,4 +375,38 @@ test('downloadMedia finds the element\'s media URL and frame, arms the download 
   assert.deepEqual(await run('playwright_locator_download_media', {selector: '#image'}), {path: '/downloads/image.svg'});
   assert.deepEqual(calls, [['with', TAB], ['enable', TAB, 'https://fixture.test/media/image.svg', `MAIN-${TAB}`], ['wait', TAB, true], ['release']]);
   assert.deepEqual(clicked, [{href: 'https://fixture.test/media/image.svg', download: 'image.svg'}]);
+});
+
+test('downloadMedia over the session\'s downloads: the link\'s request in the media\'s frame is let through and its path answered', async () => {
+  const image = Object.assign(el('img', {id: 'image'}), {currentSrc: 'https://fixture.test/media/image.svg'});
+  const {api, run, session, browser} = setup([image]);
+  session.documentResponses = new DocumentResponses(session.cdp);
+  session.downloads = new Downloads(api, session.documentResponses);
+  const source = {tabId: TAB};
+  const svg = [{name: 'content-type', value: 'image/svg+xml'}];
+  // The page following the download link: Chrome pauses its document request in the media's frame, then the response;
+  // a page image elsewhere is requested meanwhile; the host reports the download Chrome made.
+  image.ownerDocument.createElement = tag => ({tag, style: {}, remove() {}, click() {
+    setImmediate(() => {
+      browser.event(source, 'Fetch.requestPaused', {requestId: 'other', frameId: 'ELSEWHERE', resourceType: 'Document', request: {url: this.href}});
+      browser.event(source, 'Fetch.requestPaused', {requestId: 'link', frameId: `MAIN-${TAB}`, resourceType: 'Document', request: {url: this.href}});
+      setImmediate(() => {
+        browser.event(source, 'Fetch.requestPaused', {requestId: 'other', frameId: 'ELSEWHERE', resourceType: 'Document', request: {url: this.href}, responseStatusCode: 200, responseHeaders: svg});
+        browser.event(source, 'Fetch.requestPaused', {requestId: 'link', frameId: `MAIN-${TAB}`, resourceType: 'Document', request: {url: this.href}, responseStatusCode: 200, responseHeaders: svg});
+        setTimeout(() => {
+          browser.downloadChange({id: '31', url: this.href, filename: '', status: 'started'});
+          browser.downloadChange({id: '31', url: this.href, filename: '/Users/agent/Downloads/image.svg', status: 'complete'});
+        }, 20);
+      });
+    });
+  }});
+  image.ownerDocument.body.appendChild = () => {};
+  assert.deepEqual(await run('playwright_locator_download_media', {selector: '#image'}), {path: '/Users/agent/Downloads/image.svg'});
+  const fetches = browser.calls.filter(c => c.method?.startsWith('Fetch.')).map(c => [c.method, c.params.requestId ?? c.params.patterns.length]);
+  assert.deepEqual(fetches.filter(([m]) => m === 'Fetch.continueResponse'), [['Fetch.continueResponse', 'other'], ['Fetch.continueResponse', 'link']]);
+  const link = browser.calls.find(c => c.method === 'Fetch.continueResponse' && c.params.requestId === 'link');
+  assert.deepEqual(link.params.responseHeaders, [...svg, {name: 'Content-Disposition', value: 'attachment'}], 'the image is saved, not shown');
+  assert.equal(browser.calls.filter(c => c.method === 'Fetch.continueResponse' && c.params.requestId === 'other')[0].params.responseHeaders, undefined);
+  assert.deepEqual(browser.calls.filter(c => c.method === 'Fetch.enable').at(-1).params.patterns, [{requestStage: 'Response', resourceType: 'Document'}],
+    'request interception off again');
 });

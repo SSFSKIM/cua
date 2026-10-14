@@ -30,5 +30,12 @@ export function serveCommand({device,service,home,checkout=root}) {
     env:{...process.env,HOME:home,CUA_HOME:home,CUA_BROWSER_SERVICE:service,CUA_SHIM_SURFACES:'browser'}};
   return ssh(device,`cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_BROWSER_SERVICE=${quote(service)} CUA_SHIM_SURFACES='browser' node bin/cua.mjs serve`);
 }
+// The real `cua serve` from this checkout in a scratch home (the capability host's runs): the runtime and REPL client
+// of `home`, nothing of the machine's own cua home.
+export function localCuaServeCommand({service,home}) {
+  if(!['vendor','cua'].includes(service)) throw new Error('service must be vendor or cua');
+  return {command:process.execPath,args:[fileURLToPath(new URL('../../bin/cua.mjs',import.meta.url)),'serve'],cwd:root,
+    env:{...process.env,CUA_HOME:home,CUA_BROWSER_SERVICE:service,CUA_SHIM_SURFACES:'browser'}};
+}
 export function remoteCommand(device,script) {return ssh(device,script);}
 export function execute(command) {return execFileSync(command.command,command.args,{encoding:'utf8',cwd:command.cwd,env:command.env,maxBuffer:4*1024*1024});}

@@ -31,15 +31,20 @@ test('every wire command has an executable milestone case or an explicit capabil
         assert.ok(row.exclusions?.some(e=>e.case===id && e.reason===scenario.skip), `${id}: undocumented exclusion`);
       } else {
         assert.ok(scenario.cells.length, `${id}: no executable cells`);
+        // On the capability host (scenarios/capability-host/, the one backend announcing the optional capabilities) a
+        // case proves the capability's success path; everywhere else the capability is absent and asserted so.
         if (row.reachability !== 'always' && row.reachability !== 'capability:viewport') {
-          assert.ok(scenario.disabledAssertions?.includes(row.type), `${id}: missing explicit disabled-capability assertion`);
+          if (scenario.backend === 'capability-host') assert.ok(id.startsWith('capability-host/') && row.reachability.startsWith('capability:'), `${id}: a capability-host case outside its group`);
+          else assert.ok(scenario.disabledAssertions?.includes(row.type), `${id}: missing explicit disabled-capability assertion`);
         }
       }
     }
     assert.ok(row.cases.some(id=>!byId.get(id).skip), `${row.type}: skips cannot substitute for coverage`);
+    assert.ok(row.cases.some(id=>byId.get(id).backend !== 'capability-host'), `${row.type}: the ordinary route needs its own case`);
   }
   for (const s of scenarios) {
     assert.ok(milestones.includes(s.milestone), s.id);
+    assert.equal(s.backend === 'capability-host', s.id.startsWith('capability-host/'), `${s.id}: the capability-host group and its backend go together`);
     assert.equal(new Set(s.cells.map(c=>c.label)).size,s.cells.length, s.id);
     const AsyncFunction=Object.getPrototypeOf(async()=>{}).constructor;
     for(const cell of s.cells)if(cell.code)assert.doesNotThrow(()=>new AsyncFunction(cell.code),`${s.id}/${cell.label}: invalid REPL cell`);

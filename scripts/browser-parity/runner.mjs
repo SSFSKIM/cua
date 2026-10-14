@@ -68,8 +68,12 @@ export async function runScenario(scenario,{client,fixtureURL,browserFixtureURL=
   if(!reset.ok) throw new Error('Fixture reset failed');
   const page=new URL(scenario.setup?.page ?? '/counter.html',browserFixtureURL+'/').href;
   // The case's tab is opened as the model opens one, with cua.createBrowserTab (which also reads the new page's DOM
-  // snapshot, playwright_dom_snapshot).
-  const setup=`globalThis.fixtureURL=${JSON.stringify(browserFixtureURL)}; globalThis.browser=await cua.getBrowser({extensionInstanceId:${JSON.stringify(instanceId)}}); await browser.nameSession(${JSON.stringify(scenario.id)}); globalThis.tab=await cua.createBrowserTab(browser.browserId,${JSON.stringify(page)});`;
+  // snapshot, playwright_dom_snapshot); `setup.open: 'goto'` opens a new tab and navigates it instead, for a backend
+  // whose pages have no engine to snapshot (the capability host's scripted pages).
+  const open=scenario.setup?.open ?? 'createBrowserTab';
+  if(!['createBrowserTab','goto'].includes(open)) throw new Error(`${scenario.id}: setup.open must be createBrowserTab or goto`);
+  const opening=open==='goto' ? `globalThis.tab=await browser.tabs.new(); await tab.goto(${JSON.stringify(page)});` : `globalThis.tab=await cua.createBrowserTab(browser.browserId,${JSON.stringify(page)});`;
+  const setup=`globalThis.fixtureURL=${JSON.stringify(browserFixtureURL)}; globalThis.browser=await cua.getBrowser({extensionInstanceId:${JSON.stringify(instanceId)}}); await browser.nameSession(${JSON.stringify(scenario.id)}); ${opening}`;
   const bootstrap=async c=>parseCell(await c.call('js',{code:cellCode({code:setup}),timeout_ms:60000,title:`parity ${scenario.id} setup`}));
   const bootResult=await bootstrap(client);
   if(!bootResult.ok) {const row={case:scenario.id,assertion:{ok:false,reason:'setup failed',error:bootResult.error}};await emit(row);return row;}

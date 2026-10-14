@@ -22,9 +22,9 @@
    "status": "PASS",
    "detail": {
     "socket": "/home/admin/.local/share/cua-h4/chrome/b/97bcc14e4aaa.sock",
-    "pid": 7940,
+    "pid": 9566,
     "extensionVersion": "0.3.0",
-    "process": "7940 /usr/local/bin/node /home/admin/cua-m4/src/chrome/host.mjs chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+    "process": "9566 /usr/local/bin/node /home/admin/cua-m4/src/chrome/host.mjs chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
    }
   },
   {
@@ -53,7 +53,7 @@
    "detail": {
     "status": "ended",
     "ended": true,
-    "taskId": "f3a40183-1b79-45b1-bf83-9e0855411052"
+    "taskId": "90e84a62-1f0f-40e9-97c5-6d205c8ab233"
    }
   },
   {

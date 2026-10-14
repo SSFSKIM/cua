@@ -1,0 +1,387 @@
+{
+  "started": "2026-10-14T15:32:10.656Z",
+  "finished": "2026-10-14T15:32:56.721Z",
+  "root": 35271,
+  "commands": {
+    "ps": "ps -A -o pid=,ppid=,comm= (every 250 ms)",
+    "nettop": "nettop -L 0 -s 1 -n -x (continuous, rows of tree processes kept)",
+    "lsof": "lsof -nP -p <tree pids> (every 1 s; inet, unix and state/codex entries kept)"
+  },
+  "counts": {
+    "psRuns": 170,
+    "nettopRows": 9794,
+    "lsofRuns": 43
+  },
+  "tree": [
+    {
+      "pid": 35271,
+      "ppid": 35270,
+      "executable": "node",
+      "args": "node bin/cua.mjs serve",
+      "first": "2026-10-14T15:32:12.957Z",
+      "last": "2026-10-14T15:32:50.027Z"
+    },
+    {
+      "pid": 35280,
+      "ppid": 35271,
+      "executable": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+      "args": "/Users/new/.nvm/versions/node/v24.18.0/bin/node --disable-sigusr1 /Users/new/Developer/GitHub/cua-parity/src/mcp/anchor.mjs",
+      "first": "2026-10-14T15:32:12.957Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 35284,
+      "ppid": 35280,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node /Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
+      "first": "2026-10-14T15:32:12.957Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 35292,
+      "ppid": 35284,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
+      "first": "2026-10-14T15:32:12.957Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 35342,
+      "ppid": 35271,
+      "executable": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+      "args": "/Users/new/.nvm/versions/node/v24.18.0/bin/node --disable-sigusr1 /Users/new/Developer/GitHub/cua-parity/src/mcp/anchor.mjs",
+      "first": "2026-10-14T15:32:13.470Z",
+      "last": "2026-10-14T15:32:13.470Z"
+    },
+    {
+      "pid": 35343,
+      "ppid": 35342,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node /Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
+      "first": "2026-10-14T15:32:13.470Z",
+      "last": "2026-10-14T15:32:13.470Z"
+    },
+    {
+      "pid": 35344,
+      "ppid": 35343,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
+      "first": "2026-10-14T15:32:13.470Z",
+      "last": "2026-10-14T15:32:13.470Z"
+    },
+    {
+      "pid": 35385,
+      "ppid": 35344,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit=\"all\" -c default_permissions=\"node_repl\" -c permissions.node_repl={filesystem = {\"/Users/new/Library/Application Support/cua/runtimes/26.928.409",
+      "first": "2026-10-14T15:32:13.470Z",
+      "last": "2026-10-14T15:32:13.470Z"
+    },
+    {
+      "pid": 35386,
+      "ppid": 35344,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit=\"all\" -c default_permissions=\"node_repl\" -c permissions.node_repl={filesystem = {\"/Users/new/Developer/GitHub/cua-parity/src/services\" = \"read\",",
+      "first": "2026-10-14T15:32:13.470Z",
+      "last": "2026-10-14T15:32:13.470Z"
+    },
+    {
+      "pid": 35471,
+      "ppid": 35292,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit=\"all\" -c default_permissions=\"node_repl\" -c permissions.node_repl={filesystem = {\"/Users/new/Library/Application Support/cua/runtimes/26.928.409",
+      "first": "2026-10-14T15:32:14.015Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 35472,
+      "ppid": 35292,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit=\"all\" -c default_permissions=\"node_repl\" -c permissions.node_repl={filesystem = {\"/Users/new/Developer/GitHub/cua-parity/src/services\" = \"read\",",
+      "first": "2026-10-14T15:32:14.015Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 35473,
+      "ppid": 35471,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node --experimental-vm-modules /var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/.tmpCsH90i/kernel.js --session-id 3065f2b3296e42b28c3d9156a8b918da --working-dir /Users/new/Library/Application Support/cua/run/0",
+      "first": "2026-10-14T15:32:14.015Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 35474,
+      "ppid": 35472,
+      "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node --experimental-vm-modules /var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/.tmpCsH90i/trusted-worker.js /Users/new/Library/Application Support/cua/run/05c1e86e-c66f-43df-8d67-6b84bf3f2e82",
+      "first": "2026-10-14T15:32:14.015Z",
+      "last": "2026-10-14T15:32:49.773Z"
+    },
+    {
+      "pid": 39013,
+      "ppid": 35271,
+      "executable": "(pgrep)",
+      "args": "",
+      "first": "2026-10-14T15:32:50.027Z",
+      "last": "2026-10-14T15:32:50.027Z"
+    }
+  ],
+  "nettopProcesses": [],
+  "connections": [],
+  "lsof": [
+    {
+      "pid": 35271,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "14u",
+      "name": "->0xadbd070f6b6de88",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35292,
+        "command": "node_repl",
+        "name": "->0x20b443c938ec5f3f"
+      }
+    },
+    {
+      "pid": 35271,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "16u",
+      "name": "->0xea0ea5f3cd192fce",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35292,
+        "command": "node_repl",
+        "name": "->0x70b41eba62099886"
+      }
+    },
+    {
+      "pid": 35271,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "18u",
+      "name": "->0x8fb4321b6bec6d25",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35280,
+        "command": "node",
+        "name": "->0xf2aac0bc636a3cac"
+      }
+    },
+    {
+      "pid": 35280,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "3u",
+      "name": "->0xf2aac0bc636a3cac",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35271,
+        "command": "node",
+        "name": "->0x8fb4321b6bec6d25"
+      }
+    },
+    {
+      "pid": 35284,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "0u",
+      "name": "->0x20b443c938ec5f3f",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35271,
+        "command": "node",
+        "name": "->0xadbd070f6b6de88"
+      }
+    },
+    {
+      "pid": 35284,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "1u",
+      "name": "->0x70b41eba62099886",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35271,
+        "command": "node",
+        "name": "->0xea0ea5f3cd192fce"
+      }
+    },
+    {
+      "pid": 35292,
+      "command": "node_repl",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "0u",
+      "name": "->0x20b443c938ec5f3f",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35271,
+        "command": "node",
+        "name": "->0xadbd070f6b6de88"
+      }
+    },
+    {
+      "pid": 35292,
+      "command": "node_repl",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "1u",
+      "name": "->0x70b41eba62099886",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35271,
+        "command": "node",
+        "name": "->0xea0ea5f3cd192fce"
+      }
+    },
+    {
+      "pid": 35292,
+      "command": "node_repl",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "6u",
+      "name": "->0xefb0833e6a9f2803",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35292,
+        "command": "node_repl",
+        "name": "->0x4274b1d375e99c63"
+      }
+    },
+    {
+      "pid": 35292,
+      "command": "node_repl",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "7u",
+      "name": "->0x4274b1d375e99c63",
+      "first": "2026-10-14T15:32:13.728Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35292,
+        "command": "node_repl",
+        "name": "->0xefb0833e6a9f2803"
+      }
+    },
+    {
+      "pid": 35292,
+      "command": "node_repl",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "9u",
+      "name": "->0xeca69401d8b2df1c",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 66707,
+        "command": "node",
+        "name": "/Users/new/Library/Application Support/cua/chrome/b/d7060f0099ce.sock"
+      }
+    },
+    {
+      "pid": 35471,
+      "command": "codex",
+      "kind": "codex-state",
+      "type": "REG",
+      "fd": "3u",
+      "name": "/Users/new/Library/Application Support/cua/state/codex/tmp/arg0/codex-arg0dEbKDP/.lock",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z"
+    },
+    {
+      "pid": 35471,
+      "command": "codex",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "7u",
+      "name": "->0x458586f6f1b6d6d6",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35471,
+        "command": "codex",
+        "name": "->0x6e58d6608194d9ba"
+      }
+    },
+    {
+      "pid": 35471,
+      "command": "codex",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "8u",
+      "name": "->0x6e58d6608194d9ba",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35471,
+        "command": "codex",
+        "name": "->0x458586f6f1b6d6d6"
+      }
+    },
+    {
+      "pid": 35472,
+      "command": "codex",
+      "kind": "codex-state",
+      "type": "REG",
+      "fd": "3u",
+      "name": "/Users/new/Library/Application Support/cua/state/codex/tmp/arg0/codex-arg0GS9eLS/.lock",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z"
+    },
+    {
+      "pid": 35472,
+      "command": "codex",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "7u",
+      "name": "->0x37348a5d1cd99042",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35472,
+        "command": "codex",
+        "name": "->0xbf80842dcacb8d07"
+      }
+    },
+    {
+      "pid": 35472,
+      "command": "codex",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "8u",
+      "name": "->0xbf80842dcacb8d07",
+      "first": "2026-10-14T15:32:14.722Z",
+      "last": "2026-10-14T15:32:49.829Z",
+      "peer": {
+        "pid": 35472,
+        "command": "codex",
+        "name": "->0x37348a5d1cd99042"
+      }
+    }
+  ],
+  "peers": [
+    {
+      "pid": 66707,
+      "ppid": 68127,
+      "executable": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+      "args": "/Users/new/.nvm/versions/node/v24.18.0/bin/node /Users/new/Developer/GitHub/cua/src/chrome/host.mjs chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+    }
+  ],
+  "aliveAtEnd": []
+}

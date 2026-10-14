@@ -1,12 +1,12 @@
 // The trusted "browser" service: with the browser surface enabled, node_repl's trusted worker loads this module
 // (NODE_REPL_TRUSTED_SERVICES, registered by `cua serve` through buildLaunch) in place of the vendor's
 // @oai/browser-desktop service, and every request is delegated to the browser service the launch selected
-// (CUA_BROWSER_SERVICE, never agent input): `vendor` (the default) the vendor module the launcher names in
-// CUA_BROWSER_VENDOR_SERVICE, `cua` cua's own service, src/browser-service/index.mjs
+// (CUA_BROWSER_SERVICE, never agent input): `cua` cua's own service, src/browser-service/index.mjs
 // (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), which buildLaunch then adds to the trusted code
-// paths. It is imported only when selected: under the vendor selection its directory is not trusted. Both export only
-// handleRpc and follow the same REPL contract; cua's never answers the {ok:false} recovery envelope and rejects with a
-// BrowserServiceError carrying a code from its kept vocabulary. The vendor service registers its
+// paths, or `vendor`, kept one release for rollback (removed by #116), the vendor module the launcher names in
+// CUA_BROWSER_VENDOR_SERVICE. cua's is imported only when selected: under the vendor selection its directory is not
+// trusted. Both export only handleRpc and follow the same REPL contract; cua's never answers the {ok:false} recovery
+// envelope and rejects with a BrowserServiceError carrying a code from its kept vocabulary. The vendor service registers its
 // turn-ended hook through globalThis.nodeRepl.addTurnEndedHandler when `setup` initialises it (browser-service.mjs, the
 // turn tracker `ph`), and the trusted worker gives this module and the vendor module the same nodeRepl, so delegating
 // handleRpc keeps its hooks and its task cleanup.
@@ -239,9 +239,10 @@ async function cuaServiceVersion() {
 }
 
 // The browser service the launch selected (CUA_BROWSER_SERVICE): {name, loadService, actualServiceVersion,
-// expectedVersion}. Unset or empty is the vendor; an unknown name loads nothing.
+// expectedVersion}. Unset or empty is cua's own, for direct use only: buildLaunch always writes the selection it
+// resolved (src/runtime/launch.mjs browserServiceFor). An unknown name loads nothing.
 export function serviceSelection(env = process.env) {
-  const name = env.CUA_BROWSER_SERVICE || 'vendor';
+  const name = env.CUA_BROWSER_SERVICE || 'cua';
   if (name === 'cua') return {name, loadService: () => import(CUA_SERVICE_MODULE.href), actualServiceVersion: cuaServiceVersion, expectedVersion: PINNED_CUA_VERSION};
   const vendorPath = env.CUA_BROWSER_VENDOR_SERVICE;
   if (name !== 'vendor') {

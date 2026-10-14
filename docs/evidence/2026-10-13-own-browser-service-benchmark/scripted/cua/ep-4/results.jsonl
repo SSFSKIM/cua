@@ -1,0 +1,15 @@
+{"case":"bench/drag-box","cell":"start","ok":true,"value":true,"ms":330.3710000000001,"trace":[]}
+{"case":"bench/drag-box","cell":"query","ok":true,"value":"Drag the smaller box so that it is completely inside the larger box.","ms":23.132332999999562,"trace":[]}
+{"case":"bench/drag-box","cell":"rects","ok":true,"value":{"large":{"height":58,"width":58,"x":47,"y":64},"small":{"height":28,"width":28,"x":107,"y":100}},"ms":33.85045900000023,"trace":[]}
+{"case":"bench/drag-box","cell":"drag","ok":true,"value":{"path":[{"x":121,"y":114},{"x":76,"y":93}]},"ms":95.22175000000061,"trace":[]}
+{"case":"bench/drag-box","cell":"rects-after","ok":true,"value":{"large":{"height":58,"width":58,"x":47,"y":64},"small":{"height":28,"width":28,"x":62,"y":79}},"ms":24.743209000000206,"trace":[]}
+{"case":"bench/drag-box","cell":"submit","ok":true,"value":true,"ms":536.0089580000003,"trace":[]}
+{"case":"bench/drag-box","cell":"outcome","ok":true,"value":{"done":true,"raw":1,"reward":0.9545277777777778,"line":"reward: 0.9545277777777778 (raw: 1)"},"ms":21.051041999999143,"trace":[]}
+{"case":"bench/drag-box","assertion":{"ok":true}}
+{"case":"bench/drag-items","cell":"start","ok":true,"value":true,"ms":469.09508300000016,"trace":[]}
+{"case":"bench/drag-items","cell":"query","ok":true,"value":"Drag Kori to the bottom.","ms":53.17525000000023,"trace":[]}
+{"case":"bench/drag-items","cell":"rects","ok":true,"value":[{"height":25.59375,"text":"Mavis","width":134.3984375,"x":10,"y":57},{"height":25.59375,"text":"Kori","width":134.3984375,"x":10,"y":85.59375},{"height":25.59375,"text":"Mireielle","width":134.3984375,"x":10,"y":114.1875},{"height":25.59375,"text":"Kalli","width":134.3984375,"x":10,"y":142.78125},{"height":25.59375,"text":"Cherye","width":134.3984375,"x":10,"y":171.375}],"ms":30.405249999999796,"trace":[]}
+{"case":"bench/drag-items","cell":"drag","ok":true,"value":{"item":"Kori","fromIndex":2,"targetIndex":5,"path":[{"x":77,"y":98},{"x":77,"y":191}]},"ms":232.8911670000016,"trace":[]}
+{"case":"bench/drag-items","cell":"order","ok":true,"value":["Mavis","Mireielle","Kalli","Cherye","Kori"],"ms":120.27087500000198,"trace":[]}
+{"case":"bench/drag-items","cell":"outcome","ok":true,"value":{"done":true,"raw":1,"reward":0.9723222222222222,"line":"reward: 0.9723222222222222 (raw: 1)"},"ms":193.25595800000156,"trace":[]}
+{"case":"bench/drag-items","assertion":{"ok":true}}

@@ -1,0 +1,177 @@
+{
+  "T0": {
+    "answer": "browser selected ssfs; marker cua browser service 0.1.0; tabs before=1; profiles_list ok",
+    "ok": true
+  },
+  "T1": {
+    "answer": "{\"title\":\"Bench Home\",\"benchId\":\"BENCH-2026-10-05\"}",
+    "ok": true
+  },
+  "T2": {
+    "answer": "1437.50",
+    "ok": true
+  },
+  "T3": {
+    "answer": "D",
+    "ok": true
+  },
+  "T4": {
+    "answer": "LATE-7f3a",
+    "ok": true
+  },
+  "T5": {
+    "answer": "49,39,200,150",
+    "ok": true
+  },
+  "T6": {
+    "answer": "42-Bravo-circle-11",
+    "ok": true
+  },
+  "T7": {
+    "answer": "{\"log\":\"fShiftFx\",\"echo\":\"fFx\"}",
+    "ok": true
+  },
+  "T8": {
+    "answer": "no h1",
+    "ok": true
+  },
+  "miniwob/click-button": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9744611111111112,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/click-checkboxes": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9839833333333332,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/click-dialog": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9832611111111113,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/click-link": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9808333333333332,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/click-option": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9810277777777778,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/click-tab": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9818833333333332,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/enter-text": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9826,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/enter-password": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9794333333333334,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/focus-text-2": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.98445,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/drag-box": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9609166666666666,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/drag-items": {
+    "answer": {
+      "rawReward": -1,
+      "discountedReward": -1,
+      "reason": null,
+      "done": true
+    },
+    "ok": false
+  },
+  "miniwob/scroll-text": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9697166666666668,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/use-slider": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9160944444444444,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/simple-algebra": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9814777777777778,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "miniwob/email-inbox-delete": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9622444444444443,
+      "reason": null,
+      "done": true
+    },
+    "ok": true
+  },
+  "T9": {
+    "answer": "tabs after=1 (before=1); end_task not recorded",
+    "ok": true
+  }
+}

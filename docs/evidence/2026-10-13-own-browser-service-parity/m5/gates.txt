@@ -1,0 +1,60 @@
+M5 gates (acceptance 10), 2026-10-14 ~15:40 UTC, worktree at d49b03fdb8f72e67d77921252458096e0ac73b10 (feat/own-browser-service-m5; the live runs used 6c89167, and d49b03f since adds only the bench corpus and its harness flag: no src/ change).
+
+$ HOME=/tmp/cua-scratch-home npm test
+# tests 1694
+# suites 0
+# pass 1686
+# fail 0
+# cancelled 0
+# skipped 8
+# todo 0
+exit 0. The 8 skips, each visible:
+  ok 230 - installed vendor manifest, extension-disabled members and wire union # SKIP vendor module absent: manifest and vendor wire-union assertions not run
+  ok 568 - the unchanged client sets up on cua's service, uses execute, and drives tabs and navigation # SKIP vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof
+  ok 569 - dialog_open reaches model code through the client with the vendor's sentence # SKIP vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof
+  ok 570 - a dialog is reported, blocks a locator action with dialog_open, and is dismissed through the client (acceptance 4) # SKIP vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof
+  ok 571 - a download and a file chooser through the client: waitForEvent, path() and setFiles() (acceptance 4) # SKIP vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof
+  ok 572 - the content exports' refusals, the M3 members and capabilities the extension route lacks, and a missing tab, as model code sees them # SKIP vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof
+  ok 573 - timeout and strict-mode rejections cross the client with the vendor's sentences # SKIP vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof
+  ok 858 - on Linux, agent status reads the systemd user unit under the user's home without asking the manager when there is none # SKIP
+  (plus the whole-file vendor-absent notice: "SKIP vendor module absent: own/vendor manifest comparison")
+
+$ npm run test:mods
+ 32 pass
+ 0 fail
+Ran 32 tests across 1 file. [0.37s]
+exit 0
+
+$ claude plugin validate .
+Validating marketplace manifest: /Users/new/Developer/GitHub/cua-wt-browser-service/.claude-plugin/marketplace.json
+
+Validating plugin: /Users/new/Developer/GitHub/cua-wt-browser-service/CLAUDE.md
+
+⚠ Found 1 warning:
+
+  ❯ root: CLAUDE.md at the plugin root is not loaded as project context. To ship context with your plugin, use a skill (skills/<name>/SKILL.md) instead.
+
+Validating hooks: /Users/new/Developer/GitHub/cua-wt-browser-service/hooks/hooks.json
+
+  ❯ ./mods/register.tsx hooks: session.start{isInteractive=true}, session.start{isInteractive=false}, prompt.edit, command.run{command=secret}, ui.render{component=Pane, requestId=secret}, ui.input{element=secret-value}, ui.close{id=secret}, tool.call, session.append, prompt.compose
+  ❯ ./mods/register.tsx hooks on prompt.compose do not run in a plugin a person installs where an organization manages Claude Code: there, these events pass over the plugins you install, and only a plugin the organization lists in managed settings runs them
+  ❯ ./mods/register.tsx answers its own command: command.run{command=secret}
+  ❯ ./mods/register.tsx gating hook without .catch: ui.close{id=secret}
+  ❯ ./mods/register.tsx gating hook with .catch: tool.call
+  ❯ ./mods/register.tsx gating hook without .catch: session.append
+  ❯ ./mods/register.tsx calls: $.command.register, $.env.get, $.fs.exists, $.fs.list, $.fs.read, $.process.run (via projectOf, storeField), $.session.append (via storeField), $.session.cwd (via projectOf), $.ui.close (via storeField), $.ui.invalidate, $.ui.open, $.ui.resolve, $.ui.toast
+  ❯ ./mods/register.tsx env writes: nothing
+  ❯ ./mods/register.tsx env reads: HOME
+
+✔ Validation passed with warnings
+exit 0 (the one known CLAUDE.md warning)
+
+$ HOME=/tmp/cua-scratch-home node --test test/browser-service/no-network.test.mjs   (acceptance 7, unit half)
+ok 1 - setup, browser selection and a tab's commands use none of the runtime's network, config, telemetry or elicitation hooks
+ok 2 - every M3 feature, the after-cell notifications included, uses none of them either
+ok 3 - WebMCP and browserAuth over a backend that announces them use none of them either
+# tests 3
+# pass 3
+# fail 0
+# skipped 0
+exit 0

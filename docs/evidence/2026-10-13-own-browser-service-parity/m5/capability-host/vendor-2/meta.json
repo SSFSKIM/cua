@@ -1,0 +1,96 @@
+{
+  "device": "local",
+  "profile": "capability-host",
+  "checkout": "/Users/new/Developer/GitHub/cua-wt-browser-service/",
+  "home": "/private/tmp/cua-cap-VwZ7AD",
+  "commit": "fc59fb1ddc6de8b486df0b5e1ad756c2e1f125fc",
+  "runtime": "26.928.40906-darwin-arm64",
+  "service": "vendor",
+  "backend": "capability-host",
+  "environment": {
+    "CUA_BROWSER_SERVICE": "vendor",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_HOME": "/private/tmp/cua-cap-VwZ7AD"
+  },
+  "started": "2026-10-14T15:00:51.226Z",
+  "elicitations": [
+    {
+      "t": "2026-10-14T15:00:58.732Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/auth-handoff"
+    },
+    {
+      "t": "2026-10-14T15:01:04.527Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/history"
+    },
+    {
+      "t": "2026-10-14T15:01:06.549Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/history"
+    },
+    {
+      "t": "2026-10-14T15:01:06.558Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/history"
+    },
+    {
+      "t": "2026-10-14T15:01:09.186Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/raw-cdp"
+    },
+    {
+      "t": "2026-10-14T15:01:11.219Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/raw-cdp"
+    },
+    {
+      "t": "2026-10-14T15:01:13.888Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/webmcp"
+    },
+    {
+      "t": "2026-10-14T15:01:15.940Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "capability-host/webmcp"
+    }
+  ],
+  "attestations": [
+    {
+      "case": "capability-host/auth-handoff",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capability-host/history",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capability-host/raw-cdp",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "capability-host/webmcp",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    }
+  ],
+  "complete": true,
+  "cases": [
+    "capability-host/auth-handoff",
+    "capability-host/history",
+    "capability-host/raw-cdp",
+    "capability-host/webmcp"
+  ],
+  "finished": "2026-10-14T15:01:17.321Z"
+}

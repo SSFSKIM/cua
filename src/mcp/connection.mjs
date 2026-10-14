@@ -42,7 +42,7 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {browserServiceFor, buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
@@ -89,8 +89,13 @@ export async function openConnection({home, env = process.env, sessionId, input,
   let server;
   try {
     const secrets = connectionSecrets({enabled: secretsEnabled, env, project});
+    // The browser service is resolved once, at the open, and every launch of this connection (the first, and any after
+    // an idle stop) uses it: the rules profiles_list and js teach are that service's, so a registration of the other
+    // route meanwhile must not switch the runtime under them. A new connection resolves again.
+    const browserService = serverSettings.surfaces.includes('browser') ? browserServiceFor(env, home).service : undefined;
+    const ambient = browserService ? {...env, CUA_BROWSER_SERVICE: browserService} : env;
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
@@ -131,7 +136,9 @@ export async function openConnection({home, env = process.env, sessionId, input,
       return [...(browserBackends?.entries() ?? []), ...list];
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
-      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
+      sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings,
+      // The rules the model is taught are those of the service this connection's launches use.
+      browserService: browserService ?? 'cua'});
   } catch (error) {
     await release();
     throw error;

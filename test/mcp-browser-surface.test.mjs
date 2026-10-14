@@ -130,13 +130,18 @@ const BROWSER_RULES = {
   'never pick or bind a profile': /Never pick or bind a profile for the user/,
   'DOM-only tabs': /Chrome tabs are DOM-only: tab\.playwright locators, not native input/,
   'keys go to a focusable element, not a frame body, and cua.type pastes': /never a frame body; tab\.cua\.type pastes/,
-  'the fixed 3 s browser action cap and how to wait longer': /Locator actions, waits and evaluate stop at 3 s \(timeoutMs can only shorten it\); to wait longer, loop short waits to your own deadline under a larger js timeout_ms\./,
-  'read-only evaluate': /evaluate is read-only: no fetch, no require, objects are non-extensible\./,
+  'per-phase budgets up to 120 s and a js timeout covering them': /Locator actions, waits and evaluate take timeoutMs per phase \(finding the element, then acting\): 3 s by default, at most 120 s, 0 is one attempt; give the js call a timeout_ms covering every call it awaits\./,
+  'evaluate in the page, sent once': /evaluate runs in the page like its own scripts \(DOM, fetch, cookies, navigation\) and is sent once: after a timeout or navigation it may have run, so check the page before running it again\./,
   'createBrowserTab limit': /createBrowserTab can take 60 s \(js timeout_ms of at least 60000\)/,
   'leftover tab': /tab may still have opened: tell the user, don't retry/,
   'closing the only window unloads the profile and its host': /closing your tab or end_task unloads it; mark a tab handoff to keep it/,
 };
 const BROWSER_POINTER = /Chrome: follow the rules in profiles_list's description/;
+// The vendor service's own limits, which cua's lifts: only the vendor selection (the one-release rollback) teaches them.
+const VENDOR_BROWSER_RULES = {
+  'the vendor\'s fixed 3 s cap and how to wait longer': /Locator actions, waits and evaluate stop at 3 s \(timeoutMs can only shorten it\); to wait longer, loop short waits to your own deadline under a larger js timeout_ms\./,
+  'the vendor\'s read-only evaluate': /evaluate is read-only: no fetch, no require, objects are non-extensible\./,
+};
 const COMPUTER_RULES = {
   'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
   'role names in the system language': /role names are in the system language/,
@@ -218,6 +223,8 @@ test('each surface\'s rules are in the description of its tool, ahead of the 2,0
     assert.equal(Boolean(tools.profiles_list), browser, label);
     if (browser) {
       for (const [rule, pattern] of Object.entries(BROWSER_RULES)) assert.match(seen('profiles_list'), pattern, `${label}: profiles_list ${rule}`);
+      for (const [rule, pattern] of Object.entries(VENDOR_BROWSER_RULES)) assert.doesNotMatch(seen('profiles_list'), pattern, `${label}: profiles_list without ${rule}`);
+      assert.doesNotMatch(seen('js'), /3 s cap|read-only/, `${label}: js points to cua's service's rules`);
       assert.ok(tools.profiles_list.description.length <= DESCRIPTION_CAP, `${label}: profiles_list ${tools.profiles_list.description.length}`);
     }
 
@@ -233,6 +240,31 @@ test('each surface\'s rules are in the description of its tool, ahead of the 2,0
     if (platform === 'linux') for (const text of [instructions, ...Object.keys(tools).map(seen)]) assert.doesNotMatch(text, MACOS_ONLY, label);
   }
   assert.ok(jsRulesFor(['computer'], {platform: 'darwin'}).length + 2 + VENDOR_COMPUTER_JS <= DESCRIPTION_CAP, 'the default surface\'s js description is never cut');
+});
+
+test('under the vendor browser service, the rollback, profiles_list and js teach the vendor\'s 3 s cap and read-only evaluate instead', async () => {
+  const {modelTools} = await import('../src/mcp/surface.mjs');
+  for (const platform of ['darwin', 'linux']) for (const surfaces of [['browser'], ['computer', 'browser']]) for (const inAppBrowser of [false, true]) {
+    const label = `${platform} ${surfaces.join()}${inAppBrowser ? ' maws' : ''}`;
+    const tools = Object.fromEntries(modelTools(UPSTREAM_TOOLS, {surfaces, platform, inAppBrowser, browserService: 'vendor'}).map(t => [t.name, t]));
+    const cua = Object.fromEntries(modelTools(UPSTREAM_TOOLS, {surfaces, platform, inAppBrowser}).map(t => [t.name, t]));
+    for (const [rule, pattern] of Object.entries(VENDOR_BROWSER_RULES)) assert.match(tools.profiles_list.description, pattern, `${label}: ${rule}`);
+    for (const [rule, pattern] of Object.entries(BROWSER_RULES)) {
+      if (/budgets|evaluate in the page/.test(rule)) assert.doesNotMatch(tools.profiles_list.description, pattern, `${label}: not ${rule}`);
+      else if (!(inAppBrowser && /never pick/.test(rule))) assert.match(tools.profiles_list.description, pattern, `${label}: ${rule}`);
+    }
+    assert.ok(tools.profiles_list.description.length <= DESCRIPTION_CAP, label);
+    assert.match(tools.js.description, /DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab/, label);
+    assert.match(cua.js.description, /DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab/, label);
+  }
+});
+
+test('CUA_BROWSER_SERVICE is checked at start with the browser surface: cua, vendor, or unset (the launch resolves it)', () => {
+  for (const value of [undefined, '', 'cua', 'vendor']) settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: value});
+  for (const bad of ['openai', 'Cua', ' vendor'])
+    assert.throws(() => settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: bad}), error => error.code === 'invalid_setting', bad);
+  assert.deepEqual(settingsFrom({CUA_BROWSER_SERVICE: 'openai'}).surfaces, ['computer'], 'without the browser surface the selection is not read, as the launch ignores it');
+  assert.equal('browserService' in settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: 'vendor'}), false, 'the rules follow the launch the connection plans, not the variable alone');
 });
 
 test('CUA_SHIM_SURFACES selects computer (default), browser or both, and anything else is refused', () => {

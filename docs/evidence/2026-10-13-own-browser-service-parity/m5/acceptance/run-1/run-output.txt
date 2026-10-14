@@ -1,0 +1,6 @@
+resolution: CUA_BROWSER_SERVICE unset, home route cua -> cua (cua_route) at 6c89167b19e499100fedee896d6bd6a17a1b4a5e
+attested: cua (# Selected Browser; cua browser service 0.1.0) at 6c89167b19e499100fedee896d6bd6a17a1b4a5e
+case acceptance/nytimes ok
+case acceptance/slow-click ok
+case acceptance/evaluate-title ok
+case acceptance/evaluate-context-loss ok

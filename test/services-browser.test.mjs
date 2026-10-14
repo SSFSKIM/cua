@@ -400,22 +400,22 @@ test('the wrapper\'s copy of the kept reasons is the cua service\'s vocabulary (
   assert.deepEqual([...SERVICE_REASONS].sort(), [...KEPT_REASONS].sort());
 });
 
-test('CUA_BROWSER_SERVICE=cua selects cua\'s own service, its VERSION file and its pin', async () => {
-  const selected = serviceSelection({CUA_BROWSER_SERVICE: 'cua', CUA_BROWSER_VENDOR_SERVICE: '/vendor/scripts/browser-service.mjs'});
-  assert.equal(selected.name, 'cua');
-  assert.equal(selected.expectedVersion, PINNED_CUA_VERSION);
+test('cua\'s own service is the default selection (unset, empty or named), with its VERSION file and its pin', async () => {
   assert.equal(PINNED_CUA_VERSION, '0.1.0');
-  assert.equal(await selected.actualServiceVersion(), '0.1.0');
-  assert.equal((await selected.loadService()).handleRpc, cuaHandleRpc);
+  for (const env of [{}, {CUA_BROWSER_SERVICE: ''}, {CUA_BROWSER_SERVICE: 'cua'}]) {
+    const selected = serviceSelection({...env, CUA_BROWSER_VENDOR_SERVICE: '/vendor/scripts/browser-service.mjs'});
+    assert.equal(selected.name, 'cua', JSON.stringify(env));
+    assert.equal(selected.expectedVersion, PINNED_CUA_VERSION);
+    assert.equal(await selected.actualServiceVersion(), '0.1.0');
+    assert.equal((await selected.loadService()).handleRpc, cuaHandleRpc);
+  }
 });
 
-test('the vendor is the default selection, and an unknown selection loads nothing and has no version', async () => {
-  for (const env of [{}, {CUA_BROWSER_SERVICE: 'vendor'}, {CUA_BROWSER_SERVICE: ''}]) {
-    const selected = serviceSelection({...env, CUA_BROWSER_VENDOR_SERVICE: '/nonexistent/scripts/browser-service.mjs'});
-    assert.equal(selected.name, 'vendor', JSON.stringify(env));
-    assert.equal(selected.expectedVersion, PINNED_VENDOR_VERSION);
-    assert.equal(await selected.actualServiceVersion(), null, 'no package.json there');
-  }
+test('the vendor is selected only when named (the one-release rollback); an unknown selection loads nothing and has no version', async () => {
+  const selected = serviceSelection({CUA_BROWSER_SERVICE: 'vendor', CUA_BROWSER_VENDOR_SERVICE: '/nonexistent/scripts/browser-service.mjs'});
+  assert.equal(selected.name, 'vendor');
+  assert.equal(selected.expectedVersion, PINNED_VENDOR_VERSION);
+  assert.equal(await selected.actualServiceVersion(), null, 'no package.json there');
   const unknown = serviceSelection({CUA_BROWSER_SERVICE: 'openai'});
   assert.equal(await unknown.actualServiceVersion(), null);
   await assert.rejects(unknown.loadService(), /\[browser_not_configured\]$/);

@@ -77,3 +77,29 @@ The own-service inventory gate requires `src/browser-service/index.mjs` to expor
 The selective-mutation tests additionally disable viewport reset, each mark, media download, and locator waiting individually while all observations keep working. The lifecycle case creates separate deliverable, handoff and unmarked tabs, completes the primary turn and disconnects it, then uses an observer client to check retention and clean up only URLs carrying the case’s unique nonce. Media and ordinary downloads are verified against the fixture bytes through Node’s filesystem API, after limiting reads to the expected artifact basename (also checked after symlink resolution). Session naming has no browser-client readback, so the fake-native-backend probe verifies the actual `nameSession` request rather than accepting its empty result alone.
 
 Fixture event handlers serialize their POSTs and publish `data-recorded-*` attributes only after successful JSON responses. Cells whose oracles consume those events await a bounded DOM acknowledgment before returning; completing a browser action alone does not await an async page handler. The drag-end acknowledgment also covers the earlier queued drag-start. `fixture-ack.test.mjs` executes real fixture handlers and scenario cells with selectively delayed POSTs, checking both the final independent state oracle and originating-cell boundaries. These acknowledgments do not replace the dedicated pending locator-wait case.
+
+## The capability-host group (M5)
+
+No live host announces the optional capabilities raw CDP (`cdp`), WebMCP (`webmcp`), the auth handoff (`browserAuth`) and history (`history`), so their success paths have their own group, `scenarios/capability-host/`, run against a test backend instead of a Chrome profile:
+
+```
+node scripts/browser-parity.mjs run --device local --backend capability-host --service vendor --out /tmp/parity/vendor-cap
+node scripts/browser-parity.mjs run --device local --backend capability-host --service cua --out /tmp/parity/cua-cap
+node scripts/browser-parity.mjs diff /tmp/parity/vendor-cap /tmp/parity/cua-cap --expected test/browser-parity/expected-differences.json
+```
+
+The backend is `capability-host.mjs`: cua's real host (`createHost`) with the fake cua extension behind it, on a backend socket in a scratch home, whose `getInfo` adds those four capabilities and which answers `getUserHistory` from the query it was sent. Its tabs are scripted pages (navigations commit with Chrome's events; the main frame is a secure document on `https://cua-capability.example` registering one WebMCP tool, run in a `node:vm` world as `test/browser-service/support/webmcp-tab.mjs` models Chrome's WebMCP); nothing reaches a network or a Chrome. The run uses the real `cua serve`, runtime and REPL client of this machine in that scratch home (`scripts/browser-parity/capability-home.mjs`: the installed runtime cloned, a cua route record, and the vendor's own raw CDP switch `full_cdp_access_enabled = true` in its browser config, without which the vendor refuses raw CDP whatever the backend announces, and an empty `home/` that is the serve's HOME). The serve's environment is built, not inherited (`localCuaServeCommand`): PATH, TMPDIR, locale and user name from the caller, that HOME, secrets off, and nothing else, so `CUA_BROWSER_BACKENDS`, `BROWSER_USE_*`, XDG directories and the caller's secret store cannot reach the run. The harness selects the host by its instance id, and records `backend: "capability-host"`; the scratch home is removed at the end.
+
+The group runs only on that backend and that backend runs nothing else (its pages have no engine for the ordinary corpus): `selectScenarioPaths` keeps them apart, so a `--device mini` run never includes the group. A case opens its tab with `setup.open: 'goto'` (`browser.tabs.new()` then `tab.goto(page)`), because `cua.createBrowserTab` renders a DOM snapshot. Its cases carry `backend: 'capability-host'` and are the inventory's success-path cases for those rows; the ordinary route keeps its capability-disabled cases beside them. The vendor asks approvals there (origin access, the history read, a WebMCP tool call), which the harness accepts as it does on the mini.
+
+## The bench corpus: scripted benchmark episodes (M5)
+
+`--corpus bench` runs `bench/scenarios/` instead of the parity corpus: MiniWoB episodes of the benchmark task set driven by a fixed rule (`bench/drag-rules.mjs`: the query and the live element rects in, one `tab.cua.drag` path out), with no model in the loop, so a service's outcomes can be told apart from a controller's slips. They are outcome cases on one live device, not differential cases: they are not in the inventory, `diff` is not their oracle (each episode's assertion is: every cell succeeded and the console's `reward: X (raw: 1)` line arrived), and the corpus refuses `--device local` and any `--backend`. Their pages come from the archive benchmark's fixture (`http://127.0.0.1:48731`, as `TASKS.md` has it), which the operator starts on the device for the runs; the harness's own fixture still runs for the case reset. One run is one episode of each task:
+
+```
+node scripts/browser-parity.mjs run --device mini --corpus bench --service vendor --out <dir>/vendor/ep-1
+node scripts/browser-parity.mjs run --device mini --corpus bench --service cua --out <dir>/cua/ep-1
+node scripts/bench-scripted-summary.mjs <dir>
+```
+
+`bench-scripted-summary.mjs` prints each episode's raw reward and drag path, each task's pass count per service and the verdict (a cua miss in a task the vendor passes every time is a defect); incomplete or unattested runs and unequal episode counts get no verdict. The M5 evidence is `docs/evidence/2026-10-13-own-browser-service-benchmark/scripted/`.

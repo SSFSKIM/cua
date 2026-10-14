@@ -46,7 +46,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/history"
+      "capabilities/history",
+      "capability-host/history"
     ],
     "reachability": "capability:history"
   },
@@ -731,7 +732,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capability-host/auth-handoff"
     ],
     "reachability": "capability:browserAuth"
   },
@@ -741,7 +743,8 @@
     "dispatch": "Rf",
     "milestone": "M2",
     "cases": [
-      "capabilities/m2-disabled"
+      "capabilities/m2-disabled",
+      "capability-host/raw-cdp"
     ],
     "reachability": "capability:cdp"
   },
@@ -751,7 +754,8 @@
     "dispatch": "Rf",
     "milestone": "M2",
     "cases": [
-      "capabilities/m2-disabled"
+      "capabilities/m2-disabled",
+      "capability-host/raw-cdp"
     ],
     "reachability": "capability:cdp"
   },
@@ -927,7 +931,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capability-host/webmcp"
     ],
     "reachability": "capability:webmcp"
   },
@@ -937,7 +942,8 @@
     "dispatch": "Rf",
     "milestone": "M3",
     "cases": [
-      "capabilities/m3-disabled"
+      "capabilities/m3-disabled",
+      "capability-host/webmcp"
     ],
     "reachability": "capability:webmcp"
   }

@@ -59,3 +59,23 @@ $ node scripts/browser-parity.mjs diff vendor-m3-dense-2 cua-m3-dense-2 --scenar
 0 unexpected differences (1 cases, 1 cells, 0 expected; scenarios reads/visible-dom-dense.mjs)
   Both listings: 200 lines, the grid starting at line 25 and cut at g174; "Offscreen button" absent though it now
   precedes the grid. Fixture, ssh pipe and serve processes stopped with each run (none left on the mini).
+
+## 2026-10-14, M5 task 2: the three download cases re-run with the mini's Downloads consent granted
+
+`ls ~/Downloads` answers over ssh now (the consent the owner granted). Parity clone prepared at 39192b0 (the M5 branch
+head after task 1 landed: the default selection is cua, but each run sets CUA_BROWSER_SERVICE explicitly), profile ssfs,
+each run its own fresh ssh; the fixture, ssh pipe and serve processes stopped with each run. Host traces unavailable
+(the resident host is still the pre-M5 one). Elicitations: vendor 8 (origin access, downloads, upload), cua none.
+$ node scripts/browser-parity.mjs prepare --device mini --commit 39192b0aaf2f91887913eda358cf1d49fa392815 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'downloads/chooser.mjs,downloads/media.mjs,downloads/two-tabs.mjs' --out vendor-m5-dl
+case downloads/chooser ok / case downloads/media ok / case downloads/two-tabs ok   (14:15:38 to 14:16:04 UTC)
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios '<the same>' --out cua-m5-dl
+case downloads/chooser ok / case downloads/media ok / case downloads/two-tabs ok   (14:16:05 to 14:16:31 UTC)
+$ node scripts/browser-parity.mjs diff vendor-m5-dl cua-m5-dl --scenarios '<the same>' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (3 cases, 8 cells, 1 expected; scenarios downloads/chooser.mjs,downloads/media.mjs,downloads/two-tabs.mjs)
+exit 0
+The one expected difference is downloads/two-tabs (exclusive download ownership, a departure in cua's favour, M2).
+Without the allowance file the same pair shows exactly that difference:
+{"case":"downloads/two-tabs","cell":"both","kind":"semantic","a":{"ok":true,"value":{"samePath":true,"contents":true}},"b":{"ok":true,"value":{"samePath":false,"contents":true}}}
+1 differences (3 cases, 8 cells; scenarios downloads/chooser.mjs,downloads/media.mjs,downloads/two-tabs.mjs)
+With these three, every case of the M3 corpus has diffed to 0 unexpected differences (the other 56 on 2026-10-14 above).

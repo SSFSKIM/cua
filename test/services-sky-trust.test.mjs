@@ -12,6 +12,7 @@ import {registerHooks} from 'node:module';
 import {buildLaunch, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
+import {writeCuaRecord} from './fixtures/route-records.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000002';
 
@@ -62,10 +63,12 @@ function runWorker(env, requests = SKY_REQUESTS, {nodeRepl = false} = {}) {
   }));
 }
 
-function launchWithFakeVendor(t, options = {}) {
+// `cuaRoute`: the home has cua's Chrome registration, whose default browser service is cua's.
+function launchWithFakeVendor(t, {cuaRoute = false, ...options} = {}) {
   const s = scratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
+  if (cuaRoute) writeCuaRecord(home);
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
   mkdirSync(dirname(runtime.paths.skyVendorService), {recursive: true});
   writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type, text: request.args?.[0]?.text}; }\n');
@@ -99,8 +102,9 @@ test('the hook copy is effective: without the owned secrets modules trusted, the
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
 });
 
-test('the production browser service and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
-  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
+test('the production browser service under the vendor selection and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', ambient: {CUA_BROWSER_SERVICE: 'vendor'}});
+  assert.equal(env.CUA_BROWSER_SERVICE, 'vendor');
   const [setup, reference] = await runWorker(env, BROWSER_REQUESTS);
   assert.deepEqual(setup, {vendor: 'setup'}, 'delegated to the vendor module named by CUA_BROWSER_VENDOR_SERVICE');
   assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
@@ -109,13 +113,14 @@ test('the production browser service and everything it imports load under exactl
   assert.match(result.loadError, /Trusted RPC dependency must resolve within a configured trusted code path/);
 });
 
-// cua's own browser service (CUA_BROWSER_SERVICE=cua): the wrapper imports it from src/browser-service, which the
-// launch trusts only under that selection. Its real setup runs here, under exactly the launch's environment.
+// cua's own browser service (the default selection on the cua route, or CUA_BROWSER_SERVICE=cua): the wrapper imports it from
+// src/browser-service, which the launch trusts only under that selection. Its real setup runs here, under exactly the
+// launch's environment.
 const CUA_BROWSER_REQUESTS = ['browser', {method: 'setup', params: {environment: 'codex-app'}}, BROWSER_REQUESTS[2]];
 
-test('cua\'s own browser service and everything it imports load under exactly the launch\'s trusted paths when selected', {skip: typeof registerHooks !== 'function'}, async t => {
-  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', ambient: {CUA_BROWSER_SERVICE: 'cua'}});
-  assert.equal(env.CUA_BROWSER_SERVICE, 'cua');
+test('cua\'s own browser service, selected by default on the cua route, and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
+  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', cuaRoute: true});
+  assert.equal(env.CUA_BROWSER_SERVICE, 'cua', 'the default on the cua route, written out by the launch');
   const [setup, reference] = await runWorker(env, CUA_BROWSER_REQUESTS, {nodeRepl: true});
   assert.equal(setup.loadError, undefined, setup.loadError);
   assert.deepEqual(Object.keys(setup).sort(), ['apiManifest', 'disabledMemberIds'], 'cua\'s setup, not the fake vendor\'s');

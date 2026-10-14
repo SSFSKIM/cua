@@ -1,0 +1,59 @@
+Live network and disk observation, 2026-10-14T15:35:11.110Z to 2026-10-14T15:36:00.589Z (UTC), mini parity clone at 6c89167b19e499100fedee896d6bd6a17a1b4a5e, profile ssfs.
+Selection: CUA_BROWSER_SERVICE removed; the launch resolved cua (cua_route, home route cua); attested by the documentation marker "cua browser service 0.1.0".
+Cases (31, one serve): tabs/discovery, examples/tabs, tabs/navigation, tabs/manual-handoff-disabled, reads/locators, reads/snapshot, reads/frames, evaluate/read, evaluate/mutation, evaluate/counter, evaluate/context-loss, actions/locators, actions/strict-error, actions/slow-budget, input/coordinates, input/dom, waits/page, screenshot/modes, screenshot/clip, dialogs/alert, downloads/chooser, capabilities/clipboard, capabilities/logs, capabilities/viewport, capabilities/cursor, capabilities/export-rejections, capabilities/page-assets, capabilities/m3-members, capabilities/m3-disabled, capabilities/history, m5-live/m3-raw.
+Serve exit {"code":0,"signal":null}; tree processes alive at the end: none.
+Sampling: ps -A -o pid=,ppid=,comm= (every 250 ms); nettop -L 0 -s 1 -n -x (continuous, rows of tree processes kept); lsof -nP -p <tree pids> (every 1 s; inet, unix and state/codex entries kept) (runs: ps 153, nettop rows read 9361, lsof 39).
+Coverage: not recorded (this run predates the sampler's coverage checks; see the README's qualification).
+
+Process tree (pid, parent, role):
+  47946  parent 47945  cua serve
+  47964  parent 47946  anchor (src/mcp/anchor.mjs)
+  47965  parent 47964  runtime (vendor cua-repl)
+  47966  parent 47965  node_repl supervisor
+  48013  parent 47946  anchor (src/mcp/anchor.mjs)
+  48014  parent 48013  runtime (vendor cua-repl)
+  48015  parent 48014  node_repl supervisor
+  48050  parent 47946  (pgrep)
+  48125  parent 47966  codex sandbox (seatbelt wrapper)
+  48126  parent 47966  codex sandbox (seatbelt wrapper)
+  48127  parent 48125  REPL kernel
+  48128  parent 48126  trusted worker (browser service)
+  codex app-server processes in the tree: none.
+
+TCP/UDP connections of the tree (nettop rows): 0
+Tree processes nettop listed at all (any TCP/UDP activity, brief flows included in their byte totals): 0
+Processes nettop listed whose ancestry could not be read: not recorded (this run predates that check; a descendant born and gone between two 250 ms ps snapshots would not have been attributed).
+Internet sockets of the tree seen by lsof: 0
+
+Unix sockets of the tree: 15 (14 between tree processes, 1 to a process outside the tree, 0 with no peer named)
+  47966 node_repl -> 66707 node /Users/new/Developer/GitHub/cua/src/chrome/host.mjs chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/ (parent 68127 Google Chrome)
+
+Files under state/codex the tree held open: 2
+  48125 codex (codex sandbox (seatbelt wrapper)): state/codex/tmp/arg0/codex-arg0lGGfDG/.lock
+  48126 codex (codex sandbox (seatbelt wrapper)): state/codex/tmp/arg0/codex-arg0TVFZPV/.lock
+
+$CUA_HOME/state/codex: 3400 entries before (2026-10-14T15:35:14.401Z), 3400 after (2026-10-14T15:35:59.879Z).
+browser/ (the vendor's persisted grants): 937 files before and 937 after; listing and content digest unchanged (12e98a32a2b72a32); changed entries: 0.
+Every changed entry (path: before -> after as [type, size, mtime ms]):
+  node_repl/active_execs: ["dir",128,1791992059636] -> ["dir",128,1791992152165]
+  tmp/arg0: ["dir",224,1791992031061] -> ["dir",224,1791992120723]
+  tmp/arg0/codex-arg02ZgGn7: ["dir",192,1791992031061] -> absent
+  tmp/arg0/codex-arg02ZgGn7/.lock: ["file",0,1791992031061] -> absent
+  tmp/arg0/codex-arg02ZgGn7/apply_patch: ["link",111,1791992031061] -> absent
+  tmp/arg0/codex-arg02ZgGn7/applypatch: ["link",111,1791992031061] -> absent
+  tmp/arg0/codex-arg02ZgGn7/codex-execve-wrapper: ["link",111,1791992031061] -> absent
+  tmp/arg0/codex-arg0AWgHLz: ["dir",192,1791992031062] -> absent
+  tmp/arg0/codex-arg0AWgHLz/.lock: ["file",0,1791992031061] -> absent
+  tmp/arg0/codex-arg0AWgHLz/apply_patch: ["link",111,1791992031061] -> absent
+  tmp/arg0/codex-arg0AWgHLz/applypatch: ["link",111,1791992031061] -> absent
+  tmp/arg0/codex-arg0AWgHLz/codex-execve-wrapper: ["link",111,1791992031062] -> absent
+  tmp/arg0/codex-arg0TVFZPV: absent -> ["dir",192,1791992120723]
+  tmp/arg0/codex-arg0TVFZPV/.lock: absent -> ["file",0,1791992120723]
+  tmp/arg0/codex-arg0TVFZPV/apply_patch: absent -> ["link",111,1791992120723]
+  tmp/arg0/codex-arg0TVFZPV/applypatch: absent -> ["link",111,1791992120723]
+  tmp/arg0/codex-arg0TVFZPV/codex-execve-wrapper: absent -> ["link",111,1791992120723]
+  tmp/arg0/codex-arg0lGGfDG: absent -> ["dir",192,1791992120723]
+  tmp/arg0/codex-arg0lGGfDG/.lock: absent -> ["file",0,1791992120723]
+  tmp/arg0/codex-arg0lGGfDG/apply_patch: absent -> ["link",111,1791992120723]
+  tmp/arg0/codex-arg0lGGfDG/applypatch: absent -> ["link",111,1791992120723]
+  tmp/arg0/codex-arg0lGGfDG/codex-execve-wrapper: absent -> ["link",111,1791992120723]

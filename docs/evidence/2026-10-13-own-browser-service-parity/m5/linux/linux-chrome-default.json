@@ -1,0 +1,83 @@
+{
+ "home": "/home/admin/.local/share/cua-h4",
+ "key": "me",
+ "route": "cua",
+ "steps": [
+  {
+   "name": "profiles_list reports me ready",
+   "status": "PASS",
+   "detail": {
+    "status": "ok",
+    "profiles": [
+     {
+      "key": "me",
+      "ready": true,
+      "extensionInstanceId": "ee43424f-bb6d-4f91-9101-226f44c4ad9e"
+     }
+    ]
+   }
+  },
+  {
+   "name": "me's cua host serves at its pre-listed socket",
+   "status": "PASS",
+   "detail": {
+    "socket": "/home/admin/.local/share/cua-h4/chrome/b/97bcc14e4aaa.sock",
+    "pid": 9566,
+    "extensionVersion": "0.3.0",
+    "process": "9566 /usr/local/bin/node /home/admin/cua-m4/src/chrome/host.mjs chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+   }
+  },
+  {
+   "name": "the selected browser service answers",
+   "status": "PASS",
+   "detail": {
+    "requested": "cua",
+    "served": "cua browser service 0.1.0"
+   }
+  },
+  {
+   "name": "open a tab and read its title",
+   "status": "PASS",
+   "detail": {
+    "title": "Example Domain"
+   }
+  },
+  {
+   "name": "close the tab",
+   "status": "PASS",
+   "detail": "closed"
+  },
+  {
+   "name": "end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "90e84a62-1f0f-40e9-97c5-6d205c8ab233"
+   }
+  },
+  {
+   "name": "the host owns no tab after end_task",
+   "status": "PASS",
+   "detail": []
+  },
+  {
+   "name": "cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "no run entry left for the connection",
+   "status": "PASS",
+   "detail": {
+    "before": [],
+    "after": []
+   }
+  }
+ ],
+ "elicitations": [],
+ "status": "PASS"
+}

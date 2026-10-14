@@ -125,3 +125,37 @@ test('binary cell results use MCP image blocks, not oversized JSON text; tool er
   assert.deepEqual(parseCell({content}).value,{shot:{type:'image',mimeType:'image/jpeg',data:'/9j/2Q=='}});
   assert.equal(parseCell({isError:true,content:[{type:'text',text:'CUA_PARITY_RESULT {"ok":true,"value":1}\nlater tool error'}]}).ok,false);
 });
+test('a case whose setup opens by goto gets a new tab navigated there, never createBrowserTab (its DOM snapshot needs a page engine)',async t=>{
+  const {startFixture}=await import('./fixture/serve.mjs');
+  const fixture=await startFixture({port:0});t.after(()=>fixture.close());
+  const codes=[];
+  const client={async call(name,args){codes.push(args.code);return {content:[{type:'text',text:'CUA_PARITY_RESULT '+JSON.stringify({ok:true,value:null,$imageCount:0})}]};}};
+  const run=setup=>runScenario({id:'opening',milestone:'M2',commands:[],setup,cells:[],assert:()=>({ok:true})},{client,fixtureURL:fixture.url,instanceId:'fake',emit:()=>{}});
+  await run({page:'https://cua-capability.example/shop',open:'goto'});
+  assert.match(codes[0],/globalThis\.tab=await browser\.tabs\.new\(\); await tab\.goto\("https:\/\/cua-capability\.example\/shop"\);/);
+  assert.doesNotMatch(codes[0],/createBrowserTab/);
+  codes.length=0;
+  await run({page:'/counter.html'});
+  assert.match(codes[0],/cua\.createBrowserTab\(browser\.browserId,"http:\/\/127\.0\.0\.1:\d+\/counter\.html"\)/);
+  await assert.rejects(run({page:'/counter.html',open:'popup'}),/setup\.open/);
+});
+test('the capability-host group runs only on its backend, and the ordinary corpus never on it',async()=>{
+  const {selectScenarioPaths}=await import('../../scripts/browser-parity.mjs');
+  const corpus=['actions/locators.mjs','capability-host/raw-cdp.mjs','capability-host/history.mjs','examples/tabs.mjs'];
+  assert.deepEqual(selectScenarioPaths(corpus,{local:false}),['actions/locators.mjs','examples/tabs.mjs']);
+  assert.deepEqual(selectScenarioPaths(corpus,{local:true}),['examples/tabs.mjs']);
+  assert.deepEqual(selectScenarioPaths(corpus,{local:true,backend:'capability-host'}),['capability-host/raw-cdp.mjs','capability-host/history.mjs']);
+  assert.deepEqual(selectScenarioPaths(corpus,{local:true,backend:'capability-host',scenarios:'capability-host/history.mjs'}),['capability-host/history.mjs']);
+  assert.deepEqual(selectScenarioPaths(corpus,{local:false,scenarios:'**/*.mjs'}),['actions/locators.mjs','examples/tabs.mjs'],'a glob over everything still leaves the group to its backend');
+});
+test('the capability-host serve gets only its scratch homes and fixed settings, never the caller\'s sessions, secrets or browser configuration',async()=>{
+  const {localCuaServeCommand}=await import('../../scripts/browser-parity/topology.mjs');
+  const ambient={PATH:'/synthetic/bin',HOME:'/Users/owner',TMPDIR:'/synthetic/tmp/',LANG:'en_US.UTF-8',USER:'owner',
+    CUA_BROWSER_BACKENDS:'maws:/synthetic/maws.sock',CUA_HOME:'/Users/owner/cua',CUA_BROWSER_SERVICE:'vendor',CUA_SHIM_SECRETS:'on',
+    XDG_CONFIG_HOME:'/Users/owner/.config',XDG_DATA_HOME:'/Users/owner/.local/share',BROWSER_USE_BACKEND_PATHS:'/synthetic/other.sock',
+    CUA_BROWSER_DEFAULT_INSTANCE:'maws:x',CUA_SHIM_SURFACES:'computer,browser',NODE_OPTIONS:'--require /synthetic/hook.js',MAWS_E2E_QUIET:'1'};
+  const command=localCuaServeCommand({service:'cua',home:'/tmp/cua-cap-x',userHome:'/tmp/cua-cap-x/home'},ambient);
+  assert.deepEqual(command.env,{PATH:'/synthetic/bin',TMPDIR:'/synthetic/tmp/',LANG:'en_US.UTF-8',USER:'owner',
+    HOME:'/tmp/cua-cap-x/home',CUA_HOME:'/tmp/cua-cap-x',CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off'});
+  assert.throws(()=>localCuaServeCommand({service:'cua',home:'/tmp/cua-cap-x',userHome:'/Users/owner'},ambient),/inside the scratch home/);
+});

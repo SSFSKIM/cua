@@ -40,5 +40,17 @@
     "cells": ["both"],
     "kind": "semantic",
     "reason": "Two tabs, each with its own download wait armed, download the same URL at once: on cua each wait gets its own download (a started download is owned by the earliest-armed matching wait, the next by the next), so the two paths differ; the vendor matches a started download by URL for every waiting tab, so one download reaches both waits and both report the same path. A departure in cua's favour (M2 task 1 review, download-start ownership; Decision Log 2026-10-14)."
+  },
+  {
+    "cases": ["capability-host/auth-handoff"],
+    "cells": ["qr"],
+    "kind": "semantic",
+    "reason": "The auth handoff on the capability host, a valid request on the page's origin: cua's local form hands the tab to the person and answers {status:'declined', reason:'user_took_over'} after reading the frame tree once; the vendor's flow is OpenAI's broker (runtime.gaas, BS:44398-44400), absent here, and answers {status:'unavailable'} after a screenshot for its QR path (Page.startScreencast/stopScreencast, Page.getLayoutMetrics, a second Page.getFrameTree). The spec's M3 scope (the local form only); Decision Log 2026-10-14 (M3 task 2) and (session, for M5)."
+  },
+  {
+    "cases": ["capability-host/auth-handoff"],
+    "cells": ["qr"],
+    "kind": "trace",
+    "reason": "The auth handoff on the capability host, a valid request on the page's origin: cua's local form hands the tab to the person and answers {status:'declined', reason:'user_took_over'} after reading the frame tree once; the vendor's flow is OpenAI's broker (runtime.gaas, BS:44398-44400), absent here, and answers {status:'unavailable'} after a screenshot for its QR path (Page.startScreencast/stopScreencast, Page.getLayoutMetrics, a second Page.getFrameTree). The spec's M3 scope (the local form only); Decision Log 2026-10-14 (M3 task 2) and (session, for M5)."
   }
 ]

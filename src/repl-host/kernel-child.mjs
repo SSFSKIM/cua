@@ -16,7 +16,9 @@
 //
 // The child stays in the supervisor's process group, the group cua's proxy owns (src/mcp/upstream.mjs). Stopping it
 // freezes and SIGKILLs the child and every process descending from it (killProcessTree), so a kernel under a sandbox
-// launcher (which runs it as its own child) or a kernel busy in synchronous code is gone, not orphaned.
+// launcher (which runs it as its own child) or a kernel busy in synchronous code is gone, not orphaned. Whenever a
+// kernel ends, expectedly or not, `reap` (the supervisor's ownedGroupReaper) then removes what it left in the owned
+// group: a process a cell started is reparented when its kernel dies, so no tree leads to it any more.
 import {spawn, execFileSync} from 'node:child_process';
 import {closeSync, constants as fsConstants, mkdtempSync, openSync, rmSync} from 'node:fs';
 import {Socket} from 'node:net';
@@ -28,6 +30,7 @@ const TAIL_LINES = 20;
 const TAIL_LINE_CHARS = 512;
 const EXIT_GRACE_MS = 1000;
 export const KERNEL_EXIT_SENTENCE = 'node_repl kernel exited unexpectedly';
+const sendSignal = (pid, name) => { try { process.kill(pid, name); return true; } catch { return false; } };
 
 const signalNumber = signal => constants.signals[signal] ?? signal;
 export const exitStatus = ({code, signal}) => (code !== null && code !== undefined ? `exited(code=${code})` : signal ? `exited(signal=${signalNumber(signal)})` : 'unknown');
@@ -63,7 +66,7 @@ export const exitDiagnostic = ({pid, status, tail, reason = 'stdout_eof', stream
 // SIGKILLs `root` and every process descending from it. The tree is frozen first (SIGSTOP, root first, then each
 // newly listed descendant until a listing finds no new one), so nothing in it can fork or exit, and so leave the tree,
 // between a listing and the kill: a launcher killed first would orphan the kernel it had just started.
-export function killProcessTree(root, {list = descendantsOf, signal = (pid, name) => { try { process.kill(pid, name); return true; } catch { return false; } }} = {}) {
+export function killProcessTree(root, {list = descendantsOf, signal = sendSignal} = {}) {
   const frozen = new Set();
   if (signal(root, 'SIGSTOP')) frozen.add(root);
   for (let pass = 0; pass < 8; pass++) {
@@ -75,11 +78,40 @@ export function killProcessTree(root, {list = descendantsOf, signal = (pid, name
   return [...frozen];
 }
 
+// [pid, ppid, pgid] of every process, from one `ps` listing ([] when it fails).
+export function processTable() {
+  let listing;
+  try { listing = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid='], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000}); } catch { return []; }
+  return listing.split('\n').map(line => line.trim().split(/\s+/).map(Number)).filter(row => row.length === 3 && row.every(Number.isInteger));
+}
+
+// The owned-group reaper for a supervisor whose process group is its parent's (the proxy's anchor leads it): -> reap(),
+// which freezes then SIGKILLs every member of the group except the supervisor, the anchor and the supervisor's own
+// direct children (each managed by its own record: a kernel launcher already stopped, a listing `ps` already gone), or
+// null when this process does not run in such a group (then only a kernel's tree is ever killed). It is called only
+// when a kernel generation has ended and before the next starts, so the members it finds are what that generation left
+// behind: processes a cell started, reparented when their kernel died. (A process that leaves the group, as bwrap's
+// --new-session sandbox does, is not found; that sandbox dies with its parent.) #116 M2's trusted worker, a second
+// long-lived child, will need its own tree excluded here.
+export function ownedGroupReaper({self = process.pid, parent = process.ppid, table = processTable, signal = sendSignal} = {}) {
+  const row = table().find(([pid]) => pid === self);
+  if (!row || row[2] !== parent || parent <= 1) return null;
+  const strays = () => table().filter(([pid, ppid, pgid]) => pgid === parent && pid !== self && pid !== parent && ppid !== self).map(([pid]) => pid);
+  return () => {
+    const frozen = new Set();
+    for (let pass = 0; pass < 8; pass++) {
+      const found = strays().filter(pid => !frozen.has(pid));
+      if (!found.length) break;
+      for (const pid of found) if (signal(pid, 'SIGSTOP')) frozen.add(pid);
+    }
+    for (const pid of frozen) signal(pid, 'SIGKILL');
+    return [...frozen];
+  };
+}
+
 // Every process descending from `pid`, from one `ps` listing.
 export function descendantsOf(pid) {
-  let listing;
-  try { listing = execFileSync('ps', ['-axo', 'pid=,ppid='], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000}); } catch { return []; }
-  const rows = listing.split('\n').map(line => line.trim().split(/\s+/).map(Number)).filter(([p, pp]) => Number.isInteger(p) && Number.isInteger(pp));
+  const rows = processTable();
   const owned = new Set([pid]);
   for (let changed = true; changed;) {
     changed = false;
@@ -113,7 +145,7 @@ export function kernelPipes() {
 // Starts a kernel child. `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print
 // plain text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when
 // `stop()` ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
-export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null}) {
+export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null, reap = () => {}}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
@@ -159,6 +191,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     if (ended) return;
     ended = true;
     if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
+    reap();
     await within(stderrClosed, EXIT_GRACE_MS);
     for (const stream of [stdin, stdout, stderr]) stream?.destroy();
     if (spawnError) return onEnd({expected: stopping, diagnostic: `failed to start Node runtime: ${spawnError.message}`});

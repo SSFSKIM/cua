@@ -9,6 +9,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {boundaryPreflightEnv, boundaryServeEnv, cellsServeEnv, failingSandboxScript} from './fixture-launch.mjs';
 import {remoteCapabilityLane} from '../../scripts/repl-parity/capability.mjs';
+import {cellsCommand, prepareCommand} from '../../scripts/repl-parity/topology.mjs';
 
 const NODE = '/opt/node-24/bin/node';
 const scratch = {dir: '/tmp/scratch-home', userHome: '/tmp/scratch-home/user'};
@@ -35,17 +36,23 @@ test('the boundary probe passes an explicit CUA_NODE to its serve-cells children
   assert.equal('CUA_NODE' in boundaryPreflightEnv({PATH: '/usr/bin'}, {scratch, tmp: '/tmp/b/tmp', host: 'cua'}), false);
 });
 
-test('the capability lane\'s cleared environment keeps the device\'s explicit CUA_NODE', async () => {
-  const facts = {device: 'cua-linux', checkout: '/home/admin/cua-parity', home: '/home/admin/.local/share/cua', commit: 'abc', release: 'pin', node: 'v22.23.3', platform: 'linux'};
+test('every remote lane passes the own-host Node prepare recorded, never one from the device\'s shell environment', async () => {
+  const facts = {device: 'cua-linux', checkout: '/home/admin/cua-parity', home: '/home/admin/.local/share/cua', commit: 'abc', release: 'pin', node: 'v22.23.3', platform: 'linux',
+    ownNode: {path: NODE, version: 'v24.18.0'}};
   const lane = await remoteCapabilityLane({...facts, host: 'cua'},
     {start: async () => ({executionFacts: {...facts, dirty: false}, userHome: '/tmp/u', home: '/tmp/h', close: async () => {}})});
   const script = lane.command.args.at(-1);
   const clearing = script.slice(script.indexOf('env -i'), script.indexOf(' node test/repl-parity/serve-capability-client.mjs'));
-  // Run that very `env -i` prefix here with `env` as its command: CUA_NODE survives when set, and only then.
-  const run = node => execFileSync('/bin/sh', ['-c', `${clearing} env`], {encoding: 'utf8', env: {PATH: process.env.PATH, ...(node === undefined ? {} : {CUA_NODE: node}), SECRET_TOKEN: 'owner-only'}});
-  assert.match(run(NODE), new RegExp(`^CUA_NODE=${NODE}$`, 'm'));
+  // Run that very `env -i` prefix here with `env` as its command: the recorded Node is set whatever the shell has.
+  const run = ambientNode => execFileSync('/bin/sh', ['-c', `${clearing} env`], {encoding: 'utf8', env: {PATH: process.env.PATH, ...(ambientNode === undefined ? {} : {CUA_NODE: ambientNode}), SECRET_TOKEN: 'owner-only'}});
+  assert.match(run(undefined), new RegExp(`^CUA_NODE=${NODE}$`, 'm'));
+  assert.match(run('/shell/profile/node'), new RegExp(`^CUA_NODE=${NODE}$`, 'm'));
   assert.doesNotMatch(run(NODE), /SECRET_TOKEN/);
-  assert.doesNotMatch(run(undefined), /CUA_NODE/);
+  const cells = cellsCommand({...facts, host: 'cua'}).args.at(-1);
+  assert.match(cells, new RegExp(`exec env CUA_NODE='${NODE}' CUA_PARITY_EXPECTED=`));
+  assert.doesNotMatch(cellsCommand({...facts, ownNode: null, host: 'vendor'}).args.at(-1), /CUA_NODE/);
+  assert.match(prepareCommand({device: 'cua-linux', commit: 'abcdef1', profile: 'me', node: NODE}).args.at(-1), new RegExp(`export CUA_NODE='${NODE}'`));
+  assert.throws(() => prepareCommand({device: 'cua-linux', commit: 'abcdef1', profile: 'me', node: 'node'}), /absolute/);
 });
 
 test('the failing-sandbox launcher writes its marker at the literal path, however the path is spelt', t => {

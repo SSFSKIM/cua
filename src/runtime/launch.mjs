@@ -84,6 +84,8 @@
 //                                            (src/runtime/sandbox.mjs trustedCodePathsOf)
 //   CUA_REPL_TRUSTED_SERVICES                with services registered, as NODE_REPL_TRUSTED_SERVICES (#116 M2's worker)
 //   CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000
+//   CUA_REPL_OWNED_GROUP=1                   the supervisor runs in the process group the proxy's anchor owns
+//                                            (src/mcp/upstream.mjs), so it may reap what a finished kernel left there
 //   NODE_REPL_DISABLE_ANALYTICS=1            kept: the retained vendor sky service reads it
 // M1's host has no first-cell banner, module directories or cell environment allowlist: it runs raw cells.
 //
@@ -152,7 +154,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const trustedCodePaths = own ? [REPL_HOST_DIR, p.moduleDir] : [p.moduleDir];
   Object.assign(env, {PATH: FIXED_PATH, CODEX_HOME: owned.codexHome});
   Object.assign(env, own
-    ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode}
+    ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1'}
     : {CUA_REPL_NODE_REPL_PATH: p.nodeRepl, CUA_REPL_ENABLED_SURFACES: enabled.join(','), NODE_REPL_NODE_PATH: p.node, NODE_REPL_NODE_MODULE_DIRS: p.moduleDir});
   const names = own
     ? {services: 'CUA_REPL_TRUSTED_SERVICES', codePaths: 'CUA_REPL_TRUSTED_CODE_PATHS', pipeTimeout: 'CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS'}

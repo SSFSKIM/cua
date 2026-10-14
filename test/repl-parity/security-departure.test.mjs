@@ -11,13 +11,13 @@ const committed = JSON.parse(readFileSync(new URL('./expected-differences.json',
 const departure = committed.find(e => e.kind === 'security-departure');
 const meta = host => ({host, platform: 'linux', runtimeRelease: '26.928.40906-linux-arm64', service: 'cua', backend: 'no-services', sandbox: 'scoped', surfaces: ['browser'], complete: true,
   caseIds: [id], caseCells: {[id]: ['reset', 'refused', 'boundary']}, connections: ['c1'],
-  hostAttestations: [host === 'cua' ? {connection: 'c1', host, serverInfo: {name: 'cua-repl-host', version: '9.9.9'}, _meta: {'cua/replHost': {host: 'cua', version: '9.9.9'}}}
+  hostAttestations: [host === 'cua' ? {connection: 'c1', host, serverInfo: {name: 'cua-repl-host', version: '9.9.9'}, executionFacts: {ownNode: {path: '/device/node', version: 'v24.18.0'}}, _meta: {'cua/replHost': {host: 'cua', version: '9.9.9'}}}
     : {connection: 'c1', host, serverInfo: {name: 'rmcp', version: '1.5.0'}, _meta: null}]});
 const vendor = () => ({meta: meta('vendor'), tools: {tools: []}, rows: [
   {case: id, cell: 'reset', ok: true, content: [{type: 'text', text: 'js kernel reset'}], isError: false},
   {case: id, cell: 'refused', ok: true, content: [{type: 'text', text: '{"outsideWrite":true}'}], isError: false},
   {case: id, cell: 'boundary', ok: true, value: {kind: 'sandbox-launch-failure', codeExecuted: true, toolError: false, outsideWrite: true, launcherInvoked: true}},
-  {case: id, assertion: {ok: false, reason: 'failed sandbox launch must be refused with no out-of-policy write'}},
+  {case: id, assertion: {ok: false, reason: 'failed sandbox launch must be refused with no out-of-policy write'}, vendorDefect: 'linux-vendor-sandbox-launcher-fail-open'},
 ]});
 const own = () => ({meta: meta('cua'), tools: {tools: []}, rows: [
   {case: id, cell: 'reset', ok: true, content: [{type: 'text', text: 'js kernel reset'}], isError: false},
@@ -63,4 +63,35 @@ test('malformed departures are refused before anything is compared', () => {
   for (const change of [{field: 'content'}, {platform: 'windows'}, {issue: 'none'}, {vendorDefect: 'forged'}, {case: 'cells/other'}, {cells: ['refused']},
     {cua: {...departure.cua, assertion: {ok: false}}}, {cua: {...departure.cua, result: {...departure.cua.result, isError: false}}}, {extra: true}])
     assert.throws(() => validateExpected([{...departure, ...change}]), /security departure/, JSON.stringify(change));
+});
+
+// The shared comparator compares the semantic fields (ok, value, error, assertion, content, isError, structuredContent,
+// meta, vendorDefect); the mutations below touch those. The committed Linux pair: M0's vendor control against M1's own-host run, with the committed expected differences.
+const evidence = dir => {
+  const root = new URL(`../../docs/evidence/2026-10-14-own-repl-host-parity/${dir}/`, import.meta.url);
+  return {meta: JSON.parse(readFileSync(new URL('meta.json', root))), tools: JSON.parse(readFileSync(new URL('tools.json', root))),
+    rows: readFileSync(new URL('results.jsonl', root), 'utf8').trim().split('\n').map(JSON.parse)};
+};
+const diffEvidence = (mutate = () => {}) => {
+  const vendorRun = evidence('m0/linux-vendor-1'), ownRun = evidence('m1/linux-cua');
+  mutate({vendor: vendorRun, own: ownRun, row: (run, cell) => run.rows.find(r => r.case === id && (cell === 'assertion' ? Object.hasOwn(r, 'assertion') && !r.cell : r.cell === cell))});
+  return compareParityRuns(vendorRun, ownRun, {expected: committed, caseIds: [id], caseCells: {[id]: ['reset', 'refused', 'boundary']}});
+};
+
+test('on the committed Linux evidence the departure exempts only the departing fields; every other field of those rows still compares', () => {
+  const clean = diffEvidence();
+  assert.equal(clean.ok, true, JSON.stringify(clean.differences));
+  const mutations = [
+    ['structured content added to the own refusal', ({own, row}) => { row(own, 'refused').structuredContent = {x: 1}; }],
+    ['the own refusal\'s task id changed', ({own, row}) => { row(own, 'refused').meta['cua/taskId'] = '<task:2>'; }],
+    ['the host marker deleted from the own refusal', ({own, row}) => { delete row(own, 'refused').meta['cua/replHost']; }],
+    ['extra vendor metadata on the refused call', ({vendor, row}) => { row(vendor, 'refused').meta.extra = true; }],
+    ['the own boundary row not ok', ({own, row}) => { row(own, 'boundary').ok = false; }],
+    ['the own refusal not ok', ({own, row}) => { row(own, 'refused').ok = false; row(own, 'refused').error = {message: 'x'}; }],
+    ['the vendor observation not the declared defect', ({vendor, row}) => { row(vendor, 'boundary').value.outsideWrite = false; }],
+    ['the vendor assertion untagged', ({vendor, row}) => { delete row(vendor, 'assertion').vendorDefect; }],
+    ['a vendor-defect tag forged onto the own assertion', ({own, row}) => { row(own, 'assertion').vendorDefect = 'linux-vendor-sandbox-launcher-fail-open'; }],
+    ['the own reset changed', ({own, row}) => { row(own, 'reset').content[0].text = 'changed'; }],
+  ];
+  for (const [label, mutate] of mutations) assert.equal(diffEvidence(mutate).ok, false, label);
 });

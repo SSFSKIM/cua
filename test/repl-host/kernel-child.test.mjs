@@ -2,7 +2,7 @@
 // and exit status as the vendor's diagnostic words them (observed on the pinned node_repl, 2026-10-14).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {exitDiagnostic, exitStatus, kernelPipes, killProcessTree, startKernelChild, stderrTail} from '../../src/repl-host/kernel-child.mjs';
+import {exitDiagnostic, exitStatus, kernelPipes, killProcessTree, ownedGroupReaper, startKernelChild, stderrTail} from '../../src/repl-host/kernel-child.mjs';
 
 test('the stderr tail keeps the last 20 non-empty lines, each cut to 512 characters, a trailing CR dropped', () => {
   const tail = stderrTail();
@@ -75,4 +75,16 @@ test('a launcher that cannot start is reported as the vendor reports a Node runt
   const done = new Promise(resolve => { ended = resolve; });
   startKernelChild({command: '/nonexistent/launcher', args: [], env: {}, cwd: process.cwd()}, {onMessage: () => {}, onEnd: ended});
   assert.match((await done).diagnostic, /^failed to start Node runtime: spawn \/nonexistent\/launcher ENOENT/);
+});
+
+test('the owned-group reaper works only in the anchor\'s group, and takes every stray there but the host, the anchor and its own children', () => {
+  // [pid, ppid, pgid]: 100 anchor (leader), 200 supervisor, 300 a launcher still recorded (its child), 400 a stray a dead
+  // kernel left (reparented to 1), 500 its child, 600 another group's process.
+  const table = () => [[100, 1, 100], [200, 100, 100], [300, 200, 100], [400, 1, 100], [500, 400, 100], [600, 1, 600]];
+  assert.equal(ownedGroupReaper({self: 200, parent: 999, table}), null, 'not led by the parent: never reaps');
+  assert.equal(ownedGroupReaper({self: 200, parent: 100, table: () => [[200, 100, 50]]}), null);
+  const signals = [];
+  const reap = ownedGroupReaper({self: 200, parent: 100, table, signal: (pid, name) => { signals.push([pid, name]); return true; }});
+  assert.deepEqual(reap().sort(), [400, 500]);
+  assert.deepEqual(signals.map(([, n]) => n), ['SIGSTOP', 'SIGSTOP', 'SIGKILL', 'SIGKILL'], 'frozen before killed');
 });

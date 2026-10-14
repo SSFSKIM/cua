@@ -15,6 +15,9 @@ export function validateAttestations(meta) {
     if(!isDeepStrictEqual(a.serverInfo,attestations[0].serverInfo))throw new Error('Mixed host versions across connections');
     const marker=a._meta?.['cua/replHost'];
     if(meta.host==='cua') {
+      // The own host's Node, resolved and re-read on the device for this connection (scripts/repl-parity/provenance.mjs).
+      const own=a.executionFacts?.ownNode;
+      if(!own||typeof own.path!=='string'||!own.path.startsWith('/')||!(Number(/^v(\d+)\./.exec(own.version??'')?.[1])>=24))throw new Error('Own host attestation lacks the Node it ran on');
       if(a.serverInfo.name!=='cua-repl-host'||marker?.host!=='cua'||!marker.version||marker.version!==a.serverInfo.version||(meta.hostVersion&&marker.version!==meta.hostVersion))throw new Error('Own host attestation mismatch');
     } else if(a.serverInfo.name==='cua-repl-host'||a._meta&&Object.hasOwn(a._meta,'cua/replHost'))throw new Error('Vendor host attestation mismatch');
   }
@@ -51,17 +54,19 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     const allowance=expected.find(e=>e.cases.includes(x.case)&&e.cells.includes(x.cell));if(!allowance)continue;
     const vendor=a.meta.host==='vendor'?x:y,own=a.meta.host==='cua'?x:y;
     if(vendor.meta&&Object.hasOwn(vendor.meta,'cua/replHost'))continue;
-    if(!isDeepStrictEqual(own.meta?.['cua/replHost'],allowance.cua.value))continue;
+    // A named identity slot must hold exactly its declared value on the own side; absent or different is a difference.
+    if(!isDeepStrictEqual(own.meta?.['cua/replHost'],allowance.cua.value)){differences.push({kind:'identity',case:x.case,cell:x.cell,field:allowance.field,message:'declared own-host identity slot missing or different'});continue;}
     delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
   const leftAssertions=assessAssertions(a.meta,left),rightAssertions=assessAssertions(b.meta,right);
   if(a.meta.host!==b.meta.host)for(const d of departures){
     if(a.meta.platform!==d.platform||b.meta.platform!==d.platform||!ids?.includes(d.case))continue;
     const [vendorRows,ownRows,vendorAssessment]=a.meta.host==='vendor'?[left,right,leftAssertions]:[right,left,rightAssertions];
-    if(!departureHolds(d,{vendorRows,ownRows,vendorAssessment}))continue;
-    // The case's two departing rows leave the comparison and its assertion rows become one shared projection, so the
-    // shared comparator still sees the case; the evidence rows and the vendor-defect accounting are untouched.
-    for(const rows of [left,right]){for(let i=rows.length-1;i>=0;i--)if(inDeparture(d,rows[i]))rows.splice(i,1);rows.push({case:d.case,assertion:{ok:true},securityDeparture:d.id});}
+    const pairs=departurePairs(d,{vendorRows,ownRows,vendorAssessment});
+    if(!pairs)continue;
+    // Only the departing fields are projected, to one shared placeholder on both sides; every other field of those rows,
+    // and its absence, still compares. The evidence rows and the vendor-defect accounting are untouched.
+    for(const {rows,index,fields} of pairs){const row={...rows[index]};for(const field of fields)if(field==='vendorDefect')delete row[field];else row[field]=field==='assertion'?{ok:true,securityDeparture:d.id}:{securityDeparture:d.id};rows[index]=row;}
     accepted.push({case:d.case,cells:d.cells,field:d.field,kind:d.kind,issue:d.issue,reason:d.reason});
   }
   // Exempt only the assessed row object, never every assertion sharing its case ID.
@@ -97,11 +102,25 @@ export function validateExpected(expected){
   if(!e?.reason||e.kind!==undefined||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||typeof e.cua.value.version!=='string')throw new Error('Invalid exact identity field allowance');
  }
 }
-const inDeparture=(d,row)=>row.case===d.case&&(Object.hasOwn(row,'assertion')&&!Object.hasOwn(row,'cell')||d.cells.includes(row.cell));
-function departureHolds(d,{vendorRows,ownRows,vendorAssessment}){
- if(!vendorAssessment.vendorDefects.some(v=>v.id===d.vendorDefect&&v.case===d.case))return false;
- const own=ownRows.filter(r=>inDeparture(d,r)),assertion=own.filter(r=>!Object.hasOwn(r,'cell')),observation=own.filter(r=>r.cell==='boundary'),result=own.filter(r=>r.cell===d.cua.result.cell);
- if(assertion.length!==1||observation.length!==1||result.length!==1||vendorRows.filter(r=>inDeparture(d,r)).length!==own.length)return false;
- return isDeepStrictEqual(assertion[0].assertion,d.cua.assertion)&&observation[0].ok===true&&isDeepStrictEqual(observation[0].value,d.cua.observation)
-  &&result[0].ok===true&&result[0].isError===true&&isDeepStrictEqual(result[0].content,d.cua.result.content);
+// The rows a departure covers -> [{rows, index, fields}] to project, or null unless both sides hold exactly one refused
+// result, one boundary observation and one case assertion, the vendor's departing fields equal the declared defect's
+// and the own host's equal the passing outcome the entry names.
+function departurePairs(d,{vendorRows,ownRows,vendorAssessment}){
+ const defect=vendorDefects.find(v=>v.id===d.vendorDefect);
+ if(!defect||!vendorAssessment.vendorDefects.some(v=>v.id===d.vendorDefect&&v.case===d.case))return null;
+ const one=(rows,match)=>{const found=rows.map((row,index)=>({row,index})).filter(({row})=>row.case===d.case&&match(row));return found.length===1?found[0]:null;};
+ const slots={result:r=>r.cell===d.cua.result.cell,observation:r=>r.cell==='boundary',assertion:r=>Object.hasOwn(r,'assertion')&&!Object.hasOwn(r,'cell')};
+ const v={},o={};
+ for(const [name,match] of Object.entries(slots)){v[name]=one(vendorRows,match);o[name]=one(ownRows,match);if(!v[name]||!o[name])return null;}
+ const holds=isDeepStrictEqual(v.result.row.content,defect.result.content)&&v.result.row.isError===defect.result.isError
+  &&isDeepStrictEqual(o.result.row.content,d.cua.result.content)&&o.result.row.isError===d.cua.result.isError
+  &&isDeepStrictEqual(v.observation.row.value,defect.observation)&&isDeepStrictEqual(o.observation.row.value,d.cua.observation)
+  &&isDeepStrictEqual(v.assertion.row.assertion,defect.assertion)&&v.assertion.row.vendorDefect===d.vendorDefect
+  &&isDeepStrictEqual(o.assertion.row.assertion,d.cua.assertion)&&!Object.hasOwn(o.assertion.row,'vendorDefect');
+ if(!holds)return null;
+ return [[vendorRows,v],[ownRows,o]].flatMap(([rows,side])=>[
+  {rows,index:side.result.index,fields:['content','isError']},
+  {rows,index:side.observation.index,fields:['value']},
+  {rows,index:side.assertion.index,fields:['assertion','vendorDefect']},
+ ]);
 }

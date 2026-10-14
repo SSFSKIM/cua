@@ -485,6 +485,7 @@ test('the own host\'s environment: the same allowlist and surface, service and s
     CODEX_HOME: join(home, 'state', 'codex'),
     CUA_REPL_ENABLED_SURFACES: 'browser',
     CUA_REPL_NODE_PATH: node,
+    CUA_REPL_OWNED_GROUP: '1',
     CUA_REPL_TRUSTED_SERVICES: JSON.stringify({browser: BROWSER_SERVICE}),
     CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, p.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
     CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',

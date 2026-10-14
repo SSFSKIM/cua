@@ -191,3 +191,70 @@ test('EOF: the running cell settles and is answered, then the kernel goes and th
   for (let i = 0; i < 100 && kernels.some(p => alive(p.pid)); i++) await delay(20);
   assert.deepEqual(kernels.filter(p => alive(p.pid)), [], 'no kernel process outlives the host');
 });
+
+// A supervisor under the proxy's anchor (src/mcp/upstream.mjs), as buildLaunch runs it, sandbox disabled so a cell can
+// start a process. -> {call(name, args), terminate()}.
+async function anchoredHost(t, {ownedGroup = true} = {}) {
+  const {spawnUpstream} = await import('../../src/mcp/upstream.mjs');
+  const {mkdtempSync, realpathSync, rmSync, mkdirSync} = await import('node:fs');
+  const {tmpdir} = await import('node:os');
+  const {pathToFileURL} = await import('node:url');
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-anchored-')));
+  const cwd = join(root, 'run');
+  mkdirSync(cwd);
+  const upstream = spawnUpstream({command: node, args: ['--disable-sigusr1', fileURLToPathSafe('../../src/repl-host/supervisor.mjs')], cwd,
+    env: {PATH: '/usr/bin:/bin', HOME: root, TMPDIR: root, CUA_REPL_NODE_PATH: node, ...(ownedGroup ? {CUA_REPL_OWNED_GROUP: '1'} : {})}}, {stderr: 'ignore'});
+  const pending = new Map();
+  upstream.onMessage(msg => { pending.get(msg.id)?.(msg); pending.delete(msg.id); });
+  let id = 0;
+  const request = (method, params) => new Promise(resolve => { const n = ++id; pending.set(n, resolve); upstream.send({jsonrpc: '2.0', id: n, method, params}); });
+  await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 't', version: '0'}});
+  const disabled = {'codex/sandbox-state-meta': {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(cwd).href}};
+  t.after(async () => { await upstream.terminate({budgetMs: 3000}); rmSync(root, {recursive: true, force: true}); });
+  return {root, call: async (name, args) => (await request('tools/call', {name, arguments: args, _meta: disabled})).result, terminate: () => upstream.terminate({budgetMs: 3000})};
+}
+const fileURLToPathSafe = relative => new URL(relative, import.meta.url).pathname;
+// A cell that starts a process which writes `marker` after 800 ms, outliving the cell.
+const leaveWriter = marker => `let cp=await import("node:child_process");cp.spawn("/bin/sh",["-c","sleep 0.8; echo late > ${marker}"],{stdio:"ignore"}).unref();nodeRepl.write("started");`;
+
+test('what a kernel leaves in the owned group dies with its generation: on an unexpected end and on reset', own, async t => {
+  const host = await anchoredHost(t);
+  const crashed = join(host.root, 'after-crash');
+  assert.deepEqual(texts(await host.call('js', {code: leaveWriter(crashed)})), ['started']);
+  const fatal = await host.call('js', {code: 'setTimeout(()=>{throw new Error("late")},10);await new Promise(r=>setTimeout(r,300));'});
+  assert.match(fatal.content[0].text, /^node_repl kernel uncaught exception: late/);
+  await delay(500);   // the dying kernel's exit is seen; the next call starts a fresh one (a call sent at once gets its exit)
+  const reset = join(host.root, 'after-reset');
+  assert.deepEqual(texts(await host.call('js', {code: leaveWriter(reset)})), ['started']);
+  assert.deepEqual(texts(await host.call('js_reset', {})), ['js kernel reset']);
+  await delay(1500);
+  assert.equal(existsSync(crashed), false, 'the process a crashed kernel left wrote nothing');
+  assert.equal(existsSync(reset), false, 'the process a reset kernel left wrote nothing');
+  assert.equal((await host.terminate()).confirmed, true);
+});
+
+test('outside the owned group a crashed kernel\'s stray is not reaped (the regression above is real): it writes', own, async t => {
+  const host = await anchoredHost(t, {ownedGroup: false});
+  const marker = join(host.root, 'stray');
+  await host.call('js', {code: leaveWriter(marker)});
+  await host.call('js', {code: 'setTimeout(()=>{throw new Error("late")},10);await new Promise(r=>setTimeout(r,300));'});
+  for (let i = 0; i < 100 && !existsSync(marker); i++) await delay(30);
+  assert.equal(existsSync(marker), true);
+});
+
+test('a signal during an EOF drain forces the shutdown: the waiting cell is answered, the kernel goes, the host exits', own, async t => {
+  const host = await startHost(t, {node});
+  await host.js('nodeRepl.write("warm")');
+  const running = host.js('await new Promise(r=>setTimeout(r,20000));nodeRepl.write("never")');
+  await delay(300);
+  const kernels = descendants(host.child.pid);
+  host.child.stdin.end();
+  await delay(200);
+  const started = Date.now();
+  host.child.kill('SIGTERM');
+  assert.deepEqual(texts(await running), ['js execution unavailable because the runtime manager is shutting down']);
+  assert.deepEqual(await host.exited, {code: 0, signal: null});
+  assert.ok(Date.now() - started < 5000, `forced shutdown took ${Date.now() - started} ms`);
+  for (let i = 0; i < 100 && kernels.some(p => alive(p.pid)); i++) await delay(20);
+  assert.deepEqual(kernels.filter(p => alive(p.pid)), []);
+});

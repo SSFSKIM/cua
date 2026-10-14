@@ -35,7 +35,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
 import {InvalidParams, initializeResult, jsArguments, resetArguments, toolsFor, turnEndedArguments} from './tools.mjs';
 import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
-import {startKernelChild} from './kernel-child.mjs';
+import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
 import {SANDBOX_META_KEY, SandboxStateError, sandboxArgs, sandboxPolicy} from '../runtime/sandbox.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
@@ -91,13 +91,17 @@ export function kernelLaunch(settings, policy) {
 
 // Serves MCP on `input`/`output` -> {closed: Promise<exit code>, shutdown()}. `startKernel` is the kernel-child seam
 // (tests); `log` gets diagnostics (stderr).
-export function createSupervisor({input, output, env, cwd = process.cwd(), startKernel = startKernelChild, log = line => process.stderr.write(`cua-repl-host: ${line}\n`)}) {
+export function createSupervisor({input, output, env, cwd = process.cwd(), startKernel = startKernelChild, log = line => process.stderr.write(`cua-repl-host: ${line}\n`),
+  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null}) {
   const settings = hostSettings(env, {cwd});
+  // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
+  // whatever a finished kernel generation left in the group is removed with it.
+  const reap = reaper() ?? (() => {});
   const sandboxed = settings.codexCli !== null;
   let initialized = false;
   let closing = false;
-  let kernel = null;          // {child, key, generation}
-  let generation = 0;
+  let kernel = null;          // the current kernel generation {child, key}: only its messages reach an execution
+  let terminated = false;     // a forced shutdown began: nothing launches any more
   let execCounter = 0;
   let execution = null;       // the execution waiting on the kernel
   let work = Promise.resolve();
@@ -112,8 +116,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
 
   // ---- the kernel ----
   function launchKernel(launch) {
-    const self = {key: launch.key, generation: ++generation};
-    self.child = startKernel(launch, {
+    const self = {key: launch.key};
+    self.child = startKernel(launch, {reap,
       onMessage: message => { if (kernel === self) fromKernel(self, message); },
       onEnd: ({expected, diagnostic}) => {
         if (kernel === self) kernel = null;
@@ -130,7 +134,6 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const current = kernel;
     if (!current) return;
     kernel = null;
-    generation++;
     await current.child.stop();
   }
 
@@ -181,6 +184,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   }
 
   async function runJs(id, {code, timeoutMs}, policy, requestMeta) {
+    if (terminated) return toolResult(id, sentenceResult(SHUTTING_DOWN_SENTENCE));
     if (!policy.disabled && !sandboxed) return toolResult(id, sentenceResult(NO_SANDBOX_SENTENCE));
     const launch = kernelLaunch(settings, policy);
     if (kernel && kernel.key !== launch.key) await stopKernel();
@@ -198,6 +202,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   }
 
   async function runReset(id) {
+    if (terminated) return toolResult(id, sentenceResult(SHUTTING_DOWN_SENTENCE));
     await stopKernel();
     toolResult(id, sentenceResult(RESET_SENTENCE, {isError: false}));
   }
@@ -268,17 +273,31 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (msg.method !== undefined && msg.id !== undefined) onRequest(msg);
   });
 
-  // EOF: what was admitted settles and is answered, then the kernel goes and the host exits.
-  let finished = null;
+  // EOF: what was admitted settles and is answered, then the kernel goes and the host exits. A signal (forced) does
+  // not wait, and overrides a drain under way: the waiting execution is answered that the host is shutting down,
+  // nothing queued launches, and the kernel is stopped at once.
+  const flushed = () => new Promise(resolve => (output.writableEnded || output.destroyed ? resolve() : output.write('', resolve)));
+  let draining = null;
+  let forced = null;
   function shutdown({drain}) {
     closing = true;
-    finished ??= (async () => {
-      if (drain) await Promise.all([work, ...turns.values()]);
+    if (drain) {
+      draining ??= (async () => {
+        await Promise.all([work, ...turns.values()]);
+        await stopKernel();
+        await flushed();
+        resolveClosed(0);
+      })();
+      return forced ?? draining;
+    }
+    forced ??= (async () => {
+      terminated = true;
+      if (execution) settle(execution, sentenceResult(SHUTTING_DOWN_SENTENCE));
       await stopKernel();
-      await new Promise(resolve => (output.writableEnded || output.destroyed ? resolve() : output.write('', resolve)));
+      await flushed();
       resolveClosed(0);
     })();
-    return finished;
+    return forced;
   }
   input.once('end', () => shutdown({drain: true}));
   input.once('error', () => shutdown({drain: true}));

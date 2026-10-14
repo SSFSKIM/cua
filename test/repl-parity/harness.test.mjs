@@ -30,7 +30,8 @@ test('raw comparator detects content, errors, documents, metadata, missing cases
 test('every connection including reconnects must attest a real tool result; mismatches refuse comparison',()=>{
  const a=run();validateAttestations(a.meta);
  for(const mutate of [m=>m.complete=false,m=>m.connections.push('c2'),m=>m.hostAttestations[0]._meta={'cua/replHost':{host:'cua',version:'1'}},m=>m.hostAttestations[0].serverInfo=null,m=>m.hostAttestations.push({...m.hostAttestations[0],host:'cua'})]){const b=run();mutate(b.meta);assert.throws(()=>compareParityRuns(a,b),/attest|complete|connection|host/i);}
- const own={...a.meta,host:'cua',hostAttestations:[{connection:'c1',host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},_meta:{'cua/replHost':{host:'cua',version:'1'}}}]};validateAttestations(own);
+ const own={...a.meta,host:'cua',hostAttestations:[{connection:'c1',host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},executionFacts:{ownNode:{path:'/device/node',version:'v24.18.0'}},_meta:{'cua/replHost':{host:'cua',version:'1'}}}]};validateAttestations(own);
+ for(const ownNode of [undefined,null,{path:'/device/node',version:'v22.23.3'},{path:'node',version:'v24.18.0'}])assert.throws(()=>validateAttestations({...own,hostAttestations:[{...own.hostAttestations[0],executionFacts:{ownNode}}]}),/Node it ran on/);
  own.hostAttestations[0]._meta['cua/replHost'].version='2';assert.throws(()=>validateAttestations(own));
 });
 test('exact deterministic image oracle rejects equal-average brightness/colour corruption and WebP mismatch',()=>{
@@ -71,7 +72,7 @@ test('fake backend rows never count as live host coverage',()=>{
  const result=compareParityRuns(a,b);assert.equal(result.ok,false);assert.equal(result.cases,0);
 });
 test('expected host identity differences need exact case, cell, field and observed values',()=>{
- const a=run(),b=run();b.meta.host='cua';b.meta.hostAttestations=[{connection:'c1',host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},_meta:{'cua/replHost':{host:'cua',version:'1'}}}];b.rows[0].meta['cua/replHost']={host:'cua',version:'1'};
+ const a=run(),b=run();b.meta.host='cua';b.meta.hostAttestations=[{connection:'c1',host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},executionFacts:{ownNode:{path:'/device/node',version:'v24.18.0'}},_meta:{'cua/replHost':{host:'cua',version:'1'}}}];b.rows[0].meta['cua/replHost']={host:'cua',version:'1'};
  const expected=[{reason:'Deliberate host identity',cases:[scenario.id],cells:['one'],field:'meta.cua/replHost',vendor:{present:false},cua:{present:true,value:{host:'cua',version:'1'}}}];
  assert.equal(compareParityRuns(a,b).ok,false);assert.equal(compareParityRuns(a,b,{expected}).ok,true);
  b.rows[0].content[0].text='changed document';assert.equal(compareParityRuns(a,b,{expected}).ok,false);

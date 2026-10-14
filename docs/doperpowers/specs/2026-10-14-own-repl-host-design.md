@@ -539,6 +539,16 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M1 task 2 as built:
+  - Vendor behaviour was measured by probing the pinned node_repl on the mini, not inferred. That covers result ordering, error sentences, the exact `codex sandbox` argv, the exit diagnostic and the image rules.
+  - The own host fails closed where the vendor fails open. A call with no sandbox `_meta` defaults to read-only, and with no `CODEX_CLI_PATH` sandboxed calls refuse.
+  - Kernel stdio uses FIFOs on Linux, where the sandbox blocks Node's socketpairs. macOS keeps Node's own pipes, because a FIFO there never reports EOF.
+  - `compare.mjs` accepts a `security-departure` entry scoped to one case and one platform. The vendor side must match the declared defect and the own side the exact refusal; the entry names the assertion, `refused` and `boundary` rows.
+  - `REPL_HOST_VERSION` is 0.2.0.
+  - On cua-linux, a harness-installed Node v24.18.0 lives under `~/.local/share/cua-parity-node`.
+  - The own host serves the recovered **base** tool text in M1. The effective retained text, the launcher overrides that describe the cua API facade, lands in M2. M2 is the first production-shaped own-host session, with the vendor facade as banner, and its evidence must include a tools-contract comparison against the M0-recorded effective contract. This revises Design's "M1 reproduces the effective retained tool surface". In M1's no-services lane both sides serve base text, so the cells oracle is unaffected.
+  Rationale: The overrides describe a facade M1 does not load, so serving them over a no-services host would document an API that is absent. M2 is where the effective surface becomes true.
+  Date/Author: 2026-10-14, M1 task 2 executor, with the tool-text deferral ruled by the plan-executor.
 - Decision: M1 task 1 as built: the kernel reads only owned names (`CUA_REPL_JS_BANNER`, `CUA_REPL_UNTRUSTED_ENV_ALLOWLIST`, `CUA_REPL_NODE_MODULE_DIRS`, `CUA_REPL_TRUSTED_RPC_ENABLED`), and vendor `NODE_REPL_*` names have no effect. Not ported: `exec_redacted_source`/`diagnostics.js` (vendor telemetry only), `add_node_module_dir`, audio, GAAS config. `formElicitationSupported` and `responseMeta` stay for M2. The ports are mechanical transforms of the whole NR files; `realmChecks.js` is folded into `worker-runtime.mjs`. npm Meriyah 7.0.0's `meriyah.umd.min.js` is byte-identical to the embedded copy, and the extractor refuses any other SHA-256 or pin. Kernel tests resolve Node through the production `ownHostNode` and skip visibly without Node ≥24. On a Mac whose PATH node is older, the local gate is therefore `CUA_NODE=/opt/homebrew/bin/node HOME=<scratch> npm test`, and both forms must pass.
   Rationale: Owned configuration names (Interfaces, last paragraph), excluded vendor surfaces (Scope), and a gate that actually runs the kernel.
   Date/Author: 2026-10-14, M1 task 1 executor, folded by the plan-executor.

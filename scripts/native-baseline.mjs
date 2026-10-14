@@ -19,9 +19,11 @@
 //   warm.noop, warm.getState, warm.listApps     on one warm connection
 //   bind.getApp          the first cua.getApp(TextEdit): approval (answered by the harness, timed apart as
 //                        approval.elicitation) and the launch
-//   warm.getAXState, warm.getScreenshot         full tree and screenshot of a new, empty scratch document
+//   warm.getAXState, warm.getScreenshot         full tree and screenshot of a new, empty scratch document; a sample
+//                        whose target was not that document is invalidated (each tree sample checks its own; the
+//                        screenshot series is bracketed by guard.scratch)
 //   task.act/verify/close/total                 new document, typeText a fixed sentence, verify it in the full tree,
-//                        close without saving
+//                        close it with its keep-or-delete sheet's Delete button
 //   end_task
 // Nothing a cell returns is screen content: counts, lengths, booleans and hashes only (scripts/native-baseline/cells.mjs).
 // A cell that times out stops all further GUI input (a permission prompt may be waiting; the harness never answers one).
@@ -33,7 +35,7 @@ import {StdioClient, textOf} from './browser-parity/mcp.mjs';
 import {execute, remoteCommand} from './browser-parity/topology.mjs';
 import {isTextEditApproval} from './accept/lib.mjs';
 import * as cells from './native-baseline/cells.mjs';
-import {classifyHelpers, handshakeScript, HELPER_SCRIPT, LEFTOVER_SCRIPT, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
+import {classifyHelpers, handshakeScript, HELPER_SCRIPT, leftoverScript, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
 import {readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
 
 // Cold connections cycle through this plan; each is labelled by the record it found.
@@ -106,11 +108,14 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     return {wallMs: performance.now() - started, started, text, cell, isError: result.isError === true, timedOut,
       failure: cell ? null : (text.split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300)};
   };
-  const row = (op, sample, r, extra = {}) => {
-    const ok = Boolean(r.cell?.ok);
-    return emit({op, sample, ok, wallMs: round(r.wallMs), ...(r.cell?.inCellMs !== undefined ? {inCellMs: round(r.cell.inCellMs)} : {}),
-      ...(ok ? r.cell.value ?? {} : {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra});
+  // A sample's row: a value carrying `invalid` (its target was not the scratch document) is not a success.
+  const record = (op, sample, r, extra = {}) => {
+    const value = r.cell?.ok ? r.cell.value ?? {} : null;
+    const ok = Boolean(value) && !value.invalid;
+    return {op, sample, ok, wallMs: round(r.wallMs), ...(r.cell?.inCellMs !== undefined ? {inCellMs: round(r.cell.inCellMs)} : {}),
+      ...(value ?? {error: r.cell?.error ?? r.failure ?? 'failed'}), ...extra};
   };
+  const row = (op, sample, r, extra = {}) => emit(record(op, sample, r, extra));
   // A cell whose answer did not come stops the GUI work: something may be waiting on a human.
   const guard = (r, what) => {
     if (r.timedOut) { stopped = `${what} timed out; a permission prompt may be waiting on the device (never answered by the harness)`; throw new Stop(stopped); }
@@ -121,15 +126,24 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     if (!meta.textEdit.launchedByRun || meta.textEdit.quitByRun || !warm) return;
     const quit = await js(warm, cells.QUIT_TEXTEDIT);
     let running = true;
-    for (let i = 0; i < 10 && running; i++) { await sleep(500); running = remote(LEFTOVER_SCRIPT).split(' ')[1] !== '0'; }
+    for (let i = 0; i < 10 && running; i++) { await sleep(500); running = remote(leftoverScript(pre.checkout)).split(' ')[1] !== '0'; }
     meta.textEdit.quitByRun = Boolean(quit.cell?.ok) && !running;
     if (!meta.textEdit.quitByRun) meta.textEdit.quitError = quit.cell?.error ?? quit.failure ?? 'TextEdit still running after super+q';
   };
-  const measure = async (client, op, n, code, timeoutMs) => {
+  // `hold`: the rows are returned, not written, for a caller that validates the series afterwards.
+  const measure = async (client, op, n, code, {hold = false} = {}) => {
     const rows = [];
-    for (let sample = 1; sample <= n; sample++) rows.push(row(op, sample, guard(await js(client, code, timeoutMs), `${op} sample ${sample}`)));
+    for (let sample = 1; sample <= n; sample++) {
+      const r = record(op, sample, guard(await js(client, code), `${op} sample ${sample}`));
+      rows.push(hold ? r : emit(r));
+    }
     console.log(`${op}: ${rows.filter(r => r.ok).length}/${n} ok`);
     return rows;
+  };
+  // The scratch document in front, checked between series (op guard.scratch, not charged to any sample).
+  const scratchGuard = async (client, sample) => {
+    const r = row('guard.scratch', sample, guard(await js(client, cells.SCRATCH_GUARD), 'the scratch guard'));
+    return r.ok && r.scratchInFront === true;
   };
 
   try {
@@ -145,6 +159,7 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
       const label = remote(handshakeScript({record: pre.handshakeRecord, clear: planned === 'miss'})) === 'present' ? 'hit' : 'miss';
       const client = connect();
       const t0 = performance.now();
+      let totalWritten = false;
       const phase = (name, wallMs, extra = {}) => emit({op: `cold.${label}.${name}`, sample, wallMs: round(wallMs), planned, ...extra});
       try {
         await client.initialize();
@@ -159,10 +174,14 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
         phase('first_js', t3 - t2, {ok: Boolean(first.cell?.ok), ...(first.cell ? {inCellMs: round(first.cell.inCellMs)} : {error: first.failure}),
           documentChars: document.length, nativeDocumented: /## Native apps/.test(document)});
         phase('total', t3 - t0, {ok: Boolean(first.cell?.ok)});
-        await client.call('end_task');
+        totalWritten = true;
+        // The connection's cleanup is not part of the cold start: its failure is its own row.
+        const ended = await client.call('end_task');
+        if (ended.isError) emit({op: `cold.${label}.end_task`, sample, planned, ok: false, error: textOf(ended).slice(0, 300)});
       } catch (error) {
         if (error instanceof Stop) throw error;
-        emit({op: `cold.${label}.total`, sample, planned, ok: false, wallMs: round(performance.now() - t0), error: error.message});
+        emit(totalWritten ? {op: `cold.${label}.end_task`, sample, planned, ok: false, error: error.message}
+          : {op: `cold.${label}.total`, sample, planned, ok: false, wallMs: round(performance.now() - t0), error: error.message});
       } finally {
         await client.close(); clients.delete(client);
       }
@@ -189,7 +208,7 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     row('bind.getApp', 1, bind, {approvals: approvals.length, textEditLaunched: !pre.textEditRunning});
     approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: round(a.at - bind.started), app: a.app, action: a.action,
       note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    meta.textEdit.launchedByRun = !pre.textEditRunning && remote(LEFTOVER_SCRIPT).split(' ')[1] !== '0';
+    meta.textEdit.launchedByRun = !pre.textEditRunning && remote(leftoverScript(pre.checkout)).split(' ')[1] !== '0';
     let bound = bind;
     if (!bind.cell?.ok && /timeoutReached/.test(bind.cell?.error ?? '')) {
       bound = guard(await js(client, cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
@@ -201,8 +220,15 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     const scratch = guard(await js(client, cells.NEW_DOCUMENT), 'the scratch document');
     row('setup.newDocument', 1, scratch);
     if (!scratch.cell?.ok) throw new Error(`no scratch document: ${scratch.cell?.error ?? scratch.failure}`);
+    // Each full-tree sample checks its own target. Screenshot samples cannot without paying for a tree read, so the
+    // series is bracketed by the scratch guard: run only with the scratch document in front, and every sample is
+    // invalidated when it is no longer in front afterwards.
     await measure(client, 'warm.getAXState', samples, cells.AX_FULL);
-    await measure(client, 'warm.getScreenshot', samples, cells.SCREENSHOT);
+    if (!await scratchGuard(client, 1)) throw new Error('the scratch document is not in front before the screenshot series');
+    const shots = await measure(client, 'warm.getScreenshot', samples, cells.SCREENSHOT, {hold: true});
+    const stillInFront = await scratchGuard(client, 2);
+    for (const shot of shots) emit(stillInFront || !shot.ok ? shot : {...shot, ok: false, invalid: 'the scratch document was not in front after the screenshot series'});
+    if (!stillInFront) throw new Error('the scratch document is not in front after the screenshot series');
 
     for (let sample = 1; sample <= tasks; sample++) {
       const steps = [];
@@ -231,7 +257,7 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     // After a failure TextEdit is quit only from the scratch document, never from a window the run cannot vouch for.
     if (!stopped && !meta.complete) { try { await quitTextEdit(); } catch {} }
     for (const client of clients) { try { await client.close(); } catch {} }
-    const [serves, textEdit] = remote(LEFTOVER_SCRIPT).split(' ').map(Number);
+    const [serves, textEdit] = remote(leftoverScript(pre.checkout)).split(' ').map(Number);
     meta.leftovers = {serves, textEditRunning: textEdit > 0};
     if (serves || (textEdit > 0 && !pre.textEditRunning)) meta.complete = false;
     if (stopped) { meta.complete = false; meta.stopped = stopped; }

@@ -8,15 +8,20 @@ export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 export const PROTOCOL_VERSION = '2025-06-18';
 
 // Native surface only, approvals for the session only, no secret store: nothing of the owner's store is read and no
-// approval outlives the connection.
+// approval outlives the connection. The script is named by its absolute path, so the serve's command line names the
+// checkout and servePattern finds it (and no other checkout's serve, such as the resident agent's).
 export function serveCommand({device, checkout, home}) {
-  return remoteCommand(device, `cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node bin/cua.mjs serve`);
+  return remoteCommand(device, `cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node ${quote(`${checkout}/bin/cua.mjs`)} serve`);
 }
+// The extended regular expression (for pgrep -f) of a serve that serveCommand started from `checkout`. The bracketed
+// [b] keeps it from matching the command line of the shell that runs pgrep with it.
+export const servePattern = checkout => `${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[b]in/cua\\.mjs serve`;
 
 // One JSON line: the clone's commit and cleanliness, the home and runtime release a serve there uses, the handshake
 // record's path for the native surface, the machine (model, chip, memory, macOS, main display) and what is running
 // that the run must know about (TextEdit, a cua-116-spike process, serves of the clone).
 export function preflightScript() {
+  // The pattern is servePattern's, for the checkout the script runs in.
   const node = `import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {defaultHome, homeLayout, readPointer} from './src/runtime/layout.mjs';
@@ -35,7 +40,7 @@ console.log(JSON.stringify({
   display: main ? {pixels: main._spdisplays_pixels ?? null, resolution: points ? points.join(' x ') : null, scale: pixels && points ? pixels[0] / points[0] : null, virtual: /virtual|가상/i.test(main._name ?? '')} : null,
   textEditRunning: sh('/usr/bin/pgrep', ['-x', 'TextEdit']) !== '',
   spikeRunning: sh('/usr/bin/pgrep', ['-f', 'cua-116-[s]pike']) !== '',
-  serves: sh('/usr/bin/pgrep', ['-f', 'cua-[p]arity/bin/cua.mjs serve']).split('\\n').filter(Boolean).length,
+  serves: sh('/usr/bin/pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
 }));`;
   return `cd ${PARITY_CHECKOUT} && node --input-type=module -e ${quote(node)}`;
 }
@@ -48,8 +53,8 @@ export function handshakeScript({record, clear}) {
 
 // The running computer-use helpers, one per line: elapsed time ([[dd-]hh:]mm:ss) and executable path.
 export const HELPER_SCRIPT = `/bin/ps -axo etime=,comm= | /usr/bin/grep '/SkyComputerUseService$' || true`;
-// What the run may have left: serves of the clone and their runtimes, and TextEdit.
-export const LEFTOVER_SCRIPT = `printf '%s %s\\n' "$(/usr/bin/pgrep -f 'cua-[p]arity/bin/cua.mjs serve' | wc -l | tr -d ' ')" "$(/usr/bin/pgrep -x TextEdit | wc -l | tr -d ' ')"`;
+// What the run may have left: serves of the clone (servePattern) and TextEdit, as two counts.
+export const leftoverScript = checkout => `printf '%s %s\\n' "$(/usr/bin/pgrep -f ${quote(servePattern(checkout))} | wc -l | tr -d ' ')" "$(/usr/bin/pgrep -x TextEdit | wc -l | tr -d ' ')"`;
 // The one cua-116-spike check the run waits on.
 export const SPIKE_SCRIPT = `/usr/bin/pgrep -f 'cua-116-[s]pike' >/dev/null && echo running || echo idle`;
 

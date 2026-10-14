@@ -5,13 +5,14 @@ import assert from 'node:assert/strict';
 import * as cells from '../../scripts/native-baseline/cells.mjs';
 
 const AsyncFunction = (async () => {}).constructor;
-// A TextEdit double as measured on the mini: launched with no document it shows the Open panel (served out of process:
-// keys sent to TextEdit do not reach it; its New Document button does); super+w on an edited document raises the
-// keep-or-delete sheet as the front window, which super+BackSpace answers with Delete; an unedited one closes at once,
-// and closing the last document brings the panel back.
-function textEdit({failType = false} = {}) {
+// A TextEdit double shaped as measured on the mini: launched with no document it shows the Open panel (served out of
+// process: keys sent to TextEdit do not reach it; its New Document button does); super+w on an edited document brings
+// up the keep-or-delete sheet as the front window (window element ID save-panel, its question naming the document, a
+// Delete button with ID DontSaveButton), after `sheetDelayMs`; `foreign` puts some other window in front instead. An
+// unedited document closes at once, and closing the last one brings the panel back.
+function textEdit({failType = false, sheetDelayMs = 0, foreign = false} = {}) {
   const windows = [], keys = [], clicks = [];
-  let count = 0, sheet = false, panel = true, quit = false;
+  let count = 0, sheet = null, panel = true, quit = false, other = false;
   const front = () => windows.at(-1);
   const newDocument = () => { panel = false; windows.push({title: count++ ? `Untitled ${count}` : 'Untitled', text: '', edited: false}); };
   return {
@@ -20,7 +21,8 @@ function textEdit({failType = false} = {}) {
       assert.deepEqual(options, {emit: false, disableDiffing: true});
       if (panel) return 'App=com.apple.TextEdit\nWindow: "Open", App: TextEdit.\n0 standard window Open, ID: open-panel, Secondary Actions: Raise\n\t1 row Description: a document of the owner\n\t74 button New Document, ID: NewDocumentButton\n\t76 button Cancel, ID: CancelButton';
       if (!windows.length) throw new Error('Computer Use server error: noWindowsAvailable');
-      if (sheet) return 'App=com.apple.TextEdit\nWindow: "Save", App: TextEdit.\n0 sheet Save\n\t1 button Delete';
+      if (other) return 'App=com.apple.TextEdit\nWindow: "Alert", App: TextEdit.\n0 dialog Alert\n\t1 button OK, ID: OKButton';
+      if (sheet !== null && performance.now() >= sheet) return `App=com.apple.TextEdit\nWindow: "Save", App: TextEdit.\n0 sheet Description: save, ID: save-panel, Secondary Actions: Raise\n\t6 text Do you want to keep this new document ("${front().title}")?\n\t7 text field (settable) Value: ${front().title}, ID: saveAsNameTextField\n\t12 button Delete, ID: DontSaveButton\n\t13 button Cancel, ID: CancelButton\n\t14 button Save, ID: OKButton`;
       return `App=com.apple.TextEdit\nWindow: "${front().title}", App: TextEdit.\n0 standard window ${front().title}\n\t1 scroll area\n\t\t2 text area Value: ${front().text}, ID: First Text View`;
     },
     async getScreenshot(options) {
@@ -29,14 +31,18 @@ function textEdit({failType = false} = {}) {
       new DataView(png.buffer).setUint32(16, 2560); new DataView(png.buffer).setUint32(20, 1440);
       return png;
     },
-    async click(index) { clicks.push(index); if (panel && index === 74) newDocument(); },
+    async click(index) {
+      clicks.push(index);
+      if (panel && index === 74) newDocument();
+      else if (sheet !== null && performance.now() >= sheet && index === 12) { sheet = null; windows.pop(); }
+    },
     async pressKey(key) {
       keys.push(key);
       if (panel) return;
       if (key === 'super+n') newDocument();
-      else if (key === 'super+w' && !sheet) { if (front().edited) sheet = true; else { windows.pop(); panel = !windows.length; } }
-      else if (key === 'super+BackSpace' && sheet) { sheet = false; windows.pop(); }
-      else if (key === 'super+q' && !windows.some(w => w.edited)) quit = true;
+      else if (key === 'super+w' && sheet === null) {
+        if (!front().edited) { windows.pop(); panel = !windows.length; } else if (foreign) other = true; else sheet = performance.now() + sheetDelayMs;
+      } else if (key === 'super+q' && !windows.some(w => w.edited)) quit = true;
     },
     async typeText(text) { if (failType) throw new Error('typing failed'); if (panel) return; front().text += text; front().edited = true; },
   };
@@ -48,6 +54,8 @@ async function runCell(code, {app, cua = {}}) {
   assert.equal(written.length, 1);
   return cells.parseCell(written[0]);
 }
+// A short deadline, so the failure paths do not wait the production ten seconds.
+globalThis.__baselineTransitionMs = 300;
 
 test('the envelope reports the value and the in-cell time, or the error, on one marker line', async () => {
   const ok = await runCell(cells.NOOP, {app: null});
@@ -63,34 +71,58 @@ test('the observation cells return counts and a hash, never the text or the byte
   const app = textEdit();
   assert.deepEqual((await runCell(cells.NEW_DOCUMENT, {app})).value, {actions: 1, observations: 2, via: 'panel'});
   assert.deepEqual(app.clicks, [74]);
+  assert.deepEqual((await runCell(cells.SCRATCH_GUARD, {app})).value, {scratchInFront: true});
   const ax = (await runCell(cells.AX_FULL, {app})).value;
-  assert.deepEqual({elements: ax.elements, scratchInFront: ax.scratchInFront, lines: ax.lines}, {elements: 3, scratchInFront: true, lines: 5});
+  assert.deepEqual({lines: ax.lines, elements: ax.elements}, {lines: 5, elements: 3});
   assert.equal(typeof ax.chars, 'number');
   const shot = (await runCell(cells.SCREENSHOT, {app})).value;
   assert.deepEqual({bytes: shot.bytes, width: shot.width, height: shot.height, format: shot.format}, {bytes: 40, width: 2560, height: 1440, format: 'png'});
   assert.match(shot.sha256, /^[0-9a-f]{16}$/);
 });
 
-test('a task opens its own document, types and verifies the sentence, deletes it unsaved, and TextEdit quits from the scratch document', async () => {
+test('an observation of another window is an invalid sample, and the guard says so', async () => {
   const app = textEdit();
+  await runCell(cells.NEW_DOCUMENT, {app});
+  app.windows.push({title: 'Owner document', text: 'private', edited: false});
+  const ax = await runCell(cells.AX_FULL, {app});
+  assert.deepEqual({ok: ax.ok, value: ax.value}, {ok: true, value: {invalid: 'the scratch document was not in front'}});
+  assert.deepEqual((await runCell(cells.SCRATCH_GUARD, {app})).value, {scratchInFront: false});
+});
+
+test('a task opens its own document, types and verifies the sentence, deletes it on its own sheet, and TextEdit quits from the scratch document', async () => {
+  const app = textEdit({sheetDelayMs: 40});
   await runCell(cells.NEW_DOCUMENT, {app});
   assert.deepEqual((await runCell(cells.TASK_ACT, {app})).value, {actions: 2, observations: 2});
   assert.equal(app.windows.at(-1).text, cells.SENTENCE);
   assert.deepEqual((await runCell(cells.TASK_VERIFY, {app})).value, {observations: 1, present: true});
-  assert.deepEqual((await runCell(cells.TASK_CLOSE, {app})).value, {actions: 2, observations: 3, sheet: true, closed: true});
+  // The sheet comes up 40 ms after super+w: the cell waits for it by time, however many observations that takes.
+  const close = (await runCell(cells.TASK_CLOSE, {app})).value;
+  assert.deepEqual({actions: close.actions, sheet: close.sheet, closed: close.closed}, {actions: 2, sheet: true, closed: true});
+  assert.ok(close.observations >= 3);
   assert.deepEqual(app.windows.map(w => w.title), ['Untitled']);
-  await runCell(cells.TASK_ACT, {app});
-  await runCell(cells.TASK_CLOSE, {app});
-  assert.deepEqual(app.keys, ['super+n', 'super+w', 'super+BackSpace', 'super+n', 'super+w', 'super+BackSpace']);
+  assert.deepEqual(app.keys, ['super+n', 'super+w']);
+  assert.deepEqual(app.clicks, [74, 12]);
   assert.deepEqual((await runCell(cells.QUIT_TEXTEDIT, {app})).value, {quit: true});
   assert.equal(app.quit, true);
+});
+
+test('after super+w, a window that is not the task document\'s keep-or-delete sheet gets no input', async () => {
+  const app = textEdit({foreign: true});
+  await runCell(cells.NEW_DOCUMENT, {app});
+  await runCell(cells.TASK_ACT, {app});
+  const close = await runCell(cells.TASK_CLOSE, {app});
+  assert.equal(close.ok, false);
+  assert.match(close.error, /neither the task document's keep-or-delete sheet nor the scratch document; no further input was sent/);
+  assert.deepEqual(app.keys, ['super+n', 'super+w']);
+  assert.deepEqual(app.clicks, [74]);
 });
 
 test('a cell whose window is not in front acts on nothing', async () => {
   const app = textEdit();
   await runCell(cells.NEW_DOCUMENT, {app});
   app.windows.push({title: 'Owner document', text: '', edited: false});
-  for (const code of [cells.TASK_ACT, cells.QUIT_TEXTEDIT]) assert.match((await runCell(code, {app})).error, /scratch document is not in front; not quitting|nothing was done/);
+  assert.match((await runCell(cells.TASK_ACT, {app})).error, /nothing was done/);
+  assert.match((await runCell(cells.QUIT_TEXTEDIT, {app})).error, /not quitting TextEdit/);
   globalThis.__task = 'Some other window';
   assert.match((await runCell(cells.TASK_CLOSE, {app})).error, /not in front; nothing was closed/);
   assert.deepEqual(app.keys, []);

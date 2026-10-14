@@ -2,8 +2,10 @@
 // scripts/native-baseline.mjs) pooled per operation. Latency statistics cover successful samples only (a failed call's
 // time says nothing about the operation's cost); failures are counted and listed apart. Harness wall time (around the
 // MCP call, on the controlling machine, so it includes the ssh pipe) and in-cell time (performance.now() inside the
-// cell, on the device) are reported separately. Numeric details a row carries (AX text length, element count,
-// screenshot bytes, action count…) are summarised as median and range. Runs that are incomplete or disagree on what
+// cell, on the device) are reported separately. A sample the harness invalidated (its target was not the scratch
+// document) is neither: it is kept out of the statistics and listed apart. Numeric details a row carries (AX text
+// length, element count, screenshot bytes, action count…) are summarised as median and range, string details by their
+// values when there are few (the screenshot format) or their count otherwise. Runs that are incomplete or disagree on what
 // they ran against (commit, runtime release, hardware, OS, display, service) are reported as problems.
 import {readFileSync, readdirSync, existsSync} from 'node:fs';
 import {join} from 'node:path';
@@ -15,7 +17,8 @@ export const OPERATION_ORDER = [
   'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'warm.getAXState', 'warm.getScreenshot',
   'task.act', 'task.verify', 'task.close', 'task.total', 'end_task',
 ];
-const ROW_KEYS = new Set(['op', 'sample', 'ok', 'wallMs', 'inCellMs', 'error', 'run']);
+const ROW_KEYS = new Set(['op', 'sample', 'ok', 'wallMs', 'inCellMs', 'error', 'invalid', 'note', 'run']);
+const FEW_VALUES = 3;
 
 // {n, median, p95, max}; the median of an even count is the mean of the middle pair, p95 is nearest-rank.
 export function stats(values) {
@@ -57,14 +60,18 @@ function attestation(meta) {
 function detailSummary(rows) {
   const fields = new Map();
   for (const row of rows) for (const [key, value] of Object.entries(row)) {
-    if (ROW_KEYS.has(key) || typeof value !== 'number' || !Number.isFinite(value)) continue;
+    if (ROW_KEYS.has(key) || !(typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)))) continue;
     if (!fields.has(key)) fields.set(key, []);
     fields.get(key).push(value);
   }
   if (!fields.size) return null;
   return Object.fromEntries([...fields].map(([key, values]) => {
-    const s = stats(values);
-    return [key, {median: s.median, min: Math.min(...values), max: s.max}];
+    if (values.every(v => typeof v === 'number')) {
+      const s = stats(values);
+      return [key, {median: s.median, min: Math.min(...values), max: s.max}];
+    }
+    const distinct = [...new Set(values.map(String))].sort();
+    return [key, distinct.length <= FEW_VALUES ? {values: distinct} : {distinct: distinct.length}];
   }));
 }
 
@@ -87,7 +94,8 @@ export function summarize(runs) {
     const rows = byOp.get(op), ok = rows.filter(r => r.ok === true);
     return {
       op, samples: rows.length, ok: ok.length,
-      errors: rows.filter(r => r.ok !== true).map(r => ({run: r.run, sample: r.sample, error: r.error ?? 'failed'})),
+      invalid: rows.filter(r => r.ok !== true && r.invalid).map(r => ({run: r.run, sample: r.sample, reason: r.invalid})),
+      errors: rows.filter(r => r.ok !== true && !r.invalid).map(r => ({run: r.run, sample: r.sample, error: r.error ?? 'failed'})),
       wall: stats(ok.map(r => r.wallMs)), inCell: stats(ok.map(r => r.inCellMs)), details: detailSummary(ok),
     };
   });
@@ -105,16 +113,18 @@ export function renderMarkdown(summary) {
     '| Attested | Value |', '|---|---|',
     `| Device | ${a.device ?? '–'} |`, `| Host commit | ${a.commit ?? '–'} |`, `| Runtime release | ${a.release ?? '–'} |`,
     `| Hardware | ${a.hardware ?? '–'} |`, `| OS | ${a.os ?? '–'} |`, `| Display | ${a.display ?? '–'} |`, `| Service | ${a.service ?? '–'} |`, '',
-    'Milliseconds. Latency columns cover successful samples only; wall is the harness\'s time around the MCP call (it includes the ssh pipe), in-cell is `performance.now()` inside the cell on the device.', '',
-    '| Operation | Samples | OK | Errors | Wall median | Wall p95 | Wall max | In-cell median | In-cell p95 | In-cell max |',
-    '|---|---|---|---|---|---|---|---|---|---|',
-    ...summary.operations.map(o => `| ${o.op} | ${o.samples} | ${o.ok} | ${o.errors.length} | ${triple(o.wall).join(' | ')} | ${triple(o.inCell).join(' | ')} |`),
+    'Milliseconds. Latency columns cover successful samples only (invalidated samples, whose target was not the scratch document, are counted apart); wall is the harness\'s time around the MCP call (it includes the ssh pipe), in-cell is `performance.now()` inside the cell on the device.', '',
+    '| Operation | Samples | OK | Invalid | Errors | Wall median | Wall p95 | Wall max | In-cell median | In-cell p95 | In-cell max |',
+    '|---|---|---|---|---|---|---|---|---|---|---|',
+    ...summary.operations.map(o => `| ${o.op} | ${o.samples} | ${o.ok} | ${o.invalid.length} | ${o.errors.length} | ${triple(o.wall).join(' | ')} | ${triple(o.inCell).join(' | ')} |`),
   ];
   const detailed = summary.operations.filter(o => o.details);
   if (detailed.length) {
     lines.push('', '| Operation | Observed (median, range) |', '|---|---|',
-      ...detailed.map(o => `| ${o.op} | ${Object.entries(o.details).map(([k, d]) => `${k} ${d.median} (${d.min}–${d.max})`).join('; ')} |`));
+      ...detailed.map(o => `| ${o.op} | ${Object.entries(o.details).map(([k, d]) => (d.values ? `${k} ${d.values.join(', ')}` : d.distinct ? `${k} ${d.distinct} distinct` : `${k} ${d.median} (${d.min}–${d.max})`)).join('; ')} |`));
   }
+  const invalid = summary.operations.flatMap(o => o.invalid.map(i => `- ${o.op}, ${i.run} sample ${i.sample}: ${i.reason}`));
+  lines.push('', '## Invalidated samples', '', ...(invalid.length ? invalid : ['None.']));
   const errors = summary.operations.flatMap(o => o.errors.map(e => `- ${o.op}, ${e.run} sample ${e.sample}: ${e.error}`));
   lines.push('', '## Errors', '', ...(errors.length ? errors : ['None.']));
   lines.push('', '## Problems', '', ...(summary.problems.length ? summary.problems.map(p => `- ${p}`)

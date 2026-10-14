@@ -3,10 +3,16 @@
 // one marker line of JSON, and only what its body returns: counts, lengths, booleans and hashes. No cell returns
 // accessibility text, window titles or screenshot bytes, and every observation passes {emit: false}, so nothing of the
 // screen reaches the MCP result except what getApp displays by design (the harness never stores a cell's other output).
+// A measured sample whose target was not the scratch document returns `invalid` (a reason) instead of failing: the
+// harness keeps it out of the statistics and the summary lists it.
 export const MARKER = 'CUA_NATIVE_BASELINE ';
 export const TEXTEDIT = 'com.apple.TextEdit';
 // Typed into each scratch document: correctly spelled and capitalized, so TextEdit's autocorrection has nothing to change.
 export const SENTENCE = 'The quick brown fox jumps over the lazy dog.';
+// How long a cell waits for a window transition (a new document, the keep-or-delete sheet, the return to the scratch
+// document) before it fails. A deadline, not a count of observations: an engine that observes faster polls more often
+// in the same time and is not penalised for it.
+export const TRANSITION_MS = 10_000;
 
 export function cell(body) {
   return `{const __t0 = performance.now(); let __r;
@@ -22,13 +28,26 @@ export function parseCell(text) {
   return line ? JSON.parse(line.slice(MARKER.length)) : null;
 }
 
-// Facts about an accessibility text, computed in the cell: its front window title (compared, never returned), its
-// length, its line count and its element count (lines that start with an element index).
-const AX_HELPERS = `const __front = ax => ax.match(/^Window: "([^"]*)"/m)?.[1] ?? null;
-const __panel = ax => /ID: open-panel/.test(ax.split("\\n").slice(0, 3).join("\\n"));
-const __facts = ax => ({chars: ax.length, lines: ax.split("\\n").length, elements: (ax.match(/^\\s*\\d+ /gm) ?? []).length});`;
-// The full tree of the bound app; a window-less app is null rather than a failure.
-const FULL_TREE = `async () => { try { return await app.getAXState({emit: false, disableDiffing: true}); } catch (e) { if (/noWindowsAvailable/.test(String(e?.message ?? e))) return null; throw e; } }`;
+// Helpers over an accessibility text, defined in every cell that observes:
+//   __front(ax)        the front window's title (compared, never returned)
+//   __panel(ax)        the front window is TextEdit's Open panel (its window element carries ID open-panel)
+//   __keepOrDelete(ax, title)  the front window is the keep-or-delete sheet of the document `title`: its window element
+//                      is the save panel (ID save-panel), it has the Delete button (ID DontSaveButton) and its question
+//                      names that document. Identifiers are not localized; the title is the document's own.
+//   __facts(ax)        length, line count and element count (lines that start with an element index)
+//   tree()             the bound app's full tree; null when the app has no window
+//   frontOf(ax)        "(panel)", the front title, or null without a window
+//   until(done)        observes until done(ax) holds or TRANSITION_MS pass (globalThis.__baselineTransitionMs overrides it,
+//                      for the unit tests); counts observations in __observations
+const HELPERS = `const __front = ax => ax.match(/^Window: "([^"]*)"/m)?.[1] ?? null;
+const __window0 = ax => ax.match(/^\\s*0 [^\\n]*/m)?.[0] ?? "";
+const __panel = ax => /ID: open-panel\\b/.test(__window0(ax));
+const __keepOrDelete = (ax, title) => ax !== null && /ID: save-panel\\b/.test(__window0(ax)) && /ID: DontSaveButton\\b/.test(ax) && typeof title === "string" && ax.includes(title);
+const __facts = ax => ({chars: ax.length, lines: ax.split("\\n").length, elements: (ax.match(/^\\s*\\d+ /gm) ?? []).length});
+const tree = async () => { try { return await app.getAXState({emit: false, disableDiffing: true}); } catch (e) { if (/noWindowsAvailable/.test(String(e?.message ?? e))) return null; throw e; } };
+const frontOf = ax => ax === null ? null : __panel(ax) ? "(panel)" : __front(ax);
+let __observations = 0;
+const until = async done => { const end = performance.now() + (globalThis.__baselineTransitionMs ?? ${TRANSITION_MS}); let ax; do { ax = await tree(); __observations++; if (done(ax)) return ax; } while (performance.now() < end); return ax; };`;
 
 export const FIRST = cell('return {ready: true};');
 export const NOOP = cell('return {computed: 1 + 1 === 2};');
@@ -45,23 +64,30 @@ export const BIND = cell(`globalThis.app = await cua.getApp(${JSON.stringify(TEX
 // panel, which is served out of process and takes no keys sent to TextEdit (measured on the mini: super+n, Escape and
 // typing do not reach it), so from the panel the document comes from its New Document button (ID NewDocumentButton);
 // otherwise from super+n. The new front window must be one that was not in front before.
-export const NEW_DOCUMENT = cell(`${AX_HELPERS}
-const tree = ${FULL_TREE};
-const before = await tree();
+export const NEW_DOCUMENT = cell(`${HELPERS}
+const before = await tree(); __observations++;
 let via = "keys";
-const button = before === null || !__panel(before) ? null : before.match(/^\\s*(\\d+) [^\\n]*ID: NewDocumentButton/m)?.[1];
+const button = before === null || !__panel(before) ? null : before.match(/^\\s*(\\d+) [^\\n]*ID: NewDocumentButton\\b/m)?.[1];
 if (button !== null && button !== undefined) { await app.click(Number(button)); via = "panel"; } else await app.pressKey("super+n");
-const after = await tree();
-const front = after === null || __panel(after) ? null : __front(after);
-if (front === null || (before !== null && __front(before) === front)) throw new Error("no new document came to the front");
+const previous = frontOf(before);
+const after = await until(ax => { const f = frontOf(ax); return f !== null && f !== "(panel)" && f !== previous; });
+const front = frontOf(after);
+if (front === null || front === "(panel)" || front === previous) throw new Error("no new document came to the front");
 globalThis.__scratch = front;
-return {actions: 1, observations: 2, via};`);
+return {actions: 1, observations: __observations, via};`);
 
-export const AX_FULL = cell(`${AX_HELPERS}
+// Whether the scratch document is in front: run before and after a series whose samples cannot check it themselves.
+export const SCRATCH_GUARD = cell(`${HELPERS}
+return {scratchInFront: frontOf(await tree()) === globalThis.__scratch};`);
+
+// The full tree reads the front window, so each sample checks its own target in the text it already has.
+export const AX_FULL = cell(`${HELPERS}
 const ax = await app.getAXState({emit: false, disableDiffing: true});
-return {...__facts(ax), scratchInFront: __front(ax) === globalThis.__scratch};`);
+if (__front(ax) !== globalThis.__scratch) return {invalid: "the scratch document was not in front"};
+return __facts(ax);`);
 
-// Dimensions from the PNG IHDR or the JPEG SOF marker; the bytes are hashed inside the cell and never leave it.
+// Dimensions from the PNG IHDR or the JPEG SOF marker; the bytes are hashed inside the cell and never leave it. The
+// series is bracketed by SCRATCH_GUARD (the harness), so no guard is charged to these samples.
 export const SCREENSHOT = cell(`const shot = await app.getScreenshot({emit: false});
 const {createHash} = await import("node:crypto");
 let format = "unknown", width = null, height = null;
@@ -79,49 +105,48 @@ return {bytes: shot.length, width, height, format, sha256: createHash("sha256").
 
 // The observe -> act -> verify task, three cells per sample, each starting from the scratch document in front. Each
 // acting cell first checks that the front window is the one it expects, and does nothing otherwise.
-export const TASK_ACT = cell(`${AX_HELPERS}
-const tree = ${FULL_TREE};
-const before = await tree();
-if (before === null || __front(before) !== globalThis.__scratch) throw new Error("the scratch document is not in front; nothing was done");
+export const TASK_ACT = cell(`${HELPERS}
+const before = await tree(); __observations++;
+if (frontOf(before) !== globalThis.__scratch) throw new Error("the scratch document is not in front; nothing was done");
 await app.pressKey("super+n");
-const opened = await tree();
-const front = opened === null || __panel(opened) ? null : __front(opened);
-if (front === null || front === globalThis.__scratch) throw new Error("no new document came to the front");
+const opened = await until(ax => { const f = frontOf(ax); return f !== null && f !== "(panel)" && f !== globalThis.__scratch; });
+const front = frontOf(opened);
+if (front === null || front === "(panel)" || front === globalThis.__scratch) throw new Error("no new document came to the front");
 globalThis.__task = front;
 await app.typeText(${JSON.stringify(SENTENCE)});
-return {actions: 2, observations: 2};`);
+return {actions: 2, observations: __observations};`);
 
-export const TASK_VERIFY = cell(`${AX_HELPERS}
+export const TASK_VERIFY = cell(`${HELPERS}
 const ax = await app.getAXState({emit: false, disableDiffing: true});
 const own = __front(ax) === globalThis.__task;
 const present = own && ax.includes(${JSON.stringify(SENTENCE)});
 if (!present) throw new Error(own ? "the typed sentence is not in the document" : "the task document is not in front");
 return {observations: 1, present};`);
 
-// super+w on an edited untitled document opens the keep-or-delete sheet, which becomes the front window (its own
-// title); super+BackSpace answers it with Delete (the sheet's destructive button, the same key in every language).
-// The close is confirmed when the scratch document is in front again, observed a bounded number of times.
-export const TASK_CLOSE = cell(`${AX_HELPERS}
-const tree = ${FULL_TREE};
-const frontOf = async () => { const ax = await tree(); return ax === null ? null : __panel(ax) ? "(panel)" : __front(ax); };
-if (await frontOf() !== globalThis.__task) throw new Error("the task document is not in front; nothing was closed");
+// super+w on the edited task document brings up its keep-or-delete sheet; the cell clicks that sheet's Delete button
+// (ID DontSaveButton) and nothing else: any other window in front after super+w stops the cell before further input.
+// The close is confirmed when the scratch document is back in front.
+export const TASK_CLOSE = cell(`${HELPERS}
+const task = globalThis.__task;
+if (frontOf(await tree()) !== task) throw new Error("the task document is not in front; nothing was closed");
+__observations++;
 await app.pressKey("super+w");
-let actions = 1, observations = 1, front = await frontOf(); observations++;
-for (let i = 0; i < 6 && front === globalThis.__task; i++) { front = await frontOf(); observations++; }
-const sheet = front !== globalThis.__task && front !== globalThis.__scratch;
+let actions = 1;
+let ax = await until(ax => frontOf(ax) !== task);
+const sheet = __keepOrDelete(ax, task);
 if (sheet) {
-  await app.pressKey("super+BackSpace"); actions++;
-  for (let i = 0; i < 7 && front !== globalThis.__scratch; i++) { front = await frontOf(); observations++; }
+  await app.click(Number(ax.match(/^\\s*(\\d+) [^\\n]*ID: DontSaveButton\\b/m)[1])); actions++;
+  ax = await until(ax => frontOf(ax) === globalThis.__scratch);
+} else if (frontOf(ax) !== globalThis.__scratch) {
+  throw new Error(frontOf(ax) === task ? "the task document is still in front after super+w" : "after super+w the front window is neither the task document's keep-or-delete sheet nor the scratch document; no further input was sent");
 }
-if (front !== globalThis.__scratch) throw new Error("the scratch document did not come back to the front after closing the task document");
+if (frontOf(ax) !== globalThis.__scratch) throw new Error("the scratch document did not come back to the front after the task document was deleted");
 globalThis.__task = null;
-return {actions, observations, sheet, closed: true};`);
+return {actions, observations: __observations, sheet, closed: true};`);
 
 // TextEdit started by this run is quit from its unedited scratch document (closing that last document would bring the
 // Open panel back, which takes no keys): super+q, with nothing edited left to ask about.
-export const QUIT_TEXTEDIT = cell(`${AX_HELPERS}
-const tree = ${FULL_TREE};
-const ax = await tree();
-if (ax === null || __front(ax) !== globalThis.__scratch) throw new Error("the scratch document is not in front; not quitting TextEdit");
+export const QUIT_TEXTEDIT = cell(`${HELPERS}
+if (frontOf(await tree()) !== globalThis.__scratch) throw new Error("the scratch document is not in front; not quitting TextEdit");
 await app.pressKey("super+q");
 return {quit: true};`);

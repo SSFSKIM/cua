@@ -2,17 +2,17 @@
   "device": "local",
   "profile": "capability-host",
   "checkout": "/Users/new/Developer/GitHub/cua-wt-browser-service/",
-  "home": "/private/tmp/cua-cap-FWAX90",
-  "commit": "ee43e7548057f95be7d90d54d0dfae63445ce5f6",
+  "home": "/private/tmp/cua-cap-WLVaIP",
+  "commit": "fc59fb1ddc6de8b486df0b5e1ad756c2e1f125fc",
   "runtime": "26.928.40906-darwin-arm64",
   "service": "cua",
   "backend": "capability-host",
   "environment": {
     "CUA_BROWSER_SERVICE": "cua",
     "CUA_SHIM_SURFACES": "browser",
-    "CUA_HOME": "/private/tmp/cua-cap-FWAX90"
+    "CUA_HOME": "/private/tmp/cua-cap-WLVaIP"
   },
-  "started": "2026-10-14T14:12:41.678Z",
+  "started": "2026-10-14T14:59:59.005Z",
   "elicitations": [],
   "attestations": [
     {
@@ -47,5 +47,5 @@
     "capability-host/raw-cdp",
     "capability-host/webmcp"
   ],
-  "finished": "2026-10-14T14:12:51.600Z"
+  "finished": "2026-10-14T15:00:09.110Z"
 }

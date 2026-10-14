@@ -2,62 +2,62 @@
   "device": "local",
   "profile": "capability-host",
   "checkout": "/Users/new/Developer/GitHub/cua-wt-browser-service/",
-  "home": "/private/tmp/cua-cap-NPD1Rc",
-  "commit": "ee43e7548057f95be7d90d54d0dfae63445ce5f6",
+  "home": "/private/tmp/cua-cap-WjQleF",
+  "commit": "fc59fb1ddc6de8b486df0b5e1ad756c2e1f125fc",
   "runtime": "26.928.40906-darwin-arm64",
   "service": "vendor",
   "backend": "capability-host",
   "environment": {
     "CUA_BROWSER_SERVICE": "vendor",
     "CUA_SHIM_SURFACES": "browser",
-    "CUA_HOME": "/private/tmp/cua-cap-NPD1Rc"
+    "CUA_HOME": "/private/tmp/cua-cap-WjQleF"
   },
-  "started": "2026-10-14T14:11:45.572Z",
+  "started": "2026-10-14T15:00:22.565Z",
   "elicitations": [
     {
-      "t": "2026-10-14T14:11:53.156Z",
+      "t": "2026-10-14T15:00:29.885Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/auth-handoff"
     },
     {
-      "t": "2026-10-14T14:11:59.878Z",
+      "t": "2026-10-14T15:00:36.795Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/history"
     },
     {
-      "t": "2026-10-14T14:12:01.903Z",
+      "t": "2026-10-14T15:00:38.816Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/history"
     },
     {
-      "t": "2026-10-14T14:12:01.913Z",
+      "t": "2026-10-14T15:00:38.825Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/history"
     },
     {
-      "t": "2026-10-14T14:12:04.070Z",
+      "t": "2026-10-14T15:00:41.480Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/raw-cdp"
     },
     {
-      "t": "2026-10-14T14:12:06.100Z",
+      "t": "2026-10-14T15:00:43.515Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/raw-cdp"
     },
     {
-      "t": "2026-10-14T14:12:08.774Z",
+      "t": "2026-10-14T15:00:46.175Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/webmcp"
     },
     {
-      "t": "2026-10-14T14:12:10.818Z",
+      "t": "2026-10-14T15:00:48.216Z",
       "method": "elicitation/create",
       "action": "accept",
       "case": "capability-host/webmcp"
@@ -92,5 +92,5 @@
     "capability-host/raw-cdp",
     "capability-host/webmcp"
   ],
-  "finished": "2026-10-14T14:12:12.889Z"
+  "finished": "2026-10-14T15:00:50.287Z"
 }

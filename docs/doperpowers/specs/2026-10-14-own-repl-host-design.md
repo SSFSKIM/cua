@@ -149,7 +149,7 @@ session/turn (`NR:privileged-node-repl.js:14-55,639-647`; `NR:trusted-worker.js:
 teardown.
 
 `write` contributes `{kind:'write',text,item_id?}` and console contributes line events; named-item grouping and newline normalization follow `NR:kernel.js:1542-1584`. `emit_image` is an acknowledged inner request, not a new MCP streaming extension. Package text, named documents,
-images and `emitContentItem` output in execution order, including unawaited tracked emissions; preserve isError, structured content and response meta. Compare the Rust-side assembly against the vendor in M0/M1: extraction alone does not establish every ordering/error sentence.
+images and `emitContentItem` output as the vendor's Rust-side assembly orders them (revised 2026-10-14 from M0's vendor evidence): text is grouped per write name, names ordered by first appearance and concatenated within a name, and the text items precede images and content items; order within each group is preserved, for awaited and unawaited tracked emissions alike; preserve isError, structured content and response meta. Compare the Rust-side assembly against the vendor in M0/M1: extraction alone does not establish every ordering/error sentence.
 
 ### Trusted services and privileged APIs
 
@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Revise Design's output-assembly sentence from "execution order" to the vendor's observed grouping: text grouped per write name (names by first appearance, concatenated within a name) and placed before images/content items, order within each group preserved, awaited or not. M1's supervisor reproduces it and the M1 diff against `m0/vendor-1` enforces it through `cells/output/write-ids`, `cells/output/ordered-content` and `cells/output/unawaited-emissions` (all due M1).
+  Rationale: Spec text predated the vendor probe; the Design itself asked M0/M1 to compare the Rust-side assembly rather than trust extraction.
+  Date/Author: 2026-10-14, dispatching session ruling from M0 task 3's raw vendor evidence, recorded by the plan-executor.
 - Decision: M0 task 4 as built: `experimentId` is a lowercase ASCII path-safe slug (no traversal, no case-insensitive aliasing on macOS); journals have no migration or fallback to pre-tuple paths. Run metadata carries requested `meta.host` and observed `hostAttestations:[{host,serverInfo,_meta}]`, `_meta:null` meaning the tool result had none; cua requires `serverInfo.name` `cua-repl-host` and matching `serverInfo.version`/`_meta['cua/replHost'].version`, vendor requires recorded serverInfo and no `cua/replHost` key. `--axis host` requires actual `service:cua` on both sides; the service axes' archived #113 outputs are byte-identical.
   Rationale: BenchmarkRun's exact-tuple isolation and the hostAttestation ruling; old evidence lacking host observations is remeasured, not relabelled.
   Date/Author: 2026-10-14, M0 task 4 executor, folded by the plan-executor.
@@ -605,6 +608,8 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (2026-10-14): the vendor does not interleave writes and images in emission order. Named writes A(same), B(other), C(same) yield text items `['AC','B']`; `write('before')`, `emitImage(...)`, `write('after')` yields one text item `'beforeafter'` followed by the image, in awaited and unawaited forms.
+  Evidence: `docs/evidence/2026-10-14-own-repl-host-parity/m0/vendor-1/results.jsonl` (M0 task 3's mini vendor run).
 - Observation: `REPL_HOST_VERSION` is bumped by hand, and own-host Node resolution makes up to three synchronous `--version` probes (5 s timeout each) per launch.
   Evidence: M0 task 1 report. M1 bumps the version when the own host first answers (else a developer's cached handshake goes stale) and should resolve Node once per connection.
 - Observation: `scripts/native-baseline/remote.mjs` reads the vendor handshake record path, which M0 task 1 moved under `<host>@<version>/`.

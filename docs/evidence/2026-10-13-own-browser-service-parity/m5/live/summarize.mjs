@@ -16,7 +16,7 @@ const lines = [];
 const say = (text = '') => lines.push(text);
 const tree = new Map(net.tree.map(p => [p.pid, p]));
 const label = pid => { const p = tree.get(pid); return p ? `${pid} ${p.executable.split('/').pop()}` : String(pid); };
-const role = p => /bin\/cua\.mjs serve/.test(p.args) ? 'cua serve' : /anchor\.mjs/.test(p.args) ? 'anchor (src/mcp/anchor.mjs)'
+const role = p => !p ? 'unknown' : /bin\/cua\.mjs serve/.test(p.args) ? 'cua serve' : /anchor\.mjs/.test(p.args) ? 'anchor (src/mcp/anchor.mjs)'
   : /cua-repl\.mjs/.test(p.args) ? 'runtime (vendor cua-repl)' : /node_repl$/.test(p.args) ? 'node_repl supervisor'
   : /codex sandbox/.test(p.args) ? 'codex sandbox (seatbelt wrapper)' : /kernel\.js/.test(p.args) ? 'REPL kernel'
   : /trusted-worker\.js/.test(p.args) ? 'trusted worker (browser service)' : /app-server/.test(p.args) ? 'codex app-server' : p.executable.split('/').pop();
@@ -41,8 +41,11 @@ for (const c of net.connections) say(`  ${label(c.pid)} (parent ${tree.get(c.pid
 say(`Tree processes nettop listed at all (any TCP/UDP activity, brief flows included in their byte totals): ${net.nettopProcesses.length}`);
 for (const p of net.nettopProcesses) say(`  ${label(p.pid)}: bytes in ${p.bytesIn} out ${p.bytesOut}, ${p.first} to ${p.last}`);
 if (net.unresolved) {
-  say(`Processes nettop listed during the session that no ps table ever saw (ancestry unknown, so possibly the tree's): ${net.unresolved.length}`);
-  for (const u of net.unresolved) say(`  ${u.pid} ${u.process}: bytes in ${u.bytesIn ?? '?'} out ${u.bytesOut ?? '?'}, first ${u.first}`);
+  say(`Processes nettop listed during the session whose ancestry could not be read to launchd or a known outside process (possibly the tree's): ${net.unresolved.length}`);
+  for (const u of net.unresolved) {
+    say(`  ${u.pid} ${u.process}${u.reason ? ` (${u.reason})` : ''}: bytes in ${u.bytesIn ?? '?'} out ${u.bytesOut ?? '?'}, first ${u.first}`);
+    for (const c of u.connections ?? []) say(`    ${c.protocol} ${c.local} -> ${c.remote} on ${c.interface}, ${c.states.join('/')}, bytes in ${c.bytesIn} out ${c.bytesOut}`);
+  }
 } else say('Processes nettop listed whose ancestry could not be read: not recorded (this run predates that check; a descendant born and gone between two 250 ms ps snapshots would not have been attributed).');
 const inet = net.lsof.filter(e => e.kind === 'inet');
 say(`Internet sockets of the tree seen by lsof: ${inet.length}`);

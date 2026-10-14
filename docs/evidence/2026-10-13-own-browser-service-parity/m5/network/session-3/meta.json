@@ -77,7 +77,7 @@
     "capabilities/history",
     "m5-live/m3-raw"
   ],
-  "started": "2026-10-14T16:04:42.670Z",
+  "started": "2026-10-14T16:11:26.740Z",
   "complete": true,
   "resolution": {
     "route": "cua",
@@ -90,10 +90,10 @@
     "header": "# Selected Browser",
     "marker": "cua browser service 0.1.0"
   },
-  "servePid": 54267,
+  "servePid": 79296,
   "serveExit": {
     "code": 0,
     "signal": null
   },
-  "finished": "2026-10-14T16:05:31.670Z"
+  "finished": "2026-10-14T16:12:15.818Z"
 }

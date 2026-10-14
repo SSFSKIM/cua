@@ -18,11 +18,17 @@ function scratch(t) { const dir = mkdtempSync(join(tmpdir(), 'm5-observation-'))
 function spawnNode(code) { const child = spawn(process.execPath, ['-e', code], {stdio: 'ignore'}); return child; }
 
 // Runs the sampler with `nettop` replaced by a node script; `during` runs once it started; resolves its summary.
-async function sample(t, fakeNettop, {during = async () => {}, psMs = 250} = {}) {
-  const dir = scratch(t), pidFile = join(dir, 'serve.pid'), fake = join(dir, 'fake-nettop.js');
+// `table` (rows {pid, ppid, pgid}) replaces ps with a scripted process table.
+async function sample(t, fakeNettop, {during = async () => {}, psMs = 250, table} = {}) {
+  const dir = scratch(t), pidFile = join(dir, 'serve.pid'), fake = join(dir, 'fake-nettop.js'), fakePs = join(dir, 'fake-ps.js');
   writeFileSync(fake, fakeNettop);
-  const sampler = spawn(process.execPath, [SAMPLER, pidFile], {stdio: ['pipe', 'pipe', 'inherit'],
-    env: {...process.env, SAMPLER_NETTOP: JSON.stringify([process.execPath, fake, dir]), SAMPLER_LSOF: 'off', SAMPLER_PS_MS: String(psMs)}});
+  const env = {...process.env, SAMPLER_NETTOP: JSON.stringify([process.execPath, fake, dir]), SAMPLER_LSOF: 'off', SAMPLER_PS_MS: String(psMs)};
+  if (table) {
+    writeFileSync(join(dir, 'table.json'), JSON.stringify(table));
+    writeFileSync(fakePs, `const rows=JSON.parse(require('fs').readFileSync(${JSON.stringify(join(dir, 'table.json'))},'utf8'));for(const r of rows)console.log(r.pid+' '+r.ppid+' '+r.pgid+' fake');`);
+    env.SAMPLER_PS = JSON.stringify([process.execPath, fakePs]);
+  }
+  const sampler = spawn(process.execPath, [SAMPLER, pidFile], {stdio: ['pipe', 'pipe', 'inherit'], env});
   let out = ''; sampler.stdout.on('data', d => { out += d; });
   const closed = new Promise(r => sampler.once('close', r));
   await during({dir, pidFile});
@@ -56,6 +62,29 @@ test('a descendant the ps poll never saw is attributed from its nettop row; an e
   assert.ok(summary.connections.some(c => c.pid === child && c.remote === '127.0.0.1:6000'));
   assert.ok(summary.nettopProcesses.some(p => p.pid === child && p.bytesOut === 7));
   assert.deepEqual(summary.unresolved.map(u => u.pid), [gone.pid]);
+});
+
+test('ancestry decides: a tree ancestor or process group joins, launchd or a known outsider is outside, a missing ancestor or a cycle stays unresolved with its traffic', async t => {
+  const row = (pid, ppid, pgid = pid) => ({pid, ppid, pgid});
+  const table = [row(1, 0), row(900, 1), row(1000, 900),
+    row(2002, 2001),                 // its parent 2001 was never listed
+    row(2003, 1, 1000),              // adopted by launchd, still in the serve's process group
+    row(2004, 1),                    // launchd's own
+    row(2005, 2006), row(2006, 2005),// a cycle
+    row(2007, 2008), row(2008, 1),   // under an outside process
+    row(2009, 1000)];                // the serve's child
+  const reported = [2002, 2003, 2004, 2005, 2007, 2009];
+  const summary = await sample(t, HEALTHY, {psMs: 600000, table, during: async ({dir, pidFile}) => {
+    await sleep(600);
+    writeFileSync(pidFile, '1000');
+    writeFileSync(join(dir, 'pids.json'), JSON.stringify(reported));
+    await sleep(1200);
+  }});
+  assert.equal(summary.coverage.ok, true, JSON.stringify(summary.coverage));
+  assert.deepEqual(summary.tree.map(p => p.pid).sort(), [1000, 2003, 2009]);
+  assert.deepEqual([...new Set(summary.connections.map(c => c.pid))].sort(), [2003, 2009]);
+  assert.deepEqual(summary.unresolved.map(u => [u.pid, u.reason]).sort(), [[2002, 'ancestor 2001 was never listed by ps'], [2005, 'its ancestry is a cycle']]);
+  assert.ok(summary.unresolved.every(u => u.connections.length === 1 && u.connections[0].remote === '127.0.0.1:6000' && u.bytesOut === 7));
 });
 
 test('a collector that exits early is lost coverage, with its exit and stderr', async t => {

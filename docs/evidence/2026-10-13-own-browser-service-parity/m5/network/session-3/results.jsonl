@@ -1,128 +1,128 @@
-{"case":"tabs/discovery","cell":"list","ok":true,"value":[{"type":"extension"}],"ms":140.78629100000035,"trace":[]}
-{"case":"tabs/discovery","cell":"select","ok":true,"value":true,"ms":14.842208000000028,"trace":[]}
-{"case":"tabs/discovery","cell":"default","ok":true,"value":true,"ms":127.5338329999995,"trace":[]}
-{"case":"tabs/discovery","cell":"url-selection","ok":true,"value":true,"ms":20.302750000000742,"trace":[]}
-{"case":"tabs/discovery","cell":"docs","ok":true,"value":true,"ms":16.578207999998995,"trace":[]}
-{"case":"tabs/discovery","cell":"capability-docs","ok":true,"value":true,"ms":16.022500000000946,"trace":[]}
-{"case":"tabs/discovery","cell":"name","ok":true,"value":true,"ms":26.958416999999827,"trace":[]}
+{"case":"tabs/discovery","cell":"list","ok":true,"value":[{"type":"extension"}],"ms":22.357833000000028,"trace":[]}
+{"case":"tabs/discovery","cell":"select","ok":true,"value":true,"ms":33.693584000000556,"trace":[]}
+{"case":"tabs/discovery","cell":"default","ok":true,"value":true,"ms":30.59412499999962,"trace":[]}
+{"case":"tabs/discovery","cell":"url-selection","ok":true,"value":true,"ms":27.67749999999978,"trace":[]}
+{"case":"tabs/discovery","cell":"docs","ok":true,"value":true,"ms":13.850542000000132,"trace":[]}
+{"case":"tabs/discovery","cell":"capability-docs","ok":true,"value":true,"ms":14.184707999998864,"trace":[]}
+{"case":"tabs/discovery","cell":"name","ok":true,"value":true,"ms":19.600875000000087,"trace":[]}
 {"case":"tabs/discovery","assertion":{"ok":true}}
-{"case":"examples/tabs","cell":"created","ok":true,"value":{"tabId":"<tab:1>","title":"Browser parity fixture"},"ms":37.94358300000022,"trace":[]}
-{"case":"examples/tabs","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":47.24629199999981,"trace":[]}
+{"case":"examples/tabs","cell":"created","ok":true,"value":{"tabId":"<tab:1>","title":"Browser parity fixture"},"ms":21.406874999998763,"trace":[]}
+{"case":"examples/tabs","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":57.95062499999949,"trace":[]}
 {"case":"examples/tabs","assertion":{"ok":true}}
-{"case":"tabs/navigation","cell":"goto","ok":true,"value":"/reload.html","ms":79.51487499999894,"trace":[]}
-{"case":"tabs/navigation","cell":"back","ok":true,"value":"/counter.html","ms":124.0221249999995,"trace":[]}
-{"case":"tabs/navigation","cell":"forward","ok":true,"value":"/reload.html","ms":23.60516699999971,"trace":[]}
-{"case":"tabs/navigation","cell":"reload","ok":true,"value":{"path":"/reload.html","reloaded":true},"ms":55.336457999999766,"trace":[]}
+{"case":"tabs/navigation","cell":"goto","ok":true,"value":"/reload.html","ms":62.97666600000048,"trace":[]}
+{"case":"tabs/navigation","cell":"back","ok":true,"value":"/counter.html","ms":25.360916999999972,"trace":[]}
+{"case":"tabs/navigation","cell":"forward","ok":true,"value":"/reload.html","ms":106.49845800000003,"trace":[]}
+{"case":"tabs/navigation","cell":"reload","ok":true,"value":{"path":"/reload.html","reloaded":true},"ms":42.388458999999784,"trace":[]}
 {"case":"tabs/navigation","assertion":{"ok":true}}
-{"case":"tabs/manual-handoff-disabled","cell":"disabled","ok":true,"value":true,"ms":13.589958000000479,"trace":[]}
+{"case":"tabs/manual-handoff-disabled","cell":"disabled","ok":true,"value":true,"ms":195.79191600000013,"trace":[]}
 {"case":"tabs/manual-handoff-disabled","assertion":{"ok":true}}
-{"case":"reads/locators","cell":"count","ok":true,"value":2,"ms":91.93745900000067,"trace":[]}
-{"case":"reads/locators","cell":"text","ok":true,"value":"Alpha","ms":18.067958999999973,"trace":[]}
-{"case":"reads/locators","cell":"inner","ok":true,"value":"Beta","ms":40.74645799999962,"trace":[]}
-{"case":"reads/locators","cell":"attribute","ok":true,"value":"stable","ms":31.526958000000377,"trace":[]}
-{"case":"reads/locators","cell":"visible","ok":true,"value":[true,false,false],"ms":29.862750000000233,"trace":[]}
-{"case":"reads/locators","cell":"enabled","ok":true,"value":[true,false],"ms":36.70137500000055,"trace":[]}
-{"case":"reads/locators","cell":"all-text","ok":true,"value":["Alpha","Beta"],"ms":25.48570800000016,"trace":[]}
-{"case":"reads/locators","cell":"read-all","ok":true,"value":["Alpha","Beta"],"ms":18.902000000000044,"trace":[]}
+{"case":"reads/locators","cell":"count","ok":true,"value":2,"ms":80.70054100000016,"trace":[]}
+{"case":"reads/locators","cell":"text","ok":true,"value":"Alpha","ms":143.45987500000047,"trace":[]}
+{"case":"reads/locators","cell":"inner","ok":true,"value":"Beta","ms":29.051416000000245,"trace":[]}
+{"case":"reads/locators","cell":"attribute","ok":true,"value":"stable","ms":22.714791000000332,"trace":[]}
+{"case":"reads/locators","cell":"visible","ok":true,"value":[true,false,false],"ms":30.021500000000742,"trace":[]}
+{"case":"reads/locators","cell":"enabled","ok":true,"value":[true,false],"ms":135.35375000000022,"trace":[]}
+{"case":"reads/locators","cell":"all-text","ok":true,"value":["Alpha","Beta"],"ms":24.986666000000696,"trace":[]}
+{"case":"reads/locators","cell":"read-all","ok":true,"value":["Alpha","Beta"],"ms":21.57829099999981,"trace":[]}
 {"case":"reads/locators","assertion":{"ok":true}}
-{"case":"reads/snapshot","cell":"snapshot","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":36.15070799999921,"trace":[]}
-{"case":"reads/snapshot","cell":"visible-dom","ok":true,"value":"<button node_id=1>Enabled</button>\n<button node_id=2 disabled=\"true\">Disabled</button>","ms":23.848833000000013,"trace":[]}
-{"case":"reads/snapshot","cell":"ax-disabled","ok":true,"value":true,"ms":45.80162500000006,"trace":[]}
-{"case":"reads/snapshot","cell":"fallback","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":19.765959000000294,"trace":[]}
+{"case":"reads/snapshot","cell":"snapshot","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":72.59104200000002,"trace":[]}
+{"case":"reads/snapshot","cell":"visible-dom","ok":true,"value":"<button node_id=1>Enabled</button>\n<button node_id=2 disabled=\"true\">Disabled</button>","ms":148.31875000000036,"trace":[]}
+{"case":"reads/snapshot","cell":"ax-disabled","ok":true,"value":true,"ms":24.030500000000757,"trace":[]}
+{"case":"reads/snapshot","cell":"fallback","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":22.158041000000594,"trace":[]}
 {"case":"reads/snapshot","assertion":{"ok":true}}
-{"case":"reads/frames","cell":"navigate","ok":true,"value":"Browser parity fixture","ms":39.76808300000084,"trace":[]}
-{"case":"reads/frames","cell":"first","ok":true,"value":"Frame button","ms":49.251125000000684,"trace":[]}
-{"case":"reads/frames","cell":"second","ok":true,"value":"Frame button","ms":17.45958299999984,"trace":[]}
-{"case":"reads/frames","cell":"third","ok":true,"value":"Frame button","ms":22.08808399999907,"trace":[]}
-{"case":"reads/frames","cell":"snapshot","ok":true,"value":"- heading \"Frames fixture\" [level=1]\n- iframe [id=\"first\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"second\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"third\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"","ms":18.809416000000056,"trace":[]}
+{"case":"reads/frames","cell":"navigate","ok":true,"value":"Browser parity fixture","ms":34.55262500000026,"trace":[]}
+{"case":"reads/frames","cell":"first","ok":true,"value":"Frame button","ms":57.91266700000051,"trace":[]}
+{"case":"reads/frames","cell":"second","ok":true,"value":"Frame button","ms":126.18941599999926,"trace":[]}
+{"case":"reads/frames","cell":"third","ok":true,"value":"Frame button","ms":47.62774999999965,"trace":[]}
+{"case":"reads/frames","cell":"snapshot","ok":true,"value":"- heading \"Frames fixture\" [level=1]\n- iframe [id=\"first\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"second\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"third\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"","ms":31.400541999999405,"trace":[]}
 {"case":"reads/frames","assertion":{"ok":true}}
-{"case":"evaluate/read","cell":"page","ok":true,"value":{"count":2,"title":"Browser parity fixture"},"ms":17.64037499999904,"trace":[]}
-{"case":"evaluate/read","cell":"node","ok":true,"value":"Alpha","ms":23.294332999999824,"trace":[]}
-{"case":"evaluate/read","cell":"all","ok":true,"value":["Alpha","Beta"],"ms":25.704374999999345,"trace":[]}
+{"case":"evaluate/read","cell":"page","ok":true,"value":{"count":2,"title":"Browser parity fixture"},"ms":21.44183299999895,"trace":[]}
+{"case":"evaluate/read","cell":"node","ok":true,"value":"Alpha","ms":145.94595800000025,"trace":[]}
+{"case":"evaluate/read","cell":"all","ok":true,"value":["Alpha","Beta"],"ms":35.64416700000038,"trace":[]}
 {"case":"evaluate/read","assertion":{"ok":true}}
-{"case":"evaluate/mutation","cell":"mutate","ok":true,"value":"changed","ms":80.64329100000032,"trace":[]}
-{"case":"evaluate/mutation","cell":"title","ok":true,"value":"changed","ms":126.30308299999888,"trace":[]}
+{"case":"evaluate/mutation","cell":"mutate","ok":true,"value":"changed","ms":25.355125000000044,"trace":[]}
+{"case":"evaluate/mutation","cell":"title","ok":true,"value":"changed","ms":15.874041000000943,"trace":[]}
 {"case":"evaluate/mutation","assertion":{"ok":true}}
-{"case":"evaluate/counter","cell":"submit","ok":true,"value":1,"ms":30.26758300000074,"trace":[]}
-{"case":"evaluate/counter","cell":"usable","ok":true,"value":"Browser parity fixture","ms":21.448749999999563,"trace":[]}
+{"case":"evaluate/counter","cell":"submit","ok":true,"value":1,"ms":21.01274999999987,"trace":[]}
+{"case":"evaluate/counter","cell":"usable","ok":true,"value":"Browser parity fixture","ms":17.59979200000089,"trace":[]}
 {"case":"evaluate/counter","assertion":{"ok":true}}
-{"case":"evaluate/context-loss","cell":"reload","ok":false,"error":{"code":"Error","message":"playwright.evaluate was interrupted: Inspected target navigated or closed. The script was sent to the page once and may have run there; it was not run again."},"ms":156.87516700000015,"trace":[]}
-{"case":"evaluate/context-loss","cell":"usable","ok":true,"value":"Browser parity fixture","ms":15.177165999999488,"trace":[]}
+{"case":"evaluate/context-loss","cell":"reload","ok":false,"error":{"code":"Error","message":"playwright.evaluate was interrupted: Inspected target navigated or closed. The script was sent to the page once and may have run there; it was not run again."},"ms":25.048791999999594,"trace":[]}
+{"case":"evaluate/context-loss","cell":"usable","ok":true,"value":"Browser parity fixture","ms":31.960500000001048,"trace":[]}
 {"case":"evaluate/context-loss","assertion":{"ok":true}}
-{"case":"actions/locators","cell":"fill","ok":true,"value":"alpha","ms":50.030000000000655,"trace":[]}
-{"case":"actions/locators","cell":"press","ok":true,"value":{"before":0,"after":5,"value":"alpha beta"},"ms":296.369666999999,"trace":[]}
-{"case":"actions/locators","cell":"select","ok":true,"value":"b","ms":217.99604199999885,"trace":[]}
-{"case":"actions/locators","cell":"check","ok":true,"value":true,"ms":350.9207499999993,"trace":[]}
-{"case":"actions/locators","cell":"click","ok":true,"value":true,"ms":364.9660409999997,"trace":[]}
+{"case":"actions/locators","cell":"fill","ok":true,"value":"alpha","ms":46.77754199999981,"trace":[]}
+{"case":"actions/locators","cell":"press","ok":true,"value":{"before":0,"after":5,"value":"alpha beta"},"ms":386.27599999999984,"trace":[]}
+{"case":"actions/locators","cell":"select","ok":true,"value":"b","ms":142.3931249999987,"trace":[]}
+{"case":"actions/locators","cell":"check","ok":true,"value":true,"ms":379.4239170000001,"trace":[]}
+{"case":"actions/locators","cell":"click","ok":true,"value":true,"ms":330.78533400000015,"trace":[]}
 {"case":"actions/locators","assertion":{"ok":true}}
-{"case":"actions/strict-error","cell":"strict","ok":false,"error":{"code":"Error","message":"Error: Browser Use encountered an error interacting with this webpage: Error: strict mode violation: locator('.duplicate') resolved to 2 elements:\n    1) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).first()\n    2) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).nth(1)\n\nwaiting on click for selector .duplicate\nLocator diagnostics: {\"kind\":\"multiple_matches\",\"action\":\"click\",\"locator\":\".duplicate\",\"matchCount\":2,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true},{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true}],\"visibleCount\":2,\"truncated\":false}"},"ms":164.0542499999974,"trace":[]}
-{"case":"actions/strict-error","cell":"usable","ok":true,"value":2,"ms":177.80812499999956,"trace":[]}
+{"case":"actions/strict-error","cell":"strict","ok":false,"error":{"code":"Error","message":"Error: Browser Use encountered an error interacting with this webpage: Error: strict mode violation: locator('.duplicate') resolved to 2 elements:\n    1) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).first()\n    2) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).nth(1)\n\nwaiting on click for selector .duplicate\nLocator diagnostics: {\"kind\":\"multiple_matches\",\"action\":\"click\",\"locator\":\".duplicate\",\"matchCount\":2,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true},{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true}],\"visibleCount\":2,\"truncated\":false}"},"ms":141.96937499999694,"trace":[]}
+{"case":"actions/strict-error","cell":"usable","ok":true,"value":2,"ms":113.21574999999939,"trace":[]}
 {"case":"actions/strict-error","assertion":{"ok":true}}
-{"case":"actions/slow-budget","cell":"late","ok":true,"value":true,"ms":8585.904917,"trace":[]}
+{"case":"actions/slow-budget","cell":"late","ok":true,"value":true,"ms":8499.344167,"trace":[]}
 {"case":"actions/slow-budget","assertion":{"ok":true}}
-{"case":"input/coordinates","cell":"type","ok":true,"value":"pointer","ms":340.16745900000024,"trace":[]}
-{"case":"input/coordinates","cell":"end-key","ok":true,"value":{"before":0,"after":7},"ms":35.860749999999825,"trace":[]}
-{"case":"input/coordinates","cell":"double","ok":true,"value":true,"ms":344.97658299999966,"trace":[]}
-{"case":"input/coordinates","cell":"drag","ok":true,"value":"ended","ms":91.06066699999792,"trace":[]}
-{"case":"input/coordinates","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":236.82408299999952,"trace":[]}
+{"case":"input/coordinates","cell":"type","ok":true,"value":"pointer","ms":416.15387499999997,"trace":[]}
+{"case":"input/coordinates","cell":"end-key","ok":true,"value":{"before":0,"after":7},"ms":104.8738749999975,"trace":[]}
+{"case":"input/coordinates","cell":"double","ok":true,"value":true,"ms":347.2863749999997,"trace":[]}
+{"case":"input/coordinates","cell":"drag","ok":true,"value":"ended","ms":115.95624999999927,"trace":[]}
+{"case":"input/coordinates","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":219.13658399999986,"trace":[]}
 {"case":"input/coordinates","assertion":{"ok":true}}
-{"case":"input/dom","cell":"nodes","ok":true,"value":true,"ms":23.803625000000466,"trace":[]}
-{"case":"input/dom","cell":"type","ok":true,"value":"dom","ms":309.4327080000003,"trace":[]}
-{"case":"input/dom","cell":"end-key","ok":true,"value":{"before":0,"after":3},"ms":54.72583400000076,"trace":[]}
-{"case":"input/dom","cell":"double","ok":true,"value":true,"ms":316.9560829999973,"trace":[]}
-{"case":"input/dom","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":186.5667910000011,"trace":[]}
+{"case":"input/dom","cell":"nodes","ok":true,"value":true,"ms":108.6497500000005,"trace":[]}
+{"case":"input/dom","cell":"type","ok":true,"value":"dom","ms":310.59362500000134,"trace":[]}
+{"case":"input/dom","cell":"end-key","ok":true,"value":{"before":0,"after":3},"ms":38.69158299999981,"trace":[]}
+{"case":"input/dom","cell":"double","ok":true,"value":true,"ms":284.674500000001,"trace":[]}
+{"case":"input/dom","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":196.92170899999837,"trace":[]}
 {"case":"input/dom","assertion":{"ok":true}}
-{"case":"waits/page","cell":"url","ok":true,"value":"/wait-target.html","ms":922.1234580000018,"trace":[]}
-{"case":"waits/page","cell":"load","ok":true,"value":{"pending":true,"state":"complete"},"ms":1279.1212499999965,"trace":[]}
-{"case":"waits/page","cell":"delay","ok":true,"value":true,"ms":488.79112499999974,"trace":[]}
+{"case":"waits/page","cell":"url","ok":true,"value":"/wait-target.html","ms":756.9682090000024,"trace":[]}
+{"case":"waits/page","cell":"load","ok":true,"value":{"pending":true,"state":"complete"},"ms":1335.536957999997,"trace":[]}
+{"case":"waits/page","cell":"delay","ok":true,"value":true,"ms":364.62024999999994,"trace":[]}
 {"case":"waits/page","assertion":{"ok":true}}
-{"case":"screenshot/modes","cell":"viewport","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"00000000ffffffff"},"ms":183.93787499999962,"trace":[],"screenshotTolerance":4}
-{"case":"screenshot/modes","cell":"full","ok":true,"value":{"$image":"ahash64","width":2560,"height":2451,"hash":"0000ffff0000ffff"},"ms":332.9316669999971,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","cell":"viewport","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"00000000ffffffff"},"ms":171.03770900000018,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","cell":"full","ok":true,"value":{"$image":"ahash64","width":2560,"height":2451,"hash":"0000ffff0000ffff"},"ms":152.80795899999794,"trace":[],"screenshotTolerance":4}
 {"case":"screenshot/modes","assertion":{"ok":true}}
-{"case":"screenshot/clip","cell":"clip","ok":true,"value":{"$image":"ahash64","width":320,"height":240,"hash":"0f0f0f0fffffffff"},"ms":208.66799999999785,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/clip","cell":"clip","ok":true,"value":{"$image":"ahash64","width":320,"height":240,"hash":"0f0f0f0fffffffff"},"ms":355.5819590000028,"trace":[],"screenshotTolerance":4}
 {"case":"screenshot/clip","assertion":{"ok":true}}
-{"case":"dialogs/alert","cell":"open","ok":true,"value":true,"ms":395.0950840000005,"trace":[]}
-{"case":"dialogs/alert","cell":"get","ok":true,"value":"alert","ms":15.166625000005297,"trace":[]}
-{"case":"dialogs/alert","cell":"blocked","ok":false,"error":{"code":"Error","message":"Error: A alert JavaScript dialog is active in this tab. Use `tab.getJsDialog()` to get it and dismiss it first.\nwaiting on click for selector #confirm"},"ms":29.836042000002635,"trace":[]}
-{"case":"dialogs/alert","cell":"dismiss","ok":true,"value":true,"ms":56.624416999999085,"trace":[]}
+{"case":"dialogs/alert","cell":"open","ok":true,"value":true,"ms":361.17958299999736,"trace":[]}
+{"case":"dialogs/alert","cell":"get","ok":true,"value":"alert","ms":24.7065419999999,"trace":[]}
+{"case":"dialogs/alert","cell":"blocked","ok":false,"error":{"code":"Error","message":"Error: A alert JavaScript dialog is active in this tab. Use `tab.getJsDialog()` to get it and dismiss it first.\nwaiting on click for selector #confirm"},"ms":24.564207999996142,"trace":[]}
+{"case":"dialogs/alert","cell":"dismiss","ok":true,"value":true,"ms":24.669999999998254,"trace":[]}
 {"case":"dialogs/alert","assertion":{"ok":true}}
-{"case":"downloads/chooser","cell":"download","ok":true,"value":true,"ms":311.78033300000243,"trace":[]}
-{"case":"downloads/chooser","cell":"path","ok":true,"value":true,"ms":46.35704100000294,"trace":[]}
-{"case":"downloads/chooser","cell":"chooser-page","ok":true,"value":true,"ms":39.25258300000132,"trace":[]}
-{"case":"downloads/chooser","cell":"chooser","ok":true,"value":false,"ms":332.7115830000039,"trace":[]}
-{"case":"downloads/chooser","cell":"set-files","ok":true,"value":true,"ms":150.81870799999888,"trace":[]}
+{"case":"downloads/chooser","cell":"download","ok":true,"value":true,"ms":357.9576669999951,"trace":[]}
+{"case":"downloads/chooser","cell":"path","ok":true,"value":true,"ms":49.977624999999534,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser-page","ok":true,"value":true,"ms":32.84575000000041,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser","ok":true,"value":false,"ms":312.91816700000345,"trace":[]}
+{"case":"downloads/chooser","cell":"set-files","ok":true,"value":true,"ms":53.521583000001556,"trace":[]}
 {"case":"downloads/chooser","assertion":{"ok":true}}
-{"case":"capabilities/clipboard","cell":"text","ok":true,"value":"parity text","ms":62.55316599999787,"trace":[]}
-{"case":"capabilities/clipboard","cell":"rich","ok":true,"value":["parity rich"],"ms":158.38633299999492,"trace":[]}
+{"case":"capabilities/clipboard","cell":"text","ok":true,"value":"parity text","ms":17.755166000002646,"trace":[]}
+{"case":"capabilities/clipboard","cell":"rich","ok":true,"value":["parity rich"],"ms":33.57508300000336,"trace":[]}
 {"case":"capabilities/clipboard","assertion":{"ok":true}}
-{"case":"capabilities/logs","cell":"start","ok":true,"value":true,"ms":119.02000000000407,"trace":[]}
-{"case":"capabilities/logs","cell":"trigger","ok":true,"value":true,"ms":58.61554199999955,"trace":[]}
-{"case":"capabilities/logs","cell":"logs","ok":true,"value":[{"level":"log","message":"parity-log deterministic message"}],"ms":13.916459000000032,"trace":[]}
+{"case":"capabilities/logs","cell":"start","ok":true,"value":true,"ms":17.2934580000001,"trace":[]}
+{"case":"capabilities/logs","cell":"trigger","ok":true,"value":true,"ms":30.04704099999799,"trace":[]}
+{"case":"capabilities/logs","cell":"logs","ok":true,"value":[{"level":"log","message":"parity-log deterministic message"}],"ms":14.699625000001106,"trace":[]}
 {"case":"capabilities/logs","assertion":{"ok":true}}
-{"case":"capabilities/viewport","cell":"round-trip","ok":true,"value":{"overridden":true,"restored":true},"ms":54.61441700000432,"trace":[]}
+{"case":"capabilities/viewport","cell":"round-trip","ok":true,"value":{"overridden":true,"restored":true},"ms":112.85404199999903,"trace":[]}
 {"case":"capabilities/viewport","assertion":{"ok":true}}
-{"case":"capabilities/cursor","cell":"move","ok":true,"value":"140,60","ms":52.31091700000252,"trace":[]}
+{"case":"capabilities/cursor","cell":"move","ok":true,"value":"140,60","ms":38.68020799999795,"trace":[]}
 {"case":"capabilities/cursor","assertion":{"ok":true}}
-{"case":"capabilities/export-rejections","cell":"gsuite","ok":false,"error":{"code":"Error","message":"Tab is not a Google Workspace document"},"ms":105.43787500000326,"trace":[]}
-{"case":"capabilities/export-rejections","cell":"youtube","ok":false,"error":{"code":"Error","message":"Tab is not a supported YouTube watch page"},"ms":98.04483299999993,"trace":[]}
-{"case":"capabilities/export-rejections","cell":"format","ok":false,"error":{"code":"Error","message":"tab_content_export_gsuite requires supported format"},"ms":15.083833000004233,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"gsuite","ok":false,"error":{"code":"Error","message":"Tab is not a Google Workspace document"},"ms":16.01433299999917,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"youtube","ok":false,"error":{"code":"Error","message":"Tab is not a supported YouTube watch page"},"ms":37.18025000000489,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"format","ok":false,"error":{"code":"Error","message":"tab_content_export_gsuite requires supported format"},"ms":28.79200000000128,"trace":[]}
 {"case":"capabilities/export-rejections","assertion":{"ok":true}}
-{"case":"capabilities/page-assets","cell":"absent","ok":true,"value":true,"ms":13.414457999999286,"trace":[]}
-{"case":"capabilities/page-assets","cell":"list","ok":true,"value":{"kind":"image","name":"cross-asset.png","sources":[{"kind":"resource","property":"fetch"}],"crossOrigin":true},"ms":22.140291999996407,"trace":[]}
-{"case":"capabilities/page-assets","cell":"bundle","ok":true,"value":{"assets":[{"kind":"image","name":"cross-asset.png","contentType":"image/png"}],"failures":[],"contentMatches":true,"summary":{"downloadedCount":1,"failedCount":0,"requestedCount":1}},"ms":31.52729100000579,"trace":[]}
+{"case":"capabilities/page-assets","cell":"absent","ok":true,"value":true,"ms":149.4137910000063,"trace":[]}
+{"case":"capabilities/page-assets","cell":"list","ok":true,"value":{"kind":"image","name":"cross-asset.png","sources":[{"kind":"resource","property":"fetch"}],"crossOrigin":true},"ms":28.579499999999825,"trace":[]}
+{"case":"capabilities/page-assets","cell":"bundle","ok":true,"value":{"assets":[{"kind":"image","name":"cross-asset.png","contentType":"image/png"}],"failures":[],"contentMatches":true,"summary":{"downloadedCount":1,"failedCount":0,"requestedCount":1}},"ms":120.6419590000005,"trace":[]}
 {"case":"capabilities/page-assets","assertion":{"ok":true}}
-{"case":"capabilities/m3-members","cell":"disabled","ok":true,"value":{"export":true,"context":true},"ms":13.256958000005397,"trace":[]}
+{"case":"capabilities/m3-members","cell":"disabled","ok":true,"value":{"export":true,"context":true},"ms":22.5067080000008,"trace":[]}
 {"case":"capabilities/m3-members","assertion":{"ok":true}}
-{"case":"capabilities/m3-disabled","cell":"disabled","ok":true,"value":["pageAssets","webmcp","botDetection","browserAuth"],"ms":43.685208999995666,"trace":[]}
+{"case":"capabilities/m3-disabled","cell":"disabled","ok":true,"value":["pageAssets","webmcp","botDetection","browserAuth"],"ms":78.27612499999668,"trace":[]}
 {"case":"capabilities/m3-disabled","assertion":{"ok":true}}
-{"case":"capabilities/history","cell":"history","ok":false,"error":{"code":"Error","message":"No handler registered for method: getUserHistory"},"ms":20.459458999997878,"trace":[]}
+{"case":"capabilities/history","cell":"history","ok":false,"error":{"code":"Error","message":"No handler registered for method: getUserHistory"},"ms":155.52937499999825,"trace":[]}
 {"case":"capabilities/history","assertion":{"ok":true}}
-{"case":"m5-live/m3-raw","cell":"docs","ok":true,"value":true,"ms":13.915458000003127,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"bot","ok":true,"value":{"hostname":"127.0.0.1","status":"reported"},"ms":16.153208999996423,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"context","ok":true,"value":{"refused":true,"message":"No handler registered for method: executeTabRead"},"ms":112.39958299999853,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"history","ok":true,"value":{"refused":true,"message":"No handler registered for method: getUserHistory"},"ms":35.655791999997746,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"webmcp-list","ok":true,"value":{"refused":true,"message":"cua does not support command \"webmcp_list_tools\"."},"ms":26.46704199999658,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"webmcp-invoke","ok":true,"value":{"refused":true,"message":"WebMCP tool registration is stale. Call fetchTools() again."},"ms":17.3505839999998,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"auth-handoff","ok":true,"value":{"refused":true,"message":"cua does not support command \"tab_browser_auth_handoff\"."},"ms":108.8584170000031,"trace":[]}
-{"case":"m5-live/m3-raw","cell":"content-export","ok":true,"value":{"refused":true,"message":"cua does not support command \"tab_content_export\"."},"ms":23.459500000004482,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"docs","ok":true,"value":true,"ms":59.460541000000376,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"bot","ok":true,"value":{"hostname":"127.0.0.1","status":"reported"},"ms":15.908749999995052,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"context","ok":true,"value":{"refused":true,"message":"No handler registered for method: executeTabRead"},"ms":91.72825000000012,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"history","ok":true,"value":{"refused":true,"message":"No handler registered for method: getUserHistory"},"ms":18.160250000000815,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"webmcp-list","ok":true,"value":{"refused":true,"message":"cua does not support command \"webmcp_list_tools\"."},"ms":50.31362499999523,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"webmcp-invoke","ok":true,"value":{"refused":true,"message":"WebMCP tool registration is stale. Call fetchTools() again."},"ms":139.37304199999926,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"auth-handoff","ok":true,"value":{"refused":true,"message":"cua does not support command \"tab_browser_auth_handoff\"."},"ms":14.921667000002344,"trace":[]}
+{"case":"m5-live/m3-raw","cell":"content-export","ok":true,"value":{"refused":true,"message":"cua does not support command \"tab_content_export\"."},"ms":130.51079200000095,"trace":[]}
 {"case":"m5-live/m3-raw","assertion":{"ok":true}}

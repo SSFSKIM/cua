@@ -82,7 +82,7 @@ command; it drives all of a run's cases through one serve, one after another (on
 
 ## Network and disk (acceptance 7, live half): no TCP or UDP at all from the serve tree; browser/ unchanged
 
-`network/session-3/` (16:04 UTC; the parity clone was at 8e10092 by then, re-prepared for the scripted drag check,
+`network/session-3/` (16:11 UTC; the parity clone was at 8e10092 by then, re-prepared for the scripted drag check,
 the same service code as 6c89167) is the reference run: setup and browser selection, then 31 cases in one serve, all
 ok: tabs/discovery, examples/tabs, tabs/navigation, tabs/manual-handoff-disabled, reads/locators, reads/snapshot,
 reads/frames, evaluate/read, evaluate/mutation, evaluate/counter, evaluate/context-loss, actions/locators,
@@ -96,11 +96,15 @@ history are refused by the host ("No handler registered for method: executeTabRe
 browserAuth are refused as not announced ("cua does not support command ..."; a stale-registration refusal for
 invoke); the generic content export is not served.
 
-How it was observed (`live/sampler.mjs`): the serve tree is the serve pid and every process whose ancestry reaches it,
-learned from `ps` every 250 ms and, for every process nettop reports, from its ancestry read at that moment (through
-the last ps row any table had, for one that already exited), so a descendant born between two ps snapshots that does
-network I/O is still attributed; a process nettop reports that no ps table ever listed is counted as unresolved, the
-one blind spot left, and shown. One continuous `nettop -L 0 -s 1 -n -x` over every process, under `script`'s
+How it was observed (`live/sampler.mjs`): the serve tree is the serve pid and every process whose ancestry reaches it
+or that belongs to a tree process's process group (which a descendant keeps when launchd adopts it), learned from
+`ps` every 250 ms and, for every process nettop reports, from its ancestry read at that moment (through the last ps
+row any table had, for one that already exited), so a descendant born between two ps snapshots that does network I/O
+is still attributed. A reported process counts as outside only when its ancestry reaches launchd or a process already
+known to be outside; one whose ancestry cannot be read that far (an ancestor no ps table listed, a cycle) is listed as
+unresolved with its bytes and connections, never dropped. What is left unseen: a descendant that launchd adopted and
+that also left the tree's process groups before any ps table listed it (macOS keeps no original parent for a user
+to read). One continuous `nettop -L 0 -s 1 -n -x` over every process, under `script`'s
 pseudo-terminal so each sample arrives as it is taken (into a pipe nettop block-buffers, in bursts about 4 s apart),
 keeps the tree's connection rows (with endpoints) and process rows (whose byte totals include flows too brief for a
 connection row); `lsof -nP -p <tree>` every second lists internet sockets, Unix sockets (each peer named from a
@@ -110,8 +114,10 @@ endpoints and `-p` cannot follow a tree that grows during the session. Coverage 
 have printed a sample before the serve starts (the driver waits for the sampler's ready line), never exit or fall
 silent for more than 5 s, and ps and lsof must not fail; a lapse fails the run (`live/collector.mjs`, which also
 always settles: a sampler that exits early is a failed observation, and the fixture and scratch are released
-regardless). `live/observation.test.mjs` tests these offline (8 tests: attribution of a descendant only nettop saw,
-an exited unseen one as unresolved, a collector that exits, never prints or falls silent, a sampler that exits early,
+regardless). `live/observation.test.mjs` tests these offline (9 tests: attribution of a descendant only nettop saw,
+an exited unseen one as unresolved, the ancestry rules over a scripted process table (tree parent, adopted process
+in the serve's group, launchd's, under an outsider, a missing ancestor and a cycle, the last two unresolved with
+their connections), a collector that exits, never prints or falls silent, a sampler that exits early,
 hangs or reports lost coverage, and readiness). `network/sampler-control.json` is the positive control on the mini
 with this sampler (coverage held, ready in 1 s, samples about every second): a child holding a TCP connection is
 attributed with both endpoints (nettop and lsof), and a child whose only activity was one brief connection and one
@@ -121,21 +127,21 @@ datagram, never shown as a connection row, still shows in its nettop process row
 
 | observation | result |
 |---|---|
-| coverage | held: nettop ready before the serve, 39 samples, longest silence 1,026 ms, running until stopped |
+| coverage | held: nettop ready before the serve, 39 samples, longest silence 1,021 ms, running until stopped |
 | serve tree | serve, two anchors (`src/mcp/anchor.mjs`) each with the vendor runtime and its node_repl supervisor, and two `codex sandbox` wrappers running the REPL kernel and the trusted worker (where the browser service runs); no `codex app-server` process at any time |
-| TCP/UDP | none: no tree process ever appeared in nettop, no unresolved process appeared, lsof saw no internet socket |
+| TCP/UDP | none: no tree process ever appeared in nettop, no reported process was left unresolved, lsof saw no internet socket |
 | Unix-socket peers outside the tree | one: the node_repl supervisor to cua's Chrome host (`src/chrome/host.mjs`, Chrome's child) — the extension socket |
 | `state/codex/browser/` | 947 files before and after (vendor runs elsewhere had added ten since session-2), listing and content digest unchanged |
-| other `state/codex` changes | `tmp/arg0/codex-arg0*` directories created by the two `codex sandbox` processes (lsof shows each holding its `.lock`) and an earlier run's swept, and `node_repl/active_execs`' mtime: the runtime's own (#115), none the browser service's |
+| other `state/codex` changes | `tmp/arg0/codex-arg0*` directories created by the two `codex sandbox` processes (lsof shows each holding its `.lock`) and an earlier run's swept, and `node_repl/active_execs`' mtime: the runtime's own (#115), none the browser service's; and `models_cache.json` rewritten at the same size, which no tree process held at any sample: it is rewritten about every 270 s whether a session runs or not (15:58:41, 16:03:11, 16:07:42 between runs, 16:12:12 UTC), a periodic refresh by a long-running process outside the tree (the home's other runtimes run a `codex app-server`, pid 5726, a resident session's since 10-11; the tree never had one) |
 | fixture server | not a peer of the tree at all: Chrome fetches the pages, page assets and exports |
 | processes left | none (serve exit 0; no tree process alive at the end; nettop, the sampler and the mini's `/tmp` scratch gone) |
 
 The runtime's own Codex app-server traffic the spec anticipated for #115 did not occur: no app-server ran in the
-tree. An attempt just before session-3 (discarded, not committed) had the same TCP/UDP verdict but named a
-short-lived `node` holding the serve's inherited stdio socket as an outside peer, which the tree-holder preference
-above corrects; its listing also showed `models_cache.json` rewritten (same size) with no tree process holding it at
-any sample and no app-server in the tree, while the home's other runtimes run a `codex app-server` (pid 5726, a
-resident session's since 10-11): not the browser service's.
+tree. session-3 was taken three times with the same TCP/UDP verdict: an attempt at 16:02 (discarded, not committed)
+named a short-lived `node` holding the serve's inherited stdio socket as an outside peer, which the tree-holder
+preference above corrects; the run at 16:04 (committed in 7ad3daf, replaced) classified a reported process whose
+ancestry stopped at an unlisted ancestor as outside, which the rule above now leaves unresolved, so its verdict could
+not be re-derived from what it kept and the session was re-run at 16:11 under the corrected rule.
 
 Qualification of the earlier runs, taken with the first sampler (`network/session-1/`, `network/session-2/`,
 `acceptance/run-1/`): the same verdict (no tree process in nettop, no internet socket in lsof, the one Unix peer, browser/

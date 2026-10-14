@@ -2,12 +2,15 @@
 // "Network and disk proof", acceptance 7). Runs on the mini beside one `cua serve` started by live/session.mjs, until
 // its stdin ends:
 //   node sampler.mjs <serve pid file>
-// The serve process tree is the serve pid and every process whose ancestry reaches it, kept once seen even if later
-// re-parented. Membership is learned two ways: `ps` every 250 ms, and, for every process nettop reports, its ancestry
-// read at that moment, through the last ps row any table had for an exited one (so a descendant born after the last
-// ps snapshot that does network I/O is still attributed). A process nettop reports that no ps table ever listed (born
-// and gone between two snapshots, before nettop's row for it was read) is listed as unresolved, with its name and
-// bytes: the one blind spot left, disclosed rather than dropped. One continuous `nettop -L 0 -s 1 -n -x` (logging mode, CSV, one
+// The serve process tree is the serve pid and every process whose ancestry reaches it or that belongs to a tree
+// process's process group, kept once seen even if later re-parented. Membership is learned two ways: `ps` every
+// 250 ms, and, for every process nettop reports, its ancestry read at that moment, through the last ps row any table
+// had for an exited one (so a descendant born after the last ps snapshot that does network I/O is still attributed).
+// A process nettop reports is outside only when its ancestry reaches launchd or a known outside process; one whose
+// ancestry cannot be read to such an end (an ancestor no ps table listed) is listed as unresolved, with its name, bytes
+// and connections: the blind spot left, disclosed rather than dropped. A descendant that launchd adopted and that also
+// left the tree's process groups before any ps table listed it would read as outside; nothing short of root's audit
+// facilities records a process's original parent on macOS. One continuous `nettop -L 0 -s 1 -n -x` (logging mode, CSV, one
 // sample a second, every process, no name resolution) supplies connection rows with endpoints and process rows, whose
 // byte totals include flows too brief for a connection row; every second `lsof` lists the tree's sockets (a Unix
 // socket's peer named from a machine-wide `lsof -U`) and its files under state/codex. Coverage is checked, not assumed:
@@ -16,8 +19,8 @@
 // It prints `{"ready": true}` on stdout once nettop's first sample arrives (start the serve after it), then, at the
 // end, one JSON summary: coverage, the tree, the tree's connections and nettop process rows, the
 // unresolved processes, the lsof entries and outside peers, and the tree processes still alive at the end.
-// Test seams (live/observation.test.mjs): SAMPLER_NETTOP (a JSON argv replacing nettop's), SAMPLER_LSOF=off,
-// SAMPLER_PS_MS (the ps period).
+// Test seams (live/observation.test.mjs): SAMPLER_NETTOP (a JSON argv replacing nettop's), SAMPLER_PS (a JSON argv
+// prefix replacing ps for the process table), SAMPLER_LSOF=off, SAMPLER_PS_MS (the ps period).
 import {spawn, execFileSync} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {existsSync, readFileSync} from 'node:fs';
@@ -28,6 +31,7 @@ const [pidFile] = process.argv.slice(2);
 const NETTOP = process.env.SAMPLER_NETTOP ? JSON.parse(process.env.SAMPLER_NETTOP) : ['script', '-q', '/dev/null', 'nettop', '-L', '0', '-s', '1', '-n', '-x'];
 const LSOF = process.env.SAMPLER_LSOF !== 'off';
 const PS_MS = Number(process.env.SAMPLER_PS_MS) || 250;
+const PS = process.env.SAMPLER_PS ? JSON.parse(process.env.SAMPLER_PS) : ['ps'];
 const SILENCE_MS = 5000;           // nettop prints a header every second; a longer silence is lost coverage
 const started = new Date().toISOString();
 const tree = new Map();            // pid -> {pid, ppid, executable, args, first, last, via}
@@ -45,12 +49,12 @@ const nettopState = {ready: false, readyAt: null, lastOutput: null, exit: null, 
 const now = () => new Date().toISOString();
 function psTable() {
   psRuns++;
-  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,comm='], {encoding: 'utf8'}).split('\n').map(line => line.trim()).filter(Boolean)
-    .map(line => { const m = line.match(/^(\d+)\s+(\d+)\s+(.*)$/); return m && {pid: +m[1], ppid: +m[2], executable: m[3]}; }).filter(Boolean);
+  const rows = execFileSync(PS[0], [...PS.slice(1), '-A', '-o', 'pid=,ppid=,pgid=,comm='], {encoding: 'utf8'}).split('\n').map(line => line.trim()).filter(Boolean)
+    .map(line => { const m = line.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/); return m && {pid: +m[1], ppid: +m[2], pgid: +m[3], executable: m[4]}; }).filter(Boolean);
   for (const row of rows) seen.set(row.pid, row);
   return rows;
 }
-const argsOf = pid => { try { return execFileSync('ps', ['-o', 'args=', '-p', String(pid)], {encoding: 'utf8'}).trim().slice(0, 300); } catch { return ''; } };
+const argsOf = pid => { if (process.env.SAMPLER_PS) return ''; try { return execFileSync('ps', ['-o', 'args=', '-p', String(pid)], {encoding: 'utf8'}).trim().slice(0, 300); } catch { return ''; } };
 function readRoot() {
   if (root !== null || !existsSync(pidFile)) return;
   const value = Number(readFileSync(pidFile, 'utf8').trim());
@@ -59,7 +63,7 @@ function readRoot() {
   if (!nettopState.ready) problem('nettop had not printed its first sample when the serve started');
 }
 function admit(row, t, via) {
-  tree.set(row.pid, {pid: row.pid, ppid: row.ppid, executable: row.executable, args: argsOf(row.pid), first: t, last: t, via});
+  tree.set(row.pid, {pid: row.pid, ppid: row.ppid, pgid: row.pgid, executable: row.executable, args: argsOf(row.pid), first: t, last: t, via});
 }
 function follow() {
   readRoot();
@@ -72,11 +76,16 @@ function follow() {
       const known = tree.get(row.pid);
       if (known) { known.last = t; continue; }
       if (row.pid === root || tree.has(row.ppid)) { admit(row, t, 'ps'); grew = true; }
+      else if (tree.has(row.pgid)) { admit(row, t, 'ps, process group'); grew = true; }
     }
   }
 }
 let tableCache = null;
-// A process nettop reports: in the tree already, known outside, or resolved now through its live ancestry.
+// A process nettop reports: in the tree already, known outside, or classified now from its ancestry. It joins the
+// tree when an ancestor (itself included) is a tree process or belongs to a tree process's process group (which a
+// descendant keeps when its parent exits and launchd adopts it; macOS keeps no original parent). It is outside only
+// when the walk reaches launchd or a process already known to be outside; an ancestor no ps table listed, a cycle or a
+// chain too long leaves it unresolved, shown with its traffic, never dropped.
 function classify(pid, name, t) {
   readRoot();
   if (root === null || tree.has(pid) || outside.has(pid) || unresolved.has(pid)) return;
@@ -88,16 +97,21 @@ function classify(pid, name, t) {
   } catch { problem('ps failed while resolving a nettop process'); return; }
   // A process that already exited is traced through the last ps row any table had for it.
   const lookup = p => table.get(p) ?? seen.get(p);
-  const chain = [];
-  for (let at = lookup(pid); at; at = lookup(at.ppid)) {
-    chain.push(at);
-    if (at.pid === root || tree.has(at.pid)) {
+  const chain = [], visited = new Set();
+  let reason = null;
+  for (let at = lookup(pid); ; at = lookup(at.ppid)) {
+    if (!at) { reason = chain.length ? `ancestor ${chain.at(-1).ppid} was never listed by ps` : 'never listed by ps'; break; }
+    if (visited.has(at.pid)) { reason = 'its ancestry is a cycle'; break; }
+    visited.add(at.pid); chain.push(at);
+    if (at.pid === root || tree.has(at.pid) || tree.has(at.pgid)) {
       for (const row of chain.reverse()) if (!tree.has(row.pid)) admit(row, t, table.has(row.pid) ? 'nettop' : 'nettop, exited');
       return;
     }
-    if (at.ppid <= 1 || at.ppid === at.pid || chain.length > 64) break;
+    if (at.pid !== pid && outside.has(at.pid)) break;      // a known outside ancestor
+    if (at.ppid <= 1) break;                               // launchd or the kernel
+    if (chain.length > 64) { reason = 'its ancestry is longer than 64'; break; }
   }
-  if (chain.length) outside.add(pid); else unresolved.set(pid, {pid, process: name, first: t});
+  if (reason) unresolved.set(pid, {pid, process: name, first: t, reason}); else outside.add(pid);
 }
 
 // nettop CSV: a header `time,...` starts each sample; a process row `time,<name>.<pid>,...` precedes that process's
@@ -220,12 +234,13 @@ process.stdin.on('end', () => {
     process.stdout.write(JSON.stringify({
       started, finished: now(), root, rootAt,
       coverage: {ok: problems.length === 0, problems, nettop: {ready: nettopState.ready, readyAt: nettopState.readyAt, samples: nettopSamples, maxSilenceMs: nettopState.maxSilenceMs, exit: nettopState.exit, stderr: nettopState.stderr || null}},
-      commands: {ps: `ps -A -o pid=,ppid=,comm= (every ${PS_MS} ms, and at each new process nettop reports)`, nettop: `${NETTOP.join(' ')} (continuous, rows of tree processes kept)`, lsof: LSOF ? 'lsof -nP -p <tree pids> (every 1 s; inet, unix and state/codex entries kept)' : 'off'},
+      commands: {ps: `ps -A -o pid=,ppid=,pgid=,comm= (every ${PS_MS} ms, and at each new process nettop reports)`, nettop: `${NETTOP.join(' ')} (continuous, rows of tree processes kept)`, lsof: LSOF ? 'lsof -nP -p <tree pids> (every 1 s; inet, unix and state/codex entries kept)' : 'off'},
       counts: {psRuns, nettopRows, nettopSamples, lsofRuns},
       tree: [...tree.values()],
       nettopProcesses: [...processRows].filter(([pid]) => inTree(pid)).map(([pid, p]) => ({pid, ...p})),
       connections: [...flows.values()].filter(f => inTree(f.pid)),
-      unresolved: [...unresolved.values()].map(u => ({...u, ...(processRows.get(u.pid) ? {bytesIn: processRows.get(u.pid).bytesIn, bytesOut: processRows.get(u.pid).bytesOut} : {})})),
+      unresolved: [...unresolved.values()].map(u => ({...u, ...(processRows.get(u.pid) ? {bytesIn: processRows.get(u.pid).bytesIn, bytesOut: processRows.get(u.pid).bytesOut} : {}),
+        connections: [...flows.values()].filter(f => f.pid === u.pid)})),
       lsof: [...lsofEntries.values()].filter(e => inTree(e.pid)),
       peers: Object.values(peers),
       aliveAtEnd: [...tree.keys()].filter(pid => alive.has(pid)),

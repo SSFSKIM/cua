@@ -1,129 +1,180 @@
 {
-  "started": "2026-10-14T16:04:49.274Z",
-  "finished": "2026-10-14T16:05:28.965Z",
-  "root": 54267,
-  "rootAt": "2026-10-14T16:04:51.040Z",
+  "started": "2026-10-14T16:11:33.422Z",
+  "finished": "2026-10-14T16:12:13.175Z",
+  "root": 79296,
+  "rootAt": "2026-10-14T16:11:35.187Z",
   "coverage": {
     "ok": true,
     "problems": [],
     "nettop": {
       "ready": true,
-      "readyAt": "2026-10-14T16:04:50.310Z",
+      "readyAt": "2026-10-14T16:11:34.459Z",
       "samples": 39,
-      "maxSilenceMs": 1026,
+      "maxSilenceMs": 1021,
       "exit": null,
       "stderr": null
     }
   },
   "commands": {
-    "ps": "ps -A -o pid=,ppid=,comm= (every 250 ms, and at each new process nettop reports)",
+    "ps": "ps -A -o pid=,ppid=,pgid=,comm= (every 250 ms, and at each new process nettop reports)",
     "nettop": "script -q /dev/null nettop -L 0 -s 1 -n -x (continuous, rows of tree processes kept)",
     "lsof": "lsof -nP -p <tree pids> (every 1 s; inet, unix and state/codex entries kept)"
   },
   "counts": {
     "psRuns": 165,
-    "nettopRows": 8452,
+    "nettopRows": 7964,
     "nettopSamples": 39,
     "lsofRuns": 37
   },
   "tree": [
     {
-      "pid": 54267,
-      "ppid": 54266,
+      "pid": 79296,
+      "ppid": 79295,
+      "pgid": 79296,
       "executable": "node",
       "args": "node bin/cua.mjs serve",
-      "first": "2026-10-14T16:04:51.067Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "first": "2026-10-14T16:11:35.218Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54282,
-      "ppid": 54267,
+      "pid": 79300,
+      "ppid": 79296,
+      "pgid": 79300,
       "executable": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
       "args": "/Users/new/.nvm/versions/node/v24.18.0/bin/node --disable-sigusr1 /Users/new/Developer/GitHub/cua-parity/src/mcp/anchor.mjs",
-      "first": "2026-10-14T16:04:51.067Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "first": "2026-10-14T16:11:35.218Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54283,
-      "ppid": 54282,
+      "pid": 79302,
+      "ppid": 79300,
+      "pgid": 79300,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
       "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node /Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
-      "first": "2026-10-14T16:04:51.067Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "first": "2026-10-14T16:11:35.218Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54284,
-      "ppid": 54283,
+      "pid": 79304,
+      "ppid": 79302,
+      "pgid": 79300,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
       "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
-      "first": "2026-10-14T16:04:51.067Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "first": "2026-10-14T16:11:35.218Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54320,
-      "ppid": 54267,
+      "pid": 79344,
+      "ppid": 79296,
+      "pgid": 79344,
       "executable": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
       "args": "/Users/new/.nvm/versions/node/v24.18.0/bin/node --disable-sigusr1 /Users/new/Developer/GitHub/cua-parity/src/mcp/anchor.mjs",
-      "first": "2026-10-14T16:04:51.394Z",
-      "last": "2026-10-14T16:04:51.645Z",
+      "first": "2026-10-14T16:11:35.541Z",
+      "last": "2026-10-14T16:11:35.794Z",
       "via": "ps"
     },
     {
-      "pid": 54322,
-      "ppid": 54320,
+      "pid": 79362,
+      "ppid": 79344,
+      "pgid": 79344,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
       "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node /Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs",
-      "first": "2026-10-14T16:04:51.394Z",
-      "last": "2026-10-14T16:04:51.394Z",
+      "first": "2026-10-14T16:11:35.541Z",
+      "last": "2026-10-14T16:11:35.794Z",
       "via": "ps"
     },
     {
-      "pid": 54349,
-      "ppid": 54322,
+      "pid": 79372,
+      "ppid": 79362,
+      "pgid": 79344,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
       "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node_repl",
-      "first": "2026-10-14T16:04:51.394Z",
-      "last": "2026-10-14T16:04:51.394Z",
+      "first": "2026-10-14T16:11:35.541Z",
+      "last": "2026-10-14T16:11:35.794Z",
       "via": "ps"
     },
     {
-      "pid": 54444,
-      "ppid": 54284,
+      "pid": 79403,
+      "ppid": 79372,
+      "pgid": 79344,
+      "executable": "(codex)",
+      "args": "",
+      "first": "2026-10-14T16:11:35.794Z",
+      "last": "2026-10-14T16:11:35.794Z",
+      "via": "ps"
+    },
+    {
+      "pid": 79404,
+      "ppid": 79372,
+      "pgid": 79344,
+      "executable": "(codex)",
+      "args": "",
+      "first": "2026-10-14T16:11:35.794Z",
+      "last": "2026-10-14T16:11:35.794Z",
+      "via": "ps"
+    },
+    {
+      "pid": 79405,
+      "ppid": 79403,
+      "pgid": 79344,
+      "executable": "(node)",
+      "args": "",
+      "first": "2026-10-14T16:11:35.794Z",
+      "last": "2026-10-14T16:11:35.794Z",
+      "via": "ps"
+    },
+    {
+      "pid": 79406,
+      "ppid": 79404,
+      "pgid": 79344,
+      "executable": "(node)",
+      "args": "",
+      "first": "2026-10-14T16:11:35.794Z",
+      "last": "2026-10-14T16:11:35.794Z",
+      "via": "ps"
+    },
+    {
+      "pid": 79445,
+      "ppid": 79304,
+      "pgid": 79300,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
       "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit=\"all\" -c default_permissions=\"node_repl\" -c permissions.node_repl={filesystem = {\"/Users/new/Library/Application Support/cua/runtimes/26.928.409",
-      "first": "2026-10-14T16:04:51.897Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "first": "2026-10-14T16:11:36.045Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54445,
-      "ppid": 54284,
+      "pid": 79446,
+      "ppid": 79304,
+      "pgid": 79300,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
       "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit=\"all\" -c default_permissions=\"node_repl\" -c permissions.node_repl={filesystem = {\"/Users/new/Developer/GitHub/cua-parity/src/services\" = \"read\",",
-      "first": "2026-10-14T16:04:51.897Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "first": "2026-10-14T16:11:36.045Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54446,
-      "ppid": 54444,
+      "pid": 79447,
+      "ppid": 79445,
+      "pgid": 79300,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
-      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node --experimental-vm-modules /var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/.tmpiCxoNC/kernel.js --session-id 1f1d3ba8c0214acdb8139432e04de1fa --working-dir /Users/new/Library/Application Support/cua/run/9",
-      "first": "2026-10-14T16:04:51.897Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node --experimental-vm-modules /var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/.tmpasNKKk/kernel.js --session-id 689686cdab36467181e75af394f616b4 --working-dir /Users/new/Library/Application Support/cua/run/0",
+      "first": "2026-10-14T16:11:36.045Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     },
     {
-      "pid": 54447,
-      "ppid": 54445,
+      "pid": 79448,
+      "ppid": 79446,
+      "pgid": 79300,
       "executable": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
-      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node --experimental-vm-modules /var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/.tmpiCxoNC/trusted-worker.js /Users/new/Library/Application Support/cua/run/9643568f-22f6-4e34-a8a3-ab758764bdd1",
-      "first": "2026-10-14T16:04:51.897Z",
-      "last": "2026-10-14T16:05:22.146Z",
+      "args": "/Users/new/Library/Application Support/cua/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node --experimental-vm-modules /var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/.tmpasNKKk/trusted-worker.js /Users/new/Library/Application Support/cua/run/09ce6553-3bac-43dc-8b35-d0685d60b84d",
+      "first": "2026-10-14T16:11:36.045Z",
+      "last": "2026-10-14T16:12:06.290Z",
       "via": "ps"
     }
   ],
@@ -132,209 +183,209 @@
   "unresolved": [],
   "lsof": [
     {
-      "pid": 54267,
+      "pid": 79296,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "14u",
-      "name": "->0x483479db398a2261",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x93fe2d69b90d446b",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54283,
+        "pid": 79302,
         "command": "node",
-        "name": "->0xf6ae4e37c9f402cd"
+        "name": "->0x93939bfad808b073"
       }
     },
     {
-      "pid": 54267,
+      "pid": 79296,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "15u",
-      "name": "->0x20b443c938ec5f3f",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:04:51.336Z",
+      "name": "->0xd6948b0e69f1dcf2",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:11:35.481Z",
       "peer": {
-        "pid": 54322,
+        "pid": 79362,
         "command": "node",
-        "name": "->0x93fe2d69b90d446b"
+        "name": "->0xe48fd5a5e55bae9c"
       }
     },
     {
-      "pid": 54267,
+      "pid": 79296,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "16u",
-      "name": "->0x441716d31b3b426a",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0xadbd070f6b6de88",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54283,
+        "pid": 79302,
         "command": "node",
-        "name": "->0x3cb393e3fbbfd3a0"
+        "name": "->0x20b443c938ec5f3f"
       }
     },
     {
-      "pid": 54267,
+      "pid": 79296,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "18u",
-      "name": "->0x8c2a71c235b98e47",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0xf2aac0bc636a3cac",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54282,
+        "pid": 79300,
         "command": "node",
-        "name": "->0xd90331eeeb665d70"
+        "name": "->0x70b41eba62099886"
       }
     },
     {
-      "pid": 54267,
+      "pid": 79296,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "19u",
-      "name": "->0x70b41eba62099886",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:04:51.336Z",
+      "name": "->0xd90173e7cd7e2f7b",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:11:35.481Z",
       "peer": {
-        "pid": 54322,
+        "pid": 79362,
         "command": "node",
-        "name": "->0xadbd070f6b6de88"
+        "name": "->0x8fb4321b6bec6d25"
       }
     },
     {
-      "pid": 54267,
+      "pid": 79296,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "21u",
-      "name": "->0xd574da450a1c4236",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:04:51.336Z",
+      "name": "->0xefb0833e6a9f2803",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:11:35.481Z",
       "peer": {
-        "pid": 54320,
+        "pid": 79344,
+        "command": "node",
+        "name": "->0x4274b1d375e99c63"
+      }
+    },
+    {
+      "pid": 79300,
+      "command": "node",
+      "kind": "unix",
+      "type": "unix",
+      "fd": "3u",
+      "name": "->0x70b41eba62099886",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
+      "peer": {
+        "pid": 79296,
         "command": "node",
         "name": "->0xf2aac0bc636a3cac"
       }
     },
     {
-      "pid": 54282,
-      "command": "node",
-      "kind": "unix",
-      "type": "unix",
-      "fd": "3u",
-      "name": "->0xd90331eeeb665d70",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
-      "peer": {
-        "pid": 54267,
-        "command": "node",
-        "name": "->0x8c2a71c235b98e47"
-      }
-    },
-    {
-      "pid": 54283,
+      "pid": 79302,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "0u",
-      "name": "->0xf6ae4e37c9f402cd",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x93939bfad808b073",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54267,
+        "pid": 79296,
         "command": "node",
-        "name": "->0x483479db398a2261"
+        "name": "->0x93fe2d69b90d446b"
       }
     },
     {
-      "pid": 54283,
+      "pid": 79302,
       "command": "node",
       "kind": "unix",
       "type": "unix",
       "fd": "1u",
-      "name": "->0x3cb393e3fbbfd3a0",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x20b443c938ec5f3f",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54267,
+        "pid": 79296,
         "command": "node",
-        "name": "->0x441716d31b3b426a"
+        "name": "->0xadbd070f6b6de88"
       }
     },
     {
-      "pid": 54284,
+      "pid": 79304,
       "command": "node_repl",
       "kind": "unix",
       "type": "unix",
       "fd": "0u",
-      "name": "->0xf6ae4e37c9f402cd",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x93939bfad808b073",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54267,
+        "pid": 79296,
         "command": "node",
-        "name": "->0x483479db398a2261"
+        "name": "->0x93fe2d69b90d446b"
       }
     },
     {
-      "pid": 54284,
+      "pid": 79304,
       "command": "node_repl",
       "kind": "unix",
       "type": "unix",
       "fd": "1u",
-      "name": "->0x3cb393e3fbbfd3a0",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x20b443c938ec5f3f",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54267,
+        "pid": 79296,
         "command": "node",
-        "name": "->0x441716d31b3b426a"
+        "name": "->0xadbd070f6b6de88"
       }
     },
     {
-      "pid": 54284,
+      "pid": 79304,
       "command": "node_repl",
       "kind": "unix",
       "type": "unix",
       "fd": "6u",
-      "name": "->0x93939bfad808b073",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x786a533fdcb8816b",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54284,
+        "pid": 79304,
         "command": "node_repl",
-        "name": "->0x316e8221340608e7"
+        "name": "->0xd574da450a1c4236"
       }
     },
     {
-      "pid": 54284,
+      "pid": 79304,
       "command": "node_repl",
       "kind": "unix",
       "type": "unix",
       "fd": "7u",
-      "name": "->0x316e8221340608e7",
-      "first": "2026-10-14T16:04:51.336Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0xd574da450a1c4236",
+      "first": "2026-10-14T16:11:35.481Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54284,
+        "pid": 79304,
         "command": "node_repl",
-        "name": "->0x93939bfad808b073"
+        "name": "->0x786a533fdcb8816b"
       }
     },
     {
-      "pid": 54284,
+      "pid": 79304,
       "command": "node_repl",
       "kind": "unix",
       "type": "unix",
       "fd": "9u",
-      "name": "->0x75d277bb52ee6246",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0xee4e8285b5ac613e",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
         "pid": 66707,
         "command": "node",
@@ -342,83 +393,83 @@
       }
     },
     {
-      "pid": 54444,
+      "pid": 79445,
       "command": "codex",
       "kind": "codex-state",
       "type": "REG",
       "fd": "3u",
-      "name": "/Users/new/Library/Application Support/cua/state/codex/tmp/arg0/codex-arg0ZSJS9D/.lock",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z"
+      "name": "/Users/new/Library/Application Support/cua/state/codex/tmp/arg0/codex-arg0kusW8T/.lock",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z"
     },
     {
-      "pid": 54444,
+      "pid": 79445,
       "command": "codex",
       "kind": "unix",
       "type": "unix",
       "fd": "7u",
-      "name": "->0x6e58d6608194d9ba",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x33206754f7d03c6f",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54444,
+        "pid": 79445,
         "command": "codex",
-        "name": "->0x37348a5d1cd99042"
+        "name": "->0x5c8f42f53ff17745"
       }
     },
     {
-      "pid": 54444,
+      "pid": 79445,
       "command": "codex",
       "kind": "unix",
       "type": "unix",
       "fd": "8u",
-      "name": "->0x37348a5d1cd99042",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x5c8f42f53ff17745",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54444,
+        "pid": 79445,
         "command": "codex",
-        "name": "->0x6e58d6608194d9ba"
+        "name": "->0x33206754f7d03c6f"
       }
     },
     {
-      "pid": 54445,
+      "pid": 79446,
       "command": "codex",
       "kind": "codex-state",
       "type": "REG",
       "fd": "3u",
-      "name": "/Users/new/Library/Application Support/cua/state/codex/tmp/arg0/codex-arg0hUUWoz/.lock",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z"
+      "name": "/Users/new/Library/Application Support/cua/state/codex/tmp/arg0/codex-arg0a2DFoC/.lock",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z"
     },
     {
-      "pid": 54445,
+      "pid": 79446,
       "command": "codex",
       "kind": "unix",
       "type": "unix",
       "fd": "7u",
-      "name": "->0x786a533fdcb8816b",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0xa453ab0c92cbd369",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54445,
+        "pid": 79446,
         "command": "codex",
-        "name": "->0xd574da450a1c4236"
+        "name": "->0x3dde8e379db9bfbb"
       }
     },
     {
-      "pid": 54445,
+      "pid": 79446,
       "command": "codex",
       "kind": "unix",
       "type": "unix",
       "fd": "8u",
-      "name": "->0xd574da450a1c4236",
-      "first": "2026-10-14T16:04:52.337Z",
-      "last": "2026-10-14T16:05:21.449Z",
+      "name": "->0x3dde8e379db9bfbb",
+      "first": "2026-10-14T16:11:36.483Z",
+      "last": "2026-10-14T16:12:05.583Z",
       "peer": {
-        "pid": 54445,
+        "pid": 79446,
         "command": "codex",
-        "name": "->0x786a533fdcb8816b"
+        "name": "->0xa453ab0c92cbd369"
       }
     }
   ],

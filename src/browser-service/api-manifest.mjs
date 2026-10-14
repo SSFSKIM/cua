@@ -961,7 +961,7 @@ export const API_MANIFEST = {
       "evaluate": {
         "declarations": [
           {
-            "text": "evaluate<TResult, TArg>(pageFunction: PlaywrightEvaluateFunction<TArg, TResult>, arg?: TArg, options?: PlaywrightEvaluateOptions): Promise<TResult>; // Evaluate JavaScript in a read-only page scope.",
+            "text": "evaluate<TResult, TArg>(pageFunction: PlaywrightEvaluateFunction<TArg, TResult>, arg?: TArg, options?: PlaywrightEvaluateOptions): Promise<TResult>; // Evaluate JavaScript in the page's main world, as the page's own scripts run: it can read and change the page (DOM, fetch, cookies, navigation). The script is sent once and never re-run.",
             "references": [
               "PlaywrightEvaluateFunction",
               "PlaywrightEvaluateOptions"
@@ -1277,7 +1277,7 @@ export const API_MANIFEST = {
       "evaluate": {
         "declarations": [
           {
-            "text": "evaluate<TResult, TArg>(pageFunction: LocatorEvaluateFunction<TArg, TResult>, arg?: TArg, options?: PlaywrightEvaluateOptions): Promise<TResult>; // Evaluate JavaScript in a read-only scope; the locator must resolve unambiguously to one element.",
+            "text": "evaluate<TResult, TArg>(pageFunction: LocatorEvaluateFunction<TArg, TResult>, arg?: TArg, options?: PlaywrightEvaluateOptions): Promise<TResult>; // Evaluate JavaScript in the page's main world with the element as its argument; it can read and change the page. The locator must resolve unambiguously to one element; the script is sent once and never re-run.",
             "references": [
               "LocatorEvaluateFunction",
               "PlaywrightEvaluateOptions"
@@ -1288,7 +1288,7 @@ export const API_MANIFEST = {
       "evaluateAll": {
         "declarations": [
           {
-            "text": "evaluateAll<TResult, TArg>(pageFunction: LocatorEvaluateAllFunction<TArg, TResult>, arg?: TArg, options?: PlaywrightEvaluateOptions): Promise<TResult>; // Evaluate read-only JavaScript against all elements matched by this locator.",
+            "text": "evaluateAll<TResult, TArg>(pageFunction: LocatorEvaluateAllFunction<TArg, TResult>, arg?: TArg, options?: PlaywrightEvaluateOptions): Promise<TResult>; // Evaluate JavaScript in the page's main world against all elements matched by this locator; it can read and change the page. The script is sent once and never re-run.",
             "references": [
               "LocatorEvaluateAllFunction",
               "PlaywrightEvaluateOptions"
@@ -1925,7 +1925,7 @@ export const API_MANIFEST = {
       "references": []
     },
     "PlaywrightEvaluateOptions": {
-      "text": "type PlaywrightEvaluateOptions = {\n  timeoutMs?: number; // Maximum time to spend setting up the read-only DOM scope and running the script.\n};",
+      "text": "type PlaywrightEvaluateOptions = {\n  timeoutMs?: number; // Milliseconds for resolving the locator and running the script: 3000 by default, at most 120000; 0 makes one attempt. A script that times out, or whose page navigates or reloads while it runs, fails and is not run again: it may already have taken effect.\n};",
       "references": []
     },
     "LoadState": {
@@ -1941,23 +1941,23 @@ export const API_MANIFEST = {
       "references": []
     },
     "PageWaitForLoadStateOptions": {
-      "text": "type PageWaitForLoadStateOptions = {\n  state?: LoadState;\n  timeoutMs?: number;\n};",
+      "text": "type PageWaitForLoadStateOptions = {\n  state?: LoadState;\n  timeoutMs?: number; // Milliseconds to wait: 3000 by default, at most 120000; 0 makes one attempt.\n};",
       "references": [
         "LoadState"
       ]
     },
     "PageWaitForURLOptions": {
-      "text": "type PageWaitForURLOptions = {\n  timeoutMs?: number;\n  waitUntil?: WaitUntil;\n};",
+      "text": "type PageWaitForURLOptions = {\n  timeoutMs?: number; // Milliseconds to wait: 3000 by default, at most 120000; 0 makes one attempt.\n  waitUntil?: WaitUntil;\n};",
       "references": [
         "WaitUntil"
       ]
     },
     "LocatorCheckOptions": {
-      "text": "type LocatorCheckOptions = {\n  force?: boolean;\n  timeoutMs?: number;\n};",
+      "text": "type LocatorCheckOptions = {\n  force?: boolean;\n  timeoutMs?: number; // Milliseconds to wait: 3000 by default, at most 120000; 0 makes one attempt.\n};",
       "references": []
     },
     "LocatorClickOptions": {
-      "text": "type LocatorClickOptions = {\n  button?: MouseButton;\n  force?: boolean;\n  modifiers?: Array<KeyboardModifier>;\n  timeoutMs?: number;\n};",
+      "text": "type LocatorClickOptions = {\n  button?: MouseButton;\n  force?: boolean;\n  modifiers?: Array<KeyboardModifier>;\n  timeoutMs?: number; // Milliseconds to wait: 3000 by default, at most 120000; 0 makes one attempt.\n};",
       "references": [
         "MouseButton",
         "KeyboardModifier"
@@ -1990,7 +1990,7 @@ export const API_MANIFEST = {
       ]
     },
     "LocatorPressSequentiallyOptions": {
-      "text": "type LocatorPressSequentiallyOptions = {\n  timeoutMs?: number;\n};",
+      "text": "type LocatorPressSequentiallyOptions = {\n  timeoutMs?: number; // Milliseconds for the whole typing: 5000 by default and at most.\n};",
       "references": []
     },
     "SelectOptionInput": {
@@ -2000,7 +2000,7 @@ export const API_MANIFEST = {
       ]
     },
     "LocatorWaitForOptions": {
-      "text": "type LocatorWaitForOptions = {\n  state: WaitForState;\n  timeoutMs?: number;\n};",
+      "text": "type LocatorWaitForOptions = {\n  state: WaitForState;\n  timeoutMs?: number; // Milliseconds to wait: 3000 by default, at most 120000; 0 makes one attempt.\n};",
       "references": [
         "WaitForState"
       ]

@@ -58,3 +58,18 @@ test('named documents: read when listed, refused otherwise; a required document 
   await docs.readBrowser(EXTENSION);
   docs.assertRequiredDocumentationRead('tab_cdp_call');
 });
+
+test('the API reference states cua\'s evaluate and budgets: the main world, no replay, 3 s by default up to 120 s, 0 one attempt', async () => {
+  const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '9.8.7'});
+  const text = await docs.readBrowser(EXTENSION);
+  assert.doesNotMatch(text, /read-only (?:page |DOM )?scope|read-only JavaScript/i, 'no read-only evaluate scope');
+  assert.match(text, /\/\/ timeoutMs on locator, wait and evaluate calls is in milliseconds: 3000 by default, at most 120000; 0 makes one attempt\./);
+  for (const member of ['evaluate<TResult, TArg>(pageFunction: PlaywrightEvaluateFunction', 'evaluate<TResult, TArg>(pageFunction: LocatorEvaluateFunction', 'evaluateAll<TResult, TArg>']) {
+    const line = text.split('\n').find(l => l.includes(member));
+    assert.match(line, /main world/, member);
+    assert.match(line, /sent once and never re-run/, member);
+  }
+  assert.match(text, /type PlaywrightEvaluateOptions = \{\n  timeoutMs\?: number; \/\/ Milliseconds for resolving the locator and running the script: 3000 by default, at most 120000; 0 makes one attempt\. A script that times out, or whose page navigates or reloads while it runs, fails and is not run again: it may already have taken effect\./);
+  assert.match(text, /type LocatorClickOptions = \{[^}]*timeoutMs\?: number; \/\/ Milliseconds to wait: 3000 by default, at most 120000; 0 makes one attempt\./);
+  assert.match(text, /type LocatorPressSequentiallyOptions = \{\n  timeoutMs\?: number; \/\/ Milliseconds for the whole typing: 5000 by default and at most\./);
+});

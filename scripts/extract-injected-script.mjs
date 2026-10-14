@@ -18,11 +18,11 @@ const PACKAGE = 'playwright-core';
 const GENERATED = 'lib/generated/injectedScriptSource.js';
 const EXACT = /^\d+\.\d+\.\d+$/;
 
-// The exact version package.json pins playwright-core to as a devDependency.
-export function pinnedVersion(packageJson) {
-  const pin = packageJson?.devDependencies?.[PACKAGE];
-  if (pin == null) throw new Error(`package.json has no ${PACKAGE} devDependency`);
-  if (!EXACT.test(pin)) throw new Error(`package.json must pin ${PACKAGE} to one exact version (x.y.z), not "${pin}"`);
+// The exact version package.json pins `name` (playwright-core unless named) to as a devDependency.
+export function pinnedVersion(packageJson, name = PACKAGE) {
+  const pin = packageJson?.devDependencies?.[name];
+  if (pin == null) throw new Error(`package.json has no ${name} devDependency`);
+  if (!EXACT.test(pin)) throw new Error(`package.json must pin ${name} to one exact version (x.y.z), not "${pin}"`);
   return pin;
 }
 

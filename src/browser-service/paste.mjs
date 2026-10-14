@@ -1,5 +1,7 @@
 // Ported from readable chatgpt-26.928.40906 BS:19902-20531 (el, running a clipboard function in the page; Ku, the page's paste, copy and cut; FC, a cut's commit; vj and _j, the focused frame; kn and rb, the clipboard shortcuts); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
-// Also: Vi, bW, yW, wW, vW, _W, sy and xW (BS:27400-27527, typing by paste and its rich text); Pn (BS:19881-19886).
+// Also: Vi, bW, yW, wW, vW, _W, sy and xW (BS:27400-27527, typing by paste and its rich text); gW (BS:27394-27399,
+// the vendor's markdown-it instance: the default preset with breaks on, HTML, linkify and typographer off, no plugins
+// and no renderer rules); Pn (BS:19881-19886).
 //
 // Text goes into a page the way the vendor puts it there: as a paste. cua_type, dom_cua_type and fill dispatch a
 // `paste` ClipboardEvent at the focused element (the page's own handlers see it and may take it over) carrying the
@@ -9,9 +11,9 @@
 // (clipboard.mjs): a copy or cut dispatches its event in the focused frame and stores what the page put in it, or
 // the selection; a paste dispatches the stored items. A credential field's selection is never copied.
 //
-// Departure: the vendor renders typed text as Markdown (markdown-it) for its text/html; this service renders it as
-// escaped text in paragraphs and line breaks (richTextHtml), the same HTML for text without Markdown syntax, because
-// the spec admits no new dependency. Dropped: the in-app browser's input target tokens and document-only checks.
+// Typed text's text/html is its Markdown rendering, as the vendor's: markdown-it at the version the vendor embeds
+// (14.1.1, vendored from the pinned devDependency by scripts/extract-markdown-it.mjs) configured as the vendor's gW.
+// Dropped: the in-app browser's input target tokens and document-only checks.
 //
 // Every operation takes its caller's Deadline: it bounds the wait for the clipboard's queue (an operation whose budget
 // ran out while queued dispatches nothing) and is carried by every CDP call. A page failure is reported only by the
@@ -21,6 +23,7 @@ import {Deadline} from './budgets.mjs';
 import {CREDENTIAL_FIELDS} from './injected.mjs';
 import {clipboardShortcut, NATIVE_CLIPBOARD_DISABLED} from './keyboard.mjs';
 import {tabIdOf} from './tabs.mjs';
+import markdownit from './vendor/markdown-it/markdown-it.mjs';
 
 const CLIPBOARD_ERROR = 'Browser Use encountered an error interacting with this webpage\'s clipboard';
 const CLIPBOARD_WORLD = 'browser-use-virtual-clipboard';
@@ -330,14 +333,12 @@ function whitespaceHtml(characters, reversed = false) {
   return html.join('');
 }
 
-const escapeHtml = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const MARKDOWN = markdownit({breaks: true, html: false, linkify: false, typographer: false});                          // gW
 
-// Typed text as HTML (bW, _W): paragraphs at blank lines, line breaks within them, a single paragraph unwrapped, and the
-// text's leading and trailing whitespace kept.
+// Typed text as HTML (bW, _W): its Markdown rendering, a single paragraph unwrapped, and the text's leading and
+// trailing whitespace kept.
 export function richTextHtml(text) {
-  const paragraphs = text.replace(/\r\n?/g, '\n').split(/\n[ \t]*\n/).map(p => p.split('\n').map(line => line.trim()).filter(line => line !== ''))
-    .filter(lines => lines.length > 0);
-  const rendered = paragraphs.map(lines => `<p>${lines.map(escapeHtml).join('<br>\n')}</p>`).join('\n');
+  const rendered = MARKDOWN.render(text);
   let html = rendered.trim();
   if (text.trim().length === 0) return whitespaceHtml(text);
   const leading = whitespaceHtml(text);

@@ -42,7 +42,7 @@ test('every M1a wire type is registered in COMMAND_HANDLERS, the map execute dis
 test('a type without a handler (unknown, or a later milestone\'s) rejects unsupported_command naming it; removing a handler does the same', async t => {
   const {service} = await serviceOnHost(t);
   const browserId = await readyBrowser(service);
-  for (const type of ['tab_screenshot', 'no_such_command']) {
+  for (const type of ['tab_get_js_dialog', 'no_such_command']) {
     const error = await rejection(execute(service, {type, browser_id: browserId, tab_id: '1'}));
     assert.ok(error instanceof BrowserServiceError);
     assert.equal(error.code, 'unsupported_command');

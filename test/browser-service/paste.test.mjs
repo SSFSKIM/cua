@@ -74,13 +74,21 @@ test('typing needs text; a page failure reads as the vendor\'s clipboard sentenc
     'Browser Use encountered an error interacting with this webpage\'s clipboard: cua_type returned an invalid result');
 });
 
-test('the rich-text rendering is escaped HTML with paragraphs and line breaks, a single paragraph unwrapped', () => {
+// Each expected value is the vendor's own bW (its embedded markdown-it 14.1.1 and _W) run on the same text, read from
+// readable chatgpt-26.928.40906 BS:20582-27399 and BS:27439-27507.
+test('the rich-text rendering is the vendor\'s: Markdown by markdown-it (breaks, no HTML), a single paragraph unwrapped, edge whitespace kept', () => {
   assert.equal(richTextHtml('hello world'), 'hello world');
   assert.equal(richTextHtml('a < b & "c"'), 'a &lt; b &amp; &quot;c&quot;');
   assert.equal(richTextHtml('one\ntwo'), 'one<br>\ntwo');
   assert.equal(richTextHtml('one\n\ntwo'), '<p>one</p>\n<p>two</p>');
   assert.equal(richTextHtml('  padded '), '&nbsp;&nbsp;padded&nbsp;');
   assert.equal(richTextHtml('\n'), '<br>');
+  assert.equal(richTextHtml('Hello **world**\n\n- first item\n- second item\n\nSee [the docs](https://example.com/docs).'),
+    '<p>Hello <strong>world</strong></p>\n<ul>\n<li>first item</li>\n<li>second item</li>\n</ul>\n<p>See <a href="https://example.com/docs">the docs</a>.</p>');
+  assert.equal(richTextHtml('**bold** only'), '<strong>bold</strong> only');
+  assert.equal(richTextHtml('  *lead* and trail  '), '&nbsp;&nbsp;<em>lead</em> and trail&nbsp;&nbsp;');
+  assert.equal(richTextHtml('<b>raw</b>'), '&lt;b&gt;raw&lt;/b&gt;');
+  assert.equal(richTextHtml('x ![i](javascript:alert(1)) [y](javascript:alert(1))'), 'x ![i](javascript:alert(1)) [y](javascript:alert(1))');
 });
 
 test('a copy shortcut writes what the page copied to the virtual clipboard; paste reads it back; a cut commits after', async () => {

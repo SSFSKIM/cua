@@ -186,7 +186,9 @@
     "dispatch": "Rf",
     "milestone": "M1c",
     "cases": [
-      "input/coordinates"
+      "input/coordinates",
+      "input/rich-text",
+      "input/long-type"
     ],
     "reachability": "always"
   },
@@ -484,7 +486,7 @@
     "type": "playwright_locator_download_media",
     "schemaSource": "chatgpt-26.928.40906 BS:33267",
     "dispatch": "Rf",
-    "milestone": "M1c",
+    "milestone": "M2",
     "cases": [
       "downloads/media"
     ],
@@ -546,7 +548,8 @@
     "dispatch": "Rf",
     "milestone": "M1c",
     "cases": [
-      "actions/locators"
+      "actions/locators",
+      "input/queued-shortcuts"
     ],
     "reachability": "always"
   },
@@ -647,7 +650,8 @@
     "dispatch": "Rf",
     "milestone": "M1c",
     "cases": [
-      "waits/page"
+      "waits/page",
+      "waits/networkidle"
     ],
     "reachability": "always"
   },
@@ -898,7 +902,8 @@
     "dispatch": "Rf",
     "milestone": "M1c",
     "cases": [
-      "screenshot/clip"
+      "screenshot/clip",
+      "screenshot/modes"
     ],
     "reachability": "always"
   },

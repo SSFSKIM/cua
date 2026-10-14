@@ -620,6 +620,8 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (2026-10-14): the parity fixtures carry `CUA_NODE` through `serve-cells.mjs`, the boundary probe's child serves and the capability lane only when it is already set in the device's ssh environment; the controller Mac's value is deliberately not forwarded (it names a Mac path).
+  Evidence: M0 whole-branch fix ad21892 (`test/repl-parity/fixture-launch.mjs`). M1 on the mini needs no override (PATH Node 24.18.0); M4 on cua-linux (Node 22.23.3) must set `CUA_NODE` in the remote command environment.
 - Observation (2026-10-14): on Linux the vendor node_repl fails open when its sandbox launcher fails at runtime. With a harness-owned `CODEX_CLI_PATH` whose `sandbox` exits 73, the vendor host returned `isError:false` and wrote a sentinel outside cwd and TMPDIR (inside the harness-owned directory). On the mini the same injected failure is refused.
   Evidence: M0 task 3's Linux boundary probe at c46050b (`cells/confinement/no-unsandboxed-fallback`, Linux vendor runs under `docs/evidence/2026-10-14-own-repl-host-parity/m0/`). On the vendor route only cua's pre-launch preflight guards this.
 - Observation (2026-10-14): on the cua-linux VM, gedit 46.2 now fails `typeText`/`paste` with a D-Bus `NoReply` error and the window exits (the 2026-10-06 acceptance evidence recorded `os error 11` for the same crash); the display is 1440x900, not the 1024x768 that evidence records; the vendor host answers `initialize` as `rmcp 1.5.0`; the VM's Node is v22.23.3, so M4's own host there needs `CUA_NODE` (keep the proxy on the same Node for comparability).

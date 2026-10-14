@@ -20,5 +20,5 @@ export default {
     "code": "await dialog.dismiss();return (await tab.getJsDialog())==null;"
   }
 ],
-  assert:({results,service})=>({ok:results[0]?.ok&&results[1]?.ok&&results[1].value==='alert'&&expectError(results,'blocked',service==='vendor'?/Playwright selector deadline exceeded/:/^A alert JavaScript dialog is active in this tab\. Use `tab\.getJsDialog\(\)` to get it and dismiss it first\./,['Error'])&&results[3]?.ok&&results[3].value===true}),
+  assert:({results,service})=>({ok:results[0]?.ok&&results[1]?.ok&&results[1].value==='alert'&&expectError(results,'blocked',service==='vendor'?/Playwright selector deadline exceeded/:/^Error: A alert JavaScript dialog is active in this tab\. Use `tab\.getJsDialog\(\)` to get it and dismiss it first\.\nwaiting on click for selector #confirm$/,['Error'])&&results[3]?.ok&&results[3].value===true}),
 };

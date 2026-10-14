@@ -260,3 +260,15 @@ test('a long title is cut by UTF-8 bytes on a character boundary, so the file na
     assert.equal(readFileSync(path, 'utf8'), '%PDF');
   }
 });
+
+test('a Markdown export whose invalid UTF-8 expands past 50 MiB when cleaned is refused with the export sentence; nothing is written', async t => {
+  // 17 MiB of 0xFF: each byte decodes to U+FFFD, three bytes re-encoded, 51 MiB.
+  const tmp = scratchTmp();
+  const session = {
+    filesystem: LOCAL_FILESYSTEM,
+    tabs: {get: async () => ({id: 7, url: 'https://docs.google.com/document/d/DOC1/edit', title: 'Expands'})},
+    cdp: {evaluateJavascript: async () => ({base64: Buffer.alloc(17 * 1024 * 1024, 0xff).toString('base64')})},
+  };
+  await assert.rejects(EXPORT_HANDLERS.tab_content_export_gsuite({tab_id: '7', format: 'md'}, session), {message: 'Exported content exceeds the 50 MiB limit'});
+  assert.deepEqual(exportsIn(tmp), []);
+});

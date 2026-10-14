@@ -245,10 +245,65 @@ test('per asset the bound is inclusive; past the bundle\'s total the next asset 
   const atBounds = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}],
     cached: {[`${ORIGIN}/a.png`]: bytes(10), [`${ORIGIN}/b.png`]: bytes(10), [`${ORIGIN}/c.png`]: bytes(5)}});
   assert.deepEqual({assets: atBounds.result.assets.length, failures: atBounds.result.failures}, {assets: 3, failures: []}, '10 + 10 + 5 = the bundle bound');
-  const past = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}, {url: `${ORIGIN}/d.png`}, {url: `${ORIGIN}/e.png`}],
+  // e (over the per-asset bound) is acquired with a, b and c; d comes after the budget is spent.
+  const past = await bundleInProcess({limits, assets: [{url: `${ORIGIN}/e.png`}, {url: `${ORIGIN}/a.png`}, {url: `${ORIGIN}/b.png`}, {url: `${ORIGIN}/c.png`}, {url: `${ORIGIN}/d.png`}],
     cached: {[`${ORIGIN}/a.png`]: bytes(10), [`${ORIGIN}/b.png`]: bytes(10), [`${ORIGIN}/c.png`]: bytes(5), [`${ORIGIN}/d.png`]: bytes(1), [`${ORIGIN}/e.png`]: bytes(11)}});
   const reasons = past.result.failures.map(f => f.reason).sort();
   assert.deepEqual(reasons, ['Asset bundle exceeds the 200 MiB limit', 'Asset exceeds the 50 MiB limit']);
   const written = past.result.assets.reduce((sum, a) => sum + readFileSync(a.path).length, 0);
-  assert.ok(written <= 25 && written >= 21, `never more than the bundle bound written (${written})`);
+  assert.equal(written, 25, 'never more than the bundle bound written');
+  assert.deepEqual(past.result.failures.map(f => f.name).sort(), ['d.png', 'e.png']);
+});
+
+// A controller double whose cached reads resolve only after a timer, counting the reads in flight.
+function delayedCdp(sizes) {
+  const stats = {inFlight: 0, maxInFlight: 0, reads: 0};
+  const cdp = {
+    async call(tabId, method, params) {
+      switch (method) {
+        case 'Page.getFrameTree': return {frameTree: {frame: {id: 'F1'}}};
+        case 'Page.getResourceContent': {
+          stats.reads += 1;
+          stats.inFlight += 1;
+          stats.maxInFlight = Math.max(stats.maxInFlight, stats.inFlight);
+          await new Promise(resolve => setTimeout(resolve, 5));
+          stats.inFlight -= 1;
+          return {content: Buffer.alloc(sizes[params.url], 3).toString('base64'), base64Encoded: true};
+        }
+        case 'Page.getResourceTree': return {frameTree: {frame: {id: 'F1'}, resources: Object.keys(sizes).map(url => ({url, mimeType: 'image/png'}))}};
+        default: return {};
+      }
+    },
+    async evaluateJavascript() { throw new Error('no page fetch expected'); },
+  };
+  return {cdp, stats};
+}
+
+async function bundleDelayed(sizes, limits) {
+  const tmp = mkdtempSync(join(BASE, 'cua-assets-'));
+  made.push(tmp);
+  process.env.TMPDIR = tmp;
+  const {cdp, stats} = delayedCdp(sizes);
+  const pageAssets = new PageAssets(cdp, LOCAL_FILESYSTEM, limits);
+  const listed = Object.keys(sizes).map(url => ({id: assetId(url), kind: 'image', name: url.split('/').pop(), sources: [], url}));
+  const inventoryId = pageAssets.createInventory({assets: listed, documentUrl: PAGE, inlineSvgs: [], tabId: 1});
+  const result = await pageAssets.bundle({inventoryId, documentUrl: PAGE, tabId: 1});
+  return {result, stats};
+}
+
+test('at most four assets are acquired at once, and the bundle\'s order is the inventory\'s', async () => {
+  const sizes = Object.fromEntries(Array.from({length: 12}, (_, i) => [`${ORIGIN}/a${i}.png`, 1]));
+  const {result, stats} = await bundleDelayed(sizes);
+  assert.equal(stats.reads, 12);
+  assert.equal(stats.maxInFlight, 4);
+  assert.deepEqual(result.assets.map(a => a.name), Array.from({length: 12}, (_, i) => `a${i}.png`));
+});
+
+test('once the bundle budget is spent, the remaining assets fail with the bundle sentence without being read', async () => {
+  const sizes = Object.fromEntries(Array.from({length: 12}, (_, i) => [`${ORIGIN}/a${i}.png`, 1]));
+  const {result, stats} = await bundleDelayed(sizes, {maxAssetBytes: 10, maxBundleBytes: 2});
+  assert.ok(stats.reads <= 4, `${stats.reads} reads`);
+  assert.equal(result.assets.length, 2);
+  assert.equal(result.failures.length, 10);
+  assert.ok(result.failures.every(f => f.reason === 'Asset bundle exceeds the 200 MiB limit'));
 });

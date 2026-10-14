@@ -13,9 +13,11 @@
 // in the result. A manifest.json lists both.
 // Changed: cua's own byte bounds (byte-bounds.mjs): an asset over 50 MiB, from Chrome or from the page, fails with
 // ASSET_TOO_LARGE (bounded while the page reads it and again on this side before decoding), and an asset that would take
-// the bundle past 200 MiB fails with BUNDLE_TOO_LARGE. Dropped: the approvals (ensurePageAssetDownloadAllowed and the
-// cross-origin ensurePageAssetFallbackFetchAllowed, with their elicitations and origin policy; the session's ruling of
-// 2026-10-14 matches the vendor's effective behaviour on the cua route, its approval accepted) and the failure
+// the bundle past 200 MiB fails with BUNDLE_TOO_LARGE. At most ACQUIRING (4) assets are read at once (the vendor reads
+// them all at once), so what is in memory is bounded whatever the inventory's size, and none is read once the bundle's
+// budget is spent. Dropped: the approvals (ensurePageAssetDownloadAllowed and the cross-origin
+// ensurePageAssetFallbackFetchAllowed, with their elicitations and origin policy; the session's ruling of 2026-10-14
+// matches the vendor's effective behaviour on the cua route, its approval accepted) and the failure
 // telemetry (DM).
 import {createHash, randomUUID} from 'node:crypto';
 import {ASSET_TOO_LARGE, BUNDLE_TOO_LARGE, MAX_BUNDLE_BYTES, MAX_FILE_BYTES, decodedLength, readBoundedBodyInPage} from './byte-bounds.mjs';
@@ -252,6 +254,8 @@ async function fetchAssetInPage({url, maxBytes, tooLarge}, readBody) {
   return {base64: btoa(binary), contentType: response.headers.get('content-type')};
 }
 
+const ACQUIRING = 4;
+
 // An asset over its byte bound: the bundle records it with the fixed sentence, and does not fetch it again.
 class TooLarge extends Error {
   constructor(sentence) { super(sentence); }
@@ -298,6 +302,7 @@ async function bundleOne({budget, cdp, directory, entry, filesystem, tabId}) {
     budget.used += size;
   };
   try {
+    if (budget.used >= budget.maxBundleBytes) throw new TooLarge(BUNDLE_TOO_LARGE);
     if (entry.source === 'inline-svg') {
       const size = Buffer.byteLength(entry.asset.markup);
       if (size > budget.maxAssetBytes) throw new TooLarge(ASSET_TOO_LARGE);
@@ -356,7 +361,15 @@ export class PageAssets {
     const directory = `${this.filesystem.tmpDir}/browser-use/assets/${randomUUID()}`;
     await this.filesystem.mkdir(directory, {recursive: true});
     const budget = {used: 0, ...this.limits};
-    const results = await Promise.all(entries.map(entry => bundleOne({budget, cdp: this.cdp, directory, entry, filesystem: this.filesystem, tabId})));
+    const results = new Array(entries.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < entries.length) {
+        const index = next++;
+        results[index] = await bundleOne({budget, cdp: this.cdp, directory, entry: entries[index], filesystem: this.filesystem, tabId});
+      }
+    };
+    await Promise.all(Array.from({length: Math.min(ACQUIRING, entries.length)}, worker));
     const assets = results.flatMap(r => (r.asset == null ? [] : [r.asset]));
     const failures = results.flatMap(r => (r.failure == null ? [] : [r.failure]));
     const manifestPath = `${directory}/manifest.json`;

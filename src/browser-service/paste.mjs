@@ -426,12 +426,13 @@ async function focusedFrameScope(session, tabId, deadline, scope = {target: {tab
   }
 }
 
-// Runs a clipboard shortcut's action against the virtual clipboard in the focused frame (rb). `focusTarget(forPaste)`
-// focuses the element the shortcut is for, when it has one, -> its {target, executionContextId}. All within `deadline`.
+// Runs a clipboard shortcut's action against the virtual clipboard in the focused frame (rb). `focusTarget(forPaste,
+// deadline)` focuses the element the shortcut is for, when it has one, -> its {target, executionContextId}. All within
+// `deadline`, the focusing included, so nothing of a queued shortcut runs once it is spent.
 async function runClipboardAction({action, commandType, deadline, session, focusTarget, tabId}) {
   const tab = tabIdOf(tabId);
   await exclusively(session, deadline, async () => {
-    const focused = await focusTarget?.(action === 'paste' || action === 'paste-plain-text');
+    const focused = await focusTarget?.(action === 'paste' || action === 'paste-plain-text', deadline);
     const scope = await focusedFrameScope(session, tab, deadline, focused == null ? undefined : {target: focused.target, executionContextId: focused.executionContextId});
     let request;
     switch (action) {

@@ -356,10 +356,11 @@ async function clickLocator(session, params, clickCount) {
   });
 }
 
-// Focuses the locator's element -> {executionContextId, target} of the world it was focused from.
-async function focusLocator(session, params, {requireEditable, selectText}) {
+// Focuses the locator's element -> {executionContextId, target} of the world it was focused from. The resolution polls
+// within `deadline` when one is given (a clipboard shortcut's, which already began), else its own caller-sized budget.
+async function focusLocator(session, params, {requireEditable, selectText, deadline}) {
   const {executionContextId, target} = await session.selectors.evaluateOnSelector(params.selector, tabIdOf(params.tab_id), focusElement,
-    {arg: {requireEditable, selectText, retargetInput: requireEditable || selectText === true}, deadline: budgetOf(params)});
+    {arg: {requireEditable, selectText, retargetInput: requireEditable || selectText === true}, deadline: deadline ?? budgetOf(params)});
   return {executionContextId, target};
 }
 
@@ -398,7 +399,7 @@ export const ACTION_HANDLERS = {
     if (typeof params.value !== 'string' || !params.value) throw new Error('playwright_locator_press requires value');
     const tabId = tabIdOf(params.tab_id);
     const deadline = budgetOf(params);
-    const focus = async () => await focusLocator(session, params, {requireEditable: false});
+    const focus = async (forPaste, within) => await focusLocator(session, params, {requireEditable: false, deadline: within});
     if (await performClipboardShortcut({commandType: 'playwright_locator_press', deadline, session, keys: params.value, tabId, focusTarget: focus})) return {};
     const focused = await focus();
     await pressKeys(session.cdp, focused.target, params.value, {deadline, platform: session.platform});

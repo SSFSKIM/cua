@@ -170,6 +170,26 @@ test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothin
   assert.equal(pastes.length, 0);
 });
 
+test('a clipboard shortcut queued behind another resolves its element within its own deadline: nothing runs after it', async () => {
+  const field = el('input', {id: 'text', type: 'text', value: 'abc', disabled: true});
+  const {browser, run, pastes, session} = setup([field]);
+  session.clipboard.write([{entries: [{mime_type: 'text/plain', text: 'clip'}]}], 'test');
+  let release;
+  const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
+  setTimeout(() => release(), 200);
+  const started = Date.now();
+  const error = await rejection(run('playwright_locator_press', {selector: '#text', value: 'Control+v', timeout_ms: 300}));
+  assert.equal(error.code, 'timeout');
+  assert.ok(Date.now() - started < 500, `rejected with its budget (${Date.now() - started} ms)`);
+  await busy;
+  const calls = browser.calls.length;
+  field.disabled = false;
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(browser.calls.length, calls, 'no CDP call after the deadline');
+  assert.notEqual(field.ownerDocument.activeElement, field, 'the field was never focused');
+  assert.equal(pastes.length, 0);
+});
+
 test('fill selects the field\'s text and pastes the value over it in the locator\'s world; a value set directly needs no paste', async () => {
   const {browser, run, pastes, node} = setup([el('input', {id: 'text', type: 'text', value: 'old'}), el('input', {id: 'date', type: 'date', value: ''})]);
   assert.deepEqual(await run('playwright_locator_fill', {selector: '#text', value: 'alpha', replace: true}), {});

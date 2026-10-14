@@ -176,19 +176,19 @@ export class CuaInput {
   }
 
   // Clicks at `point` (the top document's) `clickCount` times, the events going to `inputTarget` at `inputPoint` when
-  // the element is in an out-of-process frame; then waits for a page load the click started, within the click's
-  // budget (`timeoutMs`, clamped). A load in `loadTarget` (the frame) is waited for beside the tab's.
+  // the element is in an out-of-process frame; then waits for a page load the click started. One deadline, the click's
+  // budget (`timeoutMs`, clamped), bounds the whole: the cursor's acknowledgment, every Input call and the load wait
+  // (also when the click fails). A load in `loadTarget` (the frame) is waited for beside the tab's.
   async clickPoint({button = 'left', clickCount, inputPoint, inputTarget, loadTarget, modifiers, point, tabId, timeoutMs}) {
     const tab = tabIdOf(tabId);
     const budget = clamp(timeoutMs);
     const deadline = new Deadline(budget);
     const at = inputPoint ?? point;
     const target = inputTarget ?? {tabId: tab};
-    const loaded = loadTarget == null || !isNested(loadTarget)
-      ? this.cdp.waitForPageLoadEvent(tab, {timeoutMs: budget})
-      : Promise.all([this.cdp.waitForPageLoadEvent(loadTarget, {timeoutMs: budget}), this.cdp.waitForPageLoadEvent(tab, {timeoutMs: budget})]);
+    const waitFor = loadOf => this.cdp.waitForPageLoadEvent(loadOf, {timeoutMs: budget, deadline});
+    const loaded = loadTarget == null || !isNested(loadTarget) ? waitFor(tab) : Promise.all([waitFor(loadTarget), waitFor(tab)]);
     try {
-      await this.cursor.moveMouse(tab, point.x, point.y);
+      await this.cursor.moveMouse(tab, point.x, point.y, {deadline});
       await this.cdp.callTarget(target, 'Input.dispatchMouseEvent', {type: 'mouseMoved', x: at.x, y: at.y, button: 'none', buttons: 0, modifiers}, {deadline});
       for (let count = 1; count <= clickCount; count += 1) {
         await this.dispatchMouseDown({button, clickCount: count, deadline, modifiers, point: at, target});
@@ -290,8 +290,12 @@ export class CuaInput {
 
 // --- the commands -----------------------------------------------------------------------------------------------------
 
+// The vendor sends a typed paste and a clipboard shortcut without a budget of their own, so each CDP call is the host's
+// 10 s at most; here one 10 s deadline bounds the whole operation.
+const pasteDeadline = () => new Deadline(LOAD_MS);
+
 async function keypress(commandType, params, session) {
-  if (Array.isArray(params.keys) && await performClipboardShortcut({commandType, session, keys: params.keys, tabId: params.tab_id})) return {};
+  if (Array.isArray(params.keys) && await performClipboardShortcut({commandType, deadline: pasteDeadline(), session, keys: params.keys, tabId: params.tab_id})) return {};
   await session.input.dispatchKeyPress({commandName: commandType, keys: params.keys, tabId: params.tab_id});
   return {};
 }
@@ -333,7 +337,7 @@ export const INPUT_HANDLERS = {
 
   // Only the tab and the text reach the paste: the focused-world options are the locator actions' (fill).
   async cua_type(params, session) {
-    await typeText(session, {tab_id: params.tab_id, text: params.text}, 'cua_type');
+    await typeText(session, {tab_id: params.tab_id, text: params.text}, 'cua_type', {deadline: pasteDeadline()});
     return {};
   },
 
@@ -366,7 +370,7 @@ export const INPUT_HANDLERS = {
   },
 
   async dom_cua_type(params, session) {
-    await typeText(session, {tab_id: params.tab_id, text: params.text}, 'dom_cua_type');
+    await typeText(session, {tab_id: params.tab_id, text: params.text}, 'dom_cua_type', {deadline: pasteDeadline()});
     return {};
   },
 };

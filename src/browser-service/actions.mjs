@@ -17,7 +17,7 @@
 // Dropped from Pf: the synthetic document-scoped click (MCP-app documents), the in-app browser's input target tokens
 // and box-model frame geometry, telemetry and command timing, the bound selector, the download source policy check.
 import {DOWNLOAD_MS, Deadline, PRESS_SEQUENTIALLY_MS, clamp} from './budgets.mjs';
-import {serviceError} from './errors.mjs';
+import {BrowserServiceError, isDeadlineError, serviceError} from './errors.mjs';
 import {checkSelectorDeadline} from './injected.mjs';
 import {pointThroughQuad} from './input.mjs';
 import {modifierMask, pressKeys, typeCharacter} from './keyboard.mjs';
@@ -292,15 +292,22 @@ async function obstructingFrameHitTarget(session, resolved, options) {
   return null;
 }
 
+// The vendor treats any failure of the hit test as no obstruction. Here only a lookup that found nothing is: an open
+// dialog and a spent budget end the action before anything is dispatched (the M1a rulings).
+const endsAction = error => (error instanceof BrowserServiceError && (error.code === 'dialog_open' || error.code === 'timeout'))
+  || isDeadlineError(error);
+
 async function obstructingFrameBoundaryHitTarget(session, boundary, options) {
+  let hit;
   try {
-    const hit = await session.cdp.callTarget(boundary.frame.parentTarget, 'DOM.getNodeForLocation',
+    hit = await session.cdp.callTarget(boundary.frame.parentTarget, 'DOM.getNodeForLocation',
       {x: Math.round(boundary.point.x), y: Math.round(boundary.point.y), includeUserAgentShadowDOM: true}, options);
-    if (hit.backendNodeId === boundary.ownerBackendNodeId || hit.frameId === boundary.frame.frameId) return null;
-    return await describeHitTarget(session, boundary.frame.parentTarget, hit.backendNodeId, options);
-  } catch {
+  } catch (error) {
+    if (endsAction(error)) throw error;
     return null;
   }
+  if (hit.backendNodeId === boundary.ownerBackendNodeId || hit.frameId === boundary.frame.frameId) return null;
+  return await describeHitTarget(session, boundary.frame.parentTarget, hit.backendNodeId, options);
 }
 
 async function describeHitTarget(session, target, backendNodeId, options) {
@@ -311,7 +318,8 @@ async function describeHitTarget(session, target, backendNodeId, options) {
     const id = attributeOf(attributes, 'id');
     const classes = attributeOf(attributes, 'class');
     return `<${tag}${id ? `#${id}` : ''}${classes ? `.${classes.trim().split(/\s+/).slice(0, 3).join('.')}` : ''}>`;
-  } catch {
+  } catch (error) {
+    if (endsAction(error)) throw error;
     return 'another element';
   }
 }
@@ -380,8 +388,9 @@ export const ACTION_HANDLERS = {
         {arg: {states: ['visible', 'enabled', 'editable'], value: params.value}, deadline: budgetOf(params)})
       : await focusLocator(session, params, {requireEditable: true});
     if (prepared.result === 'done') return {};
+    // The paste is a phase of its own, with the caller's budget, as the selection was.
     await typeText(session, {executionContextId: prepared.executionContextId, target: prepared.target, includeRichText: false,
-      replaceInputValue: replace, tab_id: params.tab_id, text: params.value}, 'playwright_locator_fill');
+      replaceInputValue: replace, tab_id: params.tab_id, text: params.value}, 'playwright_locator_fill', {deadline: budgetOf(params)});
     return {};
   },
 
@@ -390,7 +399,7 @@ export const ACTION_HANDLERS = {
     const tabId = tabIdOf(params.tab_id);
     const deadline = budgetOf(params);
     const focus = async () => await focusLocator(session, params, {requireEditable: false});
-    if (await performClipboardShortcut({commandType: 'playwright_locator_press', session, keys: params.value, tabId, focusTarget: focus})) return {};
+    if (await performClipboardShortcut({commandType: 'playwright_locator_press', deadline, session, keys: params.value, tabId, focusTarget: focus})) return {};
     const focused = await focus();
     await pressKeys(session.cdp, focused.target, params.value, {deadline, platform: session.platform});
     return {};

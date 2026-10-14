@@ -399,7 +399,9 @@ export class CdpController extends Emitter {
   // Resolves when a navigation of `target` (a tab id or a frame target) has loaded: a load that starts within
   // `classificationTimeoutMs` (250 ms) is waited for until its DOMContentLoaded or load event, or `timeoutMs`; a
   // same-document navigation or a back/forward-cache restore ends it at once; nothing starting ends it after the window.
+  // With a `deadline` neither the window nor the wait outlasts it.
   async waitForPageLoadEvent(target, options) {
+    const bounded = ms => (options.deadline == null ? ms : Math.min(ms, options.deadline.remaining()));
     const t = typeof target === 'object' ? target : {tabId: numericTab(target, 'waitForPageLoadEvent')};
     await new Promise(resolve => {
       let started = false;
@@ -427,14 +429,14 @@ export class CdpController extends Emitter {
             if (started) return;
             started = true;
             clearTimeout(timer);
-            timer = setTimeout(finish, options.timeoutMs);
+            timer = setTimeout(finish, bounded(options.timeoutMs));
             return;
           case 'Page.domContentEventFired':
           case 'Page.loadEventFired':
             if (started) finish();
         }
       };
-      let timer = setTimeout(finish, options.classificationTimeoutMs ?? LOAD_CLASSIFICATION_MS);
+      let timer = setTimeout(finish, bounded(options.classificationTimeoutMs ?? LOAD_CLASSIFICATION_MS));
       this.addListener('event', onEvent);
     });
   }

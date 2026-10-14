@@ -138,6 +138,38 @@ test('an element covering the out-of-process frame at the point is named, after 
   assert.equal(input('Input.dispatchMouseEvent').length, 3, 'the frame\'s own owner at the point is no obstruction');
 });
 
+test('an open dialog or a spent budget during the obstruction check ends the click before any Input event', async () => {
+  const frame = () => [iframe({id: 'o', frame: {id: 'OOPIF', url: 'https://oop.test/', access: 'oopif', elements: [el('button', {id: 'deep'})]}})];
+  const dialog = setup(frame());
+  dialog.browser.after('DOM.getContentQuads', () => dialog.browser.event({tabId: TAB}, 'Page.javascriptDialogOpening', {type: 'alert', message: 'hi', url: 'https://oop.test/'}));
+  const opened = await rejection(dialog.run('playwright_locator_click', {selector: `#o${ENTER_FRAME}#deep`}));
+  assert.equal(opened.code, 'dialog_open');
+  assert.equal(dialog.input('Input.dispatchMouseEvent').length, 0);
+
+  const spent = setup(frame());
+  spent.browser.fail('DOM.getNodeForLocation', 'Timed out running CDP command "DOM.getNodeForLocation" after 3000ms');
+  const timedOut = await rejection(spent.run('playwright_locator_click', {selector: `#o${ENTER_FRAME}#deep`}));
+  assert.equal(timedOut.code, 'timeout');
+  assert.equal(spent.input('Input.dispatchMouseEvent').length, 0);
+
+  const missed = setup(frame());
+  missed.browser.fail('DOM.getNodeForLocation', 'No node found at given location');
+  await missed.run('playwright_locator_click', {selector: `#o${ENTER_FRAME}#deep`});
+  assert.equal(missed.input('Input.dispatchMouseEvent').length, 3, 'a lookup that found nothing is no obstruction (the vendor\'s fallback)');
+});
+
+test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothing', async () => {
+  const {run, pastes, session} = setup([el('input', {id: 'text', type: 'text', value: 'old'})]);
+  let release;
+  const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
+  const error = await rejection(run('playwright_locator_fill', {selector: '#text', value: 'alpha', timeout_ms: 300}));
+  assert.equal(error.code, 'timeout');
+  release();
+  await busy;
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(pastes.length, 0);
+});
+
 test('fill selects the field\'s text and pastes the value over it in the locator\'s world; a value set directly needs no paste', async () => {
   const {browser, run, pastes, node} = setup([el('input', {id: 'text', type: 'text', value: 'old'}), el('input', {id: 'date', type: 'date', value: ''})]);
   assert.deepEqual(await run('playwright_locator_fill', {selector: '#text', value: 'alpha', replace: true}), {});

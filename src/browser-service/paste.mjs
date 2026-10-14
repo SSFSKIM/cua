@@ -12,6 +12,12 @@
 // Departure: the vendor renders typed text as Markdown (markdown-it) for its text/html; this service renders it as
 // escaped text in paragraphs and line breaks (richTextHtml), the same HTML for text without Markdown syntax, because
 // the spec admits no new dependency. Dropped: the in-app browser's input target tokens and document-only checks.
+//
+// Every operation takes its caller's Deadline: it bounds the wait for the clipboard's queue (an operation whose budget
+// ran out while queued dispatches nothing) and is carried by every CDP call. A page failure is reported only by the
+// page function's own fixed sentences; anything else the page threw is reported as "<command> failed", never in the
+// page's words, because a page can throw with what it was given (the typed text, the clipboard's items).
+import {Deadline} from './budgets.mjs';
 import {CREDENTIAL_FIELDS} from './injected.mjs';
 import {clipboardShortcut, NATIVE_CLIPBOARD_DISABLED} from './keyboard.mjs';
 import {tabIdOf} from './tabs.mjs';
@@ -264,10 +270,16 @@ const FOCUSED_FRAME_EXPRESSION = `(() => {
 
 // --- in node ----------------------------------------------------------------------------------------------------------
 
-const exceptionText = (details, commandType) => String(details.exception?.description ?? details.exception?.value ?? details.text ?? `${commandType} failed`);
+// The page function's own failures; the only page words a rejection repeats.
+const PAGE_SENTENCES = new Set([
+  'Browser Use virtual clipboard requires native DOM getters', 'Browser Use virtual clipboard has no data to paste',
+  'Virtual clipboard is missing credential protection', 'Browser Use virtual cut is missing a commit token',
+  'Browser Use virtual cut is no longer pending',
+]);
+const RELEASE_MS = 100;
 
 // Runs `pageFunction(args)` in the page (el): the target's main world, or the execution context given -> its data.
-async function runInPage(session, {args, commandType, executionContextId, pageFunction, tabId, target}) {
+async function runInPage(session, {args, commandType, deadline, executionContextId, pageFunction, tabId, target}) {
   const where = target ?? {tabId};
   await session.clipboard.ensurePageClipboard(session.cdp, where);
   const result = await session.cdp.callTarget(where, 'Runtime.evaluate', {
@@ -292,11 +304,15 @@ async function runInPage(session, {args, commandType, executionContextId, pageFu
     awaitPromise: true,
     ...(executionContextId == null ? {} : {contextId: executionContextId}),
     returnByValue: true,
-  });
-  if (result.exceptionDetails != null) throw new Error(`${CLIPBOARD_ERROR}: ${exceptionText(result.exceptionDetails, commandType)}`);
+  }, {deadline});
+  if (result.exceptionDetails != null) {
+    const objectId = result.exceptionDetails.exception?.objectId;
+    if (objectId != null) await session.cdp.callTarget(where, 'Runtime.releaseObject', {objectId}, {deadline: new Deadline(RELEASE_MS)}).catch(() => {});
+    throw new Error(`${CLIPBOARD_ERROR}: ${commandType} failed`);
+  }
   const answer = result.result?.value;
   if (answer == null || typeof answer !== 'object' || !('ok' in answer)) throw new Error(`${CLIPBOARD_ERROR}: ${commandType} returned an invalid result`);
-  if (answer.ok !== true) throw new Error(`${CLIPBOARD_ERROR}: ${'error' in answer && typeof answer.error === 'string' ? answer.error : `${commandType} failed`}`);
+  if (answer.ok !== true) throw new Error(`${CLIPBOARD_ERROR}: ${PAGE_SENTENCES.has(answer.error) ? answer.error : `${commandType} failed`}`);
   return 'data' in answer ? answer.data : undefined;
 }
 
@@ -346,17 +362,27 @@ const pasteItems = (text, richText) => [{                                       
   presentation_style: 'unspecified',
 }];
 
-// Types `params.text` into the focused element by paste (Vi). `params.target` and `params.executionContextId` name the
-// world of an element focused for it (fill); otherwise the tab's top document is used.
-export async function typeText(session, params, commandType) {
+// Runs `operation` in the clipboard's queue within `deadline`: the caller stops waiting when it is spent, and an
+// operation reached after that dispatches nothing.
+async function exclusively(session, deadline, operation) {
+  deadline.check();
+  return await deadline.race(session.clipboard.runExclusive(async () => {
+    deadline.check();
+    return await operation();
+  }));
+}
+
+// Types `params.text` into the focused element by paste (Vi), within `deadline`. `params.target` and
+// `params.executionContextId` name the world of an element focused for it (fill); otherwise the tab's top document.
+export async function typeText(session, params, commandType, {deadline}) {
   if (typeof params.text !== 'string') throw new Error(`${commandType} requires text`);
   const tabId = tabIdOf(params.tab_id);
-  const richText = params.includeRichText !== false && await allowsRichText(session, tabId);
+  const richText = params.includeRichText !== false && await deadline.race(allowsRichText(session, tabId));
   const items = pasteItems(params.text, richText);
-  await session.clipboard.runExclusive(async () => {
+  await exclusively(session, deadline, async () => {
     await runInPage(session, {
       args: {action: 'paste', clipboardItems: items, replaceInputValue: params.replaceInputValue, ...(richText ? {richTextFallback: true} : {})},
-      commandType, executionContextId: params.executionContextId, pageFunction: pageClipboardAction, tabId, target: params.target,
+      commandType, deadline, executionContextId: params.executionContextId, pageFunction: pageClipboardAction, tabId, target: params.target,
     });
   });
 }
@@ -365,7 +391,7 @@ export async function typeText(session, params, commandType) {
 
 // The innermost focused frame from `scope` {target, executionContextId?} (_j): an out-of-process frame by its own
 // target, a same-process one by an isolated world of the virtual clipboard in it.
-async function focusedFrameScope(session, tabId, scope = {target: {tabId}}) {
+async function focusedFrameScope(session, tabId, deadline, scope = {target: {tabId}}) {
   let current = scope;
   const seen = new Set();
   while (true) {
@@ -373,34 +399,40 @@ async function focusedFrameScope(session, tabId, scope = {target: {tabId}}) {
     const key = `${target.sessionId ?? ''}:${target.targetId ?? ''}:${current.executionContextId ?? ''}`;
     if (seen.has(key)) throw new Error('Browser Use encountered a focused frame cycle');
     seen.add(key);
-    const found = await session.cdp.callTarget(target, 'Runtime.evaluate', {contextId: current.executionContextId, expression: FOCUSED_FRAME_EXPRESSION, returnByValue: false});
-    if (found.exceptionDetails != null) throw new Error('Browser Use could not inspect the focused frame');
+    const found = await session.cdp.callTarget(target, 'Runtime.evaluate', {contextId: current.executionContextId, expression: FOCUSED_FRAME_EXPRESSION, returnByValue: false}, {deadline});
+    const release = async objectId => {
+      if (objectId != null) await session.cdp.callTarget(target, 'Runtime.releaseObject', {objectId}, {deadline: new Deadline(RELEASE_MS)}).catch(() => {});
+    };
+    if (found.exceptionDetails != null) {
+      await release(found.exceptionDetails.exception?.objectId);
+      throw new Error('Browser Use could not inspect the focused frame');
+    }
     const objectId = found.result?.objectId;
     if (objectId == null) return current;
     let frameId;
     try {
-      ({node: {frameId}} = await session.cdp.callTarget(target, 'DOM.describeNode', {objectId}));
+      ({node: {frameId}} = await session.cdp.callTarget(target, 'DOM.describeNode', {objectId}, {deadline}));
     } finally {
-      await session.cdp.callTarget(target, 'Runtime.releaseObject', {objectId}).catch(() => {});
+      await release(objectId);
     }
     if (frameId == null) return current;
-    const frameTarget = await session.cdp.targetForFrameOrAttach(tabId, frameId);
+    const frameTarget = await session.cdp.targetForFrameOrAttach(tabId, frameId, {deadline});
     if (frameTarget != null) {
       current = {target: frameTarget};
       continue;
     }
-    const {executionContextId} = await session.cdp.callTarget(target, 'Page.createIsolatedWorld', {frameId, grantUniveralAccess: false, worldName: CLIPBOARD_WORLD});
+    const {executionContextId} = await session.cdp.callTarget(target, 'Page.createIsolatedWorld', {frameId, grantUniveralAccess: false, worldName: CLIPBOARD_WORLD}, {deadline});
     current = {executionContextId, target};
   }
 }
 
 // Runs a clipboard shortcut's action against the virtual clipboard in the focused frame (rb). `focusTarget(forPaste)`
-// focuses the element the shortcut is for, when it has one, -> its {target, executionContextId}.
-async function runClipboardAction({action, commandType, session, focusTarget, tabId}) {
+// focuses the element the shortcut is for, when it has one, -> its {target, executionContextId}. All within `deadline`.
+async function runClipboardAction({action, commandType, deadline, session, focusTarget, tabId}) {
   const tab = tabIdOf(tabId);
-  await session.clipboard.runExclusive(async () => {
+  await exclusively(session, deadline, async () => {
     const focused = await focusTarget?.(action === 'paste' || action === 'paste-plain-text');
-    const scope = await focusedFrameScope(session, tab, focused == null ? undefined : {target: focused.target, executionContextId: focused.executionContextId});
+    const scope = await focusedFrameScope(session, tab, deadline, focused == null ? undefined : {target: focused.target, executionContextId: focused.executionContextId});
     let request;
     switch (action) {
       case 'paste': request = {action, clipboardItems: session.clipboard.read()}; break;
@@ -416,12 +448,12 @@ async function runClipboardAction({action, commandType, session, focusTarget, ta
     }
     const data = await runInPage(session, {
       args: {...request, protectedCredentialFieldPolicy: CREDENTIAL_FIELDS, clipboardItems: request.clipboardItems.filter(item => item.entries.length > 0)},
-      commandType, executionContextId: scope.executionContextId, pageFunction: pageClipboardAction, tabId: tab, target: scope.target,
+      commandType, deadline, executionContextId: scope.executionContextId, pageFunction: pageClipboardAction, tabId: tab, target: scope.target,
     });
     if (request.action !== 'paste' && data.items != null) {
       session.clipboard.write(data.items, commandType);
       if (request.action === 'cut' && data.cutToken != null) {
-        await runInPage(session, {args: {cutToken: data.cutToken}, commandType, executionContextId: scope.executionContextId,
+        await runInPage(session, {args: {cutToken: data.cutToken}, commandType, deadline, executionContextId: scope.executionContextId,
           pageFunction: commitPendingCut, tabId: tab, target: scope.target});
       }
     }
@@ -429,11 +461,11 @@ async function runClipboardAction({action, commandType, session, focusTarget, ta
 }
 
 // When `keys` is a clipboard shortcut, performs it on the virtual clipboard -> true; refuses a native clipboard key
-// press; -> false for any other press (kn).
-export async function performClipboardShortcut({commandType, session, keys, tabId, focusTarget}) {
+// press; -> false for any other press (kn). The action runs within `deadline`.
+export async function performClipboardShortcut({commandType, deadline, session, keys, tabId, focusTarget}) {
   const action = clipboardShortcut(keys, session.platform);
   if (action == null) return false;
   if (action === 'blocked') throw new Error(NATIVE_CLIPBOARD_DISABLED);
-  await runClipboardAction({action, commandType, session, focusTarget, tabId});
+  await runClipboardAction({action, commandType, deadline, session, focusTarget, tabId});
   return true;
 }

@@ -17,6 +17,7 @@ function setup({frames = {}, nodes = {}, points = {}, quads = {}} = {}) {
   const loads = [];
   const cdp = {
     async callTarget(target, method, params, options = {}) {
+      options.deadline?.timeoutMs();            // as the controller: nothing is dispatched once the deadline is spent
       log.push({target, method, params, deadline: options.deadline});
       if (method === 'DOM.getFrameOwner') return {backendNodeId: `owner-${params.frameId}`};
       if (method === 'DOM.getContentQuads') return {quads: [quads[params.backendNodeId]]};
@@ -56,8 +57,21 @@ test('cua_click aims the cursor, moves, presses and releases at the point, then 
   ]);
   assert.deepEqual(log.map(e => e.method), ['waitForPageLoadEvent', 'moveMouse', 'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent'],
     'the load wait is armed before the click');
-  assert.deepEqual(loads, [{target: 4, timeoutMs: 3000}], 'the vendor\'s 10 s, cut by its own clamp to 3 s');
+  assert.deepEqual(loads.map(({target, timeoutMs, deadline}) => [target, timeoutMs, deadline.ms]), [[4, 3000, 3000]], 'the vendor\'s 10 s, cut by its own clamp to 3 s');
   for (const e of log.filter(e => e.method === 'Input.dispatchMouseEvent')) assert.ok(e.deadline.ms === 3000);
+});
+
+test('a click\'s budget bounds the cursor\'s acknowledgment and the load wait: a silent cursor sends nothing after it', async () => {
+  const {session, loads, mouse} = setup();
+  const sent = [];
+  session.input.cursor = new Cursor({moveMouse(params, options) { sent.push(options); return new Promise(() => {}); }});
+  const started = Date.now();
+  const error = await rejection(session.input.clickPoint({clickCount: 1, modifiers: 0, point: {x: 1, y: 2}, tabId: 4, timeoutMs: 30}));
+  assert.equal(error.code, 'timeout');
+  assert.ok(Date.now() - started < 300, `settled with its budget (${Date.now() - started} ms)`);
+  assert.equal(mouse().length, 0, 'no Input event once the budget is spent');
+  assert.equal(sent[0].deadline.ms, 30, 'the backend request carries the deadline');
+  assert.equal(loads[0].deadline.ms, 30, 'the load wait carries the deadline');
 });
 
 test('cua_double_click presses twice with rising click counts, left button', async () => {

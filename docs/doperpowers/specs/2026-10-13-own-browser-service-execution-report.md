@@ -9,7 +9,8 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | M0 | feat/own-browser-service | https://github.com/SSFSKIM/cua/pull/121 | merged |
 | M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | merged (7bae04d); flaky-test residue registered as #123 |
 | M1b | feat/own-browser-service-m1b | https://github.com/SSFSKIM/cua/pull/124 | merged (af649ba) |
-| M1c | feat/own-browser-service-m1c | https://github.com/SSFSKIM/cua/pull/125 | reviewed clean at 8347f1c (reviewer-high), awaiting merge |
+| M1c | feat/own-browser-service-m1c | https://github.com/SSFSKIM/cua/pull/125 | merged (cfa4f63) |
+| M2 | feat/own-browser-service-m2 | — | executing (task 1: dialogs, downloads, chooser) |
 
 ## Log
 

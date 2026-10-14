@@ -88,8 +88,16 @@ export function coverageProblems(run) {
     ['task.act', plan.tasks], [linux ? 'task.clear' : 'task.close', plan.tasks], ['task.total', plan.tasks],
     ...(linux ? Object.keys(METHOD_CASES).map(op => [op, 1]) : []), ['end_task', 1]];
   const problems = expected.filter(([op, n]) => count(op) !== n).map(([op, n]) => `${name} covers ${count(op)} ${op} sample${count(op) === 1 ? '' : 's'}, the plan ${n}`);
-  const cold = rows.filter(r => /^cold\.(miss|hit)\.total$/.test(r.op)).length;
-  if (cold !== plan.cold) problems.push(`${name} covers ${cold} cold connections, the plan ${plan.cold}`);
+  const totals = rows.filter(r => /^cold\.(miss|hit)\.total$/.test(r.op));
+  if (totals.length !== plan.cold) problems.push(`${name} covers ${totals.length} cold connections, the plan ${plan.cold}`);
+  // Each cold connection that completed has every phase, under its own sample and observed label (one that failed part
+  // way writes only its failed total, which the outcome counts).
+  for (const total of totals.filter(r => r.ok === true)) {
+    const label = total.op.split('.')[1];
+    for (const phase of ['initialize', 'tools_list', 'first_js'])
+      if (rows.filter(r => r.op === `cold.${label}.${phase}` && r.sample === total.sample).length !== 1)
+        problems.push(`${name} cold connection ${total.sample} (${label}) lacks ${phase}`);
+  }
   const verified = count('task.verify'), acted = rows.filter(r => r.op === 'task.act' && r.ok === true).length;
   if (verified !== acted) problems.push(`${name} covers ${verified} task.verify samples for ${acted} successful task.act`);
   return problems;

@@ -129,7 +129,7 @@ export const linuxAdapter = {
     if (!pre.gedit) return 'gedit is not installed on the device';
     return null;
   },
-  start(meta, pre) { meta.gedit = {version: pre.gedit, owned: [], ended: [], crashReportsBefore: null}; meta.x = pre.x; },
+  start(meta, pre) { meta.gedit = {version: pre.gedit, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
 
   async gui(ctx) {
     const {meta, device, guard, js, row, emit, measure} = ctx;
@@ -189,7 +189,8 @@ export const linuxAdapter = {
       }
       const sample = ctx.record(op, 1, r, {target: state, ...readBack});
       emit(readBackError ? {...sample, ok: false, error: `read-back failed: ${readBackError}`} : sample);
-      if (ownWindow) meta.gedit.ended.push(...device.terminate([target]).terminated);
+      // The method's own window is ended (or found gone) and its directory removed now; the record says which.
+      if (ownWindow) meta.gedit.targetCleanup.push({op, ...device.terminate([target])});
       ctx.log(`${op}: ${r.cell?.value?.outcome ?? 'failed'}${r.cell?.value?.methodError ? ` (${r.cell.value.methodError})` : ''}, window ${state}`);
     }
   },

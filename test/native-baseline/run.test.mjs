@@ -127,6 +127,8 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   assert.ok(!state.desktop.calls.some(c => c.id === scratch.id && c.method === 'type_text'));
   assert.deepEqual(state.terminated, [scratch.pid]);
   assert.deepEqual(meta.gedit.owned.map(e => e.role), ['scratch', 'victim', 'victim']);
+  // The method cases' own windows were taken down by the methods: found gone, their directories removed at once.
+  assert.deepEqual(meta.gedit.targetCleanup.map(c => [c.op, c.terminated.length, c.gone.length, c.removed.length]), [['method.typeText', 0, 1, 1], ['method.paste', 0, 1, 1]]);
   assert.deepEqual(meta.leftovers, {serves: 0, geditRunning: 0});
   assert.equal(meta.service.helpers[0].origin, 'pinned runtime');
   // No row carries a window title or the typed text.

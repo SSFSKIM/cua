@@ -39,9 +39,13 @@ function rows({scale = 1, ssh = 100, tweak = r => r} = {}) {
   const warm = (op, wallMs, extra = {}) => range(30, s => ({op, sample: s, ok: true, wallMs: wallMs * scale, ...extra}));
   return [
     ...range(5, s => ({op: 'ssh.roundtrip', sample: s, ok: true, wallMs: ssh})),
-    ...range(2, s => ({op: 'cold.miss.initialize', sample: s, ok: true, wallMs: ssh + 900 * scale})),
-    ...range(2, s => ({op: 'cold.miss.total', sample: s, ok: true, wallMs: ssh + 1500 * scale})),
-    ...range(3, s => ({op: 'cold.hit.total', sample: s, ok: true, wallMs: ssh + 1200 * scale})),
+    // Cold connections 1 and 3 found no handshake record (miss), 2, 4 and 5 found one (hit); every phase of each.
+    ...[[1, 'miss'], [2, 'hit'], [3, 'miss'], [4, 'hit'], [5, 'hit']].flatMap(([s, label]) => [
+      {op: `cold.${label}.initialize`, sample: s, ok: true, wallMs: ssh + (label === 'miss' ? 900 : 700) * scale, planned: label},
+      {op: `cold.${label}.tools_list`, sample: s, ok: true, wallMs: 20 * scale, planned: label},
+      {op: `cold.${label}.first_js`, sample: s, ok: true, wallMs: (label === 'miss' ? 580 : 480) * scale, inCellMs: 0.01, planned: label},
+      {op: `cold.${label}.total`, sample: s, ok: true, wallMs: ssh + (label === 'miss' ? 1500 : 1200) * scale, planned: label},
+    ]),
     ...warm('warm.noop', 20, {inCellMs: 0.02}), ...warm('warm.getState', 30), ...warm('warm.listApps', 30),
     {op: 'setup.findWindow', sample: 1, ok: true, wallMs: 700 * scale},
     {op: 'bind.getApp', sample: 1, ok: true, wallMs: 500 * scale, approvals: 0},
@@ -172,6 +176,9 @@ test('incomplete, unattested, mixed-host or unlike-machine runs get no verdict',
     [three('vendor'), three('cua').slice(0, 1), /candidate: 1 run, acceptance 8 needs three/],
     [three('vendor'), three('cua', {tweak: r => (r.op === 'warm.noop' && r.sample > 1 ? null : r)}), /candidate: run-1 covers 1 warm\.noop sample, the plan 30/],
     [three('vendor'), three('cua', {tweak: r => (r.op === 'method.paste' ? null : r)}), /candidate: run-1 covers 0 method\.paste samples, the plan 1/],
+    // One phase of one cold connection missing from every run: its share would still look whole.
+    [three('vendor'), three('cua', {tweak: r => (r.op === 'cold.miss.first_js' && r.sample === 1 ? null : r)}), /candidate: run-1 cold connection 1 \(miss\) lacks first_js/],
+    [three('vendor'), three('cua', {tweak: r => (r.op === 'cold.hit.tools_list' && r.sample === 4 ? null : r)}), /candidate: run-1 cold connection 4 \(hit\) lacks tools_list/],
     [three('cua'), three('cua'), /the baseline attests the cua host, not vendor/],
   ];
   for (const [vendor, cua, problem] of cases) {

@@ -76,7 +76,7 @@ test('a run that requests a host must attest it on every connection it opened', 
   const vendor = {host: 'vendor', connections: 2, plan: {samples: 30, cold: 5, tasks: 10}, sandbox: {mode: 'scoped', explicit: false}, hostAttestations: [1, 2].map(() => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: null}))};
   const attested = summarize(readRuns(fixture(t, [meta(1, vendor), meta(2, vendor), meta(3, vendor)])));
   // (This fixture's rows cover only part of a plan; coverage has its own test below.)
-  assert.deepEqual(attested.problems.filter(p => !/ covers /.test(p)), []);
+  assert.deepEqual(attested.problems.filter(p => !/ covers | lacks /.test(p)), []);
   assert.equal(attested.attestation.sandbox, 'scoped (platform default)');
   assert.equal(attested.attestation.host, 'vendor (initialize: node_repl 0.1.0)');
   assert.equal(attested.attestation.plan, '5 cold, 30 warm, 10 tasks');

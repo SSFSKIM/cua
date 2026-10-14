@@ -16,7 +16,7 @@ execution, not reopen it.
 - [x] (2026-10-14) Research inputs originally committed at `92b279c`, over main `018f3c6`, now rebased as `67a6363` onto main `fae28d6` (#133); recovered-source index and surface inventory read alongside the retained code.
 - [x] (2026-10-14) Living spec authored and self-reviewed for acceptance coverage, interface dependencies and load-bearing declarations.
 - [x] (2026-10-14) Two independent reviews completed; five verified findings folded into the spec, with self-review repeated. Execution has not begun.
-- [ ] M0 — Differential harness, complete inventory, host selector (vendor default), Linux native baseline.
+- [x] (2026-10-14T22:30Z) M0 — Differential harness, complete inventory, host selector (vendor default), Linux native baseline. Five tasks reviewed clean; whole-branch reviewer-high "correct" at ad21892. Evidence: mini and cua-linux vendor `cells` pairs at harness 88970a0 (0 differences; Linux records the declared sandbox fail-open defect), three Linux vendor native-baseline runs.
 - [ ] M1 — Kernel and supervisor; raw cell semantics on the mini.
 - [ ] M2 — Trusted worker and privileged API; owned browser service and MAWS on the own host.
 - [ ] M3 — Owned cua API and documentation; complete facade coverage and profiles listing.
@@ -645,4 +645,4 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+- M0 (2026-10-14T22:30Z): the oracle exists and the vendor route measures identically twice. Mini `cells --through M1`: 111 cases, 145 cells, 0 differences, all assertions pass. cua-linux: 112 recorded, 111 passing, 146 cells, 0 differences, with the vendor's runtime sandbox fail-open recorded as a declared defect (hardening is #135). Linux native baseline: three vendor runs, 18 attested connections, no errors; typeText/paste crash gedit 46.2. Defaults unchanged (vendor). Lessons: the harness needed four review waves before it could not pass a wrong host (field-dropping normalization, subset selection, stale provenance, case-wide exemptions), so later milestones should treat any oracle change as review-critical; M0 had to own the whole M1 vendor control so M1 never writes its own oracle. Final outcomes are written at M5.

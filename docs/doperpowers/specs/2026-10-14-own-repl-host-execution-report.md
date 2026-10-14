@@ -6,7 +6,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 
 | milestone | branch | PR | state |
 |---|---|---|---|
-| M0 | feat/own-repl-host | pending | whole-branch review |
+| M0 | feat/own-repl-host | (this PR) | whole-branch reviewer-high correct at ad21892 |
 
 ## Log
 
@@ -16,6 +16,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - 2026-10-14 M0 task 4 (sol-xhigh executor; review clean first pass): BenchmarkRun tuple journals and `--axis host` on both summaries; archived #113 service-axis outputs byte-identical. Attestation shape `hostAttestations:[{host,serverInfo,_meta}]` (session ruling).
 - 2026-10-14 M0 task 3 (astra executor; four review waves): ParityRun harness, raw cells, exact image oracle incl. WebP, serve-cells lane, remote capability lane, boundary probes for the twelve M1 process-control/confinement cases (controller ruling: M0 owns the whole M1 vendor control). Review waves fixed field-dropping image normalization, diff subset selection, stale provenance, control-traffic and manifest exactness, capability cleanup, host-aware kernel targeting and a case-wide defect exemption. Discoveries: the vendor groups text per write name before images (spec revised, session ruling); the Linux vendor node_repl fails open when its sandbox launcher fails at runtime (declared vendor defect, own host must refuse; session registered hardening as #135). Final evidence at harness 88970a0: mini 111/111 passing, 0 differences; Linux 112 recorded / 111 passing (declared defect), 0 differences; 12 attested connections per run.
 - 2026-10-14 M0 task 5 (opus task-executor; three review waves): native-baseline Linux/gedit adapter, `--host`, recorded sandbox, `compare` with acceptance 8's verdict and coverage checks. Three Linux vendor runs at 5 cold/30 warm/10 task, 18 vendor attestations (rmcp 1.5.0), sandbox disabled, no errors. typeText/paste crash gedit 46.2 with D-Bus NoReply (earlier evidence: os error 11).
+- 2026-10-14 M0 whole-branch reviewer-high (fae28d6..fe2b224): four P2 (candidate-only cold cleanup failures passed compare; mixed host versions passed bench attestation; CUA_NODE dropped by the parity fixtures; unquoted sandbox sentinel path), fixed in ad21892 by one fixer; re-review "correct". Gates at the head: `HOME=/tmp/cua-scratch-home npm test` 1823 pass / 0 fail / 8 skip; `npm run test:mods` 32; `claude plugin validate .` passed with the known warning. Committed pairs re-diffed: mini 111 cases / 145 cells, 0 differences; Linux 112 recorded / 111 passing / 146 cells, 0 differences, one declared vendor defect.
 
 ## Environmental friction
 

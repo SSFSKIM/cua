@@ -48,7 +48,7 @@ export default {
 
 `results.jsonl` holds one cell row `{case,cell,ok,value|error,ms,trace}` and one `{case,assertion}` row. End-task values retain the structured status. `ms` is elapsed host time and does not participate in semantic comparison. `host-trace.jsonl` is diagnostic; missing or empty per-cell traces mean **unavailable**, never a zero-call discrepancy (the mini's resident host lacks tracing until M5).
 
-An error message is compared exactly except for line and column positions inside anonymous evaluated scripts (`<anonymous>:227:31` compares as `<anonymous>`): a page error's stack names positions in each service's own expression layout; its sentence, frames and frame names still count (M1b).
+An error message is compared exactly except for the line and column on a stack frame line inside an anonymous evaluated script (`    at <anonymous>:227:31` compares as `    at <anonymous>`): a page error's stack frames name positions in each service's own expression layout; its sentence, frames and frame names still count, and so does a position anywhere else in the message (M1b).
 
 Known `tabId`, `browser_id`, session, turn, frame, target and request ID fields normalize by first observation. Timestamp fields normalize; arbitrary `id` and every text/snapshot remain exact. For API-specific schemas use cell `normalize:{ids:{'0.id':'tab'}, masks:['volatileField']}`; paths are dot-separated array/object paths. Project a created object's ID in its creation cell so the mapping follows creation order. Masks are explicit corpus decisions, not a blanket removal of random-looking text.
 

@@ -18,10 +18,12 @@ const TAB = 7;
 const MAIN = `MAIN-${TAB}`;
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 
-function setup(elements) {
+function setup(elements, {slow = {}} = {}) {
   const {api, browser} = pageWorld();
   // The real backend abandons an answer at the command's deadline (backend.mjs); the fake is made to do the same.
-  const executeCdp = api.executeCdp;
+  // `slow` delays the answers of the methods it names by its milliseconds.
+  const executeCdp = params => (slow[params.method] ? new Promise(resolve => setTimeout(resolve, slow[params.method])).then(() => api.answer(params)) : api.answer(params));
+  api.answer = api.executeCdp;
   api.executeCdp = (params, {deadline} = {}) => (deadline ? deadline.race(executeCdp(params)) : executeCdp(params));
   browser.tab(TAB, {elements});
   const cdp = new CdpController(api);
@@ -189,6 +191,21 @@ test('the budget is the caller\'s up to 120 s; an explicit zero is one attempt b
   }
 });
 
+test('a zero budget is one 3 s attempt across the selector\'s preparation and the script, in every form', async () => {
+  for (const form of [{selector: 'li', selector_mode: 'all', all: true, slow: {'Runtime.getProperties': 2200}},
+    {selector: '#one', all: false, slow: {'DOM.describeNode': 2200}}]) {
+    // The preparation (the in-page query, resolving the matches) takes most of the attempt; the script never ends.
+    const {browser, evaluate} = setup([el('li', {id: 'one', text: 'one'})], {slow: form.slow});
+    const started = Date.now();
+    const error = await rejection(evaluate({selector: form.selector, selector_mode: form.selector_mode, timeout_ms: 0,
+      script: locatorScript(async () => { await new Promise(() => {}); }, form.all)}));
+    const took = Date.now() - started;
+    assert.equal(error.code, 'evaluate_interrupted', `${form.selector}: ${error.message}`);
+    assert.ok(took >= 2900 && took < 3600, `${form.selector}: the attempt took ${took} ms, not a second 3 s`);
+    assert.equal(dispatches(browser).length, 1);
+  }
+});
+
 test('evaluateInPage takes a tab, an element handle or a resolveAll result, and the script\'s arguments', async () => {
   const {session} = setup([el('p', {id: 'p', text: 'p'}), el('i', {text: 'x'})]);
   const deadline = new Deadline(2000);
@@ -230,19 +247,46 @@ test('the projection keeps the vendor\'s limits and markers', () => {
   assert.deepEqual(projected.pair, [{s: 1}, '[Circular]'], 'a repeated object is marked, as the vendor marks it');
 });
 
-test('the projection summarises nodes as the vendor\'s wrappers do, and reads the location, node lists and toJSON', () => {
-  const node = (props) => ({cloneNode() {}, ...props});
+test('an ordinary object projects by its own keys, as the vendor\'s does: toJSON is never called, a Date is {}', () => {
+  let conversions = 0;
+  const chain = depth => ({level: depth, toJSON() { conversions += 1; return chain(depth + 1); }});
+  assert.deepEqual(projectResult({x: 1, toJSON() { conversions += 1; return {override: 2}; }}, RESULT_LIMITS), {x: 1});
+  assert.deepEqual(projectResult(new Date(0), RESULT_LIMITS), {});
+  assert.deepEqual(projectResult(new URL('https://fixture.test/a'), RESULT_LIMITS), {});
+  assert.deepEqual(projectResult(chain(0), RESULT_LIMITS), {level: 0});
+  assert.equal(conversions, 0, 'no user toJSON ran');
+});
+
+test('the browser types the vendor wraps are adapted as its wrappers summarise them, within the limits', () => {
+  const tagged = (tag, props, proto = {}) => Object.assign(Object.create({...proto, [Symbol.toStringTag]: tag}), props);
+  const node = props => ({cloneNode() {}, ...props});
   const element = node({nodeType: 1, nodeName: 'P', id: 'x', tagName: 'P', textContent: 'hello', other: 'dropped'});
   const text = node({nodeType: 3, nodeName: '#text', textContent: 't'});
-  const location = {href: 'https://fixture.test/a', [Symbol.toStringTag]: 'Location'};
   const listed = node({nodeType: 1, nodeName: 'LI', id: '', tagName: 'LI', textContent: 'item'});
-  const list = {0: listed, length: 1, [Symbol.toStringTag]: 'NodeList', [Symbol.iterator]: function* () { yield listed; }};
-  const rect = {toJSON: () => ({x: 1, y: 2})};
-  assert.deepEqual(projectResult({element, text, location, list, rect}, RESULT_LIMITS), {
+  const list = tagged('NodeList', {0: listed, length: 1}, {*[Symbol.iterator]() { yield listed; }});
+  const tokens = tagged('DOMTokenList', {0: 'a', 1: 'b', length: 2}, {*[Symbol.iterator]() { yield 'a'; yield 'b'; }});
+  // DOMRect's fields are prototype getters: Object.keys sees none.
+  const rect = tagged('DOMRect', {}, {get x() { return 1; }, get y() { return 2; }, get width() { return 3; }, get height() { return 4; },
+    get top() { return 2; }, get right() { return 4; }, get bottom() { return 6; }, get left() { return 1; }});
+  const style = tagged('CSSStyleDeclaration', {length: 2}, {item(i) { return ['color', 'display'][i]; }, getPropertyValue(n) { return {color: 'red', display: 'block'}[n]; }});
+  const range = tagged('Range', {collapsed: false, commonAncestorContainer: element, endOffset: 3, startOffset: 1}, {toString() { return 'ell'; }});
+  const selection = tagged('Selection', {anchorNode: text, anchorOffset: 0, focusNode: null, focusOffset: 0, isCollapsed: true, rangeCount: 0, type: 'Caret'}, {toString() { return ''; }});
+  const query = tagged('MediaQueryList', {matches: true, media: '(min-width: 1px)', onchange: null});
+  const viewport = tagged('VisualViewport', {height: 600, offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 10, scale: 1, width: 800, onresize: null});
+  assert.deepEqual(projectResult({element, text, list, tokens, rect, style, range, selection, query, viewport}, RESULT_LIMITS), {
     element: {id: 'x', tagName: 'P', textContent: 'hello'},
     text: {nodeName: '#text', nodeType: 3, textContent: 't'},
-    location: 'https://fixture.test/a',
     list: [{id: '', tagName: 'LI', textContent: 'item'}],
-    rect: {x: 1, y: 2},
+    tokens: ['a', 'b'],
+    rect: {bottom: 6, height: 4, left: 1, right: 4, top: 2, width: 3, x: 1, y: 2},
+    style: {color: 'red', display: 'block'},
+    range: {collapsed: false, commonAncestorContainer: {id: 'x', tagName: 'P', textContent: 'hello'}, endOffset: 3, startOffset: 1, text: 'ell'},
+    selection: {anchorNode: {nodeName: '#text', nodeType: 3, textContent: 't'}, anchorOffset: 0, focusNode: null, focusOffset: 0, isCollapsed: true, rangeCount: 0, text: '', type: 'Caret'},
+    query: {matches: true, media: '(min-width: 1px)'},
+    viewport: {height: 600, offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 10, scale: 1, width: 800},
   });
+  const longList = tagged('NodeList', {length: 2500}, {*[Symbol.iterator]() { for (let i = 0; i < 2500; i++) yield listed; }});
+  assert.equal(projectResult(longList, RESULT_LIMITS).length, 2000, 'an adapted list keeps the array limit');
+  const nested = {a: {b: {c: {d: {e: {f: {g: {h: {i: element}}}}}}}}};
+  assert.equal(JSON.stringify(projectResult(nested, RESULT_LIMITS)).includes('[MaxDepth]'), true, 'an adapted node below the depth limit is cut');
 });

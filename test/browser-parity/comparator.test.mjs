@@ -27,6 +27,10 @@ test('an error\'s line and column inside an anonymous evaluated script are layou
   assert.equal(compareRuns(vendor, failing('Timed out: Error: No element matched selectors\n    at <anonymous>:137:23\n    at __playwrightEvaluate (<anonymous>:139:3)')).ok, false, 'the sentence still counts');
   assert.equal(compareRuns(vendor, failing('Timed out: Error: No element matched selector\n    at <anonymous>:137:23')).ok, false, 'so do the frames');
   assert.equal(compareRuns(vendor, failing('Timed out: Error: No element matched selector\n    at <anonymous>:227:31\n    at helper (<anonymous>:229:11)')).ok, false, 'and their names');
+  assert.equal(compareRuns(failing('Error: unexpected token at <anonymous>:1:2'), failing('Error: unexpected token at <anonymous>:3:4')).ok, false,
+    'a position in the sentence itself, not on a stack frame line, still counts');
+  assert.equal(compareRuns(failing('Error: x\n    at f (https://site.test/a.js:1:2)'), failing('Error: x\n    at f (https://site.test/a.js:3:4)')).ok, false,
+    'a page script\'s own position still counts');
 });
 
 test('trace is optional, otherwise method multiset uses only declared bounded polling allowances', () => {

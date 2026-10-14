@@ -9,7 +9,8 @@
 // binding `element` (the one element the selector resolves to, strictly with the vendor's visible fallback) or
 // `elements` (every match, in the frame the selector reached, [] when none). The value returned is the vendor's
 // bounded projection (depth 8, arrays 2,000 items, objects 200 keys, strings 200,000 characters, a repeated object
-// "[Circular]"), with DOM nodes summarised as the vendor's wrappers summarise them.
+// "[Circular]"), with the browser types the vendor wraps (nodes, lists, rects, styles, ...) adapted to its wrappers'
+// shapes.
 //
 // The no-replay rule (a deliberate departure from the vendor's evaluator, which runs a script again after a lost
 // context and retries the locator form until its deadline): resolving the selector may poll until the budget runs
@@ -44,17 +45,42 @@ export function checkScript(script) {
   if (MODULE_LOADING.test(script)) throw new Error('module loading is not available in playwright.evaluate');
 }
 
-// Runs in the page: the bounded projection of a script's value (serializeResult). Nodes are summarised as the vendor's
-// read-only wrappers summarise them (an element as {id, tagName, textContent}, another node by its names and text), the
-// location as its href, node lists as arrays, and an object with a toJSON method by what that returns.
+// Runs in the page: the bounded projection of a script's value (serializeResult). An ordinary object projects by its
+// own enumerable keys, as the vendor's does (no toJSON is called: a Date or a URL is {}). The browser types the vendor's
+// read-only scope hands out as wrappers are adapted to what those wrappers serialise to (the main world has the real
+// objects, whose fields are prototype getters): a node as its summary (an element {id, tagName, textContent}, another
+// node its names and text), node lists and token lists as arrays, a DOMRect as its eight fields, a style declaration
+// as its properties, a Range, a Selection, a MediaQueryList and the VisualViewport as the vendor's toJSON shapes. An
+// adapter's output holds only values and node summaries, so it adds no depth of its own.
 export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}) {
   const seen = new WeakSet();
-  const tagOf = current => Object.prototype.toString.call(current);
+  const tagOf = current => Object.prototype.toString.call(current).slice(8, -1);
   const isNode = current => typeof current.nodeType === 'number' && typeof current.nodeName === 'string' && typeof current.cloneNode === 'function';
-  const nodeSummary = node => (node.nodeType === 1
+  const nodeSummary = node => (node == null ? null : node.nodeType === 1
     ? {id: node.id, tagName: node.tagName, textContent: node.textContent}
     : {name: node.name, nodeName: node.nodeName, nodeType: node.nodeType, publicId: node.publicId, systemId: node.systemId, textContent: node.textContent});
-  const LISTS = new Set(['[object NodeList]', '[object HTMLCollection]', '[object DOMTokenList]']);
+  const ADAPTERS = {
+    NodeList: list => Array.from(list),
+    HTMLCollection: list => Array.from(list),
+    DOMTokenList: list => Array.from(list, String),
+    DOMRect: r => ({bottom: r.bottom, height: r.height, left: r.left, right: r.right, top: r.top, width: r.width, x: r.x, y: r.y}),
+    CSSStyleDeclaration: style => {
+      const output = {};
+      for (let index = 0; index < Math.min(style.length, maxObjectKeys); index += 1) {
+        const name = style.item(index);
+        output[name] = style.getPropertyValue(name);
+      }
+      return output;
+    },
+    Range: range => ({collapsed: range.collapsed, commonAncestorContainer: nodeSummary(range.commonAncestorContainer), endOffset: range.endOffset,
+      startOffset: range.startOffset, text: range.toString()}),
+    Selection: selection => ({anchorNode: nodeSummary(selection.anchorNode), anchorOffset: selection.anchorOffset, focusNode: nodeSummary(selection.focusNode),
+      focusOffset: selection.focusOffset, isCollapsed: selection.isCollapsed, rangeCount: selection.rangeCount, text: selection.toString(), type: selection.type}),
+    MediaQueryList: query => ({matches: query.matches === true, media: query.media}),
+    VisualViewport: v => ({height: v.height, offsetLeft: v.offsetLeft, offsetTop: v.offsetTop, pageLeft: v.pageLeft, pageTop: v.pageTop, scale: v.scale, width: v.width}),
+  };
+  ADAPTERS.DOMRectReadOnly = ADAPTERS.DOMRect;
+  ADAPTERS.CSS2Properties = ADAPTERS.CSSStyleDeclaration;
   const serializeNonObject = current => {
     switch (typeof current) {
       case 'bigint': return current.toString();
@@ -72,11 +98,9 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     if (seen.has(current)) return '[Circular]';
     seen.add(current);
     if (isNode(current)) return serialize(nodeSummary(current), depth);
-    const tag = tagOf(current);
-    if (tag === '[object Location]') return serialize(current.href, depth);
-    if (LISTS.has(tag)) return serialize(Array.from(current), depth);
+    const adapter = Object.hasOwn(ADAPTERS, tagOf(current)) ? ADAPTERS[tagOf(current)] : null;
+    if (adapter != null) return serialize(adapter(current), depth);
     if (Array.isArray(current)) return current.slice(0, maxArrayLength).map(item => serialize(item, depth + 1));
-    if (typeof current.toJSON === 'function') return serialize(current.toJSON(), depth);
     const output = {};
     for (const key of Object.keys(current).slice(0, maxObjectKeys)) {
       const serialized = serialize(current[key], depth + 1);
@@ -167,7 +191,8 @@ export class PageEvaluator {
   }
 
   // The locator form: the selector resolved (polled, never past the budget), its element resolved in the page's world,
-  // then the script dispatched once (bZ without its retries of the script).
+  // then the script dispatched once (bZ without its retries of the script). Resolution and the script share one attempt
+  // budget, so a zero budget is one 3 s attempt in all.
   async evaluateOnSelector(selector, tabId, script, args, deadline) {
     checkScript(script);
     const bound = attemptBudget(deadline);
@@ -178,7 +203,7 @@ export class PageEvaluator {
       let handle;
       let objectId;
       try {
-        handle = await this.selectors.resolve(selector, tabId, {deadline, retry: false});
+        handle = await this.selectors.resolve(selector, tabId, {deadline: bound, retry: false});
         ({object: {objectId}} = await this.cdp.callTarget(handle.target, 'DOM.resolveNode', {backendNodeId: handle.backendNodeId, objectGroup}, {deadline: bound}));
       } catch (error) {
         if (handle != null) await this.releaseGroup(handle.target, objectGroup);
@@ -276,8 +301,10 @@ export const EVALUATE_HANDLERS = {
     let value;
     if (params.selector_mode === 'all') {
       if (params.selector == null) throw new Error('playwright.evaluate selector_mode=all requires a selector');
-      const all = await session.selectors.resolveAll(params.selector, tabId, {deadline});
-      value = await session.evaluator.evaluateInPage(all, params.script, [], {deadline});
+      // One attempt budget for the query and the script: a zero budget's 3 s is not made twice.
+      const bound = attemptBudget(deadline);
+      const all = await session.selectors.resolveAll(params.selector, tabId, {deadline: bound, retry: deadline.ms > 0});
+      value = await session.evaluator.evaluateInPage(all, params.script, [], {deadline: bound});
     } else if (params.selector != null) {
       value = await session.evaluator.evaluateOnSelector(params.selector, tabId, params.script, [], deadline);
     } else {

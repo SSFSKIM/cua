@@ -108,7 +108,18 @@ function requireRawCdp(session) {
   }
 }
 
-const childTarget = target => (target == null ? undefined : {sessionId: target.session_id, targetId: target.target_id});   // vf
+// A child target as the payload names it -> the controller's selector (vf), or undefined for the tab itself. Exactly one
+// non-empty session_id or target_id (the payload schema Cp): anything else is refused before the call's policy is
+// chosen, since an empty selector would otherwise reach the tab itself without its document interception kept.
+const isSelector = value => typeof value === 'string' && value.length > 0;
+function childTarget(target) {
+  if (target === undefined) return undefined;
+  const session = target?.session_id, id = target?.target_id;
+  const valid = target != null && typeof target === 'object' && (session == null || isSelector(session)) && (id == null || isSelector(id))
+    && (session == null) !== (id == null);
+  if (!valid) throw new Error('CDP target must provide exactly one of session_id or target_id.');
+  return session != null ? {sessionId: session} : {targetId: id};
+}
 
 export const RAW_CDP_HANDLERS = {
   async tab_cdp_call(params, session) {                                                                              // O1

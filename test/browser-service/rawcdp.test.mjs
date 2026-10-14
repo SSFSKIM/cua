@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import {COMMAND_HANDLERS} from '../../src/browser-service/index.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
 import {RAW_CDP_HANDLERS, permittedRawCall} from '../../src/browser-service/rawcdp.mjs';
+import {CdpController} from '../../src/browser-service/cdp.mjs';
+import {DocumentResponses} from '../../src/browser-service/downloads.mjs';
 import {execute, readyBrowser, rejection, serviceOnHost} from './support/service-on-host.mjs';
 
 const NOT_SUPPORTED = 'This method is not supported through raw CDP.';
@@ -93,7 +95,7 @@ test('with the capability announced, a call goes to the tab or a child target on
   assert.deepEqual(calls, [
     {tabId: 5, method: 'Runtime.evaluate', params: {expression: '1+1'}, target: undefined, timeoutMs: 3000},
     {tabId: 5, method: 'Fetch.enable', params: {patterns: [{resourceType: 'Image'}, {requestStage: 'Response', resourceType: 'Document'}]}, target: undefined, timeoutMs: 500},
-    {tabId: 5, method: 'Fetch.disable', params: undefined, target: {sessionId: 'S1', targetId: undefined}, timeoutMs: 3000},
+    {tabId: 5, method: 'Fetch.disable', params: undefined, target: {sessionId: 'S1'}, timeoutMs: 3000},
   ]);
   assert.equal(responses.ready, 3, 'the tab\'s interception is ready before each dispatch');
 });
@@ -111,10 +113,31 @@ test('tab_cdp_events reads the tab\'s buffered events with the caller\'s cursor,
   const {reads, run} = announced();
   assert.deepEqual(await run('tab_cdp_events', {after_sequence: 3, limit: 10, methods: ['Page.loadEventFired'], target: {target_id: 'T1'}, timeout_ms: 250}),
     {cursor: 4, events: [], hasMore: false, truncated: false});
-  assert.deepEqual(reads, [{tabId: 5, afterSequence: 3, limit: 10, methods: ['Page.loadEventFired'], target: {sessionId: undefined, targetId: 'T1'}, timeoutMs: 250}]);
+  assert.deepEqual(reads, [{tabId: 5, afterSequence: 3, limit: 10, methods: ['Page.loadEventFired'], target: {targetId: 'T1'}, timeoutMs: 250}]);
 });
 
 test('a backend type the vendor never offers raw CDP to is refused with its sentence, even when it announces the capability', async () => {
   const {run} = announced({type: 'mcpapps'});
   assert.equal((await rejection(run('tab_cdp_events', {}))).message, 'Full CDP access is currently only available for browser extension and in-app browser tabs.');
+});
+
+test('a target must name exactly one non-empty session_id or target_id: an empty one never reaches the tab itself', async () => {
+  // The real controller, whose rawCdpTarget would resolve an empty selector to the tab, over a backend that records.
+  const sent = [];
+  const api = {
+    addEventListener() { return () => {}; },
+    async attach() { return {}; }, async detach() { return {}; },
+    async executeCdp(params) { sent.push(params.method); return {}; },
+  };
+  const cdp = new CdpController(api);
+  const session = {clientInfo: {type: 'extension'}, capabilities: {browser: [], tab: [{id: 'cdp'}]}, cdp, documentResponses: new DocumentResponses(cdp)};
+  const run = (command, params) => RAW_CDP_HANDLERS[command]({browser_id: 'b', tab_id: '5', ...params}, session);
+  const sentence = 'CDP target must provide exactly one of session_id or target_id.';
+  for (const target of [{}, {session_id: ''}, {target_id: ''}, {session_id: 'S1', target_id: 'T1'}, null, 'S1', {session_id: 7}]) {
+    assert.equal((await rejection(run('tab_cdp_call', {method: 'Fetch.disable', target}))).message, sentence, JSON.stringify(target));
+    assert.equal((await rejection(run('tab_cdp_events', {target}))).message, sentence, JSON.stringify(target));
+  }
+  assert.deepEqual(sent, [], 'nothing dispatched, the tab\'s document interception untouched');
+  assert.equal((await rejection(run('tab_cdp_call', {method: 'Fetch.disable'}))).message, `${NOT_SUPPORTED} Use Fetch.enable with an empty patterns array to clear raw interception.`);
+  assert.deepEqual(sent, []);
 });

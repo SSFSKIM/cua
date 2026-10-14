@@ -396,7 +396,8 @@
     "dispatch": "Rf",
     "milestone": "M1b",
     "cases": [
-      "reads/snapshot"
+      "reads/snapshot",
+      "reads/frames"
     ],
     "reachability": "always"
   },
@@ -421,7 +422,9 @@
       "evaluate/read",
       "evaluate/counter",
       "evaluate/context-loss",
-      "evaluate/late-completion"
+      "evaluate/late-completion",
+      "evaluate/budget",
+      "evaluate/attributes"
     ],
     "reachability": "always"
   },
@@ -594,9 +597,12 @@
     "milestone": "M1b",
     "cases": [
       "reads/locators",
-      "reads/oopif"
+      "reads/oopif",
+      "reads/zero-budget",
+      "reads/frames"
     ],
-    "reachability": "always"
+    "reachability": "always",
+    "notes": "timeout_ms 0 reaches the service (the REPL client sends commands without checking their schemas): one resolution attempt on both services, on cua with its dispatches bounded by 3 s (the M1b ruling); reads/zero-budget pins it for a present and a missing element."
   },
   {
     "type": "playwright_locator_wait_for",

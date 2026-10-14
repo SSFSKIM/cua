@@ -1,0 +1,106 @@
+M1b live parity on the mini (parity clone, profile ssfs; the host is the resident one, so host traces are empty).
+Scenarios of the M1b diff: the M1a cases (tabs/*, examples/*) and the M1b cases (reads/*, evaluate/*, input/ax-disabled).
+
+Runs:
+  vendor-m1b-setup  vendor, the whole corpus (43 cases), parity clone at b78da1a: the control for the case setup's
+                    return to cua.createBrowserTab, and the vendor baseline of the three cases M1b adds
+                    (reads/frames, reads/zero-budget, evaluate/budget), which vendor-1 predates.
+  cua-m1b-1         cua, the M1a and M1b cases (19), parity clone at 57779c5 (b78da1a plus the evaluate_interrupted
+                    wording of a JSON-relayed CDP error; the corpus is the same at both commits).
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit b78da1a3500df52656689f330e9ec4c48ff59a12 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --out vendor-m1b-setup
+$ node scripts/browser-parity.mjs prepare --device mini --commit 57779c5ea40c9448ed01eac8725dd2aa2930a5c4 --profile ssfs
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --out cua-m1b-1
+
+Control: the vendor with the case setup back on cua.createBrowserTab, against vendor-1, every case vendor-1 has:
+$ node scripts/browser-parity.mjs diff vendor-1 vendor-m1b-setup --scenarios 'actions/*.mjs,capabilities/*.mjs,dialogs/*.mjs,downloads/*.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,examples/*.mjs,input/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,screenshot/*.mjs,tabs/*.mjs,waits/*.mjs'
+0 differences (40 cases, 106 cells; scenarios actions/*.mjs,capabilities/*.mjs,dialogs/*.mjs,downloads/*.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,examples/*.mjs,input/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,screenshot/*.mjs,tabs/*.mjs,waits/*.mjs)
+exit 0
+
+The M1b diff against vendor-1 (the M1a and M1b cases vendor-1 has):
+$ node scripts/browser-parity.mjs diff vendor-1 cua-m1b-1 --scenarios 'tabs/*.mjs,examples/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (16 cases, 57 cells, 6 expected; scenarios tabs/*.mjs,examples/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs)
+exit 0
+
+The M1b diff with M1b's new cases, against the vendor control run:
+$ node scripts/browser-parity.mjs diff vendor-m1b-setup cua-m1b-1 --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (19 cases, 67 cells, 7 expected; scenarios tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs)
+exit 0
+
+The expected differences accepted (case/cell: reason's first words):
+  evaluate/budget wait: The clamp's maximum is 120,000 ms on cua
+  evaluate/context-loss reload: evaluate runs in the page's main world
+  evaluate/counter submit: evaluate runs in the page's main world
+  evaluate/late-completion late: evaluate runs in the page's main world
+  evaluate/mutation mutate: evaluate runs in the page's main world
+  evaluate/mutation title: evaluate runs in the page's main world
+  evaluate/no-replay submit-navigate: evaluate runs in the page's main world
+
+reads/frames per-cell ms (diagnostic, not judged; the cell's whole REPL round trip):
+  cell       vendor   cua
+  navigate      316    99
+  first         157    69
+  second         99    32
+  third          78    76
+  snapshot      303   106
+
+Earlier runs, not kept: a first cua run at 9429f8b failed two oracles that the live run corrected
+(reads/zero-budget assumed the client refuses timeoutMs 0, but it sends the command unchecked and both services make
+one attempt; evaluate/late-completion's cua oracle lacked "deadline", the word of the vendor's evaluate deadline
+sentence); a vendor probe of the three new cases; a timing probe at a throwaway commit (8dc6424, branch deleted) after
+reads/zero-budget's missing cell once took 3.6 s on cua (9 ms of service time in the probe, 33 ms the cell; 133 and
+131 ms in the two later cua runs). The zero-budget missing cell then differed from the vendor's only by the line and column of
+the page error's stack inside each service's evaluated expression (vendor <anonymous>:227:31, cua <anonymous>:137:23),
+which the comparator now masks (scripts/browser-parity/compare.mjs, with its test).
+
+After the runs: no parity process on the mini (pgrep finds only the resident checkout's serve processes); the parity
+clone clean at 57779c5.
+
+== Refresh after the whole-branch review fixes (projection bounds, bounded collections, the bare attribute) ==
+
+The fixes change the projection the corpus exercises, so the M1b diff was run again on the mini at a259b5a. That commit
+adds evaluate/attributes (a bare attribute, an attribute list and a credential field's value attribute, on the new
+/attributes.html) and masks the milliseconds in evaluate/budget's vendor sentence: a vendor run at 6dcaedd showed that
+cell differs between vendor runs ("Timed out after 2992ms" against "2990ms ..."), so the cell now reports "<n>ms".
+
+  vendor-m1b-2  vendor, the M1a and M1b cases (20), parity clone at a259b5a
+  cua-m1b-2     cua, the same cases, parity clone at a259b5a
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit a259b5a767438853dbf192300cf10d3234a240c9 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --out vendor-m1b-2
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --out cua-m1b-2
+
+Vendor control against vendor-1 (the cases vendor-1 has):
+$ node scripts/browser-parity.mjs diff vendor-1 vendor-m1b-2 --scenarios 'tabs/*.mjs,examples/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs'
+0 differences (16 cases, 57 cells; scenarios tabs/*.mjs,examples/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs)
+exit 0
+
+Vendor determinism between the run at 6dcaedd (not kept) and vendor-m1b-2, every case but evaluate/budget (whose cell changed between them):
+$ node scripts/browser-parity.mjs diff vendor@6dcaedd vendor-m1b-2 --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/attributes.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs'
+0 differences (19 cases, 68 cells; scenarios tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/attributes.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs)
+exit 0
+
+The M1b diff against vendor-1:
+$ node scripts/browser-parity.mjs diff vendor-1 cua-m1b-2 --scenarios 'tabs/*.mjs,examples/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (16 cases, 57 cells, 6 expected; scenarios tabs/*.mjs,examples/*.mjs,reads/locators.mjs,reads/oopif.mjs,reads/snapshot.mjs,evaluate/context-loss.mjs,evaluate/counter.mjs,evaluate/late-completion.mjs,evaluate/mutation.mjs,evaluate/no-replay.mjs,evaluate/read.mjs,input/ax-disabled.mjs)
+exit 0
+
+The M1b diff with every M1b case, against the fresh vendor run:
+$ node scripts/browser-parity.mjs diff vendor-m1b-2 cua-m1b-2 --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (20 cases, 70 cells, 7 expected; scenarios tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs)
+exit 0
+
+evaluate/attributes on both services (identical, no expected difference):
+  bare   {"name": "class", "nodeName": "class", "nodeValue": "item", "specified": true, "value": "item"}
+  hidden {"list": [{"name": "id", "nodeName": "id", "nodeValue": "secret", "specified": true, "value": "secret"}, {"name": "name", "nodeName": "name", "nodeValue": "password", "specified": true, "value": "password"}], "value": null}
+
+reads/frames per-cell ms (diagnostic, not judged):
+  cell       vendor   cua
+  navigate      301   119
+  first         186   108
+  second        126    42
+  third         115    88
+  snapshot       94   106
+
+After the runs: no parity process on the mini; the parity clone clean at a259b5a.

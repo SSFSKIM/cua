@@ -17,10 +17,12 @@ export const clamp = (requested, max = MAX_ACTION_MS) => Math.min(Math.max(0, re
 const exceeded = () => new BrowserServiceError('timeout', DEADLINE_EXCEEDED);
 
 export class Deadline {
-  // `ms` from now; `at` is the epoch millisecond it ends (the vendor's deadlineMs).
+  // `ms` from now, kept as the budget (the vendor's timeoutMs, which its "Timed out after <ms>ms" sentences name); `at`
+  // is the epoch millisecond it ends (the vendor's deadlineMs).
   constructor(ms) {
     if (typeof ms !== 'number' || Number.isNaN(ms)) throw new TypeError('Deadline needs a number of milliseconds');
-    this.at = Date.now() + Math.max(0, ms);
+    this.ms = Math.max(0, ms);
+    this.at = Date.now() + this.ms;
   }
 
   remaining() { return Math.max(0, this.at - Date.now()); }

@@ -1,0 +1,90 @@
+{"case":"evaluate/attributes","cell":"bare","ok":true,"value":{"name":"class","nodeName":"class","nodeValue":"item","specified":true,"value":"item"},"ms":209.00729200000023,"trace":[]}
+{"case":"evaluate/attributes","cell":"list","ok":true,"value":[{"name":"id","nodeName":"id","nodeValue":"note","specified":true,"value":"note"},{"name":"class","nodeName":"class","nodeValue":"item","specified":true,"value":"item"},{"name":"data-note","nodeName":"data-note","nodeValue":"stable","specified":true,"value":"stable"}],"ms":205.67379099999926,"trace":[]}
+{"case":"evaluate/attributes","cell":"hidden","ok":true,"value":{"list":[{"name":"id","nodeName":"id","nodeValue":"secret","specified":true,"value":"secret"},{"name":"name","nodeName":"name","nodeValue":"password","specified":true,"value":"password"}],"value":null},"ms":84.12979199999972,"trace":[]}
+{"case":"evaluate/attributes","assertion":{"ok":true}}
+{"case":"evaluate/budget","cell":"wait","ok":false,"error":{"code":"Error","message":"Timed out after <n>ms waiting for CDP command Runtime.evaluate."},"ms":3165.8229580000007,"trace":[]}
+{"case":"evaluate/budget","cell":"usable","ok":true,"value":"Browser parity fixture","ms":84.11175000000003,"trace":[]}
+{"case":"evaluate/budget","assertion":{"ok":true}}
+{"case":"evaluate/context-loss","cell":"reload","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:47)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":92.13737499999843,"trace":[]}
+{"case":"evaluate/context-loss","cell":"usable","ok":true,"value":"Browser parity fixture","ms":27.171834000000672,"trace":[]}
+{"case":"evaluate/context-loss","assertion":{"ok":true}}
+{"case":"evaluate/counter","cell":"submit","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:55)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":237.4822920000006,"trace":[]}
+{"case":"evaluate/counter","cell":"usable","ok":true,"value":"Browser parity fixture","ms":93.2701670000024,"trace":[]}
+{"case":"evaluate/counter","assertion":{"ok":true}}
+{"case":"evaluate/late-completion","cell":"late","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:47)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":117.76058300000295,"trace":[]}
+{"case":"evaluate/late-completion","cell":"usable","ok":true,"value":"Browser parity fixture","ms":93.62816600000224,"trace":[]}
+{"case":"evaluate/late-completion","assertion":{"ok":true}}
+{"case":"evaluate/mutation","cell":"mutate","ok":false,"error":{"code":"Error","message":"TypeError: Cannot set property title of [object Object] which has only a getter\n    at __playwrightEvaluate (<anonymous>:2686:50)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":47.63491699999577,"trace":[]}
+{"case":"evaluate/mutation","cell":"title","ok":true,"value":"Browser parity fixture","ms":109.27449999999953,"trace":[]}
+{"case":"evaluate/mutation","assertion":{"ok":true}}
+{"case":"evaluate/no-replay","cell":"submit-navigate","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:47)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":85.22508400000515,"trace":[]}
+{"case":"evaluate/no-replay","cell":"usable","ok":true,"value":true,"ms":96.89908300000388,"trace":[]}
+{"case":"evaluate/no-replay","assertion":{"ok":true}}
+{"case":"evaluate/read","cell":"page","ok":true,"value":{"count":2,"title":"Browser parity fixture"},"ms":235.32979099999648,"trace":[]}
+{"case":"evaluate/read","cell":"node","ok":true,"value":"Alpha","ms":676.6644579999993,"trace":[]}
+{"case":"evaluate/read","cell":"all","ok":true,"value":["Alpha","Beta"],"ms":183.41224999999395,"trace":[]}
+{"case":"evaluate/read","assertion":{"ok":true}}
+{"case":"examples/concurrency","cell":"wait","ok":true,"value":{"started":"wait"},"ms":124.49404200000572,"trace":[]}
+{"case":"examples/concurrency","cell":"trigger","ok":true,"value":true,"ms":22.48674999999639,"trace":[]}
+{"case":"examples/concurrency","cell":"join","ok":true,"value":"armed","ms":96.94495900000038,"trace":[]}
+{"case":"examples/concurrency","cell":"drop","ok":true,"value":{"dropped":true},"ms":1.1315420000028098,"trace":[]}
+{"case":"examples/concurrency","assertion":{"ok":true}}
+{"case":"examples/tabs","cell":"created","ok":true,"value":{"tabId":"<tab:1>","title":"Browser parity fixture"},"ms":122.43704200000502,"trace":[]}
+{"case":"examples/tabs","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":42.24725000000035,"trace":[]}
+{"case":"examples/tabs","assertion":{"ok":true}}
+{"case":"input/ax-disabled","cell":"disabled","ok":true,"value":true,"ms":105.23483299999498,"trace":[]}
+{"case":"input/ax-disabled","assertion":{"ok":true}}
+{"case":"reads/frames","cell":"navigate","ok":true,"value":"Browser parity fixture","ms":301.4662499999977,"trace":[]}
+{"case":"reads/frames","cell":"first","ok":true,"value":"Frame button","ms":186.3559169999935,"trace":[]}
+{"case":"reads/frames","cell":"second","ok":true,"value":"Frame button","ms":126.06350000000384,"trace":[]}
+{"case":"reads/frames","cell":"third","ok":true,"value":"Frame button","ms":115.25216600000567,"trace":[]}
+{"case":"reads/frames","cell":"snapshot","ok":true,"value":"- heading \"Frames fixture\" [level=1]\n- iframe [id=\"first\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"second\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"third\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"","ms":94.3581669999985,"trace":[]}
+{"case":"reads/frames","assertion":{"ok":true}}
+{"case":"reads/locators","cell":"count","ok":true,"value":2,"ms":129.96454099999391,"trace":[]}
+{"case":"reads/locators","cell":"text","ok":true,"value":"Alpha","ms":117.95583299999998,"trace":[]}
+{"case":"reads/locators","cell":"inner","ok":true,"value":"Beta","ms":105.45866599999135,"trace":[]}
+{"case":"reads/locators","cell":"attribute","ok":true,"value":"stable","ms":147.62337500001013,"trace":[]}
+{"case":"reads/locators","cell":"visible","ok":true,"value":[true,false,false],"ms":93.32145899999887,"trace":[]}
+{"case":"reads/locators","cell":"enabled","ok":true,"value":[true,false],"ms":253.94800000000396,"trace":[]}
+{"case":"reads/locators","cell":"all-text","ok":true,"value":["Alpha","Beta"],"ms":212.30437500000698,"trace":[]}
+{"case":"reads/locators","cell":"read-all","ok":true,"value":["Alpha","Beta"],"ms":227.5453339999949,"trace":[]}
+{"case":"reads/locators","assertion":{"ok":true}}
+{"case":"reads/oopif","cell":"frame","ok":true,"value":"Frame button","ms":205.26487499999348,"trace":[]}
+{"case":"reads/oopif","assertion":{"ok":true}}
+{"case":"reads/snapshot","cell":"snapshot","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":39.133499999996275,"trace":[]}
+{"case":"reads/snapshot","cell":"visible-dom","ok":true,"value":"<button node_id=1>Enabled</button>\n<button node_id=2 disabled=\"true\">Disabled</button>","ms":188.83512499998324,"trace":[]}
+{"case":"reads/snapshot","cell":"ax-disabled","ok":true,"value":true,"ms":54.1439160000009,"trace":[]}
+{"case":"reads/snapshot","cell":"fallback","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":49.86341699998593,"trace":[]}
+{"case":"reads/snapshot","assertion":{"ok":true}}
+{"case":"reads/zero-budget","cell":"present","ok":true,"value":"Enabled","ms":182.96320800000103,"trace":[]}
+{"case":"reads/zero-budget","cell":"missing","ok":false,"error":{"code":"Error","message":"Timed out after 0ms waiting for selector #absent: Browser Use encountered an error interacting with this webpage: Error: No element matched selector\n    at <anonymous>:227:31\n    at <anonymous>:229:11\n    at <anonymous>:230:11"},"ms":93.61970899999142,"trace":[]}
+{"case":"reads/zero-budget","cell":"default","ok":true,"value":"Enabled","ms":42.29175000000396,"trace":[]}
+{"case":"reads/zero-budget","assertion":{"ok":true}}
+{"case":"tabs/discovery","cell":"list","ok":true,"value":[{"type":"extension"}],"ms":106.37879099999554,"trace":[]}
+{"case":"tabs/discovery","cell":"select","ok":true,"value":true,"ms":202.02708299999358,"trace":[]}
+{"case":"tabs/discovery","cell":"default","ok":true,"value":true,"ms":124.90870800000266,"trace":[]}
+{"case":"tabs/discovery","cell":"url-selection","ok":true,"value":true,"ms":31.30662499999744,"trace":[]}
+{"case":"tabs/discovery","cell":"docs","ok":true,"value":true,"ms":30.005375000007916,"trace":[]}
+{"case":"tabs/discovery","cell":"capability-docs","ok":true,"value":true,"ms":23.66475000002538,"trace":[]}
+{"case":"tabs/discovery","cell":"name","ok":true,"value":true,"ms":76.40262499998789,"trace":[]}
+{"case":"tabs/discovery","assertion":{"ok":true}}
+{"case":"tabs/lifecycle","cell":"create","ok":true,"value":{"tabId":"<tab:1>"},"ms":192.88287499998114,"trace":[]}
+{"case":"tabs/lifecycle","cell":"get","ok":true,"value":true,"ms":21.228916000021854,"trace":[]}
+{"case":"tabs/lifecycle","cell":"list","ok":true,"value":true,"ms":133.95987500000047,"trace":[]}
+{"case":"tabs/lifecycle","cell":"selected","ok":true,"value":true,"ms":126.03791600000113,"trace":[]}
+{"case":"tabs/lifecycle","cell":"user-list","ok":true,"value":[],"ms":141.31279199998244,"trace":[]}
+{"case":"tabs/lifecycle","cell":"claim-own","ok":true,"value":true,"ms":93.59770899999421,"trace":[]}
+{"case":"tabs/lifecycle","cell":"close","ok":true,"value":true,"ms":418.8708340000012,"trace":[]}
+{"case":"tabs/lifecycle","cell":"mark","ok":true,"value":{"created":3},"ms":573.4710830000113,"trace":[]}
+{"case":"tabs/lifecycle","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":225.07091699997545,"trace":[]}
+{"case":"tabs/lifecycle","cell":"release-primary","ok":true,"value":{"dropped":true},"ms":1.3627080000005662,"trace":[]}
+{"case":"tabs/lifecycle","cell":"retained","client":"observer","ok":true,"value":{"deliverable":true,"handoff":true,"discarded":true},"ms":3630.5739999999932,"trace":[]}
+{"case":"tabs/lifecycle","cell":"cleanup","client":"observer","ok":true,"value":true,"ms":419.6822910000046,"trace":[]}
+{"case":"tabs/lifecycle","assertion":{"ok":true}}
+{"case":"tabs/manual-handoff-disabled","cell":"disabled","ok":true,"value":true,"ms":105.39625000001979,"trace":[]}
+{"case":"tabs/manual-handoff-disabled","assertion":{"ok":true}}
+{"case":"tabs/navigation","cell":"goto","ok":true,"value":"/reload.html","ms":430.8050000000221,"trace":[]}
+{"case":"tabs/navigation","cell":"back","ok":true,"value":"/counter.html","ms":327.36854100000346,"trace":[]}
+{"case":"tabs/navigation","cell":"forward","ok":true,"value":"/reload.html","ms":235.9825000000128,"trace":[]}
+{"case":"tabs/navigation","cell":"reload","ok":true,"value":{"path":"/reload.html","reloaded":true},"ms":418.90279200000805,"trace":[]}
+{"case":"tabs/navigation","assertion":{"ok":true}}

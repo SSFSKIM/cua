@@ -7,7 +7,8 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | milestone | branch | PR | state |
 |---|---|---|---|
 | M0 | feat/own-browser-service | https://github.com/SSFSKIM/cua/pull/121 | merged |
-| M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | reviewed clean at aad5235 (reviewer-high), awaiting merge |
+| M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | merged (7bae04d); flaky-test residue registered as #123 |
+| M1b | feat/own-browser-service-m1b | https://github.com/SSFSKIM/cua/pull/124 | reviewed clean at f75d6da (reviewer-high), awaiting merge |
 
 ## Log
 
@@ -24,6 +25,8 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 
 - 2026-10-13 M1a, split in two tasks (opus task-executors, sol task reviews). Task 1 (errors, budgets, backend, CDP controller): two fix waves (deadline through attachment and document reads; dialog recheck before dispatch; host-worded timeouts in shared attachment). Task 2 (index/COMMAND_HANDLERS, manifest, tabs, docs, switch, trust root, two-pin guard, real-client proof, live parity): found that only error.message crosses node_repl's RPC boundary (cua-side oracles corrected to sentences, 679a251) and that createBrowserTab needs M1b's snapshot (parity cases use tabs.new + goto until M1b); one fix wave (handler check before the documentation gate). Real-client proof first passed 22:13Z; live M1a parity 0 unexpected differences at 22:17Z. Whole-branch reviewer-high: one P2 (deadline not enforced after dispatch because the host awaits debugger.detach), fixed in aad5235; re-review "correct".
 - 2026-10-13 M1a gates at aad5235, three full runs by the plan-executor: 1303/0/37 once and 1302/1/37 twice, each failure a different pre-existing test outside M1a's files under full-suite load (test/extension-host.test.mjs "commands in flight when the user cancels debugging..." ECONNREFUSED; test/mcp-upstream.test.mjs "owned descendants ... are reaped"); both files pass 5/5 in isolation.
+
+- 2026-10-13 M1b in two tasks (opus executors, sol task reviews). Task 1 (playwright-core 1.59.1, extractor, injected script per frame, selectors): one fix wave (first-install navigation race, leaked remote objects, zero budget, empty resolveAll scope); controller ruling: an explicit zero budget is one attempt bounded by 3 s. Task 2 (reads, main-world evaluate with no-replay and the vendor's projection, aria snapshot, visible DOM, live parity): two fix waves (no arbitrary toJSON, one shared zero budget, stack-only comparator mask; adapters for every vendor-wrapped type). Whole-branch reviewer-high: P1 page-controlled projection bounds, P2 unbounded collection traversal, P2 visible-DOM exception leak; fixed (trusted-side boundResult, bounded reader, releases), plus the bare Attr in the vendor's shape (session ruling); one more P2 in bounded() fixed in f75d6da; final verdict ready to merge. Live: vendor-m1b-2 vs cua-m1b-2 0 unexpected differences (20 cases, 70 cells, 7 expected); vendor-1 vs cua-m1b-2 0 unexpected (16 cases, 57 cells, 6 expected); acceptance 3 on cua. Gates at f75d6da re-run by the plan-executor: npm test 1419 pass / 0 fail / 6 skip; test:mods 32; plugin validate passed with the known warning.
 
 ## Environmental friction
 

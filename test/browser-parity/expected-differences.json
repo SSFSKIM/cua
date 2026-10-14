@@ -4,5 +4,17 @@
     "cells": ["blocked"],
     "kind": "semantic",
     "reason": "A locator action while a JavaScript dialog is open: cua fails it at once with dialog_open and the sentence naming tab.getJsDialog(), where the vendor retries until its selector deadline (\"Playwright selector deadline exceeded\"). Decision Log 2026-10-13 (session, on the live dialog behaviour); acceptance 4."
+  },
+  {
+    "cases": ["evaluate/mutation", "evaluate/counter", "evaluate/context-loss", "evaluate/late-completion", "evaluate/no-replay"],
+    "cells": ["mutate", "title", "submit", "reload", "late", "submit-navigate"],
+    "kind": "semantic",
+    "reason": "evaluate runs in the page's main world (the spec's \"Lifted\"; acceptance 3): cua's script can set document.title, fetch and navigate, where the vendor's read-only membrane refuses (\"Cannot set property title ... which has only a getter\", \"fetch is not a function\"). A script interrupted after its one dispatch (a reload, a navigation, the budget) fails on cua with evaluate_interrupted's sentence, the fixture's counter at 1; the vendor's never reaches the counter. The no-replay rule, the spec's \"What the service keeps, lifts and drops\"."
+  },
+  {
+    "cases": ["evaluate/budget", "actions/slow-budget"],
+    "cells": ["wait", "late"],
+    "kind": "semantic",
+    "reason": "The clamp's maximum is 120,000 ms on cua (the spec's \"Lifted\"; acceptance 2): a caller's timeoutMs above 3 s raises the budget of evaluate and of locator actions, where the vendor caps every budget at 3 s and fails at its deadline."
   }
 ]

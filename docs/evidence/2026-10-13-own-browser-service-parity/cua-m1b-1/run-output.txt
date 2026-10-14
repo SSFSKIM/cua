@@ -1,0 +1,39 @@
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/budget ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/context-loss ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/counter ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/late-completion ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/mutation ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/no-replay ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case evaluate/read ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case examples/concurrency ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case examples/tabs ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case input/ax-disabled ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case reads/frames ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case reads/locators ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case reads/oopif ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case reads/snapshot ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case reads/zero-budget ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case tabs/discovery ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case tabs/lifecycle ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case tabs/manual-handoff-disabled ok
+attested: cua (# Selected Browser) at 57779c5ea40c9448ed01eac8725dd2aa2930a5c4
+case tabs/navigation ok

@@ -1,0 +1,11 @@
+{"case":"downloads/chooser","cell":"download","ok":true,"value":true,"ms":475.0671249999996,"trace":[]}
+{"case":"downloads/chooser","cell":"path","ok":false,"error":{"code":"mcp_tool_error","message":"js execution timed out; kernel reset, rerun your request"},"ms":60066.242874999996,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser-page","ok":false,"error":{"code":"ReferenceError","message":"tab is not defined"},"ms":294.8501660000038,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser","ok":false,"error":{"code":"ReferenceError","message":"tab is not defined"},"ms":33.55929199999082,"trace":[]}
+{"case":"downloads/chooser","cell":"set-files","ok":false,"error":{"code":"ReferenceError","message":"chooser is not defined"},"ms":30.429457999998704,"trace":[]}
+{"case":"downloads/chooser","assertion":{"ok":false,"reason":"path: js execution timed out; kernel reset, rerun your request"}}
+{"case":"downloads/media","cell":"media","ok":false,"error":{"code":"mcp_tool_error","message":"js execution timed out; kernel reset, rerun your request"},"ms":20140.807375000004,"trace":[]}
+{"case":"downloads/media","assertion":{"ok":false,"reason":"media: js execution timed out; kernel reset, rerun your request"}}
+{"case":"downloads/two-tabs","cell":"second-tab","ok":true,"value":true,"ms":345.6805000000022,"trace":[]}
+{"case":"downloads/two-tabs","cell":"both","ok":false,"error":{"code":"mcp_tool_error","message":"js execution timed out; kernel reset, rerun your request"},"ms":30082.163124999992,"trace":[]}
+{"case":"downloads/two-tabs","assertion":{"ok":false,"reason":"[[\"second-tab\",true,true],[\"both\",false,\"js execution timed out; kernel reset, rerun your request\"]]"}}

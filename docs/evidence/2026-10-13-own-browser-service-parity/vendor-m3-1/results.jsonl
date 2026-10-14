@@ -1,0 +1,210 @@
+{"case":"actions/concurrent-fill","cell":"both","ok":true,"value":["","onetwo"],"ms":714.9082920000001,"trace":[]}
+{"case":"actions/concurrent-fill","assertion":{"ok":true}}
+{"case":"actions/doubleclick","cell":"double","ok":true,"value":true,"ms":422.53020800000013,"trace":[]}
+{"case":"actions/doubleclick","assertion":{"ok":true}}
+{"case":"actions/locators","cell":"fill","ok":true,"value":"alpha","ms":398.4987089999995,"trace":[]}
+{"case":"actions/locators","cell":"press","ok":true,"value":{"before":0,"after":5,"value":"alpha beta"},"ms":694.0292090000003,"trace":[]}
+{"case":"actions/locators","cell":"select","ok":true,"value":"b","ms":283.54962499999965,"trace":[]}
+{"case":"actions/locators","cell":"check","ok":true,"value":true,"ms":544.3457500000004,"trace":[]}
+{"case":"actions/locators","cell":"click","ok":true,"value":true,"ms":427.32462499999747,"trace":[]}
+{"case":"actions/locators","assertion":{"ok":true}}
+{"case":"actions/overlay","cell":"click","ok":true,"value":false,"ms":434.39324999999735,"trace":[]}
+{"case":"actions/overlay","assertion":{"ok":true}}
+{"case":"actions/slow-budget","cell":"late","ok":false,"error":{"code":"Error","message":"Error: Playwright selector deadline exceeded\nwaiting on click for selector #late\nLocator diagnostics: {\"kind\":\"no_matches\",\"action\":\"click\",\"locator\":\"#late\",\"matchCount\":0,\"matches\":[],\"visibleCount\":0,\"truncated\":false}"},"ms":3387.095957999998,"trace":[]}
+{"case":"actions/slow-budget","assertion":{"ok":true}}
+{"case":"actions/strict-error","cell":"strict","ok":false,"error":{"code":"Error","message":"Error: Browser Use encountered an error interacting with this webpage: Error: strict mode violation: locator('.duplicate') resolved to 2 elements:\n    1) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).first()\n    2) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).nth(1)\n\nwaiting on click for selector .duplicate\nLocator diagnostics: {\"kind\":\"multiple_matches\",\"action\":\"click\",\"locator\":\".duplicate\",\"matchCount\":2,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true},{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true}],\"visibleCount\":2,\"truncated\":false}"},"ms":199.04270800000086,"trace":[]}
+{"case":"actions/strict-error","cell":"usable","ok":true,"value":2,"ms":144.9128750000018,"trace":[]}
+{"case":"actions/strict-error","assertion":{"ok":true}}
+{"case":"actions/wait-for","cell":"visible","ok":true,"value":"ready","ms":2929.7491669999945,"trace":[]}
+{"case":"actions/wait-for","assertion":{"ok":true}}
+{"case":"capabilities/clipboard-page","cell":"page-reads","ok":true,"value":"from agent","ms":427.809792,"trace":[]}
+{"case":"capabilities/clipboard-page","cell":"page-writes","ok":true,"value":"from page","ms":410.9126669999969,"trace":[]}
+{"case":"capabilities/clipboard-page","assertion":{"ok":true}}
+{"case":"capabilities/clipboard","cell":"text","ok":true,"value":"parity text","ms":87.44195899999613,"trace":[]}
+{"case":"capabilities/clipboard","cell":"rich","ok":true,"value":["parity rich"],"ms":151.16150000000198,"trace":[]}
+{"case":"capabilities/clipboard","assertion":{"ok":true}}
+{"case":"capabilities/cursor","cell":"move","ok":true,"value":"140,60","ms":222.59508300000016,"trace":[]}
+{"case":"capabilities/cursor","assertion":{"ok":true}}
+{"case":"capabilities/export-authenticated","skip":"external: authenticated Google Workspace document and stable captioned YouTube fixture are not provided; fixture-host rejection contracts remain executable","assertion":{"ok":true}}
+{"case":"capabilities/export-rejections","cell":"gsuite","ok":false,"error":{"code":"Error","message":"Tab is not a Google Workspace document"},"ms":28.895708000010927,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"youtube","ok":false,"error":{"code":"Error","message":"Tab is not a supported YouTube watch page"},"ms":56.07887499999197,"trace":[]}
+{"case":"capabilities/export-rejections","cell":"format","ok":false,"error":{"code":"Error","message":"tab_content_export_gsuite requires supported format"},"ms":25.698749999995925,"trace":[]}
+{"case":"capabilities/export-rejections","assertion":{"ok":true}}
+{"case":"capabilities/history","cell":"history","ok":false,"error":{"code":"Error","message":"No handler registered for method: getUserHistory"},"ms":257.3770829999994,"trace":[]}
+{"case":"capabilities/history","assertion":{"ok":true}}
+{"case":"capabilities/logs","cell":"start","ok":true,"value":true,"ms":38.596457999999984,"trace":[]}
+{"case":"capabilities/logs","cell":"trigger","ok":true,"value":true,"ms":146.41408299999603,"trace":[]}
+{"case":"capabilities/logs","cell":"logs","ok":true,"value":[{"level":"log","message":"parity-log deterministic message"}],"ms":32.29579200000444,"trace":[]}
+{"case":"capabilities/logs","assertion":{"ok":true}}
+{"case":"capabilities/m2-disabled","cell":"disabled","ok":true,"value":["management","visibility","cdp"],"ms":15.438625000009779,"trace":[]}
+{"case":"capabilities/m2-disabled","assertion":{"ok":true}}
+{"case":"capabilities/m3-disabled","cell":"disabled","ok":true,"value":["pageAssets","webmcp","botDetection","browserAuth"],"ms":55.43491700000595,"trace":[]}
+{"case":"capabilities/m3-disabled","assertion":{"ok":true}}
+{"case":"capabilities/m3-members","cell":"disabled","ok":true,"value":{"export":true,"context":true},"ms":63.72441600001184,"trace":[]}
+{"case":"capabilities/m3-members","assertion":{"ok":true}}
+{"case":"capabilities/page-assets","cell":"absent","ok":true,"value":true,"ms":103.74625000001106,"trace":[]}
+{"case":"capabilities/page-assets","cell":"list","ok":true,"value":{"kind":"image","name":"cross-asset.png","sources":[{"kind":"resource","property":"fetch"}],"crossOrigin":true},"ms":82.22712500000489,"trace":[]}
+{"case":"capabilities/page-assets","cell":"bundle","ok":true,"value":{"assets":[{"kind":"image","name":"cross-asset.png","contentType":"image/png"}],"failures":[],"contentMatches":true,"summary":{"downloadedCount":1,"failedCount":0,"requestedCount":1}},"ms":249.09112499999173,"trace":[]}
+{"case":"capabilities/page-assets","assertion":{"ok":true}}
+{"case":"capabilities/viewport","cell":"round-trip","ok":true,"value":{"overridden":true,"restored":true},"ms":74.9227499999979,"trace":[]}
+{"case":"capabilities/viewport","assertion":{"ok":true}}
+{"case":"dialogs/alert","cell":"open","ok":true,"value":true,"ms":375.4018749999959,"trace":[]}
+{"case":"dialogs/alert","cell":"get","ok":true,"value":"alert","ms":27.34079099999508,"trace":[]}
+{"case":"dialogs/alert","cell":"blocked","ok":false,"error":{"code":"Error","message":"Error: Playwright selector deadline exceeded\nwaiting on click for selector #confirm"},"ms":556.3324589999975,"trace":[]}
+{"case":"dialogs/alert","cell":"dismiss","ok":true,"value":true,"ms":211.70787499999278,"trace":[]}
+{"case":"dialogs/alert","assertion":{"ok":true}}
+{"case":"dialogs/paused-response","cell":"start","ok":true,"value":true,"ms":458.46399999999267,"trace":[]}
+{"case":"dialogs/paused-response","cell":"dialog","ok":true,"value":"alert","ms":2531.3797909999994,"trace":[]}
+{"case":"dialogs/paused-response","cell":"dismiss","ok":true,"value":true,"ms":187.16429100000823,"trace":[]}
+{"case":"dialogs/paused-response","cell":"paused","ok":true,"value":{"title":"Browser parity fixture","path":"/paused-navigation.html"},"ms":2593.5850000000064,"trace":[]}
+{"case":"dialogs/paused-response","cell":"mark","ok":true,"value":true,"ms":23.535000000003492,"trace":[]}
+{"case":"dialogs/paused-response","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":40.835416000001715,"trace":[]}
+{"case":"dialogs/paused-response","cell":"release-primary","ok":true,"value":{"dropped":true},"ms":9.038749999992433,"trace":[]}
+{"case":"dialogs/paused-response","cell":"arrived","client":"observer","ok":true,"value":{"arrived":true,"closed":true},"ms":2113.6355420000036,"trace":[]}
+{"case":"dialogs/paused-response","assertion":{"ok":true}}
+{"case":"dialogs/prompt","cell":"open","ok":true,"value":true,"ms":409.7427500000049,"trace":[]}
+{"case":"dialogs/prompt","cell":"accept","ok":true,"value":"parity","ms":149.40879099999438,"trace":[]}
+{"case":"dialogs/prompt","assertion":{"ok":true}}
+{"case":"downloads/ask-where-to-save","skip":"human: Chrome Ask where to save requires a person; never change profile download preferences","assertion":{"ok":true}}
+{"case":"downloads/blocked-navigation","cell":"bare","ok":false,"error":{"code":"Error","message":"Browser Use cannot open http://127.0.0.1:48732/download in tab <tab>. Browser reported: net::ERR_BLOCKED_BY_CLIENT"},"ms":49.38195799998357,"trace":[]}
+{"case":"downloads/blocked-navigation","cell":"usable","ok":true,"value":"Counter fixture","ms":421.527374999976,"trace":[]}
+{"case":"downloads/blocked-navigation","cell":"armed","ok":true,"value":{"navigation":"string","downloaded":true},"ms":547.958666999999,"trace":[]}
+{"case":"downloads/blocked-navigation","assertion":{"ok":true}}
+{"case":"downloads/chooser","cell":"download","ok":true,"value":true,"ms":793.9808330000087,"trace":[]}
+{"case":"downloads/chooser","cell":"path","ok":false,"error":{"code":"mcp_tool_error","message":"js execution timed out; kernel reset, rerun your request"},"ms":60054.707124999986,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser-page","ok":false,"error":{"code":"ReferenceError","message":"tab is not defined"},"ms":309.4986659999995,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser","ok":false,"error":{"code":"ReferenceError","message":"tab is not defined"},"ms":74.44037500000559,"trace":[]}
+{"case":"downloads/chooser","cell":"set-files","ok":false,"error":{"code":"ReferenceError","message":"chooser is not defined"},"ms":38.302415999991354,"trace":[]}
+{"case":"downloads/chooser","assertion":{"ok":false,"reason":"path: js execution timed out; kernel reset, rerun your request"}}
+{"case":"downloads/media","cell":"media","ok":false,"error":{"code":"mcp_tool_error","message":"js execution timed out; kernel reset, rerun your request"},"ms":20087.140958000004,"trace":[]}
+{"case":"downloads/media","assertion":{"ok":false,"reason":"media: js execution timed out; kernel reset, rerun your request"}}
+{"case":"downloads/two-tabs","cell":"second-tab","ok":true,"value":true,"ms":375.6344590000226,"trace":[]}
+{"case":"downloads/two-tabs","cell":"both","ok":false,"error":{"code":"mcp_tool_error","message":"js execution timed out; kernel reset, rerun your request"},"ms":30103.349540999974,"trace":[]}
+{"case":"downloads/two-tabs","assertion":{"ok":false,"reason":"[[\"second-tab\",true,true],[\"both\",false,\"js execution timed out; kernel reset, rerun your request\"]]"}}
+{"case":"evaluate/attributes","cell":"bare","ok":true,"value":{"name":"class","nodeName":"class","nodeValue":"item","specified":true,"value":"item"},"ms":97.62758400000166,"trace":[]}
+{"case":"evaluate/attributes","cell":"list","ok":true,"value":[{"name":"id","nodeName":"id","nodeValue":"note","specified":true,"value":"note"},{"name":"class","nodeName":"class","nodeValue":"item","specified":true,"value":"item"},{"name":"data-note","nodeName":"data-note","nodeValue":"stable","specified":true,"value":"stable"}],"ms":95.24729199998546,"trace":[]}
+{"case":"evaluate/attributes","cell":"hidden","ok":true,"value":{"list":[{"name":"id","nodeName":"id","nodeValue":"secret","specified":true,"value":"secret"},{"name":"name","nodeName":"name","nodeValue":"password","specified":true,"value":"password"}],"value":null},"ms":45.20133299997542,"trace":[]}
+{"case":"evaluate/attributes","assertion":{"ok":true}}
+{"case":"evaluate/budget","cell":"wait","ok":false,"error":{"code":"Error","message":"Timed out after <n>ms waiting for CDP command Runtime.evaluate."},"ms":3092.0291669999715,"trace":[]}
+{"case":"evaluate/budget","cell":"usable","ok":true,"value":"Browser parity fixture","ms":27.771750000014435,"trace":[]}
+{"case":"evaluate/budget","assertion":{"ok":true}}
+{"case":"evaluate/context-loss","cell":"reload","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:47)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":143.32937500003027,"trace":[]}
+{"case":"evaluate/context-loss","cell":"usable","ok":true,"value":"Browser parity fixture","ms":25.65799999999581,"trace":[]}
+{"case":"evaluate/context-loss","assertion":{"ok":true}}
+{"case":"evaluate/counter","cell":"submit","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:55)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":81.18679100001464,"trace":[]}
+{"case":"evaluate/counter","cell":"usable","ok":true,"value":"Browser parity fixture","ms":66.78341700002784,"trace":[]}
+{"case":"evaluate/counter","assertion":{"ok":true}}
+{"case":"evaluate/late-completion","cell":"late","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:47)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":65.9299170000013,"trace":[]}
+{"case":"evaluate/late-completion","cell":"usable","ok":true,"value":"Browser parity fixture","ms":31.316583000007086,"trace":[]}
+{"case":"evaluate/late-completion","assertion":{"ok":true}}
+{"case":"evaluate/mutation","cell":"mutate","ok":false,"error":{"code":"Error","message":"TypeError: Cannot set property title of [object Object] which has only a getter\n    at __playwrightEvaluate (<anonymous>:2686:50)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":125.69825000001583,"trace":[]}
+{"case":"evaluate/mutation","cell":"title","ok":true,"value":"Browser parity fixture","ms":33.86437500000466,"trace":[]}
+{"case":"evaluate/mutation","assertion":{"ok":true}}
+{"case":"evaluate/no-replay","cell":"submit-navigate","ok":false,"error":{"code":"Error","message":"TypeError: fetch is not a function\n    at __playwrightEvaluate (<anonymous>:2686:47)\n    at <anonymous>:2687:14\n    at runUserScript (<anonymous>:2688:10)\n    at <anonymous>:2692:10\n    at <anonymous>:2693:3"},"ms":296.66300000000047,"trace":[]}
+{"case":"evaluate/no-replay","cell":"usable","ok":true,"value":true,"ms":35.26474999997299,"trace":[]}
+{"case":"evaluate/no-replay","assertion":{"ok":true}}
+{"case":"evaluate/read","cell":"page","ok":true,"value":{"count":2,"title":"Browser parity fixture"},"ms":212.64541699999245,"trace":[]}
+{"case":"evaluate/read","cell":"node","ok":true,"value":"Alpha","ms":206.47866600000998,"trace":[]}
+{"case":"evaluate/read","cell":"all","ok":true,"value":["Alpha","Beta"],"ms":177.7555000000284,"trace":[]}
+{"case":"evaluate/read","assertion":{"ok":true}}
+{"case":"examples/concurrency","cell":"wait","ok":true,"value":{"started":"wait"},"ms":45.64133300003596,"trace":[]}
+{"case":"examples/concurrency","cell":"trigger","ok":true,"value":true,"ms":16.965291999978945,"trace":[]}
+{"case":"examples/concurrency","cell":"join","ok":true,"value":"armed","ms":18.67499999998836,"trace":[]}
+{"case":"examples/concurrency","cell":"drop","ok":true,"value":{"dropped":true},"ms":0.8655000000144355,"trace":[]}
+{"case":"examples/concurrency","assertion":{"ok":true}}
+{"case":"examples/tabs","cell":"created","ok":true,"value":{"tabId":"<tab:1>","title":"Browser parity fixture"},"ms":37.54520799999591,"trace":[]}
+{"case":"examples/tabs","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":50.122959000000264,"trace":[]}
+{"case":"examples/tabs","assertion":{"ok":true}}
+{"case":"input/ax-disabled","cell":"disabled","ok":true,"value":true,"ms":99.76170799997635,"trace":[]}
+{"case":"input/ax-disabled","assertion":{"ok":true}}
+{"case":"input/coordinates","cell":"type","ok":true,"value":"pointer","ms":613.7333329999819,"trace":[]}
+{"case":"input/coordinates","cell":"end-key","ok":true,"value":{"before":0,"after":7},"ms":209.17095800000243,"trace":[]}
+{"case":"input/coordinates","cell":"double","ok":true,"value":true,"ms":420.6781250000349,"trace":[]}
+{"case":"input/coordinates","cell":"drag","ok":true,"value":"ended","ms":207.40687499998603,"trace":[]}
+{"case":"input/coordinates","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":425.2636250000214,"trace":[]}
+{"case":"input/coordinates","assertion":{"ok":true}}
+{"case":"input/dom","cell":"nodes","ok":true,"value":true,"ms":76.00662500003818,"trace":[]}
+{"case":"input/dom","cell":"type","ok":true,"value":"dom","ms":536.0927500000107,"trace":[]}
+{"case":"input/dom","cell":"end-key","ok":true,"value":{"before":0,"after":3},"ms":192.69495799997821,"trace":[]}
+{"case":"input/dom","cell":"double","ok":true,"value":true,"ms":421.99258300004294,"trace":[]}
+{"case":"input/dom","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":296.26116600004025,"trace":[]}
+{"case":"input/dom","assertion":{"ok":true}}
+{"case":"input/long-type","cell":"long","ok":true,"value":{"length":55999,"same":true},"ms":3253.058832999959,"trace":[]}
+{"case":"input/long-type","assertion":{"ok":true}}
+{"case":"input/oopif-type","cell":"type","ok":true,"value":{"child":"","parentPaste":true},"ms":1059.9145410000347,"trace":[]}
+{"case":"input/oopif-type","assertion":{"ok":true}}
+{"case":"input/queued-shortcuts","cell":"copy","ok":true,"value":"queued","ms":388.60699999995995,"trace":[]}
+{"case":"input/queued-shortcuts","cell":"queued","ok":true,"value":["queued","queued"],"ms":178.6737500000163,"trace":[]}
+{"case":"input/queued-shortcuts","assertion":{"ok":true}}
+{"case":"input/rich-text","cell":"markdown","ok":true,"value":"<p>Hello <strong>world</strong></p>\n<ul>\n<li>first item</li>\n<li>second item</li>\n</ul>\n<p>See <a href=\"https://example.com/docs\">the docs</a>.</p>","ms":530.9040839999798,"trace":[]}
+{"case":"input/rich-text","assertion":{"ok":true}}
+{"case":"reads/frames","cell":"navigate","ok":true,"value":"Browser parity fixture","ms":198.45870799996192,"trace":[]}
+{"case":"reads/frames","cell":"first","ok":true,"value":"Frame button","ms":52.50487499998417,"trace":[]}
+{"case":"reads/frames","cell":"second","ok":true,"value":"Frame button","ms":35.4620419999701,"trace":[]}
+{"case":"reads/frames","cell":"third","ok":true,"value":"Frame button","ms":128.85179099999368,"trace":[]}
+{"case":"reads/frames","cell":"snapshot","ok":true,"value":"- heading \"Frames fixture\" [level=1]\n- iframe [id=\"first\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"second\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"\n- iframe [id=\"third\"]:\n  - text: Nested input\n  - textbox \"Nested input\"\n  - button \"Frame button\"","ms":68.31174999999348,"trace":[]}
+{"case":"reads/frames","assertion":{"ok":true}}
+{"case":"reads/locators","cell":"count","ok":true,"value":2,"ms":49.60912499995902,"trace":[]}
+{"case":"reads/locators","cell":"text","ok":true,"value":"Alpha","ms":107.84370799997123,"trace":[]}
+{"case":"reads/locators","cell":"inner","ok":true,"value":"Beta","ms":85.91591600002721,"trace":[]}
+{"case":"reads/locators","cell":"attribute","ok":true,"value":"stable","ms":183.739459000004,"trace":[]}
+{"case":"reads/locators","cell":"visible","ok":true,"value":[true,false,false],"ms":85.73050000000512,"trace":[]}
+{"case":"reads/locators","cell":"enabled","ok":true,"value":[true,false],"ms":73.36245799995959,"trace":[]}
+{"case":"reads/locators","cell":"all-text","ok":true,"value":["Alpha","Beta"],"ms":59.08670899999561,"trace":[]}
+{"case":"reads/locators","cell":"read-all","ok":true,"value":["Alpha","Beta"],"ms":94.32966599997599,"trace":[]}
+{"case":"reads/locators","assertion":{"ok":true}}
+{"case":"reads/oopif","cell":"frame","ok":true,"value":"Frame button","ms":97.75104199995985,"trace":[]}
+{"case":"reads/oopif","assertion":{"ok":true}}
+{"case":"reads/snapshot","cell":"snapshot","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":169.08145800000057,"trace":[]}
+{"case":"reads/snapshot","cell":"visible-dom","ok":true,"value":"<button node_id=1>Enabled</button>\n<button node_id=2 disabled=\"true\">Disabled</button>","ms":42.19133299996611,"trace":[]}
+{"case":"reads/snapshot","cell":"ax-disabled","ok":true,"value":true,"ms":64.27175000001444,"trace":[]}
+{"case":"reads/snapshot","cell":"fallback","ok":true,"value":"- heading \"Read fixture\" [level=1]\n- paragraph: Alpha\n- paragraph: Beta\n- button \"Enabled\"\n- button \"Disabled\" [disabled]","ms":37.48220799997216,"trace":[]}
+{"case":"reads/snapshot","assertion":{"ok":true}}
+{"case":"reads/visible-dom-dense","cell":"listing","ok":true,"value":"<input node_id=1 name=\"plain\" placeholder=\"Plain field\" value=\"typed value\" />\n<select node_id=2 name=\"single\" value=\"b\">Alpha Beta Gamma</select>\n<select node_id=3 name=\"changed\" value=\"y\">Ex Why</select>\n<select node_id=4 value=\"1\" multiple=\"true\">One Two Three</select>\n<option node_id=5 value=\"1\" selected=\"true\">One</option>\n<option node_id=6 value=\"2\">Two</option>\n<option node_id=7 value=\"3\" selected=\"true\">Three</option>\n<textarea node_id=8 name=\"notes\">Textarea text</textarea>\n<input node_id=9 aria-label=\"Checked box\" type=\"checkbox\" checked=\"true\" />\n<input node_id=10 aria-label=\"Radio one\" name=\"choice\" type=\"radio\" value=\"r1\" />\n<input node_id=11 aria-label=\"Password\" name=\"password\" type=\"password\" value=\"<redacted>\" />\n<div node_id=12 contenteditable=\"true\">Editable rich text</div>\n<div node_id=13 contenteditable=\"plaintext-only\">Plaintext editable</div>\n<details node_id=14>Summary toggle Details body</details>\n<summary node_id=15>Summary toggle</summary>\n<div node_id=16 aria-label=\"Role button\" role=\"button\">Role button</div>\n<span node_id=17>Tabindex span</span>\n<span node_id=18>Onclick span</span>\n<a node_id=19 href=\"/counter.html\" title=\"Counter link\">A link whose text runs long enough to be cut. A link whose text runs long enough to be cut. A link whose text runs long enough to be cut. A link whose text runs</a>\n<button node_id=20 disabled=\"true\">Disabled button</button>\n<button node_id=21>Aria hidden button</button>\n<button node_id=22>Shadow button</button>\n<input node_id=23 placeholder=\"Shadow field\" value=\"shadow value\" />\n<a node_id=24 href=\"#nested\">Nested shadow link</a>\n<button node_id=25>Deep button</button>\n<button node_id=26>g0</button>\n<button node_id=27>g1</button>\n<button node_id=28>g2</button>\n<button node_id=29>g3</button>\n<button node_id=30>g4</button>\n<button node_id=31>g5</button>\n<button node_id=32>g6</button>\n<button node_id=33>g7</button>\n<button node_id=34>g8</button>\n<button node_id=35>g9</button>\n<button node_id=36>g10</button>\n<button node_id=37>g11</button>\n<button node_id=38>g12</button>\n<button node_id=39>g13</button>\n<button node_id=40>g14</button>\n<button node_id=41>g15</button>\n<button node_id=42>g16</button>\n<button node_id=43>g17</button>\n<button node_id=44>g18</button>\n<button node_id=45>g19</button>\n<button node_id=46>g20</button>\n<button node_id=47>g21</button>\n<button node_id=48>g22</button>\n<button node_id=49>g23</button>\n<button node_id=50>g24</button>\n<button node_id=51>g25</button>\n<button node_id=52>g26</button>\n<button node_id=53>g27</button>\n<button node_id=54>g28</button>\n<button node_id=55>g29</button>\n<button node_id=56>g30</button>\n<button node_id=57>g31</button>\n<button node_id=58>g32</button>\n<button node_id=59>g33</button>\n<button node_id=60>g34</button>\n<button node_id=61>g35</button>\n<button node_id=62>g36</button>\n<button node_id=63>g37</button>\n<button node_id=64>g38</button>\n<button node_id=65>g39</button>\n<button node_id=66>g40</button>\n<button node_id=67>g41</button>\n<button node_id=68>g42</button>\n<button node_id=69>g43</button>\n<button node_id=70>g44</button>\n<button node_id=71>g45</button>\n<button node_id=72>g46</button>\n<button node_id=73>g47</button>\n<button node_id=74>g48</button>\n<button node_id=75>g49</button>\n<button node_id=76>g50</button>\n<button node_id=77>g51</button>\n<button node_id=78>g52</button>\n<button node_id=79>g53</button>\n<button node_id=80>g54</button>\n<button node_id=81>g55</button>\n<button node_id=82>g56</button>\n<button node_id=83>g57</button>\n<button node_id=84>g58</button>\n<button node_id=85>g59</button>\n<button node_id=86>g60</button>\n<button node_id=87>g61</button>\n<button node_id=88>g62</button>\n<button node_id=89>g63</button>\n<button node_id=90>g64</button>\n<button node_id=91>g65</button>\n<button node_id=92>g66</button>\n<button node_id=93>g67</button>\n<button node_id=94>g68</button>\n<button node_id=95>g69</button>\n<button node_id=96>g70</button>\n<button node_id=97>g71</button>\n<button node_id=98>g72</button>\n<button node_id=99>g73</button>\n<button node_id=100>g74</button>\n<button node_id=101>g75</button>\n<button node_id=102>g76</button>\n<button node_id=103>g77</button>\n<button node_id=104>g78</button>\n<button node_id=105>g79</button>\n<button node_id=106>g80</button>\n<button node_id=107>g81</button>\n<button node_id=108>g82</button>\n<button node_id=109>g83</button>\n<button node_id=110>g84</button>\n<button node_id=111>g85</button>\n<button node_id=112>g86</button>\n<button node_id=113>g87</button>\n<button node_id=114>g88</button>\n<button node_id=115>g89</button>\n<button node_id=116>g90</button>\n<button node_id=117>g91</button>\n<button node_id=118>g92</button>\n<button node_id=119>g93</button>\n<button node_id=120>g94</button>\n<button node_id=121>g95</button>\n<button node_id=122>g96</button>\n<button node_id=123>g97</button>\n<button node_id=124>g98</button>\n<button node_id=125>g99</button>\n<button node_id=126>g100</button>\n<button node_id=127>g101</button>\n<button node_id=128>g102</button>\n<button node_id=129>g103</button>\n<button node_id=130>g104</button>\n<button node_id=131>g105</button>\n<button node_id=132>g106</button>\n<button node_id=133>g107</button>\n<button node_id=134>g108</button>\n<button node_id=135>g109</button>\n<button node_id=136>g110</button>\n<button node_id=137>g111</button>\n<button node_id=138>g112</button>\n<button node_id=139>g113</button>\n<button node_id=140>g114</button>\n<button node_id=141>g115</button>\n<button node_id=142>g116</button>\n<button node_id=143>g117</button>\n<button node_id=144>g118</button>\n<button node_id=145>g119</button>\n<button node_id=146>g120</button>\n<button node_id=147>g121</button>\n<button node_id=148>g122</button>\n<button node_id=149>g123</button>\n<button node_id=150>g124</button>\n<button node_id=151>g125</button>\n<button node_id=152>g126</button>\n<button node_id=153>g127</button>\n<button node_id=154>g128</button>\n<button node_id=155>g129</button>\n<button node_id=156>g130</button>\n<button node_id=157>g131</button>\n<button node_id=158>g132</button>\n<button node_id=159>g133</button>\n<button node_id=160>g134</button>\n<button node_id=161>g135</button>\n<button node_id=162>g136</button>\n<button node_id=163>g137</button>\n<button node_id=164>g138</button>\n<button node_id=165>g139</button>\n<button node_id=166>g140</button>\n<button node_id=167>g141</button>\n<button node_id=168>g142</button>\n<button node_id=169>g143</button>\n<button node_id=170>g144</button>\n<button node_id=171>g145</button>\n<button node_id=172>g146</button>\n<button node_id=173>g147</button>\n<button node_id=174>g148</button>\n<button node_id=175>g149</button>\n<button node_id=176>g150</button>\n<button node_id=177>g151</button>\n<button node_id=178>g152</button>\n<button node_id=179>g153</button>\n<button node_id=180>g154</button>\n<button node_id=181>g155</button>\n<button node_id=182>g156</button>\n<button node_id=183>g157</button>\n<button node_id=184>g158</button>\n<button node_id=185>g159</button>\n<button node_id=186>g160</button>\n<button node_id=187>g161</button>\n<button node_id=188>g162</button>\n<button node_id=189>g163</button>\n<button node_id=190>g164</button>\n<button node_id=191>g165</button>\n<button node_id=192>g166</button>\n<button node_id=193>g167</button>\n<button node_id=194>g168</button>\n<button node_id=195>g169</button>\n<button node_id=196>g170</button>\n<button node_id=197>g171</button>\n<button node_id=198>g172</button>\n<button node_id=199>g173</button>\n<button node_id=200>g174</button>","ms":37.69691599998623,"trace":[]}
+{"case":"reads/visible-dom-dense","assertion":{"ok":true}}
+{"case":"reads/zero-budget","cell":"present","ok":true,"value":"Enabled","ms":44.7166670000297,"trace":[]}
+{"case":"reads/zero-budget","cell":"missing","ok":false,"error":{"code":"Error","message":"Timed out after 0ms waiting for selector #absent: Browser Use encountered an error interacting with this webpage: Error: No element matched selector\n    at <anonymous>:227:31\n    at <anonymous>:229:11\n    at <anonymous>:230:11"},"ms":37.214584000001196,"trace":[]}
+{"case":"reads/zero-budget","cell":"default","ok":true,"value":"Enabled","ms":42.87674999999581,"trace":[]}
+{"case":"reads/zero-budget","assertion":{"ok":true}}
+{"case":"screenshot/clip","cell":"clip","ok":true,"value":{"$image":"ahash64","width":320,"height":240,"hash":"0f0f0f0fffffffff"},"ms":103.93895899999188,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/clip","assertion":{"ok":true}}
+{"case":"screenshot/modes","cell":"viewport","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"00000000ffffffff"},"ms":115.61012500000652,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","cell":"full","ok":true,"value":{"$image":"ahash64","width":2560,"height":2451,"hash":"0000ffff0000ffff"},"ms":156.01095799996983,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","assertion":{"ok":true}}
+{"case":"tabs/discovery","cell":"list","ok":true,"value":[{"type":"extension"}],"ms":18.492457999964245,"trace":[]}
+{"case":"tabs/discovery","cell":"select","ok":true,"value":true,"ms":39.249958999978844,"trace":[]}
+{"case":"tabs/discovery","cell":"default","ok":true,"value":true,"ms":72.803041999985,"trace":[]}
+{"case":"tabs/discovery","cell":"url-selection","ok":true,"value":true,"ms":20.066707999969367,"trace":[]}
+{"case":"tabs/discovery","cell":"docs","ok":true,"value":true,"ms":27.72154200001387,"trace":[]}
+{"case":"tabs/discovery","cell":"capability-docs","ok":true,"value":true,"ms":21.837750000006054,"trace":[]}
+{"case":"tabs/discovery","cell":"name","ok":true,"value":true,"ms":75.19979199999943,"trace":[]}
+{"case":"tabs/discovery","assertion":{"ok":true}}
+{"case":"tabs/lifecycle","cell":"create","ok":true,"value":{"tabId":"<tab:1>"},"ms":61.504750000021886,"trace":[]}
+{"case":"tabs/lifecycle","cell":"get","ok":true,"value":true,"ms":49.219416000007186,"trace":[]}
+{"case":"tabs/lifecycle","cell":"list","ok":true,"value":true,"ms":27.95754199998919,"trace":[]}
+{"case":"tabs/lifecycle","cell":"selected","ok":true,"value":true,"ms":28.37524999998277,"trace":[]}
+{"case":"tabs/lifecycle","cell":"user-list","ok":true,"value":[],"ms":56.91433300002245,"trace":[]}
+{"case":"tabs/lifecycle","cell":"claim-own","ok":true,"value":true,"ms":29.266958000021987,"trace":[]}
+{"case":"tabs/lifecycle","cell":"close","ok":true,"value":true,"ms":141.3379169999971,"trace":[]}
+{"case":"tabs/lifecycle","cell":"mark","ok":true,"value":{"created":3},"ms":533.0621670000255,"trace":[]}
+{"case":"tabs/lifecycle","cell":"end","ok":true,"value":{"status":"ended","ended":true,"taskId":"<task:1>"},"ms":36.41266699996777,"trace":[]}
+{"case":"tabs/lifecycle","cell":"release-primary","ok":true,"value":{"dropped":true},"ms":1.2223329999833368,"trace":[]}
+{"case":"tabs/lifecycle","cell":"retained","client":"observer","ok":true,"value":{"deliverable":true,"handoff":true,"discarded":true},"ms":2431.5940829999745,"trace":[]}
+{"case":"tabs/lifecycle","cell":"cleanup","client":"observer","ok":true,"value":true,"ms":194.07145899999887,"trace":[]}
+{"case":"tabs/lifecycle","assertion":{"ok":true}}
+{"case":"tabs/manual-handoff-disabled","cell":"disabled","ok":true,"value":true,"ms":30.015041999984533,"trace":[]}
+{"case":"tabs/manual-handoff-disabled","assertion":{"ok":true}}
+{"case":"tabs/navigation","cell":"goto","ok":true,"value":"/reload.html","ms":340.39904200000456,"trace":[]}
+{"case":"tabs/navigation","cell":"back","ok":true,"value":"/counter.html","ms":257.58820899995044,"trace":[]}
+{"case":"tabs/navigation","cell":"forward","ok":true,"value":"/reload.html","ms":402.64079099998344,"trace":[]}
+{"case":"tabs/navigation","cell":"reload","ok":true,"value":{"path":"/reload.html","reloaded":true},"ms":2813.0484580000048,"trace":[]}
+{"case":"tabs/navigation","assertion":{"ok":true}}
+{"case":"waits/networkidle","cell":"idle","ok":true,"value":["complete",true],"ms":2258.0662500000326,"trace":[]}
+{"case":"waits/networkidle","assertion":{"ok":true}}
+{"case":"waits/page","cell":"url","ok":true,"value":"/wait-target.html","ms":1079.1027079999913,"trace":[]}
+{"case":"waits/page","cell":"load","ok":true,"value":{"pending":true,"state":"complete"},"ms":1427.0197089999565,"trace":[]}
+{"case":"waits/page","cell":"delay","ok":true,"value":true,"ms":276.686417000019,"trace":[]}
+{"case":"waits/page","assertion":{"ok":true}}
+{"case":"waits/zero-budget","cell":"load","ok":true,"value":"complete","ms":1148.6384579999722,"trace":[]}
+{"case":"waits/zero-budget","cell":"idle","ok":false,"error":{"code":"Error","message":"Timed out waiting for networkidle in tab 1030406363."},"ms":29.965917000023182,"trace":[]}
+{"case":"waits/zero-budget","assertion":{"ok":true}}

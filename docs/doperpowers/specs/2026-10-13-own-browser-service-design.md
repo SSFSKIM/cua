@@ -32,7 +32,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
   - [x] (2026-10-14 task 1, reviewed clean after two fix waves) exports (in-page fetch), page assets (cross-origin in page context, byte bounds), bot-detection report, user tab context.
   - [x] (2026-10-14 task 2, reviewed clean after one fix wave) WebMCP, local auth handoff (vendor BX validation), history, the no-network proof (asset fallback included), the dense visible-DOM case; whole corpus 0 unexpected over 56 cases, the three download cases held for the mini's Downloads consent.
 - [x] (2026-10-14, whole-branch reviewer-high clean at 874e59a) M4 — MAWS client mode and Linux parity.
-- [ ] M5 — Guidance text and docs, default switch, plugin bump, the cua benchmark runs, acceptance as written.
+- [x] (2026-10-14, at the reviewed M5 head) M5 — Guidance text and docs, default switch, plugin bump, the cua benchmark runs, acceptance as written.
   - [x] (2026-10-14 task 1, reviewed clean after two fix waves) final guidance and docs, the route-aware default (follows the active Chrome route; MAWS client mode → cua; explicit wins; launchd carries an explicit value only), doctor's browser.service row, attestation sharing the resolver, plugin 0.11.0, the standalone spec's Decision Log line.
 
 ## Facts this design rests on
@@ -458,4 +458,24 @@ Dependencies: `playwright-core` (exact pin, devDependency; only its injected scr
 
 ## Outcomes & Retrospective
 
-Pending — written at finish.
+2026-10-14, at the M5 head (feat/own-browser-service-m5; M0–M4 merged as #121, #122, #124, #125, #126, #127, #128).
+
+What the purpose asked, and what landed:
+- cua's browser surface is served by cua's own module, `src/browser-service/`, ported from the readable vendor tree with provenance headers, behind the unchanged REPL client and cua's host and MAWS's client mode. `CUA_BROWSER_SERVICE` resolves to cua's service on the cua Chrome route and in MAWS client mode, to the vendor's on the ChatGPT route (an explicit value wins; the vendor selection is the one-release rollback, removed by #116).
+- Nothing leaves the machine from the service: the fake-runtime proof (`no-network.test.mjs`, zero allowances) and the live session on the mini both hold. The live observation (`m5/network/session-3`, a sampler with checked coverage — ready before the serve, 39 samples, longest silence 1,021 ms — that attributes descendants from nettop's own rows and reports unresolved ones) saw no TCP or UDP from the serve process tree and no unresolved process; the tree's one outside peer is cua's Chrome host socket; `state/codex/browser/` is unchanged; no `codex app-server` ran in the tree (the home's other runtimes run one, which is #115's, and is not in this tree). Export and asset fetches happen in the page with the person's session, as the vendor's do.
+- No site policy (acceptance 1: nytimes.com opens and an Opinion click navigates on cua; the vendor refuses the tab); budgets up to 120 s (acceptance 2: `#late` clicked at ~8.5 s with `timeoutMs: 15000`); `evaluate` in the page's main world with the no-replay rule (acceptance 3).
+- Parity: the whole corpus at the M5 head against a fresh vendor run on the mini, 0 unexpected differences over 59 cases and 151 cells (14 expected, each a recorded lift or a departure in cua's favour); the capability-host group (raw CDP, WebMCP, auth handoff, history) through the real client on both services, 0 unexpected (5 expected, the auth handoff's QR cell); MAWS client mode (a live probe against a real MAWS) and the Linux runners pass on both services with the service attested.
+- Benchmark (acceptance 6): timing within bound on all 23 judged tasks, cua faster on 22 (e.g. T1 1063 → 137 ms, T8 1216 → 228 ms; MiniWoB 695–1055 → 434–886 ms; T2 11 → 20 ms, inside the 500 ms floor). The summariser's raw verdict is "regression" on two single outcome misses (drag-box once, drag-items once, against the vendor's 3/3); scripted drags with no model in the loop pass 5/5 on both services, so per the session's ruling the verdict is no regression: timing within bound on all 23 tasks, cua faster on 22; the two outcome misses are controller slips, shown by 5/5 scripted drags on both services. The raw summary stays in `summary.txt`.
+
+Gaps and residue:
+- The benchmark's success-count rule cannot absorb one controller slip in three with a model controller; a scripted-outcome parity check plus the tool-time rule is the candidate for the next benchmark (Surprises; the owner's decision).
+- Raw CDP, WebMCP, auth handoff and history have no live host anywhere (MAWS announces only `viewport`); the capability-host group proves them through the real client against a test backend.
+- Re-registering the other Chrome route during an open connection can hand that connection's pinned service the other route's sockets until the next connection (accepted residue).
+- The dialog-open Fetch release gap is cua's own dialog guard (Chrome answers the release); kept as the vendor's behaviour, a candidate lift for #116.
+- The vendored injected script is unminified (~300 KB per frame install, against the vendor's 155 KB); same-process frames never install it and the benchmark shows no cost, so no minifier was added.
+- Load-sensitive tests in the existing suite flake occasionally under full-suite load (#123).
+
+Retrospective:
+- The design's two-contract shape held: every milestone landed behind the switch with the default untouched until M5, and the differential harness caught what unit doubles could not (error codes not crossing the RPC boundary, `createBrowserTab` needing the snapshot, the vendor's own races).
+- The independent reviews earned their cost at every rung; the whole-branch reviews repeatedly found what the task reviews could not (deadline after dispatch, page-controlled projection bounds, wrong-target input, stuck interception).
+- What would have saved the most time: a benchmark controller with deterministic recording from the start, and a live surface whose Chrome profile and network path are pinned (the mini's relay periods, its Profile 1 window closing, and a Downloads consent each cost a re-run).

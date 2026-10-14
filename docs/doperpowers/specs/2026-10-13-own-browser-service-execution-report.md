@@ -13,7 +13,7 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | M2 | feat/own-browser-service-m2 | https://github.com/SSFSKIM/cua/pull/126 | merged (ec576a8) |
 | M3 | feat/own-browser-service-m3 | https://github.com/SSFSKIM/cua/pull/127 | merged (5f24301); three download cases await the mini's Downloads consent |
 | M4 | feat/own-browser-service-m4 | https://github.com/SSFSKIM/cua/pull/128 | merged (16be010) |
-| M5 | feat/own-browser-service-m5 | — | executing (task 1: docs, default, bump) |
+| M5 | feat/own-browser-service-m5 | (opening) | reviewed clean at 3b4f279 (reviewer-high), awaiting merge |
 
 ## Log
 
@@ -41,10 +41,13 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 
 - 2026-10-14 M4 as one task (opus executor). Linux runners PASS on the cua-linux VM under cua and vendor; MAWS e2e:browser-cua 7/7 on both, but it never starts cua, so acceptance 8 was amended to a cua-side live probe against a real MAWS (profileName, adopted popup, cursor, takeover hold: cua succeeds with timeoutMs 15000 after the hand-back, vendor fails at 3 s); live runners attest the answering service. MAWS client mode announces only viewport, so raw CDP, WebMCP, auth handoff and history still have no live host (M5 assesses a capability-host corpus group). Whole-branch reviewer-high: two P2 in the probe (no verdict/exit code; no signal cleanup), fixed in 874e59a; re-review "correct". Gates at 874e59a re-run by the plan-executor: 1653/0/8, test:mods 32, plugin validate ok.
 
+- 2026-10-14 M5 in three tasks. Task 1 (opus; final guidance, docs, default, plugin 0.11.0): two fix waves plus three default-rule refinements with the session (the default follows the active Chrome route: cua on the cua route or MAWS client mode, vendor otherwise, explicit wins, launchd carries only an explicit value; attestation shares the resolver; per-phase budget wording). Task 2 (opus; capability-host group through the real client, the three M3 download re-runs after the session restored the mini's Profile 1 window, whole corpus at the M5 head 0 unexpected over 59 cases, MAWS probe and Linux on the default). Pre-benchmark whole-branch reviewer-high: two P2 (service pinned per connection; capability runner isolated), fixed, "correct". The session updated the mini's resident checkout to 0b96351 and ran `cua agent install`. Task 3: three cua benchmark runs (sonnet controller, same brief): timing within bound on all 23 judged tasks, cua faster on 22; raw verdict "regression" on two single outcome misses, shown to be controller slips by scripted drags 5/5 on both services (session ruling); the live network and disk observation (no TCP/UDP from the serve tree, its one outside peer the Chrome host socket, state/codex/browser unchanged) and acceptance 1–3 on the default selection. Final-delta reviewer-high: four P2 in the observation drivers and the scripted summary, then one more, all fixed; "correct". Gates at 3b4f279 re-run by the plan-executor: 1688/0/8, test:mods 32, plugin validate ok.
+
 ## Environmental friction
 
 - The Agent tool here has no effort parameter: astra executors ran at their default (high), not the brief's medium.
 - Benchmark controllers cannot write files from the device REPL outside the mini's $TMPDIR, and end_task resets the device REPL: solved by the journaling recorder plus scp.
 - The cua-linux VM is not running (relevant to M4).
 - 2026-10-14: the Tailscale path to the mini ran through a DERP relay (240 ms to 1 s, drops) for a period, aborting several whole-corpus parity runs; later direct (~9 ms).
+- 2026-10-14: the mini's Chrome was relaunched with only the Default profile window (13:14 UTC), so Profile 1's extension was not loaded and ssfs was not live until the session opened a Profile 1 window.
 - 2026-10-14: the mini's ssh session cannot read ~/Downloads (macOS privacy consent pending on the console); the owner answers it, the three download cases are re-run after.

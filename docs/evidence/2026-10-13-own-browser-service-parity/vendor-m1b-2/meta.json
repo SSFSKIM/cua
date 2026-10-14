@@ -1,0 +1,275 @@
+{
+  "commit": "a259b5a767438853dbf192300cf10d3234a240c9",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/Library/Application Support/cua",
+  "profile": "ssfs",
+  "device": "mini",
+  "fixturePort": 48732,
+  "service": "vendor",
+  "backend": "live",
+  "environment": {
+    "CUA_BROWSER_SERVICE": "vendor",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_HOME": "/Users/new/Library/Application Support/cua"
+  },
+  "started": "2026-10-14T01:23:13.384Z",
+  "elicitations": [
+    {
+      "t": "2026-10-14T01:23:20.047Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/attributes"
+    },
+    {
+      "t": "2026-10-14T01:23:30.120Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/budget"
+    },
+    {
+      "t": "2026-10-14T01:23:41.552Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/context-loss"
+    },
+    {
+      "t": "2026-10-14T01:23:47.923Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/counter"
+    },
+    {
+      "t": "2026-10-14T01:23:55.721Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/late-completion"
+    },
+    {
+      "t": "2026-10-14T01:24:03.140Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/mutation"
+    },
+    {
+      "t": "2026-10-14T01:24:10.726Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/no-replay"
+    },
+    {
+      "t": "2026-10-14T01:24:16.890Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "evaluate/read"
+    },
+    {
+      "t": "2026-10-14T01:24:42.581Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "examples/concurrency"
+    },
+    {
+      "t": "2026-10-14T01:24:52.114Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "examples/tabs"
+    },
+    {
+      "t": "2026-10-14T01:24:58.666Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/ax-disabled"
+    },
+    {
+      "t": "2026-10-14T01:25:02.855Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/frames"
+    },
+    {
+      "t": "2026-10-14T01:25:15.383Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/locators"
+    },
+    {
+      "t": "2026-10-14T01:25:44.322Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/oopif"
+    },
+    {
+      "t": "2026-10-14T01:25:49.278Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/snapshot"
+    },
+    {
+      "t": "2026-10-14T01:25:59.404Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "reads/zero-budget"
+    },
+    {
+      "t": "2026-10-14T01:26:08.543Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/discovery"
+    },
+    {
+      "t": "2026-10-14T01:26:25.826Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/lifecycle"
+    },
+    {
+      "t": "2026-10-14T01:26:51.025Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/lifecycle"
+    },
+    {
+      "t": "2026-10-14T01:27:04.140Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/manual-handoff-disabled"
+    },
+    {
+      "t": "2026-10-14T01:27:10.300Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "tabs/navigation"
+    }
+  ],
+  "attestations": [
+    {
+      "case": "evaluate/attributes",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/budget",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/context-loss",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/counter",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/late-completion",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/mutation",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/no-replay",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "evaluate/read",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "examples/concurrency",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "examples/tabs",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/ax-disabled",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/frames",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/locators",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/oopif",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/snapshot",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "reads/zero-budget",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/discovery",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/manual-handoff-disabled",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "tabs/navigation",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    }
+  ],
+  "complete": true,
+  "cases": [
+    "evaluate/attributes",
+    "evaluate/budget",
+    "evaluate/context-loss",
+    "evaluate/counter",
+    "evaluate/late-completion",
+    "evaluate/mutation",
+    "evaluate/no-replay",
+    "evaluate/read",
+    "examples/concurrency",
+    "examples/tabs",
+    "input/ax-disabled",
+    "reads/frames",
+    "reads/locators",
+    "reads/oopif",
+    "reads/snapshot",
+    "reads/zero-budget",
+    "tabs/discovery",
+    "tabs/lifecycle",
+    "tabs/manual-handoff-disabled",
+    "tabs/navigation"
+  ],
+  "finished": "2026-10-14T01:27:23.522Z"
+}

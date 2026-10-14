@@ -1,0 +1,41 @@
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/attributes ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/budget ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/context-loss ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/counter ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/late-completion ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/mutation ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/no-replay ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/read ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case examples/concurrency ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case examples/tabs ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case input/ax-disabled ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/frames ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/locators ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/oopif ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/snapshot ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/zero-budget ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/discovery ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/lifecycle ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/manual-handoff-disabled ok
+attested: vendor (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/navigation ok

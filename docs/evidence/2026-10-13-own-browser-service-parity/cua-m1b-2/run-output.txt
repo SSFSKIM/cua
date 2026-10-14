@@ -1,0 +1,41 @@
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/attributes ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/budget ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/context-loss ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/counter ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/late-completion ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/mutation ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/no-replay ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case evaluate/read ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case examples/concurrency ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case examples/tabs ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case input/ax-disabled ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/frames ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/locators ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/oopif ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/snapshot ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case reads/zero-budget ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/discovery ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/lifecycle ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/manual-handoff-disabled ok
+attested: cua (# Selected Browser) at a259b5a767438853dbf192300cf10d3234a240c9
+case tabs/navigation ok

@@ -1,6 +1,7 @@
 // Device-local fake backend, real selected host in a separate child. Never transfers the controller's runtime.
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {startCapabilityHost} from '../browser-parity/capability-host.mjs';
+if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Capability fixture is remote-only; local tests use doubles');
 const home=prepareCapabilityHome({source:process.env.CUA_HOME});let host;
 try {
  host=await startCapabilityHost({home:home.dir});

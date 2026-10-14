@@ -38,7 +38,7 @@ export async function main(argv=process.argv.slice(2)){
   if(!doubles.length)throw new Error('No local double cases selected; use --suite api (raw cells require a remote real host)');
   const out=resolve(v.out);mkdirSync(out,{recursive:false});const rows=[];
   for(const scenario of doubles){const result=await runSecretCase(scenario.id);rows.push({case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true});}
-  save(join(out,'meta.json'),{schema:1,device:'local',fake:true,complete:true,host:null,suite:v.suite,caseIds:doubles.map(s=>s.id),pending:pending.map(c=>c.id),note:'Service/store doubles only; not live host parity'});
+  save(join(out,'meta.json'),{schema:1,device:'local',fake:true,complete:true,host:null,suite:v.suite,caseIds:doubles.map(s=>s.id),pending:[...pending,...selected.filter(s=>s.backend!=='secret-double')].map(c=>c.id),note:'Service/store doubles only; not live host parity'});
   writeFileSync(join(out,'results.jsonl'),rows.map(r=>JSON.stringify(r)).join('\n')+'\n');console.log(JSON.stringify({fake:true,cases:doubles.length,assertions:'PASS',out}));return;
  }
  const prepared=json(state(v.device)),{scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:prepared.platform});

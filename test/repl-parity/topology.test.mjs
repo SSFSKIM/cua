@@ -11,3 +11,9 @@ test('cells and capability resources execute on the device; local runtime copyin
   const c=make({device:'mini',checkout:'/fixture',home:'/runtime',host:'vendor'});assert.equal(c.command,'ssh');assert.ok(c.args.includes('mini'));assert.match(c.args.at(-1),/\/fixture/);
  }
 });
+
+test('the capability fixture refuses direct local invocation before opening a runtime home',async()=>{
+ const {spawnSync}=await import('node:child_process');const {fileURLToPath}=await import('node:url');
+ const result=spawnSync(process.execPath,[fileURLToPath(new URL('./serve-capability.mjs',import.meta.url))],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:'/tmp/cua-unconfigured-fixture',CUA_HOME:'/tmp/cua-unconfigured-fixture'}});
+ assert.equal(result.status,1);assert.match(result.stderr,/remote-only/);
+});

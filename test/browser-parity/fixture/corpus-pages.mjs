@@ -16,6 +16,8 @@ export const corpusPages = {
   screenshot: '<style>body{margin:0;width:320px;height:240px;background:#fff}main{width:160px;height:120px;background:#246}</style><main></main><p>Parity screenshot</p>',
   // Taller than any viewport, so a full-page screenshot and a viewport one differ in height.
   'screenshot-tall': '<style>body{margin:0;background:#fff}section{height:600px}section:nth-child(odd){background:#246}</style><section></section><section></section><section></section><section></section><p>Tall parity screenshot</p>',
+  // A cross-site (out-of-process) frame with an input; the parent records any paste event that reaches it.
+  'oopif-input': `${events}<iframe id="outer" src="/frame.html"></iframe><script>document.addEventListener('paste',()=>record({parentPaste:true}),true)</script>`,
   // Two fields one document fills at once; each records its own value.
   'fill-pair': `${events}<input id="first" aria-label="First" oninput="record({first:this.value})"><input id="second" aria-label="Second" oninput="record({second:this.value})">`,
   // A button an overlay covers: a click at the button's centre lands on the overlay (no in-document hit test on either service).

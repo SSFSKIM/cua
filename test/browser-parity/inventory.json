@@ -188,7 +188,8 @@
     "cases": [
       "input/coordinates",
       "input/rich-text",
-      "input/long-type"
+      "input/long-type",
+      "input/oopif-type"
     ],
     "reachability": "always"
   },
@@ -653,7 +654,8 @@
     "milestone": "M1c",
     "cases": [
       "waits/page",
-      "waits/networkidle"
+      "waits/networkidle",
+      "waits/zero-budget"
     ],
     "reachability": "always"
   },

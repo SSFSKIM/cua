@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {COMMAND_HANDLERS} from '../../src/browser-service/index.mjs';
 import {Emitter} from '../../src/browser-service/cdp.mjs';
 import {DocumentResponses, Downloads} from '../../src/browser-service/downloads.mjs';
+import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
 import {execute, readyBrowser, rejection, scriptedPages, serviceOnHost, waitFor} from './support/service-on-host.mjs';
 
@@ -26,10 +27,25 @@ const pausedResponse = ({url = URL_A, headers = ATTACHMENT, status = 200, resour
   ...(errorReason ? {responseErrorReason: errorReason} : {responseStatusCode: status, responseStatusText: 'OK', responseHeaders: headers}),
 });
 
-async function tabOn(t) {
+// Scripted pages where Chrome refuses the next `chrome.failures[method]` calls of a method with `chrome.message`.
+function fetchPages() {
   const pages = scriptedPages();
-  const env = await serviceOnHost(t, {pages});
-  const browserId = await readyBrowser(env.service);
+  const chrome = {failures: {}, message: 'Internal error'};
+  const cdp = request => {
+    if ((chrome.failures[request.method] ?? 0) > 0) {
+      chrome.failures[request.method] -= 1;
+      pages.sent.push({tabId: request.debuggee.tabId, method: `${request.method} (refused)`, params: request.params});
+      throw new Error(chrome.message);
+    }
+    return pages.cdp(request);
+  };
+  return {...pages, cdp, chrome};
+}
+
+async function tabOn(t, {env: given} = {}) {
+  const pages = given?.pages ?? fetchPages();
+  const env = given ?? await serviceOnHost(t, {pages});
+  const browserId = given?.browserId ?? await readyBrowser(env.service);
   const {id} = await execute(env.service, {type: 'create_tab', browser_id: browserId});
   const run = params => execute(env.service, {browser_id: browserId, tab_id: id, ...params});
   await run({type: 'navigate_tab_url', url: 'https://example.com/downloads'});
@@ -46,7 +62,7 @@ async function tabOn(t) {
     promise.then(() => { state.settled = true; }, () => { state.settled = true; });
     return state;
   };
-  return {...env, pages, run, sent, pause, released, settledOf, tabId: id};
+  return {...env, pages, browserId, run, sent, pause, released, settledOf, tabId: id};
 }
 
 test('the download commands are registered', () => {
@@ -166,6 +182,49 @@ test('a wait that times out after Chrome began the download releases nothing twi
   assert.deepEqual(await run({type: 'navigate_tab_reload'}), {});
 });
 
+test('a release Chrome refuses is sent again; one it no longer holds is not', async t => {
+  const {pause, released, sent, pages} = await tabOn(t);
+  pages.chrome.failures['Fetch.continueResponse'] = 1;
+  const page = pause({headers: [header('content-type', 'text/html')]});
+  await waitFor(() => released(page).length === 1, 'the page to be released on the second attempt');
+  assert.equal(sent('Fetch.continueResponse (refused)').length, 1);
+  pages.chrome.failures['Fetch.failRequest'] = 1;
+  pages.chrome.message = 'Invalid InterceptionId.';
+  const gone = pause();
+  await waitFor(() => sent('Fetch.failRequest (refused)').length === 1, 'the refusal');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.deepEqual(released(gone), [], 'Chrome no longer holds it: nothing is sent again');
+  assert.deepEqual(sent('Fetch.disable'), []);
+});
+
+test('a release that never lands is recovered: the tab\'s Fetch domain is disabled (Chrome lets the request go) and set up again', async t => {
+  const {pause, sent, pages} = await tabOn(t);
+  pages.chrome.failures['Fetch.failRequest'] = 3;
+  pause();
+  await waitFor(() => sent('Fetch.disable').length === 1 && sent('Fetch.enable').length === 2, 'the recovery', 5000);
+  assert.equal(sent('Fetch.failRequest (refused)').length, 3, 'three attempts before the recovery');
+  assert.deepEqual(sent('Fetch.enable').at(-1), {patterns: [DOCUMENTS]}, 'interception back for what follows');
+});
+
+test('two tabs downloading one URL each get their own download', async t => {
+  const one = await tabOn(t);
+  const two = await tabOn(t, {env: one});
+  const first = one.run({type: 'playwright_wait_for_download', timeout_ms: 5000});
+  const second = two.run({type: 'playwright_wait_for_download', timeout_ms: 5000});
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const a = one.pause();
+  await waitFor(() => one.released(a).length === 1, 'the first tab\'s download to be let through');
+  const b = two.pause();
+  await waitFor(() => two.released(b).length === 1, 'the second tab\'s download to be let through');
+  one.ext.downloadCreated({id: 41, url: URL_A, filename: ''});
+  one.ext.downloadCreated({id: 42, url: URL_A, filename: ''});
+  one.ext.downloadChanged(42, {filename: '/Users/agent/Downloads/parity (1).txt', state: 'complete'});
+  one.ext.downloadChanged(41, {filename: PATH_A, state: 'complete'});
+  assert.deepEqual(await first, {download_id: '41'});
+  assert.deepEqual(await second, {download_id: '42'});
+  assert.deepEqual(await two.run({type: 'playwright_download_path', download_id: '42'}), {path: '/Users/agent/Downloads/parity (1).txt'});
+});
+
 // --- the classes, over a scripted controller ----------------------------------------------------------------------
 
 // A controller that records calls and lets the test emit events, and a backend API that lets it notify downloads.
@@ -175,7 +234,15 @@ function scriptedController() {
   cdp.attachHandlers = [];
   cdp.addTabAttachHandler = handler => { cdp.attachHandlers.push(handler); return () => {}; };
   cdp.isTabAttached = () => true;
-  cdp.call = async (tabId, method, params, options) => { cdp.calls.push({tabId, method, params, options}); return {}; };
+  // `cdp.answers[method](params, options)` answers a method (by default {}); a hung answer ends at the call's deadline.
+  cdp.answers = {};
+  cdp.call = async (tabId, method, params, options) => {
+    cdp.calls.push({tabId, method, params, options});
+    const answer = (async () => (cdp.answers[method] ?? (() => ({})))(params, options))();
+    return options?.deadline ? await options.deadline.race(answer) : await answer;
+  };
+  cdp.detached = [];
+  cdp.detach = async tabId => { cdp.detached.push(tabId); cdp.emit('tabDetached', tabId); };
   const api = new Emitter();
   api.addEventListener = (name, handler) => api.on(name, handler);
   api.matchesCurrentSessionId = id => id === 'session-a';
@@ -219,7 +286,7 @@ test('media: the request for the media URL in its frame (and its redirects) is l
 test('interception is set up once per attachment, on the attachment\'s budget, and again after a detach', async () => {
   const {cdp} = scriptedController();
   const responses = new DocumentResponses(cdp);
-  const options = {deadline: {marker: true}};
+  const options = {deadline: new Deadline(5000)};
   await cdp.attachHandlers[0](4, options);
   await cdp.attachHandlers[0](4, options);
   assert.deepEqual(cdp.calls.map(c => [c.method, c.options]), [['Fetch.enable', options]]);
@@ -228,4 +295,71 @@ test('interception is set up once per attachment, on the attachment\'s budget, a
   assert.equal(cdp.calls.length, 2);
   assert.equal(responses.hasOwnedPausedResponses(4), false);
   assert.equal(responses.hasRequestInterceptors(4), false);
+});
+
+const never = () => new Promise(() => {});
+const methods = cdp => cdp.calls.map(c => c.method);
+
+test('a release that hangs is recovered after the release budget; a recovery Chrome refuses detaches the tab', async () => {
+  const {cdp} = scriptedController();
+  const responses = new DocumentResponses(cdp, {releaseMs: 100, recoveryMs: 100});
+  const event = params => cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 5}, params});
+  cdp.answers['Fetch.continueResponse'] = never;
+  event(pausedResponse({requestId: 'hung', headers: [header('content-type', 'text/html')]}));
+  await waitFor(() => methods(cdp).includes('Fetch.disable') && methods(cdp).filter(m => m === 'Fetch.enable').length === 1, 'the recovery');
+  assert.equal(responses.hasOwnedPausedResponses(5), false, 'released by the disable, not by forgetting it');
+  cdp.answers['Fetch.disable'] = () => { throw new Error('Internal error'); };
+  event(pausedResponse({requestId: 'hung-again', headers: [header('content-type', 'text/html')]}));
+  await waitFor(() => cdp.detached.includes(5), 'the tab to be detached');
+  assert.equal(responses.hasOwnedPausedResponses(5), false);
+});
+
+test('a download\'s release that hangs: the wait times out in its own words, and its cleanup releases the response', async () => {
+  const {cdp, api} = scriptedController();
+  const responses = new DocumentResponses(cdp, {releaseMs: 100, recoveryMs: 100});
+  const downloads = new Downloads(api, responses);
+  cdp.answers['Fetch.continueResponse'] = never;
+  cdp.answers['Fetch.failRequest'] = never;
+  await downloads.enableDownload(6);
+  const waiting = downloads.waitForDownload(6, 200);
+  cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 6}, params: pausedResponse({requestId: 'dl'})});
+  const error = await rejection(waiting);
+  assert.equal(error.message, 'Timed out after 200ms waiting for download.');
+  assert.ok(methods(cdp).includes('Fetch.failRequest'), 'the cleanup fails the paused download');
+  assert.ok(methods(cdp).includes('Fetch.disable'), 'and, that hanging too, recovers the tab');
+  assert.equal(downloads.pendingDownloadRequestsByTabId.has(6), false);
+  assert.equal(responses.hasOwnedPausedResponses(6), false);
+});
+
+test('a release refused by an open dialog is left to the dialog (the recorded vendor gap): no recovery', async () => {
+  const {cdp} = scriptedController();
+  const responses = new DocumentResponses(cdp, {releaseMs: 100, recoveryMs: 100});
+  cdp.answers['Fetch.continueResponse'] = () => { throw new BrowserServiceError('dialog_open', 'A alert JavaScript dialog is active in this tab.'); };
+  cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 7}, params: pausedResponse({requestId: 'held', headers: [header('content-type', 'text/html')]})});
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.deepEqual(methods(cdp).filter(m => m !== 'Fetch.continueResponse'), []);
+  assert.equal(responses.hasOwnedPausedResponses(7), true);
+});
+
+test('media: setting up the interception is bounded by the command\'s deadline; removing it has a budget of its own', async () => {
+  const {cdp, api} = scriptedController();
+  const responses = new DocumentResponses(cdp);
+  const downloads = new Downloads(api, responses);
+  await responses.ensureInterceptionReady(8);
+  cdp.answers['Fetch.enable'] = never;
+  const started = Date.now();
+  const error = await rejection(downloads.enableMediaDownload(8, 'https://cdn.test/a.svg', 'F', {deadline: new Deadline(150)}));
+  assert.ok(Date.now() - started < 1000, `ended at the command's deadline (${Date.now() - started} ms)`);
+  assert.equal(error.code, 'timeout');
+  assert.equal(responses.hasRequestInterceptors(8), false, 'the interceptor is not left behind');
+  const setup = cdp.calls.filter(c => c.method === 'Fetch.enable').at(1);
+  assert.ok(setup.options.deadline.ms <= 150, 'the reconfiguration carried the command\'s budget');
+});
+
+test('a paused request is released also when no interceptor is left to see it', async () => {
+  const {cdp} = scriptedController();
+  new DocumentResponses(cdp);
+  cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 9}, params: {requestId: 'orphan', frameId: 'F', resourceType: 'Document', request: {url: 'https://x.test/'}}});
+  await tick();
+  assert.deepEqual(cdp.calls.map(c => [c.method, c.params.requestId]), [['Fetch.continueRequest', 'orphan']]);
 });

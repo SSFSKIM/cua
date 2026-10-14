@@ -5,9 +5,15 @@
 // The file chooser, the vendor's way. waitForEvent("filechooser") arms Chrome's file chooser interception for the tab
 // (Page.setInterceptFileChooserDialog), so a chooser the page opens is reported (Page.fileChooserOpened) instead of
 // shown, within the wait's budget (3 s by default, the caller's up to 120 s); the chooser is kept by a fresh id with its
-// input's backend node and multiplicity, and the interception is disarmed whatever happened. setFiles gives the input
+// input's backend node and multiplicity, and the interception is disarmed whatever happened (below). setFiles gives the input
 // its files with DOM.setFileInputFiles, once (the id is spent on success). The CDP controller forgets a tab's choosers
 // when the tab is detached.
+//
+// Disarming: not while another wait in the tab still has the interception armed (the vendor's first wait to end
+// disarms the others'). A JavaScript dialog blocks the call (the controller refuses it, and Chrome itself answers it
+// only once the dialog has closed, measured with a headless Chromium probe), so it is sent when the dialog closes; any
+// other failure detaches the tab, which drops the interception with the debugger. A chooser left intercepted would
+// never open for the person.
 // Changed: a chooser in an out-of-process frame is refused with the vendor's reason alone, without its security-policy
 // framing (errors.mjs keeps none of it); Chrome refusing the files to an extension without file URL access names the
 // cua extension and drops the vendor's link to OpenAI's documentation. Dropped: the upload approval
@@ -25,6 +31,47 @@ const browserOf = clientInfo => BROWSERS[clientInfo?.family ?? 'chrome'] ?? BROW
 
 const isBackendNodeId = id => typeof id === 'number' && Number.isInteger(id) && id > 0;                              // e1
 const isChooserOpened = event => event.method === 'Page.fileChooserOpened' && isBackendNodeId(event.params?.backendNodeId);  // kJ
+
+// CdpController -> Map(tabId -> the number of chooser waits that have the tab's interception armed).
+const armedWaits = new WeakMap();
+const armedIn = cdp => { let tabs = armedWaits.get(cdp); if (tabs == null) armedWaits.set(cdp, tabs = new Map()); return tabs; };
+function arm(cdp, tabId) { armedIn(cdp).set(tabId, (armedIn(cdp).get(tabId) ?? 0) + 1); }
+function unarm(cdp, tabId) {
+  const left = (armedIn(cdp).get(tabId) ?? 1) - 1;
+  if (left > 0) armedIn(cdp).set(tabId, left); else armedIn(cdp).delete(tabId);
+  return left;
+}
+
+async function disarm(cdp, tabId) {
+  if (armedIn(cdp).has(tabId)) return;
+  try {
+    await cdp.call(tabId, 'Page.setInterceptFileChooserDialog', {enabled: false}, {deadline: new Deadline(DEFAULT_ACTION_MS)});
+  } catch (error) {
+    if (error instanceof BrowserServiceError && error.code === 'tab_detached') return;
+    if (error instanceof BrowserServiceError && error.code === 'dialog_open') {
+      disarmWhenDialogCloses(cdp, tabId);
+      return;
+    }
+    await cdp.detach(tabId).catch(() => {});
+  }
+}
+
+// Disarms once the tab's dialog has closed (the controller has forgotten it by then); nothing is left to disarm once
+// the tab is detached.
+function disarmWhenDialogCloses(cdp, tabId) {
+  const stop = () => {
+    cdp.removeListener('event', onEvent);
+    cdp.removeListener('tabDetached', onDetached);
+  };
+  const onEvent = event => {
+    if (event.method !== 'Page.javascriptDialogClosed' || event.source.tabId !== tabId) return;
+    stop();
+    disarm(cdp, tabId).catch(() => {});
+  };
+  const onDetached = detached => { if (detached === tabId) stop(); };
+  cdp.on('event', onEvent);
+  cdp.on('tabDetached', onDetached);
+}
 
 // The chooser Chrome reported, as the service keeps it (IJ).
 function chooserOf(tabId, event) {
@@ -55,6 +102,7 @@ export const CHOOSER_HANDLERS = {
     // Arming is dispatched within the wait's budget (an explicit zero arms once, within 3 s, then times out as the
     // vendor's does); a budget spent while arming reads as the wait's own timeout.
     const deadline = attemptBudget(new Deadline(timeoutMs));
+    arm(session.cdp, tabId);
     try {
       const event = await session.cdp.waitForEvent(tabId, isChooserOpened, {
         timeoutMs, timeoutMessage,
@@ -73,8 +121,8 @@ export const CHOOSER_HANDLERS = {
       session.cdp.fileChoosersById.set(id, chooser);
       return {file_chooser_id: id, is_multiple: chooser.isMultiple};
     } finally {
-      // Always disarmed, on a budget of its own: a chooser left intercepted would never open for the person.
-      await session.cdp.call(tabId, 'Page.setInterceptFileChooserDialog', {enabled: false}, {deadline: new Deadline(DEFAULT_ACTION_MS)}).catch(() => {});
+      // Disarmed on a budget of its own, unless another wait still needs the interception.
+      if (unarm(session.cdp, tabId) === 0) await disarm(session.cdp, tabId);
     }
   },
 

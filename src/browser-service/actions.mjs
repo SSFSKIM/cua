@@ -17,7 +17,7 @@
 // Dropped from Pf: the synthetic document-scoped click (MCP-app documents), the in-app browser's input target tokens
 // and box-model frame geometry, telemetry and command timing, the bound selector, the download source policy check.
 import {DOWNLOAD_MS, Deadline, PRESS_SEQUENTIALLY_MS, clamp} from './budgets.mjs';
-import {BrowserServiceError} from './errors.mjs';
+import {BrowserServiceError, isDeadlineError} from './errors.mjs';
 import {checkSelectorDeadline} from './injected.mjs';
 import {pointThroughQuad} from './input.mjs';
 import {attemptBudget} from './selectors.mjs';
@@ -496,7 +496,11 @@ export const ACTION_HANDLERS = {
       const {result: url} = await session.selectors.evaluateOnSelector(params.selector, tabId, mediaUrl, {deadline: new Deadline(clamp(left()))});
       if (frameId == null) throw new Error('Could not determine the media frame');
       left();
-      const release = await downloads.enableMediaDownload(tabId, url, frameId);
+      // Arming is bounded by what is left of the command; running out there is the command's own timeout.
+      const release = await downloads.enableMediaDownload(tabId, url, frameId, {deadline}).catch(error => {
+        if (deadline.expired() && isDeadlineError(error)) throw new Error(`Timed out after ${budget}ms downloading media.`);
+        throw error;
+      });
       try {
         await session.selectors.evaluateOnSelector(params.selector, tabId, clickDownloadLink, {arg: url, deadline: new Deadline(clamp(left()))});
         return {path: (await downloads.waitForDownload(tabId, left())).filename};

@@ -13,8 +13,12 @@ const INPUT = 42;
 // Scripted pages whose DOM.setFileInputFiles answers as `chrome.setFiles(params)` says (the default: {}).
 function chooserPages() {
   const pages = scriptedPages();
-  const chrome = {setFiles: () => ({})};
+  const chrome = {setFiles: () => ({}), disarm: () => ({})};
   const cdp = request => {
+    if (request.method === 'Page.setInterceptFileChooserDialog' && request.params.enabled === false) {
+      pages.sent.push({tabId: request.debuggee.tabId, method: request.method, params: request.params});
+      return chrome.disarm();
+    }
     if (request.method === 'DOM.setFileInputFiles') {
       pages.sent.push({tabId: request.debuggee.tabId, method: request.method, params: request.params});
       return chrome.setFiles(request.params);
@@ -119,4 +123,38 @@ test('setFiles refusals: no files, several files for a single chooser, another t
   pages.chrome.setFiles = () => ({});
   assert.deepEqual(await set(['/tmp/a']), {}, 'a refused or failed setFiles keeps the chooser');
   assert.equal(sent('DOM.setFileInputFiles').length, 4);
+});
+
+test('a dialog opening while the chooser is armed: the disarm waits for the dialog to close, then goes out', async t => {
+  const {run, sent, armed, ext, tabId} = await tabWithInput(t);
+  const waiting = run({type: 'playwright_wait_for_file_chooser', timeout_ms: 300});
+  await armed();
+  ext.cdpEvent({tabId: Number(tabId)}, 'Page.javascriptDialogOpening', {type: 'alert', message: 'a', url: 'https://example.com/chooser', hasBrowserHandler: true});
+  assert.equal((await rejection(waiting)).message, 'Timed out after 300ms waiting for file chooser.');
+  assert.deepEqual(sent('Page.setInterceptFileChooserDialog'), [{enabled: true}], 'the dialog blocks the disarm');
+  ext.cdpEvent({tabId: Number(tabId)}, 'Page.javascriptDialogClosed', {result: true, userInput: ''});
+  await waitFor(() => sent('Page.setInterceptFileChooserDialog').length === 2, 'the disarm once the dialog closed');
+  assert.deepEqual(sent('Page.setInterceptFileChooserDialog'), [{enabled: true}, {enabled: false}]);
+});
+
+test('a wait that ends does not disarm another wait of the tab; the last one does', async t => {
+  const {run, sent, opened, armed} = await tabWithInput(t);
+  const long = run({type: 'playwright_wait_for_file_chooser', timeout_ms: 3000});
+  await armed();
+  assert.equal((await rejection(run({type: 'playwright_wait_for_file_chooser', timeout_ms: 100}))).code, 'timeout');
+  assert.equal(sent('Page.setInterceptFileChooserDialog').filter(p => p.enabled === false).length, 0, 'still armed for the other wait');
+  opened();
+  assert.equal((await long).is_multiple, false);
+  assert.deepEqual(sent('Page.setInterceptFileChooserDialog').at(-1), {enabled: false});
+});
+
+test('a disarm Chrome refuses detaches the tab, which drops the interception with the debugger', async t => {
+  const {run, armed, opened, pages, ext, tabId} = await tabWithInput(t);
+  pages.chrome.disarm = () => { throw new Error('Internal error'); };
+  const waiting = run({type: 'playwright_wait_for_file_chooser', timeout_ms: 2000});
+  await armed();
+  opened();
+  await waiting;
+  await waitFor(() => !ext.state.held.has(`tab:${tabId}`), 'the tab to be detached');
+  assert.ok(ext.state.tabs.has(Number(tabId)), 'detached, not closed');
 });

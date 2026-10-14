@@ -12,9 +12,10 @@ const counts = trace => {
   for (const row of trace) if (row.cdp) out[row.cdp] = (out[row.cdp] ?? 0) + 1;
   return out;
 };
-function imageEqual(a,b,tolerance) {
-  if (a?.$image === 'sha256' || b?.$image === 'sha256') return isDeepStrictEqual(a,b);
-  if (a?.$image && b?.$image) {
+function imageEqual(a,b,tolerance,{raw=false,path='',mcpImage=false}={}) {
+  const imageSlot=!raw||mcpImage;
+  if (imageSlot && (a?.$image === 'sha256' || b?.$image === 'sha256')) return isDeepStrictEqual(a,b);
+  if (imageSlot && a?.$image && b?.$image) {
     if (a.width !== b.width || a.height !== b.height || a.$image !== b.$image || a.mimeType !== b.mimeType) return false;
     if (!/^[0-9a-f]{16}$/.test(a.hash) || !/^[0-9a-f]{16}$/.test(b.hash)) return false;
     return (BigInt('0x'+a.hash)^BigInt('0x'+b.hash)).toString(2).replaceAll('0','').length <= tolerance;
@@ -22,11 +23,11 @@ function imageEqual(a,b,tolerance) {
   if (a && b && typeof a === 'object' && typeof b === 'object') {
     if(Array.isArray(a)!==Array.isArray(b))return false;
     const keys = Object.keys(a);
-    return isDeepStrictEqual(keys.sort(), Object.keys(b).sort()) && keys.every(k => imageEqual(a[k],b[k],tolerance));
+    return isDeepStrictEqual(keys.sort(), Object.keys(b).sort()) && keys.every(k => imageEqual(a[k],b[k],tolerance,{raw,path:path?`${path}.${k}`:k,mcpImage:raw&&/^content\.\d+$/.test(path)&&a.type==='image'&&b.type==='image'&&k==='data'}));
   }
   return isDeepStrictEqual(a,b);
 }
-export function compareRuns(a, b, {expected = []} = {}) {
+export function compareRuns(a, b, {expected = [], raw = false} = {}) {
   const differences = [], accepted = [];
   if (!Array.isArray(expected) || expected.some(e => !e.reason || !Array.isArray(e.cases) || !Array.isArray(e.cells) || !['semantic','trace'].includes(e.kind))) throw new Error('Invalid expected-differences entry');
   const add = d => {
@@ -55,7 +56,7 @@ export function compareRuns(a, b, {expected = []} = {}) {
     const context = {case:row.case, cell:row.cell};
     if (!x || !y) { add({...context,kind:'cardinality',message:'missing case/cell'}); continue; }
     if (!isDeepStrictEqual(x.pollingAllowance ?? {}, y.pollingAllowance ?? {}) || (x.screenshotTolerance ?? 0) !== (y.screenshotTolerance ?? 0)) add({...context,kind:'configuration',message:'comparison allowances changed'});
-    if (!imageEqual(semantic(x),semantic(y),x.screenshotTolerance ?? 0)) add({...context,kind:row.assertion ? 'assertion' : 'semantic',a:semantic(x),b:semantic(y)});
+    if (!imageEqual(semantic(x),semantic(y),x.screenshotTolerance ?? 0,{raw})) add({...context,kind:row.assertion ? 'assertion' : 'semantic',a:semantic(x),b:semantic(y)});
     // Older resident hosts emit no trace. Missing/empty means unavailable, not zero CDP calls.
     if (!x.trace?.length || !y.trace?.length) continue;
     const xc = counts(x.trace), yc = counts(y.trace);

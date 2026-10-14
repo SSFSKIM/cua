@@ -1,7 +1,7 @@
 // Remote-only process/sandbox probes against the real selected host. The control files and every signalled PID belong
 // to this process's serve-cells children. Negative preflights are identified as boundary observations, not MCP output.
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,existsSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,existsSync,rmSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join} from 'node:path';import {fileURLToPath} from 'node:url';
 import {PassThrough} from 'node:stream';import {createServer} from 'node:net';import {randomUUID} from 'node:crypto';
 import {executionFacts,assertPreparedFacts} from '../../scripts/repl-parity/provenance.mjs';
@@ -24,7 +24,8 @@ const text=r=>(r.content??[]).filter(c=>c.type==='text').map(c=>c.text).join('\n
 async function record(label,result){rows.push({case:id,cell:label,ok:true,...await normalizeRawResult(result,{normalize})});return result;}
 async function open({sandbox='scoped',witness=false,brokenSandbox=false}={}){
  const control=join(dir,`connection-${clients.length+1}`);mkdirSync(control);
- const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:{PATH:process.env.PATH,HOME:process.env.HOME,...desktopSessionEnv(process.env),TMPDIR:join(dir,'tmp'),CUA_HOME:process.env.CUA_HOME,CUA_REPL_HOST:host,CUA_PARITY_REMOTE:'1',CUA_PARITY_EXPECTED:JSON.stringify(facts),CUA_PARITY_CONTROL_DIR:control,CUA_PARITY_SANDBOX:sandbox,CUA_PARITY_BANNER_WITNESS:witness?'1':'0',CUA_PARITY_BROKEN_SANDBOX:brokenSandbox?'1':'0'}});
+ const sandboxFailure=join(control,'failing-sandbox');if(brokenSandbox){writeFileSync(sandboxFailure,'#!/bin/sh\nprintf \'fixture sandbox launcher refused\\n\' >&2\nexit 73\n');chmodSync(sandboxFailure,0o700);}
+ const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:{PATH:process.env.PATH,HOME:process.env.HOME,...desktopSessionEnv(process.env),TMPDIR:join(dir,'tmp'),CUA_HOME:process.env.CUA_HOME,CUA_REPL_HOST:host,CUA_PARITY_REMOTE:'1',CUA_PARITY_EXPECTED:JSON.stringify(facts),CUA_PARITY_CONTROL_DIR:control,CUA_PARITY_SANDBOX:sandbox,CUA_PARITY_BANNER_WITNESS:witness?'1':'0',CUA_PARITY_BROKEN_SANDBOX:brokenSandbox?sandboxFailure:''}});
  clients.push({client,control,sandbox,witness,brokenSandbox});return client;
 }
 async function js(client,label,code,timeoutMs){return record(label,await client.call('js',{code,title:'Owned boundary fixture',...(timeoutMs?{timeout_ms:timeoutMs}:{})}));}

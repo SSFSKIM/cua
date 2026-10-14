@@ -9,7 +9,7 @@ import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false}={}) {
   const env={...launch.env};
-  if(brokenSandbox)env.CODEX_CLI_PATH='/cua-parity-unavailable-sandbox';
+  if(brokenSandbox)env.CODEX_CLI_PATH=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
   const banner=witness?'globalThis.__parityBannerWitness = Symbol("fixture-banner");':'void 0;';
   for(const key of Object.keys(env))if(/^(SKY_|OAI_SKY_|CUA_SKY_|CUA_BROWSER_|BROWSER_USE_)/.test(key))delete env[key];
   if(host==='vendor') {
@@ -36,5 +36,5 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
   if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Live cells fixture is remote-only; local parity uses doubles');
-  await serveCells({source:process.env.CUA_HOME,host:process.env.CUA_REPL_HOST??'vendor',sandbox:process.env.CUA_PARITY_SANDBOX??'scoped',witness:process.env.CUA_PARITY_BANNER_WITNESS==='1',brokenSandbox:process.env.CUA_PARITY_BROKEN_SANDBOX==='1',controlDir:process.env.CUA_PARITY_CONTROL_DIR});
+  await serveCells({source:process.env.CUA_HOME,host:process.env.CUA_REPL_HOST??'vendor',sandbox:process.env.CUA_PARITY_SANDBOX??'scoped',witness:process.env.CUA_PARITY_BANNER_WITNESS==='1',brokenSandbox:process.env.CUA_PARITY_BROKEN_SANDBOX||false,controlDir:process.env.CUA_PARITY_CONTROL_DIR});
 }

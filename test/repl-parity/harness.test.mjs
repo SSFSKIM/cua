@@ -82,3 +82,13 @@ test('effective tool schema drift invalidates parity instead of counting the cel
  const a=run(),b=run();a.tools={tools:[{name:'js',inputSchema:{type:'object'}}]};b.tools={tools:[{name:'js',inputSchema:{type:'string'}}]};
  const result=compareParityRuns(a,b);assert.equal(result.ok,false);assert.equal(result.cases,0);
 });
+
+test('application objects cannot opt into screenshot comparison by using an internal image marker',()=>{
+ const a=run(),b=run();a.rows[0].structuredContent={$image:'ahash64',width:8,height:8,hash:'0000000000000000',application:'one'};b.rows[0].structuredContent={...a.rows[0].structuredContent,application:'two'};
+ assert.equal(compareParityRuns(a,b).ok,false);
+});
+
+test('a non-image MCP item cannot make its application data a screenshot slot',()=>{
+ const a=run(),b=run();a.rows[0].content=[{type:'text',text:'fixture',data:{$image:'ahash64',width:8,height:8,hash:'0000000000000000',application:'one'}}];b.rows[0].content=structuredClone(a.rows[0].content);b.rows[0].content[0].data.application='two';
+ assert.equal(compareParityRuns(a,b).ok,false);
+});

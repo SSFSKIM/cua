@@ -51,7 +51,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     if(!isDeepStrictEqual(own.meta?.['cua/replHost'],allowance.cua.value))continue;
     delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
-  const result=compareRuns(left,right);
+  const result=compareRuns(left,right,{raw:true});
   differences.push(...result.differences);
   return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }

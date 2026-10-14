@@ -106,7 +106,7 @@ export async function main(argv=process.argv.slice(2)) {
     writeFileSync(join(out,'results.jsonl'),'');
     for(const scenario of scenarios) {
       const connectClient=async()=>{
-        const command=capability?localCuaServeCommand({service:values.service,home:prepared.home}):serveCommand({...prepared,service:values.service});
+        const command=capability?localCuaServeCommand({service:values.service,home:prepared.home,userHome:capabilityHome.userHome}):serveCommand({...prepared,service:values.service});
         const connected=new StdioClient({...command,onElicitation:row=>meta.elicitations.push({...row,case:scenario.id})});
         ownedClients.add(connected);
         await connected.initialize();

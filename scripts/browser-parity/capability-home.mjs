@@ -7,6 +7,7 @@
 //     readable chatgpt-26.928.40906 BS:9509 and BS:62613 fullCdpAccessState): the vendor serves raw CDP only with it
 //     on, where cua's service gates on the backend's announcement alone (Decision Log, M2 task 2). Without it the
 //     vendor would refuse what cua serves and the run would compare nothing.
+//   - `home/`, the HOME the serve runs with (scripts/browser-parity/topology.mjs localCuaServeCommand), empty.
 // The directory is short (/tmp) because a Unix socket path below it must fit 104 bytes.
 import {execFileSync} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
@@ -15,13 +16,15 @@ import {defaultHome, homeLayout, readPointer, writePointer} from '../../src/runt
 import {cuaRecordFile} from '../../src/chrome/route.mjs';
 import {backendDir} from '../../src/chrome/extension.mjs';
 
-// -> {dir, release, cleanup()}; throws when `source` has no installed runtime.
+// -> {dir, userHome, release, cleanup()}; throws when `source` has no installed runtime.
 export function prepareCapabilityHome({source = defaultHome(), platform = process.platform} = {}) {
   const release = readPointer(source);
   const runtime = release && join(homeLayout(source).runtimes, release);
   if (!runtime || !existsSync(runtime)) throw new Error(`no installed runtime in ${source}; run \`cua install\` first`);
   const dir = realpathSync(mkdtempSync('/tmp/cua-cap-'));
+  const userHome = join(dir, 'home');
   try {
+    mkdirSync(userHome, {mode: 0o700});
     mkdirSync(homeLayout(dir).runtimes, {recursive: true, mode: 0o700});
     execFileSync('cp', [...(platform === 'darwin' ? ['-c'] : []), '-R', runtime, homeLayout(dir).runtimes]);
     writePointer(dir, release);
@@ -34,5 +37,5 @@ export function prepareCapabilityHome({source = defaultHome(), platform = proces
     rmSync(dir, {recursive: true, force: true});
     throw error;
   }
-  return {dir, release, cleanup() { rmSync(dir, {recursive: true, force: true}); }};
+  return {dir, userHome, release, cleanup() { rmSync(dir, {recursive: true, force: true}); }};
 }

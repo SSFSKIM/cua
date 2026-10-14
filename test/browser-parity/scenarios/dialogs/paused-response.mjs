@@ -14,7 +14,9 @@ export default {
     // held open past the response.
     {label:'dialog',code:"const started=Date.now();globalThis.dialog=undefined;while(!dialog&&Date.now()-started<5000){dialog=await tab.getJsDialog();if(!dialog)await new Promise(r=>setTimeout(r,25));}await new Promise(r=>setTimeout(r,2500));return dialog?.type;"},
     {label:'dismiss',code:"await dialog.dismiss();return (await tab.getJsDialog())==null;"},
-    {label:'paused',code:"await new Promise(r=>setTimeout(r,2500));return await tab.playwright.locator('#go').count();"},
+    // Still the first document, 2.5 s after the response was sent (the tab's title and committed URL, which the host
+    // reads from Chrome's tab, not the page: a page call would wait on the paused navigation).
+    {label:'paused',code:"await new Promise(r=>setTimeout(r,2500));return {title:await tab.title(),path:new URL(await tab.url()).pathname};"},
     {label:'mark',code:"await tab.markDeliverable();return true;"},
     endTask('end'),
     drop('release-primary'),
@@ -24,7 +26,7 @@ export default {
     const value=label=>results.find(r=>r.cell===label);
     const ok=['start','dialog','dismiss','paused','mark','end','release-primary','arrived'].every(label=>value(label)?.ok)
       &&value('dialog').value==='alert'&&value('dismiss').value===true
-      &&value('paused').value===1
+      &&value('paused').value?.title==='Browser parity fixture'&&value('paused').value?.path==='/paused-navigation.html'
       &&value('arrived').value?.arrived===true&&value('arrived').value?.closed===true
       &&fixtureState.events.some(e=>e.responded===token)&&fixtureState.events.some(e=>e.arrived===token);
     return ok?{ok:true}:{ok:false,reason:JSON.stringify(results.map(r=>[r.cell,r.ok,r.value??r.error?.message]))};

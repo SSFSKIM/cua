@@ -1,7 +1,7 @@
 # M4: cua's browser service under MAWS client mode and on the Linux route (acceptance 8 and 9)
 
 Spec: `docs/doperpowers/specs/2026-10-13-own-browser-service-design.md`, M4. cua branch `feat/own-browser-service-m4`
-(runs at 629cd6a: e2cfe57 plus the runners' service attestation). 2026-10-14, 12:35 to 13:30 UTC. Every run below
+(runs at 629cd6a: e2cfe57 plus the runners' service attestation). 2026-10-14, 12:35 to 13:50 UTC (the MAWS live reports re-run at 13:47 and 13:49 after the probe gained its verdict and shutdown path). Every run below
 records which service answered: the runners' new step "the selected browser service answers" / `service` compares
 CUA_BROWSER_SERVICE with the selected browser's documentation (`cua browser service 0.1.0` marker on cua's, none on
 the vendor's), so a run cannot pass on the wrong service.
@@ -64,7 +64,14 @@ Electron binary, no Playwright client on its pages, the e2e seam, a transparent 
 `/tmp`) for two app sessions `m4-A` and `m4-B`, and makes the driver's process a trusted root (the seam's `trustRoot`),
 as an engine is for its own tree, so the `cua serve` the driver starts and that serve's own host in client mode pass
 MAWS's peer check. It also answers the person's click on the session's leased tab (the seam's `sendInput`) and reads
-the tab's control and the agent cursor's message count. `maws-live/run.mjs` drives it:
+the tab's control and the agent cursor's message count. `maws-live/run.mjs` drives it and judges the run
+(`maws-live/verdict.mjs`, written into the report as `verdict` and returned as the exit code): no error, MAWS trusted
+the probe, every maws-features step PASS with the service and popup steps named, `profileName` `MAWS`, the cursor
+messages rising, the default-budget click stopping at the deadline with `#state` waiting, and the raised-budget click
+going through no earlier than the 3 s hand-back on cua or stopping at the 3 s cap on the vendor. SIGINT, SIGTERM and
+SIGHUP take the same shutdown path as a normal end (its own session, MAWS, the scratch directories, the report) and
+exit nonzero; `test/maws-live-probe.test.mjs` proves the verdict and, with a fake Electron, the start-up failure and
+both signals offline:
 
 ```
 MAWS_E2E_QUIET=1 /tmp/maws-review/waitload20.sh && MAWS_E2E_QUIET=1 /tmp/maws-review/with-slot.sh \
@@ -78,14 +85,15 @@ default selection is MAWS's by CUA_BROWSER_BACKENDS. No Chrome was launched or r
 
 | check | cua (`maws/maws-live-cua.json`) | vendor (`maws/maws-live-vendor.json`) |
 |---|---|---|
+| verdict, exit code | PASS, exit 0 | PASS, exit 0 |
 | maws-features: profiles, service, createTab, locator, viewport, popup, download, alert, confirm, chooser, cleanup, isolation | all PASS; service `cua browser service 0.1.0` | all PASS; service `vendor` |
 | `hello.profileName` | the browser's `profileName` `MAWS`, instance `maws:m4-A` | same |
 | `tabs.adopted` (popup step) | exactly one tab added, `/popup`, listed as the agent's and closed by end_task | same |
 | `cursor.move` | a locator click raised MAWS's cursor messages 0 → 4 | 0 → 4 |
 | announced capabilities | browser `[viewport]`, tab `[]` | same |
 | `browser.history({limit: 1})` | rejects "No handler registered for method: getUserHistory" (MAWS has none) | rejects: the vendor's history approval, declined by the harness's policy |
-| takeover, default budget: the person clicks, then `locator('#submit').click()` | fails at 3,014 ms "Playwright selector deadline exceeded"; `#state` waiting | fails at 3,127 ms, same sentence; waiting |
-| takeover, `click({timeoutMs: 15000})` | succeeds at 3,244 ms (3,262 ms after the person's click), `#state` submitted:x | fails at 3,078 ms, same sentence (the 3 s cap) |
+| takeover, default budget: the person clicks, then `locator('#submit').click()` | fails at 3,078 ms "Playwright selector deadline exceeded"; `#state` waiting | fails at 3,093 ms, same sentence; waiting |
+| takeover, `click({timeoutMs: 15000})` | succeeds at 3,251 ms (3,269 ms after the person's click), `#state` submitted:x | fails at 3,039 ms, same sentence (the 3 s cap) |
 | elicitations | none | origin access, download, upload (served page only) |
 | serve exit | 0 | 0 |
 

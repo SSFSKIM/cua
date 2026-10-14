@@ -30,3 +30,13 @@ test('fixture shutdown closes active keep-alive sockets so a later run cannot re
     await Promise.race([closed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('fixture retained an active connection after shutdown')),300);})]);
   } finally {clearTimeout(timer);socket.destroy();await closed;}
 });
+
+test('the slow document records its request and its answer 800 ms later, and its page records the arrival by token', async t => {
+  const server = await startFixture({port:0}); t.after(() => server.close());
+  const started = Date.now();
+  const response = await fetch(`${server.url}/slow-document.html?token=abc`);
+  assert.ok(Date.now() - started >= 750, 'answered after its delay');
+  assert.match(await response.text(), /<title>Arrived<\/title>.*record\(\{arrived:/s);
+  assert.deepEqual((await (await fetch(server.url+'/state')).json()).events, [{requested:'abc'},{responded:'abc'}]);
+  for (const page of ['clipboard-page','paused-navigation']) assert.equal((await fetch(`${server.url}/${page}.html`)).status,200,page);
+});

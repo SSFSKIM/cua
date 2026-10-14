@@ -17,7 +17,7 @@
 // Dropped from Pf: the synthetic document-scoped click (MCP-app documents), the in-app browser's input target tokens
 // and box-model frame geometry, telemetry and command timing, the bound selector, the download source policy check.
 import {DOWNLOAD_MS, Deadline, PRESS_SEQUENTIALLY_MS, clamp} from './budgets.mjs';
-import {BrowserServiceError, serviceError} from './errors.mjs';
+import {BrowserServiceError, isDeadlineError} from './errors.mjs';
 import {checkSelectorDeadline} from './injected.mjs';
 import {pointThroughQuad} from './input.mjs';
 import {attemptBudget} from './selectors.mjs';
@@ -479,12 +479,11 @@ export const ACTION_HANDLERS = {
   },
 
   // The locator half: the media's URL and frame found, a download link for it clicked, all within the command's
-  // budget (`timeout_ms`, 120 s by default and at most). The downloads half (the session's downloads: the armed
-  // interception, the wait and the file's path) is M2's; until it is there the command is not served.
+  // budget (`timeout_ms`, 120 s by default and at most). The downloads half (downloads.mjs: the request let through,
+  // the wait and the file's path) is the session's downloads.
   async playwright_locator_download_media(params, session) {
     const tabId = tabIdOf(params.tab_id);
     const downloads = session.downloads;
-    if (downloads == null) throw serviceError('unsupported_command', 'playwright_locator_download_media');
     return await downloads.withDownload(tabId, async () => {
       const budget = clamp(params.timeout_ms ?? DOWNLOAD_MS, DOWNLOAD_MS);
       const deadline = new Deadline(budget);
@@ -497,7 +496,11 @@ export const ACTION_HANDLERS = {
       const {result: url} = await session.selectors.evaluateOnSelector(params.selector, tabId, mediaUrl, {deadline: new Deadline(clamp(left()))});
       if (frameId == null) throw new Error('Could not determine the media frame');
       left();
-      const release = await downloads.enableMediaDownload(tabId, url, frameId);
+      // Arming is bounded by what is left of the command; running out there is the command's own timeout.
+      const release = await downloads.enableMediaDownload(tabId, url, frameId, {deadline}).catch(error => {
+        if (deadline.expired() && isDeadlineError(error)) throw new Error(`Timed out after ${budget}ms downloading media.`);
+        throw error;
+      });
       try {
         await session.selectors.evaluateOnSelector(params.selector, tabId, clickDownloadLink, {arg: url, deadline: new Deadline(clamp(left()))});
         return {path: (await downloads.waitForDownload(tabId, left())).filename};

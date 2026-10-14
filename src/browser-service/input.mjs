@@ -1,5 +1,5 @@
 // Ported from readable chatgpt-26.928.40906 BS:60345-60709 (Bf, the pointer and key input of the cua and dom_cua commands); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
-// Also: the commands SC, EC, AC (BS:18604-18652), UC, jC (BS:20532-20582), ay (BS:27528-27531), rf, oO, iO, sO, aO, lO,
+// Also: the commands SC, EC, AC (BS:18604-18652), UC, qC, jC (BS:20532-20582), ay (BS:27528-27531), rf, oO, iO, sO, aO, lO,
 // cO, VX and Pv (BS:46904-46996); jt, CC and Yv (BS:18514-18531, 54595-54604); sj, Ro and zu (BS:18550-18603); c_,
 // AZ, PZ, kZ and IZ (BS:60264-60344); YI, ZI, QI and tR (BS:37933-38031, 38105-38107).
 //
@@ -326,6 +326,14 @@ export const INPUT_HANDLERS = {
   },
 
   async cua_keypress(params, session) { return await keypress('cua_keypress', params, session); },
+
+  // The pointer moved to the point, the agent's cursor aimed there first (qC).
+  async cua_move(params, session) {
+    const tabId = tabIdOf(params.tab_id);
+    requireFinitePoint('cua_move', params);
+    await session.input.dispatchMouseMove(tabId, {x: params.x, y: params.y}, modifierMask(params.keys, session.platform));
+    return {};
+  },
 
   async cua_scroll(params, session) {
     const tabId = tabIdOf(params.tab_id);

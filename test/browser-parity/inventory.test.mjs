@@ -10,7 +10,8 @@ const walk = dir => readdirSync(dir, {withFileTypes:true}).flatMap(e => e.isDire
 const corpus = async () => Promise.all(walk(join(root,'test/browser-parity/scenarios')).map(async p => (await import(pathToFileURL(p))).default));
 const inventory = () => JSON.parse(readFileSync(inventoryPath,'utf8'));
 // Milestone completion is inferred from the spec's concern modules; an explicit lower gate is useful during a port.
-const currentMilestone = () => process.env.CUA_PARITY_MILESTONE ?? ([['M3','history'],['M2','dialogs'],['M1c','waits'],['M1b','snapshot']].find(([,file])=>existsSync(join(root,`src/browser-service/${file}.mjs`)))?.[0] ?? 'M1a');
+// M2 lands in two tasks (Decision Log 2026-10-14, M2 pre-flight): its gate turns on with the second task's devlogs.mjs.
+const currentMilestone = () => process.env.CUA_PARITY_MILESTONE ?? ([['M3','history'],['M2','devlogs'],['M1c','waits'],['M1b','snapshot']].find(([,file])=>existsSync(join(root,`src/browser-service/${file}.mjs`)))?.[0] ?? 'M1a');
 
 test('every wire command has an executable milestone case or an explicit capability-disabled assertion', async () => {
   const rows = inventory(), scenarios = await corpus(), byId = new Map(scenarios.map(s => [s.id,s]));

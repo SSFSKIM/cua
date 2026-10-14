@@ -49,6 +49,15 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
         return send(200,imageSvg,'image/svg+xml');
       }
       if (url.pathname === '/image.svg') return send(200,imageSvg,'image/svg+xml');
+      // A document that answers 800 ms after its request; the request, the answer and the page's arrival are recorded.
+      if (url.pathname === '/slow-document.html') {
+        const token = url.searchParams.get('token') ?? '';
+        state.events.push({requested:token});
+        await new Promise(resolve=>{const timer=setTimeout(resolve,800);res.once('close',()=>{clearTimeout(timer);resolve();});});
+        if(res.destroyed)return;
+        state.events.push({responded:token});
+        return send(200,html(`<p id="arrived">Arrived</p><script>${eventScript}record({arrived:new URLSearchParams(location.search).get('token')??''})</script>`,'Arrived'),'text/html; charset=utf-8');
+      }
       if (url.pathname === '/download') {res.setHeader('content-disposition','attachment; filename="parity.txt"');return send(200,'parity download\n','text/plain');}
       if (url.pathname.startsWith('/benchmark/')) {
         const name = url.pathname.slice('/benchmark/'.length);

@@ -34,5 +34,11 @@
     "cells": ["load", "idle"],
     "kind": "semantic",
     "reason": "waitForLoadState with timeoutMs 0 on a loaded, network-idle page: on cua a zero budget is one observation (the M1b ruling), so a load state or network idleness that already holds succeeds; the vendor's zero timer fires before its first observation and it fails with its timeout sentence. A departure in cua's favour (M1c whole-branch review P2; Decision Log 2026-10-14)."
+  },
+  {
+    "cases": ["downloads/two-tabs"],
+    "cells": ["both"],
+    "kind": "semantic",
+    "reason": "Two tabs, each with its own download wait armed, download the same URL at once: on cua each wait gets its own download (a started download is owned by the earliest-armed matching wait, the next by the next), so the two paths differ; the vendor matches a started download by URL for every waiting tab, so one download reaches both waits and both report the same path. A departure in cua's favour (M2 task 1 review, download-start ownership; Decision Log 2026-10-14)."
   }
 ]

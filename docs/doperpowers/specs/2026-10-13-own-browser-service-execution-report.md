@@ -11,7 +11,8 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | M1b | feat/own-browser-service-m1b | https://github.com/SSFSKIM/cua/pull/124 | merged (af649ba) |
 | M1c | feat/own-browser-service-m1c | https://github.com/SSFSKIM/cua/pull/125 | merged (cfa4f63) |
 | M2 | feat/own-browser-service-m2 | https://github.com/SSFSKIM/cua/pull/126 | merged (ec576a8) |
-| M3 | feat/own-browser-service-m3 | https://github.com/SSFSKIM/cua/pull/127 | reviewed clean at 64adc37 (reviewer-high); three download cases await the mini's Downloads consent |
+| M3 | feat/own-browser-service-m3 | https://github.com/SSFSKIM/cua/pull/127 | merged (5f24301); three download cases await the mini's Downloads consent |
+| M4 | feat/own-browser-service-m4 | — | executing (MAWS client mode, Linux runners) |
 
 ## Log
 

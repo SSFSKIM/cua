@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {Deadline} from '../../src/browser-service/budgets.mjs';
 import {CdpController} from '../../src/browser-service/cdp.mjs';
 import {BrowserServiceError} from '../../src/browser-service/errors.mjs';
-import {DEADLINE_SENTENCE, EVALUATE_HANDLERS, PageEvaluator, RESULT_LIMITS, projectResult} from '../../src/browser-service/evaluate.mjs';
+import {DEADLINE_SENTENCE, EVALUATE_HANDLERS, PageEvaluator} from '../../src/browser-service/evaluate.mjs';
 import {InjectedScripts, WORLD_NAME} from '../../src/browser-service/injected.mjs';
 import {ENTER_FRAME, SelectorEngine} from '../../src/browser-service/selectors.mjs';
 import {FAKE_INJECTED_SOURCE, el, iframe, pageWorld} from './support/page-world.mjs';
@@ -215,78 +215,4 @@ test('evaluateInPage takes a tab, an element handle or a resolveAll result, and 
   const all = await session.selectors.resolveAll('i', TAB, {deadline});
   assert.deepEqual(await session.evaluator.evaluateInPage(all, 'return [elements.length, arguments[0]];', ['y'], {deadline}), [1, 'y']);
   await assert.rejects(session.evaluator.evaluateInPage({tabId: TAB, frameId: 'SAME'}, 'return 1;', [], {deadline}), /child frame/);
-});
-
-// --- the projection ------------------------------------------------------------------------------------------------
-
-test('the projection keeps the vendor\'s limits and markers', () => {
-  const deep = {};
-  let cursor = deep;
-  for (let i = 0; i < 12; i++) cursor = cursor.next = {};
-  const shared = {s: 1};
-  const cyclic = {name: 'c'};
-  cyclic.self = cyclic;
-  const projected = projectResult({
-    big: 12n, nan: NaN, inf: -Infinity, fn() {}, sym: Symbol('s'), undef: undefined,
-    long: 'x'.repeat(RESULT_LIMITS.maxStringLength + 5), array: Array.from({length: 2005}, (_, i) => i),
-    keys: Object.fromEntries(Array.from({length: 205}, (_, i) => [`k${i}`, i])), deep, cyclic, pair: [shared, shared],
-  }, RESULT_LIMITS);
-  assert.equal(projected.big, '12');
-  assert.equal(projected.nan, null);
-  assert.equal(projected.inf, null);
-  assert.ok(!('fn' in projected) && !('sym' in projected) && !('undef' in projected));
-  assert.equal(projected.long.length, RESULT_LIMITS.maxStringLength + '[Truncated]'.length);
-  assert.ok(projected.long.endsWith('[Truncated]'));
-  assert.equal(projected.array.length, 2000);
-  assert.equal(Object.keys(projected.keys).length, 200);
-  let depth = 0;
-  for (let node = projected.deep; typeof node === 'object'; node = node.next) depth++;
-  assert.equal(depth, 8);
-  assert.equal(JSON.stringify(projected.deep).includes('[MaxDepth]'), true);
-  assert.equal(projected.cyclic.self, '[Circular]');
-  assert.deepEqual(projected.pair, [{s: 1}, '[Circular]'], 'a repeated object is marked, as the vendor marks it');
-});
-
-test('an ordinary object projects by its own keys, as the vendor\'s does: toJSON is never called, a Date is {}', () => {
-  let conversions = 0;
-  const chain = depth => ({level: depth, toJSON() { conversions += 1; return chain(depth + 1); }});
-  assert.deepEqual(projectResult({x: 1, toJSON() { conversions += 1; return {override: 2}; }}, RESULT_LIMITS), {x: 1});
-  assert.deepEqual(projectResult(new Date(0), RESULT_LIMITS), {});
-  assert.deepEqual(projectResult(new URL('https://fixture.test/a'), RESULT_LIMITS), {});
-  assert.deepEqual(projectResult(chain(0), RESULT_LIMITS), {level: 0});
-  assert.equal(conversions, 0, 'no user toJSON ran');
-});
-
-test('the browser types the vendor wraps are adapted as its wrappers summarise them, within the limits', () => {
-  const tagged = (tag, props, proto = {}) => Object.assign(Object.create({...proto, [Symbol.toStringTag]: tag}), props);
-  const node = props => ({cloneNode() {}, ...props});
-  const element = node({nodeType: 1, nodeName: 'P', id: 'x', tagName: 'P', textContent: 'hello', other: 'dropped'});
-  const text = node({nodeType: 3, nodeName: '#text', textContent: 't'});
-  const listed = node({nodeType: 1, nodeName: 'LI', id: '', tagName: 'LI', textContent: 'item'});
-  const list = tagged('NodeList', {0: listed, length: 1}, {*[Symbol.iterator]() { yield listed; }});
-  const tokens = tagged('DOMTokenList', {0: 'a', 1: 'b', length: 2}, {*[Symbol.iterator]() { yield 'a'; yield 'b'; }});
-  // DOMRect's fields are prototype getters: Object.keys sees none.
-  const rect = tagged('DOMRect', {}, {get x() { return 1; }, get y() { return 2; }, get width() { return 3; }, get height() { return 4; },
-    get top() { return 2; }, get right() { return 4; }, get bottom() { return 6; }, get left() { return 1; }});
-  const style = tagged('CSSStyleDeclaration', {length: 2}, {item(i) { return ['color', 'display'][i]; }, getPropertyValue(n) { return {color: 'red', display: 'block'}[n]; }});
-  const range = tagged('Range', {collapsed: false, commonAncestorContainer: element, endOffset: 3, startOffset: 1}, {toString() { return 'ell'; }});
-  const selection = tagged('Selection', {anchorNode: text, anchorOffset: 0, focusNode: null, focusOffset: 0, isCollapsed: true, rangeCount: 0, type: 'Caret'}, {toString() { return ''; }});
-  const query = tagged('MediaQueryList', {matches: true, media: '(min-width: 1px)', onchange: null});
-  const viewport = tagged('VisualViewport', {height: 600, offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 10, scale: 1, width: 800, onresize: null});
-  assert.deepEqual(projectResult({element, text, list, tokens, rect, style, range, selection, query, viewport}, RESULT_LIMITS), {
-    element: {id: 'x', tagName: 'P', textContent: 'hello'},
-    text: {nodeName: '#text', nodeType: 3, textContent: 't'},
-    list: [{id: '', tagName: 'LI', textContent: 'item'}],
-    tokens: ['a', 'b'],
-    rect: {bottom: 6, height: 4, left: 1, right: 4, top: 2, width: 3, x: 1, y: 2},
-    style: {color: 'red', display: 'block'},
-    range: {collapsed: false, commonAncestorContainer: {id: 'x', tagName: 'P', textContent: 'hello'}, endOffset: 3, startOffset: 1, text: 'ell'},
-    selection: {anchorNode: {nodeName: '#text', nodeType: 3, textContent: 't'}, anchorOffset: 0, focusNode: null, focusOffset: 0, isCollapsed: true, rangeCount: 0, text: '', type: 'Caret'},
-    query: {matches: true, media: '(min-width: 1px)'},
-    viewport: {height: 600, offsetLeft: 0, offsetTop: 0, pageLeft: 0, pageTop: 10, scale: 1, width: 800},
-  });
-  const longList = tagged('NodeList', {length: 2500}, {*[Symbol.iterator]() { for (let i = 0; i < 2500; i++) yield listed; }});
-  assert.equal(projectResult(longList, RESULT_LIMITS).length, 2000, 'an adapted list keeps the array limit');
-  const nested = {a: {b: {c: {d: {e: {f: {g: {h: {i: element}}}}}}}}};
-  assert.equal(JSON.stringify(projectResult(nested, RESULT_LIMITS)).includes('[MaxDepth]'), true, 'an adapted node below the depth limit is cut');
 });

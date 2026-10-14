@@ -9,8 +9,8 @@
 // binding `element` (the one element the selector resolves to, strictly with the vendor's visible fallback) or
 // `elements` (every match, in the frame the selector reached, [] when none). The value returned is the vendor's
 // bounded projection (depth 8, arrays 2,000 items, objects 200 keys, strings 200,000 characters, a repeated object
-// "[Circular]"), with the browser types the vendor wraps (nodes, lists, rects, styles, ...) adapted to its wrappers'
-// shapes.
+// "[Circular]"), with every browser type the vendor's read-only scope wraps (nodes, collections, rects, styles, CSS,
+// ranges, ...) adapted to its wrappers' and builders' shapes.
 //
 // The no-replay rule (a deliberate departure from the vendor's evaluator, which runs a script again after a lost
 // context and retries the locator form until its deadline): resolving the selector may poll until the budget runs
@@ -25,7 +25,7 @@
 // `script` is a function body; `args` (an array of JSON values) becomes its `arguments`.
 import {Deadline, clamp} from './budgets.mjs';
 import {BrowserServiceError} from './errors.mjs';
-import {remoteObjects} from './injected.mjs';
+import {CREDENTIAL_FIELDS, isProtectedCredentialField, remoteObjects} from './injected.mjs';
 import {SELECTOR_DEADLINE_EXCEEDED, attemptBudget, finalError} from './selectors.mjs';
 import {tabIdOf} from './tabs.mjs';
 
@@ -46,29 +46,65 @@ export function checkScript(script) {
 }
 
 // Runs in the page: the bounded projection of a script's value (serializeResult). An ordinary object projects by its
-// own enumerable keys, as the vendor's does (no toJSON is called: a Date or a URL is {}). The browser types the vendor's
-// read-only scope hands out as wrappers are adapted to what those wrappers serialise to (the main world has the real
-// objects, whose fields are prototype getters): a node as its summary (an element {id, tagName, textContent}, another
-// node its names and text), node lists and token lists as arrays, a DOMRect as its eight fields, a style declaration
-// as its properties, a Range, a Selection, a MediaQueryList and the VisualViewport as the vendor's toJSON shapes. An
-// adapter's output holds only values and node summaries, so it adds no depth of its own.
-export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}) {
+// own enumerable keys, as the vendor's does (no toJSON is called: a Date or a URL is {}). Every browser type the
+// vendor's read-only scope hands out through a wrapper factory or a read-only builder (BS:57301-59500) is adapted to
+// what that wrapper or builder serialises to, by its platform tag (the main world has the real objects, whose fields
+// are prototype getters): nodes as their summaries; node, rule, sheet and rect collections and token lists as arrays;
+// attributes, time ranges and track lists as the builders' items; data sets, validity, rects, styles, media lists,
+// CSS rules and style sheets, ranges, selections, media query lists, the visual viewport and the font set as the
+// wrappers' toJSON shapes; the location as {} (the vendor's has no own keys). `isProtectedField(element)` names the
+// fields whose value attribute the attribute list leaves out. An adapter's output holds values, node summaries and
+// further adapted objects only.
+export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, maxStringLength}, isProtectedField = () => false) {
   const seen = new WeakSet();
   const tagOf = current => Object.prototype.toString.call(current).slice(8, -1);
   const isNode = current => typeof current.nodeType === 'number' && typeof current.nodeName === 'string' && typeof current.cloneNode === 'function';
+  const stringOrUndefined = v => (typeof v === 'string' ? v : undefined);
   const nodeSummary = node => (node == null ? null : node.nodeType === 1
     ? {id: node.id, tagName: node.tagName, textContent: node.textContent}
-    : {name: node.name, nodeName: node.nodeName, nodeType: node.nodeType, publicId: node.publicId, systemId: node.systemId, textContent: node.textContent});
+    : {name: stringOrUndefined(node.name), nodeName: node.nodeName, nodeType: node.nodeType, publicId: stringOrUndefined(node.publicId),
+      systemId: stringOrUndefined(node.systemId), textContent: node.textContent});
+  const asArray = list => Array.from(list);
+  const rect = r => ({bottom: r.bottom, height: r.height, left: r.left, right: r.right, top: r.top, width: r.width, x: r.x, y: r.y});
+  const style = declaration => {
+    const output = {};
+    for (let index = 0; index < Math.min(declaration.length, maxObjectKeys); index += 1) {
+      const name = declaration.item(index);
+      output[name] = declaration.getPropertyValue(name);
+    }
+    return output;
+  };
+  const mediaList = media => Array.from({length: media.length}, (_, index) => media.item(index) ?? '');
+  const VALIDITY = ['badInput', 'customError', 'patternMismatch', 'rangeOverflow', 'rangeUnderflow', 'stepMismatch', 'tooLong', 'tooShort', 'typeMismatch', 'valid', 'valueMissing'];
+  const RULE_TEXTS = ['conditionText', 'href', 'keyText', 'name', 'selectorText'];
+  const cssRule = rule => {
+    const output = {cssText: rule.cssText, type: rule.type};
+    for (const name of RULE_TEXTS) if (typeof rule[name] === 'string') output[name] = rule[name];
+    if (rule.style != null) output.style = style(rule.style);
+    return output;
+  };
   const ADAPTERS = {
-    NodeList: list => Array.from(list),
-    HTMLCollection: list => Array.from(list),
+    NodeList: asArray, HTMLCollection: asArray, HTMLFormControlsCollection: asArray, HTMLOptionsCollection: asArray, RadioNodeList: asArray,
+    StyleSheetList: asArray, CSSRuleList: asArray, DOMRectList: asArray,
     DOMTokenList: list => Array.from(list, String),
-    DOMRect: r => ({bottom: r.bottom, height: r.height, left: r.left, right: r.right, top: r.top, width: r.width, x: r.x, y: r.y}),
-    CSSStyleDeclaration: style => {
-      const output = {};
-      for (let index = 0; index < Math.min(style.length, maxObjectKeys); index += 1) {
-        const name = style.item(index);
-        output[name] = style.getPropertyValue(name);
+    NamedNodeMap: attributes => {
+      const owner = attributes.length > 0 ? attributes[0].ownerElement : null;
+      const hidden = owner != null && isProtectedField(owner);
+      return Array.from(attributes).filter(a => !hidden || a.name.toLowerCase() !== 'value')
+        .map(a => ({name: a.name, nodeName: a.name, nodeValue: a.value, specified: true, value: a.value}));
+    },
+    DOMStringMap: dataset => Object.fromEntries(Object.keys(dataset).map(key => [key, dataset[key]])),
+    TimeRanges: ranges => Array.from({length: ranges.length}, (_, index) => ({end: ranges.end(index), start: ranges.start(index)})),
+    ValidityState: validity => Object.fromEntries(VALIDITY.map(name => [name, validity[name] === true])),
+    DOMRect: rect, DOMRectReadOnly: rect,
+    CSSStyleDeclaration: style, CSSStyleProperties: style, CSS2Properties: style,
+    MediaList: mediaList,
+    CSSStyleSheet: sheet => {
+      const output = {disabled: sheet.disabled === true, href: sheet.href, media: sheet.media == null ? null : mediaList(sheet.media), title: sheet.title, type: sheet.type};
+      try {
+        output.ruleCount = sheet.cssRules.length;
+      } catch (error) {
+        output.ruleAccessError = error instanceof Error ? error.name || error.message : String(error);
       }
       return output;
     },
@@ -78,9 +114,16 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
       focusOffset: selection.focusOffset, isCollapsed: selection.isCollapsed, rangeCount: selection.rangeCount, text: selection.toString(), type: selection.type}),
     MediaQueryList: query => ({matches: query.matches === true, media: query.media}),
     VisualViewport: v => ({height: v.height, offsetLeft: v.offsetLeft, offsetTop: v.offsetTop, pageLeft: v.pageLeft, pageTop: v.pageTop, scale: v.scale, width: v.width}),
+    FontFaceSet: fonts => ({size: fonts.size, status: fonts.status}),
+    Location: () => ({}),
   };
-  ADAPTERS.DOMRectReadOnly = ADAPTERS.DOMRect;
-  ADAPTERS.CSS2Properties = ADAPTERS.CSSStyleDeclaration;
+  const TRACK_LISTS = new Set(['TextTrackList', 'AudioTrackList', 'VideoTrackList']);
+  const track = t => ({enabled: t.enabled === true, id: typeof t.id === 'string' ? t.id : '', kind: typeof t.kind === 'string' ? t.kind : '',
+    label: typeof t.label === 'string' ? t.label : '', language: typeof t.language === 'string' ? t.language : '',
+    mode: typeof t.mode === 'string' ? t.mode : undefined, selected: t.selected === true});
+  const adapterFor = tag => (Object.hasOwn(ADAPTERS, tag) ? ADAPTERS[tag]
+    : TRACK_LISTS.has(tag) ? tracks => Array.from(tracks, track)
+      : /^CSS[A-Za-z]*Rule$/.test(tag) ? cssRule : null);
   const serializeNonObject = current => {
     switch (typeof current) {
       case 'bigint': return current.toString();
@@ -98,7 +141,7 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     if (seen.has(current)) return '[Circular]';
     seen.add(current);
     if (isNode(current)) return serialize(nodeSummary(current), depth);
-    const adapter = Object.hasOwn(ADAPTERS, tagOf(current)) ? ADAPTERS[tagOf(current)] : null;
+    const adapter = adapterFor(tagOf(current));
     if (adapter != null) return serialize(adapter(current), depth);
     if (Array.isArray(current)) return current.slice(0, maxArrayLength).map(item => serialize(item, depth + 1));
     const output = {};
@@ -122,7 +165,8 @@ function userFunction(script, binding) {
     "use strict";
 ${script}
   }).apply(globalThis, __cuaArguments);
-  return (${projectResult.toString()})(__cuaValue, ${JSON.stringify(RESULT_LIMITS)});
+  return (${projectResult.toString()})(__cuaValue, ${JSON.stringify(RESULT_LIMITS)},
+    element => (${isProtectedCredentialField.toString()})(element, ${JSON.stringify(CREDENTIAL_FIELDS)}));
 }`;
 }
 

@@ -1,6 +1,7 @@
 // Isolated no-services parity lane, not a production empty-surface option. Remote device only.
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
+import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 export function noServicesLaunch(launch,{host='vendor'}={}) {
@@ -16,7 +17,7 @@ export function noServicesLaunch(launch,{host='vendor'}={}) {
 }
 export async function serveCells({source,host='vendor',input=process.stdin,output=process.stdout}={}) {
   const scratch=prepareCapabilityHome({source});
-  const env={PATH:process.env.PATH,HOME:scratch.userHome,TMPDIR:process.env.TMPDIR,
+  const env={...desktopSessionEnv(process.env),PATH:process.env.PATH,HOME:scratch.userHome,TMPDIR:process.env.TMPDIR,
     CUA_HOME:scratch.dir,CUA_REPL_HOST:host,CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off'};
   let connection;
   try {

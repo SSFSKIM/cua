@@ -10,7 +10,7 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | M1a | feat/own-browser-service-m1a | https://github.com/SSFSKIM/cua/pull/122 | merged (7bae04d); flaky-test residue registered as #123 |
 | M1b | feat/own-browser-service-m1b | https://github.com/SSFSKIM/cua/pull/124 | merged (af649ba) |
 | M1c | feat/own-browser-service-m1c | https://github.com/SSFSKIM/cua/pull/125 | merged (cfa4f63) |
-| M2 | feat/own-browser-service-m2 | (opening) | reviewed clean at a0e50be (reviewer-high), awaiting merge |
+| M2 | feat/own-browser-service-m2 | https://github.com/SSFSKIM/cua/pull/126 | reviewed clean at a0e50be (reviewer-high), awaiting merge |
 
 ## Log
 

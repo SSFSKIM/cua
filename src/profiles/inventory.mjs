@@ -127,7 +127,10 @@ export function teardownUnconfirmed(teardown, failure) {
 // connection where user namespaces are (`probeUserns`, injectable for tests).
 export const listingSandboxMode = (ambient, platform) => sandboxModeFrom(ambient, {platform, surfaces: ['browser']});
 
-export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns}) {
+// The launch resolves its browser service and REPL host from `ambient` as a browser-only connection of its own would
+// (src/runtime/launch.mjs replHostFor), so a refused selection fails the listing before anything is launched.
+// `prepareLaunch` may adjust the launch record before it is spawned; it exists for tests, as openConnection's does.
+export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns, prepareLaunch = launch => launch}) {
   sandbox ??= listingSandboxMode(ambient, runtime.manifest.platform);
   const sessionId = randomUUID();
   const claim = claimRunSession(home, sessionId);
@@ -136,6 +139,7 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
     launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
     assertSandboxFits(sandbox, launch);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
+    launch = prepareLaunch(launch);
     mkdirSync(launch.env.CODEX_HOME, {recursive: true, mode: 0o700});
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);

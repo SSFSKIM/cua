@@ -27,6 +27,10 @@
 // browserServiceFor): CUA_BROWSER_SERVICE when set, else the home's active route and the registration that made it
 // active (cua's with the cua route or MAWS's in-app browser; the vendor's otherwise, naming `cua chrome register` as the
 // way to cua's). It describes a choice, so it is `pass`, or `fail` for a value every launch would refuse.
+// `repl.host` names the REPL host a connection here runs (launch.mjs replHostFor, with the surfaces CUA_SHIM_SURFACES
+// names) and the one the browser-only profile listing runs (profiles_list's live check, cua profiles list and bind),
+// each with its reason, and the browser route and the registration (or absence of one) that decided the browser side.
+// It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
@@ -51,7 +55,7 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, browserServiceFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, browserSelectionFor, browserServiceFor, describeBrowserRoute, ownHostUnavailable, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -146,6 +150,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
   checks.push(browserServiceCheck(home, env));
+  checks.push(replHostCheck(home, env, host.platform));
   checks.push(route === 'cua' ? result('codex.login', 'skip', 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)')
     : await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home, host, env, route}));
@@ -176,6 +181,41 @@ function browserServiceCheck(home, env) {
     if (!(error instanceof CuaError)) throw error;
     return result('browser.service', 'fail', `${error.message}; every launch with the browser surface is refused (invalid_browser_service)`);
   }
+}
+
+const REPL_HOST_REASONS = {
+  explicit: host => `CUA_REPL_HOST=${host}`,
+  vendor_browser_route: () => 'the browser surface\'s service is the vendor\'s, which only the vendor host runs',
+  macos_native_peer_requires_vendor: () => 'the computer surface on macOS, whose helper accepts only the vendor host\'s node_repl as a peer until #117',
+  staged_vendor_default: () => 'CUA_REPL_HOST is unset, and cua\'s own host is not yet a default (#116 makes it one for Linux and browser-only sessions in its last stage)',
+};
+
+// The host a launch with `surfaces` here would run -> {host, reason, browser} or, refused, {code, message, browser}.
+function replHostSelection(home, env, platform, surfaces) {
+  let browser = null;
+  try {
+    browser = surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
+    const selected = replHostFor({platform, surfaces, ambient: env, browserSelection: browser});
+    if (selected.host === 'cua') ownHostUnavailable();
+    return {...selected, browser};
+  } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    return {code: error.code, message: error.message, browser};
+  }
+}
+
+function replHostCheck(home, env, platform) {
+  let surfaces;
+  try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    return result('repl.host', 'fail', `${error.message}; every connection is refused`);
+  }
+  const session = replHostSelection(home, env, platform, surfaces);
+  const listing = replHostSelection(home, env, platform, ['browser']);
+  const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason}): ${REPL_HOST_REASONS[r.reason](r.host)}`);
+  const route = !surfaces.includes('browser') ? 'none, no browser surface' : (session.browser ? describeBrowserRoute(session.browser) : 'not resolved');
+  return result('repl.host', session.code || listing.code ? 'fail' : 'pass',
+    `${words(session)}. Browser route: ${route}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
 }
 
 // sandbox.userns as it bears on this setup. A scoped connection is itself refused where the probe fails, so its row

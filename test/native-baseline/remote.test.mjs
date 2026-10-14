@@ -11,11 +11,12 @@ test('helpers are classified against the pinned runtime, with their age', () => 
   assert.deepEqual(classifyHelpers('', '/x'), []);
 });
 
-test('the handshake script touches only a native handshake record', () => {
-  const record = '/Users/someone/Library/Application Support/cua/state/handshake/26.928.40906-darwin-arm64/computer@2025-06-18.json';
+test('the handshake script touches only a native handshake record of the vendor host', () => {
+  const record = '/Users/someone/Library/Application Support/cua/state/handshake/26.928.40906-darwin-arm64/vendor@26.928.40906-darwin-arm64/computer@2025-06-18.json';
   assert.match(handshakeScript({record, clear: true}), /^rm -f '.*computer@2025-06-18\.json' && if \[ -f /);
   assert.doesNotMatch(handshakeScript({record, clear: false}), /rm -f/);
-  for (const other of ['/Users/someone/.codex/config.toml', record.replace('computer@', 'computer,browser@')]) assert.throws(() => handshakeScript({record: other, clear: true}), /not a native handshake record/);
+  const preIdentity = '/Users/someone/Library/Application Support/cua/state/handshake/26.928.40906-darwin-arm64/computer@2025-06-18.json';
+  for (const other of ['/Users/someone/.codex/config.toml', record.replace('computer@', 'computer,browser@'), preIdentity]) assert.throws(() => handshakeScript({record: other, clear: true}), /not a native handshake record/);
 });
 
 test('the serve has the native surface only, session approvals and no secret store', () => {

@@ -33,7 +33,7 @@ const size = text => text?.match(/(\\d+) x (\\d+)/)?.slice(1).map(Number) ?? nul
 const pixels = size(main?._spdisplays_pixels), points = size(main?._spdisplays_resolution);
 console.log(JSON.stringify({
   commit: sh('git', ['rev-parse', 'HEAD']), dirty: sh('git', ['status', '--porcelain']) !== '', checkout: process.cwd(), home, release,
-  handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', 'computer@${PROTOCOL_VERSION}.json'),
+  handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', 'vendor@' + (release ?? 'none'), 'computer@${PROTOCOL_VERSION}.json'),
   runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null,
   hardware: {model: sh('/usr/sbin/sysctl', ['-n', 'hw.model']), chip: sh('/usr/sbin/sysctl', ['-n', 'machdep.cpu.brand_string']), memoryBytes: Number(sh('/usr/sbin/sysctl', ['-n', 'hw.memsize']))},
   os: {name: sh('/usr/bin/sw_vers', ['-productName']), version: sh('/usr/bin/sw_vers', ['-productVersion']), build: sh('/usr/bin/sw_vers', ['-buildVersion'])},
@@ -45,9 +45,10 @@ console.log(JSON.stringify({
   return `cd ${PARITY_CHECKOUT} && node --input-type=module -e ${quote(node)}`;
 }
 
-// Clears (when asked) and then reports the native surface's handshake record: "present" or "absent".
+// Clears (when asked) and then reports the native surface's handshake record of the vendor host (the record of
+// <release>/vendor@<release>, src/mcp/lazy-runtime.mjs handshakeRecords): "present" or "absent".
 export function handshakeScript({record, clear}) {
-  if (!/\/state\/handshake\/[^/]+\/computer@[0-9-]+\.json$/.test(record)) throw new Error('not a native handshake record path');
+  if (!/\/state\/handshake\/([^/]+)\/vendor@\1\/computer@[0-9-]+\.json$/.test(record)) throw new Error('not a native handshake record path');
   return `${clear ? `rm -f ${quote(record)} && ` : ''}if [ -f ${quote(record)} ]; then echo present; else echo absent; fi`;
 }
 

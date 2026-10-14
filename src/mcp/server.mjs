@@ -51,7 +51,7 @@ import {projectRoot} from '../secrets/project.mjs';
 import {connectionTarget} from './target.mjs';
 import {deviceDirectory} from '../remote/directory.mjs';
 import {
-  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, browserServiceFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
+  DEVICE_TOOLS, LOCAL_TOOLS, WORK_TOOLS, browserServiceFrom, replHostFrom, correctImages, hostNotesFor, modelTools, persistAccepted, profileView, redactTokens, statusResult, surfacesFrom, withHostNotes,
 } from './surface.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {describeSweep, sweepRun} from '../runtime/run-dir.mjs';
@@ -438,6 +438,9 @@ export function settingsFrom(env, {platform = process.platform, devices = false}
   // CUA_BROWSER_SERVICE is checked here with the browser surface, as the launch reads it; which service a launch gets
   // (and so which rules the model is taught) is the launch's resolution (src/mcp/connection.mjs).
   if (surfaces.includes('browser')) browserServiceFrom(env);
+  // CUA_REPL_HOST is checked here whatever the surfaces; which host a connection runs, or whether it refuses one, is
+  // the connection's resolution (src/mcp/connection.mjs).
+  replHostFrom(env);
   return {persist, hostNotes, model: env.CUA_SHIM_MODEL, secrets: secrets === 'on', surfaces, sandbox: sandboxModeFrom(env, {platform, surfaces}), platform,
     runtimeIdleMs: runtimeIdleFrom(env)};
 }

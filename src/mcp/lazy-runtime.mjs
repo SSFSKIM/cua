@@ -6,9 +6,10 @@
 //
 // `lazyRuntime` is an upstream for createServer (src/mcp/server.mjs): the same send/onMessage/onExit/terminate shape as
 // spawnUpstream (upstream.mjs), with the launch behind it.
-// - The handshake. The vendor runtime's answers to `initialize` and `tools/list` depend only on the installed release,
-//   the enabled surfaces and the protocol version the client asks for, so the first live answers for that triple are
-//   recorded (`handshakeRecords`) and later connections answer from the record. Without a record (the first connection
+// - The handshake. The runtime's answers to `initialize` and `tools/list` depend only on the installed release, the
+//   REPL host that answers (vendor or cua's own, and its version: src/repl-host/identity.mjs), the enabled surfaces and
+//   the protocol version the client asks for, so the first live answers for that combination are recorded
+//   (`handshakeRecords`) and later connections answer from the record. Without a record (the first connection
 //   after an install or a new client protocol version) `initialize` launches the runtime, as before, and its answers
 //   are recorded. The client's own `initialize` params are kept: a launch opens the runtime with them (the client's
 //   capabilities, elicitation among them, reach the runtime unchanged) and sends `notifications/initialized` itself,
@@ -35,36 +36,45 @@ import {mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:f
 import {join} from 'node:path';
 import {fail} from '../runtime/errors.mjs';
 
-const RECORD_SCHEMA = 1;
-const PROTOCOL_VERSION = /^[A-Za-z0-9._-]{1,64}$/;
+// Schema 2 names the host it was recorded from; a schema 1 record (which did not) is a miss.
+const RECORD_SCHEMA = 2;
+// A protocol or host version, as part of a record's path.
+const FILE_SAFE = /^[A-Za-z0-9._-]{1,64}$/;
+const HOSTS = ['cua', 'vendor'];
 const HANDSHAKE_ID = 'cua-handshake';
 const DEFAULT_RUNTIME_IDLE_MS = 15 * 60_000;
 
 const isRequest = msg => msg.method !== undefined && msg.id !== undefined;
-const validRecord = r => r?.schema === RECORD_SCHEMA && typeof r.initialize?.protocolVersion === 'string' && Array.isArray(r.tools?.tools);
+const validRecord = (r, host) => r?.schema === RECORD_SCHEMA && r.host?.host === host.host && r.host?.version === host.version
+  && typeof r.initialize?.protocolVersion === 'string' && Array.isArray(r.tools?.tools);
 
-// The recorded handshake answers of one installed release under `dir` (<home>/state/handshake/<release>), one file per
-// surface set and requested protocol version. A record that cannot be read, or a version unfit for a file name, is a
+// The recorded handshake answers of one installed release under `dir` (<home>/state/handshake/<release>), for the
+// answering `host` ({host: 'cua' | 'vendor', version}, src/repl-host/identity.mjs hostIdentity), one file per surface
+// set and requested protocol version: <dir>/<host>@<version>/<surfaces>@<protocol version>.json, whose record names
+// its host again. A record that cannot be read, names another host or schema, or a version unfit for a file name, is a
 // miss; a write is atomic (a concurrent connection reads the old file or the new one) and its failure only costs the
 // next connection a launch.
-export function handshakeRecords({dir, surfaces}) {
-  const file = version => (typeof version === 'string' && PROTOCOL_VERSION.test(version) ? join(dir, `${surfaces.join(',')}@${version}.json`) : null);
+export function handshakeRecords({dir, surfaces, host}) {
+  if (!HOSTS.includes(host?.host) || typeof host.version !== 'string' || !FILE_SAFE.test(host.version))
+    fail('invalid_host_identity', 'a handshake record needs the answering host (cua or vendor) and a version fit for a file name');
+  const hostDir = join(dir, `${host.host}@${host.version}`);
+  const file = version => (typeof version === 'string' && FILE_SAFE.test(version) ? join(hostDir, `${surfaces.join(',')}@${version}.json`) : null);
   return {
     read(version) {
       const path = file(version);
       if (!path) return null;
       try {
         const record = JSON.parse(readFileSync(path, 'utf8'));
-        return validRecord(record) ? {initialize: record.initialize, tools: record.tools} : null;
+        return validRecord(record, host) ? {initialize: record.initialize, tools: record.tools} : null;
       } catch { return null; }
     },
     write(version, {initialize, tools}) {
       const path = file(version);
       if (!path) return;
-      mkdirSync(dir, {recursive: true, mode: 0o700});
+      mkdirSync(hostDir, {recursive: true, mode: 0o700});
       const temp = `${path}.${randomUUID()}.tmp`;
       try {
-        writeFileSync(temp, JSON.stringify({schema: RECORD_SCHEMA, initialize, tools}) + '\n', {mode: 0o600});
+        writeFileSync(temp, JSON.stringify({schema: RECORD_SCHEMA, host: {host: host.host, version: host.version}, initialize, tools}) + '\n', {mode: 0o600});
         renameSync(temp, path);
       } finally { rmSync(temp, {force: true}); }
     },

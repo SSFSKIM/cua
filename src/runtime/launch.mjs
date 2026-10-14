@@ -80,7 +80,7 @@ import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
-import {readCuaRecord, readVendorRecord} from '../chrome/route.mjs';
+import {readCuaRecord} from '../chrome/route.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -157,12 +157,14 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
 }
 
 // The browser service a launch from `home` gets, and why -> {service: 'cua' | 'vendor', reason}. A CUA_BROWSER_SERVICE
-// the caller sets wins (`explicit`; exactly `cua` or `vendor`). Unset or empty, it follows the home's Chrome route
-// records (src/chrome/route.mjs): the vendor's service only for a home on the ChatGPT extension route alone (a vendor
-// record and no cua one: `chatgpt_extension_route`), because cua's service refuses that extension's backends; cua's
-// otherwise (`cua_route` when the cua record exists, with or without a vendor one; `no_registration`). Resolved at each
-// launch, so a later `cua chrome register` moves the next launch. When #79 removes the vendor route this collapses to a
-// blanket `cua` default.
+// the caller sets wins (`explicit`; exactly `cua` or `vendor`). Unset or empty, cua's service where cua's own route is
+// in use: the home has cua's registration record (`cua_route`, with or without a vendor one; the cua route always has
+// one) or MAWS's in-app browser is configured (`maws_client_mode`, CUA_BROWSER_BACKENDS listing a socket, as
+// src/chrome/client-mode.mjs configuredBackends reads it). Otherwise the vendor's (`chatgpt_extension_route`): a vendor
+// record alone, or no registration at all, which is the ChatGPT extension route (the desktop app's host; profiles read
+// it the same way, src/chrome/route.mjs effectiveRoute), whose backends cua's service refuses. Resolved at each launch,
+// so a later `cua chrome register` moves the next launch. When #79 removes the vendor route this collapses to a blanket
+// `cua` default.
 export function browserServiceFor(ambient, home) {
   const value = ambient.CUA_BROWSER_SERVICE;
   if (value !== undefined && value !== '') {
@@ -170,8 +172,8 @@ export function browserServiceFor(ambient, home) {
     return {service: value, reason: 'explicit'};
   }
   if (readCuaRecord(home)) return {service: 'cua', reason: 'cua_route'};
-  if (readVendorRecord(home)) return {service: 'vendor', reason: 'chatgpt_extension_route'};
-  return {service: 'cua', reason: 'no_registration'};
+  if (ambient.CUA_BROWSER_BACKENDS?.split(':').some(Boolean)) return {service: 'cua', reason: 'maws_client_mode'};
+  return {service: 'vendor', reason: 'chatgpt_extension_route'};
 }
 
 // The enabled surfaces in the vendor launcher's terms: a non-empty set of known surface names, in canonical order.

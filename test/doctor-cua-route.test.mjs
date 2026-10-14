@@ -127,7 +127,7 @@ test('doctor with no registration keeps codex.login and chrome.host.config as be
 
 // browser.service (spec 2026-10-13-own-browser-service-design.md, M5 task 1): which browser service a launch here gets,
 // and why: an explicit CUA_BROWSER_SERVICE, else the home's route.
-test('doctor names the browser service a launch here selects and why: explicit, the cua route, no registration, the ChatGPT extension route', async t => {
+test('doctor names the browser service a launch here selects and why, and how a vendor default becomes cua\'s: explicit, the cua route, MAWS, no registration, the ChatGPT extension route', async t => {
   const stubs = {host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
     inspectAgent: async () => [], inspectChrome: async () => [], inspectLogin: async () => ({state: 'logged-out'})};
   const homeWith = records => {
@@ -138,18 +138,22 @@ test('doctor names the browser service a launch here selects and why: explicit, 
     return s.dir;
   };
   const row = async (home, env = {}) => (await inspectRuntime({home, env, ...stubs})).checks.find(c => c.name === 'browser.service');
+  const REGISTER = /`cua chrome register` \(the cua extension\) switches this home to cua's own browser service/;
   const cases = [
-    [homeWith([]), {}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and this home has no Chrome registration/],
+    [homeWith([]), {}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route/, REGISTER],
+    [homeWith(['vendor']), {}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route/, REGISTER],
     [homeWith(['cua']), {}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and this home has cua's Chrome registration/],
     [homeWith(['vendor', 'cua']), {}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and this home has cua's Chrome registration/],
-    [homeWith(['vendor']), {}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route, which needs it/],
+    [homeWith([]), {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and MAWS's in-app browser is configured \(CUA_BROWSER_BACKENDS\)/],
     [homeWith(['vendor']), {CUA_BROWSER_SERVICE: 'cua'}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE=cua/],
-    [homeWith([]), {CUA_BROWSER_SERVICE: 'vendor'}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE=vendor/],
+    [homeWith(['cua']), {CUA_BROWSER_SERVICE: 'vendor'}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE=vendor/],
     [homeWith([]), {CUA_BROWSER_SERVICE: 'openai'}, 'fail', /CUA_BROWSER_SERVICE must be cua or vendor/],
   ];
-  for (const [home, env, status, detail] of cases) {
+  for (const [home, env, status, detail, register] of cases) {
     const found = await row(home, env);
     assert.equal(found?.status, status, JSON.stringify(env));
     assert.match(found.detail, detail);
+    if (register) assert.match(found.detail, register, 'a default of the vendor\'s names the way to cua\'s');
+    else assert.doesNotMatch(found.detail, REGISTER);
   }
 });

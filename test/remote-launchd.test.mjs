@@ -88,7 +88,7 @@ test('install carries the agent\'s settings from its environment into the job wh
 
 test('install writes CUA_BROWSER_SERVICE into the job only when it was given, never the route-resolved default', async t => {
   const {home, install, plist} = setup(t);
-  writeVendorRecord(home);   // a home whose default would resolve to the vendor's service
+  writeVendorRecord(home);   // a home whose default resolves to the vendor's service
   for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_BROWSER_SERVICE: ''}]) {
     await install({http: '127.0.0.1:7801', env});
     assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_BROWSER_SERVICE)}: re-resolved at each launch`);

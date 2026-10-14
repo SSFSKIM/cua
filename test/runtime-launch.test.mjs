@@ -169,8 +169,8 @@ test('the browser surface registers the trusted browser wrapper and configures t
   for (const key of ['BROWSER_USE_BACKEND_PATHS', 'BROWSER_USE_DISABLE_AMBIENT_NETWORK', 'BROWSER_USE_SECURITY_MODE', 'BROWSER_USE_PREFERRED_EXTENSION_INSTANCE_ID'])
     assert.equal(env[key], undefined, key);
   assert.deepEqual(Object.keys(env).filter(k => /BROWSER/.test(k)).sort(), ['BROWSER_USE_AVAILABLE_BACKENDS', 'CUA_BROWSER_SERVICE', 'CUA_BROWSER_VENDOR_SERVICE']);
-  assert.equal(env.CUA_BROWSER_SERVICE, 'cua', 'cua\'s own service by default');
-  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR]);
+  assert.equal(env.CUA_BROWSER_SERVICE, 'vendor', 'a home with no registration is on the ChatGPT extension route: the vendor\'s service, written out');
+  assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS]);
 });
 
 test('a browser-only launch has no computer-use service or native helper configuration', t => {
@@ -183,8 +183,9 @@ test('a browser-only launch has no computer-use service or native helper configu
   assert.equal(env.CODEX_CLI_PATH, runtime.paths.codexCli, 'the runtime sandbox is kept whatever the surface');
 });
 
-test('cua\'s service is the default selection, unset or empty, as well as named: its directory is trusted, and nothing wider', t => {
+test('cua\'s service is the default selection on the cua route, unset or empty, as well as named: its directory is trusted, and nothing wider', t => {
   const {home, runtime} = fixtureRuntime(t);
+  writeCuaRecord(home);
   const repo = realpathSync(new URL('..', import.meta.url).pathname);
   assert.equal(BROWSER_SERVICE_IMPL_DIR, join(repo, 'src', 'browser-service'));
   for (const ambient of [AMBIENT, {...AMBIENT, CUA_BROWSER_SERVICE: ''}, {...AMBIENT, CUA_BROWSER_SERVICE: 'cua'}]) {
@@ -206,9 +207,10 @@ test('the vendor selection, the one-release rollback, is explicit and trusts no 
   assert.equal(env.CUA_BROWSER_VENDOR_SERVICE, runtime.paths.browserVendorService);
 });
 
-// The default follows the home's Chrome route (spec 2026-10-13-own-browser-service-design.md, Decision Log, M5 task 1):
-// only a home on the ChatGPT extension route alone gets the vendor's service, which that route needs.
-test('unset, the browser service follows the home\'s route in all four record states; an explicit value always wins', t => {
+// The default follows the home's Chrome route (spec 2026-10-13-own-browser-service-design.md, Decision Log, M5 task 1
+// and its controller refinement): cua's service for a home with cua's registration or in MAWS client mode, the
+// vendor's otherwise (no registration is the ChatGPT extension route, as effectiveRoute reads it).
+test('unset, the browser service follows the home\'s route in all four record states and MAWS client mode; an explicit value always wins', t => {
   const state = records => {
     const s = scratch();
     t.after(s.cleanup);
@@ -223,15 +225,19 @@ test('unset, the browser service follows the home\'s route in all four record st
   const both = state(['vendor', 'cua']);
   const bothVendorLast = state(['vendor', 'cua', 'vendor-last']);
   for (const ambient of [{}, {CUA_BROWSER_SERVICE: ''}]) {
-    assert.deepEqual(browserServiceFor(ambient, none), {service: 'cua', reason: 'no_registration'});
+    assert.deepEqual(browserServiceFor(ambient, none), {service: 'vendor', reason: 'chatgpt_extension_route'}, 'no records: the ChatGPT extension route');
     assert.deepEqual(browserServiceFor(ambient, vendor), {service: 'vendor', reason: 'chatgpt_extension_route'});
     assert.deepEqual(browserServiceFor(ambient, cua), {service: 'cua', reason: 'cua_route'});
     assert.deepEqual(browserServiceFor(ambient, both), {service: 'cua', reason: 'cua_route'}, 'both records: cua');
     assert.deepEqual(browserServiceFor(ambient, bothVendorLast), {service: 'cua', reason: 'cua_route'}, 'both records: cua, whichever was written last');
+    for (const home of [none, vendor])
+      assert.deepEqual(browserServiceFor({...ambient, CUA_BROWSER_BACKENDS: '/maws/a.sock'}, home), {service: 'cua', reason: 'maws_client_mode'}, 'MAWS client mode');
+    assert.deepEqual(browserServiceFor({...ambient, CUA_BROWSER_BACKENDS: ':'}, none), {service: 'vendor', reason: 'chatgpt_extension_route'}, 'an empty backend list is no client mode');
   }
   for (const home of [none, vendor, cua, both]) {
     assert.deepEqual(browserServiceFor({CUA_BROWSER_SERVICE: 'cua'}, home), {service: 'cua', reason: 'explicit'});
     assert.deepEqual(browserServiceFor({CUA_BROWSER_SERVICE: 'vendor'}, home), {service: 'vendor', reason: 'explicit'});
+    assert.deepEqual(browserServiceFor({CUA_BROWSER_SERVICE: 'vendor', CUA_BROWSER_BACKENDS: '/maws/a.sock'}, home), {service: 'vendor', reason: 'explicit'});
   }
   assert.throws(() => browserServiceFor({CUA_BROWSER_SERVICE: 'openai'}, none), err => err.code === 'invalid_browser_service');
 });

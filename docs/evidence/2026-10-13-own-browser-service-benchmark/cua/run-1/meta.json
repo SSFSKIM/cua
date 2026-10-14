@@ -1,0 +1,16 @@
+{
+  "service": "cua",
+  "commit": "0b96351",
+  "profile": "ssfs",
+  "model": "claude-sonnet (benchmark controller subagent)",
+  "runtime": "26.928.40906-darwin-arm64",
+  "started": "2026-10-14T15:06:39.079Z",
+  "finished": "2026-10-14T15:10:16.668Z",
+  "attestation": {
+    "route": "resident-agent",
+    "residentCommit": "0b96351",
+    "selectedBrowserHeader": "# Selected Browser\n- Name: cua\n- Type: extension\n- ID: 1\n- Service: cua browser service 0.1.0",
+    "marker": "cua browser service 0.1.0"
+  },
+  "remoteDirectory": "/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cua-bench/cua-run-1"
+}

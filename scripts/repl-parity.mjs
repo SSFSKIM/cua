@@ -10,6 +10,7 @@ import scenarios from '../test/repl-parity/scenarios/index.mjs';
 import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {AttestedConnections,runRawScenario} from './repl-parity/runner.mjs';
 import {runSecretCase} from '../test/repl-parity/fixtures/secret-cases.mjs';
+import {runBoundaryScenario} from './repl-parity/boundaries.mjs';
 import {remoteCapabilityLane} from './repl-parity/capability.mjs';
 import {compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
@@ -51,6 +52,7 @@ export async function main(argv=process.argv.slice(2)){
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));
   for(const scenario of selected){
+    if(scenario.backend==='host-boundary'){const result=await runBoundaryScenario(scenario,{prepared,host:v.host});pool.addObservations(result.observations,scenario.id);const assertion=scenario.assert({results:result.rows.filter(r=>r.cell==='boundary').map(r=>r.value)});if(!assertion.ok)throw new Error(`${scenario.id}: boundary assertion failed`);for(const row of result.rows)appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');continue;}
     if(scenario.backend==='secret-double'){
       const result=await runSecretCase(scenario.id);for(const row of [{case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true}])appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');continue;
     }

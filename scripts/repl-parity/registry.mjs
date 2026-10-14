@@ -21,7 +21,7 @@ export function validateRegistry(scenarios,rows=inventory) {
     if(s.milestone!==due.milestone)throw new Error(`${s.id}: wrong due milestone`);
     if(!Array.isArray(s.contracts)||!s.contracts.length||s.contracts.some(id=>!due.contracts.includes(id)))throw new Error(`${s.id}: invalid contract linkage`);
     if(!Array.isArray(s.platforms)||!s.platforms.length||s.platforms.some(p=>!due.platforms.includes(p)))throw new Error(`${s.id}: invalid platforms`);
-    if(!['no-services','fixture-services','capability-host','chrome','binder-double','native','secret-double'].includes(s.backend))throw new Error(`${s.id}: invalid backend`);
+    if(!['host-boundary','no-services','fixture-services','capability-host','chrome','binder-double','native','secret-double'].includes(s.backend))throw new Error(`${s.id}: invalid backend`);
     if(s.imageMode!==undefined&&!['exact','live'].includes(s.imageMode))throw new Error(`${s.id}: invalid image mode`);
     if(s.screenshotTolerance!==undefined&&(s.imageMode!=='live'||!Number.isInteger(s.screenshotTolerance)||s.screenshotTolerance<0||s.screenshotTolerance>64))throw new Error(`${s.id}: screenshot tolerance only applies to live images`);
     if(typeof s.assert!=='function')throw new Error(`${s.id}: missing independent assert`);

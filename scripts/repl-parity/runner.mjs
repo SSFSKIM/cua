@@ -3,7 +3,7 @@ import {cellCode,captureRawResult} from '../browser-parity/runner.mjs';
 import {createNormalizer} from '../browser-parity/normalize.mjs';
 import {validateAttestations} from './compare.mjs';
 export class AttestedConnections {
-  constructor(host){this.host=host;this.clients=[];this.hostAttestations=[];}
+  constructor(host){this.host=host;this.clients=[];this.hostAttestations=[];this.externalConnections=[];}
   async open(command){
     const client=new StdioClient(command),connection=`connection-${this.clients.length+1}`;
     this.clients.push({client,connection});
@@ -23,7 +23,8 @@ export class AttestedConnections {
     };
     return client;
   }
-  metadata(){return {connections:this.clients.map(c=>c.connection),hostAttestations:this.hostAttestations};}
+  addObservations(observations,prefix){if(!observations.connections.length)return;validateAttestations({host:this.host,complete:true,...observations});for(const connection of observations.connections)this.externalConnections.push(`${prefix}/${connection}`);for(const a of observations.hostAttestations)this.hostAttestations.push({...a,connection:`${prefix}/${a.connection}`});}
+  metadata(){return {connections:[...this.clients.map(c=>c.connection),...this.externalConnections],hostAttestations:this.hostAttestations};}
   async close(){for(const {client} of this.clients){const status=await client.close();if(status.code!==0)throw new Error(`Harness connection cleanup failed (${status.code??status.signal})`);}}
 }
 export async function runRawScenario(scenario,{client,emit,checkout}) {

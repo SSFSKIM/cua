@@ -2,7 +2,9 @@
 import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 export class StdioClient {
-  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {}}) {
+  // `answer(msg)` decides an elicitation (default: accept, as the parity runs do); `onElicitation(row, msg)` records it.
+  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),clientName = 'cua-browser-parity'}) {
+    this.clientName = clientName;
     this.child = spawn(command,args,{env,cwd,stdio:['pipe','pipe','pipe']});
     this.pending = new Map(); this.nextId=0; this.timeoutMs=timeoutMs; this.closed=false;
     this.exited = new Promise(resolve => this.child.once('close',(code,signal) => {this.closed=true;this.failAll(new Error(`MCP exited (${code ?? signal})`));resolve({code,signal});}));
@@ -16,9 +18,10 @@ export class StdioClient {
       if (msg.method && msg.id !== undefined) {
         if (msg.method === 'elicitation/create') {
           // Vendor approvals are schema-form requests. Record action only, never prompt text or supplied secrets.
-          const row = {t:new Date().toISOString(),method:msg.method,action:'accept'};
-          onElicitation(row);
-          this.write({jsonrpc:'2.0',id:msg.id,result:{action:'accept',content:{}}});
+          const result = answer(msg);
+          const row = {t:new Date().toISOString(),method:msg.method,action:result.action};
+          onElicitation(row,msg);
+          this.write({jsonrpc:'2.0',id:msg.id,result});
         } else if (msg.method === 'ping') this.write({jsonrpc:'2.0',id:msg.id,result:{}});
         else this.write({jsonrpc:'2.0',id:msg.id,error:{code:-32601,message:'Unsupported client request'}});
         return;
@@ -41,7 +44,7 @@ export class StdioClient {
     });
   }
   async initialize() {
-    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities:{elicitation:{form:{}}},clientInfo:{name:'cua-browser-parity',version:'1'}});
+    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities:{elicitation:{form:{}}},clientInfo:{name:this.clientName,version:'1'}});
     this.write({jsonrpc:'2.0',method:'notifications/initialized'});return value;
   }
   call(name,args={}) {return this.request('tools/call',{name,arguments:args});}

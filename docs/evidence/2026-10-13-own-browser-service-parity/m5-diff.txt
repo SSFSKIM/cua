@@ -1,0 +1,170 @@
+# M5 whole-corpus parity: the corpus at the M5 head against a fresh vendor run on the mini
+
+Spec docs/doperpowers/specs/2026-10-13-own-browser-service-design.md, M5 (acceptance 5 as the last milestone re-runs it).
+2026-10-14. Parity clone ~/Developer/GitHub/cua-parity on the mini at 237f91e (the M5 branch head after task 1 and its
+route-aware default landed, plus the two-tabs oracle fix below), profile ssfs (extensionInstanceId 3b45d47c-…), each run
+its own fresh ssh, fixture 127.0.0.1:48732 started and stopped by each run; no process of the runs left on the mini, no
+trace activation left. Each run sets CUA_BROWSER_SERVICE explicitly. Host traces: unavailable (empty) on both, because
+the Chrome host on the mini is still the resident checkout's pre-M5 one. The corpus is every scenario except the
+capability-host group, which needs its test backend and runs locally (m5/capability-host/diff.txt).
+
+ssfs [33mtrue[39m  2026-10-14T14:33:10.058Z
+$ node scripts/browser-parity.mjs prepare --device mini --commit 237f91edccea8f444e0e34f368330772e50a4755 --profile ssfs
+prepared mini at 237f91edccea8f444e0e34f368330772e50a4755, profile ssfs, fixture 48732
+exit 0
+$ node scripts/browser-parity.mjs run --service vendor --device mini --out vendor-m5-2
+case actions/concurrent-fill ok
+case actions/doubleclick ok
+case actions/locators ok
+case actions/overlay ok
+case actions/slow-budget ok
+case actions/strict-error ok
+case actions/wait-for ok
+case capabilities/clipboard-page ok
+case capabilities/clipboard ok
+case capabilities/cursor ok
+case capabilities/export-authenticated ok
+case capabilities/export-rejections ok
+case capabilities/history ok
+case capabilities/logs ok
+case capabilities/m2-disabled ok
+case capabilities/m3-disabled ok
+case capabilities/m3-members ok
+case capabilities/page-assets ok
+case capabilities/viewport ok
+case dialogs/alert ok
+case dialogs/paused-response ok
+case dialogs/prompt ok
+case downloads/ask-where-to-save ok
+case downloads/blocked-navigation ok
+case downloads/chooser ok
+case downloads/media ok
+case downloads/two-tabs ok
+case evaluate/attributes ok
+case evaluate/budget ok
+case evaluate/context-loss ok
+case evaluate/counter ok
+case evaluate/late-completion ok
+case evaluate/mutation ok
+case evaluate/no-replay ok
+case evaluate/read ok
+case examples/concurrency ok
+case examples/tabs ok
+case input/ax-disabled ok
+case input/coordinates ok
+case input/dom ok
+case input/long-type ok
+case input/oopif-type ok
+case input/queued-shortcuts ok
+case input/rich-text ok
+case reads/frames ok
+case reads/locators ok
+case reads/oopif ok
+case reads/snapshot ok
+case reads/visible-dom-dense ok
+case reads/zero-budget ok
+case screenshot/clip ok
+case screenshot/modes ok
+case tabs/discovery ok
+case tabs/lifecycle ok
+case tabs/manual-handoff-disabled ok
+case tabs/navigation ok
+case waits/networkidle ok
+case waits/page ok
+case waits/zero-budget ok
+exit 0
+ssfs [33mtrue[39m  2026-10-14T14:41:45.421Z
+$ node scripts/browser-parity.mjs run --service cua --device mini --out cua-m5-2
+case actions/concurrent-fill ok
+case actions/doubleclick ok
+case actions/locators ok
+case actions/overlay ok
+case actions/slow-budget ok
+case actions/strict-error ok
+case actions/wait-for ok
+case capabilities/clipboard-page ok
+case capabilities/clipboard ok
+case capabilities/cursor ok
+case capabilities/export-authenticated ok
+case capabilities/export-rejections ok
+case capabilities/history ok
+case capabilities/logs ok
+case capabilities/m2-disabled ok
+case capabilities/m3-disabled ok
+case capabilities/m3-members ok
+case capabilities/page-assets ok
+case capabilities/viewport ok
+case dialogs/alert ok
+case dialogs/paused-response ok
+case dialogs/prompt ok
+case downloads/ask-where-to-save ok
+case downloads/blocked-navigation ok
+case downloads/chooser ok
+case downloads/media ok
+case downloads/two-tabs ok
+case evaluate/attributes ok
+case evaluate/budget ok
+case evaluate/context-loss ok
+case evaluate/counter ok
+case evaluate/late-completion ok
+case evaluate/mutation ok
+case evaluate/no-replay ok
+case evaluate/read ok
+case examples/concurrency ok
+case examples/tabs ok
+case input/ax-disabled ok
+case input/coordinates ok
+case input/dom ok
+case input/long-type ok
+case input/oopif-type ok
+case input/queued-shortcuts ok
+case input/rich-text ok
+case reads/frames ok
+case reads/locators ok
+case reads/oopif ok
+case reads/snapshot ok
+case reads/visible-dom-dense ok
+case reads/zero-budget ok
+case screenshot/clip ok
+case screenshot/modes ok
+case tabs/discovery ok
+case tabs/lifecycle ok
+case tabs/manual-handoff-disabled ok
+case tabs/navigation ok
+case waits/networkidle ok
+case waits/page ok
+case waits/zero-budget ok
+exit 0
+ssfs [33mtrue[39m  2026-10-14T14:48:56.835Z
+$ node scripts/browser-parity.mjs diff vendor-m5-2 cua-m5-2 --expected test/browser-parity/expected-differences.json
+0 unexpected differences (59 cases, 151 cells, 14 expected)
+exit 0
+
+vendor-m5-2: 59/59 cases ok, 14:33:14 to 14:41:44 UTC, 68 elicitations accepted (origin access, downloads, uploads,
+history, as before), no cua marker. cua-m5-2: 59/59 ok, 14:41:45 to 14:48:55 UTC, no elicitations, attested
+`cua browser service 0.1.0`.
+
+The 14 expected differences, each an entry of test/browser-parity/expected-differences.json (the same pair without the
+allowance file lists exactly these 14 semantic differences and nothing else):
+  dialogs/alert blocked                      dialog_open at once (Decision Log 2026-10-13)
+  evaluate/mutation mutate, title            main-world evaluate (the spec's "Lifted"; acceptance 3)
+  evaluate/counter submit, evaluate/context-loss reload, evaluate/late-completion late, evaluate/no-replay submit-navigate
+                                             main-world evaluate and the no-replay rule
+  evaluate/budget wait, actions/slow-budget late    the 120 s clamp maximum (acceptance 2)
+  actions/concurrent-fill both               fills never cross (M1c whole-branch review)
+  input/oopif-type type                      cua_type into the focused cross-origin frame (M1c)
+  waits/zero-budget load, idle               a zero-budget wait already satisfied succeeds (M1c)
+  downloads/two-tabs both                    exclusive download ownership (M2); this vendor run gave one path for both
+
+Not counted, kept for the record:
+- vendor-m5-1 (complete, 14:16 to 14:25 UTC at 39192b0): 58/59 ok; downloads/two-tabs failed its vendor oracle because
+  the vendor gave each tab its own download ({samePath:false}) where every earlier vendor run (vendor-m2-two-tabs,
+  vendor-m5-dl) gave one download to both. The vendor's shared matcher (BS:60883 Mf) lets a started download reach
+  every armed wait that matches its URL, so whether the second tab's wait sees the first download or its own depends on
+  whether the second download starts before the first wait resolved: a race, not a fixed answer. The oracle now accepts
+  either for the vendor and still requires two paths from cua (237f91e); the expected-differences entry covers the cell
+  either way (an allowance is not a required difference).
+- A cua run at 39192b0 started 14:25 UTC aborted after 24 cases when an ssh connection to the mini was reset during the
+  key exchange ("kex_exchange_identification: read: Connection reset by peer", reading the trace between cells); its
+  cleanup completed (no fixture, serve or trace activation left on the mini). It was discarded; ssfs stayed ready
+  throughout (checked at 14:25:05 and 14:28:11 UTC).

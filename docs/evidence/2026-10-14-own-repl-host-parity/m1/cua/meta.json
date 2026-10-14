@@ -1,0 +1,1046 @@
+{
+  "schema": 1,
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+  "harnessCommit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+  "node": "v24.18.0",
+  "runtimeRelease": "26.928.40906-darwin-arm64",
+  "hostVersion": "0.2.0",
+  "apiVersion": "0.2.0",
+  "device": "mini",
+  "platform": "darwin",
+  "surfaces": [
+    "browser"
+  ],
+  "sandbox": "scoped",
+  "service": "cua",
+  "backend": "no-services",
+  "profile": "ssfs",
+  "suite": "cells",
+  "through": "M1",
+  "caseIds": [
+    "cells/bindings/persistent",
+    "cells/bindings/redeclare",
+    "cells/bindings/ordinary-error-partial-bindings",
+    "cells/await/top-level",
+    "cells/imports/dynamic",
+    "cells/imports/builtins",
+    "cells/imports/static-refused",
+    "cells/imports/process-global-refused",
+    "cells/imports/process-module-refused",
+    "cells/globals/string-codegen-refused",
+    "cells/globals/wasm-codegen-refused",
+    "cells/errors/vendor-sentences-is-error",
+    "cells/errors/thrown-cell-recovery",
+    "cells/globals/node-repl-immutable",
+    "cells/globals/tmp-dir-immutable",
+    "cells/globals/context",
+    "cells/globals/env-frozen-allowlist",
+    "cells/globals/request-meta",
+    "cells/globals/rpc-configured-only",
+    "cells/reset/clears-bindings",
+    "cells/reset/preserves-task-id",
+    "cells/timeouts/default-30000",
+    "cells/timeouts/explicit-short",
+    "cells/timeouts/fresh-heap",
+    "cells/output/write-values",
+    "cells/output/write-ids",
+    "cells/output/console-grouping-newlines",
+    "cells/output/ordered-content",
+    "cells/lifecycle/running-cancellation-eventual-result",
+    "cells/lifecycle/control-traffic-while-running",
+    "cells/emit-image/png/data-url",
+    "cells/emit-image/png/data-url-promised",
+    "cells/emit-image/png/file-url",
+    "cells/emit-image/png/file-url-promised",
+    "cells/emit-image/png/buffer",
+    "cells/emit-image/png/buffer-promised",
+    "cells/emit-image/png/uint8array",
+    "cells/emit-image/png/uint8array-promised",
+    "cells/emit-image/png/arraybuffer",
+    "cells/emit-image/png/arraybuffer-promised",
+    "cells/emit-image/png/arraybuffer-view",
+    "cells/emit-image/png/arraybuffer-view-promised",
+    "cells/emit-image/png/object-buffer",
+    "cells/emit-image/png/object-buffer-promised",
+    "cells/emit-image/png/object-uint8array",
+    "cells/emit-image/png/object-uint8array-promised",
+    "cells/emit-image/png/object-arraybuffer",
+    "cells/emit-image/png/object-arraybuffer-promised",
+    "cells/emit-image/png/object-arraybuffer-view",
+    "cells/emit-image/png/object-arraybuffer-view-promised",
+    "cells/emit-image/jpeg/data-url",
+    "cells/emit-image/jpeg/data-url-promised",
+    "cells/emit-image/jpeg/file-url",
+    "cells/emit-image/jpeg/file-url-promised",
+    "cells/emit-image/jpeg/buffer",
+    "cells/emit-image/jpeg/buffer-promised",
+    "cells/emit-image/jpeg/uint8array",
+    "cells/emit-image/jpeg/uint8array-promised",
+    "cells/emit-image/jpeg/arraybuffer",
+    "cells/emit-image/jpeg/arraybuffer-promised",
+    "cells/emit-image/jpeg/arraybuffer-view",
+    "cells/emit-image/jpeg/arraybuffer-view-promised",
+    "cells/emit-image/jpeg/object-buffer",
+    "cells/emit-image/jpeg/object-buffer-promised",
+    "cells/emit-image/jpeg/object-uint8array",
+    "cells/emit-image/jpeg/object-uint8array-promised",
+    "cells/emit-image/jpeg/object-arraybuffer",
+    "cells/emit-image/jpeg/object-arraybuffer-promised",
+    "cells/emit-image/jpeg/object-arraybuffer-view",
+    "cells/emit-image/jpeg/object-arraybuffer-view-promised",
+    "cells/emit-image/webp/data-url",
+    "cells/emit-image/webp/data-url-promised",
+    "cells/emit-image/webp/file-url",
+    "cells/emit-image/webp/file-url-promised",
+    "cells/emit-image/webp/buffer",
+    "cells/emit-image/webp/buffer-promised",
+    "cells/emit-image/webp/uint8array",
+    "cells/emit-image/webp/uint8array-promised",
+    "cells/emit-image/webp/arraybuffer",
+    "cells/emit-image/webp/arraybuffer-promised",
+    "cells/emit-image/webp/arraybuffer-view",
+    "cells/emit-image/webp/arraybuffer-view-promised",
+    "cells/emit-image/webp/object-buffer",
+    "cells/emit-image/webp/object-buffer-promised",
+    "cells/emit-image/webp/object-uint8array",
+    "cells/emit-image/webp/object-uint8array-promised",
+    "cells/emit-image/webp/object-arraybuffer",
+    "cells/emit-image/webp/object-arraybuffer-promised",
+    "cells/emit-image/webp/object-arraybuffer-view",
+    "cells/emit-image/webp/object-arraybuffer-view-promised",
+    "cells/output/image-acknowledgement",
+    "cells/output/ordered-images",
+    "cells/output/unawaited-emissions",
+    "cells/images/invalid-url",
+    "cells/images/empty-url",
+    "cells/images/unknown-bytes",
+    "cells/images/empty-bytes",
+    "cells/images/invalid-object",
+    "cells/images/invalid-mime",
+    "cells/images/rejected-promise",
+    "cells/timeouts/late-reply-generation-fence",
+    "cells/reset/generation-fence",
+    "cells/reset/fresh-banner",
+    "cells/lifecycle/eof-settles-no-replay",
+    "cells/lifecycle/child-exit-settles",
+    "cells/lifecycle/owned-group-teardown",
+    "cells/confinement/default",
+    "cells/confinement/scoped",
+    "cells/confinement/disabled",
+    "cells/confinement/trusted-write-root-overlap",
+    "cells/confinement/no-unsandboxed-fallback"
+  ],
+  "caseCells": {
+    "cells/bindings/persistent": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/bindings/redeclare": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/bindings/ordinary-error-partial-bindings": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/await/top-level": [
+      "cell-1"
+    ],
+    "cells/imports/dynamic": [
+      "cell-1"
+    ],
+    "cells/imports/builtins": [
+      "cell-1"
+    ],
+    "cells/imports/static-refused": [
+      "cell-1"
+    ],
+    "cells/imports/process-global-refused": [
+      "cell-1"
+    ],
+    "cells/imports/process-module-refused": [
+      "cell-1"
+    ],
+    "cells/globals/string-codegen-refused": [
+      "cell-1"
+    ],
+    "cells/globals/wasm-codegen-refused": [
+      "cell-1"
+    ],
+    "cells/errors/vendor-sentences-is-error": [
+      "cell-1"
+    ],
+    "cells/errors/thrown-cell-recovery": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/globals/node-repl-immutable": [
+      "cell-1"
+    ],
+    "cells/globals/tmp-dir-immutable": [
+      "cell-1"
+    ],
+    "cells/globals/context": [
+      "cell-1"
+    ],
+    "cells/globals/env-frozen-allowlist": [
+      "cell-1"
+    ],
+    "cells/globals/request-meta": [
+      "cell-1"
+    ],
+    "cells/globals/rpc-configured-only": [
+      "cell-1"
+    ],
+    "cells/reset/clears-bindings": [
+      "cell-1",
+      "reset",
+      "cell-3"
+    ],
+    "cells/reset/preserves-task-id": [
+      "cell-1",
+      "reset",
+      "cell-3"
+    ],
+    "cells/timeouts/default-30000": [
+      "timeout",
+      "cell-2"
+    ],
+    "cells/timeouts/explicit-short": [
+      "timeout",
+      "cell-2"
+    ],
+    "cells/timeouts/fresh-heap": [
+      "timeout",
+      "cell-2"
+    ],
+    "cells/output/write-values": [
+      "cell-1"
+    ],
+    "cells/output/write-ids": [
+      "cell-1"
+    ],
+    "cells/output/console-grouping-newlines": [
+      "cell-1"
+    ],
+    "cells/output/ordered-content": [
+      "cell-1"
+    ],
+    "cells/lifecycle/running-cancellation-eventual-result": [
+      "running"
+    ],
+    "cells/lifecycle/control-traffic-while-running": [
+      "running"
+    ],
+    "cells/emit-image/png/data-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/data-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/file-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/file-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/data-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/data-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/file-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/file-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/data-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/data-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/file-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/file-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/output/image-acknowledgement": [
+      "cell-1"
+    ],
+    "cells/output/ordered-images": [
+      "cell-1"
+    ],
+    "cells/output/unawaited-emissions": [
+      "cell-1"
+    ],
+    "cells/images/invalid-url": [
+      "cell-1"
+    ],
+    "cells/images/empty-url": [
+      "cell-1"
+    ],
+    "cells/images/unknown-bytes": [
+      "cell-1"
+    ],
+    "cells/images/empty-bytes": [
+      "cell-1"
+    ],
+    "cells/images/invalid-object": [
+      "cell-1"
+    ],
+    "cells/images/invalid-mime": [
+      "cell-1"
+    ],
+    "cells/images/rejected-promise": [
+      "cell-1"
+    ],
+    "cells/timeouts/late-reply-generation-fence": [
+      "timeout",
+      "fresh",
+      "boundary"
+    ],
+    "cells/reset/generation-fence": [
+      "schedule",
+      "reset",
+      "fresh",
+      "boundary"
+    ],
+    "cells/reset/fresh-banner": [
+      "first",
+      "again",
+      "reset",
+      "fresh",
+      "timeout",
+      "after-timeout",
+      "boundary"
+    ],
+    "cells/lifecycle/eof-settles-no-replay": [
+      "warm",
+      "interrupted",
+      "reconnect",
+      "boundary"
+    ],
+    "cells/lifecycle/child-exit-settles": [
+      "warm",
+      "interrupted",
+      "boundary"
+    ],
+    "cells/lifecycle/owned-group-teardown": [
+      "warm",
+      "background",
+      "boundary"
+    ],
+    "cells/confinement/default": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/scoped": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/disabled": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/trusted-write-root-overlap": [
+      "boundary"
+    ],
+    "cells/confinement/no-unsandboxed-fallback": [
+      "reset",
+      "refused",
+      "boundary"
+    ]
+  },
+  "pending": [
+    {
+      "id": "cells/output/structured-content-and-meta",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/accept",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/decline",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/cancel",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/content-and-meta",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/unsupported-form",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/malformed-reply",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/accepted-response-persistence",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/suspend-resume",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/nested-suspension",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/remaining-budget",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/approval-and-startup-waits",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/after-success",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/after-ordinary-error",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/sequential-after-code",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/background-drain",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/submitted-code-phase",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/separate-positive-timeouts",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/unregister",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/concurrent-best-effort-turn-end",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/turn-end-deadlines",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/end-task-after-hooks",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/deduplicated-turn-end",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/realpath-roots",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/symlink-escape-refused",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/no-privileges-through-cell-import",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/lazy-service-cache",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/execution-request-correlation",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/message-only-error-boundary",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/response-meta",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/emit-content-item-order",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/privileged-env-allowlist",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/no-account-telemetry-app-server",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/absolute-path",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/connect-timeout",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/base64-correlation",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/frozen-interface",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/data-close-error",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/launch-services/open-application-macos-boundary",
+      "milestone": "M2"
+    }
+  ],
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "cells/timeouts/late-reply-generation-fence/connection-1",
+    "cells/reset/generation-fence/connection-1",
+    "cells/reset/fresh-banner/connection-1",
+    "cells/lifecycle/eof-settles-no-replay/connection-1",
+    "cells/lifecycle/eof-settles-no-replay/connection-2",
+    "cells/lifecycle/child-exit-settles/connection-1",
+    "cells/lifecycle/owned-group-teardown/connection-1",
+    "cells/confinement/default/connection-1",
+    "cells/confinement/scoped/connection-1",
+    "cells/confinement/disabled/connection-1",
+    "cells/confinement/no-unsandboxed-fallback/connection-1"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "de0d1bbe-cc17-44ec-926c-9c49859a5ec2"
+      }
+    },
+    {
+      "connection": "cells/timeouts/late-reply-generation-fence/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "b2914e48-2746-4c6e-985e-763cc178fba7"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/reset/generation-fence/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "992eb13f-866d-4c55-9efd-d10dc2ed41d2"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/reset/fresh-banner/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "1d501d43-7f3e-4c74-9cc3-3f805d922510"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": true,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/eof-settles-no-replay/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "57dc7bd6-8651-4c5a-894f-9974c9692bc9"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/eof-settles-no-replay/connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "4a728479-afbb-43ec-827e-1fc22a1a3eee"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/child-exit-settles/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "6ebae84d-ff59-4fd3-b6d3-16d01f92ec6a"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/owned-group-teardown/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "4fe8b32a-53e8-427e-b4f3-31ab4f1c1125"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/default/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "c5e36af5-6989-43b2-a216-f0bee820f1d5"
+      },
+      "fixture": {
+        "sandbox": "default",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/scoped/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "441e6864-9c13-496b-b23a-4a64d07cdf41"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/disabled/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "bc4453d9-9511-45e5-8760-41a51da819eb"
+      },
+      "fixture": {
+        "sandbox": "disabled",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/no-unsandboxed-fallback/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin"
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "1ce581ce-0537-4952-9947-d008a10a2fee"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": true
+      }
+    }
+  ],
+  "vendorDefects": [],
+  "coveredCases": 111,
+  "recordedCases": 111
+}

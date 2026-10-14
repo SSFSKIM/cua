@@ -1,0 +1,56 @@
+# M1: cua's own REPL host against the M0 vendor control
+
+These runs execute cua's own host (`src/repl-host/supervisor.mjs` and the ported kernel) through the real cua proxy, in the
+same isolated no-services lane as M0's vendor control (`test/repl-parity/serve-cells.mjs`: no-op banner, no services, no
+cell environment). The suite is `cells --through M1`, compared against `m0/vendor-1` (mini) and `m0/linux-vendor-1`
+(cua-linux) with `test/repl-parity/expected-differences.json`.
+
+## Evidence
+
+- `cua/`: mini, profile `ssfs`; `linux-cua/`: cua-linux, profile `me`, X display `:0`. Each has `meta.json`,
+  `results.jsonl` and the effective MCP tool contract in `tools.json`.
+- `mini-prepare/`, `linux-prepare/`: readiness and source/runtime facts. `mini-diff.json`, `linux-diff.json`,
+  `summary.json`: verdicts and counts.
+- Source and harness commit: `f2fb888d1205caf428a9350dc9f88b0bdf22f00b`.
+
+## Result
+
+- Mini: 111 cases recorded and passing, 145 journal cells (134 MCP results, 11 boundary observations), 12 connections,
+  each attesting `serverInfo {name: cua-repl-host, version: 0.2.0}` and the result marker `cua/replHost {host: cua,
+  version: 0.2.0}`. Diff against `m0/vendor-1`: **0 unexpected differences**; 134 accepted identity slots (the marker
+  the vendor never sends), nothing else.
+- cua-linux: 112 cases recorded and passing (146 cells, 12 boundary observations), the same attestation. Diff against
+  `m0/linux-vendor-1`: **0 unexpected differences**; the same 134 identity slots plus the one declared security departure
+  below. The comparison still reports `allAssertionsPassed: false` because the vendor control carries its declared defect.
+- The default budget was exercised, not inferred: `cells/timeouts/default-30000` sent no `timeout_ms` and was answered
+  `js execution timed out; kernel reset, rerun your request` after 30,082 ms (mini) and 30,067 ms (cua-linux); the vendor
+  control took 30,036 ms.
+- 63 exact image observations per run; no raw image bytes are stored.
+
+## The #135 security departure
+
+With a harness-owned sandbox launcher that exits 73, the pinned vendor Linux host runs the cell unconfined (declared
+vendor defect `linux-vendor-sandbox-launcher-fail-open`). cua's own host refuses: the cell is answered with the kernel
+exit diagnostic (`exited(code=73)`, tail `fixture sandbox launcher refused`), exactly as the vendor refuses on macOS, no
+code runs and nothing is written outside the policy, so the case's assertion passes. `expected-differences.json` names
+this one case, platform and assertion field, the declared vendor defect on the vendor side and the exact refusal on the
+own side (`scripts/repl-parity/compare.mjs validateExpected`); any other difference in that case still fails.
+
+## Environment
+
+- Mini: proxy and own host on the PATH Node v24.18.0 (the own host resolves its Node the same way).
+- cua-linux: the proxy stays on the VM's Node v22.23.3, as M0's control did; the own host runs on a harness-owned Node
+  v24.18.0 (checksum-verified from nodejs.org) at `~/.local/share/cua-parity-node/node-v24.18.0-linux-arm64`, named by
+  `CUA_NODE` in a marked block at the top of the admin user's `~/.bashrc` (the copy before the edit is beside the Node).
+  No system package was touched; removing that block and directory undoes it.
+
+## Reproduce
+
+```sh
+node scripts/repl-parity.mjs prepare --device mini --commit f2fb888 --profile ssfs
+node scripts/repl-parity.mjs run --host cua --device mini --suite cells --through M1 --out /tmp/repl-m1-mini
+node scripts/repl-parity.mjs diff docs/evidence/2026-10-14-own-repl-host-parity/m0/vendor-1 /tmp/repl-m1-mini --through M1 --expected test/repl-parity/expected-differences.json
+```
+
+Repeat with `--device cua-linux --profile me` against `m0/linux-vendor-1` (the device's ssh environment must name
+`CUA_NODE`).

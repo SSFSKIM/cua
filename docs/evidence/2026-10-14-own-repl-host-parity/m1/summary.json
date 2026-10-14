@@ -1,0 +1,110 @@
+{
+  "schema": 2,
+  "lane": "cua own host (src/repl-host/supervisor.mjs) through cua proxy; isolated no-services cells and labeled process/preflight observations",
+  "through": "M1",
+  "expectedDifferencesFile": "test/repl-parity/expected-differences.json",
+  "runs": [
+    {
+      "run": "cua",
+      "device": "mini",
+      "profile": "ssfs",
+      "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+      "harnessCommit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+      "complete": true,
+      "recordedCases": 111,
+      "coveredAndPassingCases": 111,
+      "failedAssertions": 0,
+      "vendorDefects": [],
+      "journalCells": 145,
+      "rawMcpResults": 134,
+      "boundaryObservations": 11,
+      "exactImages": 63,
+      "defaultTimeoutMs": 30082.49925,
+      "defaultTimeoutResult": "js execution timed out; kernel reset, rerun your request",
+      "connections": 12,
+      "attestations": 12,
+      "serverInfo": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.2.0"
+        }
+      ],
+      "resultMarker": [
+        {
+          "host": "cua",
+          "version": "0.2.0"
+        }
+      ],
+      "proxyNode": "v24.18.0",
+      "runtimeRelease": "26.928.40906-darwin-arm64"
+    },
+    {
+      "run": "linux-cua",
+      "device": "cua-linux",
+      "profile": "me",
+      "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+      "harnessCommit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+      "complete": true,
+      "recordedCases": 112,
+      "coveredAndPassingCases": 112,
+      "failedAssertions": 0,
+      "vendorDefects": [],
+      "journalCells": 146,
+      "rawMcpResults": 134,
+      "boundaryObservations": 12,
+      "exactImages": 63,
+      "defaultTimeoutMs": 30067.015708,
+      "defaultTimeoutResult": "js execution timed out; kernel reset, rerun your request",
+      "connections": 12,
+      "attestations": 12,
+      "serverInfo": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.2.0"
+        }
+      ],
+      "resultMarker": [
+        {
+          "host": "cua",
+          "version": "0.2.0"
+        }
+      ],
+      "proxyNode": "v22.23.3",
+      "runtimeRelease": "26.928.40906-linux-arm64"
+    }
+  ],
+  "comparisons": [
+    {
+      "left": "m0/vendor-1",
+      "right": "m1/cua",
+      "ok": true,
+      "unexpectedDifferences": 0,
+      "cases": 111,
+      "recordedCases": 111,
+      "acceptedIdentitySlots": 134,
+      "securityDepartures": [],
+      "vendorDefects": [],
+      "allAssertionsPassed": true
+    },
+    {
+      "left": "m0/linux-vendor-1",
+      "right": "m1/linux-cua",
+      "ok": true,
+      "unexpectedDifferences": 0,
+      "cases": 111,
+      "recordedCases": 112,
+      "acceptedIdentitySlots": 134,
+      "securityDepartures": [
+        {
+          "case": "cells/confinement/no-unsandboxed-fallback",
+          "field": "assertion",
+          "issue": "#135"
+        }
+      ],
+      "vendorDefects": [
+        "linux-vendor-sandbox-launcher-fail-open"
+      ],
+      "allAssertionsPassed": false
+    }
+  ]
+}

@@ -8,12 +8,19 @@
 // (sentence, field order and tail shape observed on the pinned node_repl, 2026-10-14). `kernel_pid` is the spawned
 // child's, which under the sandbox is the launcher's, not the kernel Node's.
 //
+// The kernel's stdin, stdout and stderr are real pipes (FIFOs opened then unlinked at once), as the vendor's are: Node's
+// own child pipes are Unix socket pairs, which the Linux sandbox's network filter makes unreadable and unwritable inside
+// it (observed on cua-linux, 2026-10-14: the kernel saw EOF on stdin at once and its output was lost).
+//
 // The child stays in the supervisor's process group, the group cua's proxy owns (src/mcp/upstream.mjs). Stopping it
 // SIGKILLs the child and every process descending from it, so a kernel under a sandbox launcher (which runs it as its
 // own child) or a kernel busy in synchronous code is gone, not orphaned; a descendant started after the listing stays
 // in the owned group for the proxy's teardown.
 import {spawn, execFileSync} from 'node:child_process';
-import {constants} from 'node:os';
+import {closeSync, constants as fsConstants, mkdtempSync, openSync, rmSync} from 'node:fs';
+import {Socket} from 'node:net';
+import {constants, tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 
 const TAIL_LINES = 20;
@@ -66,25 +73,60 @@ export function descendantsOf(pid) {
   return [...owned];
 }
 
+// Three FIFO pipes -> {child: [stdin, stdout, stderr] fds for the child, parent: {stdin, stdout, stderr} fds for this
+// process}. Each FIFO is opened from both sides without blocking and unlinked before anything runs.
+export function kernelPipes() {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-kernel-pipes-'));
+  const opened = [];
+  const open = (path, flags) => { const fd = openSync(path, flags | fsConstants.O_NONBLOCK); opened.push(fd); return fd; };
+  try {
+    const [input, output, error] = ['in', 'out', 'err'].map(name => join(dir, name));
+    execFileSync('mkfifo', ['-m', '600', input, output, error], {stdio: 'ignore'});
+    const childIn = open(input, fsConstants.O_RDONLY), parentIn = open(input, fsConstants.O_WRONLY);
+    const parentOut = open(output, fsConstants.O_RDONLY), childOut = open(output, fsConstants.O_WRONLY);
+    const parentErr = open(error, fsConstants.O_RDONLY), childErr = open(error, fsConstants.O_WRONLY);
+    return {child: [childIn, childOut, childErr], parent: {stdin: parentIn, stdout: parentOut, stderr: parentErr}};
+  } catch (failure) {
+    for (const fd of opened) closeSync(fd);
+    throw failure;
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+}
+
 // Starts a kernel child. `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print
 // plain text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when
 // `stop()` ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
-export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn}) {
+export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = kernelPipes}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
   let exitInfo = null;
   let spawnError = null;
-  const child = spawnProcess(command, args, {env, cwd, stdio: ['pipe', 'pipe', 'pipe']});
-  const exited = new Promise(resolve => {
+  let child = null;
+  let io;
+  try {
+    io = pipes();
+    child = spawnProcess(command, args, {env, cwd, stdio: io.child});
+  } catch (error) {
+    spawnError = error;
+  } finally {
+    for (const fd of io?.child ?? []) closeSync(fd);
+  }
+  const stdin = io && new Socket({fd: io.parent.stdin, readable: false, writable: true});
+  const stdout = io && new Socket({fd: io.parent.stdout, readable: true, writable: false});
+  const stderr = io && new Socket({fd: io.parent.stderr, readable: true, writable: false});
+  const exited = child ? new Promise(resolve => {
     child.once('exit', (code, signal) => { exitInfo = {code, signal}; resolve(exitInfo); });
     child.once('error', error => { spawnError ??= error; resolve(null); });
-  });
-  const stderrClosed = new Promise(resolve => child.stderr.once('close', resolve));
-  child.stdin.on('error', () => {});
-  child.stderr.setEncoding('utf8').on('data', chunk => tail.write(chunk));
-  child.stdout.on('error', () => {});
-  createInterface({input: child.stdout}).on('line', line => {
+  }) : Promise.resolve(null);
+  const closed = stream => (stream ? new Promise(resolve => { if (stream.destroyed) resolve(); else stream.once('close', resolve); }) : Promise.resolve());
+  const stdoutClosed = closed(stdout);
+  const stderrClosed = closed(stderr);
+  stdin?.on('error', () => {});
+  stderr?.on('error', () => {}).setEncoding('utf8').on('data', chunk => tail.write(chunk));
+  stdout?.on('error', () => {});
+  if (stdout) createInterface({input: stdout}).on('line', line => {
     if (ended || !line.trim()) return;
     let message;
     try { message = JSON.parse(line); } catch { return; }
@@ -96,7 +138,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, ms); })]).finally(() => clearTimeout(timer));
   };
   const killTree = () => {
-    if (!child.pid) return;
+    if (!child?.pid) return;
     for (const pid of [child.pid, ...descendantsOf(child.pid)]) {
       try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
     }
@@ -105,21 +147,22 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   async function end() {
     if (ended) return;
     ended = true;
-    if (spawnError) return onEnd({expected: stopping, diagnostic: `failed to start Node runtime: ${spawnError.message}`});
-    if (!exitInfo && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
+    if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
     await within(stderrClosed, EXIT_GRACE_MS);
+    for (const stream of [stdin, stdout, stderr]) stream?.destroy();
+    if (spawnError) return onEnd({expected: stopping, diagnostic: `failed to start Node runtime: ${spawnError.message}`});
     onEnd({expected: stopping, diagnostic: exitDiagnostic({pid: child.pid, status: exitInfo ? exitStatus(exitInfo) : 'unknown', tail: tail.text()})});
   }
   // The end is the kernel's stdout closing, or its exit when something it started still holds the pipe.
-  child.stdout.once('close', end);
-  exited.then(info => (info ? within(new Promise(resolve => child.stdout.once('close', resolve)), 200).then(end) : end()));
+  stdoutClosed.then(end);
+  exited.then(info => (info ? within(stdoutClosed, 200).then(end) : end()));
 
   return {
-    get pid() { return child.pid; },
+    get pid() { return child?.pid; },
     get ended() { return ended; },
     send(message) {
-      if (ended || stopping || !child.stdin.writable) return false;
-      child.stdin.write(`${JSON.stringify(message)}\n`);
+      if (ended || stopping || !stdin?.writable) return false;
+      stdin.write(`${JSON.stringify(message)}\n`);
       return true;
     },
     // Ends the kernel on purpose: SIGKILL to it and its descendants, its input closed; resolves once its exit was seen
@@ -127,7 +170,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     async stop() {
       stopping = true;
       killTree();
-      child.stdin.destroy();
+      stdin?.destroy();
       await within(exited, 2 * EXIT_GRACE_MS);
       await end();
     },

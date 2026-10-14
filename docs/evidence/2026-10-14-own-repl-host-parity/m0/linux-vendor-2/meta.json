@@ -2,8 +2,8 @@
   "schema": 1,
   "host": "vendor",
   "observedHost": "vendor",
-  "commit": "d4e259941cb4f78c245b92717a4e7da0d0c1aef5",
-  "harnessCommit": "d4e259941cb4f78c245b92717a4e7da0d0c1aef5",
+  "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+  "harnessCommit": "88970a0ab707a382eec09f7108ed7668020753ea",
   "node": "v22.23.3",
   "runtimeRelease": "26.928.40906-linux-arm64",
   "hostVersion": "26.928.40906-linux-arm64",
@@ -18,7 +18,7 @@
   "backend": "no-services",
   "profile": "me",
   "suite": "cells",
-  "through": null,
+  "through": "M1",
   "caseIds": [
     "cells/bindings/persistent",
     "cells/bindings/redeclare",
@@ -119,7 +119,19 @@
     "cells/images/empty-bytes",
     "cells/images/invalid-object",
     "cells/images/invalid-mime",
-    "cells/images/rejected-promise"
+    "cells/images/rejected-promise",
+    "cells/timeouts/late-reply-generation-fence",
+    "cells/reset/generation-fence",
+    "cells/reset/fresh-banner",
+    "cells/lifecycle/eof-settles-no-replay",
+    "cells/lifecycle/child-exit-settles",
+    "cells/lifecycle/owned-group-teardown",
+    "cells/confinement/default",
+    "cells/confinement/scoped",
+    "cells/confinement/disabled",
+    "cells/confinement/trusted-write-root-overlap",
+    "cells/confinement/linux-fail-closed",
+    "cells/confinement/no-unsandboxed-fallback"
   ],
   "caseCells": {
     "cells/bindings/persistent": [
@@ -432,57 +444,68 @@
     ],
     "cells/images/rejected-promise": [
       "cell-1"
+    ],
+    "cells/timeouts/late-reply-generation-fence": [
+      "timeout",
+      "fresh",
+      "boundary"
+    ],
+    "cells/reset/generation-fence": [
+      "schedule",
+      "reset",
+      "fresh",
+      "boundary"
+    ],
+    "cells/reset/fresh-banner": [
+      "first",
+      "again",
+      "reset",
+      "fresh",
+      "timeout",
+      "after-timeout",
+      "boundary"
+    ],
+    "cells/lifecycle/eof-settles-no-replay": [
+      "warm",
+      "interrupted",
+      "reconnect",
+      "boundary"
+    ],
+    "cells/lifecycle/child-exit-settles": [
+      "warm",
+      "interrupted",
+      "boundary"
+    ],
+    "cells/lifecycle/owned-group-teardown": [
+      "warm",
+      "background",
+      "boundary"
+    ],
+    "cells/confinement/default": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/scoped": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/disabled": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/trusted-write-root-overlap": [
+      "boundary"
+    ],
+    "cells/confinement/linux-fail-closed": [
+      "boundary"
+    ],
+    "cells/confinement/no-unsandboxed-fallback": [
+      "reset",
+      "refused",
+      "boundary"
     ]
   },
   "pending": [
-    {
-      "id": "cells/timeouts/late-reply-generation-fence",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/reset/generation-fence",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/reset/fresh-banner",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/lifecycle/eof-settles-no-replay",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/lifecycle/child-exit-settles",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/lifecycle/owned-group-teardown",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/confinement/default",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/confinement/scoped",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/confinement/disabled",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/confinement/trusted-write-root-overlap",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/confinement/linux-fail-closed",
-      "milestone": "M1"
-    },
-    {
-      "id": "cells/confinement/no-unsandboxed-fallback",
-      "milestone": "M1"
-    },
     {
       "id": "cells/output/structured-content-and-meta",
       "milestone": "M2"
@@ -638,7 +661,18 @@
   ],
   "complete": true,
   "connections": [
-    "connection-1"
+    "connection-1",
+    "cells/timeouts/late-reply-generation-fence/connection-1",
+    "cells/reset/generation-fence/connection-1",
+    "cells/reset/fresh-banner/connection-1",
+    "cells/lifecycle/eof-settles-no-replay/connection-1",
+    "cells/lifecycle/eof-settles-no-replay/connection-2",
+    "cells/lifecycle/child-exit-settles/connection-1",
+    "cells/lifecycle/owned-group-teardown/connection-1",
+    "cells/confinement/default/connection-1",
+    "cells/confinement/scoped/connection-1",
+    "cells/confinement/disabled/connection-1",
+    "cells/confinement/no-unsandboxed-fallback/connection-1"
   ],
   "hostAttestations": [
     {
@@ -648,9 +682,324 @@
         "name": "rmcp",
         "version": "1.5.0"
       },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
       "_meta": {
-        "cua/taskId": "23df25d1-6c30-47d5-9642-5ee078f541fa"
+        "cua/taskId": "88262354-f871-4159-8329-b32586a846d5"
+      }
+    },
+    {
+      "connection": "cells/timeouts/late-reply-generation-fence/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "cua/taskId": "acf6d2f6-5d2e-4b5e-a4f9-8cd40a7b7e64"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/reset/generation-fence/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 1,
+        "cua/taskId": "85b53f5f-b985-408a-aed3-a9a4883ad024"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/reset/fresh-banner/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/taskId": "27625ec9-f2fb-4adb-a050-618220b04424"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": true,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/eof-settles-no-replay/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/taskId": "94919cf1-6121-46e5-8596-940f21320cde"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/eof-settles-no-replay/connection-2",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 1,
+        "cua/taskId": "44d0ba50-177e-4f39-86d8-3bb66cff00d4"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/child-exit-settles/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/taskId": "b600863a-fa49-4885-8b2c-1ad2eef14750"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/owned-group-teardown/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/taskId": "2531d8cc-e88f-4235-94f7-28005969b8ca"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/default/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/taskId": "ee13825b-378e-445e-af29-a3dbb728e965"
+      },
+      "fixture": {
+        "sandbox": "default",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/scoped/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 3,
+        "cua/taskId": "557a440c-c47a-4911-9648-9810acdeb7da"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/disabled/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/taskId": "e71d4944-c33b-42e4-b05d-0c2c91d951a4"
+      },
+      "fixture": {
+        "sandbox": "disabled",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/no-unsandboxed-fallback/connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux"
+      },
+      "_meta": {
+        "cua/taskId": "1bc13faa-bd5b-4fe8-9dc6-ab6a9ab09b27"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": true
       }
     }
-  ]
+  ],
+  "vendorDefects": [
+    {
+      "id": "linux-vendor-sandbox-launcher-fail-open",
+      "case": "cells/confinement/no-unsandboxed-fallback",
+      "platform": "linux",
+      "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage."
+    }
+  ],
+  "coveredCases": 111,
+  "recordedCases": 112
 }

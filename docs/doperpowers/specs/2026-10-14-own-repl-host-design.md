@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The HostIdentity observation is a per-connection record `hostAttestation` (a run carries `hostAttestations`): `serverInfo` exactly as `initialize` returned it (cua `{name:'cua-repl-host',version}`; vendor recorded as-is) and the tool-result `_meta['cua/replHost']` (cua `{host:'cua',version}`; vendor absence recorded explicitly). Run metadata carries requested and observed host; a mismatched or mixed-host run is invalid for summary and comparison. Service identity stays `meta.service:'cua'`; existing browser attestation fields are untouched. Tasks 1, 3 and 4 of M0 use these names.
+  Rationale: Three M0 tasks produce or consume the observation; one name set avoids a rename wave at review (Design "Handshake cache identity", Verification "The harness records", Interfaces HostIdentity/BenchmarkRun).
+  Date/Author: 2026-10-14, dispatching session ruling, recorded by the plan-executor.
 - Decision: The own host resolves its Node in this order, taking the first candidate whose `--version` is ≥24: (1) an explicit `CUA_NODE` (absolute path to a Node executable); (2) `process.execPath` of the running cua process; (3) `node` on PATH. If none qualifies, selection of the own host refuses before launch with a diagnostic naming the floor, each candidate tried with its version, and the `CUA_NODE` override. Never the vendor Node, never a silent downgrade to the vendor host. Local own-host runs on this Mac use `CUA_NODE=/opt/homebrew/bin/node` (v26); the mini's PATH node (v24.18.0) needs no override.
   Rationale: Design says "the user's Node ≥24, resolved to an absolute executable" without an order; this Mac's PATH node is v22. Same no-downgrade rule as the explicit route refusal.
   Date/Author: 2026-10-14, dispatching session ruling, recorded by the plan-executor.

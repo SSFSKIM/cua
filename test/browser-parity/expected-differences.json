@@ -16,5 +16,11 @@
     "cells": ["wait", "late"],
     "kind": "semantic",
     "reason": "The clamp's maximum is 120,000 ms on cua (the spec's \"Lifted\"; acceptance 2): a caller's timeoutMs above 3 s raises the budget of evaluate and of locator actions, where the vendor caps every budget at 3 s and fails at its deadline."
+  },
+  {
+    "cases": ["actions/concurrent-fill"],
+    "cells": ["both"],
+    "kind": "semantic",
+    "reason": "Two fills started together in one document: cua selects and pastes each field in one operation of the virtual clipboard's queue and checks the paste against the field it prepared, so each value lands in its own field; the vendor selects both fields before either paste, so both pastes land in the field focused last (M1c whole-branch review, P1)."
   }
 ]

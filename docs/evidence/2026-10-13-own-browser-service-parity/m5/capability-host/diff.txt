@@ -1,0 +1,61 @@
+# M5 capability-host group: raw CDP, WebMCP, auth handoff and history through the real REPL client on both services
+
+Spec docs/doperpowers/specs/2026-10-13-own-browser-service-design.md, Decision Log 2026-10-14 (session, for M5).
+Where it ran: this Mac (the executor's), 2026-10-14, branch feat/own-browser-service-m5 at ee43e75. Each run is
+`node scripts/browser-parity.mjs run --device local --backend capability-host`: the real `node bin/cua.mjs serve`
+of this checkout, the installed runtime 26.928.40906-darwin-arm64 (APFS-cloned into a scratch CUA_HOME under /tmp,
+removed at the end of the run) and its unchanged REPL client, the trusted wrapper and the selected service (vendor
+module or src/browser-service/); the only backend is test/browser-parity/capability-host.mjs, started by the harness
+in that home: cua's real host (createHost) with the fake cua extension, announcing browser `viewport`, `history` and
+tab `cdp`, `webmcp`, `browserAuth`, answering getUserHistory from its query, its tabs scripted pages (no Chrome, no
+network). The vendor's raw CDP config switch (full_cdp_access_enabled) is on in the scratch home's browser config.
+Host traces are on (the host reads the harness's activation in the scratch home).
+
+Elicitations: vendor 8 per run, accepted by the harness as on the mini (origin access per case, the history read, the
+WebMCP tool call); cua none. Attestation: vendor runs have no `cua browser service` marker; cua's carries 0.1.0.
+$ node scripts/browser-parity.mjs run --device local --backend capability-host --service vendor --out vendor-1
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/auth-handoff ok
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/history ok
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/raw-cdp ok
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/webmcp ok
+exit 0
+$ node scripts/browser-parity.mjs run --device local --backend capability-host --service vendor --out vendor-2
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/auth-handoff ok
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/history ok
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/raw-cdp ok
+attested: vendor (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/webmcp ok
+exit 0
+$ node scripts/browser-parity.mjs run --device local --backend capability-host --service cua --out cua-1
+attested: cua (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/auth-handoff ok
+attested: cua (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/history ok
+attested: cua (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/raw-cdp ok
+attested: cua (# Selected Browser) at ee43e7548057f95be7d90d54d0dfae63445ce5f6 [capability host]
+case capability-host/webmcp ok
+exit 0
+$ node scripts/browser-parity.mjs diff vendor-1 vendor-2
+0 differences (4 cases, 11 cells)
+exit 0
+$ node scripts/browser-parity.mjs diff vendor-1 cua-1 --expected test/browser-parity/expected-differences.json
+0 unexpected differences (4 cases, 11 cells, 5 expected)
+exit 0
+
+The 5 expected differences are one cell, capability-host/auth-handoff `qr` (expected-differences.json, two entries):
+semantic, cua {status:'declined', reason:'user_took_over'} (the local form; the tab marked handoff) against the
+vendor's {status:'unavailable'} (its broker, runtime.gaas, is OpenAI's and absent); and its trace, the vendor's QR
+screenshot (Page.startScreencast, Page.stopScreencast, Page.getLayoutMetrics) and a second Page.getFrameTree. Every other
+cell agrees in value and in its CDP trace multiset: raw CDP (the capability listed, a call reaching the page, the
+reload's Page.frameNavigated read back after a cursor, the vendor's method gate refusing Page.getNavigationHistory with
+its sentence), WebMCP (the page's one tool listed with its schema, origin and page URL, its call name's registration id
+masked in the cell, and invoked: "results for lamps"), the auth handoff's refusals (another origin: origin_changed;
+fields sharing an id: locator_invalid), history (queried and unfiltered, each answer made from the query).

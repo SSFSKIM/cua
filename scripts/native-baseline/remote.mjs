@@ -46,16 +46,24 @@ export function handshakeScript({record, clear}) {
   return `${clear ? `rm -f ${quote(record)} && ` : ''}if [ -f ${quote(record)} ]; then echo present; else echo absent; fi`;
 }
 
-// The running computer-use helpers, one executable path per line.
-export const HELPER_SCRIPT = `/bin/ps -axo comm= | /usr/bin/grep '/SkyComputerUseService$' || true`;
+// The running computer-use helpers, one per line: elapsed time ([[dd-]hh:]mm:ss) and executable path.
+export const HELPER_SCRIPT = `/bin/ps -axo etime=,comm= | /usr/bin/grep '/SkyComputerUseService$' || true`;
 // What the run may have left: serves of the clone and their runtimes, and TextEdit.
 export const LEFTOVER_SCRIPT = `printf '%s %s\\n' "$(/usr/bin/pgrep -f 'cua-[p]arity/bin/cua.mjs serve' | wc -l | tr -d ' ')" "$(/usr/bin/pgrep -x TextEdit | wc -l | tr -d ' ')"`;
 // The one cua-116-spike check the run waits on.
 export const SPIKE_SCRIPT = `/usr/bin/pgrep -f 'cua-116-[s]pike' >/dev/null && echo running || echo idle`;
 
-// A helper path classified against the pinned runtime: the vendor's sky from the runtime this host pins, or another
-// installation's (which the vendor client would reuse).
+// The helpers classified against the pinned runtime (the vendor's sky from the runtime this host pins, or another
+// installation's, which the vendor client would reuse), each with its age in seconds.
+const seconds = etime => {
+  const [days, clock] = etime.includes('-') ? etime.split('-') : ['0', etime];
+  return Number(days) * 86400 + clock.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
+};
 export function classifyHelpers(output, runtimeRoot) {
-  const paths = String(output).split('\n').map(l => l.trim()).filter(Boolean);
-  return paths.map(path => ({path: path.replace(/^\/Users\/[^/]+/, '~'), origin: runtimeRoot && path.startsWith(`${runtimeRoot}/`) ? 'pinned runtime' : 'another installation'}));
+  return String(output).split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+    const [, etime, path] = line.match(/^(\S+)\s+(.*)$/) ?? [null, null, line];
+    const age = etime ? seconds(etime) : NaN;
+    return {path: path.replace(/^\/Users\/[^/]+/, '~'), origin: runtimeRoot && path.startsWith(`${runtimeRoot}/`) ? 'pinned runtime' : 'another installation',
+      ageSeconds: Number.isFinite(age) ? age : null};
+  });
 }

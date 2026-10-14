@@ -57,6 +57,7 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), elicitations: [], complete: false};
   const clients = new Set();
   let stopped = null;   // why no further GUI input is sent
+  let warm = null;      // the warm connection, while it is open
 
   // Waits for the device's cua-116-spike work to finish: two measurements must not share the helper.
   const waitStarted = Date.now();
@@ -75,6 +76,13 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
   if (pre.serves) throw new Error('a serve of the parity clone is already running on the device');
   console.log(`device ${device}: ${pre.hardware.model} ${pre.os.version}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}`);
 
+  // The computer-use helpers running now, each with its age; one that started during this run was launched by it.
+  const runStarted = Date.now();
+  const helperAttestation = () => {
+    const helpers = classifyHelpers(remote(HELPER_SCRIPT), pre.runtimeRoot).map(h => ({...h, startedDuringRun: h.ageSeconds !== null && h.ageSeconds * 1000 < Date.now() - runStarted}));
+    return {helper: helpers.length ? [...new Set(helpers.map(h => h.origin))].join(', ') : 'none observed', helpers};
+  };
+  meta.helperAtStart = helperAttestation();
   const connect = () => {
     const client = new StdioClient({...serveCommand({device, checkout: pre.checkout, home: pre.home}), clientName: 'cua-native-baseline',
       answer: msg => (isTextEditApproval(msg) ? {action: 'accept', content: {}} : {action: 'decline'}),
@@ -107,6 +115,15 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
   const guard = (r, what) => {
     if (r.timedOut) { stopped = `${what} timed out; a permission prompt may be waiting on the device (never answered by the harness)`; throw new Stop(stopped); }
     return r;
+  };
+  // TextEdit this run launched is quit from its scratch document (the cell refuses when that is not in front).
+  const quitTextEdit = async () => {
+    if (!meta.textEdit.launchedByRun || meta.textEdit.quitByRun || !warm) return;
+    const quit = await js(warm, cells.QUIT_TEXTEDIT);
+    let running = true;
+    for (let i = 0; i < 10 && running; i++) { await sleep(500); running = remote(LEFTOVER_SCRIPT).split(' ')[1] !== '0'; }
+    meta.textEdit.quitByRun = Boolean(quit.cell?.ok) && !running;
+    if (!meta.textEdit.quitByRun) meta.textEdit.quitError = quit.cell?.error ?? quit.failure ?? 'TextEdit still running after super+q';
   };
   const measure = async (client, op, n, code, timeoutMs) => {
     const rows = [];
@@ -153,24 +170,33 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     }
 
     // The warm connection.
-    const client = connect();
+    const client = warm = connect();
     await client.initialize();
     await client.request('tools/list');
     const first = await js(client, cells.FIRST, BIND_MS);
     if (!first.cell?.ok) throw new Error(`the warm connection's first cell failed: ${first.failure ?? first.cell?.error}`);
     await measure(client, 'warm.noop', samples, cells.NOOP);
     await measure(client, 'warm.getState', samples, cells.GET_STATE);
-    await measure(client, 'warm.listApps', samples, cells.LIST_APPS);
+    const listed = await measure(client, 'warm.listApps', samples, cells.LIST_APPS);
+    // An engine that answers no inventory call is not driven any further: no app is bound or launched.
+    if (!listed.some(r => r.ok)) throw new Error(`the native engine answered no listApps call (${listed[0]?.error}); no GUI step was attempted`);
 
+    // The first getApp of a TextEdit that is not running launches it; on the mini that call fails with timeoutReached
+    // after about 5 s (TextEdit comes up with only its out-of-process Open panel) and the next one binds. Both are
+    // recorded: the first as bind.getApp, the retry as bind.getApp.retry.
     const bind = guard(await js(client, cells.BIND, BIND_MS), 'cua.getApp(TextEdit)');
     const approvals = client.elicited.splice(0);
     row('bind.getApp', 1, bind, {approvals: approvals.length, textEditLaunched: !pre.textEditRunning});
     approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: round(a.at - bind.started), app: a.app, action: a.action,
       note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    const helpers = classifyHelpers(remote(HELPER_SCRIPT), pre.runtimeRoot);
-    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', helper: helpers.length ? [...new Set(helpers.map(h => h.origin))].join(', ') : 'none observed', helpers};
-    if (!bind.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bind.cell?.error ?? bind.failure}`);
-    meta.textEdit.launchedByRun = !pre.textEditRunning;
+    meta.textEdit.launchedByRun = !pre.textEditRunning && remote(LEFTOVER_SCRIPT).split(' ')[1] !== '0';
+    let bound = bind;
+    if (!bind.cell?.ok && /timeoutReached/.test(bind.cell?.error ?? '')) {
+      bound = guard(await js(client, cells.BIND, BIND_MS), 'cua.getApp(TextEdit), retried');
+      row('bind.getApp.retry', 1, bound, {approvals: client.elicited.splice(0).length});
+    }
+    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor', ...helperAttestation()};
+    if (!bound.cell?.ok) throw new Error(`cua.getApp(TextEdit) failed: ${bound.cell?.error ?? bound.failure}`);
 
     const scratch = guard(await js(client, cells.NEW_DOCUMENT), 'the scratch document');
     row('setup.newDocument', 1, scratch);
@@ -193,13 +219,7 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
       if (!close.cell?.ok && act.cell?.ok) { stopped = `task ${sample}'s document could not be confirmed closed: ${close.cell?.error ?? close.failure}`; throw new Stop(stopped); }
     }
 
-    const closed = guard(await js(client, cells.CLOSE_SCRATCH), 'closing the scratch document');
-    meta.textEdit.scratchClosed = Boolean(closed.cell?.ok);
-    if (meta.textEdit.launchedByRun && closed.cell?.ok && !closed.cell.value.windowsLeft) {
-      const quit = guard(await js(client, cells.QUIT_TEXTEDIT), 'quitting TextEdit');
-      meta.textEdit.quitByRun = Boolean(quit.cell?.ok);
-      if (!quit.cell?.ok) meta.textEdit.quitError = quit.cell?.error ?? quit.failure;
-    }
+    await quitTextEdit();
     const started = performance.now();
     const ended = await client.call('end_task');
     emit({op: 'end_task', sample: 1, ok: ended.isError !== true, wallMs: round(performance.now() - started), ...(ended.isError ? {error: textOf(ended).slice(0, 300)} : {})});
@@ -208,10 +228,12 @@ export async function run({device, out, samples = 30, cold = 5, tasks = 10, spik
     meta.error = error.message;
     if (!(error instanceof Stop)) console.error(error.message);
   } finally {
+    // After a failure TextEdit is quit only from the scratch document, never from a window the run cannot vouch for.
+    if (!stopped && !meta.complete) { try { await quitTextEdit(); } catch {} }
     for (const client of clients) { try { await client.close(); } catch {} }
     const [serves, textEdit] = remote(LEFTOVER_SCRIPT).split(' ').map(Number);
     meta.leftovers = {serves, textEditRunning: textEdit > 0};
-    if (serves) meta.complete = false;
+    if (serves || (textEdit > 0 && !pre.textEditRunning)) meta.complete = false;
     if (stopped) { meta.complete = false; meta.stopped = stopped; }
     meta.finished = new Date().toISOString();
     writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');

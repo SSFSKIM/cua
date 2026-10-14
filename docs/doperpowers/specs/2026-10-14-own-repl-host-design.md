@@ -608,6 +608,8 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (2026-10-14): on the cua-linux VM, gedit 46.2 now fails `typeText`/`paste` with a D-Bus `NoReply` error and the window exits (the 2026-10-06 acceptance evidence recorded `os error 11` for the same crash); the display is 1440x900, not the 1024x768 that evidence records; the vendor host answers `initialize` as `rmcp 1.5.0`; the VM's Node is v22.23.3, so M4's own host there needs `CUA_NODE` (keep the proxy on the same Node for comparability).
+  Evidence: M0 task 5 smoke run at 58d42b6 (not evidence; report in the SDE workspace), carried into `docs/evidence/2026-10-14-own-repl-host-native/vendor/README.md`.
 - Observation (2026-10-14): the vendor does not interleave writes and images in emission order. Named writes A(same), B(other), C(same) yield text items `['AC','B']`; `write('before')`, `emitImage(...)`, `write('after')` yields one text item `'beforeafter'` followed by the image, in awaited and unawaited forms.
   Evidence: `docs/evidence/2026-10-14-own-repl-host-parity/m0/vendor-1/results.jsonl` (M0 task 3's mini vendor run).
 - Observation: `REPL_HOST_VERSION` is bumped by hand, and own-host Node resolution makes up to three synchronous `--version` probes (5 s timeout each) per launch.

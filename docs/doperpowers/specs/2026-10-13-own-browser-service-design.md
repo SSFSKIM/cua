@@ -26,6 +26,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
   - [x] (2026-10-13 task 2, reviewed clean) screenshots, waits, vendored markdown-it for cua_type, cua's evaluate and budget text, the M1c corpus; live M1c diff 0 unexpected; acceptance 1 (nytimes) and 2 on cua.
 - [ ] M2 — Dialog answering, downloads, file chooser, clipboard, console logs, viewport and visibility, raw CDP, cursor.
   - [x] (2026-10-14 task 1, reviewed clean after two fix waves) dialogs, downloads (incl. download_media's result) with release recovery and exclusive ownership, the file chooser.
+  - [x] (2026-10-14 task 2, reviewed clean after one fix wave) clipboard bridge and commands, dev logs, viewport/visibility/management, raw CDP gate (a supplied target validated as the vendor's), cua_move; whole-corpus vendor-m2-1 vs cua-m2-2: 0 unexpected over the landed cases; download ownership pinned as a departure.
 - [ ] M3 — Optional features: exports, page assets, WebMCP, bot-detection report, auth handoff, user history.
 - [ ] M4 — MAWS client mode and Linux parity.
 - [ ] M5 — Guidance text and docs, default switch, plugin bump, the cua benchmark runs, acceptance as written.

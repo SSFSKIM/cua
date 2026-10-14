@@ -37,7 +37,7 @@ import {Emitter} from './cdp.mjs';
 import {BrowserServiceError, DEADLINE_EXCEEDED, isDeadlineError} from './errors.mjs';
 import {tabIdOf} from './tabs.mjs';
 
-export const DOCUMENT_RESPONSES = {requestStage: 'Response', resourceType: 'Document'};                                     // wc
+export const DOCUMENT_RESPONSES = {requestStage: 'Response', resourceType: 'Document'};                              // wc
 const REQUESTS = {requestStage: 'Request'};                                                                           // SY
 // A release keeps the debugger when Chrome is slow to answer: the tab is not given up over one paused response (sa).
 const KEEP_DEBUGGER = {preserveOnTimeout: true};

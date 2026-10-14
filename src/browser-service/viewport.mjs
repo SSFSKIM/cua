@@ -12,10 +12,8 @@
 
 const forwarded = type => async (params, session) => await session.api.executeUnhandledCommand({type, ...params});
 
-export const BACKEND_CAPABILITY_TYPES = Object.freeze([
+export const VIEWPORT_HANDLERS = Object.fromEntries([
   'browser_viewport_set', 'browser_viewport_reset',
   'browser_visibility_get', 'browser_visibility_set',
   'browser_management_call', 'browser_management_get_audit_trail',
-]);
-
-export const VIEWPORT_HANDLERS = Object.fromEntries(BACKEND_CAPABILITY_TYPES.map(type => [type, forwarded(type)]));
+].map(type => [type, forwarded(type)]));

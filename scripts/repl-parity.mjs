@@ -7,6 +7,7 @@ import {execFileSync} from 'node:child_process';
 import {root,prepareCommand,execute,cellsCommand} from './repl-parity/topology.mjs';
 import {selectScenarios,inventory,caseSchedule,inSuite,milestones} from './repl-parity/registry.mjs';
 import scenarios from '../test/repl-parity/scenarios/index.mjs';
+import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {AttestedConnections,runRawScenario} from './repl-parity/runner.mjs';
 import {runSecretCase} from '../test/repl-parity/fixtures/secret-cases.mjs';
 import {remoteCapabilityLane} from './repl-parity/capability.mjs';
@@ -43,7 +44,7 @@ export async function main(argv=process.argv.slice(2)){
  const prepared=json(state(v.device)),{scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:prepared.platform});
  if(!selected.length)throw new Error('No executable cases selected');
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,hostVersion:v.host==='vendor'?prepared.release:null,apiVersion:v.host==='vendor'?prepared.release:null,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:'no-services',profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,s.cells.map(c=>c.label)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:'no-services',profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,s.cells.map(c=>c.label)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),complete:false,connections:[],hostAttestations:[]};
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
  const pool=new AttestedConnections(v.host);let failed=false;const resources=[];
  try{

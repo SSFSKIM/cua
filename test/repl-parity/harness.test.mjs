@@ -60,3 +60,8 @@ test('required cell manifests detect a cell removed from both evidence sides',()
  const a=run(),b=run();a.meta.caseCells=b.meta.caseCells={[scenario.id]:['one','two']};
  assert.equal(compareParityRuns(a,b).ok,false);
 });
+
+test('a run cannot mix host versions across individually valid reconnects',()=>{
+ const meta=run().meta;meta.connections.push('c2');meta.hostAttestations.push({connection:'c2',host:'vendor',serverInfo:{name:'node_repl',version:'2'},_meta:null});
+ assert.throws(()=>validateAttestations(meta),/mixed|version/i);
+});

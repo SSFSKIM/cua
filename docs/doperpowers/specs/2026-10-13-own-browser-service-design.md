@@ -18,7 +18,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
 - [x] (2026-10-13, whole-branch reviewer-high clean at aad5235) M1a — Service skeleton: setup, manifest, errors and budgets, backend transport, CDP controller with dialog tracking, tabs and turn end; the switch, the trust root, the version guard.
   - [x] (2026-10-13 task 1, reviewed clean after two fix waves) errors, budgets, backend transport, CDP controller.
   - [x] (2026-10-13 task 2, reviewed clean) index with COMMAND_HANDLERS, manifest, tabs, docs, the switch, trust root and two-pin guard; real-client error proof; live M1a parity on the mini: 0 unexpected differences.
-- [ ] M1b — Injected script, selector resolution, reads, evaluate, snapshot.
+- [x] (2026-10-13, whole-branch reviewer-high clean at f75d6da) M1b — Injected script, selector resolution, reads, evaluate, snapshot.
   - [x] (2026-10-13 task 1, reviewed clean after one fix wave) playwright-core 1.59.1 pin, extractor, injected script per frame, selector resolution.
   - [x] (2026-10-13 task 2, reviewed clean after two fix waves) reads, main-world evaluate with no-replay and the vendor's projection, aria snapshot, visible DOM; parity cases back on createBrowserTab (vendor control 0); live M1b parity 0 unexpected differences; acceptance 3 on cua.
 - [ ] M1c — Pointer and locator actions, keyboard, screenshots, waits, DOM-CUA.

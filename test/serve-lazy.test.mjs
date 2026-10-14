@@ -20,7 +20,7 @@ import {loadPins, selectPin} from '../src/runtime/manifest.mjs';
 import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {createFakeMawsExtension} from './helpers/fake-maws-peer.mjs';
-import {writeCuaRecord} from './fixtures/route-records.mjs';
+import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 
 const supported = installedHomeSupported;
 const INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'lazy-e2e', version: '0'}};
@@ -208,6 +208,40 @@ test('profiles_list and js teach the rules of the service the launch resolves: t
   const cua = await toolsOn({});
   assert.match(cua.profiles_list, /take timeoutMs per phase \(finding the element, then acting\): 3 s by default, at most 120 s/);
   assert.match(cua.js, /per-phase budgets up to 120 s, evaluate in the page/);
+});
+
+// A connection keeps the browser service its rules were taught from (M5 whole-branch review): a registration of the
+// other route between the handshake and the first js, or an idle restart, must not switch the runtime's service under
+// descriptions that still teach the old one. A new connection re-resolves.
+test('a connection launches the browser service its descriptions teach, even when the route changes before its first js; a new connection follows the new route', {skip: !supported}, async t => {
+  const env = {CUA_SHIM_SURFACES: 'computer,browser', CUA_SHIM_SECRETS: 'off'};
+  for (const [first, then, from, to] of [[writeCuaRecord, writeVendorRecord, 'cua', 'vendor'], [writeVendorRecord, writeCuaRecord, 'vendor', 'cua']]) {
+    const home = fakeInstalledHome(t);
+    first(home, {at: 1_760_000_000});
+    const cold = served(t, home, {env});
+    await cold.request('initialize', INIT);
+    await cold.request('tools/list');   // completes the handshake record, so later connections launch at their first js
+    assert.equal(await cold.end(), 0, cold.diagnostics.join('\n'));
+
+    const warm = served(t, home, {env});
+    await warm.request('initialize', INIT);
+    const tools = Object.fromEntries((await warm.request('tools/list')).result.tools.map(tool => [tool.name, tool.description]));
+    assert.match(tools.profiles_list, from === 'cua' ? /at most 120 s/ : /stop at 3 s/, `${from}: taught`);
+    assert.equal(warm.launches.length, 0, 'answered from the record');
+    then(home, {at: 1_760_090_000});   // the other route is now the most recent registration
+    await warm.call('js', {code: 'hello'});
+    assert.equal(warm.launches.length, 1);
+    assert.equal(warm.launches[0].env.CUA_BROWSER_SERVICE, from, `${from} → ${to}: the connection keeps the service it taught`);
+    assert.equal(await warm.end(), 0, warm.diagnostics.join('\n'));
+
+    const next = served(t, home, {env});
+    await next.request('initialize', INIT);
+    const nextTools = Object.fromEntries((await next.request('tools/list')).result.tools.map(tool => [tool.name, tool.description]));
+    assert.match(nextTools.profiles_list, to === 'cua' ? /at most 120 s/ : /stop at 3 s/, `${to}: a new connection teaches the new route's service`);
+    await next.call('js', {code: 'hello'});
+    assert.equal(next.launches[0].env.CUA_BROWSER_SERVICE, to);
+    assert.equal(await next.end(), 0, next.diagnostics.join('\n'));
+  }
 });
 
 // MAWS (src/chrome/client-mode.mjs): the socket is dialled at once; launches and readiness listings wait for its hello.

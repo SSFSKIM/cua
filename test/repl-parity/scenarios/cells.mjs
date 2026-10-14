@@ -5,7 +5,7 @@ import {exactImage} from '../../../scripts/browser-parity/image-hash.mjs';
 const plan=new Map(caseSchedule().map(c=>[c.id,c]));
 const text=r=>(r.content??[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
 const scenarios=[];
-const add=(tail,cells,check)=>{const id=`cells/${tail}`,p=plan.get(id);if(!p)throw new Error(id);scenarios.push({...p,backend:'no-services',cells:cells.map((c,i)=>typeof c==='string'?{label:`cell-${i+1}`,code:c}:c),assert:({results})=>{if(!check(results))throw new Error(`${id}: independent outcome failed`);return {ok:true};}});};
+const add=(tail,cells,check)=>{const id=`cells/${tail}`,p=plan.get(id);if(!p)throw new Error(id);scenarios.push({...p,backend:'no-services',cells:cells.map((c,i)=>typeof c==='string'?{label:`cell-${i+1}`,code:c}:c),assert:({results,timings})=>{if(!check(results,timings))throw new Error(`${id}: independent outcome failed`);return {ok:true};}});};
 const includes=(value)=>r=>!r.at(-1).isError&&text(r.at(-1)).includes(value);
 const err=r=>r[0].isError===true&&text(r[0]).length>0;
 add('bindings/persistent',['let parityValue=41;','nodeRepl.write(parityValue+1);'],includes('42'));
@@ -27,7 +27,7 @@ add('globals/request-meta',['nodeRepl.write(typeof nodeRepl.requestMeta==="objec
 add('globals/rpc-configured-only',['nodeRepl.write(typeof nodeRepl.rpc);'],includes('undefined'));
 add('reset/clears-bindings',['let clearMe=1;',{label:'reset',op:'reset'},'nodeRepl.write(typeof clearMe);'],includes('undefined'));
 add('reset/preserves-task-id',['nodeRepl.write("before");',{label:'reset',op:'reset'},'nodeRepl.write("after");'],r=>Boolean(r[0]._meta?.['cua/taskId'])&&r[0]._meta['cua/taskId']===r[2]._meta?.['cua/taskId']);
-for(const [id,timeout] of [['default-30000',undefined],['explicit-short',50]])add(`timeouts/${id}`,[{label:'timeout',code:'let timeoutBinding=1; await new Promise(()=>{});',...(timeout?{timeoutMs:timeout}:{})},'nodeRepl.write(typeof timeoutBinding);'],r=>r[0].isError===true&&includes('undefined')(r));
+for(const [id,timeout] of [['default-30000',undefined],['explicit-short',50]])add(`timeouts/${id}`,[{label:'timeout',code:'let timeoutBinding=1; await new Promise(()=>{});',...(timeout?{timeoutMs:timeout}:{})},'nodeRepl.write(typeof timeoutBinding);'],(r,t)=>r[0].isError===true&&includes('undefined')(r)&&t[0]>=(timeout?timeout:29000)&&t[0]<(timeout?5000:45000));
 add('timeouts/fresh-heap',[{label:'timeout',code:'let timeoutBinding=1; await new Promise(()=>{});',timeoutMs:50},'nodeRepl.write(typeof timeoutBinding);'],r=>r[0].isError===true&&includes('undefined')(r));
 add('output/write-values',['nodeRepl.write("text");nodeRepl.write(42);nodeRepl.write({fixture:true});'],r=>includes('text')(r)&&includes('42')(r)&&includes('fixture')(r));
 add('output/write-ids',['nodeRepl.write("A","same");nodeRepl.write("B","other");nodeRepl.write("C","same");'],r=>!r[0].isError&&text(r[0]).includes('A')&&text(r[0]).includes('C'));

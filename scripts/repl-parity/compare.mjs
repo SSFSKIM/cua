@@ -16,20 +16,26 @@ export function validateAttestations(meta) {
     } else if(a.serverInfo.name==='cua-repl-host'||a._meta&&Object.hasOwn(a._meta,'cua/replHost'))throw new Error('Vendor host attestation mismatch');
   }
 }
-export function compareParityRuns(a,b,{expected=[],caseIds}={}) {
+export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
   validateAttestations(a.meta);validateAttestations(b.meta);
   if(a.meta.host==='vendor'&&b.meta.host==='vendor'&&expected.length)throw new Error('No expected differences allowed for vendor determinism');
   if(expected.length)throw new Error('Expected differences must be implemented as exact case/field transformations before use');
   const differences=[];
   for(const key of ['platform','suite','service','backend','sandbox','surfaces'])if(!isDeepStrictEqual(a.meta[key],b.meta[key]))differences.push({kind:'configuration',field:key});
-  const ids=caseIds??a.meta.caseIds;
+  const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});
   for(const [side,run] of [['a',a],['b',b]]) {
     if(!caseIds&&!isDeepStrictEqual(run.meta.caseIds,ids))differences.push({kind:'cardinality',side,message:'case manifests differ'});
     for(const id of ids??[])if(!run.meta.caseIds?.includes(id)||!run.rows.some(r=>r.case===id&&r.assertion))differences.push({kind:'cardinality',side,case:id,message:'missing required case'});
+    for(const id of ids??[])for(const cell of cells?.[id]??[])if(!run.rows.some(r=>r.case===id&&r.cell===cell))differences.push({kind:'cardinality',side,case:id,cell,message:'missing required cell'});
     if(run.rows.some(r=>!run.meta.caseIds?.includes(r.case)))differences.push({kind:'cardinality',side,message:'undeclared case'});
   }
-  const result=compareRuns(a.rows.filter(r=>ids?.includes(r.case)),b.rows.filter(r=>ids?.includes(r.case)));
+  // Keep raw duration values in evidence; omit only this schema-known volatile field from comparison.
+  const semanticRows=rows=>rows.filter(r=>ids?.includes(r.case)).map(r=>{
+    if(!r.meta||!Object.hasOwn(r.meta,'codex/nodeReplExecutionDurationMs'))return r;
+    const meta={...r.meta};delete meta['codex/nodeReplExecutionDurationMs'];return {...r,meta};
+  });
+  const result=compareRuns(semanticRows(a.rows),semanticRows(b.rows));
   differences.push(...result.differences);
   return {...result,differences,ok:!differences.length};
 }

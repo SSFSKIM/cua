@@ -8,3 +8,16 @@ test('elicitation decisions can change per cell and cancellation targets the act
  assert.equal(notices[0].params.requestId,pending.requestId);
  for(const action of ['accept','cancel']){client.setElicitationAnswer(()=>({action}));assert.equal(JSON.parse((await client.call('js')).content[0].text).action,action);}
 });
+
+test('the connection collector records both reconnects rather than recycling the initial handshake',async t=>{
+ const {AttestedConnections}=await import('../../scripts/repl-parity/runner.mjs');
+ const {validateAttestations}=await import('../../scripts/repl-parity/compare.mjs');
+ const pool=new AttestedConnections('vendor');t.after(()=>pool.close());
+ const command={command:process.execPath,args:[fileURLToPath(new URL('./fixtures/control-server.mjs',import.meta.url))]};
+ const one=await pool.open(command);await one.call('js');await one.close();
+ const two=await pool.open(command);
+ assert.throws(()=>validateAttestations({host:'vendor',complete:true,...pool.metadata()}),/attestation/);
+ await two.call('js');validateAttestations({host:'vendor',complete:true,...pool.metadata()});
+ assert.equal(pool.metadata().hostAttestations.length,2);
+ assert.notEqual(pool.metadata().hostAttestations[0].connection,pool.metadata().hostAttestations[1].connection);
+});

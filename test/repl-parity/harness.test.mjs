@@ -42,3 +42,21 @@ test('exact deterministic image oracle rejects equal-average brightness/colour c
  const black=exactImage(readFileSync(new URL('./fixtures/black.png',import.meta.url))),white=exactImage(readFileSync(new URL('./fixtures/white.png',import.meta.url))),red=exactImage(readFileSync(new URL('./fixtures/red.png',import.meta.url)));
  assert.notEqual(black.sha256,white.sha256);assert.notEqual(white.sha256,red.sha256);
 });
+
+test('only the declared vendor execution-duration metadata is excluded; other timing-looking fields stay exact',()=>{
+ const a=run(),b=run();a.rows[0].meta['codex/nodeReplExecutionDurationMs']=1;b.rows[0].meta['codex/nodeReplExecutionDurationMs']=99;
+ assert.equal(compareParityRuns(a,b).ok,true);
+ b.rows[0].meta.otherDurationMs=99;assert.equal(compareParityRuns(a,b).ok,false);
+});
+
+test('raw normalization does not mask arbitrary structured content timestamps or IDs',async()=>{
+ const {createNormalizer}=await import('../../scripts/browser-parity/normalize.mjs');
+ const normalize=createNormalizer({imageMode:'exact',schemaFields:false});
+ const result=await normalize({content:[{type:'text',text:'unchanged'}],structuredContent:{timestamp:12,taskId:'application-value'},meta:{'cua/taskId':'random'}},{ids:{'meta.cua/taskId':'task'}});
+ assert.deepEqual(result,{content:[{type:'text',text:'unchanged'}],structuredContent:{timestamp:12,taskId:'application-value'},meta:{'cua/taskId':'<task:1>'}});
+});
+
+test('required cell manifests detect a cell removed from both evidence sides',()=>{
+ const a=run(),b=run();a.meta.caseCells=b.meta.caseCells={[scenario.id]:['one','two']};
+ assert.equal(compareParityRuns(a,b).ok,false);
+});

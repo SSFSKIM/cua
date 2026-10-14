@@ -41,11 +41,13 @@ export const DOCUMENT_RESPONSES = {requestStage: 'Response', resourceType: 'Docu
 const REQUESTS = {requestStage: 'Request'};                                                                           // SY
 // A release keeps the debugger when Chrome is slow to answer: the tab is not given up over one paused response (sa).
 const KEEP_DEBUGGER = {preserveOnTimeout: true};
-// A paused request the service releases on its own is given RELEASE_MS for at most RELEASE_ATTEMPTS answers; when
-// none lands, the tab's Fetch domain is disabled (Chrome then lets every paused request go on, measured with a headless
-// Chromium probe, M2 task 1 review) and set up again, each on RECOVERY_MS; when either fails the tab is detached,
-// which releases them with the debugger and sets interception up afresh at the next attachment. A paused navigation is never left behind, except while a JavaScript dialog
-// blocks the tab's commands (the vendor's gap, recorded).
+// A paused request the service releases on its own is given RELEASE_MS for at most RELEASE_ATTEMPTS answers, and
+// removing a media download's interceptor (its request stage turned off again) CLEANUP_MS for as many; when none lands,
+// the tab's Fetch domain is disabled (Chrome then lets every paused request go on, measured with a headless Chromium
+// probe, M2 task 1 review) and set up again, each on RECOVERY_MS; when either fails the tab is detached, which releases
+// them with the debugger and sets interception up afresh at the next attachment. A paused navigation or a stray
+// request stage is never left behind, except while a JavaScript dialog blocks the tab's commands (the vendor's gap,
+// recorded).
 const RELEASE_MS = 3000, RELEASE_ATTEMPTS = 3, RECOVERY_MS = 3000, CLEANUP_MS = 3000;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const messageOf = error => (error instanceof Error ? error.message : String(error ?? ''));
@@ -56,12 +58,13 @@ const isDialogBlocked = error => error instanceof BrowserServiceError && error.c
 const bounded = (work, deadline) => (deadline == null ? work : deadline.race(work));
 
 export class DocumentResponses extends Emitter {                                                                      // yf
-  // `releaseMs` and `recoveryMs` only for tests.
-  constructor(cdp, {releaseMs = RELEASE_MS, recoveryMs = RECOVERY_MS} = {}) {
+  // `releaseMs`, `recoveryMs` and `cleanupMs` only for tests.
+  constructor(cdp, {releaseMs = RELEASE_MS, recoveryMs = RECOVERY_MS, cleanupMs = CLEANUP_MS} = {}) {
     super();
     this.cdp = cdp;
     this.releaseMs = releaseMs;
     this.recoveryMs = recoveryMs;
+    this.cleanupMs = cleanupMs;
     cdp.addTabAttachHandler((tabId, options) => {
       if (!this.setupByTab.has(tabId)) return this.ensureInterceptionReady(tabId, options);
     });
@@ -77,11 +80,15 @@ export class DocumentResponses extends Emitter {                                
   cdp;
   releaseMs;
   recoveryMs;
+  cleanupMs;
   ownedResponsesByTab = new Map();               // tabId -> the request ids of its paused responses being released
   setupByTab = new Map();                        // tabId -> the Fetch.enable of its attachment
   requestInterceptorsByTab = new Map();          // tabId -> [{interceptor, priority}], highest priority first
   configurationByTab = new Map();
   configuredRequestsByTab = new Set();           // tabs whose Fetch.enable includes the request stage
+  // Tabs where a Fetch.enable changing the request stage was sent without an answer, so Chrome may have the service's
+  // request stage on or off whatever configuredRequestsByTab says; it holds until a reconfiguration or a recovery lands.
+  uncertainRequestsByTab = new Set();
   recoveriesByTab = new Map();                   // tabId -> the recovery under way
 
   ensureInterceptionReady(tabId, options = {}) {
@@ -110,12 +117,13 @@ export class DocumentResponses extends Emitter {                                
       if (i < 0) return;
       current.splice(i, 1);
       if (current.length === 0) this.requestInterceptorsByTab.delete(tabId);
-      await this.configureRequestInterception(tabId, {deadline: new Deadline(CLEANUP_MS)});
+      await this.reconfigureOrRecover(tabId);
     };
     try {
       await bounded(this.configureRequestInterception(tabId, options), deadline);
     } catch (error) {
-      await remove().catch(() => {});
+      // Undone on its own budget: the caller's deadline is spent, or its setup failed.
+      remove().catch(() => {});
       throw error;
     }
     return remove;
@@ -194,6 +202,7 @@ export class DocumentResponses extends Emitter {                                
     this.ownedResponsesByTab.delete(tabId);
     this.setupByTab.delete(tabId);
     this.configuredRequestsByTab.delete(tabId);
+    this.uncertainRequestsByTab.delete(tabId);
   }
 
   async handleEvent(event) {
@@ -201,10 +210,11 @@ export class DocumentResponses extends Emitter {                                
     const tabId = event.source.tabId;
     if (typeof tabId !== 'number' || event.source.sessionId != null || event.source.targetId != null) return;
     const params = event.params;
-    // A paused request (only the service turns the request stage on) is always released, also when the interceptor
-    // that asked for the stage is already gone (the vendor leaves it paused then).
+    // A paused request is the service's while its request stage is (or may be) on, and released by it also when the
+    // interceptor that asked for the stage is already gone (the vendor leaves it paused then); any other is a raw CDP
+    // caller's own (rawcdp.mjs lets it pause non-Document requests), left to it.
     if (params.responseStatusCode == null && params.responseErrorReason == null) {
-      await this.handleRequest(tabId, params);
+      if (this.ownsRequestStage(tabId)) await this.handleRequest(tabId, params);
       return;
     }
     if (params.resourceType !== 'Document') return;
@@ -228,13 +238,37 @@ export class DocumentResponses extends Emitter {                                
     const configured = (this.configurationByTab.get(tabId) ?? Promise.resolve()).catch(() => {}).then(async () => {
       if (!this.cdp.isTabAttached(tabId)) return;
       const wanted = this.requestInterceptorsByTab.has(tabId);
-      if (this.configuredRequestsByTab.has(tabId) === wanted) return;
+      if (this.configuredRequestsByTab.has(tabId) === wanted && !this.uncertainRequestsByTab.has(tabId)) return;
+      // Until Chrome answers, the stage may be either way (a timed-out command may still have taken effect).
+      this.uncertainRequestsByTab.add(tabId);
       await this.cdp.call(tabId, 'Fetch.enable', {patterns: wanted ? [REQUESTS, DOCUMENT_RESPONSES] : [DOCUMENT_RESPONSES]}, {...KEEP_DEBUGGER, ...options});
+      this.uncertainRequestsByTab.delete(tabId);
       if (wanted) this.configuredRequestsByTab.add(tabId); else this.configuredRequestsByTab.delete(tabId);
     });
     this.configurationByTab.set(tabId, configured);
     configured.finally(() => { if (this.configurationByTab.get(tabId) === configured) this.configurationByTab.delete(tabId); }).catch(() => {});
     return configured;
+  }
+
+  // Whether the service's request stage is on, wanted, or of unknown state in the tab.
+  ownsRequestStage(tabId) {
+    return this.requestInterceptorsByTab.has(tabId) || this.configuredRequestsByTab.has(tabId) || this.uncertainRequestsByTab.has(tabId);
+  }
+
+  // The tab's interception brought to what its interceptors need, sent again on failure within CLEANUP_MS; when it
+  // cannot land, recovered (the request stage would otherwise stay on with nothing to release its pauses).
+  async reconfigureOrRecover(tabId) {
+    const budget = new Deadline(this.cleanupMs);
+    for (let attempt = 1; attempt <= RELEASE_ATTEMPTS && !budget.expired(); attempt += 1) {
+      try {
+        await this.configureRequestInterception(tabId, {deadline: budget});
+        return;
+      } catch (error) {
+        if (isAlreadyReleased(error) || isDialogBlocked(error)) return;
+      }
+      if (attempt < RELEASE_ATTEMPTS) await sleep(Math.min(50, budget.remaining()));
+    }
+    await this.recover(tabId);
   }
 
   async handleRequest(tabId, params) {

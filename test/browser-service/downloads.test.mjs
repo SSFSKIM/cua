@@ -375,10 +375,71 @@ test('media: setting up the interception is bounded by the command\'s deadline; 
   assert.ok(setup.options.deadline.ms <= 150, 'the reconfiguration carried the command\'s budget');
 });
 
-test('a paused request is released also when no interceptor is left to see it', async () => {
+const requestPause = (cdp, tabId, requestId, resourceType = 'Document') => cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId},
+  params: {requestId, frameId: 'F', resourceType, request: {url: 'https://x.test/'}}});
+const delayed = (ms, answer = {}) => () => new Promise(resolve => setTimeout(() => resolve(answer), ms));
+
+test('a request paused by a raw CDP caller\'s own interception is left to it; the service releases only its own', async () => {
   const {cdp} = scriptedController();
-  new DocumentResponses(cdp);
-  cdp.emit('event', {method: 'Fetch.requestPaused', source: {tabId: 9}, params: {requestId: 'orphan', frameId: 'F', resourceType: 'Document', request: {url: 'https://x.test/'}}});
+  const responses = new DocumentResponses(cdp);
+  await responses.ensureInterceptionReady(9);
+  requestPause(cdp, 9, 'raw-image', 'Image');
   await tick();
-  assert.deepEqual(cdp.calls.map(c => [c.method, c.params.requestId]), [['Fetch.continueRequest', 'orphan']]);
+  assert.deepEqual(cdp.calls.filter(c => c.method !== 'Fetch.enable'), [], 'no service request stage: the raw caller\'s pause');
+  const remove = await responses.addRequestInterceptor(9, () => {});
+  requestPause(cdp, 9, 'service-image', 'Image');
+  await tick();
+  assert.deepEqual(cdp.calls.filter(c => c.method === 'Fetch.continueRequest').map(c => c.params.requestId), ['service-image'],
+    'while the service\'s request stage is on, every pause is its own');
+  await remove();
+  requestPause(cdp, 9, 'raw-again', 'Image');
+  await tick();
+  assert.deepEqual(cdp.calls.filter(c => c.method === 'Fetch.continueRequest').map(c => c.params.requestId), ['service-image']);
+});
+
+test('a pause arriving while the service\'s request stage may still be on (a setup that timed out) is released as orphaned', async () => {
+  const {cdp} = scriptedController();
+  const responses = new DocumentResponses(cdp, {cleanupMs: 1000});
+  await responses.ensureInterceptionReady(9);
+  cdp.answers['Fetch.enable'] = params => (params.patterns.length === 2 ? never() : delayed(150)());
+  await rejection(responses.addRequestInterceptor(9, () => {}, 0, {deadline: new Deadline(100)}));
+  requestPause(cdp, 9, 'orphan', 'Image');
+  await tick();
+  assert.deepEqual(cdp.calls.filter(c => c.method === 'Fetch.continueRequest').map(c => c.params.requestId), ['orphan']);
+  await waitFor(() => !responses.ownsRequestStage(9), 'the request stage turned off');
+  requestPause(cdp, 9, 'raw', 'Image');
+  await tick();
+  assert.deepEqual(cdp.calls.filter(c => c.method === 'Fetch.continueRequest').map(c => c.params.requestId), ['orphan']);
+});
+
+test('removing a media download\'s interceptor that Chrome refuses or never answers is retried, then recovered, then the tab detached', async () => {
+  for (const kind of ['refused', 'hung', 'detach']) {
+    const {cdp} = scriptedController();
+    const responses = new DocumentResponses(cdp, {cleanupMs: 200, recoveryMs: 100});
+    await responses.ensureInterceptionReady(9);
+    const remove = await responses.addRequestInterceptor(9, () => {});
+    // Refused three times (every attempt), or one hung answer that outlasts the removal's budget.
+    let refusals = 0;
+    const limit = kind === 'hung' ? 1 : 3;
+    cdp.answers['Fetch.enable'] = params => {
+      if (params.patterns.length === 1 && refusals < limit) {
+        refusals += 1;
+        if (kind === 'hung') return never();
+        throw new Error('Internal error');
+      }
+      return {};
+    };
+    if (kind === 'detach') cdp.answers['Fetch.disable'] = () => { throw new Error('Internal error'); };
+    await remove();
+    if (kind === 'detach') {
+      assert.deepEqual(cdp.detached, [9], kind);
+    } else {
+      const sent = methods(cdp);
+      assert.equal(sent.at(-2), 'Fetch.disable', kind);
+      assert.deepEqual(cdp.calls.at(-1).params, {patterns: [DOCUMENTS]}, `${kind}: interception back, response stage only`);
+      assert.deepEqual(cdp.detached, [], kind);
+    }
+    assert.equal(responses.ownsRequestStage(9), false, kind);
+    assert.ok(refusals >= 1, kind);
+  }
 });

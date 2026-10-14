@@ -141,6 +141,13 @@ test('no replay: a navigation during the script is evaluate_interrupted, sent on
   assert.equal(browser.calls.filter(c => c.method === 'Runtime.evaluate').length, 1);
 });
 
+test('no replay: a CDP error the extension relays as JSON is worded by its message', async () => {
+  const {browser, evaluate} = setup([]);
+  browser.fail('Runtime.evaluate', JSON.stringify({code: -32000, message: 'Inspected target navigated or closed'}));
+  const error = await rejection(evaluate({script: pageScript(() => 1)}));
+  assert.equal(error.message, 'playwright.evaluate was interrupted: Inspected target navigated or closed. The script was sent to the page once and may have run there; it was not run again.');
+});
+
 test('no replay: the debugger detaching under the script is not answered by sending it again', async () => {
   const {browser, evaluate} = setup([el('p', {id: 'p', text: 'p'})]);
   browser.fail('Runtime.callFunctionOn', 'Debugger unattached');

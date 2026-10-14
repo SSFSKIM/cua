@@ -22,8 +22,8 @@
 import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {DOCUMENTATION_HANDLERS, Documentation, documentationAddendum} from './docs.mjs';
 import {serviceError} from './errors.mjs';
-import {API_MANIFEST, disabledMemberIds} from './manifest.mjs';
 import {EVALUATE_HANDLERS} from './evaluate.mjs';
+import {API_MANIFEST, disabledMemberIds} from './manifest.mjs';
 import {NAVIGATION_HANDLERS} from './navigation.mjs';
 import {READ_HANDLERS} from './reads.mjs';
 import {BrowserSession} from './session.mjs';

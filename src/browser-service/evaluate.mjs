@@ -119,10 +119,20 @@ function evaluationValue(result) {
   }
 }
 
+// A CDP failure's own sentence: the extension relays Chrome's protocol errors as JSON ({code, message}).
+function cdpSentence(error) {
+  const message = messageOf(error);
+  try {
+    const parsed = JSON.parse(message);
+    if (typeof parsed?.message === 'string') return parsed.message;
+  } catch {}
+  return message;
+}
+
 // What a failure after the script's dispatch reports: the budget's sentence or the cause's, and that it was not rerun.
 function interrupted(error, deadline) {
   const timedOut = deadline.expired() || (error instanceof BrowserServiceError && error.code === 'timeout');
-  const sentence = timedOut ? DEADLINE_SENTENCE : `playwright.evaluate was interrupted: ${messageOf(error).replace(/\.$/, '')}`;
+  const sentence = timedOut ? DEADLINE_SENTENCE : `playwright.evaluate was interrupted: ${cdpSentence(error).replace(/\.$/, '')}`;
   return new BrowserServiceError('evaluate_interrupted', `${sentence}. ${NOT_RUN_AGAIN}`, {cause: error});
 }
 

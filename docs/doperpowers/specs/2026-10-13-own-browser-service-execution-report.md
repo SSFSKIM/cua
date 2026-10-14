@@ -13,7 +13,7 @@ Executed by the plan-executor for the session that owns #113. Spec: `docs/doperp
 | M2 | feat/own-browser-service-m2 | https://github.com/SSFSKIM/cua/pull/126 | merged (ec576a8) |
 | M3 | feat/own-browser-service-m3 | https://github.com/SSFSKIM/cua/pull/127 | merged (5f24301); three download cases await the mini's Downloads consent |
 | M4 | feat/own-browser-service-m4 | https://github.com/SSFSKIM/cua/pull/128 | merged (16be010) |
-| M5 | feat/own-browser-service-m5 | (opening) | reviewed clean at 3b4f279 (reviewer-high), awaiting merge |
+| M5 | feat/own-browser-service-m5 | https://github.com/SSFSKIM/cua/pull/129 | reviewed clean at 3b4f279 (reviewer-high), awaiting merge |
 
 ## Log
 

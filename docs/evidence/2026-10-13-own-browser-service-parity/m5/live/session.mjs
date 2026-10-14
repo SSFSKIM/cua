@@ -10,7 +10,7 @@
 // serve and lists $CUA_HOME/state/codex before and after (live/codex-listing.mjs).
 //   node m5/live/session.mjs --out <dir> --scenarios <file>[,<file>...] [--network]
 import {parseArgs} from 'node:util';
-import {spawn, execFileSync} from 'node:child_process';
+import {execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync} from 'node:fs';
 import {join, resolve, relative} from 'node:path';
 import {pathToFileURL, fileURLToPath} from 'node:url';
@@ -19,6 +19,7 @@ import {StdioClient, textOf} from '../../../../../scripts/browser-parity/mcp.mjs
 import {attest, runScenario} from '../../../../../scripts/browser-parity/runner.mjs';
 import {root, execute, remoteCommand, quote} from '../../../../../scripts/browser-parity/topology.mjs';
 import {fixtureProcess} from '../../../../../scripts/browser-parity/resources.mjs';
+import {startCollector} from './collector.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const {values} = parseArgs({options: {out: {type: 'string'}, scenarios: {type: 'string'}, network: {type: 'boolean', default: false}, device: {type: 'string', default: 'mini'}}});
@@ -37,7 +38,7 @@ const meta = {commit: prepared.commit, checkout: prepared.checkout, home: prepar
   started: new Date().toISOString(), complete: false};
 writeFileSync(join(out, 'results.jsonl'), '');
 
-let fixture, client, sampler, samplerOutput = '', failed = false;
+let fixture, client, collector, failed = false;
 try {
   const actual = remote(`cd ${quote(prepared.checkout)} && git rev-parse HEAD && git status --porcelain`).trim().split('\n');
   if (actual[0] !== prepared.commit || actual.length > 1) throw new Error('Parity clone moved or is dirty since prepare');
@@ -55,9 +56,8 @@ try {
   fixture = await fixtureProcess(prepared);
   if (values.network) {
     const command = remoteCommand(values.device, `exec node ${quote(`${remoteDir}/sampler.mjs`)} ${quote(`${remoteDir}/serve.pid`)}`);
-    sampler = spawn(command.command, command.args, {stdio: ['pipe', 'pipe', 'inherit']});
-    sampler.stdout.on('data', chunk => { samplerOutput += chunk; });
-    await new Promise(r => setTimeout(r, 2000));
+    collector = startCollector(command);
+    await collector.ready();                          // nettop's first sample precedes the serve
   }
   const serve = remoteCommand(values.device, `cd ${quote(prepared.checkout)} && echo $$ > ${quote(`${remoteDir}/serve.pid`)} && exec env -u CUA_BROWSER_SERVICE CUA_HOME=${quote(prepared.home)} CUA_SHIM_SURFACES='browser' node bin/cua.mjs serve`);
   meta.elicitations = [];
@@ -81,16 +81,20 @@ try {
   meta.complete = true;
 } catch (e) { meta.error = e.message; failed = true; log(`error: ${e.message}`); }
 finally {
-  if (client) { const exit = await client.close(); meta.serveExit = exit; }
-  if (sampler) {
+  // Every step runs whatever the one before it did, so the fixture, the sampler and the mini's scratch are always
+  // released; a step that fails marks the run failed.
+  const step = async (name, action) => { try { await action(); } catch (e) { (meta.cleanupErrors ??= []).push(`${name}: ${e.message}`); failed = true; } };
+  await step('serve', async () => { if (client) meta.serveExit = await client.close(); });
+  await step('sampler', async () => {
+    if (!collector) return;
     await new Promise(r => setTimeout(r, 5000));      // the serve's children wind down; the sampler keeps watching
-    sampler.stdin.end();
-    await new Promise(r => sampler.once('close', r));
-    try { meta.network = JSON.parse(samplerOutput.trim().split('\n').at(-1)); } catch (e) { meta.networkError = `sampler output unreadable: ${e.message}`; failed = true; }
-  }
-  if (fixture) await fixture.close();
-  if (values.network) try { meta.codexAfter = JSON.parse(remote(`node ${quote(`${remoteDir}/codex-listing.mjs`)} ${quote(prepared.home)}`)); } catch (e) { meta.codexAfterError = e.message; failed = true; }
-  try { remote(`rm -rf ${quote(remoteDir)}`); } catch (e) { meta.cleanupError = e.message; }
+    const result = await collector.stop();
+    if (result.summary) meta.network = result.summary;
+    if (!result.ok) { meta.networkError = result.reason; failed = true; log(`observation failed: ${result.reason}`); }
+  });
+  await step('fixture', async () => { if (fixture) await fixture.close(); });
+  if (values.network) await step('codex listing', () => { meta.codexAfter = JSON.parse(remote(`node ${quote(`${remoteDir}/codex-listing.mjs`)} ${quote(prepared.home)}`)); });
+  await step('scratch', () => { remote(`rm -rf ${quote(remoteDir)}`); });
   meta.finished = new Date().toISOString();
   const {codexBefore, codexAfter, network, ...rest} = meta;
   writeFileSync(join(out, 'meta.json'), JSON.stringify(rest, null, 2) + '\n');

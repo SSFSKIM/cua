@@ -3,6 +3,7 @@ Selection: CUA_BROWSER_SERVICE removed; the launch resolved cua (cua_route, home
 Cases (31, one serve): tabs/discovery, examples/tabs, tabs/navigation, tabs/manual-handoff-disabled, reads/locators, reads/snapshot, reads/frames, evaluate/read, evaluate/mutation, evaluate/counter, evaluate/context-loss, actions/locators, actions/strict-error, actions/slow-budget, input/coordinates, input/dom, waits/page, screenshot/modes, screenshot/clip, dialogs/alert, downloads/chooser, capabilities/clipboard, capabilities/logs, capabilities/viewport, capabilities/cursor, capabilities/export-rejections, capabilities/page-assets, capabilities/m3-members, capabilities/m3-disabled, capabilities/history, m5-live/m3-raw.
 Serve exit {"code":0,"signal":null}; tree processes alive at the end: none.
 Sampling: ps -A -o pid=,ppid=,comm= (every 250 ms); nettop -L 0 -s 1 -n -x (continuous, rows of tree processes kept); lsof -nP -p <tree pids> (every 1 s; inet, unix and state/codex entries kept) (runs: ps 153, nettop rows read 9361, lsof 39).
+Coverage: not recorded (this run predates the sampler's coverage checks; see the README's qualification).
 
 Process tree (pid, parent, role):
   47946  parent 47945  cua serve
@@ -21,6 +22,7 @@ Process tree (pid, parent, role):
 
 TCP/UDP connections of the tree (nettop rows): 0
 Tree processes nettop listed at all (any TCP/UDP activity, brief flows included in their byte totals): 0
+Processes nettop listed whose ancestry could not be read: not recorded (this run predates that check; a descendant born and gone between two 250 ms ps snapshots would not have been attributed).
 Internet sockets of the tree seen by lsof: 0
 
 Unix sockets of the tree: 15 (14 between tree processes, 1 to a process outside the tree, 0 with no peer named)

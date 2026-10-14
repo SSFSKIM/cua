@@ -16,8 +16,10 @@ const pidFile = join(dir, 'tree.pid');
 const listener = spawn(process.execPath, ['-e', `const net=require('net');const s=net.createServer(c=>{c.on('data',()=>{});c.on('error',()=>{});}).listen(0,'127.0.0.1',()=>console.log(s.address().port));`], {stdio: ['ignore', 'pipe', 'inherit']});
 const port = await new Promise(r => listener.stdout.once('data', d => r(Number(String(d).trim()))));
 const sampler = spawn(process.execPath, [join(fileURLToPath(new URL('.', import.meta.url)), 'sampler.mjs'), pidFile], {stdio: ['pipe', 'pipe', 'inherit']});
-let output = ''; sampler.stdout.on('data', d => { output += d; });
-await new Promise(r => setTimeout(r, 2000));
+let output = '';
+const ready = await Promise.race([new Promise(resolve => sampler.stdout.on('data', d => { output += d; if (/^\{"ready":true/m.test(output)) resolve(true); })),
+  new Promise(resolve => sampler.once('close', () => resolve(false))), new Promise(resolve => setTimeout(() => resolve(false), 15000))]);
+if (!ready) { sampler.kill(); listener.kill(); console.error('the sampler did not become ready'); process.exit(1); }
 const child = `const net=require('net'),dgram=require('dgram');
 setTimeout(()=>{const held=net.connect(${port},'127.0.0.1',()=>held.write('held'));setTimeout(()=>{held.end();
   const brief=net.connect(${port},'127.0.0.1',()=>{brief.end('x');});

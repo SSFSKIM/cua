@@ -25,7 +25,11 @@ say(`Live network and disk observation, ${meta.started} to ${meta.finished} (UTC
 say(`Selection: CUA_BROWSER_SERVICE removed; the launch resolved ${meta.resolution.service} (${meta.resolution.reason}, home route ${meta.resolution.route}); attested by the documentation marker "${meta.attestation.marker}".`);
 say(`Cases (${meta.cases.length}, one serve): ${meta.cases.join(', ')}.`);
 say(`Serve exit ${JSON.stringify(meta.serveExit)}; tree processes alive at the end: ${net.aliveAtEnd.length ? net.aliveAtEnd.join(', ') : 'none'}.`);
-say(`Sampling: ${net.commands.ps}; ${net.commands.nettop}; ${net.commands.lsof} (runs: ps ${net.counts.psRuns}, nettop rows read ${net.counts.nettopRows}, lsof ${net.counts.lsofRuns}).`);
+say(`Sampling: ${net.commands.ps}; ${net.commands.nettop}; ${net.commands.lsof} (runs: ps ${net.counts.psRuns}, nettop rows read ${net.counts.nettopRows}${net.counts.nettopSamples !== undefined ? ` in ${net.counts.nettopSamples} samples` : ''}, lsof ${net.counts.lsofRuns}).`);
+if (net.coverage) {
+  const n = net.coverage.nettop;
+  say(`Coverage: ${net.coverage.ok ? 'held' : 'LOST: ' + net.coverage.problems.join('; ')} (nettop ready ${n.readyAt}, before the serve's pid at ${net.rootAt}; ${n.samples} samples, longest silence ${n.maxSilenceMs} ms, ${n.exit ? 'exited early ' + JSON.stringify(n.exit) : 'running until stopped'}).`);
+} else say('Coverage: not recorded (this run predates the sampler\'s coverage checks; see the README\'s qualification).');
 say();
 say('Process tree (pid, parent, role):');
 for (const p of net.tree) say(`  ${p.pid}  parent ${p.ppid}  ${role(p)}`);
@@ -36,6 +40,10 @@ say(`TCP/UDP connections of the tree (nettop rows): ${net.connections.length}`);
 for (const c of net.connections) say(`  ${label(c.pid)} (parent ${tree.get(c.pid)?.ppid}): ${c.protocol} ${c.local} -> ${c.remote} on ${c.interface}, ${c.states.join('/')}, ${c.first} to ${c.last}, bytes in ${c.bytesIn} out ${c.bytesOut}`);
 say(`Tree processes nettop listed at all (any TCP/UDP activity, brief flows included in their byte totals): ${net.nettopProcesses.length}`);
 for (const p of net.nettopProcesses) say(`  ${label(p.pid)}: bytes in ${p.bytesIn} out ${p.bytesOut}, ${p.first} to ${p.last}`);
+if (net.unresolved) {
+  say(`Processes nettop listed during the session that no ps table ever saw (ancestry unknown, so possibly the tree's): ${net.unresolved.length}`);
+  for (const u of net.unresolved) say(`  ${u.pid} ${u.process}: bytes in ${u.bytesIn ?? '?'} out ${u.bytesOut ?? '?'}, first ${u.first}`);
+} else say('Processes nettop listed whose ancestry could not be read: not recorded (this run predates that check; a descendant born and gone between two 250 ms ps snapshots would not have been attributed).');
 const inet = net.lsof.filter(e => e.kind === 'inet');
 say(`Internet sockets of the tree seen by lsof: ${inet.length}`);
 for (const e of inet) say(`  ${label(e.pid)}: ${e.type} ${e.name}`);

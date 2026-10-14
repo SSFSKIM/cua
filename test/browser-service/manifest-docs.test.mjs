@@ -53,10 +53,13 @@ test('named documents: read when listed, refused otherwise; a required document 
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '1.0.0'});
   assert.match(await docs.read('screenshots'), /^# Screenshots/);
   await assert.rejects(docs.read('../api'), {message: 'Documentation is not available: ../api'});
-  assert.throws(() => docs.assertRequiredDocumentationRead('tab_cdp_call'), {message: 'Required documentation has not been read: "confirmations". Read the instructions with await agent.documentation.get("confirmations").'});
+  assert.throws(() => docs.assertRequiredDocumentationRead('tab_cdp_call'), {message: 'Required documentation has not been read: "confirmations", "capabilities/tab/cdp". Read the instructions with await agent.documentation.get("confirmations"); await agent.documentation.get("capabilities/tab/cdp").'});
   docs.assertRequiredDocumentationRead('list_tabs');
   await docs.readBrowser(EXTENSION);
+  assert.throws(() => docs.assertRequiredDocumentationRead('tab_cdp_call'), {message: /"capabilities\/tab\/cdp"\. /}, 'a capability document is read on its own (vendor parity)');
+  assert.match(await docs.read('capabilities/tab/cdp'), /^# Tab Capability: cdp/);
   docs.assertRequiredDocumentationRead('tab_cdp_call');
+  docs.assertRequiredDocumentationRead('tab_cdp_events');
 });
 
 test('the API reference states cua\'s evaluate and budgets: the main world, no replay, 3 s by default up to 120 s, 0 one attempt', async () => {

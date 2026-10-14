@@ -57,7 +57,7 @@ test('a type without a handler (unknown, or a later milestone\'s) rejects unsupp
 test('a later milestone\'s command that requires documentation still rejects unsupported_command first, before any documentation is read', async t => {
   const {service} = await serviceOnHost(t);
   await service.handleRpc({method: 'setup', params: {environment: 'codex-app'}});
-  for (const type of ['tab_cdp_call', 'tab_cdp_events', 'webmcp_list_tools', 'webmcp_invoke_tool']) {
+  for (const type of ['webmcp_list_tools', 'webmcp_invoke_tool']) {
     const error = await rejection(execute(service, {type, browser_id: '1', tab_id: '1'}));
     assert.equal(error.code, 'unsupported_command', `${type}: ${error.message}`);
     assert.equal(error.message, `Unsupported browser command: ${type}`);

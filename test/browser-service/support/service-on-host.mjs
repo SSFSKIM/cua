@@ -69,10 +69,11 @@ export function scriptedPages({autoLoad = true, navigateError = null} = {}) {
   return {cdp, pages, page, sent, bind(extension) { ext = extension; }};
 }
 
-// -> {service, ext, runtime, pages, turnEnded(turn), setTurn(turn), requests()}: `requests()` lists, in order, the
-// methods of the backend requests the service sent the host, as written to the fake runtime's nativePipe.
+// -> {service, ext, runtime, pages, home, turnEnded(turn), setTurn(turn), requests()}: `home` is the host's (its trace
+// activation lives there); `requests()` lists, in order, the methods of the backend requests the service sent the
+// host, as written to the fake runtime's nativePipe.
 export async function serviceOnHost(t, {fake = {}, pages = scriptedPages(), env = {}, turn = {session_id: 'session-a', turn_id: 'turn-1'}} = {}) {
-  const {ext, socketPath} = await startRealHost(t, {cdp: pages.cdp, ...fake});
+  const {ext, socketPath, home} = await startRealHost(t, {cdp: pages.cdp, ...fake});
   pages.bind(ext);
   const turnHandlers = new Set();
   const requests = [];
@@ -102,7 +103,7 @@ export async function serviceOnHost(t, {fake = {}, pages = scriptedPages(), env 
   const service = createBrowserService({runtime});
   t.after(() => service.dispose());
   return {
-    service, ext, runtime, pages, socketPath,
+    service, ext, runtime, pages, socketPath, home,
     requests: () => [...requests],
     setTurn(next) { meta.current = next; },
     async turnEnded(ended = meta.current) { await Promise.all([...turnHandlers].map(h => h.run(ended))); },

@@ -627,7 +627,8 @@
     "milestone": "M2",
     "cases": [
       "downloads/ask-where-to-save",
-      "downloads/chooser"
+      "downloads/chooser",
+      "downloads/blocked-navigation"
     ],
     "reachability": "always",
     "exclusions": [
@@ -767,7 +768,8 @@
     "dispatch": "Rf",
     "milestone": "M2",
     "cases": [
-      "capabilities/clipboard"
+      "capabilities/clipboard",
+      "capabilities/clipboard-page"
     ],
     "reachability": "always"
   },
@@ -787,7 +789,8 @@
     "dispatch": "Rf",
     "milestone": "M2",
     "cases": [
-      "capabilities/clipboard"
+      "capabilities/clipboard",
+      "capabilities/clipboard-page"
     ],
     "reachability": "always"
   },
@@ -854,7 +857,8 @@
     "milestone": "M2",
     "cases": [
       "dialogs/alert",
-      "dialogs/prompt"
+      "dialogs/prompt",
+      "dialogs/paused-response"
     ],
     "reachability": "always"
   },
@@ -865,7 +869,8 @@
     "milestone": "M2",
     "cases": [
       "dialogs/alert",
-      "dialogs/prompt"
+      "dialogs/prompt",
+      "dialogs/paused-response"
     ],
     "reachability": "always"
   },

@@ -11,6 +11,14 @@ import {Clipboard} from '../../src/browser-service/clipboard.mjs';
 import {NATIVE_CLIPBOARD_DISABLED} from '../../src/browser-service/keyboard.mjs';
 import {pageClipboardAction, performClipboardShortcut, richTextHtml, typeText} from '../../src/browser-service/paste.mjs';
 
+// The virtual clipboard with its page bridge recorded rather than installed (the bridge has its own tests,
+// clipboard-commands.test.mjs): `bridged` lists each installation asked for, with its options.
+function bridgelessClipboard(bridged = []) {
+  const clipboard = new Clipboard();
+  clipboard.ensurePageClipboard = async (cdp, target, options) => { bridged.push({target, options}); };
+  return clipboard;
+}
+
 const soon = () => new Deadline(2000);
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 
@@ -37,7 +45,8 @@ function session({url = 'https://fixture.test/form', answer = () => ({ok: true, 
     },
   };
   cdp.targetForFrameOrAttach = async (tabId, frameId, options) => { calls.push({method: 'targetForFrameOrAttach', options}); return focusedFrame?.target ?? null; };
-  return {calls, evaluated, session: {cdp, clipboard: new Clipboard(), platform: 'linux', tabs: {get: async id => ({id, url})}}};
+  const bridged = [];
+  return {calls, evaluated, bridged, session: {cdp, clipboard: bridgelessClipboard(bridged), platform: 'linux', tabs: {get: async id => ({id, url})}}};
 }
 
 test('cua_type pastes the text into the top document\'s main world, with its rich-text rendering', async () => {
@@ -206,12 +215,14 @@ test('a page cannot put the typed text or the clipboard\'s items into a rejectio
 });
 
 test('every CDP call of a paste or shortcut carries its deadline; one queued past it dispatches nothing', async () => {
-  const {calls, evaluated, session: s} = session();
+  const {calls, evaluated, bridged, session: s} = session();
   const deadline = soon();
   await typeText(s, {tab_id: '5', text: 'x'}, 'cua_type', {deadline});
   await performClipboardShortcut({deadline, commandType: 'cua_keypress', session: s, keys: ['ctrl', 'c'], tabId: '5'});
   assert.ok(calls.length >= 3);
   for (const call of calls.filter(c => c.method !== 'Runtime.releaseObject')) assert.equal(call.options.deadline, deadline, call.method);
+  assert.ok(bridged.length >= 2);
+  for (const {options} of bridged) assert.equal(options.deadline, deadline, 'the page bridge is installed within the deadline');
 
   let release;
   const busy = s.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));

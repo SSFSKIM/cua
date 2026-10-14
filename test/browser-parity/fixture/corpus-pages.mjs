@@ -22,6 +22,12 @@ export const corpusPages = {
   'fill-pair': `${events}<input id="first" aria-label="First" oninput="record({first:this.value})"><input id="second" aria-label="Second" oninput="record({second:this.value})">`,
   // A button an overlay covers: a click at the button's centre lands on the overlay (no in-document hit test on either service).
   overlay: `${events}<style>#under,#cover{position:absolute;left:20px;top:20px;width:200px;height:60px}#cover{background:rgba(0,0,0,.2)}</style><button id="under" onclick="record({under:true})">Covered button</button><div id="cover" onclick="record({cover:true})"></div>`,
+  // The page's own navigator.clipboard, used only once a browser service's clipboard bridge is installed in the page
+  // (never the machine's clipboard): #copy writes, #paste reads into #pasted; each records what it did.
+  'clipboard-page': `${events}<button id="copy" onclick="if(!globalThis.__browserUseClipboardBridge){record({bridge:false});return;}navigator.clipboard.writeText('from page').then(()=>record({copied:true}),e=>record({copyError:e.message})).then(()=>{document.querySelector('#pasted').dataset.copied='yes';})">Copy</button><button id="paste" onclick="if(!globalThis.__browserUseClipboardBridge){record({bridge:false});return;}navigator.clipboard.readText().then(t=>{document.querySelector('#pasted').textContent=t;return record({pasted:t});},e=>record({pasteError:e.message})).then(()=>{document.querySelector('#pasted').dataset.pasted='yes';})">Paste</button><output id="pasted"></output>`,
+  // A navigation whose document response arrives while an alert is open: #go starts it 400 ms after the click, the
+  // alert opens 100 ms later, and /slow-document.html answers after 800 ms (the query string carries the case's token).
+  'paused-navigation': `<button id="go" onclick="setTimeout(()=>{location.href='/slow-document.html'+location.search;setTimeout(()=>alert('during navigation'),100);},400)">Go</button>`,
   mutation: `${events}<button id="replace-context" onclick="fetch('/counter',{method:'POST'}).then(()=>location.replace('/counter.html?navigated=1'))">Replace context</button><div id="value">Mutation fixture</div>`,
 };
 export const imageSvg='<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#224466"/><circle cx="60" cy="40" r="20" fill="#fff"/></svg>';

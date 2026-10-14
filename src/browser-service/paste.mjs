@@ -289,7 +289,7 @@ const RELEASE_MS = 100;
 // Runs `pageFunction(args)` in the page (el): the target's main world, or the execution context given -> its data.
 async function runInPage(session, {args, commandType, deadline, executionContextId, pageFunction, tabId, target}) {
   const where = target ?? {tabId};
-  await session.clipboard.ensurePageClipboard(session.cdp, where);
+  await session.clipboard.ensurePageClipboard(session.cdp, where, {deadline});
   const result = await session.cdp.callTarget(where, 'Runtime.evaluate', {
     expression: `(
           async () => {

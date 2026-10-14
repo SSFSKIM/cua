@@ -18,23 +18,28 @@
 // with the BrowserSession of the backend its browser_id names. A type without a handler rejects unsupported_command.
 // Dropped from VN: telemetry, Sentry, the identity fetch, site status and the security wrapper, the credential
 // recovery and observation machinery, the response-meta and notification hooks (WebMCP's arrive with M3), and the
-// executeUnhandledCommand fallback for capability commands (M2 registers browser_viewport_* explicitly).
+// executeUnhandledCommand fallback for any command without a handler (viewport.mjs registers the backend's
+// capability commands by name).
 import {ACTION_HANDLERS} from './actions.mjs';
 import {BrowserContext, SELECTION_HANDLERS} from './browsers.mjs';
 import {CHOOSER_HANDLERS} from './chooser.mjs';
+import {CLIPBOARD_HANDLERS} from './clipboard.mjs';
+import {DEVLOG_HANDLERS} from './devlogs.mjs';
 import {DIALOG_HANDLERS} from './dialogs.mjs';
 import {DOCUMENTATION_HANDLERS, Documentation, documentationAddendum} from './docs.mjs';
 import {DOWNLOAD_HANDLERS} from './downloads.mjs';
 import {serviceError} from './errors.mjs';
 import {EVALUATE_HANDLERS} from './evaluate.mjs';
 import {INPUT_HANDLERS} from './input.mjs';
-import {API_MANIFEST, disabledMemberIds} from './manifest.mjs';
+import {API_MANIFEST, browserCapabilities, disabledMemberIds} from './manifest.mjs';
 import {NAVIGATION_HANDLERS} from './navigation.mjs';
+import {RAW_CDP_HANDLERS} from './rawcdp.mjs';
 import {READ_HANDLERS} from './reads.mjs';
 import {SCREENSHOT_HANDLERS} from './screenshot.mjs';
 import {BrowserSession} from './session.mjs';
 import {AX_HANDLERS, SNAPSHOT_HANDLERS} from './snapshot.mjs';
 import {TAB_HANDLERS} from './tabs.mjs';
+import {VIEWPORT_HANDLERS} from './viewport.mjs';
 import {VISIBLE_DOM_HANDLERS} from './visible-dom.mjs';
 import {WAIT_HANDLERS} from './waits.mjs';
 
@@ -84,7 +89,7 @@ export const COMMAND_HANDLERS = new Map([
   ...Object.entries(DOCUMENTATION_HANDLERS),
   ...Object.entries({...TAB_HANDLERS, ...AX_HANDLERS, ...NAVIGATION_HANDLERS, ...READ_HANDLERS, ...EVALUATE_HANDLERS, ...SNAPSHOT_HANDLERS,
     ...VISIBLE_DOM_HANDLERS, ...ACTION_HANDLERS, ...INPUT_HANDLERS, ...WAIT_HANDLERS, ...SCREENSHOT_HANDLERS, ...DIALOG_HANDLERS,
-    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
+    ...CHOOSER_HANDLERS, ...DOWNLOAD_HANDLERS, ...CLIPBOARD_HANDLERS, ...DEVLOG_HANDLERS, ...VIEWPORT_HANDLERS, ...RAW_CDP_HANDLERS}).map(([type, run]) => [type, browserCommand(type, run)]),
 ]);
 
 // What one setup made: the backends, the documentation and a session per backend connection.
@@ -110,7 +115,9 @@ class ServiceRuntime {
   sessionFor(browser) {
     let session = this.sessions.get(browser.api);
     if (session == null) {
-      session = new BrowserSession(browser.api, browser.id, browser.info, {preferredWindowId: this.context.preferredWindowIdFor(browser.info)});
+      session = new BrowserSession(browser.api, browser.id, browser.info, {
+        preferredWindowId: this.context.preferredWindowIdFor(browser.info), capabilities: browserCapabilities(this.env, browser.info.capabilities),
+      });
       this.sessions.set(browser.api, session);
       browser.api.addCloseListener(() => { this.sessions.delete(browser.api); });
     }

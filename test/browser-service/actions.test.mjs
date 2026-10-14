@@ -17,6 +17,14 @@ import {CuaInput} from '../../src/browser-service/input.mjs';
 import {ENTER_FRAME, SelectorEngine} from '../../src/browser-service/selectors.mjs';
 import {FAKE_INJECTED_SOURCE, el, iframe, pageWorld} from './support/page-world.mjs';
 
+// The virtual clipboard with its page bridge recorded rather than installed (the bridge has its own tests,
+// clipboard-commands.test.mjs): `bridged` lists each installation asked for, with its options.
+function bridgelessClipboard(bridged = []) {
+  const clipboard = new Clipboard();
+  clipboard.ensurePageClipboard = async (cdp, target, options) => { bridged.push({target, options}); };
+  return clipboard;
+}
+
 const TAB = 6;
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 
@@ -50,7 +58,7 @@ function setup(elements, {onInput, slow} = {}) {
   const injected = new InjectedScripts(cdp, {source: FAKE_INJECTED_SOURCE});
   const moves = [];
   const cursor = new Cursor({async moveMouse(params) { moves.push(params); return {}; }});
-  const session = {cdp, injected, selectors: new SelectorEngine(cdp, injected), cursor, clipboard: new Clipboard(), platform: 'linux',
+  const session = {cdp, injected, selectors: new SelectorEngine(cdp, injected), cursor, clipboard: bridgelessClipboard(), platform: 'linux',
     tabs: {get: async id => ({id, url: 'https://fixture.test/'})}};
   session.input = new CuaInput(cdp, cursor, null, {platform: 'linux'});
   const run = (type, params) => ACTION_HANDLERS[type]({browser_id: 'b', tab_id: String(TAB), ...params}, session);

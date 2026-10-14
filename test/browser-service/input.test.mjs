@@ -8,6 +8,14 @@ import {Clipboard} from '../../src/browser-service/clipboard.mjs';
 import {Cursor} from '../../src/browser-service/cursor.mjs';
 import {CuaInput, INPUT_HANDLERS, pointThroughQuad} from '../../src/browser-service/input.mjs';
 
+// The virtual clipboard with its page bridge recorded rather than installed (the bridge has its own tests,
+// clipboard-commands.test.mjs): `bridged` lists each installation asked for, with its options.
+function bridgelessClipboard(bridged = []) {
+  const clipboard = new Clipboard();
+  clipboard.ensurePageClipboard = async (cdp, target, options) => { bridged.push({target, options}); };
+  return clipboard;
+}
+
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 
 // `frames` the DOM-CUA frames by id ({frameId, parentFrameId?, size?, target}); `nodes` the listed nodes by public id;
@@ -39,7 +47,7 @@ function setup({frames = {}, nodes = {}, points = {}, quads = {}} = {}) {
       return {result: {value: points[ref] ?? null}};
     },
   };
-  const session = {cdp, cursor, visibleDom, platform: 'linux', clipboard: new Clipboard(), tabs: {get: async id => ({id, url: 'https://fixture.test/'})}};
+  const session = {cdp, cursor, visibleDom, platform: 'linux', clipboard: bridgelessClipboard(), tabs: {get: async id => ({id, url: 'https://fixture.test/'})}};
   session.input = new CuaInput(cdp, cursor, visibleDom, {platform: 'linux'});
   const run = (type, params) => INPUT_HANDLERS[type]({browser_id: 'b', tab_id: '4', ...params}, session);
   const mouse = () => log.filter(e => e.method === 'Input.dispatchMouseEvent').map(e => e.params);
@@ -227,4 +235,13 @@ test('a point maps through a frame owner\'s quad by its size, or by its offset w
   assert.deepEqual(pointThroughQuad({x: 20, y: 10}, {width: 400, height: 200}, quad), {x: 110, y: 55});
   assert.deepEqual(pointThroughQuad({x: 20, y: 10}, null, quad), {x: 120, y: 60});
   assert.equal(pointThroughQuad({x: 1, y: 1}, null, [1, 2]), null);
+});
+
+test('cua_move aims the cursor, then moves the pointer to the point with the keys held, and nothing else', async () => {
+  const {log, moves, run, mouse} = setup();
+  assert.deepEqual(await run('cua_move', {x: 140, y: 60, keys: ['Shift']}), {});
+  assert.deepEqual(moves, [{tabId: 4, x: 140, y: 60}], 'the cursor is aimed and awaited (only a cursor peer acts on it)');
+  assert.deepEqual(mouse(), [{type: 'mouseMoved', x: 140, y: 60, button: 'none', buttons: 0, modifiers: 8}]);
+  assert.deepEqual(log.map(e => e.method), ['moveMouse', 'Input.dispatchMouseEvent']);
+  assert.equal((await rejection(run('cua_move', {x: 1, y: Number.NaN}))).message, 'cua_move requires finite x and y coordinates');
 });

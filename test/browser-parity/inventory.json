@@ -423,7 +423,8 @@
       "evaluate/counter",
       "evaluate/context-loss",
       "evaluate/late-completion",
-      "evaluate/budget"
+      "evaluate/budget",
+      "evaluate/attributes"
     ],
     "reachability": "always"
   },

@@ -190,3 +190,16 @@ test('the service bounds the by-value result itself, and leaves an in-page proje
   assert.deepEqual(boundResult(projected, RESULT_LIMITS), bounded, 'and the two sides agree on the limits');
   for (const scalar of [undefined, null, 1, true, 'x']) assert.equal(boundResult(scalar, RESULT_LIMITS), scalar);
 });
+
+test('a bare attribute is the vendor\'s read-only attribute; a credential field\'s value attribute is null, as its list leaves it out', () => {
+  const field = element({nodeName: 'INPUT', tagName: 'INPUT'});
+  const plain = element();
+  // An Attr is a node (nodeType 2): it must not take the node summary.
+  const attr = (name, value, ownerElement) => native('Attr', {nodeType: 2, nodeName: name, name, value, ownerElement, textContent: value, cloneNode() {}});
+  assert.deepEqual(project(attr('class', 'item', plain), e => e === field), {name: 'class', nodeName: 'class', nodeValue: 'item', specified: true, value: 'item'});
+  assert.deepEqual(project(attr('name', 'password', field), e => e === field), {name: 'name', nodeName: 'name', nodeValue: 'password', specified: true, value: 'password'});
+  assert.equal(project(attr('value', 'hunter2', field), e => e === field), null);
+  assert.equal(project(attr('VALUE', 'hunter2', field), e => e === field), null);
+  assert.deepEqual(project([attr('value', 'kept', plain)], e => e === field), [{name: 'value', nodeName: 'value', nodeValue: 'kept', specified: true, value: 'kept'}]);
+  assert.deepEqual(project({nodeType: 2, name: 'plain'}), {nodeType: 2, name: 'plain'}, 'an ordinary object is not taken for an attribute');
+});

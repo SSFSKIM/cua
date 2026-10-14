@@ -49,7 +49,8 @@ export function checkScript(script) {
 // own enumerable keys, as the vendor's does (no toJSON is called: a Date or a URL is {}). Every browser type the
 // vendor's read-only scope hands out through a wrapper factory or a read-only builder (BS:57301-59500) is adapted to
 // what that wrapper or builder serialises to, by its platform tag (the main world has the real objects, whose fields
-// are prototype getters): nodes as their summaries; node, rule, sheet and rect collections and token lists as arrays;
+// are prototype getters): an attribute as the vendor's read-only attribute (null for a credential field's value
+// attribute); other nodes as their summaries; node, rule, sheet and rect collections and token lists as arrays;
 // attributes, time ranges and track lists as the builders' items; data sets, validity, rects, styles, media lists,
 // CSS rules and style sheets, ranges, selections, media query lists, the visual viewport and the font set as the
 // wrappers' toJSON shapes; the location as {} (the vendor's has no own keys). `isProtectedField(element)` names the
@@ -88,6 +89,11 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     : {name: stringOrUndefined(node.name), nodeName: node.nodeName, nodeType: node.nodeType, publicId: stringOrUndefined(node.publicId),
       systemId: stringOrUndefined(node.systemId), textContent: node.textContent});
   const asArray = list => bounded(list);
+  // An attribute as the vendor's read-only attribute (makeReadonlyAttribute, BS:57312-57319).
+  const attribute = a => ({name: a.name, nodeName: a.name, nodeValue: a.value, specified: true, value: a.value});
+  // A bare attribute: the vendor's attribute, or null for a credential field's value attribute, which its read-only
+  // attribute list leaves out (getNamedItem answers null).
+  const bareAttribute = a => (a.ownerElement != null && String(a.name).toLowerCase() === 'value' && isProtectedField(a.ownerElement) ? null : attribute(a));
   const rect = r => ({bottom: r.bottom, height: r.height, left: r.left, right: r.right, top: r.top, width: r.width, x: r.x, y: r.y});
   const style = declaration => {
     const output = {};
@@ -114,8 +120,7 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
       const read = bounded(attributes);
       const owner = read.length > 0 ? read[0].ownerElement : null;
       const hidden = owner != null && isProtectedField(owner);
-      return read.filter(a => !hidden || a.name.toLowerCase() !== 'value')
-        .map(a => ({name: a.name, nodeName: a.name, nodeValue: a.value, specified: true, value: a.value}));
+      return read.filter(a => !hidden || a.name.toLowerCase() !== 'value').map(attribute);
     },
     DOMStringMap: dataset => Object.fromEntries(Object.keys(dataset).map(key => [key, dataset[key]])),
     TimeRanges: ranges => bounded({length: ranges.length}, (item, index) => ({end: ranges.end(index), start: ranges.start(index)})),
@@ -164,8 +169,10 @@ export function projectResult(value, {maxDepth, maxArrayLength, maxObjectKeys, m
     if (depth > maxDepth) return '[MaxDepth]';
     if (seen.has(current)) return '[Circular]';
     seen.add(current);
+    const tag = tagOf(current);
+    if (tag === 'Attr' || (current.nodeType === 2 && isNode(current))) return serialize(bareAttribute(current), depth);
     if (isNode(current)) return serialize(nodeSummary(current), depth);
-    const adapter = adapterFor(tagOf(current));
+    const adapter = adapterFor(tag);
     if (adapter != null) return serialize(adapter(current), depth);
     if (Array.isArray(current)) {
       const items = [];

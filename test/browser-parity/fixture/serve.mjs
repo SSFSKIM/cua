@@ -16,6 +16,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
     'chooser': `<input id="file" type="file"><output id="filename"></output><script>document.querySelector('#file').onchange=async e=>{const name=e.target.files[0].name;await ${record}({file:name})});const out=document.querySelector('#filename');out.textContent=name;out.dataset.recorded='yes';}</script>`,
     'oopif': '<iframe id="outer" src="/frame.html"></iframe>',
     'frame': '<label>Nested input<input id="nested"></label><button id="frame-button">Frame button</button>',
+    'attributes': '<p id="note" class="item" data-note="stable">Alpha</p><input id="secret" name="password" value="hunter2">',
     'frames': '<h1>Frames fixture</h1><iframe id="first" title="First" src="/frame.html"></iframe><iframe id="second" title="Second" src="/frame.html"></iframe><iframe id="third" title="Third" src="/frame.html"></iframe>',
     'popup': '<button id="popup" onclick="window.open(\'/counter.html\')">Open popup</button>',
     'slow': `<main id="target"></main><script>${eventScript}setTimeout(()=>{document.querySelector('#target').innerHTML='<button id="late">Late element</button>';document.querySelector('#late').onclick=()=>record({late:true});},8000)</script>`,

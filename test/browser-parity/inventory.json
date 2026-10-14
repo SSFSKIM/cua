@@ -458,7 +458,8 @@
     "cases": [
       "actions/locators",
       "actions/slow-budget",
-      "actions/strict-error"
+      "actions/strict-error",
+      "actions/overlay"
     ],
     "reachability": "always"
   },
@@ -498,7 +499,8 @@
     "dispatch": "Rf",
     "milestone": "M1c",
     "cases": [
-      "actions/locators"
+      "actions/locators",
+      "actions/concurrent-fill"
     ],
     "reachability": "always"
   },

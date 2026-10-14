@@ -156,6 +156,16 @@ test('an open dialog or a spent budget during the obstruction check ends the cli
   missed.browser.fail('DOM.getNodeForLocation', 'No node found at given location');
   await missed.run('playwright_locator_click', {selector: `#o${ENTER_FRAME}#deep`});
   assert.equal(missed.input('Input.dispatchMouseEvent').length, 3, 'a lookup that found nothing is no obstruction (the vendor\'s fallback)');
+
+  const detached = setup(frame());
+  detached.browser.fail('DOM.getNodeForLocation', 'Debugger is not attached to the tab', 2);
+  assert.equal((await rejection(detached.run('playwright_locator_click', {selector: `#o${ENTER_FRAME}#deep`}))).code, 'tab_detached');
+  assert.equal(detached.input('Input.dispatchMouseEvent').length, 0);
+
+  const broken = setup(frame());
+  broken.browser.fail('DOM.getNodeForLocation', 'Internal error');
+  assert.equal((await rejection(broken.run('playwright_locator_click', {selector: `#o${ENTER_FRAME}#deep`}))).message, 'Internal error');
+  assert.equal(broken.input('Input.dispatchMouseEvent').length, 0);
 });
 
 test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothing', async () => {
@@ -188,6 +198,32 @@ test('a clipboard shortcut queued behind another resolves its element within its
   assert.equal(browser.calls.length, calls, 'no CDP call after the deadline');
   assert.notEqual(field.ownerDocument.activeElement, field, 'the field was never focused');
   assert.equal(pastes.length, 0);
+});
+
+test('a zero budget makes one attempt for the element, then dispatches within the default 3 s: click, fill and press', async () => {
+  const {run, mouse, keys, pastes} = setup([el('button', {id: 'go'}), el('input', {id: 'text', type: 'text', value: ''})]);
+  await run('playwright_locator_click', {selector: '#go', timeout_ms: 0});
+  assert.equal(mouse().length, 3);
+  await run('playwright_locator_fill', {selector: '#text', value: 'zero', timeout_ms: 0});
+  assert.equal(pastes.length, 1);
+  await run('playwright_locator_press', {selector: '#text', value: 'End', timeout_ms: 0});
+  assert.deepEqual(keys(), ['rawKeyDown End', 'keyUp End']);
+});
+
+test('two fills started together each prepare and paste in one operation, the paste checked against its own field', async () => {
+  const a = el('input', {id: 'a', type: 'text', value: ''});
+  const b = el('input', {id: 'b', type: 'text', value: ''});
+  const {browser, run, pastes} = setup([a, b]);
+  await Promise.all([run('playwright_locator_fill', {selector: '#a', value: 'A'}), run('playwright_locator_fill', {selector: '#b', value: 'B'})]);
+  assert.deepEqual(pastes.map(p => p.args.clipboardItems[0].entries[0].text).sort(), ['A', 'B']);
+  for (const paste of pastes) {
+    const field = paste.args.clipboardItems[0].entries[0].text === 'A' ? a : b;
+    assert.equal(paste.args.inputTargetToken, field.__cuaInputTargetToken, 'each paste names the token its own field carries');
+  }
+  // The order of the page work: each field's selection is followed by its own paste.
+  const steps = browser.calls.filter(c => c.method === 'Runtime.evaluate' && !c.params.expression.includes('PlaywrightInjected.InjectedScript')
+    && (c.params.expression.includes('const pageFunction') || c.params.expression.includes('needsinput'))).map(c => (c.params.expression.includes('const pageFunction') ? 'paste' : 'prepare'));
+  assert.deepEqual(steps, ['prepare', 'paste', 'prepare', 'paste']);
 });
 
 test('fill selects the field\'s text and pastes the value over it in the locator\'s world; a value set directly needs no paste', async () => {

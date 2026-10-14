@@ -15,20 +15,28 @@ const soon = () => new Deadline(2000);
 const rejection = async promise => { try { await promise; } catch (error) { return error; } assert.fail('expected a rejection'); };
 
 // A session whose page answers each clipboard evaluation with `answer(args)`; the focused-frame probe finds no frame.
-function session({url = 'https://fixture.test/form', answer = () => ({ok: true, data: {}})} = {}) {
+// `focusedFrame` {frameId, target?}: the focused-frame probe finds that frame element (an out-of-process frame when it
+// has a target, else a same-process one reached through an isolated world).
+function session({url = 'https://fixture.test/form', answer = () => ({ok: true, data: {}}), focusedFrame} = {}) {
   const calls = [];
   const evaluated = [];
   const cdp = {
     async callTarget(target, method, params, options = {}) {
       calls.push({target, method, params, options});
+      if (method === 'DOM.describeNode') return {node: {frameId: focusedFrame?.frameId}};
+      if (method === 'Page.createIsolatedWorld') return {executionContextId: 77};
       if (method !== 'Runtime.evaluate') return {};
-      if (params.expression.includes('focusedFrameElementInRoot')) return {result: {type: 'object', subtype: 'null', value: null}};
+      if (params.expression.includes('focusedFrameElementInRoot')) {
+        return focusedFrame != null && target.sessionId == null && params.contextId == null
+          ? {result: {type: 'object', subtype: 'node', objectId: 'frame-element'}} : {result: {type: 'object', subtype: 'null', value: null}};
+      }
       const args = JSON.parse(params.expression.match(/await pageFunction\((.*)\);\n/)[1]);
       evaluated.push({target, contextId: params.contextId, args, params});
       const answered = answer(args);
       return answered?.exceptionDetails ? answered : {result: {type: 'object', value: answered}};
     },
   };
+  cdp.targetForFrameOrAttach = async (tabId, frameId, options) => { calls.push({method: 'targetForFrameOrAttach', options}); return focusedFrame?.target ?? null; };
   return {calls, evaluated, session: {cdp, clipboard: new Clipboard(), platform: 'linux', tabs: {get: async id => ({id, url})}}};
 }
 
@@ -214,4 +222,25 @@ test('every CDP call of a paste or shortcut carries its deadline; one queued pas
   await busy;
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(evaluated.length, before, 'the queued paste never ran');
+});
+
+test('cua_type pastes into the focused frame: an out-of-process frame in its own target, a same-process one in a world in it', async () => {
+  const oop = session({focusedFrame: {frameId: 'CHILD', target: {tabId: 5, sessionId: 'OOP'}}});
+  await typeText(oop.session, {tab_id: '5', text: 'inside'}, 'cua_type', {deadline: soon()});
+  assert.deepEqual(oop.evaluated.map(e => [e.target, e.contextId]), [[{tabId: 5, sessionId: 'OOP'}, undefined]]);
+  const same = session({focusedFrame: {frameId: 'CHILD'}});
+  await typeText(same.session, {tab_id: '5', text: 'inside'}, 'dom_cua_type', {deadline: soon()});
+  assert.deepEqual(same.evaluated.map(e => [e.target, e.contextId]), [[{tabId: 5}, 77]]);
+  assert.equal(same.calls.find(c => c.method === 'Page.createIsolatedWorld').params.frameId, 'CHILD');
+});
+
+test('the page function refuses a prepared paste when the focused element is not the one prepared', async () => {
+  const {input, run} = page();
+  const items = [{entries: [{mime_type: 'text/plain', text: 'new'}], presentation_style: 'unspecified'}];
+  input.__cuaInputTargetToken = 'mine';
+  await assert.rejects(run({action: 'paste', clipboardItems: items, inputTargetToken: 'theirs'}),
+    {message: 'Active element is no longer the expected input target: target token mismatch'});
+  assert.equal(input.value, 'old value');
+  assert.deepEqual(await run({action: 'paste', clipboardItems: items, inputTargetToken: 'mine', replaceInputValue: true}), {});
+  assert.equal(input.value, 'new');
 });

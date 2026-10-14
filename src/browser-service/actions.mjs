@@ -17,9 +17,10 @@
 // Dropped from Pf: the synthetic document-scoped click (MCP-app documents), the in-app browser's input target tokens
 // and box-model frame geometry, telemetry and command timing, the bound selector, the download source policy check.
 import {DOWNLOAD_MS, Deadline, PRESS_SEQUENTIALLY_MS, clamp} from './budgets.mjs';
-import {BrowserServiceError, isDeadlineError, serviceError} from './errors.mjs';
+import {serviceError} from './errors.mjs';
 import {checkSelectorDeadline} from './injected.mjs';
 import {pointThroughQuad} from './input.mjs';
+import {attemptBudget} from './selectors.mjs';
 import {modifierMask, pressKeys, typeCharacter} from './keyboard.mjs';
 import {performClipboardShortcut, typeText} from './paste.mjs';
 import {tabIdOf} from './tabs.mjs';
@@ -34,6 +35,9 @@ const isNested = target => target.sessionId != null || target.targetId != null; 
 const sameTarget = (a, b) => a.tabId === b.tabId && a.sessionId === b.sessionId && a.targetId === b.targetId;        // PJ
 const locatorButton = button => (button === 'right' || button === 'middle' ? button : 'left');                       // z1
 const budgetOf = params => new Deadline(clamp(params.timeout_ms));
+// A phase that dispatches after its element was resolved: the caller's budget, or for an explicit zero (one attempt,
+// the M1b ruling) at most the default 3 s, never an already spent zero.
+const dispatchBudget = params => attemptBudget(budgetOf(params));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const attributeOf = (attributes, name) => {                                                                          // Y1
   for (let i = 0; i < attributes.length; i += 2) if (attributes[i] === name) return attributes[i + 1];
@@ -124,6 +128,7 @@ async function focusElement(element, injected, arg) {
   const outcome = arg.selectText ? injected.selectText(target) : focused.matches ? 'done' : injected.focusNode(target, false);
   if (outcome !== 'done') throw new Error(String(outcome));
   if (!(await injected.expect(target, {expression: 'to.be.focused', isNot: false})).matches) throw new Error('Element is not focused');
+  if (arg.inputTargetToken != null) Object.defineProperty(target, '__cuaInputTargetToken', {configurable: true, value: arg.inputTargetToken, writable: true});
 }
 
 // Fills the field the injected script's way (prepareLocatorFill's function): 'done' when the value was set directly
@@ -139,7 +144,9 @@ function prepareFill(element, injected, arg) {
   if (outcome === 'error:notconnected') throw new Error('Element is not connected');
   if (outcome !== 'done' && outcome !== 'needsinput') throw new Error(outcome);
   if (outcome === 'done') return 'done';
-  if ((typeof injected.retarget === 'function' ? injected.retarget(element, 'follow-label') : element) == null) throw new Error('Element is not connected');
+  const target = typeof injected.retarget === 'function' ? injected.retarget(element, 'follow-label') : element;
+  if (target == null) throw new Error('Element is not connected');
+  Object.defineProperty(target, '__cuaInputTargetToken', {configurable: true, value: arg.inputTargetToken, writable: true});
   return outcome;
 }
 
@@ -257,7 +264,7 @@ async function resolvePointerActionTarget(session, params, {requiredStates, scro
   const tabId = tabIdOf(params.tab_id);
   const resolved = await session.selectors.evaluateOnSelector(params.selector, tabId, pointerActionPoint,
     {arg: {requiredStates, scrollAlignment: scrollAlignment ?? CENTER}, deadline: budgetOf(params)});
-  const top = await currentTopLevelPointForAction(session, resolved.result, resolved.oopifFrameChain, {deadline: budgetOf(params)});
+  const top = await currentTopLevelPointForAction(session, resolved.result, resolved.oopifFrameChain, {deadline: dispatchBudget(params)});
   return {frameBoundaries: top.frameBoundaries, inputPoint: resolved.result, inputTarget: resolved.target, point: top.point, target: resolved.target};
 }
 
@@ -292,10 +299,12 @@ async function obstructingFrameHitTarget(session, resolved, options) {
   return null;
 }
 
-// The vendor treats any failure of the hit test as no obstruction. Here only a lookup that found nothing is: an open
-// dialog and a spent budget end the action before anything is dispatched (the M1a rulings).
-const endsAction = error => (error instanceof BrowserServiceError && (error.code === 'dialog_open' || error.code === 'timeout'))
-  || isDeadlineError(error);
+// The vendor treats any failure of the hit test as no obstruction, and of the description as "another element". Here
+// only Chrome's answer that nothing is there keeps those fallbacks; every other failure (an open dialog, a spent budget,
+// a detached tab) ends the action before anything is dispatched (the M1a rulings).
+const NO_NODE_AT_LOCATION = 'No node found at given location';                                                       // DOM.getNodeForLocation
+const NO_NODE_FOR_ID = 'No node found for given backend id';                                                          // DOM.describeNode
+const messageOf = error => (error instanceof Error ? error.message : String(error));
 
 async function obstructingFrameBoundaryHitTarget(session, boundary, options) {
   let hit;
@@ -303,8 +312,8 @@ async function obstructingFrameBoundaryHitTarget(session, boundary, options) {
     hit = await session.cdp.callTarget(boundary.frame.parentTarget, 'DOM.getNodeForLocation',
       {x: Math.round(boundary.point.x), y: Math.round(boundary.point.y), includeUserAgentShadowDOM: true}, options);
   } catch (error) {
-    if (endsAction(error)) throw error;
-    return null;
+    if (messageOf(error) === NO_NODE_AT_LOCATION) return null;
+    throw error;
   }
   if (hit.backendNodeId === boundary.ownerBackendNodeId || hit.frameId === boundary.frame.frameId) return null;
   return await describeHitTarget(session, boundary.frame.parentTarget, hit.backendNodeId, options);
@@ -319,8 +328,8 @@ async function describeHitTarget(session, target, backendNodeId, options) {
     const classes = attributeOf(attributes, 'class');
     return `<${tag}${id ? `#${id}` : ''}${classes ? `.${classes.trim().split(/\s+/).slice(0, 3).join('.')}` : ''}>`;
   } catch (error) {
-    if (endsAction(error)) throw error;
-    return 'another element';
+    if (messageOf(error) === NO_NODE_FOR_ID) return 'another element';
+    throw error;
   }
 }
 
@@ -329,7 +338,7 @@ async function performPointerAction(session, params, {actionName, dispatch, forc
   let obstruction = null;
   for (const scrollAlignment of force ? [CENTER] : SCROLL_ALIGNMENTS) {
     const resolved = await resolvePointerActionTarget(session, params, {requiredStates, scrollAlignment});
-    obstruction = force ? null : await obstructingFrameHitTarget(session, resolved, {deadline: new Deadline(timeoutMs)});
+    obstruction = force ? null : await obstructingFrameHitTarget(session, resolved, {deadline: attemptBudget(new Deadline(timeoutMs))});
     if (obstruction == null) {
       await dispatch(resolved);
       return;
@@ -358,10 +367,10 @@ async function clickLocator(session, params, clickCount) {
 
 // Focuses the locator's element -> {executionContextId, target} of the world it was focused from. The resolution polls
 // within `deadline` when one is given (a clipboard shortcut's, which already began), else its own caller-sized budget.
-async function focusLocator(session, params, {requireEditable, selectText, deadline}) {
+async function focusLocator(session, params, {requireEditable, selectText, deadline, inputTargetToken}) {
   const {executionContextId, target} = await session.selectors.evaluateOnSelector(params.selector, tabIdOf(params.tab_id), focusElement,
-    {arg: {requireEditable, selectText, retargetInput: requireEditable || selectText === true}, deadline: deadline ?? budgetOf(params)});
-  return {executionContextId, target};
+    {arg: {requireEditable, selectText, retargetInput: requireEditable || selectText === true, inputTargetToken}, deadline: deadline ?? budgetOf(params)});
+  return {executionContextId, target, inputTargetToken};
 }
 
 async function readCheckedState(session, params) {
@@ -379,27 +388,33 @@ export const ACTION_HANDLERS = {
     return {};
   },
 
-  // fill (replace) and locator.type (no replace): the field focused, or its text selected, then the value pasted.
+  // fill (replace) and locator.type (no replace): the field focused, or its text selected, then the value pasted. Both
+  // happen in one operation of the clipboard's queue, the field marked with a token the paste checks, so two fills in
+  // one document never cross (the vendor prepares outside the queue). The selection and the paste are phases of their
+  // own, each with the caller's budget; the queue wait is bounded by the paste's.
   async playwright_locator_fill(params, session) {
     if (typeof params.value !== 'string') throw new Error('playwright_locator_fill requires string value');
     const replace = params.replace !== false;
     const tabId = tabIdOf(params.tab_id);
-    const prepared = replace
-      ? await session.selectors.evaluateOnSelector(params.selector, tabId, prepareFill,
-        {arg: {states: ['visible', 'enabled', 'editable'], value: params.value}, deadline: budgetOf(params)})
-      : await focusLocator(session, params, {requireEditable: true});
-    if (prepared.result === 'done') return {};
-    // The paste is a phase of its own, with the caller's budget, as the selection was.
-    await typeText(session, {executionContextId: prepared.executionContextId, target: prepared.target, includeRichText: false,
-      replaceInputValue: replace, tab_id: params.tab_id, text: params.value}, 'playwright_locator_fill', {deadline: budgetOf(params)});
+    const inputTargetToken = crypto.randomUUID();
+    const prepare = async () => {
+      if (!replace) return await focusLocator(session, params, {requireEditable: true, inputTargetToken});
+      const {result, target, executionContextId} = await session.selectors.evaluateOnSelector(params.selector, tabId, prepareFill,
+        {arg: {states: ['visible', 'enabled', 'editable'], value: params.value, inputTargetToken}, deadline: budgetOf(params)});
+      return {result, target, executionContextId, inputTargetToken};
+    };
+    await typeText(session, {includeRichText: false, replaceInputValue: replace, tab_id: params.tab_id, text: params.value}, 'playwright_locator_fill',
+      {deadline: dispatchBudget(params), prepare, pasteDeadline: () => dispatchBudget(params)});
     return {};
   },
 
   async playwright_locator_press(params, session) {
     if (typeof params.value !== 'string' || !params.value) throw new Error('playwright_locator_press requires value');
     const tabId = tabIdOf(params.tab_id);
-    const deadline = budgetOf(params);
-    const focus = async (forPaste, within) => await focusLocator(session, params, {requireEditable: false, deadline: within});
+    const deadline = dispatchBudget(params);
+    // Inside a shortcut the focusing resolves within the shortcut's deadline; an explicit zero stays one attempt.
+    const zero = clamp(params.timeout_ms) === 0;
+    const focus = async (forPaste, within) => await focusLocator(session, params, {requireEditable: false, deadline: zero ? new Deadline(0) : within});
     if (await performClipboardShortcut({commandType: 'playwright_locator_press', deadline, session, keys: params.value, tabId, focusTarget: focus})) return {};
     const focused = await focus();
     await pressKeys(session.cdp, focused.target, params.value, {deadline, platform: session.platform});

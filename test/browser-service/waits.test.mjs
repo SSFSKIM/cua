@@ -13,6 +13,7 @@ function documentPages() {
   const cdp = request => {
     const tabId = request.debuggee.tabId;
     if (request.method === 'Runtime.evaluate') { pages.sent.push({tabId, method: request.method, params: request.params}); return {result: {type: 'object', value: {href: doc.href, readyState: doc.readyState}}}; }
+    if (request.method === 'Page.setLifecycleEventsEnabled') doc.onLifecycleEnabled?.(tabId);
     if (request.method === 'Page.getFrameTree') { pages.sent.push({tabId, method: request.method, params: request.params}); return {frameTree: {frame: {id: `F${tabId}`, loaderId: doc.loader, url: doc.href}}}; }
     return pages.cdp(request);
   };
@@ -98,6 +99,20 @@ test('networkidle restarts on a new main-frame document and times out with the v
   event('Page.lifecycleEvent', {name: 'networkIdle', frameId: `F${tabId}`, loaderId: 'L1'});
   const error = await rejection(waiting);
   assert.equal(error.message, `Timed out waiting for networkidle in tab ${tabId}.`);
+});
+
+test('a zero budget is one observation: a complete document, or one idle when observed, succeeds; otherwise the vendor\'s timeout', async t => {
+  const {run, doc, event, tabId} = await tabOn(t);
+  assert.deepEqual(await run({type: 'playwright_wait_for_load_state', timeout_ms: 0}), {});
+  doc.readyState = 'interactive';
+  assert.deepEqual(await run({type: 'playwright_wait_for_load_state', state: 'domcontentloaded', timeout_ms: 0}), {});
+  doc.readyState = 'loading';
+  assert.equal((await rejection(run({type: 'playwright_wait_for_load_state', timeout_ms: 0}))).message, `Timed out waiting for load in tab ${tabId}.`);
+  doc.onLifecycleEnabled = id => event('Page.lifecycleEvent', {name: 'networkIdle', frameId: `F${id}`, loaderId: 'L1'});
+  assert.deepEqual(await run({type: 'playwright_wait_for_load_state', state: 'networkidle', timeout_ms: 0}), {});
+  doc.onLifecycleEnabled = undefined;
+  assert.equal((await rejection(run({type: 'playwright_wait_for_load_state', state: 'networkidle', timeout_ms: 0}))).message,
+    `Timed out waiting for networkidle in tab ${tabId}.`);
 });
 
 test('networkidle fails when the tab detaches', async t => {

@@ -14,6 +14,12 @@ export const corpusPages = {
   typing: `${events}<style>#editor{min-height:60px;border:1px solid #888}#long{width:400px;height:80px}</style><div id="editor" contenteditable="true" aria-label="Rich editor" oninput="record({editor:this.innerHTML})"></div><textarea id="long" aria-label="Long text" oninput="record({longLength:this.value.length})"></textarea><input id="copy-src" aria-label="Copy source" value="queued"><input id="paste-a" aria-label="Paste A" oninput="record({pasteA:this.value})"><input id="paste-b" aria-label="Paste B" oninput="record({pasteB:this.value})">`,
   media: '<img id="image" alt="Parity media" src="/image.svg" width="120" height="80">',
   screenshot: '<style>body{margin:0;width:320px;height:240px;background:#fff}main{width:160px;height:120px;background:#246}</style><main></main><p>Parity screenshot</p>',
+  // Taller than any viewport, so a full-page screenshot and a viewport one differ in height.
+  'screenshot-tall': '<style>body{margin:0;background:#fff}section{height:600px}section:nth-child(odd){background:#246}</style><section></section><section></section><section></section><section></section><p>Tall parity screenshot</p>',
+  // Two fields one document fills at once; each records its own value.
+  'fill-pair': `${events}<input id="first" aria-label="First" oninput="record({first:this.value})"><input id="second" aria-label="Second" oninput="record({second:this.value})">`,
+  // A button an overlay covers: a click at the button's centre lands on the overlay (no in-document hit test on either service).
+  overlay: `${events}<style>#under,#cover{position:absolute;left:20px;top:20px;width:200px;height:60px}#cover{background:rgba(0,0,0,.2)}</style><button id="under" onclick="record({under:true})">Covered button</button><div id="cover" onclick="record({cover:true})"></div>`,
   mutation: `${events}<button id="replace-context" onclick="fetch('/counter',{method:'POST'}).then(()=>location.replace('/counter.html?navigated=1'))">Replace context</button><div id="value">Mutation fixture</div>`,
 };
 export const imageSvg='<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#224466"/><circle cx="60" cy="40" r="20" fill="#fff"/></svg>';

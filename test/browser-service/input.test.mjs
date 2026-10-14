@@ -196,6 +196,32 @@ test('cua_type and dom_cua_type type by paste into the focused element', async (
   assert.match(pastes[1].params.expression, /"text":"dom"/);
 });
 
+test('a node two same-process frames deep in an out-of-process frame: one owner quad gives its point in that target', async () => {
+  const oopif = {tabId: 4, sessionId: 'S1'};
+  const frames = {
+    MAIN: {frameId: 'MAIN', target: {tabId: 4}},
+    OOP: {frameId: 'OOP', parentFrameId: 'MAIN', size: {width: 400, height: 300}, target: oopif},
+    MID: {frameId: 'MID', parentFrameId: 'OOP', size: {width: 200, height: 200}, target: oopif},
+    INNER: {frameId: 'INNER', parentFrameId: 'MID', size: {width: 100, height: 100}, target: oopif},
+  };
+  const nodes = {5: {frameId: 'INNER', localRef: 'r5', target: oopif}};
+  // Owner quads are in the out-of-process frame's viewport: the inner frame's (30,20) already counts the middle frame's
+  // offset (10,10), so mapping through the middle frame's owner again would land at 65,65.
+  const quads = {'owner-INNER': [30, 20, 130, 20, 130, 120, 30, 120], 'owner-MID': [10, 10, 210, 10, 210, 210, 10, 210],
+    'owner-OOP': [100, 50, 500, 50, 500, 350, 100, 350]};
+  const {run, mouse, moves} = setup({frames, nodes, points: {r5: {x: 25, y: 35}}, quads});
+  await run('dom_cua_click', {node_id: '5'});
+  assert.deepEqual(mouse()[0], {type: 'mouseMoved', x: 55, y: 55, button: 'none', buttons: 0, modifiers: 0}, 'the events: one quad, not two');
+  assert.deepEqual(moves, [{tabId: 4, x: 155, y: 105}], 'the cursor: the same point, mapped on to the top document');
+});
+
+test('a zero budget DOM-CUA click is one attempt: it dispatches within the default 3 s', async () => {
+  const frames = {MAIN: {frameId: 'MAIN', target: {tabId: 4}}};
+  const {run, mouse} = setup({frames, nodes: {2: {frameId: 'MAIN', localRef: 'r2', target: {tabId: 4}}}, points: {r2: {x: 3, y: 4}}});
+  await run('dom_cua_click', {node_id: '2', timeout_ms: 0});
+  assert.equal(mouse().length, 3);
+});
+
 test('a point maps through a frame owner\'s quad by its size, or by its offset when the size is unknown', () => {
   const quad = [100, 50, 300, 50, 300, 150, 100, 150];
   assert.deepEqual(pointThroughQuad({x: 20, y: 10}, {width: 400, height: 200}, quad), {x: 110, y: 55});

@@ -196,6 +196,11 @@ export const pageClipboardAction = async args => {
   delete globalThis.__browserUsePendingCut;
   const target = focusedIn(document) ?? document.body;
   const focused = asElement(target);
+  // A paste prepared for one element (fill) lands only in that element: the vendor's input target check (d), kept for
+  // every prepared paste rather than only the in-app browser's.
+  if (args.inputTargetToken != null && focused?.__cuaInputTargetToken !== args.inputTargetToken) {
+    throw new Error('Active element is no longer the expected input target: target token mismatch');
+  }
   const view = focused == null ? window : windowOf(focused);
   const items = args.clipboardItems;
   if (args.action === 'paste') {
@@ -277,7 +282,7 @@ const FOCUSED_FRAME_EXPRESSION = `(() => {
 const PAGE_SENTENCES = new Set([
   'Browser Use virtual clipboard requires native DOM getters', 'Browser Use virtual clipboard has no data to paste',
   'Virtual clipboard is missing credential protection', 'Browser Use virtual cut is missing a commit token',
-  'Browser Use virtual cut is no longer pending',
+  'Browser Use virtual cut is no longer pending', 'Active element is no longer the expected input target: target token mismatch',
 ]);
 const RELEASE_MS = 100;
 
@@ -365,25 +370,48 @@ const pasteItems = (text, richText) => [{                                       
 
 // Runs `operation` in the clipboard's queue within `deadline`: the caller stops waiting when it is spent, and an
 // operation reached after that dispatches nothing.
+// The operation's own phases carry their deadlines into every call; the caller's wait in the queue is bounded here.
 async function exclusively(session, deadline, operation) {
   deadline.check();
-  return await deadline.race(session.clipboard.runExclusive(async () => {
+  const reached = Promise.withResolvers();
+  const result = session.clipboard.runExclusive(async () => {
+    reached.resolve();
     deadline.check();
     return await operation();
-  }));
+  });
+  try {
+    await deadline.race(reached.promise);
+  } catch (error) {
+    result.catch(() => {});
+    throw error;
+  }
+  return await result;
 }
 
 // Types `params.text` into the focused element by paste (Vi), within `deadline`. `params.target` and
 // `params.executionContextId` name the world of an element focused for it (fill); otherwise the tab's top document.
-export async function typeText(session, params, commandType, {deadline}) {
+//
+// Without a target the paste goes to the focused frame (focusedFrameScope, as the shortcuts' do), so focus inside a
+// cross-origin or out-of-process frame gets the text and the parent page never sees the event; the vendor evaluates in
+// the top document. `prepare()` (fill) focuses and marks the element inside the same queued operation -> {result,
+// target, executionContextId, inputTargetToken}; 'done' as the result ends it without a paste; the paste then lands only
+// in the marked element and runs within `pasteDeadline()`, a phase of its own.
+export async function typeText(session, params, commandType, {deadline, prepare, pasteDeadline = () => deadline}) {
   if (typeof params.text !== 'string') throw new Error(`${commandType} requires text`);
   const tabId = tabIdOf(params.tab_id);
   const richText = params.includeRichText !== false && await deadline.race(allowsRichText(session, tabId));
   const items = pasteItems(params.text, richText);
   await exclusively(session, deadline, async () => {
+    const prepared = prepare == null ? null : await prepare();
+    if (prepared?.result === 'done') return;
+    const phase = prepare == null ? deadline : pasteDeadline();
+    const scope = prepared != null ? {target: prepared.target, executionContextId: prepared.executionContextId}
+      : params.target != null ? {target: params.target, executionContextId: params.executionContextId}
+        : await focusedFrameScope(session, tabId, phase);
     await runInPage(session, {
-      args: {action: 'paste', clipboardItems: items, replaceInputValue: params.replaceInputValue, ...(richText ? {richTextFallback: true} : {})},
-      commandType, deadline, executionContextId: params.executionContextId, pageFunction: pageClipboardAction, tabId, target: params.target,
+      args: {action: 'paste', clipboardItems: items, replaceInputValue: params.replaceInputValue, ...(richText ? {richTextFallback: true} : {}),
+        ...(prepared?.inputTargetToken != null ? {inputTargetToken: prepared.inputTargetToken} : {})},
+      commandType, deadline: phase, executionContextId: scope.executionContextId, pageFunction: pageClipboardAction, tabId, target: scope.target,
     });
   });
 }

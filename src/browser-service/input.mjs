@@ -14,6 +14,7 @@
 import {Deadline, LOAD_MS, clamp} from './budgets.mjs';
 import {modifierMask, pressKeys} from './keyboard.mjs';
 import {performClipboardShortcut, typeText} from './paste.mjs';
+import {attemptBudget} from './selectors.mjs';
 import {tabIdOf} from './tabs.mjs';
 
 const isNested = target => target.sessionId != null || target.targetId != null;                                     // dt
@@ -182,7 +183,8 @@ export class CuaInput {
   async clickPoint({button = 'left', clickCount, inputPoint, inputTarget, loadTarget, modifiers, point, tabId, timeoutMs}) {
     const tab = tabIdOf(tabId);
     const budget = clamp(timeoutMs);
-    const deadline = new Deadline(budget);
+    // An explicit zero budget is one attempt bounded by the default 3 s (the M1b ruling), not a spent deadline.
+    const deadline = attemptBudget(new Deadline(budget));
     const at = inputPoint ?? point;
     const target = inputTarget ?? {tabId: tab};
     const waitFor = loadOf => this.cdp.waitForPageLoadEvent(loadOf, {timeoutMs: budget, deadline});
@@ -235,17 +237,15 @@ export class CuaInput {
     return {inputPoint: await this.pointInOwnTarget(tab, node.frameId, point), point: await this.pointInTopDocument(tab, node.frameId, point), target: node.target};
   }
 
-  // A frame's point mapped out through the parent frames of the same target (QI).
+  // A frame's point in its own target's viewport (QI). A frame owner's content quad is already in the target's
+  // viewport, so one mapping through the frame's own owner accounts for every same-target ancestor; the vendor's QI
+  // mapped through each of them again (a nested same-process frame inside an out-of-process one landed off by the
+  // ancestors' offsets, and its events disagreed with the cursor's point from pointInTopDocument).
   async pointInOwnTarget(tabId, frameId, point) {
-    let frame = this.frameOf(tabId, frameId);
-    let mapped = point;
-    while (frame.parentFrameId != null) {
-      const parent = this.parentOf(tabId, frame);
-      if (!sameTarget(frame.target, parent.target)) break;
-      mapped = await this.pointInParent(parent.target, frame, mapped);
-      frame = parent;
-    }
-    return mapped;
+    const frame = this.frameOf(tabId, frameId);
+    if (frame.parentFrameId == null) return point;
+    const parent = this.parentOf(tabId, frame);
+    return sameTarget(frame.target, parent.target) ? await this.pointInParent(parent.target, frame, point) : point;
   }
 
   // A frame's point mapped out through every frame to the top document (ZI): across each frame's owner where the

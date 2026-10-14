@@ -101,10 +101,11 @@ async function waitForNetworkIdle(cdp, tabId, deadline) {
     ({frameTree: {frame}} = await cdp.call(tabId, 'Page.getFrameTree', undefined, calls));
     for (const event of early.splice(0)) onEvent(event);
     await cdp.call(tabId, 'Page.setLifecycleEventsEnabled', {enabled: true}, calls);
+    // The idle flag before the clock: a document already idle when observed succeeds, also on a zero budget.
     while (true) {
       if (failure != null) throw failure;
-      if (deadline.expired()) throw timedOut();
       if (idle) return;
+      if (deadline.expired()) throw timedOut();
       wake = Promise.withResolvers();
       const timer = setTimeout(wake.resolve, deadline.remaining());
       try {
@@ -129,11 +130,21 @@ export async function waitForLoadState(cdp, tabId, state = 'load', deadline) {
   }
   const calls = attemptBudget(deadline);
   await cdp.call(tabId, 'Page.enable', {}, {deadline: calls});
-  await cdp.waitForEvent(tabId, event => isPageSource(event) && isLoadEvent(event, state), {
-    timeoutMs: deadline.remaining(),
-    timeoutMessage: `Timed out waiting for ${state} in tab ${tabId}.`,
-    initialCheck: async () => reachedReadyState((await cdp.readDocumentState(tabId, {deadline: calls}))?.readyState, state),
+  // The event listener is armed first; the initial observation of the document then runs to its end (within its own
+  // calls' bound) even when the budget is shorter, as an explicit zero is: a state that already holds succeeds.
+  const abort = new AbortController();
+  const event = cdp.waitForEvent(tabId, e => isPageSource(e) && isLoadEvent(e, state), {
+    timeoutMs: deadline.remaining(), signal: abort.signal, timeoutMessage: `Timed out waiting for ${state} in tab ${tabId}.`,
   });
+  event.catch(() => {});
+  const fired = event.then(() => true, () => new Promise(() => {}));
+  try {
+    const observed = cdp.readDocumentState(tabId, {deadline: calls}).then(document => reachedReadyState(document?.readyState, state));
+    if (await Promise.race([fired, observed])) return;
+    await event;
+  } finally {
+    abort.abort();
+  }
 }
 
 // The load state a URL wait waits for after the URL, in a phase of its own (o1).

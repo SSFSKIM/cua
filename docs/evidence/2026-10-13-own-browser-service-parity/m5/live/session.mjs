@@ -10,7 +10,7 @@
 // serve and lists $CUA_HOME/state/codex before and after (live/codex-listing.mjs).
 //   node m5/live/session.mjs --out <dir> --scenarios <file>[,<file>...] [--network]
 import {parseArgs} from 'node:util';
-import {spawn} from 'node:child_process';
+import {spawn, execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync, appendFileSync, readFileSync, existsSync} from 'node:fs';
 import {join, resolve, relative} from 'node:path';
 import {pathToFileURL, fileURLToPath} from 'node:url';
@@ -48,7 +48,6 @@ try {
   remote(`mkdir -m 700 ${quote(remoteDir)}`);
   for (const name of ['sampler.mjs', 'codex-listing.mjs']) {
     const put = remoteCommand(values.device, `cat > ${quote(`${remoteDir}/${name}`)}`);
-    const {execFileSync} = await import('node:child_process');
     execFileSync(put.command, put.args, {input: readFileSync(join(here, name))});
   }
   const listing = () => JSON.parse(remote(`node ${quote(`${remoteDir}/codex-listing.mjs`)} ${quote(prepared.home)}`));

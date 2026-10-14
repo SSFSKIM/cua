@@ -1,0 +1,11 @@
+{"case":"downloads/chooser","cell":"download","ok":true,"value":true,"ms":711.2741670000005,"trace":[]}
+{"case":"downloads/chooser","cell":"path","ok":true,"value":true,"ms":58.975500000000466,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser-page","ok":true,"value":true,"ms":218.56987500000105,"trace":[]}
+{"case":"downloads/chooser","cell":"chooser","ok":true,"value":false,"ms":634.492209,"trace":[]}
+{"case":"downloads/chooser","cell":"set-files","ok":true,"value":true,"ms":99.05987500000083,"trace":[]}
+{"case":"downloads/chooser","assertion":{"ok":true}}
+{"case":"downloads/media","cell":"media","ok":true,"value":{"exists":true,"contentMatches":true},"ms":609.1655410000021,"trace":[]}
+{"case":"downloads/media","assertion":{"ok":true}}
+{"case":"downloads/two-tabs","cell":"second-tab","ok":true,"value":true,"ms":256.9882499999985,"trace":[]}
+{"case":"downloads/two-tabs","cell":"both","ok":true,"value":{"samePath":true,"contents":true},"ms":513.1607919999988,"trace":[]}
+{"case":"downloads/two-tabs","assertion":{"ok":true}}

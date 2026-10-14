@@ -20,9 +20,9 @@ test('WebP bytes, decoded dimensions and declared MIME all participate in exact 
 });
 
 test('raw live screenshots retain MIME and average-hash tolerance, separate from exact emitImage bytes',async()=>{
- const {createNormalizer}=await import('../../scripts/browser-parity/normalize.mjs');
- const normalize=createNormalizer({imageMode:'live',schemaFields:false});
- const image=await normalize({type:'image',mimeType:'image/png',data:fixture('black.png').toString('base64')});
+ const {normalizeRawResult}=await import('../../scripts/repl-parity/runner.mjs');
+ const result=await normalizeRawResult({content:[{type:'image',mimeType:'image/png',data:fixture('black.png').toString('base64')}]},{imageMode:'live'});
+ const image=result.content[0].data;
  assert.equal(image.$image,'ahash64');assert.equal(image.mimeType,'image/png');
  assert.equal(compareRuns(rows(image),rows({...image,mimeType:'image/jpeg'})).ok,false);
 });

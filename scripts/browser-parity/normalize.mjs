@@ -15,7 +15,7 @@ export function createNormalizer({imageMode='live',schemaFields=true}={}) {
     const visit = (v, key = '', path = '') => {
       if (masks.includes(path)) return '<masked>';
       if (v === null || v === undefined) return v ?? null;
-      if (v?.type === 'image' && typeof v.data === 'string') {
+      if (schemaFields && v?.type === 'image' && typeof v.data === 'string') {
         const bytes=Buffer.from(v.data,'base64'),value=hash(bytes,{mimeType:v.mimeType});
         return !schemaFields&&imageMode==='live'?{...value,mimeType:exactImage(bytes,{mimeType:v.mimeType}).mimeType}:value;
       }

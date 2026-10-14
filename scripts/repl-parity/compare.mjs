@@ -24,17 +24,18 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
   // M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
   if(!Array.isArray(expected)||expected.some(e=>!e.reason||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||typeof e.cua.value.version!=='string'))throw new Error('Invalid exact identity field allowance');
   const accepted=[];
-  const differences=[];const fakeCases=new Set([...a.rows,...b.rows].filter(r=>r.fake).map(r=>r.case));
+  const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
+  const differences=[];const fakeCases=new Set([...a.rows,...b.rows].filter(r=>ids?.includes(r.case)&&r.fake).map(r=>r.case));
   for(const id of fakeCases)differences.push({kind:'evidence',case:id,message:'double output cannot establish live host parity'});
   if(!isDeepStrictEqual(a.tools,b.tools))differences.push({kind:'tools',message:'effective tool contract changed'});
-  for(const key of ['platform','suite','service','backend','sandbox','surfaces'])if(!isDeepStrictEqual(a.meta[key],b.meta[key]))differences.push({kind:'configuration',field:key});
-  const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
+  for(const key of ['platform','service','backend','sandbox','surfaces'])if(!isDeepStrictEqual(a.meta[key],b.meta[key]))differences.push({kind:'configuration',field:key});
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});
   for(const [side,run] of [['a',a],['b',b]]) {
     if(!caseIds&&!isDeepStrictEqual(run.meta.caseIds,ids))differences.push({kind:'cardinality',side,message:'case manifests differ'});
     for(const id of ids??[])if(!run.meta.caseIds?.includes(id)||!run.rows.some(r=>r.case===id&&r.assertion))differences.push({kind:'cardinality',side,case:id,message:'missing required case'});
     for(const id of ids??[])for(const cell of cells?.[id]??[])if(!run.rows.some(r=>r.case===id&&r.cell===cell))differences.push({kind:'cardinality',side,case:id,cell,message:'missing required cell'});
-    if(run.rows.some(r=>!run.meta.caseIds?.includes(r.case)))differences.push({kind:'cardinality',side,message:'undeclared case'});
+    for(const id of ids??[])if(cells?.[id]&&!isDeepStrictEqual(run.rows.filter(r=>r.case===id&&r.cell).map(r=>r.cell).sort(),[...cells[id]].sort()))differences.push({kind:'cardinality',side,case:id,message:'observed cell set differs from manifest'});
+    if(run.rows.some(r=>ids?.includes(r.case)&&!run.meta.caseIds?.includes(r.case)))differences.push({kind:'cardinality',side,message:'undeclared case'});
   }
   // Keep raw duration values in evidence; omit only this schema-known volatile field from comparison.
   const semanticRows=rows=>rows.filter(r=>ids?.includes(r.case)).map(r=>{

@@ -6,6 +6,7 @@ export function ownedProcesses(pid){
 }
 export function killOwnedKernel(pid,cwd){
  for(const child of ownedProcesses(pid)){
+  if(!/(^|\/)node(?:js)?$/.test(child.comm))continue;
   let command;try{command=execFileSync('ps',['-p',String(child.pid),'-o','command='],{encoding:'utf8'});}catch{continue;}
   if(command.includes('/kernel.js')&&command.includes(cwd)){
    // Recheck ancestry immediately before signalling; no name-wide kills, ever.

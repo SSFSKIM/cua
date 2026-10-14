@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,existsSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join} from 'node:path';import {fileURLToPath} from 'node:url';
 import {PassThrough} from 'node:stream';import {createServer} from 'node:net';import {randomUUID} from 'node:crypto';
-import {AttestedConnections} from '../../scripts/repl-parity/runner.mjs';
+import {executionFacts,assertPreparedFacts} from '../../scripts/repl-parity/provenance.mjs';
+import {AttestedConnections,normalizeRawResult} from '../../scripts/repl-parity/runner.mjs';
 import {captureRawResult} from '../../scripts/browser-parity/runner.mjs';
 import {createNormalizer} from '../../scripts/browser-parity/normalize.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
@@ -14,16 +15,17 @@ import {desktopSessionEnv} from '../../src/runtime/linux-desktop.mjs';
 import {ownedProcesses,killOwnedKernel,alive} from '../../scripts/repl-parity/processes.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Boundary probes are remote-only');
 const probe=process.argv[2],id=`cells/${probe}`,host=process.env.CUA_REPL_HOST??'vendor';
+const facts=executionFacts({source:process.env.CUA_HOME});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
 const dir=mkdtempSync(join(tmpdir(),'cua-bounds-'));mkdirSync(join(dir,'tmp'));
 const pool=new AttestedConnections(host),clients=[],rows=[],normalize=createNormalizer({imageMode:'exact',schemaFields:false});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(check,ms=10000){const deadline=Date.now()+ms;while(!check()){if(Date.now()>deadline)throw new Error('Fixture condition timed out');await delay(20);}}
 const text=r=>(r.content??[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
-async function record(label,result){rows.push({case:id,cell:label,ok:true,...await normalize(captureRawResult(result),{ids:{'meta.cua/taskId':'task','meta.cua/callId':'call','meta.cua/sessionId':'session'}})});return result;}
+async function record(label,result){rows.push({case:id,cell:label,ok:true,...await normalizeRawResult(result,{normalize})});return result;}
 async function open({sandbox='scoped',witness=false,brokenSandbox=false}={}){
  const control=join(dir,`connection-${clients.length+1}`);mkdirSync(control);
- const client=await pool.open({command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:{PATH:process.env.PATH,HOME:process.env.HOME,...desktopSessionEnv(process.env),TMPDIR:join(dir,'tmp'),CUA_HOME:process.env.CUA_HOME,CUA_REPL_HOST:host,CUA_PARITY_REMOTE:'1',CUA_PARITY_CONTROL_DIR:control,CUA_PARITY_SANDBOX:sandbox,CUA_PARITY_BANNER_WITNESS:witness?'1':'0',CUA_PARITY_BROKEN_SANDBOX:brokenSandbox?'1':'0'}});
- clients.push({client,control});return client;
+ const client=await pool.open({expectedFacts:facts,command:process.execPath,args:[fileURLToPath(new URL('./serve-cells.mjs',import.meta.url))],env:{PATH:process.env.PATH,HOME:process.env.HOME,...desktopSessionEnv(process.env),TMPDIR:join(dir,'tmp'),CUA_HOME:process.env.CUA_HOME,CUA_REPL_HOST:host,CUA_PARITY_REMOTE:'1',CUA_PARITY_EXPECTED:JSON.stringify(facts),CUA_PARITY_CONTROL_DIR:control,CUA_PARITY_SANDBOX:sandbox,CUA_PARITY_BANNER_WITNESS:witness?'1':'0',CUA_PARITY_BROKEN_SANDBOX:brokenSandbox?'1':'0'}});
+ clients.push({client,control,sandbox,witness,brokenSandbox});return client;
 }
 async function js(client,label,code,timeoutMs){return record(label,await client.call('js',{code,title:'Owned boundary fixture',...(timeoutMs?{timeout_ms:timeoutMs}:{})}));}
 async function close(client){
@@ -94,6 +96,7 @@ try{
  }else throw new Error('Unknown boundary probe');
  for(const {client} of clients)await close(client);
  rows.push({case:id,cell:'boundary',ok:true,value:proof,evidenceKind:proof.kind},{case:id,assertion:{ok:true}});
- console.log(JSON.stringify({rows,observations:pool.metadata()}));
+ const observations=pool.metadata();for(const [i,a] of observations.hostAttestations.entries())a.fixture={sandbox:clients[i].sandbox,bannerWitness:clients[i].witness,brokenSandbox:clients[i].brokenSandbox};
+ console.log(JSON.stringify({rows,observations,executionFacts:facts}));
 }catch(error){process.stderr.write(`Boundary ${probe} failed: ${error.message}\n`);process.exitCode=1;}
 finally{for(const {client,closed} of clients)if(!closed)await close(client).catch(()=>{process.exitCode=1;});if(server)await new Promise(r=>server.close(r));rmSync(dir,{recursive:true,force:true});}

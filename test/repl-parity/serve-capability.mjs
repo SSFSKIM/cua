@@ -1,10 +1,12 @@
 // Device-local fake backend, real selected host in a separate child. Never transfers the controller's runtime.
+import {executionFacts,assertPreparedFacts} from '../../scripts/repl-parity/provenance.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {startCapabilityHost} from '../browser-parity/capability-host.mjs';
 if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Capability fixture is remote-only; local tests use doubles');
+const facts=executionFacts({source:process.env.CUA_HOME});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
 const home=prepareCapabilityHome({source:process.env.CUA_HOME});let host;
 try {
  host=await startCapabilityHost({home:home.dir});
- console.log(JSON.stringify({ready:true,home:home.dir,userHome:home.userHome,release:home.release,instanceId:host.instanceId,socketPath:host.socketPath,pid:process.pid}));
+ console.log(JSON.stringify({ready:true,executionFacts:facts,home:home.dir,userHome:home.userHome,release:home.release,instanceId:host.instanceId,socketPath:host.socketPath,pid:process.pid}));
  await new Promise(resolve=>{process.stdin.resume();process.stdin.once('end',resolve);process.once('SIGTERM',resolve);process.once('SIGINT',resolve);});
 }finally{await host?.close();home.cleanup();}

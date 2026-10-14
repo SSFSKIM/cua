@@ -47,7 +47,7 @@ function announced({frame = {id: 'F1', loaderId: 'L1', securityOrigin: ORIGIN, u
 }
 
 test('the tab is handed to the person: marked handoff, answered with the vendor\'s "took over" result', async () => {
-  for (const request of [{}, {fields: [], qr_code: true}, {fields: [], options: [{id: 'google', label: 'Google', selector: '#google'}, {id: 'mail', label: 'email', field_ids: []}]}]) {
+  for (const request of [{}, {submit: {selector: '#password', action: 'press_enter'}}, {submit: {selector: '#sign-in', action: 'click'}}, {fields: [], qr_code: true}, {fields: [], options: [{id: 'google', label: 'Google', selector: '#google'}, {id: 'mail', label: 'email', field_ids: []}]}]) {
     const {marks, calls, run} = announced();
     assert.deepEqual(await run(request), {status: 'declined', reason: 'user_took_over'}, JSON.stringify(request));
     assert.deepEqual(calls, [{tabId: 7, method: 'Page.getFrameTree'}]);
@@ -69,7 +69,7 @@ test('a page no longer on the request\'s origin, or not fully known, is reported
   }
 });
 
-test('fields and options sharing an id or selector, or naming an unknown field, are locator_invalid before the page is read', async () => {
+test('fields and options sharing an id or selector, an option naming an unknown field, or a submit click on a credential field are locator_invalid before the page is read', async () => {
   const cases = [
     {fields: [FIELDS[0], {...FIELDS[1], id: 'user'}]},
     {fields: [FIELDS[0], {...FIELDS[1], selector: '#email'}]},
@@ -77,6 +77,7 @@ test('fields and options sharing an id or selector, or naming an unknown field, 
     {fields: [FIELDS[0]], options: [{id: 'a', label: 'A', field_ids: ['user']}, {id: 'a', label: 'B', selector: '#b'}]},
     {fields: [FIELDS[0]], options: [{id: 'a', label: 'A', field_ids: ['nobody']}, {id: 'b', label: 'B', selector: '#b'}]},
     {fields: [FIELDS[0]], options: [{id: 'a', label: 'A', field_ids: ['user', 'user']}, {id: 'b', label: 'B', selector: '#b'}]},
+    {submit: {selector: '#password', action: 'click'}},
   ];
   for (const request of cases) {
     const {marks, calls, run} = announced();

@@ -8,7 +8,7 @@
 // (webmcp, browserAuth), over a backend that does.
 import {after, before, test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync} from 'node:fs';
+import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {AUTH_HANDOFF_HANDLERS} from '../../src/browser-service/authhandoff.mjs';
@@ -47,13 +47,18 @@ const DOC = 'https://docs.google.com/document/d/DOC1/edit';
 const VIDEO = 'https://www.youtube.com/watch?v=abcdefghijk';
 const CAPTION = 'https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&fmt=srv3';
 const ASSET = 'http://127.0.0.1:48732/a.png';
+// A cross-origin image the page loaded that Chrome no longer holds: bundled by a fetch inside the page.
+const CDN_ASSET = 'https://cdn.example/b.png';
+const CDN_BYTES = 'cross-origin png bytes';
 
 // The page each tab shows, by its URL: a Google Doc whose export the page fetches, a YouTube watch page whose player
-// requests its captions, a page with one loaded image Chrome holds; every page fetch recorded (the page's own traffic).
+// requests its captions, a page with a loaded image Chrome holds and a cross-origin one it does not; every page fetch
+// recorded (the page's own traffic).
 function pageGlobals(url, pageFetches) {
   const fetch = async (requested, init) => {
     pageFetches.push(requested);
     if (requested.startsWith('https://docs.google.com/')) return pageResponse('# Doc\n');
+    if (requested === CDN_ASSET && init?.credentials === 'include') return pageResponse(CDN_BYTES, {headers: {'content-type': 'image/png'}});
     if (requested.startsWith('https://www.youtube.com/api/timedtext')) return pageResponse(JSON.stringify({events: [{tStartMs: 0, segs: [{utf8: 'Hello'}]}]}), {headers: {'content-type': 'application/json'}});
     throw new TypeError(`Failed to fetch ${requested} ${init?.method ?? ''}`);
   };
@@ -86,10 +91,12 @@ async function trappedService(t) {
       case 'DOMSnapshot.captureSnapshot':
         return {strings: [url ?? PAGE], documents: [{documentURL: 0, nodes: {backendNodeId: [], nodeName: [], attributes: []}, layout: {nodeIndex: [], styles: []}}]};
       case 'Page.getResourceTree': return {frameTree: {frame: {id: `F${tabId}`}, resources: [{url: ASSET, mimeType: 'image/png', type: 'Image'}]}};
-      case 'Page.getResourceContent': return {content: Buffer.from('png').toString('base64'), base64Encoded: true};
+      case 'Page.getResourceContent':
+        if (params.url !== ASSET) throw new Error('No resource with given URL found');
+        return {content: Buffer.from('png').toString('base64'), base64Encoded: true};
       case 'Runtime.evaluate':
         if (params.expression.startsWith('({ href: window.location.href')) return {result: {type: 'object', value: {href: url ?? PAGE, readyState: 'complete'}}};
-        if (params.expression.startsWith('performance.getEntriesByType("resource")')) return {result: {type: 'object', value: [{name: ASSET, initiatorType: 'img'}]}};
+        if (params.expression.startsWith('performance.getEntriesByType("resource")')) return {result: {type: 'object', value: [{name: ASSET, initiatorType: 'img'}, {name: CDN_ASSET, initiatorType: 'img'}]}};
         if (params.expression.startsWith('Array.from(document.querySelectorAll("svg"))')) return {result: {type: 'object', value: []}};
         if (url != null) return evaluateInPage(pageGlobals(url, pageFetches), params);
     }
@@ -149,12 +156,15 @@ test('every M3 feature, the after-cell notifications included, uses none of them
   const video = await tab(VIDEO);
   assert.match((await run({type: 'tab_content_export_youtube_transcript', tab_id: video})).path, /\.txt$/);
   assert.match((await rejection(run({type: 'tab_content_export', tab_id: doc, format: 'markdown'}))).message, /cua does not support command "tab_content_export"/);
-  // Page assets: listed from the page, bundled from Chrome's loaded copy.
+  // Page assets: listed from the page, bundled from Chrome's loaded copy, else (the cross-origin one) by a fetch inside
+  // the page.
   const page = await tab(PAGE);
   const inventory = await run({type: 'tab_page_assets_list', tab_id: page});
-  assert.equal(inventory.assets.length, 1);
+  assert.deepEqual(inventory.assets.map(a => a.url).sort(), [ASSET, CDN_ASSET]);
   const bundle = await run({type: 'tab_page_assets_bundle', tab_id: page, inventoryId: inventory.id});
-  assert.equal(bundle.summary.downloadedCount, 1);
+  assert.equal(bundle.summary.downloadedCount, 2);
+  const written = Object.fromEntries(bundle.assets.map(a => [a.url, readFileSync(a.path, 'utf8')]));
+  assert.deepEqual(written, {[ASSET]: 'png', [CDN_ASSET]: CDN_BYTES});
   // The bot-detection report, the user's tab context and history (through the backend), WebMCP and browserAuth (not
   // announced by cua's host).
   assert.equal((await run({type: 'tab_bot_detection_report', tab_id: page, reason: 'captcha_failed'})).status, 'reported');
@@ -166,7 +176,7 @@ test('every M3 feature, the after-cell notifications included, uses none of them
   await afterCell();
   assert.deepEqual(items, []);
   assert.deepEqual(pageFetches, ['https://docs.google.com/document/d/DOC1/export?format=md',
-    'https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&fmt=json3'], 'the page\'s own fetches, nothing else');
+    'https://www.youtube.com/api/timedtext?v=abcdefghijk&lang=en&fmt=json3', CDN_ASSET], 'the page\'s own fetches, nothing else');
   assert.deepEqual(used, []);
 });
 

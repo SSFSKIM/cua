@@ -1,13 +1,13 @@
 // Ported from readable chatgpt-26.928.40906 BS:44114-44134 (UB, tab_browser_auth_handoff: its capability check, BX's request check and Ys's page check); see docs/doperpowers/specs/2026-10-13-own-browser-service-design.md "Porting".
-// Also: BX (BS:45641-45676); Ys (BS:45408-45425) with He, TI and CI (BS:36378-36397); the result (BS:35096-35111);
+// Also: BX (BS:45641-45675); Ys (BS:45408-45425) with He, TI and CI (BS:36378-36397); the result (BS:35096-35111);
 // mc, the manual handoff's mark (BS:46288-46304).
 //
 // tab.capabilities.get("browserAuth").request(...), for a backend that announces the tab capability `browserAuth`
 // (cua's host does not, so on its route the command is refused as the vendor refuses it there and the model never sees
 // the capability). cua serves the local form only: the tab is handed to the person, who signs in themselves in the
 // page in their own browser. The request is checked as the vendor checks it (distinct field and option ids and
-// selectors, else locator_invalid; the tab's main frame still on the request's origin, else origin_changed or
-// page_changed), then the tab is marked `handoff`, so at the turn's end the agent lets go of it (its debugger detached)
+// selectors, no submit click on a credential field, else locator_invalid; the tab's main frame still on the request's
+// origin, else origin_changed or page_changed), then the tab is marked `handoff`, so at the turn's end the agent lets go of it (its debugger detached)
 // and it stays open for the person until the session's next turn resumes it, and the answer is
 // {status: 'declined', reason: 'user_took_over'}: the vendor's result for a person who chose to sign in themselves.
 // Its document (docs-content.mjs, capabilities/tab/browserAuth) says so. Dropped, with nothing in their place: the
@@ -28,7 +28,8 @@ function webOrigin(url) {
   return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : null;
 }
 
-// Every field and option has its own id and selector, and an option's fields are fields of the request (BX).
+// Every field and option has its own id and selector, an option's fields are fields of the request, and a submit click
+// is not on a credential field (BX).
 function distinctTargets(request) {
   const fieldIds = new Set(), selectors = new Set();
   for (const field of request.fields ?? []) {
@@ -36,19 +37,21 @@ function distinctTargets(request) {
     fieldIds.add(field.id);
     selectors.add(field.selector);
   }
-  if (request.options == null) return true;
-  const optionIds = new Set(), optionSelectors = new Set();
-  for (const option of request.options) {
-    if (optionIds.has(option.id)) return false;
-    optionIds.add(option.id);
-    if (option.selector != null) {
-      if (optionSelectors.has(option.selector) || selectors.has(option.selector)) return false;
-      optionSelectors.add(option.selector);
+  if (request.options != null) {
+    const optionIds = new Set(), optionSelectors = new Set();
+    for (const option of request.options) {
+      if (optionIds.has(option.id)) return false;
+      optionIds.add(option.id);
+      if (option.selector != null) {
+        if (optionSelectors.has(option.selector) || selectors.has(option.selector)) return false;
+        optionSelectors.add(option.selector);
+      }
+      const ids = option.field_ids ?? [];
+      if (new Set(ids).size !== ids.length || ids.some(id => !fieldIds.has(id))) return false;
     }
-    const ids = option.field_ids ?? [];
-    if (new Set(ids).size !== ids.length || ids.some(id => !fieldIds.has(id))) return false;
   }
-  return true;
+  // A submit click must not land on a credential field (pressing Enter in one is how such a form submits).
+  return request.submit == null || request.submit.action === 'press_enter' || !selectors.has(request.submit.selector);
 }
 
 // The tab's main frame, or the status naming why it is not the page the request describes (Ys).

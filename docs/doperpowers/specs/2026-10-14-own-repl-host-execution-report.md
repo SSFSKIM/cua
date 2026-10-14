@@ -6,7 +6,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 
 | milestone | branch | PR | state |
 |---|---|---|---|
-| M0 | feat/own-repl-host | (this PR) | whole-branch reviewer-high correct at ad21892 |
+| M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | whole-branch reviewer-high correct at ad21892 |
 
 ## Log
 

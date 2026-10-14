@@ -33,6 +33,7 @@ Owner's rulings (2026-10-13, board #113 and #114): independence is for distribut
   - [x] (2026-10-14 task 2, reviewed clean after one fix wave) WebMCP, local auth handoff (vendor BX validation), history, the no-network proof (asset fallback included), the dense visible-DOM case; whole corpus 0 unexpected over 56 cases, the three download cases held for the mini's Downloads consent.
 - [x] (2026-10-14, whole-branch reviewer-high clean at 874e59a) M4 — MAWS client mode and Linux parity.
 - [ ] M5 — Guidance text and docs, default switch, plugin bump, the cua benchmark runs, acceptance as written.
+  - [x] (2026-10-14 task 1, reviewed clean after two fix waves) final guidance and docs, the route-aware default (follows the active Chrome route; MAWS client mode → cua; explicit wins; launchd carries an explicit value only), doctor's browser.service row, attestation sharing the resolver, plugin 0.11.0, the standalone spec's Decision Log line.
 
 ## Facts this design rests on
 

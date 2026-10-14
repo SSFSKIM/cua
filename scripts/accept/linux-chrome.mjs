@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Live Linux Chrome fixture (Linux acceptance item 10's last step; the own-extension spec's acceptance 7): over
 // `cua serve` with the browser surface it takes the instance id profiles_list reports for one registered profile key
-// (default `me`), selects that browser, opens a tab on https://example.com/, reads its title, closes the tab, ends the
+// (default `me`), selects that browser, attests which browser service answers (CUA_BROWSER_SERVICE; the
+// documentation's `cua browser service` marker), opens a tab on https://example.com/, reads its title, closes the tab, ends the
 // task and checks the connection left nothing under $CUA_HOME/run. It also records the live Chrome host it drove: on
 // the cua route (`cua chrome register`) the profile's own host serving at its pre-listed socket, and after end_task
 // that host's status lists no tab still owned; on the vendor route (`--vendor`) OpenAI's hosts running from
@@ -18,6 +19,7 @@ import {defaultHome} from '../../src/runtime/layout.mjs';
 import {chromeRoute, effectiveRoute} from '../../src/chrome/route.mjs';
 import {backendDir, socketNameFor} from '../../src/chrome/extension.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
+import {DOCUMENTATION_CELL, serviceAttestation} from './service-attest.mjs';
 import {cuaHostStep, ownedTabs, vendorHostStep} from './linux-chrome-lib.mjs';
 import {decideElicitation, answerFor, inventoryEntry} from '../probe/chrome/original/elicitation.mjs';
 
@@ -54,6 +56,9 @@ try {
     const {ok, detail} = cuaHostStep({home, instanceId: profile.extensionInstanceId, psLines: psLines(), exists: existsSync, readJson});
     step(`${key}'s cua host serves at its pre-listed socket`, ok, detail);
   }
+  const documented = await session.js(DOCUMENTATION_CELL(profile.extensionInstanceId), 60_000);
+  const attested = documented.result?.isError ? {ok: false, detail: resultText(documented).slice(0, 300)} : serviceAttestation(resultText(documented));
+  step('the selected browser service answers', attested.ok, attested.detail);
 
   const opened = await session.js(`const browser = await cua.getBrowser({extensionInstanceId: ${JSON.stringify(profile.extensionInstanceId)}});
     globalThis.fixtureTab = await cua.createBrowserTab(browser.browserId, 'https://example.com/');

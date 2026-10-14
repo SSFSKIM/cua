@@ -1,0 +1,10 @@
+Running 7 tests using 1 worker
+  ✓  1 e2e/browser-cua.spec.ts:123:5 › a fake cua host drives a session's tabs through its socket: create, navigate, read, click, frames, filter, isolation, ownership, reset, close, disconnect (1.6s)
+  ✓  2 e2e/browser-cua.spec.ts:211:5 › takeover and the cursor through a lease: cursor.move draws, a screenshot hides it first, the person's click takes the page, an acting command is refused within 2 s and a reading one passes, 3 s later the same command goes through, letting go hides the cursor (7.8s)
+  ✓  3 e2e/browser-cua.spec.ts:300:5 › the Browser panel follows the agent: a lease's first acting command opens the shown session's Browser tool, and the agent's tab is not selected; after a restart the session's activity lists as before (2.4s)
+  ✓  4 e2e/browser-cua.spec.ts:363:5 › the person's own navigations of a leased idle tab are theirs: ⌘R in the page and Reload from the window make no agent row (4.8s)
+  ✓  5 e2e/browser-cua.spec.ts:413:5 › a person's bookmark click on a leased idle tab is theirs: no agent row, and the agent's acting command in the hand-back window is refused; the agent's own navigation still makes its row (6.4s)
+  ✓  6 e2e/browser-cua.spec.ts:483:5 › a same-user process outside every session's tree is cut off before the hello: an orphaned connector is refused, the trusted host keeps its connection (1.0s)
+  ✓  7 e2e/browser-cua.spec.ts:510:5 › with no trusted root, a live session's own engine tree is let in: the connector its engine starts hears the hello, on the engine's pid from the session's status (1.4s)
+  7 passed (25.9s)
+exit 0

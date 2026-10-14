@@ -1,0 +1,19 @@
+{
+  "device": "cua-linux",
+  "checkout": "/home/admin/Developer/GitHub/cua-parity",
+  "commit": "d4e259941cb4f78c245b92717a4e7da0d0c1aef5",
+  "node": "v22.23.3",
+  "platform": "linux",
+  "home": "/home/admin/.local/share/cua",
+  "release": "26.928.40906-linux-arm64",
+  "profile": "me",
+  "extensionInstanceId": "e579ff6c-ef9c-40c7-8134-265f45c366e2",
+  "display": ":0",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  }
+}

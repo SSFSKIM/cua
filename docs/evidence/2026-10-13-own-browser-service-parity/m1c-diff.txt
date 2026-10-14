@@ -1,0 +1,175 @@
+M1c live parity on the mini (parity clone at 2638024, profile ssfs; the host is the resident one, so host traces are empty).
+Scenarios of the M1c diff: actions/*, input/coordinates, input/dom, input/rich-text, input/long-type,
+input/queued-shortcuts, screenshot/*, waits/* (14 cases; downloads/media moved to M2).
+
+Runs:
+  vendor-m1c-1   vendor, the M1c cases, parity clone at 2638024: the fresh vendor baseline (the corpus' M1c cases
+                 changed: five new cases, and actions/slow-budget reloads its page in the cell).
+  cua-m1c-1      cua, the same cases, same commit.
+  cua-m1c-m1ab   cua, the M1a and M1b cases at the same commit (a regression check of the earlier milestones'
+                 cases after M1c's changes), against vendor-m1b-2.
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit 2638024e90cd72bebb3de693f8e7211b248df431 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out vendor-m1c-1
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out cua-m1c-1
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --out cua-m1c-m1ab
+
+The M1c diff:
+$ node scripts/browser-parity.mjs diff vendor-m1c-1 cua-m1c-1 --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (14 cases, 31 cells, 1 expected; scenarios actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs)
+exit 0
+
+The earlier milestones' cases at the M1c head, against the M1b vendor baseline:
+$ node scripts/browser-parity.mjs diff vendor-m1b-2 cua-m1c-m1ab --scenarios 'tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (20 cases, 70 cells, 7 expected; scenarios tabs/*.mjs,examples/*.mjs,reads/*.mjs,evaluate/*.mjs,input/ax-disabled.mjs)
+exit 0
+
+The expected difference accepted in the M1c diff: actions/slow-budget late (the clamp's maximum is 120,000 ms on cua).
+
+Acceptance 2 (actions/slow-budget, the cell reloads slow.html, then locator('#late').click({timeoutMs: 15000})):
+  cua     ok, value true (the click waited >= 5 s; #late appears at 8 s), cell 8515 ms including the reload
+  vendor  "Playwright selector deadline exceeded / waiting on click for selector #late", no click recorded
+
+Per-cell ms (diagnostic, not judged; each a whole REPL round trip over ssh). The vendor run went through a network
+spell of 240 ms to 1 s round trips on a relayed Tailscale path (see below), so its larger figures are mostly network:
+  case cell                                   vendor     cua
+  actions/doubleclick double                     798     293
+  actions/locators fill                          892     109
+  actions/locators press                         768     316
+  actions/locators select                        293      24
+  actions/locators check                         690     368
+  actions/locators click                        3169     301
+  actions/slow-budget late                     14337    8515
+  actions/strict-error strict                    103     103
+  actions/strict-error usable                    118      36
+  actions/wait-for visible                     15573     814
+  input/coordinates type                         611     327
+  input/coordinates end-key                      323     129
+  input/coordinates double                       559     445
+  input/coordinates drag                         219     456
+  input/coordinates scroll                      1289     391
+  input/dom nodes                                590      94
+  input/dom type                                3293     315
+  input/dom end-key                             8809     127
+  input/dom double                               979     376
+  input/dom scroll                               613     253
+  input/long-type long                          1168     517
+  input/queued-shortcuts copy                  39088      98
+  input/queued-shortcuts queued                 2593      95
+  input/rich-text markdown                       705     412
+  screenshot/clip clip                            77     120
+  screenshot/modes viewport                     1395     212
+  screenshot/modes full                          528     218
+  waits/networkidle idle                       34282    1939
+  waits/page url                                2292     803
+  waits/page load                               2004    1262
+  waits/page delay                               430     301
+
+The long cua_type (input/long-type, 55,999 characters, one paste): cua 517 ms, vendor 1,168 ms for the whole cell
+(click, type, the fixture acknowledgment, the read-back). cua's 10 s aggregate typing bound did not come near firing,
+so it is not raised (the session's ruling: raise it to the vendor's per-call sum only if it fires where the vendor
+completes).
+
+Network: this Mac's path to the mini was relayed through DERP (lax) for most of the session, with round trips of
+240 ms to 1 s and stretches of "no reply"; five earlier attempts (whole-corpus vendor runs and a first M1c subset)
+ended on ssh connect timeouts, a broken multiplexed session or an MCP call timeout, none on a case. Each aborted run's
+trace activation was removed by its own trace id; no parity process was left on the mini. The kept runs went through
+a harness-only ssh wrapper (ControlMaster over one connection, no ~/.ssh/config change) after a latency gate. The
+diff is therefore scoped to the M1c cases plus a cua regression run of the M1a/M1b cases, not a whole-corpus vendor
+run.
+
+After the runs: no parity process on the mini, no trace activation, the parity clone clean at 2638024.
+
+--- 2026-10-14: the M1c whole-branch review fixes, re-run live ---
+
+Code under test: 2f1fead (the fixes), then af759c7 (actions/concurrent-fill's two-service oracle; service code
+unchanged). Profile ssfs; the host is the resident one, so host traces are empty. Each run used a fresh ssh connection
+per serve (the harness's plain BatchMode ssh, no multiplexing). Tailscale: the mini relayed (DERP lax) at the
+first prepare, direct by the cua run. No run aborted.
+
+New and changed cases: actions/overlay (new: a covered button's click lands on the overlay on both services, the
+vendor having no in-document hit test), actions/concurrent-fill (new: two fills in one cell), screenshot/modes (now a
+2,400 px page; the full-page JPEG must be at least 2,400 px high and taller than the viewport's).
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit 2f1fead71277c2c82c4e20f19fc9de28e79eea14 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out vendor-m1c-2
+  16 cases; all ok but actions/concurrent-fill, whose first oracle expected each value in its own field on both services:
+  on the vendor the fills crossed (the race the review found is the vendor's own). The case was given a two-service
+  oracle and an expected-differences entry (af759c7), then re-run alone on the vendor:
+$ node scripts/browser-parity.mjs prepare --device mini --commit af759c7d060ddbf9e5f63d11f050cebb530d4ba9 --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'actions/concurrent-fill.mjs' --out vendor-m1c-3
+  case actions/concurrent-fill ok    (value ["","onetwo"]: both pastes in the field focused last)
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'actions/*.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --out cua-m1c-2
+  16 cases, all ok (actions/concurrent-fill value ["one","two"]); exit 0
+
+The diffs:
+$ node scripts/browser-parity.mjs diff vendor-m1c-1 cua-m1c-2 --scenarios 'actions/doubleclick.mjs,actions/locators.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/clip.mjs,waits/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (13 cases, 29 cells, 1 expected; the unchanged cases against the earlier vendor baseline)
+$ node scripts/browser-parity.mjs diff vendor-m1c-2 cua-m1c-2 --scenarios 'actions/doubleclick.mjs,actions/locators.mjs,actions/overlay.mjs,actions/slow-budget.mjs,actions/strict-error.mjs,actions/wait-for.mjs,input/coordinates.mjs,input/dom.mjs,input/rich-text.mjs,input/long-type.mjs,input/queued-shortcuts.mjs,screenshot/*.mjs,waits/*.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (15 cases, 32 cells, 1 expected)
+$ node scripts/browser-parity.mjs diff vendor-m1c-3 cua-m1c-2 --scenarios 'actions/concurrent-fill.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (1 cases, 1 cells, 1 expected)
+Expected differences accepted: actions/slow-budget late (the 120 s clamp), actions/concurrent-fill both (the fill race).
+
+screenshot/modes on the tall page: vendor viewport 2560x1181, full page 2560x2451 (the image sizes the comparator
+records); cua the same sizes, hashes within tolerance.
+
+Per-cell ms (diagnostic, not judged), vendor (vendor-m1c-2, concurrent-fill from vendor-m1c-3) then cua (cua-m1c-2):
+  actions/concurrent-fill both                 721     602
+  actions/doubleclick double                   618     374
+  actions/locators fill                        252     112
+  actions/locators press                       548     310
+  actions/locators select                      206     139
+  actions/locators check                       574     309
+  actions/locators click                       442     302
+  actions/overlay click                        528     342
+  actions/slow-budget late                    5242    8533
+  actions/strict-error strict                  101     205
+  actions/strict-error usable                   30      79
+  actions/wait-for visible                    1067     850
+  input/coordinates type                       546     309
+  input/coordinates end-key                    316      44
+  input/coordinates double                     432     283
+  input/coordinates drag                       327     207
+  input/coordinates scroll                     326     196
+  input/dom nodes                             7768     167
+  input/dom type                               543     404
+  input/dom end-key                            233     100
+  input/dom double                             506     296
+  input/dom scroll                             446     206
+  input/long-type long                         848     510
+  input/queued-shortcuts copy                  241     100
+  input/queued-shortcuts queued                301     206
+  input/rich-text markdown                     849     341
+  screenshot/clip clip                         113     185
+  screenshot/modes viewport                    229    5992
+  screenshot/modes full                        231     341
+  waits/networkidle idle                      2272    2049
+  waits/page url                               934     922
+  waits/page load                             1402    1253
+  waits/page delay                             407     305
+One outlier: cua screenshot/modes viewport 5,992 ms in cua-m1c-2; two re-runs of that case alone gave 105 and 216 ms
+(viewport) and 138 and 117 ms (full), so it did not repeat.
+
+Cleanup after the runs, on the mini: parity fixture processes 0, parity serve processes 0, trace activation absent.
+
+--- 2026-10-14: the departures in cua's favour, each a case and an expected difference ---
+
+At 84fae86 (corpus only; service code as at 2f1fead). Profile ssfs; fresh ssh per serve; Tailscale relayed at the
+prepare; neither run aborted.
+
+$ node scripts/browser-parity.mjs prepare --device mini --commit 84fae86c2c7119f8ee82b6d04eb9f5c0278b4b9c --profile ssfs
+$ node scripts/browser-parity.mjs run --service vendor --device mini --scenarios 'input/oopif-type.mjs,waits/zero-budget.mjs' --out vendor-m1c-departures
+  case input/oopif-type ok     (type: {"child":"","parentPaste":true}: the vendor's paste reaches the parent page at the
+                                frame element; the child's field stays empty)
+  case waits/zero-budget ok    (load: "Timed out waiting for load in tab N."; idle: "Timed out waiting for networkidle in
+                                tab N.")
+$ node scripts/browser-parity.mjs run --service cua --device mini --scenarios 'input/oopif-type.mjs,waits/zero-budget.mjs' --out cua-m1c-departures
+  case input/oopif-type ok     (type: {"child":"oopif","parentPaste":false})
+  case waits/zero-budget ok    (load: "complete"; idle: "complete")
+$ node scripts/browser-parity.mjs diff vendor-m1c-departures cua-m1c-departures --scenarios 'input/oopif-type.mjs,waits/zero-budget.mjs' --expected test/browser-parity/expected-differences.json
+0 unexpected differences (2 cases, 3 cells, 3 expected; scenarios input/oopif-type.mjs,waits/zero-budget.mjs)
+Without the allowance file the same diff lists exactly those three cells (input/oopif-type type, waits/zero-budget load
+and idle): 3 differences (2 cases, 3 cells).
+
+Cleanup on the mini after the runs: parity fixture and serve processes 0.

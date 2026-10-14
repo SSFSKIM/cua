@@ -1,0 +1,5 @@
+{"case":"input/oopif-type","cell":"type","ok":true,"value":{"child":"","parentPaste":true},"ms":1232.9453749999993,"trace":[]}
+{"case":"input/oopif-type","assertion":{"ok":true}}
+{"case":"waits/zero-budget","cell":"load","ok":false,"error":{"code":"Error","message":"Timed out waiting for load in tab 1030405687."},"ms":1046.4170830000003,"trace":[]}
+{"case":"waits/zero-budget","cell":"idle","ok":false,"error":{"code":"Error","message":"Timed out waiting for networkidle in tab 1030405687."},"ms":32.969583000001876,"trace":[]}
+{"case":"waits/zero-budget","assertion":{"ok":true}}

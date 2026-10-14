@@ -575,6 +575,18 @@ test('waitForPageLoadEvent: a load that starts waits for its load event; a same-
   assert.ok(Date.now() - started < 900, 'no navigation: resolved after the classification window');
 });
 
+test('waitForPageLoadEvent with a deadline: neither the classification window nor a started load outlasts it', async () => {
+  const {api, cdp} = await attached();
+  let started = Date.now();
+  await cdp.waitForPageLoadEvent(TAB, {timeoutMs: 1000, deadline: new Deadline(20)});
+  assert.ok(Date.now() - started < 150, `the window is cut to the deadline (${Date.now() - started} ms)`);
+  started = Date.now();
+  const loading = cdp.waitForPageLoadEvent(TAB, {timeoutMs: 3000, deadline: new Deadline(60)});
+  api.event({tabId: TAB}, 'Page.frameStartedLoading', {frameId: MAIN_FRAME});
+  await loading;
+  assert.ok(Date.now() - started < 200, `a started load is waited for only until the deadline (${Date.now() - started} ms)`);
+});
+
 test('evaluateJavascript returns the value or throws the page\'s exception; readDocumentState records the top-level URL', async () => {
   const {api, cdp} = await attached({'Runtime.evaluate': ({commandParams}) => (commandParams.expression === 'missing'
     ? thrown() : commandParams.expression.includes('readyState') ? evaluated({href: 'https://fixture.test/doc', readyState: 'complete'}) : evaluated(42))});

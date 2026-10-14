@@ -1,7 +1,7 @@
 import {expectValues} from '../../support/assertions.mjs';
 import {imageSvg} from '../../fixture/corpus-pages.mjs';
 export default {
-  id:'downloads/media',milestone:'M1c',commands:['playwright_locator_download_media'],
+  id:'downloads/media',milestone:'M2',commands:['playwright_locator_download_media'],
   setup:{page:'/media.html',state:{}},
   cells:[{
     label:'media',timeoutMs:20000,

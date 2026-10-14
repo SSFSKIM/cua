@@ -97,7 +97,7 @@ test('dialog_open reaches model code through the client with the vendor\'s sente
 test('a later milestone\'s command and a missing tab reach model code as the service\'s rejections', {skip: !CLIENT && 'vendor runtime absent: the installed REPL client (BC) is needed for the real-client proof'}, async t => {
   const {browser} = await realClient(t);
   const tab = await browser.tabs.new();
-  assert.equal((await rejectionOf(tab.screenshot())).message, 'Unsupported browser command: tab_screenshot');
+  assert.equal((await rejectionOf(tab.getJsDialog())).message, 'Unsupported browser command: tab_get_js_dialog');
   assert.equal((await rejectionOf(browser.tabs.get('4242'))).message, `Tab not found: 4242. Existing tabs: ${tab.id}||about:blank`);
 });
 

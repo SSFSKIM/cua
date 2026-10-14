@@ -1,0 +1,216 @@
+{
+  "commit": "2f1fead71277c2c82c4e20f19fc9de28e79eea14",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/Library/Application Support/cua",
+  "profile": "ssfs",
+  "device": "mini",
+  "fixturePort": 48732,
+  "service": "vendor",
+  "backend": "live",
+  "environment": {
+    "CUA_BROWSER_SERVICE": "vendor",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_HOME": "/Users/new/Library/Application Support/cua"
+  },
+  "started": "2026-10-14T08:23:19.137Z",
+  "elicitations": [
+    {
+      "t": "2026-10-14T08:23:27.201Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/concurrent-fill"
+    },
+    {
+      "t": "2026-10-14T08:23:35.995Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/doubleclick"
+    },
+    {
+      "t": "2026-10-14T08:23:40.405Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/locators"
+    },
+    {
+      "t": "2026-10-14T08:23:51.735Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/overlay"
+    },
+    {
+      "t": "2026-10-14T08:23:55.833Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/slow-budget"
+    },
+    {
+      "t": "2026-10-14T08:24:04.948Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/strict-error"
+    },
+    {
+      "t": "2026-10-14T08:24:15.529Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "actions/wait-for"
+    },
+    {
+      "t": "2026-10-14T08:24:20.250Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/coordinates"
+    },
+    {
+      "t": "2026-10-14T08:24:31.394Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/dom"
+    },
+    {
+      "t": "2026-10-14T08:24:50.927Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/long-type"
+    },
+    {
+      "t": "2026-10-14T08:24:56.061Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/queued-shortcuts"
+    },
+    {
+      "t": "2026-10-14T08:25:02.417Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "input/rich-text"
+    },
+    {
+      "t": "2026-10-14T08:25:07.434Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "screenshot/clip"
+    },
+    {
+      "t": "2026-10-14T08:25:17.769Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "screenshot/modes"
+    },
+    {
+      "t": "2026-10-14T08:25:30.965Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "waits/networkidle"
+    },
+    {
+      "t": "2026-10-14T08:25:37.844Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "case": "waits/page"
+    }
+  ],
+  "attestations": [
+    {
+      "case": "actions/concurrent-fill",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/doubleclick",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/locators",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/overlay",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/slow-budget",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/strict-error",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "actions/wait-for",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/coordinates",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/dom",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/long-type",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/queued-shortcuts",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "input/rich-text",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "screenshot/clip",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "screenshot/modes",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "waits/networkidle",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    },
+    {
+      "case": "waits/page",
+      "service": "vendor",
+      "header": "# Selected Browser"
+    }
+  ],
+  "complete": true,
+  "cases": [
+    "actions/concurrent-fill",
+    "actions/doubleclick",
+    "actions/locators",
+    "actions/overlay",
+    "actions/slow-budget",
+    "actions/strict-error",
+    "actions/wait-for",
+    "input/coordinates",
+    "input/dom",
+    "input/long-type",
+    "input/queued-shortcuts",
+    "input/rich-text",
+    "screenshot/clip",
+    "screenshot/modes",
+    "waits/networkidle",
+    "waits/page"
+  ],
+  "finished": "2026-10-14T08:25:50.673Z"
+}

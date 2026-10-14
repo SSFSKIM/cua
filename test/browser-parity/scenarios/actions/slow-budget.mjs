@@ -1,3 +1,5 @@
+// The cell reloads the page first, restarting its 8 s clock, so a slow case setup cannot make #late appear before
+// the click (it did once on the mini: the vendor clicked it at 494 ms).
 import {expectError} from '../../support/assertions.mjs';
 export default {
   id:"actions/slow-budget", milestone:"M1c", commands:["playwright_locator_click"],
@@ -5,7 +7,7 @@ export default {
   cells:[
   {
     "label": "late",
-    "code": "await tab.playwright.locator('#late').click({timeoutMs:15000});await tab.playwright.locator('html[data-recorded-late=\"true\"]').waitFor({state:'attached',timeoutMs:3000});return true;",
+    "code": "await tab.goto(fixtureURL+'/slow.html');const started=Date.now();await tab.playwright.locator('#late').click({timeoutMs:15000});const waited=Date.now()-started;await tab.playwright.locator('html[data-recorded-late=\"true\"]').waitFor({state:'attached',timeoutMs:3000});return waited>=5000;",
     "timeoutMs": 25000
   }
 ],

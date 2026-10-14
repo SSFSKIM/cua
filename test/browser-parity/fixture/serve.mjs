@@ -59,7 +59,7 @@ export async function startFixture({port = 48732, host = '127.0.0.1'} = {}) {
       if (!Object.hasOwn(pages,name)) return send(404,{error:'not found'});
       let page = pages[name];
       // A different site, not merely a different port, forces the frame out of process under site isolation.
-      if(name === 'oopif') page = page.replace('/frame.html',`http://localhost:${server.address().port}/frame.html`);
+      if(name === 'oopif' || name === 'oopif-input') page = page.replace('/frame.html',`http://localhost:${server.address().port}/frame.html`);
       return send(200,html(page),'text/html; charset=utf-8');
     } catch { send(400,{error:'invalid request'}); }
   });

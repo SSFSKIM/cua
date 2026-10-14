@@ -289,7 +289,7 @@ export class BackendApi {
   markTab(tabId, status) { return this.sendSessionRequest('markTab', {tabId, status}); }
   nameSession(name) { return this.sendSessionRequest('nameSession', {name}); }
   executeUnhandledCommand(command) { return this.sendSessionRequest('executeUnhandledCommand', command); }
-  moveMouse(params) { return this.sendSessionRequest('moveMouse', params); }
+  moveMouse(params, {deadline} = {}) { return this.sendSessionRequest('moveMouse', params, {deadline}); }
 
   // The backend's info, cached as clientInfo. A backend announcing the ChatGPT extension's agent request headers is
   // refused: its identity gate is OpenAI's, and the service serves cua's host and MAWS only. The host needs no session

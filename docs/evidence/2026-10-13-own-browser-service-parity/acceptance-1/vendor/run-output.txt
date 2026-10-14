@@ -1,0 +1,2 @@
+attested: vendor (# Selected Browser) at 2638024e90cd72bebb3de693f8e7211b248df431
+case acceptance/nytimes ok

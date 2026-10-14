@@ -1,0 +1,45 @@
+{"case":"actions/doubleclick","cell":"double","ok":true,"value":true,"ms":292.6745000000001,"trace":[]}
+{"case":"actions/doubleclick","assertion":{"ok":true}}
+{"case":"actions/locators","cell":"fill","ok":true,"value":"alpha","ms":109.10349999999926,"trace":[]}
+{"case":"actions/locators","cell":"press","ok":true,"value":{"before":0,"after":5,"value":"alpha beta"},"ms":316.3414160000002,"trace":[]}
+{"case":"actions/locators","cell":"select","ok":true,"value":"b","ms":23.69262499999968,"trace":[]}
+{"case":"actions/locators","cell":"check","ok":true,"value":true,"ms":367.60583300000144,"trace":[]}
+{"case":"actions/locators","cell":"click","ok":true,"value":true,"ms":301.376291999999,"trace":[]}
+{"case":"actions/locators","assertion":{"ok":true}}
+{"case":"actions/slow-budget","cell":"late","ok":true,"value":true,"ms":8514.976375,"trace":[]}
+{"case":"actions/slow-budget","assertion":{"ok":true}}
+{"case":"actions/strict-error","cell":"strict","ok":false,"error":{"code":"Error","message":"Error: Browser Use encountered an error interacting with this webpage: Error: strict mode violation: locator('.duplicate') resolved to 2 elements:\n    1) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).first()\n    2) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).nth(1)\n\nwaiting on click for selector .duplicate\nLocator diagnostics: {\"kind\":\"multiple_matches\",\"action\":\"click\",\"locator\":\".duplicate\",\"matchCount\":2,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true},{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true}],\"visibleCount\":2,\"truncated\":false}"},"ms":102.52195800000118,"trace":[]}
+{"case":"actions/strict-error","cell":"usable","ok":true,"value":2,"ms":36.480250000000524,"trace":[]}
+{"case":"actions/strict-error","assertion":{"ok":true}}
+{"case":"actions/wait-for","cell":"visible","ok":true,"value":"ready","ms":813.7244590000009,"trace":[]}
+{"case":"actions/wait-for","assertion":{"ok":true}}
+{"case":"input/coordinates","cell":"type","ok":true,"value":"pointer","ms":327.00433300000077,"trace":[]}
+{"case":"input/coordinates","cell":"end-key","ok":true,"value":{"before":0,"after":7},"ms":128.63974999999846,"trace":[]}
+{"case":"input/coordinates","cell":"double","ok":true,"value":true,"ms":444.7907919999998,"trace":[]}
+{"case":"input/coordinates","cell":"drag","ok":true,"value":"ended","ms":455.74008300000423,"trace":[]}
+{"case":"input/coordinates","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":391.2670419999995,"trace":[]}
+{"case":"input/coordinates","assertion":{"ok":true}}
+{"case":"input/dom","cell":"nodes","ok":true,"value":true,"ms":94.47812500000146,"trace":[]}
+{"case":"input/dom","cell":"type","ok":true,"value":"dom","ms":315.4258340000015,"trace":[]}
+{"case":"input/dom","cell":"end-key","ok":true,"value":{"before":0,"after":3},"ms":127.31533299999865,"trace":[]}
+{"case":"input/dom","cell":"double","ok":true,"value":true,"ms":376.49970799999574,"trace":[]}
+{"case":"input/dom","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":253.24391599999944,"trace":[]}
+{"case":"input/dom","assertion":{"ok":true}}
+{"case":"input/long-type","cell":"long","ok":true,"value":{"length":55999,"same":true},"ms":517.4383329999982,"trace":[]}
+{"case":"input/long-type","assertion":{"ok":true}}
+{"case":"input/queued-shortcuts","cell":"copy","ok":true,"value":"queued","ms":97.70791699999972,"trace":[]}
+{"case":"input/queued-shortcuts","cell":"queued","ok":true,"value":["queued","queued"],"ms":94.562291000002,"trace":[]}
+{"case":"input/queued-shortcuts","assertion":{"ok":true}}
+{"case":"input/rich-text","cell":"markdown","ok":true,"value":"<p>Hello <strong>world</strong></p>\n<ul>\n<li>first item</li>\n<li>second item</li>\n</ul>\n<p>See <a href=\"https://example.com/docs\">the docs</a>.</p>","ms":412.3759580000042,"trace":[]}
+{"case":"input/rich-text","assertion":{"ok":true}}
+{"case":"screenshot/clip","cell":"clip","ok":true,"value":{"$image":"ahash64","width":320,"height":240,"hash":"0f0f0f0fffffffff"},"ms":120.10779200000252,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/clip","assertion":{"ok":true}}
+{"case":"screenshot/modes","cell":"viewport","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"7fffffffffffffff"},"ms":212.23991599999863,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","cell":"full","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"7fffffffffffffff"},"ms":218.4431659999973,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","assertion":{"ok":true}}
+{"case":"waits/networkidle","cell":"idle","ok":true,"value":["complete",true],"ms":1939.3322919999991,"trace":[]}
+{"case":"waits/networkidle","assertion":{"ok":true}}
+{"case":"waits/page","cell":"url","ok":true,"value":"/wait-target.html","ms":803.2568749999991,"trace":[]}
+{"case":"waits/page","cell":"load","ok":true,"value":{"pending":true,"state":"complete"},"ms":1261.8088340000104,"trace":[]}
+{"case":"waits/page","cell":"delay","ok":true,"value":true,"ms":301.42612499999814,"trace":[]}
+{"case":"waits/page","assertion":{"ok":true}}

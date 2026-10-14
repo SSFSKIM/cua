@@ -1,0 +1,45 @@
+{"case":"actions/doubleclick","cell":"double","ok":true,"value":true,"ms":798.4352909999998,"trace":[]}
+{"case":"actions/doubleclick","assertion":{"ok":true}}
+{"case":"actions/locators","cell":"fill","ok":true,"value":"alpha","ms":891.6905420000003,"trace":[]}
+{"case":"actions/locators","cell":"press","ok":true,"value":{"before":0,"after":5,"value":"alpha beta"},"ms":767.8594160000011,"trace":[]}
+{"case":"actions/locators","cell":"select","ok":true,"value":"b","ms":292.69254199999887,"trace":[]}
+{"case":"actions/locators","cell":"check","ok":true,"value":true,"ms":690.2016669999994,"trace":[]}
+{"case":"actions/locators","cell":"click","ok":true,"value":true,"ms":3169.396499999999,"trace":[]}
+{"case":"actions/locators","assertion":{"ok":true}}
+{"case":"actions/slow-budget","cell":"late","ok":false,"error":{"code":"Error","message":"Error: Playwright selector deadline exceeded\nwaiting on click for selector #late\nLocator diagnostics: {\"kind\":\"no_matches\",\"action\":\"click\",\"locator\":\"#late\",\"matchCount\":0,\"matches\":[],\"visibleCount\":0,\"truncated\":false}"},"ms":14337.488000000001,"trace":[]}
+{"case":"actions/slow-budget","assertion":{"ok":true}}
+{"case":"actions/strict-error","cell":"strict","ok":false,"error":{"code":"Error","message":"Error: Browser Use encountered an error interacting with this webpage: Error: strict mode violation: locator('.duplicate') resolved to 2 elements:\n    1) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).first()\n    2) <button class=\"duplicate\">Same</button> aka getByRole('button', { name: 'Same' }).nth(1)\n\nwaiting on click for selector .duplicate\nLocator diagnostics: {\"kind\":\"multiple_matches\",\"action\":\"click\",\"locator\":\".duplicate\",\"matchCount\":2,\"matches\":[{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true},{\"ariaLabel\":null,\"disabled\":false,\"role\":null,\"tag\":\"button\",\"text\":\"Same\",\"type\":null,\"visible\":true}],\"visibleCount\":2,\"truncated\":false}"},"ms":103.02174999998533,"trace":[]}
+{"case":"actions/strict-error","cell":"usable","ok":true,"value":2,"ms":118.14787499999511,"trace":[]}
+{"case":"actions/strict-error","assertion":{"ok":true}}
+{"case":"actions/wait-for","cell":"visible","ok":true,"value":"ready","ms":15573.155709000013,"trace":[]}
+{"case":"actions/wait-for","assertion":{"ok":true}}
+{"case":"input/coordinates","cell":"type","ok":true,"value":"pointer","ms":610.7622499999998,"trace":[]}
+{"case":"input/coordinates","cell":"end-key","ok":true,"value":{"before":0,"after":7},"ms":323.125,"trace":[]}
+{"case":"input/coordinates","cell":"double","ok":true,"value":true,"ms":558.550041999988,"trace":[]}
+{"case":"input/coordinates","cell":"drag","ok":true,"value":"ended","ms":218.71474999998463,"trace":[]}
+{"case":"input/coordinates","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":1289.0137910000049,"trace":[]}
+{"case":"input/coordinates","assertion":{"ok":true}}
+{"case":"input/dom","cell":"nodes","ok":true,"value":true,"ms":590.4175000000105,"trace":[]}
+{"case":"input/dom","cell":"type","ok":true,"value":"dom","ms":3292.694583000004,"trace":[]}
+{"case":"input/dom","cell":"end-key","ok":true,"value":{"before":0,"after":3},"ms":8808.75774999999,"trace":[]}
+{"case":"input/dom","cell":"double","ok":true,"value":true,"ms":979.1510840000119,"trace":[]}
+{"case":"input/dom","cell":"scroll","ok":true,"value":{"before":0,"moved":true},"ms":613.3426249999902,"trace":[]}
+{"case":"input/dom","assertion":{"ok":true}}
+{"case":"input/long-type","cell":"long","ok":true,"value":{"length":55999,"same":true},"ms":1167.864540999988,"trace":[]}
+{"case":"input/long-type","assertion":{"ok":true}}
+{"case":"input/queued-shortcuts","cell":"copy","ok":true,"value":"queued","ms":39088.42629099998,"trace":[]}
+{"case":"input/queued-shortcuts","cell":"queued","ok":true,"value":["queued","queued"],"ms":2592.8319580000243,"trace":[]}
+{"case":"input/queued-shortcuts","assertion":{"ok":true}}
+{"case":"input/rich-text","cell":"markdown","ok":true,"value":"<p>Hello <strong>world</strong></p>\n<ul>\n<li>first item</li>\n<li>second item</li>\n</ul>\n<p>See <a href=\"https://example.com/docs\">the docs</a>.</p>","ms":704.749959000037,"trace":[]}
+{"case":"input/rich-text","assertion":{"ok":true}}
+{"case":"screenshot/clip","cell":"clip","ok":true,"value":{"$image":"ahash64","width":320,"height":240,"hash":"0f0f0f0fffffffff"},"ms":76.80737500003306,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/clip","assertion":{"ok":true}}
+{"case":"screenshot/modes","cell":"viewport","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"7fffffffffffffff"},"ms":1395.183874999988,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","cell":"full","ok":true,"value":{"$image":"ahash64","width":2560,"height":1181,"hash":"7fffffffffffffff"},"ms":527.8844999999856,"trace":[],"screenshotTolerance":4}
+{"case":"screenshot/modes","assertion":{"ok":true}}
+{"case":"waits/networkidle","cell":"idle","ok":true,"value":["complete",true],"ms":34281.53237499995,"trace":[]}
+{"case":"waits/networkidle","assertion":{"ok":true}}
+{"case":"waits/page","cell":"url","ok":true,"value":"/wait-target.html","ms":2291.567832999979,"trace":[]}
+{"case":"waits/page","cell":"load","ok":true,"value":{"pending":true,"state":"complete"},"ms":2003.5566670000553,"trace":[]}
+{"case":"waits/page","cell":"delay","ok":true,"value":true,"ms":430.36987500009127,"trace":[]}
+{"case":"waits/page","assertion":{"ok":true}}

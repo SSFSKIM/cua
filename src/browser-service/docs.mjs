@@ -123,7 +123,8 @@ function declarations(iface, members, browserType, hidden) {
     : definition.declarations.filter(({documented, unsupportedByDefaultIn}) => documented !== false && unsupportedByDefaultIn?.includes(browserType) !== true)));
 }
 
-// The API reference: every interface and type reachable from the root through the declarations the browser gets (IN).
+// The API reference: every interface and type reachable from the root through the declarations the browser gets (IN),
+// with cua's budget rule (the clamp's lifted maximum, the spec's "Lifted") at its head.
 export function apiReference(manifest, browserType, hidden = new Set()) {
   const reached = new Set();
   const queue = [manifest.root];
@@ -138,7 +139,8 @@ export function apiReference(manifest, browserType, hidden = new Set()) {
     reached.add(name);
     for (const ref of references) if (!reached.has(ref)) queue.push(ref);
   }
-  const lines = ['# API Reference', '', 'Use this as the supported `agent.browsers.*` surface.', '', '```ts', '// Returned by setupBrowserRuntime().', '// browser was selected during bootstrap.'];
+  const lines = ['# API Reference', '', 'Use this as the supported `agent.browsers.*` surface.', '', '```ts', '// Returned by setupBrowserRuntime().', '// browser was selected during bootstrap.',
+    '// timeoutMs on locator, wait and evaluate calls is in milliseconds: 3000 by default, at most 120000; 0 makes one attempt.'];
   for (const [name, members] of Object.entries(manifest.interfaces)) {
     if (reached.has(name)) lines.push(`interface ${name} {`, ...declarations(name, members, browserType, hidden).map(({text}) => `  ${text}`), '}', '');
   }

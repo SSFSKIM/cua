@@ -16,5 +16,23 @@
     "cells": ["wait", "late"],
     "kind": "semantic",
     "reason": "The clamp's maximum is 120,000 ms on cua (the spec's \"Lifted\"; acceptance 2): a caller's timeoutMs above 3 s raises the budget of evaluate and of locator actions, where the vendor caps every budget at 3 s and fails at its deadline."
+  },
+  {
+    "cases": ["actions/concurrent-fill"],
+    "cells": ["both"],
+    "kind": "semantic",
+    "reason": "Two fills started together in one document: cua selects and pastes each field in one operation of the virtual clipboard's queue and checks the paste against the field it prepared, so each value lands in its own field; the vendor selects both fields before either paste, so both pastes land in the field focused last (M1c whole-branch review, P1)."
+  },
+  {
+    "cases": ["input/oopif-type"],
+    "cells": ["type"],
+    "kind": "semantic",
+    "reason": "cua_type after focusing an input inside a cross-site (out-of-process) frame: cua pastes into the focused frame, so the text lands in the child's field and the parent page sees no paste; the vendor evaluates its paste in the top document, so the paste event reaches the parent at the frame element and the child's field stays empty. A departure in cua's favour (M1c whole-branch review P1; Decision Log 2026-10-14)."
+  },
+  {
+    "cases": ["waits/zero-budget"],
+    "cells": ["load", "idle"],
+    "kind": "semantic",
+    "reason": "waitForLoadState with timeoutMs 0 on a loaded, network-idle page: on cua a zero budget is one observation (the M1b ruling), so a load state or network idleness that already holds succeeds; the vendor's zero timer fires before its first observation and it fails with its timeout sentence. A departure in cua's favour (M1c whole-branch review P2; Decision Log 2026-10-14)."
   }
 ]

@@ -1,0 +1,5 @@
+attested: vendor (# Selected Browser) at 84fae86c2c7119f8ee82b6d04eb9f5c0278b4b9c
+case input/oopif-type ok
+attested: vendor (# Selected Browser) at 84fae86c2c7119f8ee82b6d04eb9f5c0278b4b9c
+case waits/zero-budget ok
+EXIT 0

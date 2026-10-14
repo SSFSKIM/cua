@@ -195,3 +195,106 @@ test('append-only deferred done markers use final scored outcomes without rewrit
   writeFileSync(join(root,'outcomes.json'),JSON.stringify({T1:{ok:null}}));
   assert.throws(()=>summarize(dir),/outcome|inconsistent/);
 });
+
+// Synthetic initialize/tool-result observations, not an env selection label.
+function hostFixture(t, times) {
+  const dir=fixture(t,times);
+  for(const host of ['vendor','cua'])for(let n=1;n<=3;n++) {
+    const path=join(dir,host,`run-${n}/meta.json`),meta=JSON.parse(readFileSync(path,'utf8'));
+    Object.assign(meta,{experimentId:'host-parity',host,service:'cua',surfaces:['browser'],hostAttestations:[{
+      host,serverInfo:{name:host==='cua'?'cua-repl-host':'node-repl',version:'1.0.0'},
+      _meta:host==='cua'?{'cua/replHost':{host:'cua',version:'1.0.0'}}:null,
+    }]});
+    writeFileSync(path,JSON.stringify(meta));
+  }
+  return dir;
+}
+test('host axis judges host groups while retaining cua browser-service identity in data and CLI output',t=>{
+  const dir=hostFixture(t),before=readFileSync(join(dir,'vendor/run-1/meta.json'),'utf8');
+  const report=summarize(dir,{axis:'host'});
+  assert.equal(report.verdict,'no regression');
+  assert.equal(report.axis,'host');
+  assert.equal(report.service,'cua');
+  assert.deepEqual(report.runs.map(r=>[r.host,r.service,r.run]),[
+    ['vendor','cua',1],['vendor','cua',2],['vendor','cua',3],['cua','cua',1],['cua','cua',2],['cua','cua',3],
+  ]);
+  assert.equal(report.tasks[0].vendor.toolMs.median,1000);
+  assert.equal(readFileSync(join(dir,'vendor/run-1/meta.json'),'utf8'),before,'summary never rewrites archived identity');
+  const script=fileURLToPath(new URL('../../scripts/bench-summary.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,[script,dir,'--axis','host'],{encoding:'utf8'});
+  assert.equal(run.status,0,run.stderr);
+  assert.match(run.stdout,/comparison axis: host; browser service: cua/);
+  assert.match(run.stdout,/verdict: no regression/);
+  assert.equal(summarize(hostFixture(t,[1600,1700,1800]),{axis:'host'}).verdict,'regression');
+});
+
+test('host axis refuses missing, mismatched or mixed observed host metadata instead of inferring old evidence',t=>{
+  const dir=hostFixture(t),path=join(dir,'cua/run-1/meta.json'),valid=JSON.parse(readFileSync(path,'utf8'));
+  const mutations=[
+    meta=>{delete meta.host;},
+    meta=>{meta.host='vendor';},
+    meta=>{delete meta.hostAttestations;},
+    meta=>{meta.hostAttestations=[];},
+    meta=>{meta.hostAttestations[0].host='vendor';},
+    meta=>{meta.hostAttestations[0].serverInfo.name='node-repl';},
+    meta=>{delete meta.hostAttestations[0].serverInfo.version;},
+    meta=>{meta.hostAttestations[0]._meta={};},
+    meta=>{meta.hostAttestations[0]._meta['cua/replHost'].host='vendor';},
+    meta=>{meta.hostAttestations[0]._meta['cua/replHost'].version='old';},
+    meta=>{meta.hostAttestations.push({host:'vendor',serverInfo:{name:'node-repl',version:'1'},_meta:null});},
+  ];
+  for(const change of mutations) {
+    const meta=structuredClone(valid);change(meta);writeFileSync(path,JSON.stringify(meta));
+    assert.throws(()=>summarize(dir,{axis:'host'}),/host attestation/i);
+  }
+  writeFileSync(path,JSON.stringify(valid));
+  const vendorPath=join(dir,'vendor/run-1/meta.json'),vendor=JSON.parse(readFileSync(vendorPath,'utf8'));
+  for(const change of [
+    meta=>{delete meta.hostAttestations[0]._meta;},
+    meta=>{meta.hostAttestations[0]._meta={'cua/replHost':null};},
+    meta=>{meta.hostAttestations[0].serverInfo.name='cua-repl-host';},
+  ]) {
+    const meta=structuredClone(vendor);change(meta);writeFileSync(vendorPath,JSON.stringify(meta));
+    assert.throws(()=>summarize(dir,{axis:'host'}),/host attestation/i);
+  }
+  // #113 archived service evidence is still readable on its original axis only.
+  assert.throws(()=>summarize(fixture(t),{axis:'host'}),/host attestation|service attestation/i);
+});
+
+test('host axis requires one observed host identity per run and per pooled host group; the groups may differ',t=>{
+  const dir=hostFixture(t),edit=(group,n,change)=>{const path=join(dir,group,`run-${n}/meta.json`),meta=JSON.parse(readFileSync(path,'utf8'));change(meta);writeFileSync(path,JSON.stringify(meta));};
+  const version=v=>meta=>{for(const a of meta.hostAttestations){a.serverInfo.version=v;if(a._meta?.['cua/replHost'])a._meta['cua/replHost'].version=v;}};
+  // cua's group at another version than vendor's is a legitimate comparison.
+  for(const n of [1,2,3])edit('cua',n,version('2.0.0'));
+  assert.equal(summarize(dir,{axis:'host'}).verdict,'no regression');
+  // A second connection of one run answered by another version.
+  edit('vendor',1,meta=>meta.hostAttestations.push({...meta.hostAttestations[0],serverInfo:{name:'node-repl',version:'1.0.1'}}));
+  assert.throws(()=>summarize(dir,{axis:'host'}),/host attestation.*mixed host identities/);
+  edit('vendor',1,meta=>meta.hostAttestations.pop());
+  // One run of a group answered by another version than the others.
+  edit('cua',2,version('2.0.1'));
+  assert.throws(()=>summarize(dir,{axis:'host'}),/cua group mixes host identities \(cua-repl-host 2\.0\.0, cua-repl-host 2\.0\.1\)/);
+});
+
+test('host axis validates actual browser service and labels partial groups as hosts, not services',t=>{
+  const dir=hostFixture(t),path=join(dir,'vendor/run-1/meta.json'),meta=JSON.parse(readFileSync(path,'utf8'));
+  writeFileSync(path,JSON.stringify({...meta,service:'vendor'}));
+  assert.throws(()=>summarize(dir,{axis:'host'}),/service attestation/);
+  writeFileSync(path,JSON.stringify(meta));
+  rmSync(join(dir,'cua/run-3'),{recursive:true});
+  const report=summarize(dir,{axis:'host'});
+  assert.equal(report.verdict,null);
+  assert.deepEqual(report.incomplete,[{host:'cua',runs:2}]);
+  assert.equal(report.runs[0].service,'cua');
+});
+
+test('service axis stays explicit or default; unknown axes and CLI flags fail closed',t=>{
+  const dir=fixture(t);
+  assert.deepEqual(summarize(dir,{axis:'service'}),summarize(dir));
+  assert.throws(()=>summarize(dir,{axis:'other'}),/axis/);
+  const script=fileURLToPath(new URL('../../scripts/bench-summary.mjs',import.meta.url));
+  for(const args of [['--axis','other'],['--axis']]) {
+    const run=spawnSync(process.execPath,[script,dir,...args],{encoding:'utf8'});
+    assert.equal(run.status,1);assert.doesNotMatch(run.stdout,/verdict:/);assert.match(run.stderr,/axis/);
+  }
+});

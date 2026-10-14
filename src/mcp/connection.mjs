@@ -42,7 +42,8 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {browserServiceFor, buildLaunch, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {browserSelectionFor, buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
@@ -89,13 +90,16 @@ export async function openConnection({home, env = process.env, sessionId, input,
   let server;
   try {
     const secrets = connectionSecrets({enabled: secretsEnabled, env, project});
-    // The browser service is resolved once, at the open, and every launch of this connection (the first, and any after
-    // an idle stop) uses it: the rules profiles_list and js teach are that service's, so a registration of the other
-    // route meanwhile must not switch the runtime under them. A new connection resolves again.
-    const browserService = serverSettings.surfaces.includes('browser') ? browserServiceFor(env, home).service : undefined;
-    const ambient = browserService ? {...env, CUA_BROWSER_SERVICE: browserService} : env;
+    // The browser service and the REPL host are resolved once, at the open, from the caller's own environment (so an
+    // unset CUA_BROWSER_SERVICE stays unset to the host selection, which treats an explicit one differently), and every
+    // launch of this connection (the first, and any after an idle stop) uses them: the rules profiles_list and js teach
+    // are that service's, and the recorded handshake is that host's, so a registration of the other route meanwhile
+    // must not switch the runtime under them. An explicit CUA_REPL_HOST the connection cannot honour fails the open.
+    // A new connection resolves again.
+    const browserSelection = serverSettings.surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
+    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, browserSelection});
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient: env, browserSelection, replHost, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
@@ -124,7 +128,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
       }
     };
     const upstream = lazyRuntime({start, stopped, diagnostics,
-      records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(',')})});
+      records: handshakeRecords({dir: join(homeLayout(realHome(home)).handshake, runtime.release), surfaces: planned.env.CUA_REPL_ENABLED_SURFACES.split(','),
+        host: hostIdentity({host: replHost.host, release: runtime.release})})});
     // `route` words a missing extension as the home's route's (registry.mjs reasonText).
     // `track` (createServer's): the live check counts as use of the runtime for the idle stop.
     const profiles = {route: chromeRoute(home), list: async ({track = promise => promise} = {}) => {
@@ -138,7 +143,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
       sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), ...(idleTimer ? {idleTimer} : {}), ...serverSettings,
       // The rules the model is taught are those of the service this connection's launches use.
-      browserService: browserService ?? 'cua'});
+      browserService: browserSelection?.service ?? 'cua'});
   } catch (error) {
     await release();
     throw error;

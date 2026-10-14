@@ -1,0 +1,170 @@
+{
+  "schema": 2,
+  "lane": "real pinned vendor host through cua proxy; isolated no-services cells and explicitly labeled process/preflight observations",
+  "through": "M1",
+  "expectedDifferencesFileUsed": false,
+  "comparisonCommit": "88970a0",
+  "runs": [
+    {
+      "run": "vendor-1",
+      "device": "mini",
+      "profile": "ssfs",
+      "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "harnessCommit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "complete": true,
+      "recordedCases": 111,
+      "coveredAndPassingCases": 111,
+      "failedAssertions": 0,
+      "vendorDefects": [],
+      "journalCells": 145,
+      "rawMcpResults": 134,
+      "boundaryObservations": 11,
+      "exactImages": 63,
+      "defaultTimeoutMs": 30036.325417,
+      "connections": 12,
+      "attestations": 12,
+      "pendingM1": 0,
+      "node": "v24.18.0",
+      "runtimeNode": "v24.21.0",
+      "runtimeRelease": "26.928.40906-darwin-arm64"
+    },
+    {
+      "run": "vendor-2",
+      "device": "mini",
+      "profile": "ssfs",
+      "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "harnessCommit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "complete": true,
+      "recordedCases": 111,
+      "coveredAndPassingCases": 111,
+      "failedAssertions": 0,
+      "vendorDefects": [],
+      "journalCells": 145,
+      "rawMcpResults": 134,
+      "boundaryObservations": 11,
+      "exactImages": 63,
+      "defaultTimeoutMs": 30163.832209,
+      "connections": 12,
+      "attestations": 12,
+      "pendingM1": 0,
+      "node": "v24.18.0",
+      "runtimeNode": "v24.21.0",
+      "runtimeRelease": "26.928.40906-darwin-arm64"
+    },
+    {
+      "run": "linux-vendor-1",
+      "device": "cua-linux",
+      "profile": "me",
+      "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "harnessCommit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "complete": true,
+      "recordedCases": 112,
+      "coveredAndPassingCases": 111,
+      "failedAssertions": 1,
+      "vendorDefects": [
+        {
+          "id": "linux-vendor-sandbox-launcher-fail-open",
+          "case": "cells/confinement/no-unsandboxed-fallback",
+          "platform": "linux",
+          "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage."
+        }
+      ],
+      "journalCells": 146,
+      "rawMcpResults": 134,
+      "boundaryObservations": 12,
+      "exactImages": 63,
+      "defaultTimeoutMs": 30014.336792000002,
+      "connections": 12,
+      "attestations": 12,
+      "pendingM1": 0,
+      "node": "v22.23.3",
+      "runtimeNode": "v24.21.0",
+      "runtimeRelease": "26.928.40906-linux-arm64"
+    },
+    {
+      "run": "linux-vendor-2",
+      "device": "cua-linux",
+      "profile": "me",
+      "commit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "harnessCommit": "88970a0ab707a382eec09f7108ed7668020753ea",
+      "complete": true,
+      "recordedCases": 112,
+      "coveredAndPassingCases": 111,
+      "failedAssertions": 1,
+      "vendorDefects": [
+        {
+          "id": "linux-vendor-sandbox-launcher-fail-open",
+          "case": "cells/confinement/no-unsandboxed-fallback",
+          "platform": "linux",
+          "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage."
+        }
+      ],
+      "journalCells": 146,
+      "rawMcpResults": 134,
+      "boundaryObservations": 12,
+      "exactImages": 63,
+      "defaultTimeoutMs": 30038.994334,
+      "connections": 12,
+      "attestations": 12,
+      "pendingM1": 0,
+      "node": "v22.23.3",
+      "runtimeNode": "v24.21.0",
+      "runtimeRelease": "26.928.40906-linux-arm64"
+    }
+  ],
+  "mini": {
+    "ok": true,
+    "differences": [],
+    "expected": [],
+    "cases": 111,
+    "cells": 145,
+    "recordedCases": 111,
+    "vendorDefects": [],
+    "allAssertionsPassed": true,
+    "doubleCases": 0
+  },
+  "linux": {
+    "ok": true,
+    "differences": [],
+    "expected": [],
+    "cases": 111,
+    "cells": 146,
+    "recordedCases": 112,
+    "vendorDefects": [
+      {
+        "id": "linux-vendor-sandbox-launcher-fail-open",
+        "case": "cells/confinement/no-unsandboxed-fallback",
+        "platform": "linux",
+        "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage."
+      }
+    ],
+    "allAssertionsPassed": false,
+    "doubleCases": 0
+  },
+  "linuxProfile": "me",
+  "linuxWorkFinishedAt": "2026-10-14T21:21:39Z",
+  "inventoryRows": 542,
+  "registeredScenarios": 158,
+  "pendingM1Cases": [],
+  "verification": {
+    "focusedSharedAndRepl": {
+      "pass": 199,
+      "fail": 0
+    },
+    "npmTest": {
+      "pass": 1774,
+      "fail": 0,
+      "skip": 8
+    },
+    "mods": {
+      "pass": 32,
+      "fail": 0
+    },
+    "pluginValidation": "passed with known CLAUDE.md warning"
+  },
+  "notes": [
+    "Linux determinism includes one explicitly declared vendor safety defect; its independent assertion remains false and is not counted as passing coverage.",
+    "The original 100-case controls were replaced with complete applicable M1 controls.",
+    "Capability smoke uses a fake backend and real vendor host; it is not live Chrome/native coverage."
+  ]
+}

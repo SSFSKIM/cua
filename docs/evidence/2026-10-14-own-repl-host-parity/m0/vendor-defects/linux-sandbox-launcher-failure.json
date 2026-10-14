@@ -1,0 +1,28 @@
+{
+  "sourceCommit": "c46050b6fc06ff3f256989efac91014fcdb4cc50",
+  "device": "cua-linux",
+  "runtimeRelease": "26.928.40906-linux-arm64",
+  "requestedHost": "vendor",
+  "requestedSandbox": "scoped",
+  "injection": "Internal prepareLaunch fixture replaces CODEX_CLI_PATH with an existing harness-owned executable that logs invocation and exits 73; no runtime file is modified",
+  "launcherInvoked": true,
+  "invocationPrefix": [
+    "sandbox",
+    "-c",
+    "shell_environment_policy.inherit=\"all\""
+  ],
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"outsideWrite\":true}"
+      }
+    ],
+    "isError": false
+  },
+  "outsideWrite": true,
+  "writeScope": "The target was inside the harness-owned private control directory, outside both the REPL cwd and its TMPDIR. It was removed during owned cleanup.",
+  "verdict": "Recorded vendor defect, not covered-and-passing. M1 own host must refuse the failed sandbox launch; no expected-differences entry is added at M0.",
+  "controllerRuling": "172a6bb",
+  "vendorDefect": "linux-vendor-sandbox-launcher-fail-open"
+}

@@ -21,11 +21,15 @@ import {homeLayout} from '../src/runtime/layout.mjs';
 import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID} from '../src/profiles/chrome.mjs';
 import {createFakeMawsExtension} from './helpers/fake-maws-peer.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
+import {hostIdentity, REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 
 const supported = installedHomeSupported;
 const INIT = {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'lazy-e2e', version: '0'}};
 const release = () => selectPin(loadPins()).release;
-const recordDir = home => join(homeLayout(home).handshake, release());
+// A connection's handshake records: per release, then per answering host and its version (the vendor's: the release).
+const vendorHost = () => hostIdentity({host: 'vendor', release: release()});
+const recordsFor = (home, surfaces) => handshakeRecords({dir: join(homeLayout(home).handshake, release()), surfaces, host: vendorHost()});
+const recordDir = home => join(homeLayout(home).handshake, release(), `vendor@${release()}`);
 // The fake upstream's log, from the last runtime start on: what the connection's own runtime received.
 const runtimeLog = home => {
   const path = join(home, 'state', 'codex', 'fake-upstream.jsonl');
@@ -107,7 +111,7 @@ test('profiles_list\'s registry part launches nothing; its live check makes only
   mkdirSync(extension, {recursive: true});
   writeFileSync(join(extension, 'manifest.json'), '{}');
   const env = {CUA_SHIM_SURFACES: 'browser', CUA_SHIM_SANDBOX: 'disabled'};
-  handshakeRecords({dir: recordDir(home), surfaces: ['browser']}).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
+  recordsFor(home, ['browser']).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
   const listings = [];
   const listBackends = async () => { listings.push(1); return {backends: [{instanceId: 'inst-a', family: 'chrome'}], teardown: {confirmed: true, steps: ['eof']}}; };
   const server = served(t, home, {env, chrome: chromeFacts({userData}), listBackends});
@@ -142,7 +146,7 @@ function child(home) {
 for (const how of ['eof', 'SIGTERM', 'SIGINT', 'SIGHUP']) {
   test(`a connection that never launched closes clean on ${how}: exit 0, nothing launched, nothing left`, {skip: !supported}, async t => {
     const home = fakeInstalledHome(t);
-    handshakeRecords({dir: recordDir(home), surfaces: ['computer']}).write(INIT.protocolVersion, {
+    recordsFor(home, ['computer']).write(INIT.protocolVersion, {
       initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}, instructions: 'Recorded.'},
       tools: {tools: [{name: 'js', description: 'Recorded js.', inputSchema: {type: 'object'}}, {name: 'js_reset', description: 'Recorded reset.', inputSchema: {type: 'object'}}]},
     });
@@ -257,7 +261,7 @@ test('with a MAWS backend the handshake does not wait for its hello; profiles_li
   });
   await new Promise(resolve => peer.listen(path, resolve));
   t.after(() => new Promise(resolve => { peer.close(resolve); for (const {port} of ports) port.disconnect(); }));
-  handshakeRecords({dir: recordDir(home), surfaces: ['computer', 'browser']}).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
+  recordsFor(home, ['computer', 'browser']).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
   const server = served(t, home, {env: {CUA_SHIM_SURFACES: 'computer,browser', CUA_BROWSER_BACKENDS: path, CUA_SHIM_SECRETS: 'off'}});
   const began = Date.now();
   await server.request('initialize', INIT);
@@ -361,6 +365,37 @@ test('without a record the handshake launches and records the runtime\'s answers
   assert.equal((await h.server.closed).code, 0);
 });
 
+// HostIdentity (spec 2026-10-14-own-repl-host-design.md): a record answers only for the host and host version that
+// gave it, besides the release, surface set and protocol version, so a cached vendor handshake never answers for cua's
+// own host, nor an older own host for a newer one; a record of the earlier schema is a miss.
+test('handshake records are keyed by the answering host and its version; a stale or foreign record is a miss', t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  const dir = join(s.dir, 'handshake', '26.928.40906-darwin-arm64');
+  const vendor = {host: 'vendor', version: '26.928.40906-darwin-arm64'};
+  const own = {host: 'cua', version: REPL_HOST_VERSION};
+  const records = host => handshakeRecords({dir, surfaces: ['browser'], host});
+  const answer = name => ({initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name, version: '1'}}, tools: {tools: []}});
+  records(vendor).write('2025-06-18', answer('vendor'));
+  assert.equal(records(vendor).read('2025-06-18').initialize.serverInfo.name, 'vendor');
+  assert.equal(records(own).read('2025-06-18'), null, 'a vendor record never answers for the own host');
+  records(own).write('2025-06-18', answer('cua-repl-host'));
+  assert.equal(records(own).read('2025-06-18').initialize.serverInfo.name, 'cua-repl-host');
+  assert.equal(records(vendor).read('2025-06-18').initialize.serverInfo.name, 'vendor', 'each host keeps its own record');
+  assert.equal(records({host: 'cua', version: '999.0.0'}).read('2025-06-18'), null, 'an older own host\'s record never answers for a newer one');
+  assert.equal(records({host: 'vendor', version: '27.1.1-darwin-arm64'}).read('2025-06-18'), null);
+  assert.deepEqual(readdirSync(dir).sort(), [`cua@${REPL_HOST_VERSION}`, 'vendor@26.928.40906-darwin-arm64']);
+  const file = join(dir, `cua@${REPL_HOST_VERSION}`, 'browser@2025-06-18.json');
+  const stored = JSON.parse(readFileSync(file, 'utf8'));
+  assert.deepEqual({schema: stored.schema, host: stored.host}, {schema: 2, host: own});
+  writeFileSync(file, JSON.stringify({schema: 1, initialize: stored.initialize, tools: stored.tools}));
+  assert.equal(records(own).read('2025-06-18'), null, 'a record of the earlier schema, which named no host, is a miss');
+  writeFileSync(file, JSON.stringify({...stored, host: vendor}));
+  assert.equal(records(own).read('2025-06-18'), null, 'a record naming another host is a miss wherever it lies');
+  for (const bad of [undefined, {host: 'own', version: '1'}, {host: 'cua', version: '../x'}, {host: 'vendor', version: ''}])
+    assert.throws(() => handshakeRecords({dir, surfaces: ['browser'], host: bad}), error => error.code === 'invalid_host_identity', JSON.stringify(bad));
+});
+
 // ---- the idle stop (issue #107) ----
 
 // A fake clock for createServer's idle timer: timers are recorded and fire only when the test says so.
@@ -390,7 +425,7 @@ const alive = pid => { try { process.kill(pid, 0); return true; } catch { return
 
 test('an idle runtime stops after the default 15 min through the normal end and the next js relaunches it once, its result opening with the restart notice', {skip: !supported}, async t => {
   const home = fakeInstalledHome(t);
-  handshakeRecords({dir: recordDir(home), surfaces: ['computer']}).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
+  recordsFor(home, ['computer']).write(INIT.protocolVersion, {initialize: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'recorded', version: '0'}}, tools: {tools: []}});
   const clock = fakeClock();
   const server = served(t, home, {env: {CUA_RUNTIME_IDLE_MS: undefined}, idleTimer: clock.timer});
   await server.request('initialize', INIT);

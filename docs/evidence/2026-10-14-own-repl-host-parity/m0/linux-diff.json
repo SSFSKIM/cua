@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "differences": [],
+  "expected": [],
+  "cases": 111,
+  "cells": 146,
+  "recordedCases": 112,
+  "vendorDefects": [
+    {
+      "id": "linux-vendor-sandbox-launcher-fail-open",
+      "case": "cells/confinement/no-unsandboxed-fallback",
+      "platform": "linux",
+      "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage."
+    }
+  ],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

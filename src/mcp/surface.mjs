@@ -22,6 +22,15 @@ export function browserServiceFrom(env) {
   return value;
 }
 
+// The CUA_REPL_HOST the caller set: null when unset or empty (each connection then resolves its REPL host,
+// src/runtime/launch.mjs replHostFor), else exactly `cua` or `vendor`.
+export function replHostFrom(env) {
+  const value = env.CUA_REPL_HOST;
+  if (value === undefined || value === '') return null;
+  if (value !== 'cua' && value !== 'vendor') fail('invalid_setting', 'CUA_REPL_HOST must be cua or vendor');
+  return value;
+}
+
 // Upstream tools passed through with their own description and schema. turn_ended (completion is server-owned) and
 // js_add_node_module_dir (it would widen what model code can import) stay private. Their search hints name the
 // platform the computer surface drives (`os`: macos, or linux on Linux).

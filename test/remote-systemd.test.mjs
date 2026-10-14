@@ -84,6 +84,26 @@ test('install refuses, before writing anything or calling systemctl, a bad displ
   }
 });
 
+// CUA_REPL_HOST (spec 2026-10-14-own-repl-host-design.md, Decision Log): as on macOS, only an explicit value enters
+// the unit; an unknown one is refused before the unit is written or systemctl is asked.
+test('install writes CUA_REPL_HOST into the unit only when it was given, cua or vendor, never a resolved default, and refuses an unknown one first', async t => {
+  const {home, install, unit} = setup(t);
+  for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_REPL_HOST: ''}]) {
+    await install({http: '127.0.0.1:7801', env});
+    assert.deepEqual(readUnit(readFileSync(unit, 'utf8')).environment, {DISPLAY: ':0', CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_REPL_HOST)}: resolved at each connection`);
+  }
+  for (const host of ['cua', 'vendor']) {
+    await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_REPL_HOST: host}});
+    assert.deepEqual(readUnit(readFileSync(unit, 'utf8')).environment, {DISPLAY: ':0', CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', CUA_REPL_HOST: host}, `${host}: carried as given`);
+  }
+  for (const bad of ['own', 'Vendor', ' cua']) {
+    const fresh = setup(t);
+    await assert.rejects(fresh.install({http: '127.0.0.1:7801', env: {CUA_HOME: fresh.home, CUA_REPL_HOST: bad}}), {code: 'invalid_setting', message: /CUA_REPL_HOST must be cua or vendor/}, bad);
+    assert.equal(existsSync(fresh.unit), false);
+    assert.deepEqual(fresh.systemctl.calls, []);
+  }
+});
+
 test('an unreachable user manager refuses install before the unit is written, and reads as unknown in status', async t => {
   const {install, unit, common} = setup(t, {unreachable: true});
   await assert.rejects(install({http: '127.0.0.1:7801'}), error => {

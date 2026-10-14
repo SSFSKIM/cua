@@ -7,6 +7,8 @@
 // set in the environment `install` runs in, refused (invalid_setting) as `agent run` would refuse it. CUA_BROWSER_SERVICE
 // only when given (cua or vendor, the one-release rollback a job's fixed environment could not otherwise take), never a
 // resolved default: unset, each launch resolves it from the home's route (src/runtime/launch.mjs browserServiceFor).
+// CUA_REPL_HOST likewise only when given (cua or vendor; vendor is the installed agent's rollback), never a resolved
+// default: unset, each connection resolves its REPL host afresh (src/runtime/launch.mjs replHostFor).
 // Every check that can refuse runs here, before a service manager is touched. `--relay` is refused
 // (relay_unavailable) when this checkout cannot load the ws package the relay path needs: such a job would refuse at
 // every start and be restarted every 10 s.
@@ -16,7 +18,7 @@ import {checkRelayUrl, readDevice} from './device.mjs';
 import {AGENT_SETTINGS, limitsFrom} from './limits.mjs';
 import {consoleCheckFrom} from './console.mjs';
 import {parseFixedAddress} from './address.mjs';
-import {browserServiceFrom, surfacesFrom} from '../mcp/surface.mjs';
+import {browserServiceFrom, replHostFrom, surfacesFrom} from '../mcp/surface.mjs';
 import {runtimeIdleFrom} from '../mcp/lazy-runtime.mjs';
 import {loadWebSocket} from './relay-link.mjs';
 import {fail} from '../runtime/errors.mjs';
@@ -34,6 +36,7 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
   consoleCheckFrom(env);
   runtimeIdleFrom(env);
   const browserService = browserServiceFrom(env);
+  const replHost = replHostFrom(env);
   const device = readDevice(home);
   if (!device) fail('remote_not_enrolled', `${machine} is not enrolled for remote control`, {hint: 'run cua remote enroll first'});
   if (device.relayUrl) checkRelayUrl(device.relayUrl);
@@ -44,6 +47,7 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
   const settings = {
     ...Object.fromEntries([...AGENT_SETTINGS, 'CUA_RUNTIME_IDLE_MS'].filter(key => env[key] !== undefined).map(key => [key, env[key]])),
     ...(browserService ? {CUA_BROWSER_SERVICE: browserService} : {}),
+    ...(replHost ? {CUA_REPL_HOST: replHost} : {}),
   };
   return {
     programArguments: [node, cli, 'agent', 'run', ...args],

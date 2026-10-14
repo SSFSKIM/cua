@@ -99,6 +99,27 @@ test('install writes CUA_BROWSER_SERVICE into the job only when it was given, ne
   }
 });
 
+// CUA_REPL_HOST (spec 2026-10-14-own-repl-host-design.md, Decision Log): only an explicit value is persisted, so the
+// installed job keeps the user's rollback (vendor) or choice (cua) and an unset install resolves the default afresh at
+// each connection; an unknown value is refused before anything is written.
+test('install writes CUA_REPL_HOST into the job only when it was given, cua or vendor, never a resolved default, and refuses an unknown one first', async t => {
+  const {home, install, plist, launchctl} = setup(t);
+  for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_REPL_HOST: ''}]) {
+    await install({http: '127.0.0.1:7801', env});
+    assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_REPL_HOST)}: resolved at each connection`);
+  }
+  for (const host of ['cua', 'vendor']) {
+    await install({http: '127.0.0.1:7801', surfaces: 'computer,browser', env: {CUA_HOME: home, CUA_REPL_HOST: host}});
+    assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser', CUA_REPL_HOST: host}, `${host}: carried as given`);
+  }
+  const calls = launchctl.calls.length;
+  const before = readFileSync(plist, 'utf8');
+  for (const bad of ['own', 'Vendor', ' cua'])
+    await assert.rejects(install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_REPL_HOST: bad}}), {code: 'invalid_setting', message: /CUA_REPL_HOST must be cua or vendor/}, bad);
+  assert.equal(readFileSync(plist, 'utf8'), before, 'a refused setting changes nothing');
+  assert.equal(launchctl.calls.length, calls);
+});
+
 test('install refuses a relay URL that is not wss: or loopback ws: before writing anything', async t => {
   const {home, install, plist, launchctl} = setup(t);
   const file = join(home, 'remote', 'device.json');

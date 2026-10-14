@@ -259,6 +259,14 @@ test('under the vendor browser service, the rollback, profiles_list and js teach
   }
 });
 
+test('CUA_REPL_HOST is checked at start whatever the surfaces: cua, vendor, or unset (each connection resolves it)', () => {
+  for (const surfaces of ['computer', 'browser', 'computer,browser']) {
+    for (const value of [undefined, '', 'cua', 'vendor']) settingsFrom({CUA_SHIM_SURFACES: surfaces, CUA_REPL_HOST: value});
+    for (const bad of ['own', 'Cua', 'cua,vendor'])
+      assert.throws(() => settingsFrom({CUA_SHIM_SURFACES: surfaces, CUA_REPL_HOST: bad}), error => error.code === 'invalid_setting' && /CUA_REPL_HOST must be cua or vendor/.test(error.message), `${surfaces} ${bad}`);
+  }
+});
+
 test('CUA_BROWSER_SERVICE is checked at start with the browser surface: cua, vendor, or unset (the launch resolves it)', () => {
   for (const value of [undefined, '', 'cua', 'vendor']) settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: value});
   for (const bad of ['openai', 'Cua', ' vendor'])

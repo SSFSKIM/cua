@@ -68,7 +68,24 @@ test('summarize pools every run per operation: latency over successful samples, 
   assert.deepEqual(op('warm.getScreenshot').details, {bytes: {median: 1500, min: 1000, max: 2000}, format: {values: ['jpeg']}, sha256: {distinct: 6}});
   assert.equal(op('task.total').ok, 27);
   assert.deepEqual(op('task.total').details, {actions: {median: 4, min: 4, max: 4}});
-  assert.deepEqual(summary.attestation, {device: 'mini', commit: 'abc1234', release: '26.928.40906-darwin-arm64', hardware: 'Mac14,12, Apple M2 Pro, 16 GiB', os: 'macOS 27.0 (26A428)', display: '2560 x 1440 points at scale 2 (5120 x 2880 pixels)', service: 'computer surface, answered by vendor (helper: pinned runtime)'});
+  // A run recorded before host attestation (the 2026-10-14 Mac baseline) has no requested host and no sample plan here.
+  assert.deepEqual(summary.attestation, {device: 'mini', commit: 'abc1234', host: null, release: '26.928.40906-darwin-arm64', hardware: 'Mac14,12, Apple M2 Pro, 16 GiB', os: 'macOS 27.0 (26A428)', display: '2560 x 1440 points at scale 2 (5120 x 2880 pixels)', service: 'computer surface, answered by vendor (helper: pinned runtime)', sandbox: null, plan: null});
+});
+
+test('a run that requests a host must attest it on every connection it opened', t => {
+  const vendor = {host: 'vendor', connections: 2, plan: {samples: 30, cold: 5, tasks: 10}, sandbox: {mode: 'scoped', explicit: false}, hostAttestations: [1, 2].map(() => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: null}))};
+  const attested = summarize(readRuns(fixture(t, [meta(1, vendor), meta(2, vendor), meta(3, vendor)])));
+  // (This fixture's rows cover only part of a plan; coverage has its own test below.)
+  assert.deepEqual(attested.problems.filter(p => !/ covers | lacks /.test(p)), []);
+  assert.equal(attested.attestation.sandbox, 'scoped (platform default)');
+  assert.equal(attested.attestation.host, 'vendor (initialize: node_repl 0.1.0)');
+  assert.equal(attested.attestation.plan, '5 cold, 30 warm, 10 tasks');
+  const short = {...vendor, connections: 3};
+  const marked = {...vendor, hostAttestations: [{host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/replHost': {host: 'cua', version: '0.1.0'}}}, vendor.hostAttestations[1]]};
+  const problems = summarize(readRuns(fixture(t, [meta(1, vendor), meta(2, short), meta(3, marked), meta(4, {...vendor, sandbox: undefined})]))).problems;
+  assert.ok(problems.includes('run-4 records no sandbox policy'), problems.join(' | '));
+  assert.ok(problems.includes('run-2: 3 connections opened, 2 attested'), problems.join(' | '));
+  assert.ok(problems.some(p => /^run-3: host attestation missing or mismatched \(requested vendor\)/.test(p)), problems.join(' | '));
 });
 
 test('an incomplete run or one that disagrees on commit, release or service is a problem, never silently pooled', t => {
@@ -93,4 +110,24 @@ test('the CLI summary command writes summary.md beside the runs', t => {
   const result = spawnSync(process.execPath, [SCRIPT, 'summary', dir], {encoding: 'utf8'});
   assert.equal(result.status, 0, result.stderr);
   assert.match(readFileSync(join(dir, 'summary.md'), 'utf8'), /\| task\.total \| 30 \| 27 \| 0 \| 3 \|/);
+});
+
+test('a run recorded with host attestation must cover its whole plan; a legacy run is not held to it', t => {
+  const plan = {samples: 30, cold: 5, tasks: 10};
+  const attested = {host: 'vendor', connections: 1, plan, sandbox: {mode: 'scoped', explicit: false}, hostAttestations: [{host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: null}]};
+  const problems = summarize(readRuns(fixture(t, [meta(1, attested)]))).problems;
+  // rowsFor covers 30 warm.noop samples and 5 cold connections, and only 2 screenshots, no getState, no tasks' steps.
+  assert.ok(!problems.some(p => /warm\.noop|cold connections/.test(p)), problems.join(' | '));
+  assert.ok(problems.includes('run-1 covers 2 warm.getScreenshot samples, the plan 30'), problems.join(' | '));
+  assert.ok(problems.includes('run-1 covers 0 task.act samples, the plan 10'), problems.join(' | '));
+  assert.deepEqual(summarize(readRuns(fixture(t, [meta(1)]))).problems, []);
+});
+
+test('a run answers as one host identity, and every pooled run as the same one', t => {
+  const attest = version => ({host: 'vendor', serverInfo: {name: 'node_repl', version}, _meta: null});
+  const run = attestations => ({host: 'vendor', connections: attestations.length, plan: {samples: 30, cold: 5, tasks: 10}, sandbox: {mode: 'scoped', explicit: false}, hostAttestations: attestations});
+  const hostProblems = runs => summarize(readRuns(fixture(t, runs))).problems.filter(p => !/ covers | lacks /.test(p));
+  assert.deepEqual(hostProblems([meta(1, run([attest('1'), attest('1')])), meta(2, run([attest('1')]))]), []);
+  assert.ok(hostProblems([meta(1, run([attest('1'), attest('2')]))]).some(p => /^run-1: host attestation .*mixed host identities \(node_repl 1, node_repl 2\)/.test(p)));
+  assert.ok(hostProblems([meta(1, run([attest('1')])), meta(2, run([attest('2')]))]).some(p => /run-2 differs in host/.test(p)));
 });

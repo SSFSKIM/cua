@@ -67,3 +67,79 @@ test('a case on one service only is refused', t => {
   writeFileSync(path,readFileSync(path,'utf8').split('\n').filter(l=>!l.includes('bench/drag-items')).join('\n'));
   assert.throws(()=>summarizeScripted(dir),/bench\/drag-items: unequal episodes \(vendor 5, cua 4\)/);
 });
+
+function hostEvidence(t,options={}) {
+  const dir=evidence(t,options);
+  for(const host of ['vendor','cua'])for(let n=1;n<=5;n++) {
+    const path=join(dir,host,`ep-${n}/meta.json`),meta=JSON.parse(readFileSync(path,'utf8'));
+    Object.assign(meta,{host,service:'cua',surfaces:['browser'],hostAttestations:[{
+      host,serverInfo:{name:host==='cua'?'cua-repl-host':'node-repl',version:'1.0.0'},
+      _meta:host==='cua'?{'cua/replHost':{host:'cua',version:'1.0.0'}}:null,
+    }]});
+    for(const attestation of meta.attestations)attestation.service='cua';
+    writeFileSync(path,JSON.stringify(meta));
+  }
+  return dir;
+}
+test('host-axis scripted outcomes count observed hosts without relabelling the cua service',t=>{
+  const dir=hostEvidence(t),before=readFileSync(join(dir,'vendor/ep-1/meta.json'),'utf8');
+  const report=summarizeScripted(dir,{axis:'host'});
+  assert.equal(report.axis,'host');assert.equal(report.service,'cua');
+  assert.deepEqual(report.tasks['bench/drag-box'],{vendor:'5/5',cua:'5/5'});
+  assert.deepEqual(report.episodes[0],{case:'bench/drag-box',host:'vendor',service:'cua',episode:1,done:true,raw:1,reward:0.9,path:'(1,2)->(3,4)',ok:true});
+  assert.equal(report.verdict,'equal: every scripted episode passes on both hosts');
+  assert.equal(readFileSync(join(dir,'vendor/ep-1/meta.json'),'utf8'),before);
+  assert.equal(summarizeScripted(hostEvidence(t,{raw:(host,n,c)=>host==='cua'&&n===3&&c==='bench/drag-items'?-1:1}),{axis:'host'}).verdict,
+    'defect: cua misses bench/drag-items ep-3 (raw -1)');
+  const script=fileURLToPath(new URL('../../scripts/bench-scripted-summary.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,[script,dir,'--axis','host'],{encoding:'utf8'});
+  assert.equal(run.status,0,run.stderr);assert.match(run.stdout,/comparison axis: host; browser service: cua/);
+  assert.match(run.stdout,/verdict: equal: every scripted episode passes on both hosts/);
+});
+
+test('host-axis scripted summary requires one host identity per episode and per host group',t=>{
+  const dir=hostEvidence(t),edit=(group,n,change)=>{const path=join(dir,group,`ep-${n}/meta.json`),meta=JSON.parse(readFileSync(path,'utf8'));change(meta);writeFileSync(path,JSON.stringify(meta));};
+  edit('vendor',3,meta=>{meta.hostAttestations[0].serverInfo.version='1.0.1';});
+  assert.throws(()=>summarizeScripted(dir,{axis:'host'}),/vendor group mixes host identities/);
+  edit('vendor',3,meta=>{meta.hostAttestations[0].serverInfo.version='1.0.0';meta.hostAttestations.push({...meta.hostAttestations[0],serverInfo:{name:'node-repl',version:'0.9.0'}});});
+  assert.throws(()=>summarizeScripted(dir,{axis:'host'}),/host attestation.*mixed host identities/);
+});
+
+test('host-axis scripted summary rejects unattested host claims and service/connection mismatches',t=>{
+  const dir=hostEvidence(t),path=join(dir,'vendor/ep-1/meta.json'),valid=JSON.parse(readFileSync(path,'utf8'));
+  for(const change of [
+    meta=>{delete meta.hostAttestations;},
+    meta=>{meta.host='cua';},
+    meta=>{meta.hostAttestations[0].host='cua';},
+    meta=>{delete meta.hostAttestations[0]._meta;},
+    meta=>{meta.hostAttestations.push({host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},_meta:{'cua/replHost':{host:'cua',version:'1'}}});},
+    meta=>{meta.service='vendor';},
+    meta=>{meta.attestations[1].service='vendor';},
+  ]) {
+    const meta=structuredClone(valid);change(meta);writeFileSync(path,JSON.stringify(meta));
+    assert.throws(()=>summarizeScripted(dir,{axis:'host'}),/host attestation|service attestation/);
+  }
+  assert.throws(()=>summarizeScripted(evidence(t),{axis:'host'}),/host attestation|service attestation/);
+});
+
+test('host-axis scripted comparison still refuses incomplete or unequal episodes; invalid axes fail',t=>{
+  const dir=hostEvidence(t);
+  rmSync(join(dir,'cua/ep-5'),{recursive:true});
+  assert.throws(()=>summarizeScripted(dir,{axis:'host'}),/unequal episodes/);
+  assert.throws(()=>summarizeScripted(dir,{axis:'other'}),/axis/);
+  const complete=hostEvidence(t),path=join(complete,'cua/ep-1/meta.json'),meta=JSON.parse(readFileSync(path,'utf8'));
+  writeFileSync(path,JSON.stringify({...meta,complete:false}));
+  assert.throws(()=>summarizeScripted(complete,{axis:'host'}),/incomplete/);
+  const serviceDir=evidence(t);
+  assert.deepEqual(summarizeScripted(serviceDir,{axis:'service'}),summarizeScripted(serviceDir));
+  const script=fileURLToPath(new URL('../../scripts/bench-scripted-summary.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,[script,serviceDir,'--axis','other'],{encoding:'utf8'});
+  assert.equal(run.status,1);assert.doesNotMatch(run.stdout,/verdict:/);assert.match(run.stderr,/axis/);
+});
+
+test('scripted service CLI still defaults to the working directory when no evidence argument is supplied',t=>{
+  const dir=evidence(t),script=fileURLToPath(new URL('../../scripts/bench-scripted-summary.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,[script],{cwd:dir,encoding:'utf8'});
+  assert.equal(run.status,0,run.stderr);
+  assert.match(run.stdout,/verdict: equal: every scripted episode passes on both services/);
+});

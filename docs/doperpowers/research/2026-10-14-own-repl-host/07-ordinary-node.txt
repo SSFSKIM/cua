@@ -1,0 +1,13 @@
+UTC=2026-10-14T17:36:54Z
+{"at":"2026-10-14T17:36:54.328Z","event":"process","hostname":"Mac-mini.local","pid":66183,"ppid":66176,"uid":501,"execPath":"/Users/new/.nvm/versions/node/v24.18.0/bin/node","node":"v24.18.0","socketPath":"/Users/new/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService/IPC/computeruse.sock"}
+{"at":"2026-10-14T17:36:54.332Z","event":"ancestry","depth":0,"row":"66183 66176 /Users/new/.nvm/versions/node/v24.18.0/bin/node"}
+{"at":"2026-10-14T17:36:54.333Z","event":"ancestry","depth":1,"row":"66176 66175 zsh"}
+{"at":"2026-10-14T17:36:54.335Z","event":"ancestry","depth":2,"row":"66175 66163 sshd-session: new@notty"}
+{"at":"2026-10-14T17:36:54.336Z","event":"ancestry","depth":3,"row":"66163     1 sshd-session: new [priv]"}
+{"at":"2026-10-14T17:36:54.338Z","event":"ancestry","depth":4,"row":"1     0 /sbin/launchd"}
+{"at":"2026-10-14T17:36:54.338Z","event":"connected"}
+{"at":"2026-10-14T17:36:54.339Z","event":"frame-tx","raw":"{\"id\":1,\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"params\":{\"clientApiVersion\":\"CodexComputerUseIPC-5\"}}","base64":"XgAAAHsiaWQiOjEsImpzb25ycGMiOiIyLjAiLCJtZXRob2QiOiJwaW5nIiwicGFyYW1zIjp7ImNsaWVudEFwaVZlcnNpb24iOiJDb2RleENvbXB1dGVyVXNlSVBDLTUifX0="}
+{"at":"2026-10-14T17:36:54.389Z","event":"socket-end"}
+{"at":"2026-10-14T17:36:54.390Z","event":"socket-close","hadError":false}
+{"at":"2026-10-14T17:36:54.390Z","event":"probe-error","message":"socket closed before response"}
+{"at":"2026-10-14T17:36:54.390Z","event":"cleanup","socketDestroyed":true}

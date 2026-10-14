@@ -1,0 +1,34 @@
+{
+  "device": "cua-linux",
+  "ready": true,
+  "fakeBackend": true,
+  "observations": {
+    "connections": [
+      "connection-1"
+    ],
+    "hostAttestations": [
+      {
+        "connection": "connection-1",
+        "host": "vendor",
+        "serverInfo": {
+          "name": "rmcp",
+          "version": "1.5.0"
+        },
+        "executionFacts": {
+          "checkout": "/home/admin/Developer/GitHub/cua-parity",
+          "home": "/home/admin/.local/share/cua",
+          "commit": "c46050b6fc06ff3f256989efac91014fcdb4cc50",
+          "dirty": false,
+          "release": "26.928.40906-linux-arm64",
+          "node": "v22.23.3",
+          "runtimeNode": "v24.21.0",
+          "platform": "linux"
+        },
+        "_meta": {
+          "codex/nodeReplExecutionDurationMs": 77,
+          "cua/taskId": "7d4a719c-3ff1-4036-bce5-3716d5d2c530"
+        }
+      }
+    ]
+  }
+}

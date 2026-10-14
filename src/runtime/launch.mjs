@@ -66,13 +66,18 @@
 //                                            before the global one
 //   CUA_SECRETS_UNAVAILABLE                  otherwise: why (e.g. secrets_disabled), so the trusted services fail a
 //                                            {{secret:…}} reference with that reason
+// The selection (spec docs/doperpowers/specs/2026-10-14-own-repl-host-design.md, "Selection is a connection fact"): the
+// launch record also carries `replHost` ({host, reason}, replHostFor), the REPL host it runs. CUA_REPL_HOST and CUA_NODE
+// are read by the proxy only and never reach the runtime's environment. Until cua's own host lands (#116 M1) a selection
+// of it resolves its Node (ownHostNode) and then fails (repl_host_unavailable); it never launches the vendor host instead.
 // Deliberately never set: NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the
 // vendor launcher adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH,
 // NODE_REPL_WORKER_WRAPPER, NODE_REPL_DENIED_PATHS.
 //
 // The working directory is <home>/run/<sessionId>; model cells can see it, so it is never the caller's directory or
 // the repository. The caller creates it (mode 0700) before spawning and removes it when the connection ends.
-import {realpathSync, statSync} from 'node:fs';
+import {accessSync, constants, realpathSync, statSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
@@ -80,7 +85,7 @@ import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
-import {chromeRoute} from '../chrome/route.mjs';
+import {chromeRoute, registrationTimes} from '../chrome/route.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -100,16 +105,27 @@ export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 // trusted only when the launch selects it.
 export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
 const BROWSER_SERVICES = ['cua', 'vendor'];
+const REPL_HOSTS = ['cua', 'vendor'];
+// The oldest Node major cua's own REPL host runs on (its kernel's vm modules); the vendor host keeps its pinned Node.
+export const NODE_FLOOR = 24;
 
 // `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
-// CUA_BROWSER_BACKENDS configured any.
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null}) {
+// CUA_BROWSER_BACKENDS configured any. `browserSelection` (browserSelectionFor) and `replHost` (replHostFor) are the
+// connection's, resolved once at its open so every launch of it (an idle relaunch too) runs what it resolved then; a
+// caller that gives neither, a single launch, has them resolved here from `ambient` and `home`.
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, browserSelection, replHost}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   if (secretsDir !== undefined && (typeof secretsDir !== 'string' || !isAbsolute(secretsDir))) fail('invalid_secrets_dir', 'the secret store directory must be an absolute path');
   if (secretsProjectDir !== undefined && (typeof secretsProjectDir !== 'string' || !isAbsolute(secretsProjectDir) || !secretsDir)) fail('invalid_secrets_dir', 'the project secret store directory must be an absolute path beside the global one');
-  const browserService = enabled.includes('browser') ? browserServiceFor(ambient, home).service : null;
+  browserSelection = enabled.includes('browser') ? (browserSelection ?? browserSelectionFor(ambient, home)) : null;
+  replHost ??= replHostFor({platform: runtime.manifest.platform, surfaces: enabled, ambient, browserSelection});
+  if (replHost.host === 'cua') {
+    ownHostNode({ambient});
+    ownHostUnavailable();
+  }
+  const browserService = browserSelection?.service ?? null;
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
   const linux = runtime.manifest.platform === 'linux';
@@ -153,7 +169,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[STORE_ENV.dir] = secretsDir;
     if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
-  return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId)};
+  return {command: p.node, args: [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason}};
 }
 
 // The browser service a launch from `home` gets, and why -> {service: 'cua' | 'vendor', reason}. A CUA_BROWSER_SERVICE
@@ -167,14 +183,118 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
 // launch. Shared with the live runners' attestation (scripts/accept/service-attest.mjs). When #79 removes the vendor
 // route this collapses to a blanket `cua` default.
 export function browserServiceFor(ambient, home) {
+  const {service, reason} = browserSelectionFor(ambient, home);
+  return {service, reason};
+}
+
+// browserServiceFor's choice with its provenance, which the REPL host selection needs (replHostFor):
+// {service, reason, explicit, route, registration}. `explicit`: CUA_BROWSER_SERVICE was set (nonempty) in `ambient`, the
+// caller's original environment, never a value a caller wrote back after resolving it. `route`: the home's active
+// Chrome route (chromeRoute: 'cua', 'vendor' or null), whatever decided the service. `registration` ({route, at}, `at`
+// its record's write time in epoch ms): the registration that decided an unset selection, or null when none did (an
+// explicit value, MAWS client mode, or a home with no registration).
+export function browserSelectionFor(ambient, home) {
   const value = ambient.CUA_BROWSER_SERVICE;
-  if (value !== undefined && value !== '') {
-    if (!BROWSER_SERVICES.includes(value)) fail('invalid_browser_service', `CUA_BROWSER_SERVICE must be ${BROWSER_SERVICES.join(' or ')}`);
-    return {service: value, reason: 'explicit'};
+  const explicit = value !== undefined && value !== '';
+  if (explicit && !BROWSER_SERVICES.includes(value)) fail('invalid_browser_service', `CUA_BROWSER_SERVICE must be ${BROWSER_SERVICES.join(' or ')}`);
+  const route = chromeRoute(home);
+  const decidedBy = which => ({route: which, at: registrationTimes(home)[which]});
+  if (explicit) return {service: value, reason: 'explicit', explicit, route, registration: null};
+  if (route === 'cua') return {service: 'cua', reason: 'cua_route', explicit, route, registration: decidedBy('cua')};
+  if (ambient.CUA_BROWSER_BACKENDS?.split(':').some(Boolean)) return {service: 'cua', reason: 'maws_client_mode', explicit, route, registration: null};
+  return {service: 'vendor', reason: 'chatgpt_extension_route', explicit, route, registration: route === 'vendor' ? decidedBy('vendor') : null};
+}
+
+// What decided a browser selection, in words: the route and the registration that made it active, or their absence.
+export function describeBrowserRoute({service, reason, registration}) {
+  const at = ms => new Date(ms).toISOString();
+  if (reason === 'explicit') return `CUA_BROWSER_SERVICE=${service}`;
+  if (reason === 'cua_route') return `the cua route, by cua's registration (cua chrome register) of ${at(registration.at)}`;
+  if (reason === 'maws_client_mode') return 'MAWS\'s in-app browser (CUA_BROWSER_BACKENDS), no registration deciding';
+  return registration ? `the ChatGPT extension route, by its registration (cua chrome register --vendor) of ${at(registration.at)}`
+    : 'the ChatGPT extension route, as a home with no Chrome registration is read';
+}
+
+// The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}. `browserSelection`
+// (browserSelectionFor; required with the browser surface, ignored without it, as the launch ignores CUA_BROWSER_SERVICE
+// then) carries the original explicitness. CUA_REPL_HOST in `ambient`, the caller's original environment:
+//   vendor   always the vendor host (`explicit`): the rollback.
+//   cua      cua's own host (`explicit`) where it can run, else refused before launch (repl_host_refused), never
+//            downgraded: with CUA_BROWSER_SERVICE=vendor (a contradictory pair); with the browser surface on a vendor
+//            browser route resolved from the home (named, with the registration that decided it and how to move the
+//            home); with the computer surface on macOS, whose native helper accepts only the vendor host's node_repl as
+//            a peer until #117.
+//   unset or empty   the vendor host: `vendor_browser_route` when the browser surface's service is the vendor's (only the
+//            vendor host runs it), `macos_native_peer_requires_vendor` for the computer surface on macOS (MAWS client
+//            mode does not change that), else `staged_vendor_default`: the sessions #116's last stage (M5) moves to
+//            cua's own host by default (`linux`, `browser_only`).
+// Any other value is refused (invalid_repl_host).
+export function replHostFor({platform, surfaces, ambient, browserSelection}) {
+  const value = ambient.CUA_REPL_HOST;
+  const requested = value === undefined || value === '' ? null : value;
+  if (requested !== null && !REPL_HOSTS.includes(requested)) fail('invalid_repl_host', `CUA_REPL_HOST must be ${REPL_HOSTS.join(' or ')}`);
+  if (requested === 'vendor') return {host: 'vendor', reason: 'explicit'};
+  if (surfaces.includes('browser') && !browserSelection) throw new TypeError('replHostFor: the browser surface needs its browser selection');
+  const browser = surfaces.includes('browser') ? browserSelection : null;
+  const macosComputer = platform === 'darwin' && surfaces.includes('computer');
+  if (requested === 'cua') {
+    if (browser?.service === 'vendor' && browser.explicit)
+      fail('repl_host_refused', 'CUA_REPL_HOST=cua and CUA_BROWSER_SERVICE=vendor contradict each other: cua\'s own REPL host runs only cua\'s browser service, and the vendor\'s runs only on the vendor host. To move to cua\'s host, unset CUA_BROWSER_SERVICE (or set it to cua); to keep the vendor\'s service, unset CUA_REPL_HOST or use CUA_REPL_HOST=vendor');
+    if (browser?.service === 'vendor')
+      fail('repl_host_refused', `CUA_REPL_HOST=cua needs cua's own browser service, but this home's browser service resolves to the vendor's: ${describeBrowserRoute(browser)}. Run \`cua chrome register\` to move this home to the cua route, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor host`);
+    if (macosComputer)
+      fail('repl_host_refused', 'CUA_REPL_HOST=cua is not supported with the computer surface on macOS: its computer-use helper accepts only the vendor host\'s node_repl as a peer until #117 replaces it. Use CUA_SHIM_SURFACES=browser for cua\'s own host, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor)');
+    return {host: 'cua', reason: 'explicit'};
   }
-  if (chromeRoute(home) === 'cua') return {service: 'cua', reason: 'cua_route'};
-  if (ambient.CUA_BROWSER_BACKENDS?.split(':').some(Boolean)) return {service: 'cua', reason: 'maws_client_mode'};
-  return {service: 'vendor', reason: 'chatgpt_extension_route'};
+  if (browser?.service === 'vendor') return {host: 'vendor', reason: 'vendor_browser_route'};
+  if (macosComputer) return {host: 'vendor', reason: 'macos_native_peer_requires_vendor'};
+  return {host: 'vendor', reason: 'staged_vendor_default'};
+}
+
+// The Node cua's own REPL host runs on: the first of an explicit CUA_NODE (an absolute path), the node running cua
+// (`execPath`) and the first `node` on the caller's PATH whose `--version` (`versionOf`) is at least NODE_FLOOR, as its
+// real path, which the launch can name in an environment whose PATH is fixed. None: refused (repl_host_node), naming
+// every candidate tried and its version. The vendor host's pinned Node is never a candidate.
+export function ownHostNode({ambient, execPath = process.execPath, versionOf = nodeVersion}) {
+  const explicit = ambient.CUA_NODE || null;
+  if (explicit !== null && !isAbsolute(explicit)) fail('invalid_setting', 'CUA_NODE must be the absolute path of a Node executable');
+  const tried = [];
+  for (const [label, path] of [['CUA_NODE', explicit], ['the node running cua', execPath], ['node on PATH', nodeOnPath(ambient.PATH)]]) {
+    if (!path) { tried.push(`${label} (${label === 'CUA_NODE' ? 'unset' : 'not found'})`); continue; }
+    let real;
+    try { real = realpathSync(path); } catch { tried.push(`${label} ${path} (not found)`); continue; }
+    const version = versionOf(real);
+    if (version && Number(version.slice(1).split('.')[0]) >= NODE_FLOOR) return real;
+    tried.push(`${label} ${path} (${version ?? 'no readable version'})`);
+  }
+  fail('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and none was found: ${tried.join(', ')}; set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later, or run cua with one (the vendor host's pinned Node is never used for it)`);
+}
+
+// `vX.Y.Z` as the executable at `path` reports it, or null.
+function nodeVersion(path) {
+  try {
+    const out = execFileSync(path, ['--version'], {encoding: 'utf8', timeout: 5000, env: {PATH: FIXED_PATH}, stdio: ['ignore', 'pipe', 'ignore']});
+    return out.trim().match(/^v\d+\.\d+\.\d+/)?.[0] ?? null;
+  } catch { return null; }
+}
+
+// The `node` a shell would run from `PATH`: the first executable file of that name in an absolute entry.
+function nodeOnPath(PATH = '') {
+  for (const dir of PATH.split(':')) {
+    if (!isAbsolute(dir)) continue;
+    const path = join(dir, 'node');
+    try {
+      if (!statSync(path).isFile()) continue;
+      accessSync(path, constants.X_OK);
+      return path;
+    } catch { /* not here */ }
+  }
+  return null;
+}
+
+// Until #116's M1 lands cua's own host (src/repl-host/), selecting it fails clearly; it never runs the vendor host instead.
+export function ownHostUnavailable() {
+  fail('repl_host_unavailable', 'CUA_REPL_HOST=cua selects cua\'s own REPL host, which this cua does not include yet (#116 lands it); unset CUA_REPL_HOST or use CUA_REPL_HOST=vendor');
 }
 
 // The enabled surfaces in the vendor launcher's terms: a non-empty set of known surface names, in canonical order.

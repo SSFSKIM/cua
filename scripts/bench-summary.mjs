@@ -3,10 +3,49 @@
 // time. T0/T9 timing is diagnostic only. Outcome parity compares scored ok counts:
 // cua must have at least as many successes over three runs as vendor. Answers and
 // rewards are displayed, never compared. Incomplete groups get no verdict.
+// Default groups are browser services; --axis host compares attested REPL hosts
+// while both groups retain browser service cua.
 import {readFileSync, existsSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {parseArgs} from 'node:util';
 const json = path => JSON.parse(readFileSync(path,'utf8'));
+
+export function validateAxis(axis) {
+  if (!['service','host'].includes(axis)) throw new Error('axis must be service|host');
+}
+// Capture both initialize and a real tool result on every connection. An env
+// selection or an old cached handshake alone is not answering-host evidence.
+// Every connection of a run must answer as one host identity (serverInfo name
+// and version); -> that identity, which a pooled group must share across runs.
+export function validateHostAttestations(meta, host, root) {
+  const fail = () => {throw new Error(`${root}: host attestation missing or mismatched (requested ${host}); remeasure unattested evidence`);};
+  if (meta.host !== host || !Array.isArray(meta.hostAttestations) || !meta.hostAttestations.length) fail();
+  for (const observed of meta.hostAttestations) {
+    const info = observed?.serverInfo;
+    if (observed?.host !== host || typeof info?.name !== 'string' || !info.name || typeof info.version !== 'string' || !info.version ||
+        !Object.hasOwn(observed,'_meta') || (observed._meta !== null && (typeof observed._meta !== 'object' || Array.isArray(observed._meta)))) fail();
+    const marker = observed._meta?.['cua/replHost'];
+    if (host === 'cua') {
+      if (info.name !== 'cua-repl-host' || marker?.host !== 'cua' || marker.version !== info.version) fail();
+    } else if (info.name === 'cua-repl-host' || (observed._meta !== null && Object.hasOwn(observed._meta,'cua/replHost'))) fail();
+  }
+  const identities = [...new Set(meta.hostAttestations.map(a => `${a.serverInfo.name} ${a.serverInfo.version}`))].sort();
+  if (identities.length !== 1) throw new Error(`${root}: host attestation shows mixed host identities (${identities.join(', ')}) within one run; remeasure it`);
+  return identities[0];
+}
+// The runs pooled into one host group must all have answered as the same host identity (vendor and cua groups may differ).
+export function assertOneHostIdentity(group, identities) {
+  const distinct = [...new Set(identities)].sort();
+  if (distinct.length > 1) throw new Error(`${group} group mixes host identities (${distinct.join(', ')}); pool only runs of one host version`);
+}
+export function summaryArgs(args, {defaultDir} = {}) {
+  const {values,positionals} = parseArgs({args,allowPositionals:true,options:{axis:{type:'string',default:'service'}}});
+  validateAxis(values.axis);
+  if (positionals.length > 1 || (!positionals.length && !defaultDir)) throw new Error('Usage: <summary-script> <evidence-dir> [--axis service|host]');
+  return {dir:positionals[0] ?? defaultDir,axis:values.axis};
+}
+
 const timingJudged = task => task !== 'T0' && task !== 'T9';
 const validDuration = ms => Number.isFinite(ms) && ms >= 0;
 function spread(times) {
@@ -16,15 +55,17 @@ function spread(times) {
 }
 const stats = rows => ({toolMs:spread(rows.map(r => r.toolMs)),wallMs:spread(rows.map(r => r.wallMs)),
   outcomes:rows.map(r => r.outcome.ok),details:rows.map(r => r.outcome)});
-function readService(dir, service) {
-  if (!existsSync(join(dir,service))) return null;
-  const runs = [];
+function readGroup(dir, group, axis) {
+  const service = axis === 'host' ? 'cua' : group;
+  if (!existsSync(join(dir,group))) return null;
+  const runs = [], identities = [];
   for (let n=1;n<=3;n++) {
-    const root = join(dir,service,`run-${n}`);
+    const root = join(dir,group,`run-${n}`);
     if (!existsSync(root)) continue;
     const meta = json(join(root,'meta.json'));
     for (const k of ['service','commit','profile','model','runtime','started','finished']) if (!meta[k]) throw new Error(`${root}: missing meta.${k}`);
     if (meta.service !== service) throw new Error(`${root}: service attestation mismatch`);
+    if (axis === 'host') identities.push(validateHostAttestations(meta,group,root));
     const calls = readFileSync(join(root,'calls.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
     const outcomes = json(join(root,'outcomes.json')), tasks = new Map();
     for (const task of new Set([...calls.map(r => r.task),...Object.keys(outcomes)])) {
@@ -43,12 +84,14 @@ function readService(dir, service) {
       tasks.set(task,{task,timingJudged:timingJudged(task),toolMs,wallMs,outcome});
     }
     if (!tasks.size) throw new Error(`${root}: no tasks`);
-    runs.push({service,run:n,meta,tasks});
+    runs.push({service,...(axis === 'host' ? {host:group} : {}),run:n,meta,tasks});
   }
+  if (axis === 'host') assertOneHostIdentity(group,identities);
   return runs;
 }
-export function summarize(dir) {
-  const vendor = readService(dir,'vendor'), cua = readService(dir,'cua');
+export function summarize(dir, {axis = 'service'} = {}) {
+  validateAxis(axis);
+  const vendor = readGroup(dir,'vendor',axis), cua = readGroup(dir,'cua',axis);
   if (!vendor) throw new Error('vendor: three runs required');
   const all = [...vendor,...(cua ?? [])], ids = [...(all[0]?.tasks.keys() ?? [])];
   for (const r of all) {
@@ -56,9 +99,10 @@ export function summarize(dir) {
     for (const key of ['profile','model','runtime']) if (r.meta[key] !== all[0].meta[key]) throw new Error(`incomparable ${key} across runs`);
   }
   const incomplete = [['vendor',vendor],['cua',cua]].filter(([,runs]) => runs && runs.length !== 3)
-    .map(([service,runs]) => ({service,runs:runs.length}));
-  if (incomplete.length) return {tasks:[],verdict:null,incomplete,
-    runs:all.map(r => ({service:r.service,run:r.run,tasks:[...r.tasks.values()]}))};
+    .map(([group,runs]) => ({[axis]:group,runs:runs.length}));
+  const runs = all.map(r => ({service:r.service,...(axis === 'host' ? {host:r.host,meta:r.meta} : {}),run:r.run,tasks:[...r.tasks.values()]}));
+  const identity = axis === 'host' ? {axis,service:'cua',runs} : {};
+  if (incomplete.length) return {...identity,tasks:[],verdict:null,incomplete,runs};
   const tasks = ids.map(task => {
     const v = stats(vendor.map(r => r.tasks.get(task)));
     const c = cua && stats(cua.map(r => r.tasks.get(task)));
@@ -66,17 +110,18 @@ export function summarize(dir) {
     return {task,timingJudged:timingJudged(task),vendor:v,cua:c,
       ok:c ? timingOK && c.outcomes.filter(Boolean).length >= v.outcomes.filter(Boolean).length : null};
   });
-  return {tasks,verdict:!cua ? 'cua runs: none' : tasks.every(r => r.ok) ? 'no regression' : 'regression'};
+  return {...identity,tasks,verdict:!cua ? 'cua runs: none' : tasks.every(r => r.ok) ? 'no regression' : 'regression'};
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    if (!process.argv[2]) throw new Error('Usage: node scripts/bench-summary.mjs <evidence-dir>');
-    const report = summarize(process.argv[2]);
+    const {dir,axis} = summaryArgs(process.argv.slice(2));
+    const report = summarize(dir,{axis});
+    if (axis === 'host') console.log('comparison axis: host; browser service: cua');
     console.log('timing criterion: median of per-task sum of call ms, within max(10%, 500 ms) of vendor or lower; wall time is reported, not judged; T0/T9 timing excluded');
     console.log("outcome criterion: per-task cua success count over three runs must be at least vendor's; answers and rewards are displayed, not compared");
     if (report.incomplete) {
-      for (const run of report.runs) for (const row of run.tasks) console.log(`${run.service}/run-${run.run} ${row.task}: ${JSON.stringify(row)}`);
-      for (const {service,runs} of report.incomplete) console.log(`incomplete: ${service} has ${runs} of 3 runs`);
+      for (const run of report.runs) for (const row of run.tasks) console.log(`${run[axis]}/run-${run.run} ${row.task}: ${JSON.stringify(row)}`);
+      for (const group of report.incomplete) console.log(`incomplete: ${group[axis]} has ${group.runs} of 3 runs`);
       process.exitCode = 1;
     } else {
       for (const row of report.tasks) console.log(`${row.task}: ${JSON.stringify(row)}`);

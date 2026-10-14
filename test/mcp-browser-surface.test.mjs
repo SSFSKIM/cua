@@ -130,7 +130,7 @@ const BROWSER_RULES = {
   'never pick or bind a profile': /Never pick or bind a profile for the user/,
   'DOM-only tabs': /Chrome tabs are DOM-only: tab\.playwright locators, not native input/,
   'keys go to a focusable element, not a frame body, and cua.type pastes': /never a frame body; tab\.cua\.type pastes/,
-  'budgets up to 120 s and a js timeout above them': /Locator actions, waits and evaluate wait up to their timeoutMs: 3 s by default, at most 120 s \(0 is one attempt\); give the js call a timeout_ms above the longest wait in it\./,
+  'per-phase budgets up to 120 s and a js timeout covering them': /Locator actions, waits and evaluate take timeoutMs per phase \(finding the element, then acting\): 3 s by default, at most 120 s, 0 is one attempt; give the js call a timeout_ms covering every call it awaits\./,
   'evaluate in the page, sent once': /evaluate runs in the page like its own scripts \(DOM, fetch, cookies, navigation\) and is sent once: after a timeout or navigation it may have run, so check the page before running it again\./,
   'createBrowserTab limit': /createBrowserTab can take 60 s \(js timeout_ms of at least 60000\)/,
   'leftover tab': /tab may still have opened: tell the user, don't retry/,
@@ -255,7 +255,7 @@ test('under the vendor browser service, the rollback, profiles_list and js teach
     }
     assert.ok(tools.profiles_list.description.length <= DESCRIPTION_CAP, label);
     assert.match(tools.js.description, /DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab/, label);
-    assert.match(cua.js.description, /DOM-only tabs, budgets up to 120 s, evaluate in the page, slow createBrowserTab/, label);
+    assert.match(cua.js.description, /DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab/, label);
   }
 });
 

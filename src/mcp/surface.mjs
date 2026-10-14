@@ -88,12 +88,13 @@ const LINUX_SECRETS_LIST_BROWSER_TOOL = withoutSetValue(SECRETS_LIST_BROWSER_TOO
 // profiles_list names a stale binding. Which profile is meant stays the user's call (the dogfood agent bound one
 // itself from tab contents). The budget and evaluate lines follow the browser service the launch selects
 // (CUA_BROWSER_SERVICE): cua's own (the default, docs/doperpowers/specs/2026-10-13-own-browser-service-design.md)
-// takes a caller's timeoutMs up to 120 s and runs evaluate in the page's main world, sent once; the vendor's, the
+// takes a caller's timeoutMs up to 120 s for each phase of a call (finding the element, then acting and the load it
+// starts: src/browser-service/actions.mjs) and runs evaluate in the page's main world, sent once; the vendor's, the
 // one-release rollback, caps locator actions, waits and playwright.evaluate at 3 s (spike #25: a per-call timeoutMs
 // can only shorten it) and evaluates read-only. Either way a cell timeout resets the kernel, losing the tab handle.
 const SERVICE_RULES = {
   cua: [
-    '- Locator actions, waits and evaluate wait up to their timeoutMs: 3 s by default, at most 120 s (0 is one attempt); give the js call a timeout_ms above the longest wait in it.',
+    '- Locator actions, waits and evaluate take timeoutMs per phase (finding the element, then acting): 3 s by default, at most 120 s, 0 is one attempt; give the js call a timeout_ms covering every call it awaits.',
     '- evaluate runs in the page like its own scripts (DOM, fetch, cookies, navigation) and is sent once: after a timeout or navigation it may have run, so check the page before running it again.',
   ],
   vendor: [
@@ -220,7 +221,7 @@ const LINUX_COMPUTER_RULES = [
   '- No app asks for approval: this connection drives every window of the session; the trusted wrapper is not a boundary on Linux.',
 ];
 const BROWSER_POINTER = {
-  cua: '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, budgets up to 120 s, evaluate in the page, slow createBrowserTab).',
+  cua: '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab).',
   vendor: '- Chrome: follow the rules in profiles_list\'s description (DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab).',
 };
 

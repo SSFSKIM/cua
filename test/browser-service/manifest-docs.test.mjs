@@ -71,7 +71,7 @@ test('the API reference states cua\'s evaluate and budgets: the main world, no r
   const docs = new Documentation({apiManifest: API_MANIFEST, disabledMemberIds: new Set(), serviceVersion: '9.8.7'});
   const text = await docs.readBrowser(EXTENSION);
   assert.doesNotMatch(text, /read-only (?:page |DOM )?scope|read-only JavaScript/i, 'no read-only evaluate scope');
-  assert.match(text, /\/\/ timeoutMs on locator, wait and evaluate calls is in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000\./);
+  assert.match(text, /\/\/ timeoutMs on locator, wait and evaluate calls is a per-phase budget in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000\./);
   for (const member of ['evaluate<TResult, TArg>(pageFunction: PlaywrightEvaluateFunction', 'evaluate<TResult, TArg>(pageFunction: LocatorEvaluateFunction', 'evaluateAll<TResult, TArg>']) {
     const line = text.split('\n').find(l => l.includes(member));
     assert.match(line, /main world/, member);
@@ -93,10 +93,12 @@ test('the browser documentation teaches cua\'s service: the Chrome rules, the li
   assert.match(guide, /DOM-only/);
   assert.match(guide, /`tab\.playwright` locators/);
   assert.match(guide, /Press keys on a focusable element[^\n]*never a frame's or the document's `body`/);
-  // The lifted budgets.
-  assert.match(guide, /3000 by default, at most 120000/);
-  assert.match(guide, /`timeoutMs: 0` makes one attempt, bounded by 3000/);
-  assert.match(guide, /`timeout_ms` above the longest budget/);
+  // The lifted budgets, per phase (actions.mjs: resolution, then dispatch and the load it starts, each get timeoutMs).
+  assert.match(guide, /a budget per phase, in milliseconds: 3000 by default, at most 120000/);
+  assert.match(guide, /finding its element[^\n]*up to `timeoutMs`, then the action itself and any page load it starts up to `timeoutMs` again/);
+  assert.match(guide, /`timeoutMs: 0` makes one attempt per phase, bounded by 3000/);
+  assert.match(guide, /`timeout_ms` that covers the whole sequence of calls it awaits/);
+  assert.doesNotMatch(guide, /that call's budget|longest budget/, 'timeoutMs is not the whole call\'s bound');
   // evaluate in the main world, and the no-replay rule.
   assert.match(guide, /main world/);
   assert.match(guide, /`fetch`/);

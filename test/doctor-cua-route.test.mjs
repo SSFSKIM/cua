@@ -127,27 +127,32 @@ test('doctor with no registration keeps codex.login and chrome.host.config as be
 
 // browser.service (spec 2026-10-13-own-browser-service-design.md, M5 task 1): which browser service a launch here gets,
 // and why: an explicit CUA_BROWSER_SERVICE, else the home's route.
-test('doctor names the browser service a launch here selects and why, and how a vendor default becomes cua\'s: explicit, the cua route, MAWS, no registration, the ChatGPT extension route', async t => {
+test('doctor names the browser service a launch here selects and why: the active route and the registration that made it so, MAWS, explicit; a vendor default names the way to cua\'s', async t => {
   const stubs = {host: DARWIN, inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}),
     inspectAgent: async () => [], inspectChrome: async () => [], inspectLogin: async () => ({state: 'logged-out'})};
-  const homeWith = records => {
+  const homeWith = ({vendor, cua} = {}) => {
     const s = scratch();
     t.after(s.cleanup);
-    if (records.includes('vendor')) writeVendorRecord(s.dir);
-    if (records.includes('cua')) writeCuaRecord(s.dir);
+    if (vendor !== undefined) writeVendorRecord(s.dir, {at: vendor});
+    if (cua !== undefined) writeCuaRecord(s.dir, {at: cua});
     return s.dir;
   };
   const row = async (home, env = {}) => (await inspectRuntime({home, env, ...stubs})).checks.find(c => c.name === 'browser.service');
+  const EARLY = 1_760_000_000, LATE = 1_760_090_000;
+  const iso = at => new Date(at * 1000).toISOString();
   const REGISTER = /`cua chrome register` \(the cua extension\) switches this home to cua's own browser service/;
+  const CUA = "^cua \\(cua's own browser service\\): ";
+  const VENDOR = "^vendor \\(OpenAI's, from the pinned runtime\\): ";
   const cases = [
-    [homeWith([]), {}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route/, REGISTER],
-    [homeWith(['vendor']), {}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route/, REGISTER],
-    [homeWith(['cua']), {}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and this home has cua's Chrome registration/],
-    [homeWith(['vendor', 'cua']), {}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and this home has cua's Chrome registration/],
-    [homeWith([]), {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE is unset and MAWS's in-app browser is configured \(CUA_BROWSER_BACKENDS\)/],
-    [homeWith(['vendor']), {CUA_BROWSER_SERVICE: 'cua'}, 'pass', /^cua \(cua's own browser service\): CUA_BROWSER_SERVICE=cua/],
-    [homeWith(['cua']), {CUA_BROWSER_SERVICE: 'vendor'}, 'pass', /^vendor \(OpenAI's, from the pinned runtime\): CUA_BROWSER_SERVICE=vendor/],
-    [homeWith([]), {CUA_BROWSER_SERVICE: 'openai'}, 'fail', /CUA_BROWSER_SERVICE must be cua or vendor/],
+    [homeWith(), {}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route \\(the desktop app's host\\)`), REGISTER],
+    [homeWith({vendor: EARLY}), {}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route: its registration \\(cua chrome register --vendor\\) of ${iso(EARLY)} is the most recent`), REGISTER],
+    [homeWith({cua: EARLY}), {}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE is unset and this home is on the cua route: cua's registration of ${iso(EARLY)} is the most recent`)],
+    [homeWith({vendor: EARLY, cua: LATE}), {}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE is unset and this home is on the cua route: cua's registration of ${iso(LATE)} is the most recent`)],
+    [homeWith({vendor: LATE, cua: EARLY}), {}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route: its registration \\(cua chrome register --vendor\\) of ${iso(LATE)} is the most recent`), REGISTER],
+    [homeWith(), {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE is unset and MAWS's in-app browser is configured \\(CUA_BROWSER_BACKENDS\\)`)],
+    [homeWith({vendor: EARLY}), {CUA_BROWSER_SERVICE: 'cua'}, 'pass', new RegExp(`${CUA}CUA_BROWSER_SERVICE=cua`)],
+    [homeWith({cua: EARLY}), {CUA_BROWSER_SERVICE: 'vendor'}, 'pass', new RegExp(`${VENDOR}CUA_BROWSER_SERVICE=vendor`)],
+    [homeWith(), {CUA_BROWSER_SERVICE: 'openai'}, 'fail', /CUA_BROWSER_SERVICE must be cua or vendor/],
   ];
   for (const [home, env, status, detail, register] of cases) {
     const found = await row(home, env);

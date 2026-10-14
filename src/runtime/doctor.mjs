@@ -24,9 +24,9 @@
 // connection), codex.login is `skip` (that route needs no Codex login) and chrome.host.config, the OpenAI host's
 // configuration, is not reported. On the vendor route and with no registration they are as before.
 // `browser.service` names the browser service a launch with the browser surface gets here and why (launch.mjs
-// browserServiceFor): CUA_BROWSER_SERVICE when set, else the home's route (cua's with cua's registration or MAWS's
-// in-app browser, the vendor's otherwise, naming `cua chrome register` as the way to cua's). It describes a choice, so
-// it is `pass`, or `fail` for a value every launch would refuse.
+// browserServiceFor): CUA_BROWSER_SERVICE when set, else the home's active route and the registration that made it
+// active (cua's with the cua route or MAWS's in-app browser; the vendor's otherwise, naming `cua chrome register` as the
+// way to cua's). It describes a choice, so it is `pass`, or `fail` for a value every launch would refuse.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
@@ -60,7 +60,7 @@ import {loginStatus, LOGIN_STATES} from './login.mjs';
 import {describeSweep, sweepRun} from './run-dir.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
 import {chromeChecks, cuaChromeChecks, mawsHostCheck, processTable} from '../profiles/checks.mjs';
-import {chromeRoute, extensionIdFor, readVendorRecord} from '../chrome/route.mjs';
+import {chromeRoute, extensionIdFor, registrationTimes} from '../chrome/route.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
@@ -158,19 +158,20 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
 
 const SERVICE_NAMES = {cua: 'cua (cua\'s own browser service)', vendor: 'vendor (OpenAI\'s, from the pinned runtime)'};
 const TO_CUA = '`cua chrome register` (the cua extension) switches this home to cua\'s own browser service';
+const at = ms => new Date(ms).toISOString();
 const SERVICE_REASONS = {
   explicit: service => `CUA_BROWSER_SERVICE=${service}`,
-  cua_route: () => 'CUA_BROWSER_SERVICE is unset and this home has cua\'s Chrome registration (the cua extension route), whether or not a ChatGPT extension registration is there too',
+  cua_route: (service, times) => `CUA_BROWSER_SERVICE is unset and this home is on the cua route: cua's registration of ${at(times.cua)} is the most recent`,
   maws_client_mode: () => 'CUA_BROWSER_SERVICE is unset and MAWS\'s in-app browser is configured (CUA_BROWSER_BACKENDS)',
-  chatgpt_extension_route: (service, home) => (readVendorRecord(home)
-    ? `CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route, which needs it (cua's own service refuses that extension's backends); ${TO_CUA}`
-    : `CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route (the desktop app's host), which needs it; ${TO_CUA}`),
+  chatgpt_extension_route: (service, times) => (times.vendor !== null
+    ? `CUA_BROWSER_SERVICE is unset and this home is on the ChatGPT extension route: its registration (cua chrome register --vendor) of ${at(times.vendor)} is the most recent, and that route needs the vendor's service (cua's own refuses its backends); ${TO_CUA}`
+    : `CUA_BROWSER_SERVICE is unset and this home has no Chrome registration, which is the ChatGPT extension route (the desktop app's host), and that route needs the vendor's service; ${TO_CUA}`),
 };
 
 function browserServiceCheck(home, env) {
   try {
     const {service, reason} = browserServiceFor(env, home);
-    return result('browser.service', 'pass', `${SERVICE_NAMES[service]}: ${SERVICE_REASONS[reason](service, home)}. A launch with the browser surface uses it; CUA_BROWSER_SERVICE=cua or vendor chooses`);
+    return result('browser.service', 'pass', `${SERVICE_NAMES[service]}: ${SERVICE_REASONS[reason](service, registrationTimes(home))}. A launch with the browser surface uses it; CUA_BROWSER_SERVICE=cua or vendor chooses`);
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return result('browser.service', 'fail', `${error.message}; every launch with the browser surface is refused (invalid_browser_service)`);

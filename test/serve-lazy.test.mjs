@@ -206,8 +206,8 @@ test('profiles_list and js teach the rules of the service the launch resolves: t
   assert.match(explicit.profiles_list, /at most 120 s/, 'an explicit value wins over the route');
   writeCuaRecord(home);
   const cua = await toolsOn({});
-  assert.match(cua.profiles_list, /wait up to their timeoutMs: 3 s by default, at most 120 s/);
-  assert.match(cua.js, /budgets up to 120 s, evaluate in the page/);
+  assert.match(cua.profiles_list, /take timeoutMs per phase \(finding the element, then acting\): 3 s by default, at most 120 s/);
+  assert.match(cua.js, /per-phase budgets up to 120 s, evaluate in the page/);
 });
 
 // MAWS (src/chrome/client-mode.mjs): the socket is dialled at once; launches and readiness listings wait for its hello.

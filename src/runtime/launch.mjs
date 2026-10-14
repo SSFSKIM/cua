@@ -80,7 +80,7 @@ import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
-import {readCuaRecord} from '../chrome/route.mjs';
+import {chromeRoute} from '../chrome/route.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -157,21 +157,22 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
 }
 
 // The browser service a launch from `home` gets, and why -> {service: 'cua' | 'vendor', reason}. A CUA_BROWSER_SERVICE
-// the caller sets wins (`explicit`; exactly `cua` or `vendor`). Unset or empty, cua's service where cua's own route is
-// in use: the home has cua's registration record (`cua_route`, with or without a vendor one; the cua route always has
-// one) or MAWS's in-app browser is configured (`maws_client_mode`, CUA_BROWSER_BACKENDS listing a socket, as
-// src/chrome/client-mode.mjs configuredBackends reads it). Otherwise the vendor's (`chatgpt_extension_route`): a vendor
-// record alone, or no registration at all, which is the ChatGPT extension route (the desktop app's host; profiles read
-// it the same way, src/chrome/route.mjs effectiveRoute), whose backends cua's service refuses. Resolved at each launch,
-// so a later `cua chrome register` moves the next launch. When #79 removes the vendor route this collapses to a blanket
-// `cua` default.
+// the caller sets wins (`explicit`; exactly `cua` or `vendor`). Unset or empty, it follows the home's active Chrome
+// route, the one backend discovery uses (src/chrome/route.mjs chromeRoute: the most recent registration;
+// src/chrome/discovery.mjs), so the service and the sockets it is given always agree: cua's on the cua route
+// (`cua_route`) or with MAWS's in-app browser configured (`maws_client_mode`, CUA_BROWSER_BACKENDS listing a socket, as
+// src/chrome/client-mode.mjs configuredBackends reads it); otherwise the vendor's (`chatgpt_extension_route`: the
+// ChatGPT extension's registration is the most recent, or there is none, which is that route as effectiveRoute reads
+// it), whose backends cua's service refuses. Resolved at each launch, so a later `cua chrome register` moves the next
+// launch. Shared with the live runners' attestation (scripts/accept/service-attest.mjs). When #79 removes the vendor
+// route this collapses to a blanket `cua` default.
 export function browserServiceFor(ambient, home) {
   const value = ambient.CUA_BROWSER_SERVICE;
   if (value !== undefined && value !== '') {
     if (!BROWSER_SERVICES.includes(value)) fail('invalid_browser_service', `CUA_BROWSER_SERVICE must be ${BROWSER_SERVICES.join(' or ')}`);
     return {service: value, reason: 'explicit'};
   }
-  if (readCuaRecord(home)) return {service: 'cua', reason: 'cua_route'};
+  if (chromeRoute(home) === 'cua') return {service: 'cua', reason: 'cua_route'};
   if (ambient.CUA_BROWSER_BACKENDS?.split(':').some(Boolean)) return {service: 'cua', reason: 'maws_client_mode'};
   return {service: 'vendor', reason: 'chatgpt_extension_route'};
 }

@@ -141,7 +141,7 @@ export function apiReference(manifest, browserType, hidden = new Set()) {
     for (const ref of references) if (!reached.has(ref)) queue.push(ref);
   }
   const lines = ['# API Reference', '', 'Use this as the supported `agent.browsers.*` surface.', '', '```ts', '// Returned by setupBrowserRuntime().', '// browser was selected during bootstrap.',
-    '// timeoutMs on locator, wait and evaluate calls is in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000.'];
+    '// timeoutMs on locator, wait and evaluate calls is a per-phase budget in milliseconds: 3000 by default, at most 120000; 0 makes one attempt of at most 3000.'];
   for (const [name, members] of Object.entries(manifest.interfaces)) {
     if (reached.has(name)) lines.push(`interface ${name} {`, ...declarations(name, members, browserType, hidden).map(({text}) => `  ${text}`), '}', '');
   }

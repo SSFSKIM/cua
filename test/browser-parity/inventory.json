@@ -410,7 +410,8 @@
     "dispatch": "Rf",
     "milestone": "M2",
     "cases": [
-      "downloads/chooser"
+      "downloads/chooser",
+      "downloads/two-tabs"
     ],
     "reachability": "always"
   },
@@ -628,7 +629,8 @@
     "cases": [
       "downloads/ask-where-to-save",
       "downloads/chooser",
-      "downloads/blocked-navigation"
+      "downloads/blocked-navigation",
+      "downloads/two-tabs"
     ],
     "reachability": "always",
     "exclusions": [

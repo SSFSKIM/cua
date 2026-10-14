@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M0 task 1 as built: before M5, sessions that cannot use the own host already report their real reason (`vendor_browser_route`, `macos_native_peer_requires_vendor`); only eligible sessions report `staged_vendor_default`, so M5 flips one branch. `CUA_BROWSER_SERVICE` is ignored when the browser surface is off (the contradictory-pair rule needs browser on). Error codes: `repl_host_refused` (the three explicit-cua refusals, distinguished by message), `repl_host_unavailable` (until M1), `repl_host_node` (floor), `invalid_repl_host`/`invalid_setting`, `invalid_host_identity`. Agent jobs and `settingsFrom` validate only the value; route/platform refusals run when a connection or listing opens, so an install may persist `cua`. `CUA_NODE` is not persisted into jobs. `REPL_HOST_VERSION` is a hand-maintained constant (like #113's `SERVICE_VERSION`); the vendor host's version is its runtime release. Handshake records live at `<release>/<host>@<version>/<surfaces>@<protocol>.json`, schema 2, host recorded inside; old records miss. A connection passes its once-resolved selections to every launch rather than writing them back into the environment; the profiles listing resolves independently through the same rule. Doctor reports `repl_host_unavailable` for explicit cua at M0 without probing Node.
+  Rationale: Executor decisions in the spirit of Design "Selection is a connection fact" and the cache-identity rule; recorded so M1–M5 consume the same names.
+  Date/Author: 2026-10-14, M0 task 1 executor, folded by the plan-executor.
 - Decision: The HostIdentity observation is a per-connection record `hostAttestation` (a run carries `hostAttestations`): `serverInfo` exactly as `initialize` returned it (cua `{name:'cua-repl-host',version}`; vendor recorded as-is) and the tool-result `_meta['cua/replHost']` (cua `{host:'cua',version}`; vendor absence recorded explicitly). Run metadata carries requested and observed host; a mismatched or mixed-host run is invalid for summary and comparison. Service identity stays `meta.service:'cua'`; existing browser attestation fields are untouched. Tasks 1, 3 and 4 of M0 use these names.
   Rationale: Three M0 tasks produce or consume the observation; one name set avoids a rename wave at review (Design "Handshake cache identity", Verification "The harness records", Interfaces HostIdentity/BenchmarkRun).
   Date/Author: 2026-10-14, dispatching session ruling, recorded by the plan-executor.
@@ -596,6 +599,10 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation: `REPL_HOST_VERSION` is bumped by hand, and own-host Node resolution makes up to three synchronous `--version` probes (5 s timeout each) per launch.
+  Evidence: M0 task 1 report. M1 bumps the version when the own host first answers (else a developer's cached handshake goes stale) and should resolve Node once per connection.
+- Observation: `scripts/native-baseline/remote.mjs` reads the vendor handshake record path, which M0 task 1 moved under `<host>@<version>/`.
+  Evidence: M0 task 1 updated it for vendor; M0 task 5 parametrises it by host.
 - Observation: Direct vendor Node is rejected by the macOS native helper just like ordinary Node.
   Evidence: `07-ordinary-node.txt` and `08-vendor-node.txt` both show connect, ping, socket-end and `socket closed before response`; the code-signing/ancestry findings explain the staged default, not a new universal claim about every possible peer.
 - Observation: Existing local parity and fake-upstream success cannot prove persistent REPL compatibility.

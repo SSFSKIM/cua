@@ -1,0 +1,12 @@
+{"case":"acceptance/nytimes","cell":"open","ok":true,"value":{"url":"https://www.nytimes.com/","title":"The New York Times - Breaking News, US News, World News and Videos"},"ms":872.8698330000007,"trace":[]}
+{"case":"acceptance/nytimes","cell":"opinion","ok":true,"value":{"before":"https://www.nytimes.com/","after":"https://www.nytimes.com/section/opinion","title":"Opinion - The New York Times"},"ms":1579.437750000001,"trace":[]}
+{"case":"acceptance/nytimes","assertion":{"ok":true}}
+{"case":"acceptance/slow-click","cell":"late","ok":true,"value":{"clickedAfterMs":8457,"recorded":true},"ms":8524.893208,"trace":[]}
+{"case":"acceptance/slow-click","assertion":{"ok":true,"reason":"{\"cell\":\"late\",\"ok\":true,\"value\":{\"clickedAfterMs\":8457,\"recorded\":true}}"}}
+{"case":"acceptance/evaluate-title","cell":"mutate","ok":true,"value":"changed","ms":64.91979100000026,"trace":[]}
+{"case":"acceptance/evaluate-title","cell":"title","ok":true,"value":"changed","ms":18.83599999999933,"trace":[]}
+{"case":"acceptance/evaluate-title","assertion":{"ok":true}}
+{"case":"acceptance/evaluate-context-loss","cell":"reload","ok":true,"value":{"rejected":true,"name":"Error","message":"playwright.evaluate was interrupted: Inspected target navigated or closed. The script was sent to the page once and may have run there; it was not run again."},"ms":70.23516699999891,"trace":[]}
+{"case":"acceptance/evaluate-context-loss","cell":"counter","ok":true,"value":1,"ms":1527.0144999999975,"trace":[]}
+{"case":"acceptance/evaluate-context-loss","cell":"usable","ok":true,"value":"Browser parity fixture","ms":16.01324999999997,"trace":[]}
+{"case":"acceptance/evaluate-context-loss","assertion":{"ok":true,"reason":"[{\"rejected\":true,\"name\":\"Error\",\"message\":\"playwright.evaluate was interrupted: Inspected target navigated or closed. The script was sent to the page once and may have run there; it was not run again.\"},1,\"Browser parity fixture\"]"}}

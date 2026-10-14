@@ -1,0 +1,15 @@
+session-1's capabilities/viewport failure (restored: false), diagnosed 2026-10-14 ~15:33 UTC on the same clone, profile and default selection with live/session.mjs (no --network), the corpus cell made to return its measurements (innerWidth/innerHeight, devicePixelRatio, outer size) and to measure again 1 s after the reset:
+
+alone, in its own serve:
+{"original": {"dpr": 2, "height": 1237, "outer": "2560x1237", "width": 2560}, "requested": {"width": 640, "height": 480}, "changed": {"dpr": 1, "height": 480, "outer": "640x480", "width": 640}, "restored": {"dpr": 2, "height": 1237, "outer": "2560x1237", "width": 2560}, "later": {"dpr": 2, "height": 1237, "outer": "2560x1237", "width": 2560}, "tabs": 1}
+
+after session-1's 23 preceding cases in one serve (the order that failed):
+{"original": {"dpr": 2, "height": 1181, "outer": "2560x1181", "width": 2560}, "requested": {"width": 640, "height": 480}, "changed": {"dpr": 1, "height": 480, "outer": "640x480", "width": 640}, "restored": {"dpr": 2, "height": 1181, "outer": "2560x1181", "width": 2560}, "later": {"dpr": 2, "height": 1181, "outer": "2560x1181", "width": 2560}, "tabs": 1}
+
+Both restore exactly, alone and in the order that failed, and session-2 passed the same case in the same order. The page's
+own size differs by 56 px between the two diagnostic runs (inner height 1237 vs 1181), so the window's layout does move
+between and during sessions on this profile (Chrome bars such as the debugging or downloads bar come and go as cases
+attach the debugger and download); session-1's cell took 21 ms and returns booleans only, so the exact cause of its
+one mismatch is not pinned. The override itself applied there (overridden: true). The viewport commands are the
+host's (executeUnhandledCommand in src/chrome/host.mjs), not the browser service's. Recorded as a one-off measurement
+mismatch, not a service defect.

@@ -1,0 +1,33 @@
+resolution: CUA_BROWSER_SERVICE unset, home route cua -> cua (cua_route) at 6c89167b19e499100fedee896d6bd6a17a1b4a5e
+attested: cua (# Selected Browser; cua browser service 0.1.0) at 6c89167b19e499100fedee896d6bd6a17a1b4a5e
+case tabs/discovery ok
+case examples/tabs ok
+case tabs/navigation ok
+case tabs/manual-handoff-disabled ok
+case reads/locators ok
+case reads/snapshot ok
+case reads/frames ok
+case evaluate/read ok
+case evaluate/mutation ok
+case evaluate/counter ok
+case evaluate/context-loss ok
+case actions/locators ok
+case actions/strict-error ok
+case actions/slow-budget ok
+case input/coordinates ok
+case input/dom ok
+case waits/page ok
+case screenshot/modes ok
+case screenshot/clip ok
+case dialogs/alert ok
+case downloads/chooser ok
+case capabilities/clipboard ok
+case capabilities/logs ok
+case capabilities/viewport FAIL round-trip: unexpected fixture result {"overridden":true,"restored":false}
+case capabilities/cursor ok
+case capabilities/export-rejections ok
+case capabilities/page-assets ok
+case capabilities/m3-members ok
+case capabilities/m3-disabled ok
+case capabilities/history ok
+case m5-live/m3-raw FAIL unexpected: [{"cell":"webmcp-list","value":{"refused":true,"message":"Required documentation has not been read: \"webmcp\". Read the instructions with await agent.documentation.get(\"webmcp\")."}},{"cell":"auth-handoff","value":{"refused":true,"message":"Required documentation has not been read: \"capabilities/tab/browserAuth\". Read the instructions with await agent.documentation.get(\"capabilities/tab/browserAuth\")."}}]

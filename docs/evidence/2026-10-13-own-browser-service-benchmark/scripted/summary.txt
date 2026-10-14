@@ -1,0 +1,23 @@
+bench/drag-box vendor ep-1: raw 1, reward 0.9650722222222222, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-1: raw 1, reward 0.9793666666666667, drag (77,98)->(77,191), pass
+bench/drag-box vendor ep-2: raw 1, reward 0.9663611111111111, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-2: raw 1, reward 0.9800388888888889, drag (77,98)->(77,191), pass
+bench/drag-box vendor ep-3: raw 1, reward 0.9662888888888889, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-3: raw 1, reward 0.9788111111111111, drag (77,98)->(77,191), pass
+bench/drag-box vendor ep-4: raw 1, reward 0.96185, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-4: raw 1, reward 0.9670055555555556, drag (77,98)->(77,191), pass
+bench/drag-box vendor ep-5: raw 1, reward 0.9582222222222222, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-5: raw 1, reward 0.9763388888888889, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-1: raw 1, reward 0.9665833333333333, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-1: raw 1, reward 0.9763222222222222, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-2: raw 1, reward 0.9613888888888888, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-2: raw 1, reward 0.9767444444444444, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-3: raw 1, reward 0.9633777777777778, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-3: raw 1, reward 0.9727666666666667, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-4: raw 1, reward 0.9545277777777778, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-4: raw 1, reward 0.9723222222222222, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-5: raw 1, reward 0.9551611111111111, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-5: raw 1, reward 0.9805, drag (77,98)->(77,191), pass
+bench/drag-box: vendor 5/5, cua 5/5
+bench/drag-items: vendor 5/5, cua 5/5
+verdict: equal: every scripted episode passes on both services

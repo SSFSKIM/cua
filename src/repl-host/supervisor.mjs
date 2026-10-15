@@ -197,6 +197,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!policy.disabled && !sandboxed) return toolResult(id, sentenceResult(NO_SANDBOX_SENTENCE));
     const launch = kernelLaunch(settings, policy);
     if (kernel && kernel.key !== launch.key) await stopKernel();
+    // A forced shutdown may have begun while the old kernel stopped: then nothing launches or runs.
+    if (terminated) return toolResult(id, sentenceResult(SHUTTING_DOWN_SENTENCE));
     kernel ??= launchKernel(launch);
     const current = {id: `exec-${++execCounter}`, kernel, images: [], durationMs: null, settled: false};
     const result = new Promise(resolve => { current.resolve = resolve; });

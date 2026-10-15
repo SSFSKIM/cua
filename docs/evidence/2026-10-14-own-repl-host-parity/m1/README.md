@@ -11,7 +11,9 @@ cell environment). The suite is `cells --through M1`, compared against `m0/vendo
   `results.jsonl` and the effective MCP tool contract in `tools.json`.
 - `mini-prepare/`, `linux-prepare/`: readiness and source/runtime facts. `mini-diff.json`, `linux-diff.json`,
   `summary.json`: verdicts and counts.
-- Source and harness commit: `8f56fb5 (the re-review-fix head)`.
+- Source and harness commit: `8f56fb5`. The PR head differs from it only by two fixes the cells suite cannot reach: a forced
+  shutdown during a sandbox-policy change no longer launches a kernel, and a supervisor test passes its marker path to
+  the cell and shell as data. Both diffs below were re-run at that head and still read 0 unexpected differences.
 
 ## Result
 

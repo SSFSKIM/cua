@@ -199,7 +199,7 @@ async function anchoredHost(t, {ownedGroup = true} = {}) {
   const {mkdtempSync, realpathSync, rmSync, mkdirSync} = await import('node:fs');
   const {tmpdir} = await import('node:os');
   const {pathToFileURL} = await import('node:url');
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-anchored-')));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-anchored $(touch pwned) ')));
   const cwd = join(root, 'run');
   mkdirSync(cwd);
   const upstream = spawnUpstream({command: node, args: ['--disable-sigusr1', fileURLToPathSafe('../../src/repl-host/supervisor.mjs')], cwd,
@@ -215,7 +215,8 @@ async function anchoredHost(t, {ownedGroup = true} = {}) {
 }
 const fileURLToPathSafe = relative => new URL(relative, import.meta.url).pathname;
 // A cell that starts a process which writes `marker` after 800 ms, outliving the cell.
-const leaveWriter = marker => `let cp=await import("node:child_process");cp.spawn("/bin/sh",["-c","sleep 0.8; echo late > ${marker}"],{stdio:"ignore"}).unref();nodeRepl.write("started");`;
+// The marker path is data: JSON in the cell's source, a separate argument ($1) to the shell.
+const leaveWriter = marker => `let cp=await import("node:child_process");cp.spawn("/bin/sh",["-c","sleep 0.8; echo late > \\"$1\\"","writer",${JSON.stringify(marker)}],{stdio:"ignore"}).unref();nodeRepl.write("started");`;
 
 test('what a kernel leaves in the owned group dies with its generation: on an unexpected end and on reset', own, async t => {
   const host = await anchoredHost(t);
@@ -286,4 +287,35 @@ test('closed resolves only after every kernel stop in flight has finished, howev
   await supervisor.closed;
   await delay(0);
   assert.equal(closedAt, true, 'closed after the stop finished');
+});
+
+test('a forced shutdown that arrives while a policy change stops the old kernel launches nothing more', async () => {
+  const {PassThrough} = await import('node:stream');
+  const {createSupervisor} = await import('../../src/repl-host/supervisor.mjs');
+  let releaseStop;
+  const stopHeld = new Promise(resolve => { releaseStop = resolve; });
+  const launched = [];
+  const startKernel = (launch, {onMessage}) => {
+    launched.push(launch.key);
+    return {send: message => { if (message.type === 'exec') setImmediate(() => onMessage({type: 'exec_result', id: message.id, ok: true, output: 'ran', named_outputs: []})); return true; },
+      stop: () => stopHeld};
+  };
+  const input = new PassThrough(), output = new PassThrough();
+  const replies = new Map();
+  output.setEncoding('utf8').on('data', chunk => { for (const line of chunk.split('\n').filter(Boolean)) { const msg = JSON.parse(line); replies.get(msg.id)?.(msg); } });
+  const supervisor = createSupervisor({input, output, env: {CUA_REPL_NODE_PATH: '/fixture/node', CODEX_CLI_PATH: '/fixture/codex', PATH: '/usr/bin:/bin'}, cwd: '/fixture/run', startKernel, log: () => {}});
+  const request = (id, method, params) => new Promise(resolve => { replies.set(id, resolve); input.write(`${JSON.stringify({jsonrpc: '2.0', id, method, params})}\n`); });
+  await request(1, 'initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 't', version: '0'}});
+  const disabled = {'codex/sandbox-state-meta': {permissionProfile: {type: 'disabled'}, sandboxCwd: 'file:///fixture/run'}};
+  assert.equal((await request(2, 'tools/call', {name: 'js', arguments: {code: '1'}, _meta: disabled})).result.content[0].text, 'ran');
+  // Another policy (the default, no sandbox state): the disabled kernel must stop first, and its stop is held.
+  const second = request(3, 'tools/call', {name: 'js', arguments: {code: '2'}, _meta: {}});
+  await delay(30);
+  const shutdown = supervisor.shutdown();
+  await delay(30);
+  releaseStop();
+  assert.deepEqual((await second).result.content, [{type: 'text', text: 'js execution unavailable because the runtime manager is shutting down'}]);
+  await shutdown;
+  await supervisor.closed;
+  assert.deepEqual(launched, ['disabled'], 'no kernel was launched after the shutdown began');
 });

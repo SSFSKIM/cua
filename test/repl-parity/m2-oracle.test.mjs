@@ -39,3 +39,10 @@ test('end_task maps only its proxy task ID, including the canonical JSON text, w
  assert.notDeepEqual(await normalizeRawResult(result('random-a')),await normalizeRawResult(result('random-b')));
  const changed=result('random-b');changed.content[0].text+=' ';assert.notDeepEqual(await normalizeRawResult(changed,{tool:'end_task'}),b);
 });
+
+test('native connect bound excludes controller transport delay but not a real slow host execution',()=>{
+ const scenario=scenarios.find(s=>s.id==='cells/native-pipe/connect-timeout');
+ const result=duration=>({isError:false,content:[{type:'text',text:JSON.stringify({refused:true,budget:1000,observation:'saturated-peer-refused',platform:'darwin'})}],_meta:{'codex/nodeReplExecutionDurationMs':duration}});
+ assert.equal(scenario.assert({results:[{},result(10)],timings:[4000,8000]}).ok,true);
+ assert.throws(()=>scenario.assert({results:[{},result(5000)],timings:[1,1]}));
+});

@@ -15,7 +15,8 @@ const name=process.env.CUA_PARITY_NATIVE_FILENAME;if(!/^cua-m4-[a-f0-9-]{36}\.tx
 const scratch=prepareCapabilityHome({source,prefix:'cua-m4t1-cap-'}),file=join(scratch.userHome,name);
 let child,connection,exited;
 try{
- writeFileSync(file,'');
+ const mode=process.env.CUA_PARITY_NATIVE_MODE;if(!['blank','drag','scroll'].includes(mode))throw Error('Unknown native fixture mode');
+ writeFileSync(file,mode==='drag'?'alpha bravo charlie delta echo foxtrot\n':mode==='scroll'?Array.from({length:200},(_,i)=>`line ${String(i).padStart(3,'0')} owned native scroll fixture`).join('\n'):'');
  child=spawn('gedit',['--standalone',file],{stdio:'ignore'});
  exited=new Promise((resolve,reject)=>{child.once('exit',resolve);child.once('error',reject);});exited.catch(()=>{});
  const env={...cellsServeEnv(process.env,{scratch,sandbox:'disabled',host}),CUA_SHIM_SURFACES:'computer'};
@@ -25,8 +26,9 @@ try{
 }finally{
  // ChildProcess ownership plus the original argv guard excludes reused PIDs. Never pgrep/kill a shared gedit/helper.
  const ours=()=>{try{return child?.exitCode===null&&child?.signalCode===null&&readFileSync(`/proc/${child.pid}/cmdline`,'utf8').split('\0').includes(file);}catch{return false;}};
- if(ours())child.kill('SIGTERM');
- let timer;try{await Promise.race([exited??Promise.resolve(),new Promise(resolve=>{timer=setTimeout(resolve,3000);})]);}finally{clearTimeout(timer);}
- if(ours()){child.kill('SIGKILL');await exited;}
- scratch.cleanup();
+ try{
+  if(ours())child.kill('SIGTERM');
+  let timer;try{await Promise.race([exited??Promise.resolve(),new Promise(resolve=>{timer=setTimeout(resolve,3000);})]);}finally{clearTimeout(timer);}
+  if(ours()){child.kill('SIGKILL');await exited;}
+ }finally{scratch.cleanup();}
 }

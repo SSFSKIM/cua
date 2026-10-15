@@ -8,8 +8,8 @@
       "run": "cua",
       "device": "mini",
       "profile": "ssfs",
-      "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
-      "harnessCommit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+      "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+      "harnessCommit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
       "complete": true,
       "recordedCases": 111,
       "coveredAndPassingCases": 111,
@@ -19,7 +19,7 @@
       "rawMcpResults": 134,
       "boundaryObservations": 11,
       "exactImages": 63,
-      "defaultTimeoutMs": 30082.49925,
+      "defaultTimeoutMs": 30150.190166999997,
       "defaultTimeoutResult": "js execution timed out; kernel reset, rerun your request",
       "connections": 12,
       "attestations": 12,
@@ -33,6 +33,16 @@
         {
           "host": "cua",
           "version": "0.2.0"
+        }
+      ],
+      "ownNodePrepared": {
+        "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+        "version": "v24.18.0"
+      },
+      "ownNodePerConnection": [
+        {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
         }
       ],
       "proxyNode": "v24.18.0",
@@ -42,8 +52,8 @@
       "run": "linux-cua",
       "device": "cua-linux",
       "profile": "me",
-      "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
-      "harnessCommit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+      "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+      "harnessCommit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
       "complete": true,
       "recordedCases": 112,
       "coveredAndPassingCases": 112,
@@ -53,7 +63,7 @@
       "rawMcpResults": 134,
       "boundaryObservations": 12,
       "exactImages": 63,
-      "defaultTimeoutMs": 30067.015708,
+      "defaultTimeoutMs": 30192.215042,
       "defaultTimeoutResult": "js execution timed out; kernel reset, rerun your request",
       "connections": 12,
       "attestations": 12,
@@ -67,6 +77,16 @@
         {
           "host": "cua",
           "version": "0.2.0"
+        }
+      ],
+      "ownNodePrepared": {
+        "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+        "version": "v24.18.0"
+      },
+      "ownNodePerConnection": [
+        {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
         }
       ],
       "proxyNode": "v22.23.3",

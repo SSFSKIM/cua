@@ -1,12 +1,16 @@
 {
   "checkout": "/home/admin/Developer/GitHub/cua-parity",
   "home": "/home/admin/.local/share/cua",
-  "commit": "f2fb888d1205caf428a9350dc9f88b0bdf22f00b",
+  "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
   "dirty": false,
   "release": "26.928.40906-linux-arm64",
   "node": "v22.23.3",
   "runtimeNode": "v24.21.0",
   "platform": "linux",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+    "version": "v24.18.0"
+  },
   "device": "cua-linux",
   "profile": "me",
   "extensionInstanceId": "e579ff6c-ef9c-40c7-8134-265f45c366e2",

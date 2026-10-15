@@ -539,6 +539,13 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Case scheduling splits by platform for native-paired members.
+  - Their `api/` binder-double cases are darwin-only and due M3, because the doubles are grounded in macOS source.
+  - On Linux the same members are proven by their `native/` live cases, due M4.
+  - Platform-independent decorated-tab behaviour is proven by real-browser `api/` cases on both platforms.
+  - A Linux selection never demands darwin doubles, and a native-paired member with no `native/` case still fails the M4 gate.
+  Rationale: Verification "Computer behavior runs live on Linux; macOS-only binder behavior uses source-grounded service doubles".
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
 - Decision: Some included APIs (certain AX, management and content members) are proven at the facade only, because the retained cua browser service cannot advertise them.
   - Those members run in M0's remote capability-host lane against the real selected host and the real vendor or owned client. A source-grounded command-transport fixture replies, and each reply cites its vendor source lines.
   - The inventory rows and cases are labelled boundary-double, and the evidence states that they prove the facade only and add no new service capability.

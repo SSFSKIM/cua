@@ -9,10 +9,11 @@ export function chromeLaunchFacts(fs,{display,home}){
   try{
    if(!['chrome','google-chrome'].includes(fs.readFileSync(`/proc/${pid}/comm`,'utf8').trim()))continue;
    argv=fs.readFileSync(`/proc/${pid}/cmdline`,'utf8').split('\0').filter(Boolean);
+   if(argv.length===1&&argv[0].includes(' '))argv=argv[0].trim().split(/\s+/);
    if(argv.some(a=>a==='--type'||a.startsWith('--type=')))continue;
    actualDisplay=fs.readFileSync(`/proc/${pid}/environ`,'utf8').split('\0').find(p=>p.startsWith('DISPLAY='))?.slice(8);
   }catch{continue;}
-  if(actualDisplay!==display)continue;
+  if(actualDisplay!==undefined&&actualDisplay!==display)continue;
   const flags=[],unrecordedFlagNames=[];let omittedPositionalArguments=0,profileDirectory=null;
   for(let i=1;i<argv.length;i++){
    const arg=argv[i],key=arg.split('=')[0];
@@ -22,8 +23,9 @@ export function chromeLaunchFacts(fs,{display,home}){
     flags.push(key+'='+value);if(key==='--profile-directory')profileDirectory=value;
    }else if(arg.startsWith('--'))unrecordedFlagNames.push(key);else omittedPositionalArguments++;
   }
-  found.push({executable:argv[0],flags,display:actualDisplay,profileDirectory,registrationHome:home,unrecordedFlagNames,omittedPositionalArguments});
+  found.push({executable:argv[0],flags,display:actualDisplay??display,displaySource:actualDisplay===undefined?'prepared-X-session (process environment unavailable)':'process-environment',profileDirectory,registrationHome:home,unrecordedFlagNames,omittedPositionalArguments});
  }
+ if(found.length>1&&found.some(f=>f.displaySource!=='process-environment'))throw Error('Ambiguous Chrome display after process-title rewriting');
  if(!found.length)throw Error('No main Chrome process on the prepared display');
  return found.sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b)));
 }

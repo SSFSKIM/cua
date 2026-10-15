@@ -546,6 +546,7 @@ owned browser service/extension host. The new docs directory must be included in
   - The rows are browser fill/AX actions at their supported shapes, refusal before read, and sanitized post-read errors. They run with the real selected host and client, a synthetic sentinel store in the lane's scratch HOME, and a fake backend that records only booleans, labels and hashes.
   - M0's 27 source/service-double secret rows move to `--suite secrets` and stay labelled fake. They are never counted as live proof.
   - Native text-method substitution is M4.
+  - The live seam runs the real selected host, the real client, the real imported secret wrapper and a real scratch fileStore, with a recorder below the wrapper, labelled boundary-double at the service boundary. Wrapper-malformation rows the client cannot emit (coerced method, extra fields) stay as named unit-only proofs under the completeness-gate rule. Fill into real Chrome is #113's concern (amended 2026-10-15).
   Rationale: The comparator rightly refuses fake rows as live evidence. The capability lane is the only place where real-client substitution can run without touching the owner's secret store.
   Date/Author: 2026-10-15, plan-executor assignment to M3 task 1.
 - Decision: M3 task 2 as built.

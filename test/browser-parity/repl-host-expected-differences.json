@@ -28,5 +28,34 @@
     ],
     "maxDelta": 2,
     "reason": "Volatile polling count, not a host difference: the cell's locator click waits about 8 s for #late, polling with Runtime.evaluate (and releasing each result) until it appears, so the count moves with timing. The vendor host varies against itself on the mini with the same service by two (78/74 in the c49777c pair's run, docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host; 80/76 in each of m2/browser-diagnostics/reruns-slow-budget-paused-response/vendor-1..3), and the own host shows 80/76 in m2/browser-diagnostics/reruns-slow-budget-paused-response/cua-1..3. Scoped to this case and cell, to those two methods and to a change of two, for REPL-host comparisons only, as the wait-for entry. M2 task 3."
+  },
+  {
+    "cases": [
+      "input/coordinates"
+    ],
+    "cells": [
+      "drag"
+    ],
+    "kind": "trace",
+    "methods": [
+      "Runtime.evaluate",
+      "Runtime.releaseObject"
+    ],
+    "maxDelta": 1,
+    "reason": "Volatile count, not a host difference: the drag cell's Runtime.evaluate (and the release of its result) is issued once or twice with timing. The vendor host varies against itself on the mini with the same service, 3/1 in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host and 2/0 in the e4ea7eb pair's docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-vendor-host; in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/reruns-coordinates-networkidle the vendor host shows 2/0, 3/1, 2/0 and the own host 2/0, 3/1, 2/0. Scoped to this case and cell, to those two methods and to a change of one, for REPL-host comparisons only, as the wait-for entry. M2 task 3."
+  },
+  {
+    "cases": [
+      "waits/networkidle"
+    ],
+    "cells": [
+      "idle"
+    ],
+    "kind": "trace",
+    "methods": [
+      "Page.lifecycleEvent"
+    ],
+    "maxDelta": 4,
+    "reason": "Volatile event count, not a host difference: how many Page.lifecycleEvent notifications land in the idle cell depends on when the page's network goes quiet relative to the cell. The vendor host varies against itself on the mini with the same service between 8 and 12: 11 in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host, 12 in the e4ea7eb pair's docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-vendor-host, and 11, 8, 11 in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/reruns-coordinates-networkidle/vendor-1..3; the own host showed 11 in every run. Scoped to this case and cell, to that one event and to the vendor's own spread of four, for REPL-host comparisons only. M2 task 3."
   }
 ]

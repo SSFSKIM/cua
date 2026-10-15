@@ -1,18 +1,37 @@
 # M2 task 3: the own host's live runs (2026-10-15)
 
-## Final state, at code head `d29907a`
+## Final state: code at `c49777c`, corpus pair at `e4ea7eb`
 
-`d29907a` is `aff75b4` plus the following:
+`c49777c` is the head of the shipped host code. It is `aff75b4` plus:
 - a time-zone settle at runtime load (`8e3d148`);
 - replacement of a child that does not finish starting (`d29907a`), from the `capabilities/history` hang investigation in `history-hang/README.md`;
-- the browser-parity pending flag and a host-comparison allowance file (`9bad10c`, harness only).
+- a bound on what the host waits for from a ready worker: its reported hook deadlines plus 2 s, then the worker is stopped (`c49777c`).
+
+Later commits touch only the harness, the corpus and the tests:
+- `7342d69`: trace allowances can name `methods` and a `maxDelta`;
+- `e4ea7eb`: the slow-budget allowance, and `dialogs/paused-response`'s start cell outlasts the response pause it traces;
+- `1a196bb`: the bound tests reach their blocked state;
+- the commit that records this pair adds the `input/coordinates` and `waits/networkidle` allowances.
 
 | Run | Command | Result |
 |---|---|---|
-| Services suite, `cua/`, `cua-diff.json` | `repl-parity.mjs run --host cua --device mini --suite services`, diff against `vendor-1` with `--expected` | 41 cases, 74 cells, complete, every assertion passing, **0 differences**. 73 expected entries used, all the `meta.cua/replHost` identity slot. All 42 connections attest `cua-repl-host 0.3.0` with the marker `{host: cua, version: 0.3.0}`. |
-| Tools, `tools-cua/`, `tools-diff.json` | `tools.mjs record --host cua`, diff against `tools-vendor` | **0 differences**. The only allowance is `tools.0.description` through the `table-2-browser-exclusions` transform. |
-| MAWS, `maws/` | the probe below | Verdict PASS. Served by `cua browser service 0.1.0`. All 3 serve sessions answered initialize as `cua-repl-host 0.3.0`, and every js result carried the own-host marker (`maws/attest-cua-summary.json`). |
-| Browser corpus pair | `browser-parity.mjs prepare` and `run --repl-host vendor\|cua --service cua` | **Not recorded.** At `d29907a`, `prepare` refused: profile ssfs `host_not_live` (`cua profiles list`). Held for the controller. The pair recorded at `aff75b4` is superseded and removed; its findings are below and in `browser-diagnostics/`. |
+| Services suite, `cua/`, `cua-diff.json` (at `c49777c`) | `repl-parity.mjs run --host cua --device mini --suite services`, diff against `vendor-1` with `--expected` | 41 cases, 74 cells, complete, every assertion passing, **0 differences**. 73 expected entries used, all the `meta.cua/replHost` identity slot. All 42 connections attest `cua-repl-host 0.3.0` with the marker `{host: cua, version: 0.3.0}`. |
+| Tools, `tools-cua/`, `tools-diff.json` (at `c49777c`) | `tools.mjs record --host cua`, diff against `tools-vendor` | **0 differences**. The only allowance is `tools.0.description` through the `table-2-browser-exclusions` transform. |
+| MAWS, `maws/` (at `c49777c`) | the probe below | Verdict PASS. Served by `cua browser service 0.1.0`. All 3 serve sessions answered initialize as `cua-repl-host 0.3.0`, and every js result carried the own-host marker (`maws/attest-cua-summary.json`). |
+| Browser corpus pair, `browser-vendor-host/`, `browser-cua-host/` (at `e4ea7eb`) | `browser-parity.mjs prepare --commit e4ea7eb --profile ssfs`, then `run --service cua --repl-host vendor` and `run --service cua --repl-host cua`, then `diff --expected test/browser-parity/repl-host-expected-differences.json` | All 59 cases on both sides, downloads included, every case passing, no hang. Vendor side: 61/61 connections `rmcp 1.5.0`. Own side: 61/61 `cua-repl-host 0.3.0`. Every connection's service was `cua browser service 0.1.0`. **0 unexpected differences (59 cases, 151 cells, 7 expected)**, in `browser-diff.txt`. |
+
+The corpus pair has no semantic differences: the 7 differences without allowances (`browser-diff-no-allowances.txt`) are all trace counts, in four cases. Two full vendor-host runs differ from each other in exactly the same 4 cases, cells and methods (`browser-diagnostics/vendor-c49777c-vs-vendor-e4ea7eb-diff.txt`, 7 differences). Each case has a scoped entry in `test/browser-parity/repl-host-expected-differences.json`:
+
+| Case, cell | Methods | maxDelta | Vendor against itself | Own host |
+|---|---|---|---|---|
+| `actions/wait-for`, `visible` | `Runtime.evaluate`, `Runtime.releaseObject` | 1 | 11/7 and 12/8 (`hist-vendor`, `vendor-variance-*`, both full pairs) | 11/7 and 12/8 |
+| `actions/slow-budget`, `late` | the same | 2 | 78/74 (`corpus-c49777c/vendor-host`); 80/76 (`reruns-slow-budget-paused-response/vendor-1..3`, `browser-vendor-host`) | 80/76 three times; 79/75 in the pair |
+| `input/coordinates`, `drag` | the same | 1 | 3/1 and 2/0 (`corpus-c49777c/vendor-host`, `browser-vendor-host`, `reruns-coordinates-networkidle/vendor-1..3`) | 3/1 and 2/0 |
+| `waits/networkidle`, `idle` | `Page.lifecycleEvent` | 4 | 8, 11, 12 (the same runs) | 11 every run |
+
+The c49777c pair (`browser-diagnostics/corpus-c49777c/`) is kept as diagnostics. It had 3 unexpected differences.
+- Two were slow-budget's polling count. They led to that entry.
+- One was `dialogs/paused-response`, start cell: `Fetch.requestPaused` 1 against 0. The host traces show the event emitted at the same offset in every run, on both hosts (dialog opening + about 700 ms). The runner's trace read at the end of the cell sometimes missed it, so it fell between cells. `e4ea7eb` makes the start cell wait 2.5 s after the click, past the response pause, instead of adding an allowance. It then matched on both hosts (`browser-diagnostics/paused-response-check-e4ea7eb`) and in the pair.
 
 `maws/e2e-browser-cua.txt` (7 passed) is MAWS's unchanged fake-host regression. It never starts cua, so it is not re-run per code head.
 
@@ -53,7 +72,7 @@ node scripts/repl-parity/tools.mjs diff m2/tools-vendor m2/tools-cua --expected 
 
 The only allowance used is `tools.0.description`, through the `table-2-browser-exclusions` transform.
 
-## Browser corpus (`browser-vendor-host/`, `browser-cua-host/`, `browser-diff.txt`): NOT PASSING, held for the controller
+## Browser corpus at `aff75b4` (superseded, not in this tree): NOT PASSING, held for the controller
 
 ```
 node scripts/browser-parity.mjs prepare --device mini --commit aff75b4 --profile ssfs

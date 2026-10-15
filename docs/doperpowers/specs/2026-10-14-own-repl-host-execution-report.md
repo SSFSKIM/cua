@@ -7,7 +7,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | milestone | branch | PR | state |
 |---|---|---|---|
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
-| M1 | feat/own-repl-host-m1 | pending | whole-branch fix wave |
+| M1 | feat/own-repl-host-m1 | (PR pending) | whole-branch reviewer-high correct at dc7a86d |
 
 ## Log
 
@@ -20,7 +20,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - 2026-10-14 M0 whole-branch reviewer-high (fae28d6..fe2b224): four P2 (candidate-only cold cleanup failures passed compare; mixed host versions passed bench attestation; CUA_NODE dropped by the parity fixtures; unquoted sandbox sentinel path), fixed in ad21892 by one fixer; re-review "correct". Gates at the head: `HOME=/tmp/cua-scratch-home npm test` 1823 pass / 0 fail / 8 skip; `npm run test:mods` 32; `claude plugin validate .` passed with the known warning. Committed pairs re-diffed: mini 111 cases / 145 cells, 0 differences; Linux 112 recorded / 111 passing / 146 cells, 0 differences, one declared vendor defect.
 
 - 2026-10-14 M1 in two tasks (opus task-executors, sol task reviews). Task 1 (kernel port, vendored Meriyah 7.0.0 byte-identical to the embedded copy, base worker runtime, owned `CUA_REPL_*` names): clean first pass. Task 2 (supervisor, HostMcp, timers/fencing, grouped assembly, lifecycle, buildLaunch/sandbox wiring, launcher-failure refusal, serverInfo `cua-repl-host 0.2.0` and result marker, live cells on both devices): two fix waves (security-departure deleted whole rows; dead-launch descendants escaped cleanup; SIGTERM could not preempt an EOF drain; own Node unrecorded; then shutdown resolved before forced cleanup and the reaper killed live-worker descendants). Session rulings: effective tool text moves to M2; executors must not change device-global configuration (the VM `~/.bashrc` CUA_NODE block was reverted; the harness passes CUA_NODE, recorded by `prepare --node`). Live at 8f56fb5: mini 111/111, 0 unexpected differences (134 identity slots); cua-linux 112/112, 0 unexpected (134 identity slots + the #135 security departure); default 30 s timeout exercised on both.
-- 2026-10-14 M1 whole-branch reviewer-high (f87f9cc..f2215d2): two P2 (termination not rechecked after a policy-change stop; unsafe marker path in a supervisor test), sent to the task 2 executor.
+- 2026-10-14 M1 whole-branch reviewer-high (f87f9cc..f2215d2): two P2 (termination not rechecked after a policy-change stop; unsafe marker path in a supervisor test), sent to the task 2 executor; fixed in dc7a86d (evidence not re-recorded: neither change is reachable by the cells suite; README names 8f56fb5); re-review "correct". Gates at the head: plain `npm test` 1860/0/48 (own-host tests skip visibly on PATH Node 22), with `CUA_NODE=/opt/homebrew/bin/node` 1900/0/8; test:mods 32; validate ok with the known warning; extract-meriyah clean.
 
 ## Environmental friction
 

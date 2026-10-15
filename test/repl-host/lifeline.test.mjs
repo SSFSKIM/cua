@@ -32,12 +32,23 @@ const pathOf = setting => setting.split(':').slice(2).join(':');
 const child = (then = 'setTimeout(() => { for (;;) {} }, 50);') => `import(${JSON.stringify(LIFELINE)}).then(({watchLifeline}) => watchLifeline()).then(
   () => { process.stdout.write('watching\\n'); ${then} }, error => { process.stdout.write(error.message + '\\n'); process.exit(1); });`;
 
+// Settles with `promise`, or fails once `ms` passed: no wait here is unbounded.
+const within = (promise, what, ms = 10_000) => {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what}: not within ${ms} ms`)), ms); })]).finally(() => clearTimeout(timer));
+};
+
 function start(t, setting, code = child()) {
   const proc = spawn(process.execPath, ['-e', code], {stdio: ['ignore', 'pipe', 'inherit'], env: {PATH: process.env.PATH, [LIFELINE_ENV]: setting}});
-  const exited = new Promise(resolve => proc.once('exit', (code, signal) => resolve({code, signal})));
-  const reported = new Promise(resolve => proc.stdout.setEncoding('utf8').once('data', text => resolve(text.trim())));
-  t.after(async () => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); await exited; });
-  return {proc, exited, reported};
+  const ended = new Promise(resolve => proc.once('exit', (code, signal) => resolve({code, signal})));
+  // A child that exits before it reports rejects the report rather than leaving it pending.
+  const reported = within(new Promise((resolve, reject) => {
+    proc.stdout.setEncoding('utf8').once('data', text => resolve(text.trim()));
+    ended.then(status => reject(new Error(`the child ended before it reported (${JSON.stringify(status)})`)));
+  }), 'the child\'s report');
+  reported.catch(() => {});
+  t.after(async () => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); await within(ended, 'the child\'s exit at teardown'); });
+  return {proc, get exited() { return within(ended, 'the child\'s exit'); }, reported};
 }
 const lifeline = t => { const made = lifelinePipe(); t.after(() => made.release()); return made; };
 

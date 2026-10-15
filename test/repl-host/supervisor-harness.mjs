@@ -130,6 +130,11 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', denyLife
   const js = (code, {timeoutMs, ...rest} = {}) => call('js', {code, ...(timeoutMs ? {timeout_ms: timeoutMs} : {})}, rest);
   // Records what runs below the host now -> those processes.
   const track = () => { const now = descendants(child.pid); for (const p of now) tracked.set(p.pid, p); return now; };
+  // Every disruption a test makes through the host's own handles (its stdin's end, a signal) records what runs below
+  // it first, so whatever the test asserts next, teardown still finds those processes once they are reparented.
+  const kill = child.kill.bind(child), end = child.stdin.end.bind(child.stdin);
+  child.kill = (...args) => { if (child.exitCode === null && child.signalCode === null) track(); return kill(...args); };
+  child.stdin.end = (...args) => { if (child.exitCode === null && child.signalCode === null) track(); return end(...args); };
   const host = {child, cwd, root, codexHome, tmp, trusted, send, request, call, js, exited, frames, serverRequests, track, stderr: () => stderr};
   if (initialize) {
     host.initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities, clientInfo: {name: 'test', version: '0'}});

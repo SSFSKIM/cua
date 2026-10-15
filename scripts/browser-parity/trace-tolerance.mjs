@@ -1,7 +1,7 @@
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
-import {compareRuns} from './compare.mjs';
+import {compareRuns, validTrace} from './compare.mjs';
 import {validateAttestations} from '../repl-parity/compare.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -31,8 +31,7 @@ function validateControl(run) {
   if (rows.some(r => !r || !meta.cases.includes(r.case) || r.fake)
     || meta.cases.some(id => !rows.some(r => r.case === id && r.assertion))) throw new Error('Trace variance rows differ from case manifest');
   for (const row of rows) if (row.cell) {
-    if (!Array.isArray(row.trace) || row.trace.some(t => !t || typeof t !== 'object'
-      || (Object.hasOwn(t, 'cdp') && !/^[A-Za-z]+\.[A-Za-z][A-Za-z0-9]*$/.test(typeof t.cdp === 'string' ? t.cdp : '')))) throw new Error('Malformed trace variance trace');
+    if (!validTrace(row.trace)) throw new Error('Malformed trace variance trace');
   }
   if (!compareRuns(rows, rows).ok) throw new Error('Invalid trace variance evidence results');
 }

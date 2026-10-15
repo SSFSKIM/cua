@@ -8,6 +8,7 @@ const base = [
   {case:'read', assertion:{ok:true}},
 ];
 const copy = () => structuredClone(base);
+const cdpRequest = cdp => ({kind:'request',method:'executeCdp',cdp});
 
 test('comparator rejects removed cases/cells, changed values/errors/assertions and duplicates', () => {
   assert.equal(compareRuns(base, copy()).ok, true);
@@ -35,15 +36,15 @@ test('an error\'s line and column inside an anonymous evaluated script are layou
 
 test('trace is optional, otherwise method multiset uses only declared bounded polling allowances', () => {
   const a = copy(), b = copy();
-  a[0].trace = [{cdp:'Input.dispatchMouseEvent'}, {cdp:'Runtime.callFunctionOn'}];
+  a[0].trace = [cdpRequest('Input.dispatchMouseEvent'), cdpRequest('Runtime.callFunctionOn')];
   assert.equal(compareRuns(a, b).ok, true, 'empty resident-host trace is no trace');
-  b[0].trace = [{cdp:'Runtime.callFunctionOn'}, {cdp:'Input.dispatchMouseEvent'}];
+  b[0].trace = [cdpRequest('Runtime.callFunctionOn'), cdpRequest('Input.dispatchMouseEvent')];
   assert.equal(compareRuns(a, b).ok, true);
-  b[0].trace.push({cdp:'Runtime.callFunctionOn'});
+  b[0].trace.push(cdpRequest('Runtime.callFunctionOn'));
   assert.equal(compareRuns(a, b).ok, false);
   a[0].pollingAllowance = b[0].pollingAllowance = {'Runtime.callFunctionOn':1};
   assert.equal(compareRuns(a, b).ok, true);
-  b[0].trace.push({cdp:'Input.dispatchMouseEvent'});
+  b[0].trace.push(cdpRequest('Input.dispatchMouseEvent'));
   assert.equal(compareRuns(a, b).ok, false);
 });
 
@@ -69,7 +70,7 @@ test('normalizer maps ids by encounter order, masks volatile fields but preserve
 });
 
 test('unbounded and non-polling trace allowances cannot conceal a regression',()=>{
-  const a=copy(),b=copy();a[0].trace=[{cdp:'DOM.querySelector'}];b[0].trace=[{cdp:'DOM.querySelector'},{cdp:'DOM.querySelector'}];
+  const a=copy(),b=copy();a[0].trace=[cdpRequest('DOM.querySelector')];b[0].trace=[cdpRequest('DOM.querySelector'),cdpRequest('DOM.querySelector')];
   a[0].pollingAllowance=b[0].pollingAllowance={'DOM.*':-1};
   assert.equal(compareRuns(a,b).ok,false);
   a[0].pollingAllowance=b[0].pollingAllowance={'DOM.*':'unbounded'};

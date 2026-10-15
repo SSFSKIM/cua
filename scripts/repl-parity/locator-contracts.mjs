@@ -136,7 +136,10 @@ return {initial,failed,retried,rootStill,after,commands:(await __trace()).slice(
 `,valueIs(cacheExpected));
 
 const boundaryPayload={matchCount:1,visibleCount:1,matches:[sample('button','Target')]};
-const boundaryDiagnostic={kind:'action_failed',action:'click',locator:'.row',...boundaryPayload,truncated:false};
+// The service's Rust serde wire recursively orders reply keys before actionError spreads
+// the value (:7236-7246). Preserve that order in the exact message, as in the pinned
+// M2 strict-error corpus and the reviewed vendor boundary smoke (2026-10-15).
+const boundaryDiagnostic={kind:'action_failed',action:'click',locator:'.row',matchCount:1,matches:[{ariaLabel:null,disabled:false,role:null,tag:'button',text:'Target',type:null,visible:true}],visibleCount:1,truncated:false};
 const boundaryMessage=emptyResponse+'\nwaiting on click for selector .row\nLocator diagnostics: '+JSON.stringify(boundaryDiagnostic);
 // Author a stable observation before emitting raw MCP: generated projector spelling varies
 // across clients. The real-Chrome sampling cell proves its behavior; this trace retains

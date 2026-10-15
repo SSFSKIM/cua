@@ -168,7 +168,7 @@ const cacheObservation={
 };
 const crossObservation={distinct:true,errors:Array.from({length:6},()=>({rejected:true,message:sameTab})),commands:[],created:[{type:'create_tab',browser_id:'$browser'}],cleanup:[{type:'close_tab',browser_id:'$browser',tab_id:'$scratch'}]};
 const boundaryPayload={matchCount:1,visibleCount:1,matches:[match('button','Target')]};
-const boundaryDiag={kind:'action_failed',action:'click',locator:'.row',...boundaryPayload,truncated:false};
+const boundaryDiag={kind:'action_failed',action:'click',locator:'.row',matchCount:1,matches:[{ariaLabel:null,disabled:false,role:null,tag:'button',text:'Target',type:null,visible:true}],visibleCount:1,truncated:false};
 const diagnosticObservation={error:{rejected:true,message:'transport send returned empty response\nwaiting on click for selector .row\nLocator diagnostics: '+JSON.stringify(boundaryDiag)},commands:[wire('playwright_locator_click',{selector:'.row',timeout_ms:88,client_timeout_ms:88}),wire('playwright_evaluate',{selector:'.row',selector_mode:'all',timeout_ms:1000,client_timeout_ms:1000,scriptPresent:true})]};
 const boundaryResults=()=>[success('base'),success(crossObservation),success(cacheObservation),success(diagnosticObservation)];
 
@@ -258,8 +258,12 @@ test('actual boundary cross-tab supplemental cell excludes setup/cleanup dispatc
  rows[1]=broken.result;assert.equal((await boundary().assert({results:rows})).ok,false);
 });
 
+// The trusted-service JSON reply follows Rust serde's recursive object-key ordering;
+// model that wire boundary before the selected client spreads the diagnostic value.
+const serviceWire=value=>Array.isArray(value)?value.map(serviceWire):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([key,item])=>[key,serviceWire(item)])):value;
+
 async function exerciseBoundaryDiagnostic({diagnose=true,script='return vendorProjection(elements);'}={}){
- const service=createCapabilityOracleService({handleRpc:async()=>{throw Error('No live service');}}),rpc=(_name,request)=>service.handleRpc(request);
+ const service=createCapabilityOracleService({handleRpc:async()=>{throw Error('No live service');}}),rpc=async(_name,request)=>serviceWire(await service.handleRpc(request));
  const send=async params=>{const value=await rpc('browser',{method:'execute',params});if(value==null)throw Error('transport send returned empty response');return value;};
  const command=(type,extra)=>({type,browser_id:'fixture',tab_id:'7',...extra});
  const tab={id:'7',playwright:{locator:selector=>({click:async({timeoutMs})=>{
@@ -289,4 +293,14 @@ test('authored diagnostic observation omits minifier-dependent bytes, retains al
   assert.equal(observed.parsed.value.commands[1].scriptPresent,false);
   const rows=boundaryResults();rows[3]=observed.result;assert.equal((await boundary().assert({results:rows})).ok,false);
  }
+});
+
+
+test('diagnostic exact text pins observed host ordering rather than treating reordered JSON as equivalent',async()=>{
+ const observed='transport send returned empty response\nwaiting on click for selector .row\nLocator diagnostics: {"kind":"action_failed","action":"click","locator":".row","matchCount":1,"matches":[{"ariaLabel":null,"disabled":false,"role":null,"tag":"button","text":"Target","type":null,"visible":true}],"visibleCount":1,"truncated":false}';
+ assert.equal(diagnosticObservation.error.message,observed);
+ const s=boundary(),good=boundaryResults();assert.equal((await s.assert({results:good})).ok,true);
+ const unsorted=structuredClone(diagnosticObservation);
+ unsorted.error.message='transport send returned empty response\nwaiting on click for selector .row\nLocator diagnostics: '+JSON.stringify({kind:'action_failed',action:'click',locator:'.row',...boundaryPayload,truncated:false});
+ const broken=boundaryResults();broken[3]=success(unsorted);assert.equal((await s.assert({results:broken})).ok,false);
 });

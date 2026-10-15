@@ -29,6 +29,7 @@ test('recorded vendor variance replaces the M2 allowances without losing any of 
 
 const readRun = path => ({meta: JSON.parse(readFileSync(root + path + '/meta.json', 'utf8')), rows: readFileSync(root + path + '/results.jsonl', 'utf8').trim().split('\n').map(JSON.parse)});
 const sourceA = readRun(fixture.pairs[0].a), sourceB = readRun(fixture.pairs[0].b);
+const cdpRequest = cdp => ({kind: 'request', method: 'executeCdp', cdp});
 const triples = entries => entries.map(e => [e.cases[0], e.cells[0], e.methods[0], e.maxDelta]).sort();
 
 test('the first fixture derives exactly the old scope, with no other case, cell or method tolerated', () => {
@@ -46,8 +47,8 @@ test('the first fixture derives exactly the old scope, with no other case, cell 
 test('bounds follow recorded counts rather than hardcoded M2 methods or limits', () => {
   const a = structuredClone(sourceA), b = structuredClone(sourceA);
   const row = b.rows.find(r => r.case === 'input/coordinates' && r.cell === 'drag');
-  row.trace.push(...Array.from({length: 3}, () => ({cdp: 'Input.dispatchKeyEvent', kind: 'request'})));
-  row.trace.push({cdp: 'Input.dispatchTouchEvent', kind: 'request'});
+  row.trace.push(...Array.from({length: 3}, () => cdpRequest('Input.dispatchKeyEvent')));
+  row.trace.push(cdpRequest('Input.dispatchTouchEvent'));
   assert.deepEqual(triples(deriveTraceAllowances(a, b)), [
     ['input/coordinates', 'drag', 'Input.dispatchKeyEvent', 3],
     ['input/coordinates', 'drag', 'Input.dispatchTouchEvent', 1],
@@ -149,12 +150,12 @@ test('every derived limit accepts its boundary and rejects out-of-bound, scope, 
     const row = sourceB.rows.find(r => r.case === e.cases[0] && r.cell === e.cells[0]);
     const a = [structuredClone(row), {case: row.case, assertion: {ok: true}}];
     const b = structuredClone(a);
-    b[0].trace.push(...Array.from({length: e.maxDelta}, () => ({cdp: e.methods[0]})));
+    b[0].trace.push(...Array.from({length: e.maxDelta}, () => cdpRequest(e.methods[0])));
     const boundary = compareRuns(a, b, {expected});
     assert.equal(boundary.ok, true, JSON.stringify(e));
     assert.equal(boundary.expected.length, 1);
     assert.equal(compareRuns(b, a, {expected}).ok, true, 'the bound is symmetric');
-    b[0].trace.push({cdp: e.methods[0]});
+    b[0].trace.push(cdpRequest(e.methods[0]));
     assert.deepEqual(compareRuns(a, b, {expected}).differences.map(d => [d.case, d.cell, d.method]), [[row.case, row.cell, e.methods[0]]]);
     assert.equal(compareRuns(b, a, {expected}).ok, false, 'negative out-of-bound delta is rejected too');
     b[0].trace.pop();
@@ -164,7 +165,7 @@ test('every derived limit accepts its boundary and rejects out-of-bound, scope, 
       if (field === 'case') x[1].case = y[1].case = 'outside-scope';
       assert.equal(compareRuns(x, y, {expected}).ok, false);
     }
-    const changedMethod = structuredClone(a); changedMethod[0].trace.push({cdp: 'Input.dispatchKeyEvent'});
+    const changedMethod = structuredClone(a); changedMethod[0].trace.push(cdpRequest('Input.dispatchKeyEvent'));
     assert.equal(compareRuns(a, changedMethod, {expected}).ok, false);
     const changedValue = structuredClone(b); changedValue[0].value = 'semantic mutation';
     assert.equal(compareRuns(a, changedValue, {expected}).ok, false);
@@ -185,7 +186,7 @@ test('derived tolerances cannot erase an out-of-bound difference by losing eithe
       for (const e of expected) {
         const row = sourceB.rows.find(r => r.case === e.cases[0] && r.cell === e.cells[0]);
         const a = [structuredClone(row), {case: row.case, assertion: {ok: true}}], b = structuredClone(a);
-        b[0].trace.push(...Array.from({length: e.maxDelta + 1}, () => ({cdp: e.methods[0]})));
+        b[0].trace.push(...Array.from({length: e.maxDelta + 1}, () => cdpRequest(e.methods[0])));
         assert.equal(compareRuns(a, b, {expected}).ok, false, 'the intact out-of-bound trace fails first');
         const missingSides = side === 'both' ? ['a', 'b'] : [side];
         for (const missing of missingSides) {
@@ -231,14 +232,118 @@ test('CLI host comparisons reject missing or empty cell traces with and without 
 });
 
 
-test('uncalibrated getter cells may have two unavailable traces, and legacy service comparisons retain optional tracing', () => {
+test('uncalibrated getters accept empty arrays but reject absent host evidence; legacy services keep optional tracing', () => {
   const expected = loadTraceAllowances(fixture);
   const getter = sourceB.rows.find(r => r.case === 'tabs/discovery' && r.cell === 'list');
   assert.deepEqual(getter.trace, []);
   const a = [structuredClone(getter), {case: getter.case, assertion: {ok: true}}], b = structuredClone(a);
   assert.equal(compareRuns(a, b, {expected, requireTraceParity: true}).ok, true);
   delete b[0].trace;
-  assert.equal(compareRuns(a, b, {expected, requireTraceParity: true}).ok, true);
-  const legacy = structuredClone(a); legacy[0].trace = [{cdp: 'Runtime.evaluate'}];
+  assert.deepEqual(compareRuns(a, b, {expected, requireTraceParity: true}).differences.map(d => [d.kind, d.side]), [['trace-availability', 'b']]);
+  const legacy = structuredClone(a); legacy[0].trace = [cdpRequest('Runtime.evaluate')];
   assert.equal(compareRuns(legacy, b).ok, true);
+});
+
+
+const malformedTraces = [
+  ['string', 'not-a-trace'],
+  ['object', {0: cdpRequest('Runtime.releaseObject'), length: 1}],
+  ['number', 1],
+  ['null trace', null],
+  ['primitive entry', [1]],
+  ['null entry', [null]],
+  ['array entry', [[]]],
+  ['empty record', [{}]],
+  ['missing kind', [{method: 'executeCdp', cdp: 'Runtime.releaseObject'}]],
+  ['missing method', [{kind: 'request', cdp: 'Runtime.releaseObject'}]],
+  ['null CDP field', [{...cdpRequest('Runtime.releaseObject'), cdp: null}]],
+  ['invalid kind', [{...cdpRequest('Runtime.releaseObject'), kind: 'unknown'}]],
+  ['invalid method', [{...cdpRequest('Runtime.releaseObject'), method: 1}]],
+  ['invalid CDP type', [{...cdpRequest('Runtime.releaseObject'), cdp: 1}]],
+  ['empty CDP token', [{...cdpRequest('Runtime.releaseObject'), cdp: ''}]],
+  ['unsafe CDP token', [{...cdpRequest('Runtime.releaseObject'), cdp: 'Runtime.evaluate payload'}]],
+];
+
+test('host target trace schema is validated before counting and cannot consume a derived allowance', async t => {
+  const expected = loadTraceAllowances(fixture);
+  for (const side of ['a', 'b']) for (const [label, trace] of malformedTraces) {
+    await t.test(`${side}: ${label}`, () => {
+      const row = {case: 'input/coordinates', cell: 'drag', ok: true, value: 'stable', trace: [cdpRequest('Runtime.releaseObject')]};
+      const a = [row, {case: row.case, assertion: {ok: true}}], b = structuredClone(a);
+      (side === 'a' ? a : b)[0].trace = trace;
+      const result = compareRuns(a, b, {expected});
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.differences.map(d => [d.kind, d.side, d.case, d.cell]), [['configuration', side, row.case, row.cell]]);
+      assert.deepEqual(result.expected, []);
+    });
+  }
+});
+
+test('CLI rejects malformed host target traces as evidence errors rather than allowances or crashes', async t => {
+  const own = readRun(base + 'browser-cua-host');
+  for (const host of ['vendor', 'cua']) for (const [label, trace] of malformedTraces) {
+    await t.test(`${host}: ${label}`, () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cua-trace-schema-'));
+      try {
+        for (const [name, original] of [['vendor', sourceB], ['cua', own]]) {
+          const run = structuredClone(original);
+          if (name === host) run.rows.find(r => r.case === 'actions/wait-for' && r.cell === 'visible').trace = trace;
+          mkdirSync(join(dir, name));
+          writeFileSync(join(dir, name, 'meta.json'), JSON.stringify(run.meta));
+          writeFileSync(join(dir, name, 'results.jsonl'), run.rows.map(JSON.stringify).join('\n') + '\n');
+        }
+        for (const withExpected of [true, false]) {
+          const args = [root + 'scripts/browser-parity.mjs', 'diff', join(dir, 'vendor'), join(dir, 'cua'), '--scenarios', 'actions/wait-for.mjs'];
+          if (withExpected) args.push('--expected', new URL('./repl-host-expected-differences.json', import.meta.url).pathname);
+          const result = spawnSync(process.execPath, args, {encoding: 'utf8'});
+          assert.equal(result.status, 1, result.stdout + result.stderr);
+          assert.equal(result.stderr, '', 'invalid trace evidence is reported without crashing the diff');
+          const differences = result.stdout.trim().split('\n').slice(0, -1).map(JSON.parse);
+          assert.deepEqual(differences.map(d => [d.kind, d.side, d.case, d.cell]), [['configuration', host === 'vendor' ? 'a' : 'b', 'actions/wait-for', 'visible']]);
+        }
+      } finally { rmSync(dir, {recursive: true, force: true}); }
+    });
+  }
+});
+
+test('the recorded host trace union preserves requests and notifications with and without CDP methods', () => {
+  const rows = sourceB.rows.flatMap(r => r.trace ?? []);
+  const union = [
+    rows.find(r => r.kind === 'request' && r.cdp),
+    rows.find(r => r.kind === 'request' && !r.cdp),
+    rows.find(r => r.kind === 'notification' && r.cdp),
+    rows.find(r => r.kind === 'notification' && !r.cdp),
+  ];
+  assert.equal(union.every(Boolean), true);
+  const a = [{case: 'trace/union', cell: 'events', ok: true, value: 'same', trace: union}, {case: 'trace/union', assertion: {ok: true}}];
+  assert.equal(compareRuns(a, structuredClone(a), {requireTraceParity: true}).ok, true);
+  const control = structuredClone(sourceA); control.rows[0].trace = [{}];
+  assert.throws(() => deriveTraceAllowances(control, sourceB), /trace/i);
+});
+
+
+test('host cells require trace arrays even for getters while assertions and legacy service cells may omit them', () => {
+  const getter = sourceB.rows.find(r => r.case === 'tabs/discovery' && r.cell === 'list');
+  const a = [structuredClone(getter), {case: getter.case, assertion: {ok: true}}], b = structuredClone(a);
+  delete a[0].trace; delete b[0].trace;
+  assert.deepEqual(compareRuns(a, b, {requireTraceParity: true}).differences.map(d => [d.kind, d.side]), [['trace-availability', 'a'], ['trace-availability', 'b']]);
+  assert.equal(compareRuns(a, b).ok, true);
+});
+
+test('malformed present legacy traces are invalid evidence too, not the legacy missing-trace exception', () => {
+  for (const [label, trace] of malformedTraces) {
+    const a = [{case: 'trace/legacy', cell: 'read', ok: true, value: 'same', trace}, {case: 'trace/legacy', assertion: {ok: true}}];
+    const result = compareRuns(a, structuredClone(a));
+    assert.equal(result.ok, false, label);
+    assert.deepEqual(result.differences.map(d => [d.kind, d.side]), [['configuration', 'a'], ['configuration', 'b']], label);
+  }
+});
+
+test('bounded CDP tokens allowed by the host producer are counted without object-prototype collisions', () => {
+  for (const cdp of ['__proto__', 'constructor']) {
+    const a = [{case: 'trace/token', cell: 'read', ok: true, trace: [cdpRequest(cdp)]}, {case: 'trace/token', assertion: {ok: true}}];
+    const b = structuredClone(a); b[0].trace.push(cdpRequest(cdp));
+    const result = compareRuns(a, b, {requireTraceParity: true});
+    assert.deepEqual(result.differences.map(d => [d.kind, d.method, d.a, d.b]), [['trace', cdp, 1, 2]]);
+  }
 });

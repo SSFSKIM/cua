@@ -8,7 +8,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 |---|---|---|---|
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
-| M2 | feat/own-repl-host-m2 | (PR pending) | whole-branch reviewer-high correct at bb3d59a |
+| M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | whole-branch reviewer-high correct at bb3d59a |
 
 ## Log
 
@@ -48,6 +48,8 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - 2026-10-14 M2 whole-branch reviewer-high (397d532..2d4378a): two P2s, sent to the task 3 executor.
   - Worker death left its timeout suspensions in place.
   - Host-only trace allowances could be applied to a vendor-against-vendor diff.
+
+- 2026-10-15 M2 whole-branch fixes in bb3d59a: a dying worker's open timeout suspensions are released, and host allowances apply only to an attested vendor-host vs cua-host pair. Nothing was re-recorded, because no recorded case reaches the worker-death-during-suspension path. The re-review verdict is "correct". Gates at 0bc6f6b: plain `npm test` 1918 pass / 0 fail / 70 skip; with `CUA_NODE`, 1980/0/8; test:mods 32; validate ok with the known warning; corpus diff with `--expected`: 0 unexpected (59 cases, 151 cells, 7 expected). PR #139.
 
 ## Environmental friction
 

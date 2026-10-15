@@ -117,8 +117,10 @@ test('the Chrome-route host checks no peer: an orphaned same-user process is ser
   const result = join(s.dir, 'result.json');
   const q = JSON.stringify;
   spawn('/bin/sh', ['-c', `(${q(process.execPath)} ${q(CONNECTOR)} ${q(h.socketPath)} ${q(result)} &)`], {stdio: 'ignore'});
-  await waitFor(() => existsSync(result), 'the orphan\'s outcome');
-  assert.deepEqual(JSON.parse(readFileSync(result, 'utf8')), {connected: true, replied: true, closed: false});
+  // The connector writes its outcome in one write, which a reader can still catch half done: wait for the whole object.
+  let outcome;
+  await waitFor(() => { try { outcome = JSON.parse(readFileSync(result, 'utf8')); return true; } catch { return false; } }, 'the orphan\'s outcome');
+  assert.deepEqual(outcome, {connected: true, replied: true, closed: false});
   assert.doesNotMatch(readFileSync(join(logDir(h.home), `${h.name}.log`), 'utf8'), /refused peer/);
 });
 

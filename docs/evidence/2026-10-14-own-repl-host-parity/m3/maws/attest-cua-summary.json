@@ -1,0 +1,72 @@
+{
+  "version": "0.3.0",
+  "sessions": [
+    {
+      "session": 1,
+      "pid": 97926,
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.3.0"
+        }
+      ],
+      "hostResults": 11,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.3.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task",
+        "end_task"
+      ],
+      "ok": true
+    },
+    {
+      "session": 2,
+      "pid": 99363,
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.3.0"
+        }
+      ],
+      "hostResults": 1,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.3.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task"
+      ],
+      "ok": true
+    },
+    {
+      "session": 3,
+      "pid": 99628,
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.3.0"
+        }
+      ],
+      "hostResults": 10,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.3.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "end_task"
+      ],
+      "ok": true
+    }
+  ],
+  "ok": true
+}

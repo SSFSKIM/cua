@@ -1,0 +1,2356 @@
+{
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/Library/Application Support/cua",
+  "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+  "dirty": false,
+  "release": "26.928.40906-darwin-arm64",
+  "node": "v24.18.0",
+  "runtimeNode": "v24.21.0",
+  "platform": "darwin",
+  "ownNode": {
+    "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+    "version": "v24.18.0"
+  },
+  "profile": "ssfs",
+  "device": "mini",
+  "fixturePort": 48732,
+  "host": "cua",
+  "observedHost": "cua",
+  "fake": false,
+  "service": "cua",
+  "backend": "live",
+  "environment": {
+    "CUA_REPL_HOST": "cua",
+    "CUA_BROWSER_SERVICE": "cua",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_HOME": "/Users/new/Library/Application Support/cua"
+  },
+  "started": "2026-10-15T12:29:33.475Z",
+  "elicitations": [],
+  "attestations": [
+    {
+      "case": "actions/concurrent-fill",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/doubleclick",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/locators",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/overlay",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/slow-budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/strict-error",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/wait-for",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/clipboard-page",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/clipboard",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/cursor",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/export-authenticated",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/export-rejections",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/history",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/logs",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/m2-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/m3-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/m3-members",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/page-assets",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/viewport",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/alert",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/paused-response",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/paused-response",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/prompt",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/ask-where-to-save",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/blocked-navigation",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/chooser",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/media",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/two-tabs",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/attributes",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/context-loss",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/counter",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/late-completion",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/mutation",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/no-replay",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/read",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "examples/concurrency",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "examples/tabs",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/ax-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/coordinates",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/dom",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/long-type",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/oopif-type",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/queued-shortcuts",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/rich-text",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/frames",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/locators",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/oopif",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/snapshot",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/visible-dom-dense",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/zero-budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "screenshot/clip",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "screenshot/modes",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/discovery",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/manual-handoff-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/navigation",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "waits/networkidle",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "waits/page",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "waits/zero-budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    }
+  ],
+  "complete": true,
+  "cases": [
+    "actions/concurrent-fill",
+    "actions/doubleclick",
+    "actions/locators",
+    "actions/overlay",
+    "actions/slow-budget",
+    "actions/strict-error",
+    "actions/wait-for",
+    "capabilities/clipboard-page",
+    "capabilities/clipboard",
+    "capabilities/cursor",
+    "capabilities/export-authenticated",
+    "capabilities/export-rejections",
+    "capabilities/history",
+    "capabilities/logs",
+    "capabilities/m2-disabled",
+    "capabilities/m3-disabled",
+    "capabilities/m3-members",
+    "capabilities/page-assets",
+    "capabilities/viewport",
+    "dialogs/alert",
+    "dialogs/paused-response",
+    "dialogs/prompt",
+    "downloads/ask-where-to-save",
+    "downloads/blocked-navigation",
+    "downloads/chooser",
+    "downloads/media",
+    "downloads/two-tabs",
+    "evaluate/attributes",
+    "evaluate/budget",
+    "evaluate/context-loss",
+    "evaluate/counter",
+    "evaluate/late-completion",
+    "evaluate/mutation",
+    "evaluate/no-replay",
+    "evaluate/read",
+    "examples/concurrency",
+    "examples/tabs",
+    "input/ax-disabled",
+    "input/coordinates",
+    "input/dom",
+    "input/long-type",
+    "input/oopif-type",
+    "input/queued-shortcuts",
+    "input/rich-text",
+    "reads/frames",
+    "reads/locators",
+    "reads/oopif",
+    "reads/snapshot",
+    "reads/visible-dom-dense",
+    "reads/zero-budget",
+    "screenshot/clip",
+    "screenshot/modes",
+    "tabs/discovery",
+    "tabs/lifecycle",
+    "tabs/manual-handoff-disabled",
+    "tabs/navigation",
+    "waits/networkidle",
+    "waits/page",
+    "waits/zero-budget"
+  ],
+  "connections": [
+    "connection-1",
+    "connection-2",
+    "connection-3",
+    "connection-4",
+    "connection-5",
+    "connection-6",
+    "connection-7",
+    "connection-8",
+    "connection-9",
+    "connection-10",
+    "connection-11",
+    "connection-12",
+    "connection-13",
+    "connection-14",
+    "connection-15",
+    "connection-16",
+    "connection-17",
+    "connection-18",
+    "connection-19",
+    "connection-20",
+    "connection-21",
+    "connection-22",
+    "connection-23",
+    "connection-24",
+    "connection-25",
+    "connection-26",
+    "connection-27",
+    "connection-28",
+    "connection-29",
+    "connection-30",
+    "connection-31",
+    "connection-32",
+    "connection-33",
+    "connection-34",
+    "connection-35",
+    "connection-36",
+    "connection-37",
+    "connection-38",
+    "connection-39",
+    "connection-40",
+    "connection-41",
+    "connection-42",
+    "connection-43",
+    "connection-44",
+    "connection-45",
+    "connection-46",
+    "connection-47",
+    "connection-48",
+    "connection-49",
+    "connection-50",
+    "connection-51",
+    "connection-52",
+    "connection-53",
+    "connection-54",
+    "connection-55",
+    "connection-56",
+    "connection-57",
+    "connection-58",
+    "connection-59",
+    "connection-60",
+    "connection-61"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 112,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "0c1fd387-19f4-40db-b125-ef0f0eafcd48"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "91a58d34-789f-4fbd-8e0a-b1f8187d8345"
+      }
+    },
+    {
+      "connection": "connection-3",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "9dac35ba-26c4-4b04-b9e1-3fff12797e8d"
+      }
+    },
+    {
+      "connection": "connection-4",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "1080fceb-9596-4041-ac87-48196a0c723c"
+      }
+    },
+    {
+      "connection": "connection-5",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 118,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "a9688cee-2970-4273-9b9c-5c6ef3919629"
+      }
+    },
+    {
+      "connection": "connection-6",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 116,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "e51db7a0-f6a0-49af-80b6-434dca7a9dcd"
+      }
+    },
+    {
+      "connection": "connection-7",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 110,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "2d857545-15a4-4a0f-8e68-047128f3dbd5"
+      }
+    },
+    {
+      "connection": "connection-8",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "e5a6abca-4815-486b-8d7f-4d4ab62747a4"
+      }
+    },
+    {
+      "connection": "connection-9",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 107,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "0e535cfc-1b24-45c7-9262-9381e637db3e"
+      }
+    },
+    {
+      "connection": "connection-10",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 99,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "4026f0c2-b7cd-413e-a223-38fabec80f2d"
+      }
+    },
+    {
+      "connection": "connection-11",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "c2ff84f3-51d3-40d0-8b18-00b7236f04cb"
+      }
+    },
+    {
+      "connection": "connection-12",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "fc376a8d-0ccd-4756-953a-b7ab92fc9c8c"
+      }
+    },
+    {
+      "connection": "connection-13",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "3f1e7584-021a-4711-9d16-22dbac69a6d5"
+      }
+    },
+    {
+      "connection": "connection-14",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 107,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "42974503-caeb-4c4c-a3df-496b85dc3e57"
+      }
+    },
+    {
+      "connection": "connection-15",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 118,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "220d1836-45b7-413a-864b-f6cdac82f288"
+      }
+    },
+    {
+      "connection": "connection-16",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "c04e318c-8d3f-4d3e-8f06-4f40ea7a9c1c"
+      }
+    },
+    {
+      "connection": "connection-17",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 102,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "1a57b253-82ec-4ec4-b0b8-d0e303dcbf0c"
+      }
+    },
+    {
+      "connection": "connection-18",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 107,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "91a49ea2-6842-43e7-93d3-d0c12537faea"
+      }
+    },
+    {
+      "connection": "connection-19",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "71d329e2-8a4f-4f4a-9025-076c06d75c39"
+      }
+    },
+    {
+      "connection": "connection-20",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "820c1872-50ae-4546-b52a-6a2987766506"
+      }
+    },
+    {
+      "connection": "connection-21",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "5f2b4e77-b12c-4de3-980a-fdd42d7ff2af"
+      }
+    },
+    {
+      "connection": "connection-22",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "bcf333bf-b5f0-47c6-9f9b-541d1abc557a"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 124,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "c7fceac9-a4fb-4295-9024-6e16a8915139"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 102,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "51c17400-2c49-40a7-aee1-fc40722f9483"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "17b219c1-26f5-46c9-80c8-eb1b2090cfdb"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "0d77ff39-b4d7-4d1b-ac26-d728d2e1d85e"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 101,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "01048e20-3013-4bef-8daa-7c42dd0bb6dc"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 106,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "44890826-e584-4ff9-bf83-aa0b9a68111a"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 106,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "a394aee3-8326-40b3-983b-99da1e7889b3"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "29b4fda9-17dc-403a-8432-a3b6ab8b5710"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 102,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "2ba5a04d-d435-44b3-8806-265c006890dc"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "73977439-11c4-4978-a589-feae9a97e316"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "0bbcb351-c044-4ea5-b71d-6ff8f8280476"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 108,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "9f98873a-75f3-42a1-8252-08cdc3624eb6"
+      }
+    },
+    {
+      "connection": "connection-35",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 106,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "c96992a8-6c7e-437c-b664-ca384f442651"
+      }
+    },
+    {
+      "connection": "connection-36",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "880a9571-94f8-4008-b162-bead16f9d9bf"
+      }
+    },
+    {
+      "connection": "connection-37",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 107,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "e6ed4c77-69b2-4b1c-9055-62a6d044a5a1"
+      }
+    },
+    {
+      "connection": "connection-38",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "2cd9df38-30da-4897-8fa6-304721f4a32b"
+      }
+    },
+    {
+      "connection": "connection-39",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "ece2b8ad-2dfc-40eb-bbd0-346dfd51ee6e"
+      }
+    },
+    {
+      "connection": "connection-40",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "e4af326a-f43a-4861-920c-986f148dae7c"
+      }
+    },
+    {
+      "connection": "connection-41",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "6b1f65f5-c7ba-4a82-a4e0-daabfea3e4a8"
+      }
+    },
+    {
+      "connection": "connection-42",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "cdfc6e18-8639-4e1d-a21a-c1bbfa4e977e"
+      }
+    },
+    {
+      "connection": "connection-43",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 122,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "45f9a35f-3488-4361-acba-9e444ca4a51f"
+      }
+    },
+    {
+      "connection": "connection-44",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 106,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "a3ee5348-c8ab-4396-a41f-caa217c1639f"
+      }
+    },
+    {
+      "connection": "connection-45",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "74ce9264-491c-4d84-960a-ab8cab456192"
+      }
+    },
+    {
+      "connection": "connection-46",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "607b591f-07b3-496e-9cae-f02955799b74"
+      }
+    },
+    {
+      "connection": "connection-47",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 108,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "5c2ce2a2-26f2-4e98-9b7b-e3d78bbf041f"
+      }
+    },
+    {
+      "connection": "connection-48",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "f36e0403-7a0d-47e0-9b50-f0ed6bb73e9f"
+      }
+    },
+    {
+      "connection": "connection-49",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 123,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "793bf0a8-ad23-464a-9049-a5b1996a80b2"
+      }
+    },
+    {
+      "connection": "connection-50",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 103,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "66cf1816-cfce-4045-8bf5-071fbec83a86"
+      }
+    },
+    {
+      "connection": "connection-51",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 108,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "a30a0a46-75b8-452e-bab3-6aedbbd49f5d"
+      }
+    },
+    {
+      "connection": "connection-52",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "5824ba09-e83b-461e-b21d-aa98789beb93"
+      }
+    },
+    {
+      "connection": "connection-53",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 106,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "6cea0bb8-4095-4f22-a4f0-590742ab1aac"
+      }
+    },
+    {
+      "connection": "connection-54",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "aca83c90-2963-49a4-9722-8688202fd423"
+      }
+    },
+    {
+      "connection": "connection-55",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 102,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "957b94e1-dba3-4b9d-8e57-746d09077f88"
+      }
+    },
+    {
+      "connection": "connection-56",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 107,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "5aba23cb-4b09-43a8-84dd-fd345dac2b15"
+      }
+    },
+    {
+      "connection": "connection-57",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 104,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "2c3e5941-f0f9-49b2-9168-25eeecbd767f"
+      }
+    },
+    {
+      "connection": "connection-58",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 109,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "8b831c56-bea9-4e92-b0d0-e6af70b23b4e"
+      }
+    },
+    {
+      "connection": "connection-59",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 105,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "932c5639-bf75-4971-aca8-38327f9edc9c"
+      }
+    },
+    {
+      "connection": "connection-60",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 107,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "49008ee8-99a1-4493-b31a-e2c6021a9110"
+      }
+    },
+    {
+      "connection": "connection-61",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.3.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "25125908a07ee1e8a271e8025c46809d6f336644",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 108,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.3.0"
+        },
+        "cua/taskId": "caffdb18-1b2e-4b57-9e14-6fb9dff7ad2c"
+      }
+    }
+  ],
+  "finished": "2026-10-15T12:35:50.610Z"
+}

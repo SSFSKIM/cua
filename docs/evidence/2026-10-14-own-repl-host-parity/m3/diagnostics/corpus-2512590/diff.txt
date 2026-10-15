@@ -1,0 +1,5 @@
+{"kind":"assertion","side":"a","case":"downloads/blocked-navigation","message":"case assertion failed"}
+{"kind":"assertion","side":"b","case":"downloads/blocked-navigation","message":"case assertion failed"}
+{"case":"actions/locators","cell":"fill","kind":"trace","method":"Runtime.evaluate","a":6,"b":5}
+{"case":"actions/locators","cell":"fill","kind":"trace","method":"Runtime.releaseObject","a":2,"b":1}
+4 unexpected differences (59 cases, 151 cells, 4 expected)

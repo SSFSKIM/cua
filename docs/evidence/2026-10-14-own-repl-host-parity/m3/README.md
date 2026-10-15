@@ -76,3 +76,49 @@ All six runs recorded source and harness commit `d75a10541aa427659a51566c2f7563f
 API proof labels comprise 136 Chrome cases, 22 real-service cases, 8 real-service-plus-boundary cases, 40 boundary doubles, 64 hidden boundary cases and 20 binder doubles. All use the actual selected host/client; the labels distinguish what lies below that client. `doubleCases: 0` in the comparator means no fake host rows, not absence of the explicitly labelled transport/binder doubles.
 
 The earlier 41867b8 API pair passed every assertion but differed in one WebMCP registration UUID. Those recordings are not committed as passing controls or relabelled. These are fresh recordings after the source-grounded issuance projection, and the two docs/secret pairs likewise replace the earlier provisional captures.
+
+# M3 task 4: the own host with the owned facade, graded against this oracle
+
+Every run below executes `feat/own-repl-host-m3` at **`50d1170`**, the head that ships. The own host's code is unchanged since `9a3b0e1` (task 3 and the Table 3 amendment). Task 4's two commits touch only the #113 browser corpus's download guards (below). The own host's banner is `src/cua-api/bootstrap.mjs` (`CUA_BOOTSTRAP_BANNER`); no vendor facade import is left on the own route.
+
+All macOS sessions were browser-only (`CUA_SHIM_SURFACES=browser`, cua browser service, scoped sandbox), on the mini's `~/Developer/GitHub/cua-parity` clone through batch SSH, with the existing ssfs binding. No native helper, Chrome launch or rebind, resident checkout or agent, or secret store was involved, and no -10005 or `host_not_live` occurred.
+
+| Run | Command (from the worktree) | Result |
+|---|---|---|
+| API, `cua-api/`, `api-cua-diff.json` | `repl-parity.mjs run --host cua --device mini --suite api --through M3`, diff against `vendor-api-1` with `--expected test/repl-parity/expected-differences.json` | 290/290 cases, 1,072 cells, every assertion passing. **0 differences.** 1,072 expected entries used, all the `meta.cua/replHost` identity slot. |
+| Secrets, `cua-secrets/`, `secrets-cua-diff.json` | the same, `--suite secrets-live`, against `vendor-secrets-1` | 25/25 cases, 50 cells. **0 differences.** 50 expected, all the identity slot. |
+| Docs and profiles, `cua-docs/`, `docs-cua-diff.json` | the same, `--suite docs-profiles`, against `vendor-docs-1` | 12/12 cases, 37 cells. **0 differences.** 36 expected, all the identity slot. The first-call core bytes equal the oracle's independent Table 3 derivation, amendment included. `profiles_list` passes through the own browser-only bounded host (its initialize and listing js attest `cua-repl-host 0.3.0`), with no titles, URLs or tab counts. |
+| Tools contract, `tools-cua/`, `tools-cua-diff.json` | `repl-parity/tools.mjs record --host cua --device mini`, diff against `../m2/tools-vendor` | **0 differences.** The only allowance used is the `table-2-browser-exclusions` transform of `tools.0.description`. |
+| Browser corpus, `browser-vendor-host/`, `browser-cua-host/`, `browser-diff.txt` | `browser-parity.mjs prepare --commit 50d1170 --profile ssfs`, `run --service cua --repl-host vendor`, `run --service cua --repl-host cua`, `diff --expected test/browser-parity/repl-host-expected-differences.json` | 59/59 cases on each side, every assertion passing. **0 unexpected differences (59 cases, 151 cells, 0 expected)**; without the derived tolerances it is also 0 (`browser-diff-no-allowances.txt`). Vendor side: 61/61 connections `rmcp 1.5.0`, no own-host marker. Own side: 61/61 `cua-repl-host 0.3.0` with `{host: cua, version: 0.3.0}`. Every connection served by `cua browser service 0.1.0`. |
+| MAWS live probe, `maws/` | below | Verdict PASS. All 3 `cua serve` sessions answered initialize as `cua-repl-host 0.3.0` and every js result carried the own-host marker (`maws/attest-cua-summary.json`). |
+| MAWS `pnpm e2e:browser-cua`, `maws/e2e-browser-cua.txt` | below | 7 passed. MAWS's fake-host regression; it never starts cua, so it is not own-host evidence. |
+
+Every own connection in these runs attests `serverInfo {name: cua-repl-host, version: 0.3.0}` and the result marker, and records commit `50d1170`, a clean clone, Node v24.18.0 and runtime `26.928.40906-darwin-arm64`.
+
+## The download guards (`2512590`, `50d1170`)
+
+The mini's Downloads already holds `parity.txt` and `parity (1).txt` through `parity (100).txt`, so Chrome names every new fixture download `parity - YYYY-MM-DDTdddddd.ddd.txt`. At `0bab8b0` the corpus's `downloads/chooser` and `downloads/two-tabs` refused their own artifact on the vendor host (`diagnostics/downloads-guard/vendor-before-fix-0bab8b0`). Each newly created file matched that grammar exactly. `2512590` gives both cases one shared guard, `test/browser-parity/support/fixture-download-name.mjs`, carrying exactly the grammar the REPL chooser case accepts, and they then passed (`vendor-after-fix-2512590`). The first full pair at `2512590` (`diagnostics/corpus-2512590/`) showed a third case on the same old grammar, `downloads/blocked-navigation` (`armed` reported `downloaded: false` on both hosts), and `50d1170` moves it onto the same guard. `test/browser-parity/download-names.test.mjs` requires every corpus pattern that names the fixture artifact to be that guard. Nothing was deleted from Downloads.
+
+## Vendor variance met on the way (no allowance added)
+
+- **`actions/locators`, `fill` cell.** In the `2512590` pair the vendor host counted 6 `Runtime.evaluate` / 2 `Runtime.releaseObject` against the own host's 5/1. Three reruns of each host at `50d1170` (`diagnostics/locators-reruns-50d1170/`) give the vendor 5/1 in `fill`, and 4/2 then 3/1 in `select`; the own host is 5/1 and 3/1 every time. This is locator polling the vendor varies on against itself. The final pair at `50d1170` matched without it, so the derived-tolerance configuration is unchanged.
+- **`cells/documentation/browser-docs-before-state`.** The cua browser service numbers browsers in the order their backends answer `getInfo` (`src/browser-service/backend.mjs` `discoverBackends`), and the mini has two bound profiles (ssfs and school). When docs-profiles ran straight after the secrets suite, both hosts numbered school first: the own host's first docs run (`diagnostics/docs-browser-id-race/cua-first`, 1 semantic difference against `vendor-docs-1`), the vendor host after its own api and secrets runs (`vendor-after-api-secrets`, the same single difference against `vendor-docs-1` with no allowances), and the own host again (`cua-after-secrets`). Three further runs of each host and a second vendor run after secrets numbered ssfs first. The committed `cua-docs/` run (docs-profiles first, before api and secrets) matches.
+
+## MAWS
+
+MAWS ran from a worktree created for this task (`/tmp/maws-cua-m3t4`, detached at MAWS `origin/master` `d45452f1`, `pnpm install --frozen-lockfile`, `pnpm build`), never the MAWS main checkout, on this Mac as in #113 M4/M5 and M2. The scratch home `/tmp/cua-m3t4-home` holds only an APFS clone of the installed runtime and `current.json`. The probe is #113's, unchanged; host attestation reuses M2's `../m2/maws/attest-serve.mjs` preload and `attest-summary.mjs`.
+
+```
+MAWS_E2E_QUIET=1 /tmp/maws-review/waitload20.sh && /tmp/maws-review/with-slot.sh env MAWS_CHECKOUT=/tmp/maws-cua-m3t4 \
+  CUA_HOME=/tmp/cua-m3t4-home CUA_BROWSER_SERVICE=cua CUA_REPL_HOST=cua CUA_SHIM_SURFACES=browser CUA_NODE=/opt/homebrew/bin/node \
+  CUA_ATTEST_OUT=m3/maws/attest-cua.jsonl NODE_OPTIONS=--import=./docs/evidence/2026-10-14-own-repl-host-parity/m2/maws/attest-serve.mjs \
+  node docs/evidence/2026-10-13-own-browser-service-parity/m4/maws-live/run.mjs --out m3/maws/maws-live-cua.json   # exit 0
+node ../m2/maws/attest-summary.mjs m3/maws/attest-cua.jsonl 0.3.0 > m3/maws/attest-cua-summary.json                # exit 0
+cd /tmp/maws-cua-m3t4 && MAWS_E2E_QUIET=1 /tmp/maws-review/waitload20.sh && /tmp/maws-review/with-slot.sh pnpm e2e:browser-cua   # 7 passed
+```
+
+Probe: verdict PASS, every maws-features step passing, the cursor moved. Takeover: at the default budget the click stops at 3,013 ms with `#state` waiting; with `{timeoutMs: 15000}` it goes through at 3,257 ms with `submitted:x`.
+
+## Gates at `50d1170`
+
+`gates-task4.json`: default Node 2,252 pass / 150 declared skips; `CUA_NODE` 2,326 pass / 76 declared skips (2,402 tests each, 0 failures); mods 32/32; M3 inventory gate 8/8; `claude plugin validate .` passes with its one known root CLAUDE.md warning; `npm pack --dry-run --json` ships 192 files, including `docs/cua-api/*`, `src/cua-api/*` with vendored Zod, and the Meriyah asset, and no test file.

@@ -539,6 +539,14 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M2 runs as three tasks in one PR.
+  - Task 1 (astra) is the M2 oracle: vendor-side scenarios for every case due M2 (isolated trusted fixture services for service hooks, elicitation accept/decline/cancel, suspended budgets, hook order and deadlines, turn deduplication, response meta, trust-boundary refusals and worker secret rejection paths); `browser-parity --repl-host vendor|cua`, independent of `--service`; and a tools-contract comparison against M0's recorded effective contract. It records vendor controls on the mini, browser-only.
+  - Task 2 (opus) is the port: trusted-worker, worker-runtime completion and privileged-node-repl, **TrustedServiceWire** and **PrivilegedRuntime**; nativePipe relayed by the supervisor; the effective retained tool text; registering the trusted worker through the reaper's `own(pid)`; the unmodified vendor facade as temporary banner.
+  - Task 1 runs in a sibling worktree in parallel with task 2 (disjoint files), so the subject never writes its oracle.
+  - Task 3 (opus, task 2's executor resumed) covers the live runs once both are reviewed: the M2 service cases on the own host, the 59-case browser corpus (vendor host versus cua host, both with `--service cua`), the MAWS live probe and unchanged `pnpm e2e:browser-cua`.
+  - Binding for every macOS live session in M2: browser-only (`CUA_SHIM_SURFACES=browser`), so the own host never meets the native helper before #117. MAWS runs only from a MAWS worktree the executor creates, never the MAWS main checkout, through `/tmp/maws-review/waitload20.sh` and `with-slot.sh` with `MAWS_E2E_QUIET=1`, one e2e group at a time.
+  Rationale: Same separation of oracle and subject as M0/M1. The interfaces TrustedServiceWire and PrivilegedRuntime are the review frontier before live use. The session's reminders on the native helper and MAWS hygiene are recorded where executors read them.
+  Date/Author: 2026-10-14, plan-executor M2 pre-flight, with the session's post-merge reminders.
 - Decision: Executors must not change device-global configuration. The marked `CUA_NODE` block M1 task 2 added to cua-linux's `~/.bashrc` is removed and restored from its backup. The checksum-verified Node 24.18.0 under `~/.local/share/cua-parity-node` stays as a harness-owned asset. The parity harness passes `CUA_NODE` in its own remote command environment, recorded by `prepare`. The own host's fail-closed departures stand as recorded under M1 task 2: missing sandbox `_meta` defaults to read-only, and a sandboxed call without `CODEX_CLI_PATH` refuses. Any parity case that exercises them gets a scoped expected-differences entry.
   Rationale: A shell-profile export reaches every cua checkout on the VM, and after M5 it would silently choose the Node for the resident agent.
   Date/Author: 2026-10-14, dispatching session ruling, recorded by the plan-executor.

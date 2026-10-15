@@ -1,10 +1,10 @@
 {
  "service": "cua",
- "started": "2026-10-15T12:44:07.195Z",
+ "started": "2026-10-15T13:10:19.315Z",
  "maws": {
   "sockets": {
-   "m4-A": "/tmp/mcua-m4-zE7XNk/browser/cua/m4-A.sock",
-   "m4-B": "/tmp/mcua-m4-zE7XNk/browser/cua/m4-B.sock"
+   "m4-A": "/tmp/mcua-m4-axfY2C/browser/cua/m4-A.sock",
+   "m4-B": "/tmp/mcua-m4-axfY2C/browser/cua/m4-B.sock"
   },
   "trusted": true
  },
@@ -25,9 +25,9 @@
   },
   "status": "PASS",
   "backends": [
-   "/tmp/mcua-m4-zE7XNk/browser/cua/m4-A.sock"
+   "/tmp/mcua-m4-axfY2C/browser/cua/m4-A.sock"
   ],
-  "other": "/tmp/mcua-m4-zE7XNk/browser/cua/m4-B.sock",
+  "other": "/tmp/mcua-m4-axfY2C/browser/cua/m4-B.sock",
   "details": {
    "profiles": {
     "status": "ok",
@@ -68,7 +68,7 @@
     "added": [
      {
       "id": "2",
-      "url": "http://127.0.0.1:58914/popup"
+      "url": "http://127.0.0.1:54306/popup"
      }
     ]
    },
@@ -80,7 +80,7 @@
     "sha256Match": true,
     "createdByFixture": true,
     "inDownloads": true,
-    "elapsedMs": 270,
+    "elapsedMs": 267,
     "removed": {
      "deleted": true
     }
@@ -146,7 +146,7 @@
   "before": 0,
   "click": {
    "ok": true,
-   "ms": 260
+   "ms": 264
   },
   "after": 4,
   "ok": true
@@ -164,10 +164,10 @@
  "takeover": {
   "defaultBudget": {
    "person": {
-    "at": 1792068257765,
+    "at": 1792069830373,
     "tab": "b_000000000003",
     "row": {
-     "path": "/tmp/mcua-m4-zE7XNk/browser/cua/m4-A.sock",
+     "path": "/tmp/mcua-m4-axfY2C/browser/cua/m4-A.sock",
      "connections": 1,
      "held": 0,
      "leased": [
@@ -182,19 +182,19 @@
    },
    "click": {
     "ok": false,
-    "ms": 3013,
+    "ms": 3011,
     "error": "Error: Playwright selector deadline exceeded",
-    "sincePersonMs": 3026
+    "sincePersonMs": 3016
    },
    "state": "waiting",
    "controlAfter": "agent"
   },
   "timeoutMs15000": {
    "person": {
-    "at": 1792068264404,
+    "at": 1792069837010,
     "tab": "b_000000000003",
     "row": {
-     "path": "/tmp/mcua-m4-zE7XNk/browser/cua/m4-A.sock",
+     "path": "/tmp/mcua-m4-axfY2C/browser/cua/m4-A.sock",
      "connections": 1,
      "held": 0,
      "leased": [
@@ -209,8 +209,8 @@
    },
    "click": {
     "ok": true,
-    "ms": 3257,
-    "sincePersonMs": 3269
+    "ms": 3259,
+    "sincePersonMs": 3263
    },
    "state": "submitted:x",
    "controlAfter": "agent"
@@ -221,7 +221,7 @@
   "signal": null
  },
  "mawsInspectAtQuit": null,
- "finished": "2026-10-15T12:44:28.429Z",
+ "finished": "2026-10-15T13:10:41.138Z",
  "verdict": {
   "status": "PASS",
   "failures": []

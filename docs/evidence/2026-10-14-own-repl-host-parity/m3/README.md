@@ -79,7 +79,7 @@ The earlier 41867b8 API pair passed every assertion but differed in one WebMCP r
 
 # M3 task 4: the own host with the owned facade, graded against this oracle
 
-Every run below executes `feat/own-repl-host-m3` at **`50d1170`**, the head that ships. The own host's code is unchanged since `9a3b0e1` (task 3 and the Table 3 amendment). Task 4's two commits touch only the #113 browser corpus's download guards (below). The own host's banner is `src/cua-api/bootstrap.mjs` (`CUA_BOOTSTRAP_BANNER`); no vendor facade import is left on the own route.
+The mini runs below execute `feat/own-repl-host-m3` at **`50d1170`**; the MAWS probe, which runs on this Mac, executes **`0d54b41`**, the evidence commit that adds its source-binding recorder (no code change since `50d1170`: `git diff 50d1170 0d54b41 -- src bin scripts test` is empty). The own host's code is unchanged since `9a3b0e1` (task 3 and the Table 3 amendment). Task 4's two commits touch only the #113 browser corpus's download guards (below). The own host's banner is `src/cua-api/bootstrap.mjs` (`CUA_BOOTSTRAP_BANNER`); no vendor facade import is left on the own route.
 
 All macOS sessions were browser-only (`CUA_SHIM_SURFACES=browser`, cua browser service, scoped sandbox), on the mini's `~/Developer/GitHub/cua-parity` clone through batch SSH, with the existing ssfs binding. No native helper, Chrome launch or rebind, resident checkout or agent, or secret store was involved, and no -10005 or `host_not_live` occurred.
 
@@ -90,10 +90,10 @@ All macOS sessions were browser-only (`CUA_SHIM_SURFACES=browser`, cua browser s
 | Docs and profiles, `cua-docs/`, `docs-cua-diff.json` | the same, `--suite docs-profiles`, against `vendor-docs-1` | 12/12 cases, 37 cells. **0 differences.** 36 expected, all the identity slot. The first-call core bytes equal the oracle's independent Table 3 derivation, amendment included. `profiles_list` passes through the own browser-only bounded host (its initialize and listing js attest `cua-repl-host 0.3.0`), with no titles, URLs or tab counts. |
 | Tools contract, `tools-cua/`, `tools-cua-diff.json` | `repl-parity/tools.mjs record --host cua --device mini`, diff against `../m2/tools-vendor` | **0 differences.** The only allowance used is the `table-2-browser-exclusions` transform of `tools.0.description`. |
 | Browser corpus, `browser-vendor-host/`, `browser-cua-host/`, `browser-diff.txt` | `browser-parity.mjs prepare --commit 50d1170 --profile ssfs`, `run --service cua --repl-host vendor`, `run --service cua --repl-host cua`, `diff --expected test/browser-parity/repl-host-expected-differences.json` | 59/59 cases on each side, every assertion passing. **0 unexpected differences (59 cases, 151 cells, 0 expected)**; without the derived tolerances it is also 0 (`browser-diff-no-allowances.txt`). Vendor side: 61/61 connections `rmcp 1.5.0`, no own-host marker. Own side: 61/61 `cua-repl-host 0.3.0` with `{host: cua, version: 0.3.0}`. Every connection served by `cua browser service 0.1.0`. |
-| MAWS live probe, `maws/` | below | Verdict PASS. All 3 `cua serve` sessions answered initialize as `cua-repl-host 0.3.0` and every js result carried the own-host marker (`maws/attest-cua-summary.json`). |
-| MAWS `pnpm e2e:browser-cua`, `maws/e2e-browser-cua.txt` | below | 7 passed. MAWS's fake-host regression; it never starts cua, so it is not own-host evidence. |
+| MAWS live probe, `maws/` (at `0d54b41`) | below | Verdict PASS. All 3 `cua serve` sessions answered initialize as `cua-repl-host 0.3.0`, every js result carried the own-host marker, and each session's source record names commit `0d54b41`, a clean tree, runtime `26.928.40906-darwin-arm64` and own-host Node `/opt/homebrew/Cellar/node/26.7.0/bin/node` v26.7.0 (`maws/attest-cua-summary.json`). |
+| MAWS `pnpm e2e:browser-cua`, `maws/e2e-browser-cua.txt` | below | 7 passed. MAWS's fake-host regression; it never starts cua, so it is not own-host evidence. The raw log's two `ExperimentalWarning: SQLite is an experimental feature` lines (1094-1097) come from MAWS's own test processes and are nonblocking noise. |
 
-Every own connection in these runs attests `serverInfo {name: cua-repl-host, version: 0.3.0}` and the result marker, and records commit `50d1170`, a clean clone, Node v24.18.0 and runtime `26.928.40906-darwin-arm64`.
+Each mini parity run's metadata (api, secrets-live, docs-profiles, tools, both corpus runs) records commit `50d1170`, a clean clone, harness Node and own-host Node v24.18.0 and runtime `26.928.40906-darwin-arm64`, and every own connection in them attests `serverInfo {name: cua-repl-host, version: 0.3.0}` and the result marker. The MAWS records prove their own facts, listed in their row above; M2's MAWS records (`../m2/maws/`) carry identity and markers only, and the M2 and M3 0.3.0 hosts are told apart by these source records.
 
 ## The download guards (`2512590`, `50d1170`)
 
@@ -106,18 +106,19 @@ The mini's Downloads already holds `parity.txt` and `parity (1).txt` through `pa
 
 ## MAWS
 
-MAWS ran from a worktree created for this task (`/tmp/maws-cua-m3t4`, detached at MAWS `origin/master` `d45452f1`, `pnpm install --frozen-lockfile`, `pnpm build`), never the MAWS main checkout, on this Mac as in #113 M4/M5 and M2. The scratch home `/tmp/cua-m3t4-home` holds only an APFS clone of the installed runtime and `current.json`. The probe is #113's, unchanged; host attestation reuses M2's `../m2/maws/attest-serve.mjs` preload and `attest-summary.mjs`.
+MAWS ran from a worktree created for this task (`/tmp/maws-cua-m3t4`, detached at MAWS `origin/master` `d45452f1`, `pnpm install --frozen-lockfile`, `pnpm build`), never the MAWS main checkout, on this Mac as in #113 M4/M5 and M2. The scratch home `/tmp/cua-m3t4-home` holds only an APFS clone of the installed runtime and `current.json`. The probe is #113's, unchanged. Host attestation uses `maws/attest-serve.mjs` and `maws/attest-summary.mjs`, copies of M2's extended (after the task review) so that each `cua serve` session also records, at spawn, its checkout, HEAD commit, clean-tree status, resolved runtime release and the own host's Node as `ownHostNode` resolves it from that child's environment (path and reported version). The summary requires exactly one such record per session, naming the expected commit with a clean tree. The probe's own assertions are unchanged. The records are written outside the checkout during the run (so the tree stays clean) and copied in afterwards. An earlier probe at `50d1170`, recorded with M2's identity-only recorder, also passed; it is superseded and not committed.
 
 ```
 MAWS_E2E_QUIET=1 /tmp/maws-review/waitload20.sh && /tmp/maws-review/with-slot.sh env MAWS_CHECKOUT=/tmp/maws-cua-m3t4 \
   CUA_HOME=/tmp/cua-m3t4-home CUA_BROWSER_SERVICE=cua CUA_REPL_HOST=cua CUA_SHIM_SURFACES=browser CUA_NODE=/opt/homebrew/bin/node \
-  CUA_ATTEST_OUT=m3/maws/attest-cua.jsonl NODE_OPTIONS=--import=./docs/evidence/2026-10-14-own-repl-host-parity/m2/maws/attest-serve.mjs \
-  node docs/evidence/2026-10-13-own-browser-service-parity/m4/maws-live/run.mjs --out m3/maws/maws-live-cua.json   # exit 0
-node ../m2/maws/attest-summary.mjs m3/maws/attest-cua.jsonl 0.3.0 > m3/maws/attest-cua-summary.json                # exit 0
+  CUA_ATTEST_OUT=/tmp/m3t4/maws3/attest-cua.jsonl NODE_OPTIONS=--import=./docs/evidence/2026-10-14-own-repl-host-parity/m3/maws/attest-serve.mjs \
+  node docs/evidence/2026-10-13-own-browser-service-parity/m4/maws-live/run.mjs --out /tmp/m3t4/maws3/maws-live-cua.json   # exit 0
+node docs/evidence/2026-10-14-own-repl-host-parity/m3/maws/attest-summary.mjs /tmp/m3t4/maws3/attest-cua.jsonl 0.3.0 "$(git rev-parse HEAD)" \
+  > /tmp/m3t4/maws3/attest-cua-summary.json                                                                            # exit 0; then copied into m3/maws/
 cd /tmp/maws-cua-m3t4 && MAWS_E2E_QUIET=1 /tmp/maws-review/waitload20.sh && /tmp/maws-review/with-slot.sh pnpm e2e:browser-cua   # 7 passed
 ```
 
-Probe: verdict PASS, every maws-features step passing, the cursor moved. Takeover: at the default budget the click stops at 3,013 ms with `#state` waiting; with `{timeoutMs: 15000}` it goes through at 3,257 ms with `submitted:x`.
+Probe: verdict PASS, every maws-features step passing, the cursor moved. Takeover: at the default budget the click stops at 3,011 ms with `#state` waiting; with `{timeoutMs: 15000}` it goes through at 3,259 ms with `submitted:x`. The e2e group was run once, at `50d1170`; it never starts cua, so it was not repeated.
 
 ## Gates at `50d1170`
 

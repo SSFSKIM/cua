@@ -42,15 +42,21 @@ export async function handleRpc(r){
   return createSkyService({loadVendor:async()=>backend,secrets,platform:'darwin'}).handleRpc({type:'execute',method:'type_text',args:[{app:'fixture',text:'{{secret:PARITY_SYNTHETIC}}'}]});
  }
  case 'pipe':{
+  if(r.mode==='wire-error'&&nodeRepl.env.PARITY_FIXTURE_WIRE_INJECTION!=='1')throw new Error('Native wire injection is harness-only');
   if(r.mode==='relative')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_RELATIVE);
   if(r.mode==='timeout'){try{await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);return {refused:false};}catch(e){return {refused:true,budget:Number(nodeRepl.env.NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS??nodeRepl.env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS),observation:/timed out|timeout/i.test(e.message)?'timer-expired':/refused|temporarily unavailable/i.test(e.message)?'saturated-peer-refused':'unexpected-error',platform:process.platform};}}
   if(r.mode==='missing')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_MISSING);
-  const socket=await nodeRepl.nativePipe.createConnection(r.mode==='transport-error'?nodeRepl.env.PARITY_PIPE_ERROR:nodeRepl.env.PARITY_PIPE);
-  if(r.mode==='transport-error')return await new Promise(resolve=>{
+  // Observe only this fixture's connection response; never inspect or persist unrelated wire payloads.
+  let connectionId,pending='';const observe=chunk=>{pending+=chunk.toString();let end;while((end=pending.indexOf('\n'))>=0){const message=JSON.parse(pending.slice(0,end));pending=pending.slice(end+1);if(message.type==='native_pipe_response'&&message.ok&&typeof message.result?.connection_id==='string')connectionId=message.result.connection_id;}};
+  if(r.mode==='wire-error')process.stdin.on('data',observe);
+  let socket;try{socket=await nodeRepl.nativePipe.createConnection(r.mode==='transport-error'?nodeRepl.env.PARITY_PIPE_ERROR:nodeRepl.env.PARITY_PIPE);}finally{if(r.mode==='wire-error')process.stdin.off('data',observe);}
+  if(r.mode==='wire-error'&&(!connectionId||pending))throw new Error('Fixture requires an observed connection id at a complete worker frame boundary');
+  if(r.mode==='transport-error'||r.mode==='wire-error')return await new Promise(resolve=>{
    const events=[],lateEvents=[];let message;
    socket.on('error',e=>{events.push('error');message=e.message;});
-   socket.on('close',()=>{events.push('close');socket.on('error',e=>lateEvents.push({event:'error',message:e.message}));socket.on('close',()=>lateEvents.push({event:'close'}));queueMicrotask(()=>resolve({events,lateEvents,message:message??null}));});
-   socket.write(new Uint8Array(2*1024*1024).fill(65));
+   socket.on('close',()=>{events.push('close');socket.on('error',e=>lateEvents.push({event:'error',message:e.message}));socket.on('close',()=>lateEvents.push({event:'close'}));queueMicrotask(()=>{if(r.mode==='wire-error')socket.end();resolve({proof:r.mode==='wire-error'?'boundary-double':'live-abort',events,lateEvents,message:message??null,...(r.mode==='wire-error'?{entry:'worker-stdin',observedConnection:true}:{})});});});
+   if(r.mode==='wire-error')process.stdin.emit('data',Buffer.from(JSON.stringify({type:'native_pipe_closed',connection_id:connectionId,error:'fixture transport error'})+'\n'));
+   else socket.write(new Uint8Array(2*1024*1024).fill(65));
   });
   if(r.mode==='interface'){
    const value={frozen:Object.isFrozen(socket),keys:Object.keys(socket).sort(),destroy:typeof socket.destroy};

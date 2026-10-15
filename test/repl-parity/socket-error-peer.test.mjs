@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {createConnection} from 'node:net';
 import {fixtureServices} from './fixtures/service-home.mjs';
-test('transport-error peer keeps its write half alive so an EPIPE cannot be hidden by an earlier EOF',async()=>{
+test('owned peer stays open before input and aborts mid-stream with a real transport error',async()=>{
  const fixture=await fixtureServices({errorPipe:true});let socket;
  try{
   socket=createConnection(fixture.env.PARITY_PIPE_ERROR);const events=[];socket.on('error',e=>events.push(e.code));socket.on('close',()=>events.push('close'));

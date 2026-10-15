@@ -62,6 +62,33 @@
    "command": "node --test --test-name-pattern='commands in flight when the user cancels debugging' test/extension-host.test.mjs (x2)",
    "pass": 2,
    "fail": 0
+  },
+  {
+   "phase": "follow-up-own",
+   "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+   "head": "288857e",
+   "load": "73.22 115.31 134.30",
+   "tests": 2461,
+   "pass": 2384,
+   "fail": 1,
+   "skipped": 76,
+   "cancelled": 0,
+   "failedTests": [
+    "during the drain a new elicitation is not asked of the departed client: the service is told at once (test/repl-host/eof-drain.test.mjs)"
+   ],
+   "note": "Load-flaky before this change as well: 1 of 3 focused runs failed with the change stashed, and 3 of 3 passed with it applied. No own-host process was left after the run."
+  },
+  {
+   "phase": "follow-up-focused",
+   "command": "CUA_NODE=/opt/homebrew/bin/node node --test test/repl-host/*.test.mjs test/cua-api/*.test.mjs test/runtime-launch.test.mjs test/runtime-linux-launch.test.mjs test/services-sky-trust.test.mjs test/repl-parity/*.test.mjs",
+   "load": "164.40 157.24 141.81",
+   "pass": 535,
+   "fail": 1,
+   "skipped": 68,
+   "failedTests": [
+    "the same eof-drain elicitation test as above"
+   ]
   }
- ]
+ ],
+ "followUpHead": "cbb64c1 (src) / 288857e"
 }

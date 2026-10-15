@@ -3,8 +3,8 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 export class StdioClient {
   // `answer(msg)` decides an elicitation (default: accept, as the parity runs do); `onElicitation(row, msg)` records it.
-  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),onNotification = () => {},clientName = 'cua-browser-parity'}) {
-    this.clientName = clientName; this.answer=answer;
+  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,closeTimeoutMs = 5000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),onNotification = () => {},clientName = 'cua-browser-parity'}) {
+    this.clientName = clientName; this.answer=answer;this.closeTimeoutMs=closeTimeoutMs;
     this.child = spawn(command,args,{env,cwd,stdio:['pipe','pipe','pipe']});
     this.pending = new Map(); this.nextId=0; this.timeoutMs=timeoutMs; this.closed=false;
     this.exited = new Promise(resolve => this.child.once('close',(code,signal) => {this.closed=true;this.failAll(new Error(`MCP exited (${code ?? signal})`));resolve({code,signal});}));
@@ -61,7 +61,7 @@ export class StdioClient {
       if(drop) this.child.kill('SIGTERM'); else this.child.stdin.end();
     }
     let timer;
-    const exited=await Promise.race([this.exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),5000);})]);clearTimeout(timer);
+    const exited=await Promise.race([this.exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),this.closeTimeoutMs);})]);clearTimeout(timer);
     if(exited) return exited;
     this.child.kill('SIGKILL'); return this.exited;
   }

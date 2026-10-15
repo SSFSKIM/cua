@@ -22,5 +22,5 @@ export function cellsCommand({device,checkout,home,host,fixtureServices=false,fi
   if(!['vendor','cua'].includes(host))throw new Error('Invalid host');
   if(device==='local')throw new Error('Local live runtime forbidden: use the double lane');
   const expectedFacts={device,checkout,home,...facts};
-  return {...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_FIXTURE_CASE=${quote(fixtureCase)} CUA_PARITY_FIXTURE_SERVICES=${fixtureServices?'1':'0'} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-cells.mjs`),expectedFacts};
+  return {closeTimeoutMs:15000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_FIXTURE_CASE=${quote(fixtureCase)} CUA_PARITY_FIXTURE_SERVICES=${fixtureServices?'1':'0'} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-cells.mjs`),expectedFacts};
 }

@@ -7287,8 +7287,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/fill",
+      "secrets/browser-live/execute/fill"
+    ],
+    "unitCases": [
       "secrets/browser/execute/fill"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/fill": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute/ax-paste",
@@ -7300,8 +7312,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/ax-paste",
+      "secrets/browser-live/execute/ax-paste"
+    ],
+    "unitCases": [
       "secrets/browser/execute/ax-paste"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/ax-paste": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute/ax-type-text",
@@ -7313,8 +7337,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/ax-type-text",
+      "secrets/browser-live/execute/ax-type-text"
+    ],
+    "unitCases": [
       "secrets/browser/execute/ax-type-text"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/ax-type-text": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute/ax-set-value",
@@ -7326,8 +7362,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/ax-set-value",
+      "secrets/browser-live/execute/ax-set-value"
+    ],
+    "unitCases": [
       "secrets/browser/execute/ax-set-value"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/ax-set-value": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/fill",
@@ -7339,8 +7387,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/fill",
+      "secrets/browser-live/execute-with-recovery/fill"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/fill"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/fill": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/ax-paste",
@@ -7352,8 +7412,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/ax-paste",
+      "secrets/browser-live/execute-with-recovery/ax-paste"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/ax-paste"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/ax-paste": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/ax-type-text",
@@ -7365,8 +7437,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/ax-type-text",
+      "secrets/browser-live/execute-with-recovery/ax-type-text"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/ax-type-text"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/ax-type-text": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/ax-set-value",
@@ -7378,8 +7462,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/ax-set-value",
+      "secrets/browser-live/execute-with-recovery/ax-set-value"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/ax-set-value"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/ax-set-value": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/invalid-label",
@@ -7391,8 +7487,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/invalid-label",
+      "secrets/browser-live/refuse/invalid-label"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/invalid-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/invalid-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/reserved-label",
@@ -7404,8 +7512,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/reserved-label",
+      "secrets/browser-live/refuse/reserved-label"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/reserved-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/reserved-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unsupported-shape",
@@ -7417,8 +7537,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unsupported-shape",
+      "secrets/browser-live/refuse/unsupported-shape"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unsupported-shape"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unsupported-shape": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/coerced-method",
@@ -7431,7 +7563,15 @@
     "milestone": "M3",
     "cases": [
       "secrets/browser/refuse/coerced-method"
-    ]
+    ],
+    "unitCases": [
+      "secrets/browser/refuse/coerced-method"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/browser/refuse/extra-fields",
@@ -7444,7 +7584,15 @@
     "milestone": "M3",
     "cases": [
       "secrets/browser/refuse/extra-fields"
-    ]
+    ],
+    "unitCases": [
+      "secrets/browser/refuse/extra-fields"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/browser/refuse/disabled",
@@ -7456,8 +7604,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/disabled",
+      "secrets/browser-live/refuse/disabled"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/disabled"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/disabled": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unavailable",
@@ -7469,8 +7629,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unavailable",
+      "secrets/browser-live/refuse/unavailable"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unavailable"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unavailable": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unknown-label",
@@ -7482,8 +7654,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unknown-label",
+      "secrets/browser-live/refuse/unknown-label"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unknown-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unknown-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unsafe-store",
@@ -7495,8 +7679,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unsafe-store",
+      "secrets/browser-live/refuse/unsafe-store"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unsafe-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unsafe-store": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unreadable-store",
@@ -7508,8 +7704,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unreadable-store",
+      "secrets/browser-live/refuse/unreadable-store"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unreadable-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unreadable-store": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/service-version",
@@ -7521,8 +7729,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/service-version",
+      "secrets/browser-live/refuse/service-version"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/service-version"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/service-version": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/errors/rejection-sanitized",
@@ -7534,8 +7754,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/errors/rejection-sanitized",
+      "secrets/browser-live/errors/rejection-sanitized"
+    ],
+    "unitCases": [
       "secrets/browser/errors/rejection-sanitized"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/errors/rejection-sanitized": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/errors/recovery-envelope-sanitized",
@@ -7547,8 +7779,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/errors/recovery-envelope-sanitized",
+      "secrets/browser-live/errors/recovery-envelope-sanitized"
+    ],
+    "unitCases": [
       "secrets/browser/errors/recovery-envelope-sanitized"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/errors/recovery-envelope-sanitized": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/errors/worker-rejection-message-only",
@@ -7561,7 +7805,8 @@
     "milestone": "M3",
     "cases": [
       "secrets/browser/errors/worker-rejection-message-only"
-    ]
+    ],
+    "liveRequired": true
   },
   {
     "id": "secret/browser/no-substitution/embedded-marker",
@@ -7573,8 +7818,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/embedded-marker",
+      "secrets/browser-live/no-substitution/embedded-marker"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/embedded-marker"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/embedded-marker": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/no-substitution/unsupported-fields",
@@ -7586,8 +7843,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/unsupported-fields",
+      "secrets/browser-live/no-substitution/unsupported-fields"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/unsupported-fields"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/unsupported-fields": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/no-substitution/evaluate-strings",
@@ -7599,8 +7868,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/evaluate-strings",
+      "secrets/browser-live/no-substitution/evaluate-strings"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/evaluate-strings"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/evaluate-strings": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/no-substitution/cdp-strings",
@@ -7612,8 +7893,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/cdp-strings",
+      "secrets/browser-live/no-substitution/cdp-strings"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/cdp-strings"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/cdp-strings": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/optional-fields/timeouts-and-text-format",
@@ -7625,8 +7918,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/optional-fields/timeouts-and-text-format",
+      "secrets/browser-live/optional-fields/timeouts-and-text-format"
+    ],
+    "unitCases": [
       "secrets/browser/optional-fields/timeouts-and-text-format"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/optional-fields/timeouts-and-text-format": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/reports/labels-not-values",
@@ -7638,8 +7943,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/reports/labels-not-values",
+      "secrets/browser-live/reports/labels-not-values"
+    ],
+    "unitCases": [
       "secrets/browser/reports/labels-not-values"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/reports/labels-not-values": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/invalid-label",
@@ -7651,8 +7968,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/invalid-label",
+      "secrets/native-live/refuse/invalid-label"
+    ],
+    "unitCases": [
       "secrets/native/refuse/invalid-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/reserved-label",
@@ -7664,8 +7990,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/reserved-label",
+      "secrets/native-live/refuse/reserved-label"
+    ],
+    "unitCases": [
       "secrets/native/refuse/reserved-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unsupported-shape",
@@ -7677,8 +8012,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unsupported-shape",
+      "secrets/native-live/refuse/unsupported-shape"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unsupported-shape"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/coerced-method",
@@ -7690,8 +8034,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/coerced-method",
+      "secrets/native-live/refuse/coerced-method"
+    ],
+    "unitCases": [
       "secrets/native/refuse/coerced-method"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/extra-fields",
@@ -7703,8 +8056,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/extra-fields",
+      "secrets/native-live/refuse/extra-fields"
+    ],
+    "unitCases": [
       "secrets/native/refuse/extra-fields"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/disabled",
@@ -7716,8 +8078,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/disabled",
+      "secrets/native-live/refuse/disabled"
+    ],
+    "unitCases": [
       "secrets/native/refuse/disabled"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unavailable",
@@ -7729,8 +8100,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unavailable",
+      "secrets/native-live/refuse/unavailable"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unavailable"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unknown-label",
@@ -7742,8 +8122,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unknown-label",
+      "secrets/native-live/refuse/unknown-label"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unknown-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unsafe-store",
@@ -7755,8 +8144,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unsafe-store",
+      "secrets/native-live/refuse/unsafe-store"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unsafe-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unreadable-store",
@@ -7768,8 +8166,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unreadable-store",
+      "secrets/native-live/refuse/unreadable-store"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unreadable-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/errors/post-read-sanitized",
@@ -7781,8 +8188,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/errors/post-read-sanitized",
+      "secrets/native-live/errors/post-read-sanitized"
+    ],
+    "unitCases": [
       "secrets/native/errors/post-read-sanitized"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/errors/worker-rejection-message-only",
@@ -7795,7 +8211,8 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/errors/worker-rejection-message-only"
-    ]
+    ],
+    "liveRequired": true
   },
   {
     "id": "secret/native/no-substitution/embedded-marker",
@@ -7807,8 +8224,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/no-substitution/embedded-marker",
+      "secrets/native-live/no-substitution/embedded-marker"
+    ],
+    "unitCases": [
       "secrets/native/no-substitution/embedded-marker"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/no-substitution/unsupported-methods-and-fields",
@@ -7820,8 +8246,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/no-substitution/unsupported-methods-and-fields",
+      "secrets/native-live/no-substitution/unsupported-methods-and-fields"
+    ],
+    "unitCases": [
       "secrets/native/no-substitution/unsupported-methods-and-fields"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/no-substitution/javascript-strings",
@@ -7833,8 +8268,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/no-substitution/javascript-strings",
+      "secrets/native-live/no-substitution/javascript-strings"
+    ],
+    "unitCases": [
       "secrets/native/no-substitution/javascript-strings"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/reports/labels-not-values",
@@ -7846,8 +8290,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/reports/labels-not-values",
+      "secrets/native-live/reports/labels-not-values"
+    ],
+    "unitCases": [
       "secrets/native/reports/labels-not-values"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/darwin/paste",
@@ -7859,7 +8312,15 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/darwin/paste"
-    ]
+    ],
+    "unitCases": [
+      "secrets/native/darwin/paste"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/native/darwin/type-text",
@@ -7871,7 +8332,15 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/darwin/type-text"
-    ]
+    ],
+    "unitCases": [
+      "secrets/native/darwin/type-text"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/native/darwin/set-value",
@@ -7883,7 +8352,15 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/darwin/set-value"
-    ]
+    ],
+    "unitCases": [
+      "secrets/native/darwin/set-value"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/native/linux/type-text",
@@ -7894,7 +8371,16 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/linux/type-text",
+      "secrets/native-live/linux/type-text"
+    ],
+    "unitCases": [
       "secrets/native/linux/type-text"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   }
 ]

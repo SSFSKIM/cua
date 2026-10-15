@@ -5,6 +5,7 @@
 import {caseSchedule,validateRegistry} from '../../../scripts/repl-parity/registry.mjs';
 import {cellCode,parseCell} from '../../../scripts/browser-parity/runner.mjs';
 import {expectValues} from '../../browser-parity/support/assertions.mjs';
+import {fixtureDownloadNamePattern} from '../fixture-downloads.mjs';
 import navigation from '../../browser-parity/scenarios/tabs/navigation.mjs';
 import reads from '../../browser-parity/scenarios/reads/locators.mjs';
 import evaluate from '../../browser-parity/scenarios/evaluate/read.mjs';
@@ -79,10 +80,47 @@ for(const member of ['tab/dev','tabdevapi/logs'])add(member,logs,['logs']);
 for(const [member,label] of [
  ['contentapi/exportgsuite','gsuite'],['contentapi/exportyoutubetranscript','youtube'],['tab/content','gsuite'],
 ])add(member,exports,[label]);
+// Reuse the corpus's download/chooser outcomes, then remove only this handle's attested fixture artifact.
+// Repeated API cases must not accumulate files and exhaust Chrome's ordinary collision-name variants.
+const ownedPath=cell('path',String.raw`
+const path=await download.path({timeoutMs:10000}),expected=${fixtureDownloadNamePattern};
+if(typeof path!=='string'||!path.startsWith('/')||!expected.test(path.split('/').at(-1)))throw new Error('Unexpected fixture download path');
+try{
+ const fs=await import('node:fs/promises'),constants=(await import('node:fs')).constants;
+ const real=await fs.realpath(path);if(!expected.test(real.split('/').at(-1)))throw new Error('fixture path refused');
+ const entry=await fs.lstat(path);if(!entry.isFile()||entry.isSymbolicLink()||entry.size!==16)throw new Error('fixture file refused');
+ const file=await fs.open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+ try{if((await file.stat()).size!==16||(await file.readFile('utf8'))!=='parity download\n')throw new Error('fixture content differs');}finally{await file.close();}
+ globalThis.uploadPath=real;globalThis.uploadName=real.split('/').at(-1);return true;
+}catch(error){
+ const codes=['ENOENT','EACCES','EPERM','ELOOP','EISDIR','ENOTDIR'];
+ throw new Error('Fixture download attestation refused ('+(codes.includes(error?.code)?error.code:'validation')+')');
+}`);
+const ownedChooser={...chooser,id:'downloads/chooser-owned-cleanup',cells:[...chooser.cells.map(c=>c.label==='path'?ownedPath:c),cell('cleanup',String.raw`
+try{
+ if(typeof uploadPath!=='string'||typeof uploadName!=='string')throw new Error('fixture not attested');
+ if((await tab.playwright.locator('#filename[data-recorded=yes]').textContent())!==uploadName)throw new Error('fixture selection not acknowledged');
+ const path=await download.path({timeoutMs:10000}),expected=${fixtureDownloadNamePattern};
+ if(typeof path!=='string'||!path.startsWith('/')||!expected.test(path.split('/').at(-1)))throw new Error('fixture path refused');
+ const fs=await import('node:fs/promises'),constants=(await import('node:fs')).constants;
+ if(await fs.realpath(path)!==uploadPath)throw new Error('fixture path changed');
+ const entry=await fs.lstat(path);if(!entry.isFile()||entry.isSymbolicLink()||entry.size!==16)throw new Error('fixture file refused');
+ const file=await fs.open(path,constants.O_RDONLY|constants.O_NOFOLLOW);let original;
+ try{original=await file.stat();if((await file.readFile('utf8'))!=='parity download\n')throw new Error('fixture content differs');}finally{await file.close();}
+ const current=await fs.lstat(path);
+ if(!current.isFile()||current.isSymbolicLink()||current.dev!==original.dev||current.ino!==original.ino)throw new Error('fixture file changed');
+ await fs.unlink(path);return true;
+}catch(error){
+ const codes=['ENOENT','EACCES','EPERM','ELOOP','EISDIR','ENOTDIR'];
+ throw new Error('Fixture download cleanup refused ('+(codes.includes(error?.code)?error.code:'validation')+')');
+}`)],assert(input){
+ if(input.results.length!==chooser.cells.length+1||input.results.at(-1)?.ok!==true||input.results.at(-1).value!==true)return {ok:false,reason:'fixture download cleanup failed'};
+ return chooser.assert({...input,results:input.results.slice(0,-1)});
+}};
 for(const [member,label] of [
  ['playwrightapi/waitforevent','download'],['playwrightdownload/path','path'],
  ['playwrightfilechooser/ismultiple','chooser'],['playwrightfilechooser/setfiles','set-files'],
-])add(member,chooser,[label]);
+])add(member,ownedChooser,[label]);
 add('playwrightlocator/downloadmedia',media,['media']);
 for(const [member,label] of [
  ['playwrightapi/waitforurl','url'],['playwrightapi/waitforloadstate','load'],['playwrightapi/waitfortimeout','delay'],

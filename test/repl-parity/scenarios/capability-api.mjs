@@ -27,17 +27,21 @@ globalThis.__boot=async(mode,disabledMemberIds=[])=>{await nodeRepl.rpc('browser
 globalThis.__trace=()=>nodeRepl.rpc('browser',{method:'oracle.trace'});
 globalThis.__command=c=>Object.fromEntries(Object.entries(c).map(([k,v])=>[k,k==='browser_id'&&v===browser.browserId?'$browser':k==='tab_id'&&v===tab.id?'$tab':k==='tab_id'&&v===globalThis.__userId?'$user':v]));
 `;
+const checkObservation=(actual,expected)=>typeof expected==='function'?expected(actual):assert.deepEqual(actual,expected);
 function add(id,mode,body,expected,{commands,setup='',extra=[]}={}){
  const full=id.startsWith('api/')?id:`capability-host/${id}`,p=plan.get(full);if(!p)throw Error(full);
  const cells=[{label:'setup',code:support+`await __boot(${JSON.stringify(mode)});${setup};__say({ready:true,proof:${JSON.stringify(mode)}});`},
   {label:'exercise',code:`var before=(await __trace()).length;var value=await(async()=>{${body}})();__say({value:__project(value),commands:(await __trace()).slice(before).map(__command)});`},...extra.map((x,i)=>({label:`validation-${i+1}`,code:x.code}))];
  const expectedCount=cells.length;
  scenarios.push({...p,backend:'capability-host',boundaryProof:mode,limitations:mode==='boundary-double'?['Client-boundary double; does not prove retained browser-service support.']:undefined,cells,
-  assert:({results})=>{assert.equal(results.length,expectedCount);assert.deepEqual(observation(results[0]),{ready:true,proof:mode});const got=observation(results[1]);if(typeof expected==='function')expected(got.value);else assert.deepEqual(got.value,expected);if(typeof commands==='function')commands(got.commands);else if(commands)assert.deepEqual(got.commands,commands);else assert.ok(got.commands.length>0,'API must execute a real command');for(let i=0;i<extra.length;i++)assert.deepEqual(observation(results[i+2]),extra[i].expected);return {ok:true};}});
+  assert:({results})=>{assert.equal(results.length,expectedCount);assert.deepEqual(observation(results[0]),{ready:true,proof:mode});const got=observation(results[1]);if(typeof expected==='function')expected(got.value);else assert.deepEqual(got.value,expected);if(typeof commands==='function')commands(got.commands);else if(commands)assert.deepEqual(got.commands,commands);else assert.ok(got.commands.length>0,'API must execute a real command');for(let i=0;i<extra.length;i++)checkObservation(observation(results[i+2]),extra[i].expected);return {ok:true};}});
 }
 const validation=(code,expected)=>({code:`__say(await(async()=>{${code}})());`,expected});
-const invalidRequest=(call)=>validation(`var before=(await __trace()).length;try{await(${call});return {rejected:false};}catch(e){return {rejected:true,noCommand:(await __trace()).length===before};}`,{rejected:true,noCommand:true});
-const invalidResult=(command,call,value)=>validation(`await nodeRepl.rpc('browser',{method:'oracle.reply',params:{type:${JSON.stringify(command)},value:${JSON.stringify(value)}}});var before=(await __trace()).length;try{await(${call});return {rejected:false};}catch(e){return {rejected:true,sent:(await __trace()).length===before+1};}`,{rejected:true,sent:true});
+// Inputs here are entirely synthetic. Keep parser/client error text verbatim in raw observations so differential
+// comparison catches changed sentences; the independent oracle also requires rejection at the right boundary.
+const rejection=(fields)=>actual=>{const {message,...rest}=actual;assert.deepEqual(rest,{rejected:true,...fields});assert.equal(typeof message,'string');assert.ok(message.trim().length>0,'validation error message required');};
+const invalidRequest=(call)=>validation(`var before=(await __trace()).length;try{await(${call});return {rejected:false};}catch(e){return {rejected:true,noCommand:(await __trace()).length===before,message:e.message};}`,rejection({noCommand:true}));
+const invalidResult=(command,call,value)=>validation(`await nodeRepl.rpc('browser',{method:'oracle.reply',params:{type:${JSON.stringify(command)},value:${JSON.stringify(value)}}});var before=(await __trace()).length;try{await(${call});return {rejected:false};}catch(e){return {rejected:true,sent:(await __trace()).length===before+1,message:e.message};}`,rejection({sent:true}));
 
 // BC:6611-6660,9919-10012. User tabs are a seeded, synthetic unowned tab, never an owner's profile.
 const userSetup=`globalThis.user=(await browser.user.openTabs()).find(t=>t.url==='https://cua-capability.example/user');if(!user)throw Error('Missing capability user fixture');globalThis.__userId=user.id;`;
@@ -153,7 +157,7 @@ function extend(id,checks,{mixed=false}={}){
  const scenario=scenarios.find(s=>s.id===id);if(!scenario)throw Error(id);
  const original=scenario.assert,count=scenario.cells.length;
  scenario.cells.push(...checks.map((c,i)=>({label:`type-validation-${i+1}`,code:c.code})));
- scenario.assert=({results})=>{assert.equal(results.length,count+checks.length);original({results:results.slice(0,count)});for(let i=0;i<checks.length;i++)assert.deepEqual(observation(results[count+i]),checks[i].expected);return {ok:true};};
+ scenario.assert=({results})=>{assert.equal(results.length,count+checks.length);original({results:results.slice(0,count)});for(let i=0;i<checks.length;i++)checkObservation(observation(results[count+i]),checks[i].expected);return {ok:true};};
  if(mixed){scenario.boundaryProof='real-service+boundary-double';scenario.limitations=['Real-service success plus source-grounded client result-validation double.'];}
 }
 const reply=(type,value)=>`await nodeRepl.rpc('browser',{method:'oracle.reply',params:{type:${JSON.stringify(type)},value:${JSON.stringify(value)}}});`;

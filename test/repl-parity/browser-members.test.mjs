@@ -145,3 +145,11 @@ test('autoaccept supplement arms navigation before triggering unload and reads o
  assert.deepEqual(outcome.parsed,{ok:true,value:{cleared:true,fixture:'Counter fixture'}});
  assert.deepEqual(calls,[['wait','http://fixture/counter.html?left=1','load'],['click','#leave'],['read','#value']]);
 });
+
+test('chooser member cases require cleanup after acknowledged fixture selection, not only a successful upload',async()=>{
+ const results=[true,true,true,false,true,true].map(v=>raw(v));
+ for(const tail of ['playwrightapi/waitforevent','playwrightdownload/path','playwrightfilechooser/ismultiple','playwrightfilechooser/setfiles']){
+  assert.equal((await invoke(tail,results,{events:[{file:'parity.txt'}]})).ok,true,tail);
+  const failed=results.slice();failed[5]=raw(false);assert.equal((await invoke(tail,failed,{events:[{file:'parity.txt'}]})).ok,false,tail);
+ }
+});

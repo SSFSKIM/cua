@@ -1,3 +1,4 @@
+import {rowCovered,verifyUnitProofs,secretProofContract} from '../../scripts/repl-parity/coverage.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -158,7 +159,7 @@ export function requiredBehaviors() {
   for (const name of secretNative) add('secret', `native/${name}`, 'M4', 'src/services/sky.mjs');
   for (const name of ['paste', 'type-text', 'set-value']) add('secret', `native/darwin/${name}`, 'M4', 'src/services/sky.mjs', ['darwin']);
   add('secret', 'native/linux/type-text', 'M4', 'src/services/sky.mjs', ['linux']);
-  return rows;
+  return rows.map(secretProofContract);
 }
 
 export function validateInventory(rows, contracts) {
@@ -169,7 +170,7 @@ export function validateInventory(rows, contracts) {
   assert.deepEqual(sorted(rows.map(row => row.id)), sorted(expected.keys()), 'exact Table 1 and cell/secret membership');
   const consumers = typeConsumers(contracts);
   for (const row of rows) {
-    assert.deepEqual(sorted(Object.keys(row)), ['cases', 'id', 'kind', 'milestone', 'platforms', ...(row.proofs?['proofs']:[]), 'source'], row.id);
+    assert.deepEqual(sorted(Object.keys(row)), sorted(['cases', 'id', 'kind', 'milestone', 'platforms', ...(row.proofs?['proofs']:[]), ...(row.kind==='secret'?['liveRequired',...(row.unitCases?['unitCases','unitProof']:[])]:[]), 'source']), row.id);
 
     assert.match(row.id, /^(member|type|cell|secret)\/[a-z0-9.-]+(?:\/[a-z0-9.-]+)+$/);
     const contract = expected.get(row.id);
@@ -193,17 +194,18 @@ export function validateInventory(rows, contracts) {
     } else {
       assert.equal(row.milestone, contract.milestone, `${row.id}: due milestone`);
       assert.deepEqual(row.cases, contract.cases, `${row.id}: required behavior case`);
+      if(row.kind==='secret')for(const key of ['liveRequired','unitCases','unitProof'])assert.deepEqual(row[key],contract[key],`${row.id}: ${key} proof obligation`);
     }
     const proofs=Object.fromEntries(row.cases.flatMap(id=>{const scenario=scenarios.find(s=>s.id===id);const proof=scenario?.boundaryProof??(scenario?.backend==='binder-double'?'binder-double':undefined);return proof?[[id,proof]]:[];}));
     assert.deepEqual(row.proofs??{},proofs,`${row.id}: evidence proof kind must match its executable lane`);
   }
 }
 
-export function stageInventory(rows, through, executableCases = new Set()) {
+export function stageInventory(rows, through, executableCases = new Set(), passedUnitProofs = new Set()) {
   assert.ok(milestones.includes(through), `invalid --through milestone: ${through}`);
   const due = rows.filter(row => milestones.indexOf(row.milestone) <= milestones.indexOf(through));
   const pending = rows.filter(row => !due.includes(row));
-  const covered = due.filter(row => row.cases.every(id => executableCases.has(id)));
+  const covered = due.filter(row => rowCovered(row,executableCases,passedUnitProofs));
   const uncovered = due.filter(row => !covered.includes(row));
   return {due, pending, covered, uncovered};
 }
@@ -296,8 +298,9 @@ test('selected-stage completeness reports later contracts as pending, never cove
   const flag = process.argv.find(arg => arg.startsWith('--through='));
   const index = process.argv.indexOf('--through');
   const through = flag?.slice('--through='.length) ?? (index < 0 ? process.env.CUA_REPL_PARITY_THROUGH ?? 'M0' : process.argv[index + 1]);
-  const executableCases = new Set(scenarios.map(scenario => scenario.id));
-  const stage = stageInventory(inventory(), through, executableCases);
+  const executableCases = new Set(scenarios.filter(s=>s.backend!=='secret-double').map(scenario => scenario.id));
+  const rows=inventory(),passedUnitProofs=verifyUnitProofs(rows);
+  const stage = stageInventory(rows, through, executableCases,passedUnitProofs);
   t.diagnostic(`through ${through}: ${stage.due.length} due; ${stage.covered.length} executable-linked; ${stage.uncovered.length} uncovered (not live parity evidence)`);
   for (const milestone of milestones) {
     const pending = stage.pending.filter(row => row.milestone === milestone);

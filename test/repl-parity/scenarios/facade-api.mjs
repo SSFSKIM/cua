@@ -1,6 +1,6 @@
 // Independent oracle: readable chatgpt-26.928.40906 R/cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/
 // tinysky_alt/create_browser_api.js:26-289, create_tinysky_alt.js:16-141, get_state.js:6-58;
-// browser client collection caching: oai_js_browser/dist/skill/scripts/browser-client.js:9769-10046.
+// browser client collection construction: oai_js_browser/dist/skill/scripts/browser-client.js:6447-6589,10061-10212.
 // The real retained service and scratch Chrome page supply all observations; no owner tab text is emitted.
 import assert from 'node:assert/strict';
 import {caseSchedule} from '../../../scripts/repl-parity/registry.mjs';

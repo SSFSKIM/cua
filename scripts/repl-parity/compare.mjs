@@ -40,7 +40,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
   for(const id of fakeCases)differences.push({kind:'evidence',case:id,message:'double output cannot establish live host parity'});
   if(!isDeepStrictEqual(a.tools,b.tools))differences.push({kind:'tools',message:'effective tool contract changed'});
   for(const key of ['platform','service','backend','sandbox','surfaces'])if(!isDeepStrictEqual(a.meta[key],b.meta[key]))differences.push({kind:'configuration',field:key});
-  if(a.meta.caseProofs||b.meta.caseProofs)for(const id of ids??[])if(a.meta.caseProofs?.[id]!==b.meta.caseProofs?.[id])differences.push({kind:'configuration',case:id,field:'caseProofs'});
+  if(a.meta.caseProofs&&b.meta.caseProofs||(ids??[]).some(id=>/^(api|hidden|capability-host)\//.test(id)||/^secrets\/(browser|native)-live\//.test(id)||/^cells\/(facade|documentation|profiles)\//.test(id)))for(const id of ids??[])if(!a.meta.caseProofs?.[id]||a.meta.caseProofs[id]!==b.meta.caseProofs?.[id])differences.push({kind:'configuration',case:id,field:'caseProofs'});
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});
   for(const [side,run] of [['a',a],['b',b]]) {
     if(!caseIds&&!isDeepStrictEqual(run.meta.caseIds,ids))differences.push({kind:'cardinality',side,message:'case manifests differ'});

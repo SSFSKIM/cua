@@ -101,7 +101,7 @@ test('real-service mode cannot inject a fake successful reply; configuring hidde
 test('capability collection oracle requires local-definition descriptions, not id-only backend metadata',()=>{
  const s=scenario('capability-host/tabcapabilitycollection/list');
  const values=[{id:'cdp',descriptionType:'string'},{id:'webmcp',descriptionType:'string'},{id:'browserAuth',descriptionType:'string'}];
- const observations=[result({ready:true,proof:'real-service'}),result({value:values,commands:[]}),result({rejected:true,noCommand:true})];
+ const observations=[result({ready:true,proof:'real-service'}),result({value:values,commands:[]}),result({rejected:true,noCommand:true,message:'Capability is not available: missing-capability'})];
  assert.equal(s.assert({results:observations}).ok,true);
  for(let i=0;i<values.length;i++){
   const mutation=structuredClone(values);mutation[i].descriptionType='undefined';
@@ -136,4 +136,23 @@ test('dialog reply fixtures pass through exactly and record the dismiss command 
  const command={type:'tab_handle_js_dialog',browser_id:'fixture',tab_id:'7',dialog_id:'dialog-beforeunload',action:'dismiss'};
  assert.deepEqual(await rpc(fixture,'execute',command),{});
  assert.deepEqual((await rpc(fixture,'oracle.trace')).at(-1),command);
+});
+
+test('validation cells preserve the entire synthetic error message for exact differential comparison',async()=>{
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const message='[\n  {"code":"invalid_type","path":["visible"],"message":"Expected boolean, received string"}\n]';
+ for(const [id,isResult]of [['capability-host/browser-browser/history',false],['capability-host/visibilitybrowsercapability/get',true]]){
+  let observed;const trace=[];
+  const reject=async()=>{if(isResult)trace.push({type:'browser_visibility_get'});throw new Error(message);};
+  const code=scenario(id).cells.find(c=>c.label==='validation-1').code;
+  await new AsyncFunction('__say','__trace','browser','cap','nodeRepl',code)(v=>{observed=v;},async()=>trace,{history:reject},{get:reject},{rpc:async()=>({})});
+  assert.deepEqual(observed,{rejected:true,...(isResult?{sent:true}:{noCommand:true}),message});
+ }
+});
+test('independent result validation requires both rejection location and a nonempty captured message',()=>{
+ const s=scenario('capability-host/visibilitybrowsercapability/get');
+ const base=[result({ready:true,proof:'boundary-double'}),result({value:true,commands:[{type:'browser_visibility_get',browser_id:'$browser'}]})];
+ const observed={rejected:true,sent:true,message:'Expected boolean, received string'};
+ assert.equal(s.assert({results:[...base,result(observed)]}).ok,true);
+ for(const invalid of [{rejected:true,sent:true},{...observed,message:''},{...observed,message:42},{...observed,sent:false},{...observed,rejected:false}])assert.throws(()=>s.assert({results:[...base,result(invalid)]}));
 });

@@ -8,12 +8,12 @@ export function capabilityFixtureCommand({device,checkout,home,api=false,...fact
  if(!['mini','cua-linux'].includes(device))throw new Error('Capability live host must run on the remote device; local unit tests use doubles');
  return remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify({device,checkout,home,...facts}))} CUA_PARITY_REMOTE=1 CUA_PARITY_API=${api?'1':'0'} CUA_HOME=${quote(home)} node test/repl-parity/serve-capability.mjs`);
 }
-export async function remoteCapabilityLane({device,checkout,home,host,api=false,...facts},{start=ownedJsonProcess}={}) {
+export async function remoteCapabilityLane({device,checkout,home,host,api=false,liveSecrets=false,...facts},{start=ownedJsonProcess}={}) {
  if(!['vendor','cua'].includes(host))throw new Error('Invalid host');
  const expectedFacts={device,checkout,home,...facts};
  const fixture=await start(capabilityFixtureCommand({...expectedFacts,api}));
  try {
   assertPreparedFacts(expectedFacts,fixture.executionFacts);
-  return {...fixture,command:{expectedFacts,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env -i PATH="$PATH" ${ownNodeEnv(facts)}HOME=${quote(fixture.userHome)} CUA_PARITY_REMOTE=1 CUA_PARITY_API=${api?'1':'0'} CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_SOURCE_HOME=${quote(home)} CUA_HOME=${quote(fixture.home)} CUA_REPL_HOST=${quote(host)} CUA_BROWSER_SERVICE=cua CUA_SHIM_SURFACES=browser CUA_SHIM_SECRETS=off node test/repl-parity/serve-capability-client.mjs`)}};
+  return {...fixture,command:{expectedFacts,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env -i PATH="$PATH" ${ownNodeEnv(facts)}HOME=${quote(fixture.userHome)} CUA_PARITY_REMOTE=1 CUA_PARITY_API=${api?'1':'0'} CUA_PARITY_LIVE_SECRETS=${liveSecrets?'1':'0'} CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_SOURCE_HOME=${quote(home)} CUA_HOME=${quote(fixture.home)} CUA_REPL_HOST=${quote(host)} CUA_BROWSER_SERVICE=cua CUA_SHIM_SURFACES=browser CUA_SHIM_SECRETS=off node test/repl-parity/serve-capability-client.mjs`)}};
  }catch(error){await fixture.close();throw error;}
 }

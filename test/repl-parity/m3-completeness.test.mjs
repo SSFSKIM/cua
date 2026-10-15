@@ -51,3 +51,9 @@ test('live api suite cannot pad its coverage with fake secret-store unit cases',
  const secrets=selectScenarios(scenarios,inventory,{suite:'secrets',through:'M3',platform:'darwin'}).scenarios;
  assert.ok(secrets.some(s=>s.backend==='secret-double'));assert.ok(secrets.every(s=>s.id.startsWith('secrets/')));
 });
+test('all excludes fake cases without letting a live-required secret obligation fall out',()=>{
+ const all=selectScenarios(scenarios,inventory,{suite:'all',through:'M3',platform:'darwin'}).scenarios;
+ assert.ok(all.every(s=>s.backend!=='secret-double'));
+ assert.ok(all.some(s=>s.id==='secrets/browser-live/execute/fill'));
+ assert.throws(()=>selectScenarios(scenarios.filter(s=>s.id!=='secrets/browser-live/execute/fill'),inventory,{suite:'all',through:'M3',platform:'darwin'}),/missing executable/);
+});

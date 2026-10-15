@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Table 3 gains a dated amendment, recorded in `surface-inventory.md` under "Table 3 amendment (2026-10-15)". It repairs the two sentences that the literal Windows deletions made ungrammatical: "Linux always returns full accessibility state." and "Linux app `paste` supports only `text` and uses the platform's native text input." The oracle derives these bytes independently, and the facade's `core.md` applies the same repair. The principle stays as before: vendor wording verbatim, the name changed to cua, exclusions explicit. The amendment covers only sentences the exclusion itself broke.
+  Rationale: The owner's ruling, relayed by the session. A deletion that breaks a sentence's grammar is not "verbatim" in any useful sense.
+  Date/Author: 2026-10-15, owner ruling, recorded by the plan-executor.
 - Decision: M3 task 3 as built.
   - **Documents.** They are committed already edited. Their provenance lives in `docs/cua-api/PROVENANCE.md`, because the files are emitted byte for byte. A test applies the 14 Table 3 edits to SHA-pinned vendor copies and requires byte equality.
   - **Module layout.** One module per vendor concern. That includes `linux-accessibility-tree.mjs`, which Linux `getAXState` text depends on.

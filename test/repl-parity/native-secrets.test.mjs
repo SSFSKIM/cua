@@ -19,3 +19,8 @@ test('native secret recorder checks real fileStore reads, refusal-before-read an
  }
  await assert.rejects(createNativeSecretOracle('/tmp/owner/home'),/scratch/);
 });
+test('the native secret fixture accepts the scratch HOME of any run-labelled parity prefix, and still nothing else',async t=>{
+ const made=async prefix=>{const root=await realpath(await mkdtemp('/tmp/'+prefix)),home=join(root,'run','test','home');await mkdir(home,{recursive:true});t.after(()=>rm(root,{recursive:true,force:true}));return home;};
+ await createNativeSecretOracle(await made('cua-m4t3-cap-'));
+ for(const prefix of ['cua-m4t3-other-','cuax-cap-','cua-M4-cap-'])await assert.rejects(createNativeSecretOracle(await made(prefix)),/canonical scratch HOME/,prefix);
+});

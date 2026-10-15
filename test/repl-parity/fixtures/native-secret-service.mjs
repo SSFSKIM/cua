@@ -8,8 +8,10 @@ import {createSkyService} from '../../../src/services/sky.mjs';
 import {fileStore} from '../../../src/secrets/store.mjs';
 import {errorIsSafe} from './live-secret-service.mjs';
 import {nativeSecretCases,LABEL,REFERENCE,WINDOW} from './native-secret-cases.mjs';
+// The scratch HOME a native lane made: <TMPDIR>/<parity scratch prefix>cap-XXXXXX/run/<id>/home, where the prefix is
+// scripts/repl-parity/topology.mjs parityScratchPrefix's grammar (cua-, or a run's cua-<label>-).
 export async function createNativeSecretOracle(home){
- if(!/^cua-(?:m4t1-)?cap-/.test(basename(dirname(dirname(dirname(home)))))||basename(home)!=='home'||basename(dirname(dirname(home)))!=='run'||await realpath(home)!==home)throw Error('Native secret fixture requires its canonical scratch HOME');
+ if(!/^cua-(?:[a-z0-9]+-)*cap-/.test(basename(dirname(dirname(dirname(home)))))||basename(home)!=='home'||basename(dirname(dirname(home)))!=='run'||await realpath(home)!==home)throw Error('Native secret fixture requires its canonical scratch HOME');
  const value='synthetic-'+randomUUID(),root=await mkdtemp(join(home,'native-secret-'));let row,wrapped,reads=[],inputs=[],outputs=[],safe=true;
  async function configure(id){
   row=nativeSecretCases.find(r=>r.id===id);if(!row)throw Error('Unknown native secret case');reads=[];inputs=[];outputs=[];safe=true;

@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-10-15 — `profiles list` ignores the explicit-override rule on a vendor-routed home (minor, found in #116 M4).** On cua-linux, the default home is vendor-routed. There, `CUA_BROWSER_SERVICE=cua node bin/cua.mjs profiles list --json` returns `ok:true` with every profile `ready:false, reason:host_not_live`. It should refuse with a route diagnostic naming the route and the deciding registration, as an explicit contradictory setting does at connection launch (#116 Design, "Selection is a connection fact"). The misleading `host_not_live` cost a debugging round in M4. Fix: apply the same explicit-route refusal in the independent profiles-listing path (`src/profiles/inventory.mjs`).
+
 - **2026-10-15 — Own REPL host (#116): two minor gaps left after M2/M3 review.**
   - (a) On a live connection, a kernel whose event loop blocks after its submitted code completes still holds the call with no bound. Only EOF is bounded, by M3's drain. The vendor behaves the same way, and nothing observed hits it. A per-execution watchdog in `src/repl-host/supervisor.mjs` would close it.
   - (b) Under a heavy machine load (load average 40–180), the full suite intermittently fails timing-sensitive tests in files #116 didn't touch: `mcp-upstream` (anchor/group tests), `extension-host`, `chrome-host-run`, a `browser-service` CDP budget, `browser-service/actions` "element without a box", and `eof-drain` "new elicitation during drain". Each passes alone, and gates are re-run until clean. Widening those budgets, or running those files serially, would remove the noise.

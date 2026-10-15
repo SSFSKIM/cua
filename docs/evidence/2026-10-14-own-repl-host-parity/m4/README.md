@@ -49,4 +49,4 @@ CUA_PARITY_SCRATCH_PREFIX=cua-m4t3- node scripts/repl-parity.mjs run --host cua 
 node scripts/repl-parity.mjs diff m4/vendor-1 m4/cua-1 --expected test/repl-parity/expected-differences.json
 CUA_PARITY_SCRATCH_PREFIX=cua-m4t3- node m4/accept/run.mjs linux-native|linux-chrome|linux-chrome-features m4/accept/runs
 ```
-The native comparison is reported in `../../2026-10-14-own-repl-host-native/README.md`: it is comparable and returned FAIL. A same-sitting vendor control shows the slowdown is this machine's load, so a quiet re-measure is owed.
+The native-baseline runs of this sitting are **diagnostic only, neither a pass nor a fail**. They were recorded at load average 80–250, and a same-sitting vendor control was slowed just as much. The authoritative quiet-machine own triple and a fresh vendor control are deferred to M5's Linux sitting. See `../../2026-10-14-own-repl-host-native/README.md` and `diagnostics-m4t3/` there.

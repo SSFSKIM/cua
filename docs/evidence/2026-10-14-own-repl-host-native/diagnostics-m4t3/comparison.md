@@ -1,3 +1,5 @@
+> **Diagnostic only: this is neither a pass nor a fail.** These own-host runs were recorded on 2026-10-15 between 18:13 and 18:32 UTC, while this MacBook, which hosts the cua-linux VM, was at load average 80–250 from other sessions' jobs. A vendor-host control recorded in the same sitting (`vendor-same-sitting-1`) was slowed just as much (getAXState median 1,127 ms, against 426 ms at M0). The comparator output below is kept unedited, and its verdict line measures the machine, not the host. The authoritative quiet-machine own triple and a fresh vendor control are deferred to M5's Linux sitting, per the spec's Decision Log (M4 task 3 rulings, ruling 1).
+
 # Native baseline comparison
 
 | | Baseline | Candidate |

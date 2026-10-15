@@ -87,19 +87,33 @@ The run refuses to start while any gedit runs, so every gedit window it saw was 
 - **Node.** The VM's Node is v22.23.3. cua's own host needs Node 24 or later. M4 should provide it through `CUA_NODE` and keep the proxy on this Node, so the two sides differ only in the host.
 - **Timing and order.** Three runs in one sitting, back to back: 19:31 to 19:44 UTC.
 
-## M4: cua's own host (`cua/`), 2026-10-15
+## M4: cua's own host under machine load (diagnostic only), 2026-10-15
 
-**Result: `compare` judged the two sides comparable and returned FAIL. Most of the slowdown comes from this machine's load, not from the host, so a quiet-machine re-measure is still owed.** The comparison is `comparison.md`; the pooled own-host summary is `cua/summary.md`.
+**This is a diagnostic, neither a pass nor a fail. Acceptance 8's native comparison is still open.**
+- The authoritative quiet-machine own triple (`cua/run-{1,2,3}`) and a fresh vendor control move to M5's Linux sitting, per the spec's Decision Log (M4 task 3 rulings, ruling 1).
+- What this sitting recorded is under `diagnostics-m4t3/`:
+  - three own-host runs, `cua-under-load/run-{1,2,3}`, with their `summary.md`;
+  - the comparator's unedited output against M0's `vendor/`, in `comparison.md`;
+  - one vendor-host control, `vendor-same-sitting-1`.
+- Each file leads with the same label.
 
-- Three own-host runs at the default plan, `cua/run-{1,2,3}`, recorded 18:13 to 18:32 UTC. All three completed with no failed and no invalidated samples. Every connection (6 per run) attested `cua-repl-host 0.4.0` in `initialize` and `{host: cua, version: 0.4.0}` in its first result. No approval was asked, and nothing was left behind.
-- `compare` found nothing to stop it: device, release, hardware, OS, display (1440 × 900), native service (the pinned `sky_linux`), sandbox (`disabled`, the platform default) and plan all match the M0 vendor baseline. It failed five operations:
-  - `warm.getAXState`: 1,181.5 ms against a 928.3 ms limit.
-  - `warm.getScreenshot`: 1,122.9 ms against a 1,032 ms limit.
-  - `task.verify`, `task.clear` and `task.total`: task.total 24,537 ms against a 21,146 ms limit.
-- Every method case gave the vendor's outcome, sample for sample.
-- **Same-sitting vendor control** (`diagnostics-m4t3/vendor-same-sitting-1`, run straight after the three own runs, on the same clone and commit, `--host vendor`): the vendor host was just as slow as the own host, and both were 2–3× slower than at M0.
+**Why it is a diagnostic.**
+- The cua-linux VM runs on this MacBook (`tart run cua-linux`), and the Mac was under heavy load from other sessions' jobs (ffmpeg and Python evals, a MAWS supervisor) throughout. `vm.loadavg` (1, 5 and 15 minutes), logged at each run's edges:
 
-  | Median wall (ms) | M0 vendor run-1 | vendor, same sitting | cua run-1 | cua run-2 | cua run-3 |
+  | Point | 1 min | 5 min | 15 min |
+  |---|---|---|---|
+  | Own run-1 start (18:13:36 UTC) | 91.50 | 160.14 | 208.20 |
+  | Run-1 end / run-2 start | 91.56 | 123.31 | 173.18 |
+  | Run-2 end / run-3 start | 97.70 | 97.30 | 142.27 |
+  | Run-3 end | 80.74 | 97.04 | 127.58 |
+  | Vendor control start | 81.29 | 96.62 | 127.07 |
+  | Vendor control end (18:38:32 UTC) | 56.46 | 83.04 | 111.53 |
+
+  Earlier in the same sitting it peaked near 250.
+- In-cell time equals wall time for the slowed operations, so the time is spent inside the VM.
+- The vendor host, run straight after the three own runs on the same clone and commit, was slowed just as much:
+
+  | Median wall (ms) | M0 vendor run-1 | Vendor, same sitting | Own run-1 | Own run-2 | Own run-3 |
   |---|---|---|---|---|---|
   | ssh.roundtrip | 214 | 602 | 349 | 355 | 210 |
   | warm.noop | 2.1 | 6.6 | 2.3 | 9.2 | 2.6 |
@@ -109,6 +123,18 @@ The run refuses to start while any gedit runs, so every gedit window it saw was 
   | task.verify | 534 | 1,067 | 1,619 | 2,569 | 1,504 |
   | task.total | 19,271 | 21,740 | 23,047 | 25,719 | 24,537 |
 
-  The VM runs on this MacBook (`tart run cua-linux`). During these runs the Mac's load average was 80–250 from other sessions' jobs (`vm.loadavg` was logged at each run's start and end: 91/160/208 at run-1's start, 56/83/112 at the control's end). In-cell time equals wall time for these operations, so the time is spent inside the VM. One vendor control is not three, and acceptance 8's verdict must come from a quiet re-measure, run as three own runs, or as matched vendor and own triples if the M0 conditions cannot be reproduced. This run neither passes nor waives it.
-- **Environment.** As at M0, the serve ran on the VM's own Node v22.23.3, the default cua home (`~/.local/share/cua`), `DISPLAY=:0` with the account's `~/.Xauthority`, and the session bus. The one deliberate difference: cua's host runs on Node v24.18.0 (`/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node`). The harness passes that path as `CUA_NODE` in the serve's command environment (new `--node`, recorded as `meta.environment.CUA_NODE` and `meta.ownNode`). The vendor host runs on its pinned Node v24.21.0. The clone was at `a5ccc1b`, not M0's `1d34683`; between them, only the host under test and the harness changed.
-- **Reproduce.** Run `node scripts/native-baseline.mjs run --device cua-linux --host cua --node <own Node> --out <dir>/cua/run-<n>` for n = 1..3, then `summary <dir>/cua` and `compare <dir>/vendor <dir>/cua --out <dir>/comparison.md`.
+**What the runs do show.**
+- All three own runs completed, with no failed and no invalidated samples. Every connection (6 per run) attested `cua-repl-host 0.4.0`, both in `initialize` and in the marker on its first result.
+- Every method case gave the vendor's outcome, sample for sample.
+- Nothing was left behind, and no approval was asked.
+- `compare` accepted the two sides as comparable: device, release, hardware, OS, display (1440 × 900), native service (pinned `sky_linux`), sandbox (`disabled`, the platform default) and plan all match.
+- Its timing rows are kept as recorded, verdict line included, and are not acted on.
+
+**Environment for M5's re-measure.**
+- As at M0:
+  - The serve runs on the VM's own Node v22.23.3.
+  - It uses the default cua home (`~/.local/share/cua`).
+  - It runs in the X session (`DISPLAY=:0`, `~/.Xauthority`, the session bus).
+- One deliberate difference: cua's host runs on Node v24.18.0 (`/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node`). The new `--node` passes it as `CUA_NODE` in the serve's command environment, recorded in `meta.environment.CUA_NODE` and `meta.ownNode`. The vendor host runs on its pinned v24.21.0.
+- These runs used the clone at `a5ccc1b`. M5 re-measures at its own head, on a quiet machine, with a fresh vendor control in the same sitting.
+- Command: `node scripts/native-baseline.mjs run --device cua-linux --host cua --node <own Node> --out <dir>/cua/run-<n>` for n = 1..3, then `summary <dir>/cua` and `compare <dir>/vendor <dir>/cua`.

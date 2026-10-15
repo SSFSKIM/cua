@@ -539,6 +539,14 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M4 task 2 as built.
+  - **ApprovalStorage:** a no-callers verdict, with nothing ported. Neither the retained Linux Sky path (stdio transport) nor the owned wrappers and services call `config`/`readToml`/`writeToml`. The only caller is the vendor browser service, which never runs on the own host. Approval persistence stays proxy-owned. The verdict lives in the header of `privileged-node-repl.mjs`, and a guard test pins the worker's privileged API.
+  - **Linux native route:** it needed no production change. Tests on the production launch path cover it end to end: `sky_linux` runs as the trusted worker's non-detached stdio child, inside the worker's `own()` subtree, survives timeout and reset, is reaped on idle stop, close and worker death, and starts fresh on relaunch.
+  - **Native secrets:** substitution happens at the `{window,text}` shape; refusals come before input, and post-read errors are withheld.
+  - **Host version:** `REPL_HOST_VERSION` is 0.4.0, pinned literally in the identity test. All M4 evidence attests 0.4.0.
+  - **Still for task 3:** live Linux proof, including the Linux FIFO kernel-stdio branch.
+  Rationale: Design permits an evidence-backed no-callers verdict. The retained Linux machinery already carries the route.
+  Date/Author: 2026-10-15, M4 task 2 executor and its review, folded by the plan-executor.
 - Decision: On cua-linux, `prepare` and every live run of the cua browser service use `CUA_HOME=/home/admin/.local/share/cua-h4`, #113's cua-route home. The value travels in the harness's remote command environment, exactly like `CUA_NODE`, and the prepare facts record the home, the registration manifest and the route provenance.
   - The VM's default home is vendor-routed: its registration and bindings belong to the OpenAI extension. It stays as it is.
   - Nothing on the VM is re-registered or rebound.

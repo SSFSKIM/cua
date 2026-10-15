@@ -16,7 +16,6 @@
 import {statSync} from 'node:fs';
 import {createConnection} from 'node:net';
 import {isAbsolute} from 'node:path';
-import {getSystemErrorMap} from 'node:util';
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 export const CONNECT_TIMEOUT_SENTENCE = 'native pipe initial connect timed out';
@@ -33,18 +32,31 @@ export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 const PEER_GONE = new Set(['EPIPE', 'ECONNRESET', 'ECONNABORTED']);
 const peerGoneOnWrite = error => error.syscall !== 'read' && PEER_GONE.has(error.code);
 
-// libuv's messages are strerror's for these errnos except in letter case; where the words differ too, strerror's.
-const STRERROR = {EIO: 'Input/output error', ENAMETOOLONG: 'File name too long', ENOTCONN: process.platform === 'linux' ? 'Transport endpoint is not connected' : 'Socket is not connected'};
-// A Node system error as Rust's std::io::Error displays the same OS error: `<strerror> (os error <errno>)`. Anything
-// that is not a system error keeps its own message.
-export function osErrorSentence(error) {
-  if (!Number.isInteger(error?.errno) || error.errno >= 0 || typeof error.code !== 'string') return error?.message ?? String(error);
-  let detail = STRERROR[error.code];
-  if (!detail) {
-    const known = [...getSystemErrorMap().values()].find(([name]) => name === error.code);
-    if (!known) return error.message;
-    detail = known[1].charAt(0).toUpperCase() + known[1].slice(1);
-  }
+// strerror for every errno the relay's syscalls (stat, connect, read, write, close of a Unix socket) can reach, as the
+// vendor's Rust host displays an OS error: glibc's text on Linux (glibc's errlist), Darwin libc's on macOS (checked
+// against os.strerror on macOS 15). libuv's own messages are not strerror (ELOOP, ENFILE, ENOMEM, ETIMEDOUT, ... differ).
+const COMMON = {
+  EPERM: 'Operation not permitted', ENOENT: 'No such file or directory', EINTR: 'Interrupted system call', EIO: 'Input/output error',
+  EBADF: 'Bad file descriptor', EAGAIN: 'Resource temporarily unavailable', ENOMEM: 'Cannot allocate memory', EACCES: 'Permission denied',
+  ENOTDIR: 'Not a directory', EISDIR: 'Is a directory', EINVAL: 'Invalid argument', ENFILE: 'Too many open files in system',
+  EMFILE: 'Too many open files', EROFS: 'Read-only file system', EPIPE: 'Broken pipe', ENAMETOOLONG: 'File name too long',
+  ELOOP: 'Too many levels of symbolic links', ENOTSOCK: 'Socket operation on non-socket', EMSGSIZE: 'Message too long',
+  EPROTOTYPE: 'Protocol wrong type for socket', ENETDOWN: 'Network is down', ECONNABORTED: 'Software caused connection abort',
+  ECONNRESET: 'Connection reset by peer', ENOBUFS: 'No buffer space available', ECONNREFUSED: 'Connection refused',
+  EALREADY: 'Operation already in progress', EINPROGRESS: 'Operation now in progress', ECANCELED: 'Operation canceled',
+};
+const STRERROR = {
+  linux: {...COMMON, EOVERFLOW: 'Value too large for defined data type', EOPNOTSUPP: 'Operation not supported', EADDRNOTAVAIL: 'Cannot assign requested address',
+    ENOTCONN: 'Transport endpoint is not connected', ESHUTDOWN: 'Cannot send after transport endpoint shutdown', ETIMEDOUT: 'Connection timed out'},
+  darwin: {...COMMON, EOVERFLOW: 'Value too large to be stored in data type', EOPNOTSUPP: 'Operation not supported on socket', EADDRNOTAVAIL: "Can't assign requested address",
+    ENOTCONN: 'Socket is not connected', ESHUTDOWN: "Can't send after socket shutdown", ETIMEDOUT: 'Operation timed out'},
+};
+// A Node system error as Rust's std::io::Error displays the same OS error: `<strerror> (os error <errno>)`, the errno
+// being the platform's (Node reports it negated). Anything else, or an errno no relay syscall reaches, keeps its own
+// message rather than a guessed sentence.
+export function osErrorSentence(error, platform = process.platform) {
+  const detail = STRERROR[platform]?.[error?.code];
+  if (!detail || !Number.isInteger(error.errno) || error.errno >= 0) return error?.message ?? String(error);
   return `${detail} (os error ${-error.errno})`;
 }
 

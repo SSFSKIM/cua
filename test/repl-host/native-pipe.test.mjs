@@ -4,11 +4,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CONNECT_TIMEOUT_SENTENCE, NOT_ABSOLUTE_SENTENCE, NOT_CONNECTED_SENTENCE, NOT_SOCKET_SENTENCE, nativePipeRelay} from '../../src/repl-host/native-pipe.mjs';
+import {CONNECT_TIMEOUT_SENTENCE, NOT_ABSOLUTE_SENTENCE, NOT_CONNECTED_SENTENCE, NOT_SOCKET_SENTENCE, nativePipeRelay, osErrorSentence} from '../../src/repl-host/native-pipe.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // A system error as Node raises it: libuv's message, the code, the negative errno and the failing syscall.
@@ -193,4 +193,33 @@ test('closeAll also ends a connect still pending: its socket is destroyed at onc
   sockets[0].emit('connect');
   await delay(1100);
   assert.deepEqual(sent, [], 'no timeout answer and no late connect');
+});
+
+// strerror as the vendor's Rust host displays it: glibc's on Linux, Darwin libc's on macOS (Darwin's checked against
+// os.strerror on macOS 15). libuv's own messages differ for many of these, so a mutation to libuv's text fails here.
+test('an OS error reads as the platform C library\'s strerror, with the platform\'s errno', () => {
+  const linux = {ELOOP: [40, 'Too many levels of symbolic links'], ENFILE: [23, 'Too many open files in system'], ENOMEM: [12, 'Cannot allocate memory'],
+    ETIMEDOUT: [110, 'Connection timed out'], ENOTCONN: [107, 'Transport endpoint is not connected'], EADDRNOTAVAIL: [99, 'Cannot assign requested address'],
+    EAGAIN: [11, 'Resource temporarily unavailable'], ECONNRESET: [104, 'Connection reset by peer'], ENOENT: [2, 'No such file or directory'], EPROTOTYPE: [91, 'Protocol wrong type for socket']};
+  const darwin = {ELOOP: [62, 'Too many levels of symbolic links'], ENFILE: [23, 'Too many open files in system'], ENOMEM: [12, 'Cannot allocate memory'],
+    ETIMEDOUT: [60, 'Operation timed out'], ENOTCONN: [57, 'Socket is not connected'], EADDRNOTAVAIL: [49, "Can't assign requested address"],
+    EAGAIN: [35, 'Resource temporarily unavailable'], ECONNRESET: [54, 'Connection reset by peer'], ENOENT: [2, 'No such file or directory'], EPROTOTYPE: [41, 'Protocol wrong type for socket']};
+  for (const [platform, table] of Object.entries({linux, darwin}))
+    for (const [code, [errno, text]] of Object.entries(table))
+      assert.equal(osErrorSentence(Object.assign(new Error(`connect ${code}`), {code, errno: -errno, syscall: 'connect'}), platform), `${text} (os error ${errno})`, `${platform} ${code}`);
+  // Not a system error, or one no relay syscall reaches: its own message, never a guessed sentence.
+  assert.equal(osErrorSentence(new Error('plain')), 'plain');
+  assert.equal(osErrorSentence(Object.assign(new Error('spawn E2BIG'), {code: 'E2BIG', errno: -7, syscall: 'spawn'}), 'linux'), 'spawn E2BIG');
+});
+
+test('a symbolic link loop at the socket path is refused with the platform\'s sentence before anything connects', t => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-pipe-')));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  symlinkSync(join(dir, 'b.sock'), join(dir, 'a.sock'));
+  symlinkSync(join(dir, 'a.sock'), join(dir, 'b.sock'));
+  const sent = [];
+  const relay = nativePipeRelay({send: message => sent.push(message)});
+  relay.handle({id: 'loop', op: 'connect', path: join(dir, 'a.sock')});
+  const errno = process.platform === 'linux' ? 40 : 62;
+  assert.deepEqual(sent, [{type: 'native_pipe_response', id: 'loop', ok: false, error: `failed to connect native pipe: Too many levels of symbolic links (os error ${errno})`}]);
 });

@@ -46,9 +46,9 @@ const COMMON = {
   EALREADY: 'Operation already in progress', EINPROGRESS: 'Operation now in progress', ECANCELED: 'Operation canceled',
 };
 const STRERROR = {
-  linux: {...COMMON, EOVERFLOW: 'Value too large for defined data type', EOPNOTSUPP: 'Operation not supported', EADDRNOTAVAIL: 'Cannot assign requested address',
+  linux: {...COMMON, EOVERFLOW: 'Value too large for defined data type', EOPNOTSUPP: 'Operation not supported', ENOTSUP: 'Operation not supported', EADDRNOTAVAIL: 'Cannot assign requested address',
     ENOTCONN: 'Transport endpoint is not connected', ESHUTDOWN: 'Cannot send after transport endpoint shutdown', ETIMEDOUT: 'Connection timed out'},
-  darwin: {...COMMON, EOVERFLOW: 'Value too large to be stored in data type', EOPNOTSUPP: 'Operation not supported on socket', EADDRNOTAVAIL: "Can't assign requested address",
+  darwin: {...COMMON, EOVERFLOW: 'Value too large to be stored in data type', EOPNOTSUPP: 'Operation not supported on socket', ENOTSUP: 'Operation not supported', EADDRNOTAVAIL: "Can't assign requested address",
     ENOTCONN: 'Socket is not connected', ESHUTDOWN: "Can't send after socket shutdown", ETIMEDOUT: 'Operation timed out'},
 };
 // A Node system error as Rust's std::io::Error displays the same OS error: `<strerror> (os error <errno>)`, the errno

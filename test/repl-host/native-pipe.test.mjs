@@ -200,10 +200,13 @@ test('closeAll also ends a connect still pending: its socket is destroyed at onc
 test('an OS error reads as the platform C library\'s strerror, with the platform\'s errno', () => {
   const linux = {ELOOP: [40, 'Too many levels of symbolic links'], ENFILE: [23, 'Too many open files in system'], ENOMEM: [12, 'Cannot allocate memory'],
     ETIMEDOUT: [110, 'Connection timed out'], ENOTCONN: [107, 'Transport endpoint is not connected'], EADDRNOTAVAIL: [99, 'Cannot assign requested address'],
-    EAGAIN: [11, 'Resource temporarily unavailable'], ECONNRESET: [104, 'Connection reset by peer'], ENOENT: [2, 'No such file or directory'], EPROTOTYPE: [91, 'Protocol wrong type for socket']};
+    EAGAIN: [11, 'Resource temporarily unavailable'], ECONNRESET: [104, 'Connection reset by peer'], ENOENT: [2, 'No such file or directory'], EPROTOTYPE: [91, 'Protocol wrong type for socket'],
+    ENOTSUP: [95, 'Operation not supported'], EOPNOTSUPP: [95, 'Operation not supported']};
   const darwin = {ELOOP: [62, 'Too many levels of symbolic links'], ENFILE: [23, 'Too many open files in system'], ENOMEM: [12, 'Cannot allocate memory'],
     ETIMEDOUT: [60, 'Operation timed out'], ENOTCONN: [57, 'Socket is not connected'], EADDRNOTAVAIL: [49, "Can't assign requested address"],
-    EAGAIN: [35, 'Resource temporarily unavailable'], ECONNRESET: [54, 'Connection reset by peer'], ENOENT: [2, 'No such file or directory'], EPROTOTYPE: [41, 'Protocol wrong type for socket']};
+    EAGAIN: [35, 'Resource temporarily unavailable'], ECONNRESET: [54, 'Connection reset by peer'], ENOENT: [2, 'No such file or directory'], EPROTOTYPE: [41, 'Protocol wrong type for socket'],
+    // Node's ENOTSUP is Darwin's 45, distinct from EOPNOTSUPP's 102.
+    ENOTSUP: [45, 'Operation not supported'], EOPNOTSUPP: [102, 'Operation not supported on socket']};
   for (const [platform, table] of Object.entries({linux, darwin}))
     for (const [code, [errno, text]] of Object.entries(table))
       assert.equal(osErrorSentence(Object.assign(new Error(`connect ${code}`), {code, errno: -errno, syscall: 'connect'}), platform), `${text} (os error ${errno})`, `${platform} ${code}`);

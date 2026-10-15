@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import scenarios from './scenarios/index.mjs';
-import {PENDING_REASON,resolvePendingDeclarations,classifyPendingCell,pendingCellsFor,assertAlternativeProof,loadAlternativeProofs} from '../../scripts/repl-parity/pending-cells.mjs';
+import {PENDING_REASON,resolvePendingDeclarations,classifyPendingCell,pendingCellsFor,assertAlternativeProof,assertAlternativeCoverage,loadAlternativeProofs} from '../../scripts/repl-parity/pending-cells.mjs';
 import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
 import {assessAssertions} from '../../scripts/repl-parity/vendor-defects.mjs';
 const names=['input/coordinates#scroll','input/dom#scroll'];
@@ -47,3 +47,5 @@ test('pending skips only the classified scroll value check, never sibling result
  assert.equal((await click.assert({...input,fixtureState:{events:[]}})).ok,false);
  assert.deepEqual(await scroll.assert({...input,results:[...values,passed()]}),{ok:true,pendingCells:['scroll'],covered:false});
 });
+
+test('no alternate-platform coverage can be manufactured by an empty or duplicate control set',()=>{assert.throws(()=>assertAlternativeCoverage([], 'api/browser-cuaapi/scroll'));const proof=loadAlternativeProofs()[0];assert.throws(()=>assertAlternativeCoverage([proof,proof], 'api/browser-cuaapi/scroll'));});

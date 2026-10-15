@@ -29,6 +29,10 @@ export function assertAlternativeProof(run,id){
  const cells=rows.filter(r=>r.cell);assert.deepEqual(cells.map(r=>r.cell).sort(),[...run.meta.caseCells[id]].sort());
  assert.ok(cells.every(r=>r.ok===true&&r.isError===false));assert.equal(classifyPendingCell(cells.find(r=>r.cell==='scroll')),'unexpected-pass');
 }
+export function assertAlternativeCoverage(runs,id){
+ assert.equal(runs.length,2,'pending requires both live alternate-host controls');assert.deepEqual(runs.map(r=>r.meta.host).sort(),['cua','vendor'],'pending requires independent alternate-host controls');
+ for(const run of runs)assertAlternativeProof(run,id);
+}
 let proofs;
 export function loadAlternativeProofs(){
  if(proofs)return proofs;
@@ -44,7 +48,7 @@ export function resolvePendingDeclarations({logicalCells=[],reason,platform,thro
  const pendingEnvironment=selected.map(scope=>{
   if(scenarios){const consumers=scenarios.filter(s=>s.corpusCase===scope.corpus&&s.cells.some(c=>c.label===scope.cell));assert.deepEqual(consumers.map(s=>s.id).sort(),scope.cases,'declared pending consumer set changed');assert.deepEqual(consumers.filter(s=>s.witnessCells.every(c=>c===scope.cell)).map(s=>s.id),[scope.member],'pending member witness changed');}
   if(caseIds)assert.ok(scope.cases.every(id=>caseIds.includes(id)),'pending cell consumers absent from manifest');
-  const alternate=loadAlternativeProofs();for(const run of alternate)assertAlternativeProof(run,scope.member);
+  const alternate=loadAlternativeProofs();assertAlternativeCoverage(alternate,scope.member);
   return {logicalCell:scope.logicalCell,cell:scope.cell,cases:scope.cases,member:scope.member,reason,alternativeProofs:alternate.map(run=>({path:run.path,host:run.meta.host,commit:run.meta.commit,files:policy.proofs.find(p=>p.path===run.path).files}))};
  });
  return {pendingEnvironment,pendingObligations:pendingEnvironment.map(d=>d.member)};

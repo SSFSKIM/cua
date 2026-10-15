@@ -539,6 +539,15 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The M2 tools oracle compares against an **effective** vendor control, not M0's base `tools.json`.
+  - `m0/vendor-1/tools.json` is the base, no-services surface and stays as it is.
+  - M2 task 1 records the vendor's effective `tools/list` through a production-shaped, browser-only vendor launch and commits it as the M2 vendor control.
+  - The own host's tools are compared field by field against that control.
+  - Each base-versus-effective delta is reported with its launcher source.
+  - Approved branding/exclusion departures need scoped expected-differences entries; any other delta is a defect.
+  - Task 1 owns the harness and the effective vendor recording; task 3 runs the own-side comparison.
+  Rationale: The serve-cells lane bypasses the launcher overrides, so M0 recorded base text only, and a literal match against it would be a false oracle for production tool text.
+  Date/Author: 2026-10-14, session ruling relayed by M2 task 1's executor, recorded by the plan-executor.
 - Decision: M2 runs as three tasks in one PR.
   - Task 1 (astra) is the M2 oracle: vendor-side scenarios for every case due M2 (isolated trusted fixture services for service hooks, elicitation accept/decline/cancel, suspended budgets, hook order and deadlines, turn deduplication, response meta, trust-boundary refusals and worker secret rejection paths); `browser-parity --repl-host vendor|cua`, independent of `--service`; and a tools-contract comparison against M0's recorded effective contract. It records vendor controls on the mini, browser-only.
   - Task 2 (opus) is the port: trusted-worker, worker-runtime completion and privileged-node-repl, **TrustedServiceWire** and **PrivilegedRuntime**; nativePipe relayed by the supervisor; the effective retained tool text; registering the trusted worker through the reaper's `own(pid)`; the unmodified vendor facade as temporary banner.

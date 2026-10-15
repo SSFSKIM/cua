@@ -79,9 +79,10 @@
 // own settings under owned names in place of the vendor's NODE_REPL_ ones (no vendor launcher, node_repl or vendor Node
 // path is set):
 //   CUA_REPL_NODE_PATH                       the resolved Node the kernel runs on
-//   CUA_REPL_TRUSTED_CODE_PATHS              src/repl-host (the host's own code), then what NODE_REPL_TRUSTED_CODE_PATHS
-//                                            lists for the vendor; the scoped preflight protects these
-//                                            (src/runtime/sandbox.mjs trustedCodePathsOf)
+//   CUA_REPL_TRUSTED_CODE_PATHS              src/repl-host (the host's own code), src/cua-api and docs/cua-api (the cua
+//                                            facade the banner imports and the documents it reads), then what
+//                                            NODE_REPL_TRUSTED_CODE_PATHS lists for the vendor; the scoped preflight
+//                                            protects these (src/runtime/sandbox.mjs trustedCodePathsOf)
 //   CUA_REPL_TRUSTED_SERVICES                with services registered, as NODE_REPL_TRUSTED_SERVICES: what the trusted
 //                                            worker (src/repl-host/trusted-worker.mjs) loads; every service must lie
 //                                            inside a trusted code path by real path (sandbox.mjs
@@ -90,9 +91,10 @@
 //   CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000
 //   CUA_REPL_OWNED_GROUP=1                   the supervisor runs in the process group the proxy's anchor owns
 //                                            (src/mcp/upstream.mjs), so it may reap what a finished kernel left there
-//   CUA_REPL_NODE_MODULE_DIRS                the vendor module tree, where the banner's facade import resolves
-//   CUA_REPL_JS_BANNER                       the vendor launcher's banner, importing the unmodified vendor facade
-//                                            (@oai/cua/tinyskyAlt) until #116 M3 owns it
+//   CUA_REPL_NODE_MODULE_DIRS                the vendor module tree, where cells resolve package imports as the vendor
+//                                            launcher lets them
+//   CUA_REPL_JS_BANNER                       imports cua's own facade bootstrap (src/cua-api/bootstrap.mjs, by file
+//                                            URL), which installs `cua` (and `agent`) for the enabled surfaces
 //   CUA_REPL_UNTRUSTED_ENV_ALLOWLIST         CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV, as the vendor launcher adds
 //   CUA_REPL_TOOL_OVERRIDES                  the vendor launcher's tool text for this platform and these surfaces
 //                                            (src/repl-host/instructions.mjs), as NODE_REPL_TOOL_OVERRIDES
@@ -103,14 +105,14 @@
 import {accessSync, constants, realpathSync, statSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {dirname, isAbsolute, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
 import {assertTrustedServicesContained} from './sandbox.mjs';
-import {VENDOR_FACADE_BANNER, toolOverrides} from '../repl-host/instructions.mjs';
+import {toolOverrides} from '../repl-host/instructions.mjs';
 import {chromeRoute, registrationTimes} from '../chrome/route.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
@@ -134,10 +136,16 @@ export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
 // vendored parser), which is trusted code for the scoped preflight.
 export const REPL_HOST_DIR = ownedPath('../repl-host');
 export const REPL_HOST_SUPERVISOR = ownedPath('../repl-host/supervisor.mjs');
+// cua's own facade (the spec's CuaBootstrap) and its first-call documents (CoreDocumentation): the first cell of a fresh
+// own-host kernel imports the bootstrap, which reads the documents; both are trusted code for the scoped preflight.
+export const CUA_API_DIR = ownedPath('../cua-api');
+export const CUA_API_DOCS_DIR = ownedPath('../../docs/cua-api');
+export const CUA_BOOTSTRAP_BANNER = `await import(${JSON.stringify(pathToFileURL(join(CUA_API_DIR, 'bootstrap.mjs')).href)});\n`;
 const BROWSER_SERVICES = ['cua', 'vendor'];
 const REPL_HOSTS = ['cua', 'vendor'];
 // The environment names a cell may read through nodeRepl.env on the own host: the vendor launcher's own additions to
-// its node_repl's allowlist (cua-repl launch.js), which the vendor facade reads.
+// its node_repl's allowlist (cua-repl launch.js). The facade reads the first (src/cua-api/bootstrap.mjs); the second's
+// vendor modes are not ported, and the launch never sets it.
 const CELL_ENV_ALLOWLIST = 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV';
 // The oldest Node major cua's own REPL host runs on (its kernel's vm modules); the vendor host keeps its pinned Node.
 export const NODE_FLOOR = 24;
@@ -165,11 +173,11 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const env = {};
   for (const key of AMBIENT_ALLOWLIST) if (typeof ambient[key] === 'string') env[key] = ambient[key];
   if (linux) Object.assign(env, desktopSessionEnv(ambient));
-  const trustedCodePaths = own ? [REPL_HOST_DIR, p.moduleDir] : [p.moduleDir];
+  const trustedCodePaths = own ? [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir] : [p.moduleDir];
   Object.assign(env, {PATH: FIXED_PATH, CODEX_HOME: owned.codexHome});
   Object.assign(env, own
     ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
-      CUA_REPL_JS_BANNER: VENDOR_FACADE_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: CELL_ENV_ALLOWLIST,
+      CUA_REPL_JS_BANNER: CUA_BOOTSTRAP_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: CELL_ENV_ALLOWLIST,
       CUA_REPL_TOOL_OVERRIDES: JSON.stringify(toolOverrides({platform: runtime.manifest.platform, surfaces: enabled}))}
     : {CUA_REPL_NODE_REPL_PATH: p.nodeRepl, CUA_REPL_ENABLED_SURFACES: enabled.join(','), NODE_REPL_NODE_PATH: p.node, NODE_REPL_NODE_MODULE_DIRS: p.moduleDir});
   const names = own

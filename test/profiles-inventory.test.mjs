@@ -200,3 +200,18 @@ test('the cell recognises a MAWS backend by its instance id prefix and lets noth
   replyCell(upstream, await upstream.nextCall('js'), {backends: [{instanceId: 'maws:app-1', family: 'chrome'}, {instanceId: 'a', family: 'chrome'}]});
   assert.deepEqual((await listing).backends, [{instanceId: 'a', family: 'chrome'}]);
 });
+
+test('the listing records which REPL host answered: serverInfo from initialize and the cell result\'s cua/replHost marker', async () => {
+  const marker = {host: 'cua', version: '9.9.9'};
+  for (const [meta, expected] of [[{'cua/replHost': marker, 'cua/taskId': 'x'}, marker], [undefined, null]]) {
+    const upstream = fakeUpstream();
+    const listing = listBackendsWith(upstream, {tabCounts: false});
+    const init = await upstream.nextRequest('initialize');
+    upstream.reply(init, {protocolVersion: '2025-06-18', capabilities: {}, serverInfo: {name: 'cua-repl-host', version: '9.9.9'}});
+    const call = await upstream.nextCall('js');
+    upstream.reply(call, {content: [{type: 'text', text: `${MARKER} ${JSON.stringify({backends: []})}`}], isError: false, ...(meta ? {_meta: meta} : {})});
+    const result = await listing;
+    assert.deepEqual(result.hostAttestation, {serverInfo: {name: 'cua-repl-host', version: '9.9.9'}, _meta: expected});
+    assert.deepEqual(result.backends, []);
+  }
+});

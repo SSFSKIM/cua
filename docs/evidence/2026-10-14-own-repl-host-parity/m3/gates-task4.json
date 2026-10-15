@@ -1,0 +1,11 @@
+{
+  "sourceCommit": "50d1170056423af5730456497de6813189bf8496",
+  "checks": [
+    {"name": "default", "command": "HOME=/tmp/cua-scratch-home-m3t4 npm test", "tests": 2402, "pass": 2252, "fail": 0, "skipped": 150},
+    {"name": "explicit-node", "command": "CUA_NODE=/opt/homebrew/bin/node HOME=/tmp/cua-scratch-home-m3t4 npm test", "tests": 2402, "pass": 2326, "fail": 0, "skipped": 76},
+    {"name": "inventory", "command": "CUA_REPL_PARITY_THROUGH=M3 node --test test/repl-parity/inventory.test.mjs", "tests": 8, "pass": 8, "fail": 0, "skipped": 0},
+    {"name": "mods", "command": "npm run test:mods", "pass": 32, "fail": 0},
+    {"name": "plugin-validate", "command": "claude plugin validate .", "result": "Validation passed with warnings", "warnings": ["root: CLAUDE.md at the plugin root is not loaded as project context. To ship context with your plugin, use a skill (skills/<name>/SKILL.md) instead."]},
+    {"name": "pack", "command": "npm pack --dry-run --json", "files": 192, "includes": ["docs/cua-api/core.md", "docs/cua-api/confirmations.md", "docs/cua-api/other-browser-apis.md", "docs/cua-api/PROVENANCE.md", "src/cua-api/bootstrap.mjs", "src/cua-api/browser-client.mjs", "src/cua-api/vendor/zod/VERSION", "src/repl-host/vendor/meriyah/meriyah.mjs", "src/repl-host/vendor/meriyah/VERSION"], "testFiles": 0}
+  ]
+}

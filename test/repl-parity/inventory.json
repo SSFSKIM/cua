@@ -24,7 +24,10 @@
     "cases": [
       "api/cua/computer",
       "native/cua/computer"
-    ]
+    ],
+    "proofs": {
+      "api/cua/computer": "binder-double"
+    }
   },
   {
     "id": "member/cua/computer.target",
@@ -38,7 +41,10 @@
     "cases": [
       "api/cua/computer.target",
       "native/cua/computer.target"
-    ]
+    ],
+    "proofs": {
+      "api/cua/computer.target": "binder-double"
+    }
   },
   {
     "id": "member/cua/computer.launch-app",
@@ -52,7 +58,10 @@
     "cases": [
       "api/cua/computer.launch-app",
       "native/cua/computer.launch-app"
-    ]
+    ],
+    "proofs": {
+      "api/cua/computer.launch-app": "binder-double"
+    }
   },
   {
     "id": "member/cua/getapp",
@@ -66,7 +75,10 @@
     "cases": [
       "api/cua/getapp",
       "native/cua/getapp"
-    ]
+    ],
+    "proofs": {
+      "api/cua/getapp": "binder-double"
+    }
   },
   {
     "id": "member/cua/listapps",
@@ -80,7 +92,10 @@
     "cases": [
       "api/cua/listapps",
       "native/cua/listapps"
-    ]
+    ],
+    "proofs": {
+      "api/cua/listapps": "binder-double"
+    }
   },
   {
     "id": "member/cua/listwindows",
@@ -94,7 +109,10 @@
     "cases": [
       "api/cua/listwindows",
       "native/cua/listwindows"
-    ]
+    ],
+    "proofs": {
+      "api/cua/listwindows": "binder-double"
+    }
   },
   {
     "id": "member/cua/getbrowser",
@@ -212,7 +230,10 @@
     "cases": [
       "api/target-app-decorated-tab/getaxstate",
       "native/target-app-decorated-tab/getaxstate"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/getaxstate": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/getscreenshot",
@@ -226,7 +247,10 @@
     "cases": [
       "api/target-app-decorated-tab/getscreenshot",
       "native/target-app-decorated-tab/getscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/getscreenshot": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/getaxstateandscreenshot",
@@ -240,7 +264,10 @@
     "cases": [
       "api/target-app-decorated-tab/getaxstateandscreenshot",
       "native/target-app-decorated-tab/getaxstateandscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/click",
@@ -254,7 +281,10 @@
     "cases": [
       "api/target-app-decorated-tab/click",
       "native/target-app-decorated-tab/click"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/click": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/drag",
@@ -268,7 +298,10 @@
     "cases": [
       "api/target-app-decorated-tab/drag",
       "native/target-app-decorated-tab/drag"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/drag": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/scroll",
@@ -282,7 +315,10 @@
     "cases": [
       "api/target-app-decorated-tab/scroll",
       "native/target-app-decorated-tab/scroll"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/scroll": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/selecttext",
@@ -296,7 +332,10 @@
     "cases": [
       "api/target-app-decorated-tab/selecttext",
       "native/target-app-decorated-tab/selecttext"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/selecttext": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/setvalue",
@@ -310,7 +349,10 @@
     "cases": [
       "api/target-app-decorated-tab/setvalue",
       "native/target-app-decorated-tab/setvalue"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/setvalue": "binder-double"
+    }
   },
   {
     "id": "member/target-app-decorated-tab/performsecondaryaction",
@@ -324,7 +366,10 @@
     "cases": [
       "api/target-app-decorated-tab/performsecondaryaction",
       "native/target-app-decorated-tab/performsecondaryaction"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/performsecondaryaction": "binder-double"
+    }
   },
   {
     "id": "member/app/scroll",
@@ -338,7 +383,10 @@
     "cases": [
       "api/app/scroll",
       "native/app/scroll"
-    ]
+    ],
+    "proofs": {
+      "api/app/scroll": "binder-double"
+    }
   },
   {
     "id": "member/app/paste",
@@ -352,7 +400,10 @@
     "cases": [
       "api/app/paste",
       "native/app/paste"
-    ]
+    ],
+    "proofs": {
+      "api/app/paste": "binder-double"
+    }
   },
   {
     "id": "member/app/presskey",
@@ -366,7 +417,10 @@
     "cases": [
       "api/app/presskey",
       "native/app/presskey"
-    ]
+    ],
+    "proofs": {
+      "api/app/presskey": "binder-double"
+    }
   },
   {
     "id": "member/app/typetext",
@@ -380,7 +434,10 @@
     "cases": [
       "api/app/typetext",
       "native/app/typetext"
-    ]
+    ],
+    "proofs": {
+      "api/app/typetext": "binder-double"
+    }
   },
   {
     "id": "member/decorated-tab/paste",
@@ -550,7 +607,11 @@
     "cases": [
       "hidden/browser-browser/user",
       "capability-host/browser-browser/user"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-browser/user": "boundary-double:hidden",
+      "capability-host/browser-browser/user": "real-service"
+    }
   },
   {
     "id": "member/browser-browser/documentation",
@@ -577,7 +638,11 @@
     "cases": [
       "hidden/browser-browser/history",
       "capability-host/browser-browser/history"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-browser/history": "boundary-double:hidden",
+      "capability-host/browser-browser/history": "real-service"
+    }
   },
   {
     "id": "member/browser-browser/namesession",
@@ -604,7 +669,11 @@
     "cases": [
       "hidden/browser-browseruser/claimtab",
       "capability-host/browser-browseruser/claimtab"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-browseruser/claimtab": "boundary-double:hidden",
+      "capability-host/browser-browseruser/claimtab": "real-service"
+    }
   },
   {
     "id": "member/browser-browseruser/gettabcontext",
@@ -618,7 +687,11 @@
     "cases": [
       "hidden/browser-browseruser/gettabcontext",
       "capability-host/browser-browseruser/gettabcontext"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-browseruser/gettabcontext": "boundary-double:hidden",
+      "capability-host/browser-browseruser/gettabcontext": "boundary-double"
+    }
   },
   {
     "id": "member/browser-browseruser/opentabs",
@@ -632,7 +705,11 @@
     "cases": [
       "hidden/browser-browseruser/opentabs",
       "capability-host/browser-browseruser/opentabs"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-browseruser/opentabs": "boundary-double:hidden",
+      "capability-host/browser-browseruser/opentabs": "real-service"
+    }
   },
   {
     "id": "member/browser-tabs/content",
@@ -646,7 +723,11 @@
     "cases": [
       "hidden/browser-tabs/content",
       "capability-host/browser-tabs/content"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-tabs/content": "boundary-double:hidden",
+      "capability-host/browser-tabs/content": "boundary-double"
+    }
   },
   {
     "id": "member/browser-tabs/get",
@@ -712,7 +793,11 @@
     "cases": [
       "hidden/browser-tab/ax",
       "capability-host/browser-tab/ax"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-tab/ax": "boundary-double:hidden",
+      "capability-host/browser-tab/ax": "boundary-double"
+    }
   },
   {
     "id": "member/browser-tab/capabilities",
@@ -895,7 +980,11 @@
     "cases": [
       "hidden/browser-tab/markdeliverable",
       "capability-host/browser-tab/markdeliverable"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-tab/markdeliverable": "boundary-double:hidden",
+      "capability-host/browser-tab/markdeliverable": "real-service"
+    }
   },
   {
     "id": "member/browser-tab/markhandoff",
@@ -909,7 +998,11 @@
     "cases": [
       "hidden/browser-tab/markhandoff",
       "capability-host/browser-tab/markhandoff"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-tab/markhandoff": "boundary-double:hidden",
+      "capability-host/browser-tab/markhandoff": "real-service"
+    }
   },
   {
     "id": "member/browser-tab/reload",
@@ -936,7 +1029,11 @@
     "cases": [
       "hidden/browser-tab/requestmanualhandoff",
       "capability-host/browser-tab/requestmanualhandoff"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-tab/requestmanualhandoff": "boundary-double:hidden",
+      "capability-host/browser-tab/requestmanualhandoff": "boundary-double"
+    }
   },
   {
     "id": "member/browser-tab/screenshot",
@@ -989,7 +1086,11 @@
     "cases": [
       "hidden/browser-axapi/click",
       "capability-host/browser-axapi/click"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/click": "boundary-double:hidden",
+      "capability-host/browser-axapi/click": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/drag",
@@ -1003,7 +1104,11 @@
     "cases": [
       "hidden/browser-axapi/drag",
       "capability-host/browser-axapi/drag"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/drag": "boundary-double:hidden",
+      "capability-host/browser-axapi/drag": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/get",
@@ -1017,7 +1122,11 @@
     "cases": [
       "hidden/browser-axapi/get",
       "capability-host/browser-axapi/get"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/get": "boundary-double:hidden",
+      "capability-host/browser-axapi/get": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/paste",
@@ -1031,7 +1140,11 @@
     "cases": [
       "hidden/browser-axapi/paste",
       "capability-host/browser-axapi/paste"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/paste": "boundary-double:hidden",
+      "capability-host/browser-axapi/paste": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/performsecondaryaction",
@@ -1045,7 +1158,11 @@
     "cases": [
       "hidden/browser-axapi/performsecondaryaction",
       "capability-host/browser-axapi/performsecondaryaction"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/performsecondaryaction": "boundary-double:hidden",
+      "capability-host/browser-axapi/performsecondaryaction": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/presskey",
@@ -1059,7 +1176,11 @@
     "cases": [
       "hidden/browser-axapi/presskey",
       "capability-host/browser-axapi/presskey"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/presskey": "boundary-double:hidden",
+      "capability-host/browser-axapi/presskey": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/scroll",
@@ -1073,7 +1194,11 @@
     "cases": [
       "hidden/browser-axapi/scroll",
       "capability-host/browser-axapi/scroll"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/scroll": "boundary-double:hidden",
+      "capability-host/browser-axapi/scroll": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/selecttext",
@@ -1087,7 +1212,11 @@
     "cases": [
       "hidden/browser-axapi/selecttext",
       "capability-host/browser-axapi/selecttext"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/selecttext": "boundary-double:hidden",
+      "capability-host/browser-axapi/selecttext": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/setvalue",
@@ -1101,7 +1230,11 @@
     "cases": [
       "hidden/browser-axapi/setvalue",
       "capability-host/browser-axapi/setvalue"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/setvalue": "boundary-double:hidden",
+      "capability-host/browser-axapi/setvalue": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/typetext",
@@ -1115,7 +1248,11 @@
     "cases": [
       "hidden/browser-axapi/typetext",
       "capability-host/browser-axapi/typetext"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/typetext": "boundary-double:hidden",
+      "capability-host/browser-axapi/typetext": "boundary-double"
+    }
   },
   {
     "id": "member/browser-axapi/write",
@@ -1129,7 +1266,11 @@
     "cases": [
       "hidden/browser-axapi/write",
       "capability-host/browser-axapi/write"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-axapi/write": "boundary-double:hidden",
+      "capability-host/browser-axapi/write": "boundary-double"
+    }
   },
   {
     "id": "member/browser-contentapi/export",
@@ -1143,7 +1284,11 @@
     "cases": [
       "hidden/browser-contentapi/export",
       "capability-host/browser-contentapi/export"
-    ]
+    ],
+    "proofs": {
+      "hidden/browser-contentapi/export": "boundary-double:hidden",
+      "capability-host/browser-contentapi/export": "boundary-double"
+    }
   },
   {
     "id": "member/browser-contentapi/exportgsuite",
@@ -1208,7 +1353,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-cuaapi/downloadmedia"
-    ]
+    ],
+    "proofs": {
+      "api/browser-cuaapi/downloadmedia": "real-service+boundary-double"
+    }
   },
   {
     "id": "member/browser-cuaapi/drag",
@@ -1312,7 +1460,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-domcuaapi/downloadmedia"
-    ]
+    ],
+    "proofs": {
+      "api/browser-domcuaapi/downloadmedia": "real-service+boundary-double"
+    }
   },
   {
     "id": "member/browser-domcuaapi/get-visible-dom",
@@ -1390,7 +1541,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementinfo"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementinfo": "real-service+boundary-double"
+    }
   },
   {
     "id": "member/browser-playwrightapi/elementscreenshot",
@@ -1403,7 +1557,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementscreenshot": "real-service+boundary-double"
+    }
   },
   {
     "id": "member/browser-playwrightapi/evaluate",
@@ -2248,7 +2405,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-beforeunloaddialog/type"
-    ]
+    ],
+    "proofs": {
+      "api/browser-beforeunloaddialog/type": "boundary-double"
+    }
   },
   {
     "id": "member/browser-beforeunloaddialog/dismiss",
@@ -2261,7 +2421,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-beforeunloaddialog/dismiss"
-    ]
+    ],
+    "proofs": {
+      "api/browser-beforeunloaddialog/dismiss": "boundary-double"
+    }
   },
   {
     "id": "member/browser-confirmdialog/type",
@@ -2369,7 +2532,13 @@
       "capability-host/browsercapabilitycollection/list",
       "hidden/browsercapabilitycollection/get",
       "hidden/browsercapabilitycollection/list"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browsercapabilitycollection/get": "real-service",
+      "capability-host/browsercapabilitycollection/list": "real-service",
+      "hidden/browsercapabilitycollection/get": "boundary-double:hidden",
+      "hidden/browsercapabilitycollection/list": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/browserhistoryoptions",
@@ -2383,7 +2552,11 @@
     "cases": [
       "capability-host/browser-browser/history",
       "hidden/browser-browser/history"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-browser/history": "real-service",
+      "hidden/browser-browser/history": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/browserhistoryentry",
@@ -2397,7 +2570,11 @@
     "cases": [
       "capability-host/browser-browser/history",
       "hidden/browser-browser/history"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-browser/history": "real-service",
+      "hidden/browser-browser/history": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/browserusertabinfo",
@@ -2415,7 +2592,15 @@
       "hidden/browser-browseruser/claimtab",
       "hidden/browser-browseruser/gettabcontext",
       "hidden/browser-browseruser/opentabs"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-browseruser/claimtab": "real-service",
+      "capability-host/browser-browseruser/gettabcontext": "boundary-double",
+      "capability-host/browser-browseruser/opentabs": "real-service",
+      "hidden/browser-browseruser/claimtab": "boundary-double:hidden",
+      "hidden/browser-browseruser/gettabcontext": "boundary-double:hidden",
+      "hidden/browser-browseruser/opentabs": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/browserusertabcontext",
@@ -2429,7 +2614,11 @@
     "cases": [
       "capability-host/browser-browseruser/gettabcontext",
       "hidden/browser-browseruser/gettabcontext"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-browseruser/gettabcontext": "boundary-double",
+      "hidden/browser-browseruser/gettabcontext": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/tabscontentoptions",
@@ -2443,7 +2632,11 @@
     "cases": [
       "capability-host/browser-tabs/content",
       "hidden/browser-tabs/content"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-tabs/content": "boundary-double",
+      "hidden/browser-tabs/content": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/tabscontentresult",
@@ -2457,7 +2650,11 @@
     "cases": [
       "capability-host/browser-tabs/content",
       "hidden/browser-tabs/content"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-tabs/content": "boundary-double",
+      "hidden/browser-tabs/content": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/tabinfo",
@@ -2487,7 +2684,13 @@
       "capability-host/tabcapabilitycollection/list",
       "hidden/tabcapabilitycollection/get",
       "hidden/tabcapabilitycollection/list"
-    ]
+    ],
+    "proofs": {
+      "capability-host/tabcapabilitycollection/get": "real-service",
+      "capability-host/tabcapabilitycollection/list": "real-service",
+      "hidden/tabcapabilitycollection/get": "boundary-double:hidden",
+      "hidden/tabcapabilitycollection/list": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/dialog",
@@ -2531,7 +2734,15 @@
       "hidden/browser-axapi/click",
       "hidden/browser-axapi/drag",
       "hidden/browser-axapi/scroll"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/click": "boundary-double",
+      "capability-host/browser-axapi/drag": "boundary-double",
+      "capability-host/browser-axapi/scroll": "boundary-double",
+      "hidden/browser-axapi/click": "boundary-double:hidden",
+      "hidden/browser-axapi/drag": "boundary-double:hidden",
+      "hidden/browser-axapi/scroll": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/axclickoptions",
@@ -2545,7 +2756,11 @@
     "cases": [
       "capability-host/browser-axapi/click",
       "hidden/browser-axapi/click"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/click": "boundary-double",
+      "hidden/browser-axapi/click": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/axstateoptions",
@@ -2561,7 +2776,13 @@
       "capability-host/browser-axapi/write",
       "hidden/browser-axapi/get",
       "hidden/browser-axapi/write"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/get": "boundary-double",
+      "capability-host/browser-axapi/write": "boundary-double",
+      "hidden/browser-axapi/get": "boundary-double:hidden",
+      "hidden/browser-axapi/write": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/axpasteoptions",
@@ -2575,7 +2796,11 @@
     "cases": [
       "capability-host/browser-axapi/paste",
       "hidden/browser-axapi/paste"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/paste": "boundary-double",
+      "hidden/browser-axapi/paste": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/axdirection",
@@ -2589,7 +2814,11 @@
     "cases": [
       "capability-host/browser-axapi/scroll",
       "hidden/browser-axapi/scroll"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/scroll": "boundary-double",
+      "hidden/browser-axapi/scroll": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/axselecttextoptions",
@@ -2603,7 +2832,11 @@
     "cases": [
       "capability-host/browser-axapi/selecttext",
       "hidden/browser-axapi/selecttext"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/selecttext": "boundary-double",
+      "hidden/browser-axapi/selecttext": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/clickoptions",
@@ -2642,7 +2875,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-cuaapi/downloadmedia"
-    ]
+    ],
+    "proofs": {
+      "api/browser-cuaapi/downloadmedia": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/dragoptions",
@@ -2734,7 +2970,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-domcuaapi/downloadmedia"
-    ]
+    ],
+    "proofs": {
+      "api/browser-domcuaapi/downloadmedia": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/domkeypressoptions",
@@ -2786,7 +3025,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementinfo"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementinfo": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/elementinfo",
@@ -2799,7 +3041,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementinfo"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementinfo": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/elementscreenshotoptions",
@@ -2812,7 +3057,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementscreenshot": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/playwrightevaluatefunction",
@@ -3120,7 +3368,11 @@
     "cases": [
       "capability-host/browser-tabs/content",
       "hidden/browser-tabs/content"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-tabs/content": "boundary-double",
+      "hidden/browser-tabs/content": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/cliprect",
@@ -3147,7 +3399,11 @@
     "cases": [
       "capability-host/browser-axapi/click",
       "hidden/browser-axapi/click"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/click": "boundary-double",
+      "hidden/browser-axapi/click": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/axselectiontype",
@@ -3161,7 +3417,11 @@
     "cases": [
       "capability-host/browser-axapi/selecttext",
       "hidden/browser-axapi/selecttext"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browser-axapi/selecttext": "boundary-double",
+      "hidden/browser-axapi/selecttext": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/browser-named-type/elementinforect",
@@ -3174,7 +3434,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementinfo"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementinfo": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/elementinfoselector",
@@ -3187,7 +3450,10 @@
     "milestone": "M3",
     "cases": [
       "api/browser-playwrightapi/elementinfo"
-    ]
+    ],
+    "proofs": {
+      "api/browser-playwrightapi/elementinfo": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/browser-named-type/waituntil",
@@ -3288,7 +3554,13 @@
       "native/target-app-decorated-tab/click",
       "native/target-app-decorated-tab/drag",
       "native/target-app-decorated-tab/scroll"
-    ]
+    ],
+    "proofs": {
+      "api/app/scroll": "binder-double",
+      "api/target-app-decorated-tab/click": "binder-double",
+      "api/target-app-decorated-tab/drag": "binder-double",
+      "api/target-app-decorated-tab/scroll": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/observationoptions",
@@ -3313,7 +3585,14 @@
       "native/target-app-decorated-tab/getaxstate",
       "native/target-app-decorated-tab/getaxstateandscreenshot",
       "native/target-app-decorated-tab/getscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/cua/listapps": "binder-double",
+      "api/cua/listwindows": "binder-double",
+      "api/target-app-decorated-tab/getaxstate": "binder-double",
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double",
+      "api/target-app-decorated-tab/getscreenshot": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/stateoptions",
@@ -3329,7 +3608,11 @@
       "api/target-app-decorated-tab/getaxstateandscreenshot",
       "native/target-app-decorated-tab/getaxstate",
       "native/target-app-decorated-tab/getaxstateandscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/getaxstate": "binder-double",
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/stateandscreenshot",
@@ -3343,7 +3626,10 @@
     "cases": [
       "api/target-app-decorated-tab/getaxstateandscreenshot",
       "native/target-app-decorated-tab/getaxstateandscreenshot"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/pasteoptions",
@@ -3358,7 +3644,10 @@
       "api/app/paste",
       "api/decorated-tab/paste",
       "native/app/paste"
-    ]
+    ],
+    "proofs": {
+      "api/app/paste": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/clickoptions",
@@ -3372,7 +3661,10 @@
     "cases": [
       "api/target-app-decorated-tab/click",
       "native/target-app-decorated-tab/click"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/click": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/selecttextoptions",
@@ -3386,7 +3678,10 @@
     "cases": [
       "api/target-app-decorated-tab/selecttext",
       "native/target-app-decorated-tab/selecttext"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/selecttext": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/direction",
@@ -3402,7 +3697,11 @@
       "api/target-app-decorated-tab/scroll",
       "native/app/scroll",
       "native/target-app-decorated-tab/scroll"
-    ]
+    ],
+    "proofs": {
+      "api/app/scroll": "binder-double",
+      "api/target-app-decorated-tab/scroll": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/selectiontype",
@@ -3416,7 +3715,10 @@
     "cases": [
       "api/target-app-decorated-tab/selecttext",
       "native/target-app-decorated-tab/selecttext"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/selecttext": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/mousebutton",
@@ -3430,7 +3732,10 @@
     "cases": [
       "api/target-app-decorated-tab/click",
       "native/target-app-decorated-tab/click"
-    ]
+    ],
+    "proofs": {
+      "api/target-app-decorated-tab/click": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/appinfo",
@@ -3446,7 +3751,10 @@
       "api/cua/initialize",
       "api/cua/listapps",
       "native/cua/listapps"
-    ]
+    ],
+    "proofs": {
+      "api/cua/listapps": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/windowinfo",
@@ -3464,7 +3772,11 @@
       "api/cua/listwindows",
       "native/cua/listapps",
       "native/cua/listwindows"
-    ]
+    ],
+    "proofs": {
+      "api/cua/listapps": "binder-double",
+      "api/cua/listwindows": "binder-double"
+    }
   },
   {
     "id": "type/first-call-named-type/browserinfo",
@@ -3606,7 +3918,11 @@
     "cases": [
       "hidden/browsercapabilitycollection/get",
       "capability-host/browsercapabilitycollection/get"
-    ]
+    ],
+    "proofs": {
+      "hidden/browsercapabilitycollection/get": "boundary-double:hidden",
+      "capability-host/browsercapabilitycollection/get": "real-service"
+    }
   },
   {
     "id": "member/browsercapabilitycollection/list",
@@ -3620,7 +3936,11 @@
     "cases": [
       "hidden/browsercapabilitycollection/list",
       "capability-host/browsercapabilitycollection/list"
-    ]
+    ],
+    "proofs": {
+      "hidden/browsercapabilitycollection/list": "boundary-double:hidden",
+      "capability-host/browsercapabilitycollection/list": "real-service"
+    }
   },
   {
     "id": "member/tabcapabilitycollection/get",
@@ -3634,7 +3954,11 @@
     "cases": [
       "hidden/tabcapabilitycollection/get",
       "capability-host/tabcapabilitycollection/get"
-    ]
+    ],
+    "proofs": {
+      "hidden/tabcapabilitycollection/get": "boundary-double:hidden",
+      "capability-host/tabcapabilitycollection/get": "real-service"
+    }
   },
   {
     "id": "member/tabcapabilitycollection/list",
@@ -3648,7 +3972,11 @@
     "cases": [
       "hidden/tabcapabilitycollection/list",
       "capability-host/tabcapabilitycollection/list"
-    ]
+    ],
+    "proofs": {
+      "hidden/tabcapabilitycollection/list": "boundary-double:hidden",
+      "capability-host/tabcapabilitycollection/list": "real-service"
+    }
   },
   {
     "id": "member/managementbrowsercapability/id",
@@ -3662,7 +3990,11 @@
     "cases": [
       "hidden/managementbrowsercapability/id",
       "capability-host/managementbrowsercapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/id": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/id": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability/documentation",
@@ -3676,7 +4008,11 @@
     "cases": [
       "hidden/managementbrowsercapability/documentation",
       "capability-host/managementbrowsercapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/documentation": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/documentation": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability/bookmarks",
@@ -3690,7 +4026,11 @@
     "cases": [
       "hidden/managementbrowsercapability/bookmarks",
       "capability-host/managementbrowsercapability/bookmarks"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/bookmarks": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/bookmarks": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability/tabgroups",
@@ -3704,7 +4044,11 @@
     "cases": [
       "hidden/managementbrowsercapability/tabgroups",
       "capability-host/managementbrowsercapability/tabgroups"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/tabgroups": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/tabgroups": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability/tabs",
@@ -3718,7 +4062,11 @@
     "cases": [
       "hidden/managementbrowsercapability/tabs",
       "capability-host/managementbrowsercapability/tabs"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/tabs": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/tabs": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability/windows",
@@ -3732,7 +4080,11 @@
     "cases": [
       "hidden/managementbrowsercapability/windows",
       "capability-host/managementbrowsercapability/windows"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/windows": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/windows": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability/getaudittrail",
@@ -3746,7 +4098,11 @@
     "cases": [
       "hidden/managementbrowsercapability/getaudittrail",
       "capability-host/managementbrowsercapability/getaudittrail"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability/getaudittrail": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability/getaudittrail": "boundary-double"
+    }
   },
   {
     "id": "type/capability-named-type/browsermanagementnamespace",
@@ -3774,7 +4130,25 @@
       "hidden/managementbrowsercapability/tabgroups",
       "hidden/managementbrowsercapability/tabs",
       "hidden/managementbrowsercapability/windows"
-    ]
+    ],
+    "proofs": {
+      "capability-host/managementbrowsercapability.bookmarks/method-string": "boundary-double",
+      "capability-host/managementbrowsercapability.tabgroups/method-string": "boundary-double",
+      "capability-host/managementbrowsercapability.tabs/method-string": "boundary-double",
+      "capability-host/managementbrowsercapability.windows/method-string": "boundary-double",
+      "capability-host/managementbrowsercapability/bookmarks": "boundary-double",
+      "capability-host/managementbrowsercapability/tabgroups": "boundary-double",
+      "capability-host/managementbrowsercapability/tabs": "boundary-double",
+      "capability-host/managementbrowsercapability/windows": "boundary-double",
+      "hidden/managementbrowsercapability.bookmarks/method-string": "boundary-double:hidden",
+      "hidden/managementbrowsercapability.tabgroups/method-string": "boundary-double:hidden",
+      "hidden/managementbrowsercapability.tabs/method-string": "boundary-double:hidden",
+      "hidden/managementbrowsercapability.windows/method-string": "boundary-double:hidden",
+      "hidden/managementbrowsercapability/bookmarks": "boundary-double:hidden",
+      "hidden/managementbrowsercapability/tabgroups": "boundary-double:hidden",
+      "hidden/managementbrowsercapability/tabs": "boundary-double:hidden",
+      "hidden/managementbrowsercapability/windows": "boundary-double:hidden"
+    }
   },
   {
     "id": "member/visibilitybrowsercapability/id",
@@ -3788,7 +4162,11 @@
     "cases": [
       "hidden/visibilitybrowsercapability/id",
       "capability-host/visibilitybrowsercapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/visibilitybrowsercapability/id": "boundary-double:hidden",
+      "capability-host/visibilitybrowsercapability/id": "boundary-double"
+    }
   },
   {
     "id": "member/visibilitybrowsercapability/documentation",
@@ -3802,7 +4180,11 @@
     "cases": [
       "hidden/visibilitybrowsercapability/documentation",
       "capability-host/visibilitybrowsercapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/visibilitybrowsercapability/documentation": "boundary-double:hidden",
+      "capability-host/visibilitybrowsercapability/documentation": "boundary-double"
+    }
   },
   {
     "id": "member/visibilitybrowsercapability/get",
@@ -3816,7 +4198,11 @@
     "cases": [
       "hidden/visibilitybrowsercapability/get",
       "capability-host/visibilitybrowsercapability/get"
-    ]
+    ],
+    "proofs": {
+      "hidden/visibilitybrowsercapability/get": "boundary-double:hidden",
+      "capability-host/visibilitybrowsercapability/get": "boundary-double"
+    }
   },
   {
     "id": "member/visibilitybrowsercapability/set",
@@ -3830,7 +4216,11 @@
     "cases": [
       "hidden/visibilitybrowsercapability/set",
       "capability-host/visibilitybrowsercapability/set"
-    ]
+    ],
+    "proofs": {
+      "hidden/visibilitybrowsercapability/set": "boundary-double:hidden",
+      "capability-host/visibilitybrowsercapability/set": "boundary-double"
+    }
   },
   {
     "id": "member/viewportbrowsercapability/id",
@@ -3844,7 +4234,11 @@
     "cases": [
       "hidden/viewportbrowsercapability/id",
       "capability-host/viewportbrowsercapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/viewportbrowsercapability/id": "boundary-double:hidden",
+      "capability-host/viewportbrowsercapability/id": "real-service"
+    }
   },
   {
     "id": "member/viewportbrowsercapability/documentation",
@@ -3858,7 +4252,11 @@
     "cases": [
       "hidden/viewportbrowsercapability/documentation",
       "capability-host/viewportbrowsercapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/viewportbrowsercapability/documentation": "boundary-double:hidden",
+      "capability-host/viewportbrowsercapability/documentation": "real-service"
+    }
   },
   {
     "id": "member/viewportbrowsercapability/reset",
@@ -3872,7 +4270,11 @@
     "cases": [
       "hidden/viewportbrowsercapability/reset",
       "capability-host/viewportbrowsercapability/reset"
-    ]
+    ],
+    "proofs": {
+      "hidden/viewportbrowsercapability/reset": "boundary-double:hidden",
+      "capability-host/viewportbrowsercapability/reset": "real-service"
+    }
   },
   {
     "id": "member/viewportbrowsercapability/set",
@@ -3886,7 +4288,11 @@
     "cases": [
       "hidden/viewportbrowsercapability/set",
       "capability-host/viewportbrowsercapability/set"
-    ]
+    ],
+    "proofs": {
+      "hidden/viewportbrowsercapability/set": "boundary-double:hidden",
+      "capability-host/viewportbrowsercapability/set": "real-service"
+    }
   },
   {
     "id": "type/capability-named-type/viewportsize",
@@ -3900,7 +4306,11 @@
     "cases": [
       "capability-host/viewportbrowsercapability/set",
       "hidden/viewportbrowsercapability/set"
-    ]
+    ],
+    "proofs": {
+      "capability-host/viewportbrowsercapability/set": "real-service",
+      "hidden/viewportbrowsercapability/set": "boundary-double:hidden"
+    }
   },
   {
     "id": "member/botdetectiontabcapability/id",
@@ -3914,7 +4324,11 @@
     "cases": [
       "hidden/botdetectiontabcapability/id",
       "capability-host/botdetectiontabcapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/botdetectiontabcapability/id": "boundary-double:hidden",
+      "capability-host/botdetectiontabcapability/id": "boundary-double"
+    }
   },
   {
     "id": "member/botdetectiontabcapability/documentation",
@@ -3928,7 +4342,11 @@
     "cases": [
       "hidden/botdetectiontabcapability/documentation",
       "capability-host/botdetectiontabcapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/botdetectiontabcapability/documentation": "boundary-double:hidden",
+      "capability-host/botdetectiontabcapability/documentation": "boundary-double"
+    }
   },
   {
     "id": "member/botdetectiontabcapability/report",
@@ -3942,7 +4360,11 @@
     "cases": [
       "hidden/botdetectiontabcapability/report",
       "capability-host/botdetectiontabcapability/report"
-    ]
+    ],
+    "proofs": {
+      "hidden/botdetectiontabcapability/report": "boundary-double:hidden",
+      "capability-host/botdetectiontabcapability/report": "boundary-double"
+    }
   },
   {
     "id": "member/browserauthtabcapability/id",
@@ -3956,7 +4378,11 @@
     "cases": [
       "hidden/browserauthtabcapability/id",
       "capability-host/browserauthtabcapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/browserauthtabcapability/id": "boundary-double:hidden",
+      "capability-host/browserauthtabcapability/id": "real-service"
+    }
   },
   {
     "id": "member/browserauthtabcapability/documentation",
@@ -3970,7 +4396,11 @@
     "cases": [
       "hidden/browserauthtabcapability/documentation",
       "capability-host/browserauthtabcapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/browserauthtabcapability/documentation": "boundary-double:hidden",
+      "capability-host/browserauthtabcapability/documentation": "real-service"
+    }
   },
   {
     "id": "member/browserauthtabcapability/request",
@@ -3984,7 +4414,11 @@
     "cases": [
       "hidden/browserauthtabcapability/request",
       "capability-host/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden",
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthrequestoptions",
@@ -3998,7 +4432,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthhandoffoptions",
@@ -4012,7 +4450,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthrequestfield",
@@ -4026,7 +4468,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthrequestoption",
@@ -4040,7 +4486,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthrequestsubmit",
@@ -4054,7 +4504,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthfield",
@@ -4068,7 +4522,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthselector",
@@ -4082,7 +4540,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthoption",
@@ -4096,7 +4558,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/browserauthsubmit",
@@ -4110,7 +4576,11 @@
     "cases": [
       "capability-host/browserauthtabcapability/request",
       "hidden/browserauthtabcapability/request"
-    ]
+    ],
+    "proofs": {
+      "capability-host/browserauthtabcapability/request": "real-service+boundary-double",
+      "hidden/browserauthtabcapability/request": "boundary-double:hidden"
+    }
   },
   {
     "id": "member/cdptabcapability/id",
@@ -4124,7 +4594,11 @@
     "cases": [
       "hidden/cdptabcapability/id",
       "capability-host/cdptabcapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/cdptabcapability/id": "boundary-double:hidden",
+      "capability-host/cdptabcapability/id": "real-service"
+    }
   },
   {
     "id": "member/cdptabcapability/documentation",
@@ -4138,7 +4612,11 @@
     "cases": [
       "hidden/cdptabcapability/documentation",
       "capability-host/cdptabcapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/cdptabcapability/documentation": "boundary-double:hidden",
+      "capability-host/cdptabcapability/documentation": "real-service"
+    }
   },
   {
     "id": "member/cdptabcapability/readevents",
@@ -4152,7 +4630,11 @@
     "cases": [
       "hidden/cdptabcapability/readevents",
       "capability-host/cdptabcapability/readevents"
-    ]
+    ],
+    "proofs": {
+      "hidden/cdptabcapability/readevents": "boundary-double:hidden",
+      "capability-host/cdptabcapability/readevents": "real-service+boundary-double"
+    }
   },
   {
     "id": "member/cdptabcapability/send",
@@ -4166,7 +4648,11 @@
     "cases": [
       "hidden/cdptabcapability/send",
       "capability-host/cdptabcapability/send"
-    ]
+    ],
+    "proofs": {
+      "hidden/cdptabcapability/send": "boundary-double:hidden",
+      "capability-host/cdptabcapability/send": "real-service+boundary-double"
+    }
   },
   {
     "id": "type/capability-named-type/cdpeventsoptions",
@@ -4180,7 +4666,11 @@
     "cases": [
       "capability-host/cdptabcapability/readevents",
       "hidden/cdptabcapability/readevents"
-    ]
+    ],
+    "proofs": {
+      "capability-host/cdptabcapability/readevents": "real-service+boundary-double",
+      "hidden/cdptabcapability/readevents": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/cdpcommandparams",
@@ -4194,7 +4684,11 @@
     "cases": [
       "capability-host/cdptabcapability/send",
       "hidden/cdptabcapability/send"
-    ]
+    ],
+    "proofs": {
+      "capability-host/cdptabcapability/send": "real-service+boundary-double",
+      "hidden/cdptabcapability/send": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/cdpsendoptions",
@@ -4208,7 +4702,11 @@
     "cases": [
       "capability-host/cdptabcapability/send",
       "hidden/cdptabcapability/send"
-    ]
+    ],
+    "proofs": {
+      "capability-host/cdptabcapability/send": "real-service+boundary-double",
+      "hidden/cdptabcapability/send": "boundary-double:hidden"
+    }
   },
   {
     "id": "type/capability-named-type/cdptarget",
@@ -4224,7 +4722,13 @@
       "capability-host/cdptabcapability/send",
       "hidden/cdptabcapability/readevents",
       "hidden/cdptabcapability/send"
-    ]
+    ],
+    "proofs": {
+      "capability-host/cdptabcapability/readevents": "real-service+boundary-double",
+      "capability-host/cdptabcapability/send": "real-service+boundary-double",
+      "hidden/cdptabcapability/readevents": "boundary-double:hidden",
+      "hidden/cdptabcapability/send": "boundary-double:hidden"
+    }
   },
   {
     "id": "member/pageassetstabcapability/id",
@@ -4238,7 +4742,11 @@
     "cases": [
       "hidden/pageassetstabcapability/id",
       "capability-host/pageassetstabcapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/pageassetstabcapability/id": "boundary-double:hidden",
+      "capability-host/pageassetstabcapability/id": "boundary-double"
+    }
   },
   {
     "id": "member/pageassetstabcapability/documentation",
@@ -4252,7 +4760,11 @@
     "cases": [
       "hidden/pageassetstabcapability/documentation",
       "capability-host/pageassetstabcapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/pageassetstabcapability/documentation": "boundary-double:hidden",
+      "capability-host/pageassetstabcapability/documentation": "boundary-double"
+    }
   },
   {
     "id": "member/pageassetstabcapability/bundle",
@@ -4266,7 +4778,11 @@
     "cases": [
       "hidden/pageassetstabcapability/bundle",
       "capability-host/pageassetstabcapability/bundle"
-    ]
+    ],
+    "proofs": {
+      "hidden/pageassetstabcapability/bundle": "boundary-double:hidden",
+      "capability-host/pageassetstabcapability/bundle": "boundary-double"
+    }
   },
   {
     "id": "member/pageassetstabcapability/list",
@@ -4280,7 +4796,11 @@
     "cases": [
       "hidden/pageassetstabcapability/list",
       "capability-host/pageassetstabcapability/list"
-    ]
+    ],
+    "proofs": {
+      "hidden/pageassetstabcapability/list": "boundary-double:hidden",
+      "capability-host/pageassetstabcapability/list": "boundary-double"
+    }
   },
   {
     "id": "member/tabwebmcpcapability/id",
@@ -4294,7 +4814,11 @@
     "cases": [
       "hidden/tabwebmcpcapability/id",
       "capability-host/tabwebmcpcapability/id"
-    ]
+    ],
+    "proofs": {
+      "hidden/tabwebmcpcapability/id": "boundary-double:hidden",
+      "capability-host/tabwebmcpcapability/id": "real-service"
+    }
   },
   {
     "id": "member/tabwebmcpcapability/documentation",
@@ -4308,7 +4832,11 @@
     "cases": [
       "hidden/tabwebmcpcapability/documentation",
       "capability-host/tabwebmcpcapability/documentation"
-    ]
+    ],
+    "proofs": {
+      "hidden/tabwebmcpcapability/documentation": "boundary-double:hidden",
+      "capability-host/tabwebmcpcapability/documentation": "real-service"
+    }
   },
   {
     "id": "member/tabwebmcpcapability/fetchtools",
@@ -4322,7 +4850,11 @@
     "cases": [
       "hidden/tabwebmcpcapability/fetchtools",
       "capability-host/tabwebmcpcapability/fetchtools"
-    ]
+    ],
+    "proofs": {
+      "hidden/tabwebmcpcapability/fetchtools": "boundary-double:hidden",
+      "capability-host/tabwebmcpcapability/fetchtools": "real-service+boundary-double"
+    }
   },
   {
     "id": "member/webmcptools/description",
@@ -4336,7 +4868,11 @@
     "cases": [
       "hidden/webmcptools/description",
       "capability-host/webmcptools/description"
-    ]
+    ],
+    "proofs": {
+      "hidden/webmcptools/description": "boundary-double:hidden",
+      "capability-host/webmcptools/description": "real-service"
+    }
   },
   {
     "id": "member/webmcptools/call",
@@ -4350,7 +4886,11 @@
     "cases": [
       "hidden/webmcptools/call",
       "capability-host/webmcptools/call"
-    ]
+    ],
+    "proofs": {
+      "hidden/webmcptools/call": "boundary-double:hidden",
+      "capability-host/webmcptools/call": "real-service"
+    }
   },
   {
     "id": "type/capability-named-type/webmcptools",
@@ -4368,7 +4908,15 @@
       "hidden/tabwebmcpcapability/fetchtools",
       "hidden/webmcptools/call",
       "hidden/webmcptools/description"
-    ]
+    ],
+    "proofs": {
+      "capability-host/tabwebmcpcapability/fetchtools": "real-service+boundary-double",
+      "capability-host/webmcptools/call": "real-service",
+      "capability-host/webmcptools/description": "real-service",
+      "hidden/tabwebmcpcapability/fetchtools": "boundary-double:hidden",
+      "hidden/webmcptools/call": "boundary-double:hidden",
+      "hidden/webmcptools/description": "boundary-double:hidden"
+    }
   },
   {
     "id": "member/managementbrowsercapability.bookmarks/method-string",
@@ -4382,7 +4930,11 @@
     "cases": [
       "hidden/managementbrowsercapability.bookmarks/method-string",
       "capability-host/managementbrowsercapability.bookmarks/method-string"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability.bookmarks/method-string": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability.bookmarks/method-string": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability.tabgroups/method-string",
@@ -4396,7 +4948,11 @@
     "cases": [
       "hidden/managementbrowsercapability.tabgroups/method-string",
       "capability-host/managementbrowsercapability.tabgroups/method-string"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability.tabgroups/method-string": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability.tabgroups/method-string": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability.tabs/method-string",
@@ -4410,7 +4966,11 @@
     "cases": [
       "hidden/managementbrowsercapability.tabs/method-string",
       "capability-host/managementbrowsercapability.tabs/method-string"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability.tabs/method-string": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability.tabs/method-string": "boundary-double"
+    }
   },
   {
     "id": "member/managementbrowsercapability.windows/method-string",
@@ -4424,7 +4984,11 @@
     "cases": [
       "hidden/managementbrowsercapability.windows/method-string",
       "capability-host/managementbrowsercapability.windows/method-string"
-    ]
+    ],
+    "proofs": {
+      "hidden/managementbrowsercapability.windows/method-string": "boundary-double:hidden",
+      "capability-host/managementbrowsercapability.windows/method-string": "boundary-double"
+    }
   },
   {
     "id": "member/host-noderepl/write",
@@ -5772,7 +6336,10 @@
     "milestone": "M3",
     "cases": [
       "cells/facade/all-settled-inventory"
-    ]
+    ],
+    "proofs": {
+      "cells/facade/all-settled-inventory": "binder-double"
+    }
   },
   {
     "id": "cell/documentation/first-call-core-policy-bytes",
@@ -6720,8 +7287,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/fill",
+      "secrets/browser-live/execute/fill"
+    ],
+    "unitCases": [
       "secrets/browser/execute/fill"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/fill": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute/ax-paste",
@@ -6733,8 +7312,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/ax-paste",
+      "secrets/browser-live/execute/ax-paste"
+    ],
+    "unitCases": [
       "secrets/browser/execute/ax-paste"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/ax-paste": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute/ax-type-text",
@@ -6746,8 +7337,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/ax-type-text",
+      "secrets/browser-live/execute/ax-type-text"
+    ],
+    "unitCases": [
       "secrets/browser/execute/ax-type-text"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/ax-type-text": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute/ax-set-value",
@@ -6759,8 +7362,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute/ax-set-value",
+      "secrets/browser-live/execute/ax-set-value"
+    ],
+    "unitCases": [
       "secrets/browser/execute/ax-set-value"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute/ax-set-value": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/fill",
@@ -6772,8 +7387,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/fill",
+      "secrets/browser-live/execute-with-recovery/fill"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/fill"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/fill": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/ax-paste",
@@ -6785,8 +7412,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/ax-paste",
+      "secrets/browser-live/execute-with-recovery/ax-paste"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/ax-paste"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/ax-paste": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/ax-type-text",
@@ -6798,8 +7437,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/ax-type-text",
+      "secrets/browser-live/execute-with-recovery/ax-type-text"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/ax-type-text"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/ax-type-text": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/execute-with-recovery/ax-set-value",
@@ -6811,8 +7462,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/execute-with-recovery/ax-set-value",
+      "secrets/browser-live/execute-with-recovery/ax-set-value"
+    ],
+    "unitCases": [
       "secrets/browser/execute-with-recovery/ax-set-value"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/execute-with-recovery/ax-set-value": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/invalid-label",
@@ -6824,8 +7487,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/invalid-label",
+      "secrets/browser-live/refuse/invalid-label"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/invalid-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/invalid-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/reserved-label",
@@ -6837,8 +7512,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/reserved-label",
+      "secrets/browser-live/refuse/reserved-label"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/reserved-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/reserved-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unsupported-shape",
@@ -6850,8 +7537,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unsupported-shape",
+      "secrets/browser-live/refuse/unsupported-shape"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unsupported-shape"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unsupported-shape": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/coerced-method",
@@ -6864,7 +7563,15 @@
     "milestone": "M3",
     "cases": [
       "secrets/browser/refuse/coerced-method"
-    ]
+    ],
+    "unitCases": [
+      "secrets/browser/refuse/coerced-method"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/browser/refuse/extra-fields",
@@ -6877,7 +7584,15 @@
     "milestone": "M3",
     "cases": [
       "secrets/browser/refuse/extra-fields"
-    ]
+    ],
+    "unitCases": [
+      "secrets/browser/refuse/extra-fields"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/browser/refuse/disabled",
@@ -6889,8 +7604,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/disabled",
+      "secrets/browser-live/refuse/disabled"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/disabled"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/disabled": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unavailable",
@@ -6902,8 +7629,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unavailable",
+      "secrets/browser-live/refuse/unavailable"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unavailable"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unavailable": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unknown-label",
@@ -6915,8 +7654,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unknown-label",
+      "secrets/browser-live/refuse/unknown-label"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unknown-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unknown-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unsafe-store",
@@ -6928,8 +7679,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unsafe-store",
+      "secrets/browser-live/refuse/unsafe-store"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unsafe-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unsafe-store": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/unreadable-store",
@@ -6941,8 +7704,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/unreadable-store",
+      "secrets/browser-live/refuse/unreadable-store"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/unreadable-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/unreadable-store": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/refuse/service-version",
@@ -6954,8 +7729,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/refuse/service-version",
+      "secrets/browser-live/refuse/service-version"
+    ],
+    "unitCases": [
       "secrets/browser/refuse/service-version"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/refuse/service-version": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/errors/rejection-sanitized",
@@ -6967,8 +7754,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/errors/rejection-sanitized",
+      "secrets/browser-live/errors/rejection-sanitized"
+    ],
+    "unitCases": [
       "secrets/browser/errors/rejection-sanitized"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/errors/rejection-sanitized": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/errors/recovery-envelope-sanitized",
@@ -6980,8 +7779,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/errors/recovery-envelope-sanitized",
+      "secrets/browser-live/errors/recovery-envelope-sanitized"
+    ],
+    "unitCases": [
       "secrets/browser/errors/recovery-envelope-sanitized"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/errors/recovery-envelope-sanitized": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/errors/worker-rejection-message-only",
@@ -6994,7 +7805,8 @@
     "milestone": "M3",
     "cases": [
       "secrets/browser/errors/worker-rejection-message-only"
-    ]
+    ],
+    "liveRequired": true
   },
   {
     "id": "secret/browser/no-substitution/embedded-marker",
@@ -7006,8 +7818,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/embedded-marker",
+      "secrets/browser-live/no-substitution/embedded-marker"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/embedded-marker"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/embedded-marker": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/no-substitution/unsupported-fields",
@@ -7019,8 +7843,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/unsupported-fields",
+      "secrets/browser-live/no-substitution/unsupported-fields"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/unsupported-fields"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/unsupported-fields": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/no-substitution/evaluate-strings",
@@ -7032,8 +7868,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/evaluate-strings",
+      "secrets/browser-live/no-substitution/evaluate-strings"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/evaluate-strings"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/evaluate-strings": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/no-substitution/cdp-strings",
@@ -7045,8 +7893,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/no-substitution/cdp-strings",
+      "secrets/browser-live/no-substitution/cdp-strings"
+    ],
+    "unitCases": [
       "secrets/browser/no-substitution/cdp-strings"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/no-substitution/cdp-strings": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/optional-fields/timeouts-and-text-format",
@@ -7058,8 +7918,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/optional-fields/timeouts-and-text-format",
+      "secrets/browser-live/optional-fields/timeouts-and-text-format"
+    ],
+    "unitCases": [
       "secrets/browser/optional-fields/timeouts-and-text-format"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/optional-fields/timeouts-and-text-format": "service-boundary-double"
+    }
   },
   {
     "id": "secret/browser/reports/labels-not-values",
@@ -7071,8 +7943,20 @@
     ],
     "milestone": "M3",
     "cases": [
+      "secrets/browser/reports/labels-not-values",
+      "secrets/browser-live/reports/labels-not-values"
+    ],
+    "unitCases": [
       "secrets/browser/reports/labels-not-values"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true,
+    "proofs": {
+      "secrets/browser-live/reports/labels-not-values": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/invalid-label",
@@ -7084,8 +7968,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/invalid-label",
+      "secrets/native-live/refuse/invalid-label"
+    ],
+    "unitCases": [
       "secrets/native/refuse/invalid-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/reserved-label",
@@ -7097,8 +7990,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/reserved-label",
+      "secrets/native-live/refuse/reserved-label"
+    ],
+    "unitCases": [
       "secrets/native/refuse/reserved-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unsupported-shape",
@@ -7110,8 +8012,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unsupported-shape",
+      "secrets/native-live/refuse/unsupported-shape"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unsupported-shape"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/coerced-method",
@@ -7123,8 +8034,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/coerced-method",
+      "secrets/native-live/refuse/coerced-method"
+    ],
+    "unitCases": [
       "secrets/native/refuse/coerced-method"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/extra-fields",
@@ -7136,8 +8056,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/extra-fields",
+      "secrets/native-live/refuse/extra-fields"
+    ],
+    "unitCases": [
       "secrets/native/refuse/extra-fields"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/disabled",
@@ -7149,8 +8078,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/disabled",
+      "secrets/native-live/refuse/disabled"
+    ],
+    "unitCases": [
       "secrets/native/refuse/disabled"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unavailable",
@@ -7162,8 +8100,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unavailable",
+      "secrets/native-live/refuse/unavailable"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unavailable"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unknown-label",
@@ -7175,8 +8122,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unknown-label",
+      "secrets/native-live/refuse/unknown-label"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unknown-label"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unsafe-store",
@@ -7188,8 +8144,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unsafe-store",
+      "secrets/native-live/refuse/unsafe-store"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unsafe-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/refuse/unreadable-store",
@@ -7201,8 +8166,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/refuse/unreadable-store",
+      "secrets/native-live/refuse/unreadable-store"
+    ],
+    "unitCases": [
       "secrets/native/refuse/unreadable-store"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/errors/post-read-sanitized",
@@ -7214,8 +8188,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/errors/post-read-sanitized",
+      "secrets/native-live/errors/post-read-sanitized"
+    ],
+    "unitCases": [
       "secrets/native/errors/post-read-sanitized"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/errors/worker-rejection-message-only",
@@ -7228,7 +8211,8 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/errors/worker-rejection-message-only"
-    ]
+    ],
+    "liveRequired": true
   },
   {
     "id": "secret/native/no-substitution/embedded-marker",
@@ -7240,8 +8224,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/no-substitution/embedded-marker",
+      "secrets/native-live/no-substitution/embedded-marker"
+    ],
+    "unitCases": [
       "secrets/native/no-substitution/embedded-marker"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/no-substitution/unsupported-methods-and-fields",
@@ -7253,8 +8246,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/no-substitution/unsupported-methods-and-fields",
+      "secrets/native-live/no-substitution/unsupported-methods-and-fields"
+    ],
+    "unitCases": [
       "secrets/native/no-substitution/unsupported-methods-and-fields"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/no-substitution/javascript-strings",
@@ -7266,8 +8268,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/no-substitution/javascript-strings",
+      "secrets/native-live/no-substitution/javascript-strings"
+    ],
+    "unitCases": [
       "secrets/native/no-substitution/javascript-strings"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/reports/labels-not-values",
@@ -7279,8 +8290,17 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/reports/labels-not-values",
+      "secrets/native-live/reports/labels-not-values"
+    ],
+    "unitCases": [
       "secrets/native/reports/labels-not-values"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   },
   {
     "id": "secret/native/darwin/paste",
@@ -7292,7 +8312,15 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/darwin/paste"
-    ]
+    ],
+    "unitCases": [
+      "secrets/native/darwin/paste"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/native/darwin/type-text",
@@ -7304,7 +8332,15 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/darwin/type-text"
-    ]
+    ],
+    "unitCases": [
+      "secrets/native/darwin/type-text"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/native/darwin/set-value",
@@ -7316,7 +8352,15 @@
     "milestone": "M4",
     "cases": [
       "secrets/native/darwin/set-value"
-    ]
+    ],
+    "unitCases": [
+      "secrets/native/darwin/set-value"
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": false
   },
   {
     "id": "secret/native/linux/type-text",
@@ -7327,7 +8371,16 @@
     ],
     "milestone": "M4",
     "cases": [
+      "secrets/native/linux/type-text",
+      "secrets/native-live/linux/type-text"
+    ],
+    "unitCases": [
       "secrets/native/linux/type-text"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-parity/secrets.test.mjs",
+      "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
+    },
+    "liveRequired": true
   }
 ]

@@ -1,0 +1,106 @@
+{
+  "version": "0.3.0",
+  "commit": "0d54b41a1d45adaac071032cf82829fe90bc95e4",
+  "sessions": [
+    {
+      "session": 1,
+      "pid": 32069,
+      "source": {
+        "checkout": "/Users/new/Developer/GitHub/cua-wt-repl-host",
+        "commit": "0d54b41a1d45adaac071032cf82829fe90bc95e4",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "ownNode": {
+          "path": "/opt/homebrew/Cellar/node/26.7.0/bin/node",
+          "version": "v26.7.0"
+        },
+        "platform": "darwin"
+      },
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.3.0"
+        }
+      ],
+      "hostResults": 11,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.3.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task",
+        "end_task"
+      ],
+      "ok": true
+    },
+    {
+      "session": 2,
+      "pid": 33739,
+      "source": {
+        "checkout": "/Users/new/Developer/GitHub/cua-wt-repl-host",
+        "commit": "0d54b41a1d45adaac071032cf82829fe90bc95e4",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "ownNode": {
+          "path": "/opt/homebrew/Cellar/node/26.7.0/bin/node",
+          "version": "v26.7.0"
+        },
+        "platform": "darwin"
+      },
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.3.0"
+        }
+      ],
+      "hostResults": 1,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.3.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task"
+      ],
+      "ok": true
+    },
+    {
+      "session": 3,
+      "pid": 34224,
+      "source": {
+        "checkout": "/Users/new/Developer/GitHub/cua-wt-repl-host",
+        "commit": "0d54b41a1d45adaac071032cf82829fe90bc95e4",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "ownNode": {
+          "path": "/opt/homebrew/Cellar/node/26.7.0/bin/node",
+          "version": "v26.7.0"
+        },
+        "platform": "darwin"
+      },
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.3.0"
+        }
+      ],
+      "hostResults": 10,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.3.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "end_task"
+      ],
+      "ok": true
+    }
+  ],
+  "ok": true
+}

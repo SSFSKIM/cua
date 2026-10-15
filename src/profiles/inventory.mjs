@@ -14,10 +14,15 @@
 // labelling copies each profile's extension store to a temp directory, which node_repl's default sandbox refuses.
 // A MAWS backend (src/chrome/client-mode.mjs) reports family chrome too; the cell recognises it by its instance id
 // prefix (maws:) and lets nothing of it out: it is never a Chrome profile's.
+// The launch selects its REPL host as a browser-only connection would (HostSelection, src/runtime/launch.mjs
+// replHostFor). The listing records which host answered (`hostAttestation`, the spec's HostIdentity observation):
+// initialize's serverInfo as it came and the cell result's `cua/replHost` marker (null when it carried none), nothing
+// of the inventory itself.
 import {randomUUID} from 'node:crypto';
 import {chmodSync, mkdirSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {CuaError, fail} from '../runtime/errors.mjs';
+import {REPL_HOST_META_KEY} from '../repl-host/identity.mjs';
 import {isMawsInstance} from '../chrome/extension.mjs';
 import {buildLaunch, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
@@ -89,9 +94,10 @@ export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = t
     if (upstream.send({jsonrpc: '2.0', id, method, params}) === false) reject(unresponsive(method)());
   }), ms, unresponsive(method));
   let backends;
+  let hostAttestation;
   let failure;
   try {
-    await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-profiles-bind', version: '0'}}, limit.initializeMs);
+    const initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {elicitation: {}}, clientInfo: {name: 'cua-profiles-bind', version: '0'}}, limit.initializeMs);
     upstream.send({jsonrpc: '2.0', method: 'notifications/initialized'});
     const sessionId = randomUUID();
     const meta = withSandbox({'x-codex-turn-metadata': {session_id: sessionId, thread_id: sessionId, turn_id: randomUUID(), call_id: randomUUID(), model: 'cua-profiles-bind'}}, sandboxState);
@@ -99,6 +105,7 @@ export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = t
     const title = tabCounts ? 'cua profiles bind: list Chrome backends' : 'cua profiles: check live Chrome backends';
     const result = await request('tools/call', {name: 'js', arguments: {code, title, timeout_ms: limit.cellMs}, _meta: meta}, limit.callMs);
     backends = parseBackends(result);
+    hostAttestation = {serverInfo: initialized?.serverInfo ?? null, _meta: result?._meta?.[REPL_HOST_META_KEY] ?? null};
   } catch (error) {
     failure = error;
   }
@@ -106,7 +113,7 @@ export async function listBackendsWith(upstream, {limits = LIMITS, tabCounts = t
   const teardown = await upstream.terminate({budgetMs: limit.teardownMs});
   if (!teardown?.confirmed) throw teardownUnconfirmed(teardown, failure);
   if (failure) throw failure;
-  return {backends, elicitationsDeclined, teardown};
+  return {backends, hostAttestation, elicitationsDeclined, teardown};
 }
 
 // The owned runtime could not be shown gone: that outranks the listing's own result (a bind must not be recorded on
@@ -144,7 +151,7 @@ export async function listLiveBackends({home, runtime, ambient = process.env, li
     mkdirSync(launch.cwd, {mode: 0o700});
     chmodSync(launch.cwd, 0o700);
     const result = await listBackendsWith(spawnUpstream(launch, {stderr: 'ignore'}), {limits, tabCounts, sandboxState: sandboxStateFor(sandbox, launch.cwd)});
-    return {backends: result.backends, elicitationsDeclined: result.elicitationsDeclined, teardown: result.teardown};
+    return {backends: result.backends, hostAttestation: result.hostAttestation, elicitationsDeclined: result.elicitationsDeclined, teardown: result.teardown};
   } finally {
     claim.release();
     if (launch) rmSync(join(launch.env.CODEX_HOME, 'computer-use', 'sessions', `${sessionId}.toml`), {force: true});

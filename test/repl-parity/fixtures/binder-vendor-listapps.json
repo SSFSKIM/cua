@@ -1,0 +1,23 @@
+{
+  "provenance": {
+    "host": "vendor",
+    "control": "cua-m3-api-probe-1",
+    "checkout": "ef52174",
+    "case": "api/cua/listapps",
+    "cell": "exercise",
+    "note": "Synthetic binder service only; recorded MCP output retains vendor RPC serde object-key order."
+  },
+  "result": {
+    "isError": false,
+    "content": [
+      {
+        "type": "text",
+        "text": "[{\"displayName\":\"Fixture Editor\",\"id\":\"com.fixture.Editor\",\"isRunning\":true,\"lastUsedDate\":\"2026-10-14T12:00:00Z\",\"useCount\":7},{\"displayName\":\"Closed Fixture\",\"id\":\"com.fixture.Closed\",\"isRunning\":false}]"
+      },
+      {
+        "type": "text",
+        "text": "BINDER_REPORT:{\"values\":[[{\"displayName\":\"Fixture Editor\",\"id\":\"com.fixture.Editor\",\"isRunning\":true,\"lastUsedDate\":\"2026-10-14T12:00:00Z\",\"useCount\":7},{\"displayName\":\"Closed Fixture\",\"id\":\"com.fixture.Closed\",\"isRunning\":false}],[{\"displayName\":\"Fixture Editor\",\"id\":\"com.fixture.Editor\",\"isRunning\":true,\"lastUsedDate\":\"2026-10-14T12:00:00Z\",\"useCount\":7},{\"displayName\":\"Closed Fixture\",\"id\":\"com.fixture.Closed\",\"isRunning\":false}]],\"calls\":[{\"args\":[],\"method\":\"list_apps\",\"type\":\"execute\"},{\"args\":[],\"method\":\"list_apps\",\"type\":\"execute\"}]}"
+      }
+    ]
+  }
+}

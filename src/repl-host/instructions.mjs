@@ -35,10 +35,6 @@ export function applyEdits(source, edits) {
   return out;
 }
 
-// The first-cell banner (the vendor's instructions/banner.js, read as the launcher reads it): until M3 it imports the
-// unmodified vendor facade, resolved from the launch's module directories.
-export const VENDOR_FACADE_BANNER = read('banner.js');
-
 // The overrides for `platform` (process.platform) and the enabled `surfaces` -> {server_instructions, tools: {js:
 // {description, field_descriptions: {code}}, js_reset: {description}}}, as the vendor launcher builds them.
 export function toolOverrides({platform, surfaces}) {

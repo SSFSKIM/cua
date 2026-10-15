@@ -685,3 +685,12 @@ Actions apply to the cited text unit, not a wholesale rewrite of its parent sect
 | Browser confirmations duplicate | `chatgpt-26.928.40906/cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/setup_browser.js:8-16` | drop | Drop only duplicate browser confirmations document emission; the core confirmations policy and its valid host override are kept verbatim. |
 | Browser IAB/Orbit-specific prose in first-call methods | `chatgpt-26.928.40906/cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/tab_reference.js:20-47`; `chatgpt-26.928.40906/cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_browser_api.js:188-194` | drop | Remove IAB mention routing and Orbit new-tab exception; do not remove generic extension mention and chrome://newtab behavior. |
 | Browser generator — unavailable-document error | `chatgpt-26.928.40906/cua_node/@oai/browser-desktop/scripts/browser-service.mjs:65379-65382` | keep-verbatim | Keep exact error `Documentation is not available: ${e}` for unavailable lookup names; excluded cloud/IAB/MCP documents are unavailable, not stale vendor prose. |
+
+### Table 3 amendment (2026-10-15, owner ruling)
+
+The literal Windows deletions broke the grammar of two sentences in `tinysky-alt-core-cua-repl.md`. The owner allows a repair scoped to those two sentences only. Everywhere else the rule is unchanged: vendor wording verbatim, the name changed to cua, exclusions explicit. These two edits are applied after the Windows deletions:
+
+| Sentence after the Table 3 deletion | Repaired form |
+|---|---|
+| `Linux always return full accessibility state.` | `Linux always returns full accessibility state.` |
+| ``Linux app `paste` support only `text` and use the platform's native text input.`` | ``Linux app `paste` supports only `text` and uses the platform's native text input.`` |

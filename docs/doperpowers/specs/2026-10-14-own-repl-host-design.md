@@ -19,7 +19,7 @@ execution, not reopen it.
 - [x] (2026-10-14T22:30Z) M0 — Differential harness, complete inventory, host selector (vendor default), Linux native baseline. Five tasks reviewed clean; whole-branch reviewer-high "correct" at ad21892. Evidence: mini and cua-linux vendor `cells` pairs at harness 88970a0 (0 differences; Linux records the declared sandbox fail-open defect), three Linux vendor native-baseline runs.
 - [x] (2026-10-15T00:23Z) M1 — Kernel and supervisor; raw cell semantics on the mini (and cua-linux). Two tasks reviewed clean; whole-branch reviewer-high "correct" at dc7a86d. Own-host `cells --through M1` at 8f56fb5: mini 111/111 and cua-linux 112/112, 0 unexpected differences against the M0 vendor controls; serverInfo `cua-repl-host 0.2.0` attested on every connection.
 - [x] (2026-10-15T07:04Z) M2 — Trusted worker and privileged API; owned browser service and MAWS on the own host. Three tasks reviewed clean; whole-branch reviewer-high "correct" at bb3d59a. Mini, browser-only: services 41 cases 0 differences; tools contract 0 (Table 2 transform only); browser corpus 59/59 per host at e4ea7eb, 0 unexpected, 7 expected trace counts; MAWS live probe PASS with the own host attested. EOF drain bound for a suspended request deferred to M3.
-- [ ] M3 — Owned cua API and documentation; complete facade coverage and profiles listing.
+- [x] (2026-10-15T13:17Z) M3 — Owned cua API and documentation; complete facade coverage and profiles listing. Four tasks reviewed clean; whole-branch reviewer-high "correct". The own host with the owned facade against the M3 vendor controls on the mini, browser-only: api 290 cases, secrets-live 25 and docs-profiles 12 each 0 differences with identity slots only; tools contract 0; 59-case corpus 59/59, 0 unexpected; MAWS live probe PASS with per-session source records. core.md equals Table 3 plus the owner-approved amendment.
 - [ ] M4 — Linux native path, approvals and native baseline comparison.
 - [ ] M5 — Per-surface defaults, final parity/performance/remote proofs, documentation and plugin release.
 
@@ -539,6 +539,94 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Three M3 task 4 findings are settled as follows.
+  - **`REPL_HOST_VERSION` stays 0.3.0 through M3.** M4 bumps it once, since M4 changes the host again (ApprovalStorage, the Linux native path), and records all M4 evidence at the bumped version. M3's evidence tells the M2 and M3 0.3.0 hosts apart by attested source commit. Nothing ships to users before M5's default switch.
+  - **Browser numbering race (M4 oracle input).** The browser service numbers browsers in the order backends answer, so with two bound mini profiles (ssfs, school) `browser-docs-before-state` can flip on either host. The harness will map browser ids by backend/profile identity, as a declared schema-known dynamic id, rather than by creation order. Until then, M3 records docs-profiles first and keeps the race runs as labelled diagnostics.
+  - **`actions/locators` polling counts (M4/M5 oracle input).** These drift by one or two between vendor runs, and no vendor-against-vendor calibration pair covers the case. The derived tolerance will be recalibrated from at least two vendor-against-vendor pairs, taking the union of spreads, before M5's repeat runs.
+  Rationale: One version bump per host change avoids recording all the evidence twice. The two oracle issues are vendor-side nondeterminism that the oracle must absorb mechanically, never with hand allowances.
+  Date/Author: 2026-10-15, plan-executor rulings on M3 task 4's concerns.
+- Decision: M3 task 1, the oracle, as built.
+  - **Suites:** `api`, with 290 cases and 1,072 cells; `secrets-live`, 25 cases; and `docs-profiles`, 12 cases. The M0 double rows stay in `secrets`, labelled fake.
+  - **Proof classes**, recorded per case: Chrome-live, real-service, mixed, boundary-double, hidden-boundary and binder-double.
+  - **Fail-closed rules:** host trace comparison needs a target trace of the right schema (array entries matching the producer's request/notification kinds) wherever the control has one. Tolerances are derived from recorded vendor-against-vendor pairs, and the M2 replay still reports 7 derived differences.
+  - **Downloads:** cleaned by an outer, harness-owned helper given a private proof over stdin.
+  - **WebMCP:** registration ids are projected only after the real service issues them, scoped by browser and tab; unknown references are rejected.
+  - **Locator diagnostics:** the expectation is the RPC-sorted payload (Rust serde order).
+  - **Download filenames:** after many downloads, Chrome's collision filenames take the form `parity - YYYY-MM-DDTdddddd.ddd.txt`. The REPL chooser case accepts that observed grammar. The #113 corpus download cases do not yet, and need the same narrow grammar if they hit it.
+  - **Completeness:** 491 of the 491 obligations due at M3 are linked; 51 M4 obligations are pending.
+  - **Vendor controls** at d75a105: all three pairs show 0 differences with no allowances.
+  Rationale: This is the oracle that task 4 and later milestones are graded by.
+  Date/Author: 2026-10-15, M3 task 1 executor and its reviews, folded by the plan-executor.
+- Decision: Table 3 gains a dated amendment, recorded in `surface-inventory.md` under "Table 3 amendment (2026-10-15)". It repairs the two sentences that the literal Windows deletions made ungrammatical: "Linux always returns full accessibility state." and "Linux app `paste` supports only `text` and uses the platform's native text input." The oracle derives these bytes independently, and the facade's `core.md` applies the same repair. The principle stays as before: vendor wording verbatim, the name changed to cua, exclusions explicit. The amendment covers only sentences the exclusion itself broke.
+  Rationale: The owner's ruling, relayed by the session. A deletion that breaks a sentence's grammar is not "verbatim" in any useful sense.
+  Date/Author: 2026-10-15, owner ruling, recorded by the plan-executor.
+- Decision: M3 task 3 as built.
+  - **Documents.** They are committed already edited. Their provenance lives in `docs/cua-api/PROVENANCE.md`, because the files are emitted byte for byte. A test applies the 14 Table 3 edits to SHA-pinned vendor copies and requires byte equality.
+  - **Module layout.** One module per vendor concern. That includes `linux-accessibility-tree.mjs`, which Linux `getAXState` text depends on.
+  - **Sky.** The facade's no-nodeRepl branch, Sky's native client, is native-engine code and is not ported. Its refusal sentence is kept verbatim.
+  - **Dropped vendor switches.** `CUA_REPL_BROWSER_ENV` modes and `TINYSKY_ALT_INITIALIZE_DOCS` are gone (Table 2). The core confirmations policy, its valid requestMeta override and the bundled fallback stay. Only the duplicate browser emission of that policy is excluded (Table 3).
+  - **Paths.** `src/cua-api` and `docs/cua-api` join the kernel's read paths, the own host's trusted code paths and doctor's protected paths. That gives read access and write-overlap protection, and no new cell-accessible service.
+  - **Banner.** The banner now imports `src/cua-api/bootstrap.mjs`; the M2 vendor-facade banner is removed.
+  - **Profiles listing.** It also returns `hostAttestation` and is otherwise unchanged.
+  Rationale: Follows Design "Owned facade and first-call documentation" and the owner's document ruling.
+  Date/Author: 2026-10-15, M3 task 3 executor and its review, folded by the plan-executor.
+- Decision: `exportGsuite` and `exportYouTubeTranscript` are covered at two levels.
+  - Real-service cases on a scratch page assert the source-defined rejection and error contracts.
+  - Source-boundary success-marshalling cases under the capability case are labelled boundary-double and cite vendor source lines.
+  - Authenticated live export success is an explicit external-fixture limitation: no authenticated Workspace or stable captioned-YouTube fixture exists, the same as #113's corpus. It is not claimed.
+  Rationale: Acceptance 3 requires an executable proof of every member's contract. A rejection-only case leaves the success shape untested, and the owner's accounts are never used as fixtures.
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
+- Decision: `--suite all` selects live-lane cases only, and fake rows are never compared live. The inventory completeness gate counts a row as covered when it has live coverage, or when its obligation is a unit/double proof and the row names a unit test, checked to exist and run under `npm test`. A row whose acceptance requires live proof must point at a live-lane case. This is implemented in M3, not deferred to M5.
+  Rationale: Otherwise the final M5 `all` diff could never pass while fake secret rows remain, and silently exempting fake rows in the comparator would weaken the oracle.
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
+- Decision: Acceptance 6's M3 slice (browser substitution) is proven through the real client in the remote capability-host lane.
+  - The rows are browser fill/AX actions at their supported shapes, refusal before read, and sanitized post-read errors. They run with the real selected host and client, a synthetic sentinel store in the lane's scratch HOME, and a fake backend that records only booleans, labels and hashes.
+  - M0's 27 source/service-double secret rows move to `--suite secrets` and stay labelled fake. They are never counted as live proof.
+  - Native text-method substitution is M4.
+  - The live seam runs the real selected host, the real client, the real imported secret wrapper and a real scratch fileStore, with a recorder below the wrapper, labelled boundary-double at the service boundary. Wrapper-malformation rows the client cannot emit (coerced method, extra fields) stay as named unit-only proofs under the completeness-gate rule. Fill into real Chrome is #113's concern (amended 2026-10-15).
+  Rationale: The comparator rightly refuses fake rows as live evidence. The capability lane is the only place where real-client substitution can run without touching the owner's secret store.
+  Date/Author: 2026-10-15, plan-executor assignment to M3 task 1.
+- Decision: M3 task 2 as built.
+  - **EOF drain.** At EOF the host withdraws unanswered elicitations with `notifications/cancelled`. The worker gets an honest error sentence rather than a fabricated `cancel` action, and nothing is granted. Budget suspensions end, so a silent worker's cell times out on its remaining budget. Each admitted execution gets a drain deadline (remaining budget + after-code hook bound + turn margin + 2 s) and then takes the forced-shutdown path.
+  - **Browser client.** Ported mechanically into one file, `src/cua-api/browser-client.mjs`, keeping the bundle's local names until #120.
+    - Zod is vendored at 3.25.76 (v3 API) under the exact-pin rule (`scripts/extract-zod.mjs`); the bundled copy's literal strings match that release exactly.
+    - Dropped per Table 2: `iab`, `mcpapps`, `codexSessionId` and the Orbit rewrite.
+    - What stays in the vendor's facade files for task 3: initial snapshot, allSettled inventory, Linux window binding, platform input guards, DOM-only Tab input wrappers, emit:false.
+  - **Task 3 inherits:** adding `src/cua-api` to the kernel's sandbox read paths for restricted profiles.
+  Rationale: Vendor parse sites rely on Zod's stripping, refinements and error text, so a hand-written validator would change refusals. The facade concerns follow the vendor's own file split.
+  Date/Author: 2026-10-15, M3 task 2 executor, folded by the plan-executor.
+- Decision: Case scheduling splits by platform for native-paired members.
+  - Their `api/` binder-double cases are darwin-only and due M3, because the doubles are grounded in macOS source.
+  - On Linux the same members are proven by their `native/` live cases, due M4.
+  - Platform-independent decorated-tab behaviour is proven by real-browser `api/` cases on both platforms.
+  - A Linux selection never demands darwin doubles, and a native-paired member with no `native/` case still fails the M4 gate.
+  Rationale: Verification "Computer behavior runs live on Linux; macOS-only binder behavior uses source-grounded service doubles".
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
+- Decision: Some included APIs (certain AX, management and content members) are proven at the facade only, because the retained cua browser service cannot advertise them.
+  - Those members run in M0's remote capability-host lane against the real selected host and the real vendor or owned client. A source-grounded command-transport fixture replies, and each reply cites its vendor source lines.
+  - The inventory rows and cases are labelled boundary-double, and the evidence states that they prove the facade only and add no new service capability.
+  - Members the real service does advertise must run against that real service.
+  - Hidden-member cases use an absent or disabled manifest.
+  - The macOS binder-double seam is unchanged.
+  Rationale: Table 1 requires every member's executable proof, including members the service never advertises. A facade-level proof at the transport seam is the most that is honest, and it must not read as service coverage.
+  Date/Author: 2026-10-15, session ruling relayed by M3 task 1's executor, recorded by the plan-executor.
+- Decision: M3 runs as four tasks in one PR.
+  - **Task 1 (astra, sibling worktree, in parallel): the M3 oracle.**
+    - Executable cases for every Table 1 member and type due M3. Browser members run live. macOS binder members use source-grounded doubles, with native Linux rows staying M4. Capability-gated members get both hidden-member assertions and advertised cases through the remote capability-host lane.
+    - The `docs-profiles` suite. Its expected first-call bytes are derived independently: Table 3 applied to the pinned vendor document, never copied from the port. It also covers named output order, `rewriteDocumentation` same-requestMeta suppression, and `profiles_list` with no titles or URLs.
+    - Trace-count tolerance derived from a recorded vendor-against-vendor pair. The comparator tolerates, per case, cell and method, the delta the vendor shows against itself. This replaces the four hand-written M2 allowances, which become its first fixture.
+    - Vendor controls recorded on the mini, browser-only.
+  - **Task 2 (opus): the bounded EOF drain, then the browser client.**
+    - First, the bounded EOF drain for a suspended request: at drain start, cancel pending client requests and resume the budget, under a drain deadline.
+    - Then the browser-client port producing **BrowserClientRuntime** in `src/cua-api/browser-client.mjs`, with its Zod-site decision.
+  - **Task 3 (opus, after task 2 is reviewed): the facade, CuaBootstrap and CoreDocumentation.**
+    - The facade, bootstrap, platform binders, Sky facade, `docs/cua-api/core.md` with the confirmations policy and the auxiliary document, package files, `profiles/inventory.mjs` on HostSelection, and switching the banner to `src/cua-api/bootstrap.mjs`.
+  - **Task 4 (task 3 resumed): the live runs.**
+    - `api` and `docs-profiles` suites, own against vendor; the browser corpus repeated with the owned bootstrap; MAWS repeated.
+  - All macOS live sessions stay browser-only.
+  - Documents follow the owner's ruling: vendor wording verbatim, with the product name changed to cua in prose only, and only the exclusions Tables 2–3 list.
+  Rationale: Same oracle/subject separation as M0–M2. BrowserClientRuntime is the spec's named review frontier. Both binding M3 inputs from M2 are scheduled first in their tasks.
+  Date/Author: 2026-10-15, plan-executor M3 pre-flight, with the session's post-merge instruction.
 - Decision: Two more host-comparison trace allowances are approved on the same basis as `actions/wait-for` and `actions/slow-budget`: `input/coordinates` (drag, maxDelta 1) and `waits/networkidle` (`Page.lifecycleEvent`, maxDelta 4). Each is scoped to its case, cell and methods; maxDelta equals the vendor's own spread; each cites committed, attested vendor-against-vendor runs. The final M2 corpus pair at e4ea7eb runs 59/59 on each host with 0 unexpected differences and 7 expected trace counts.
   Rationale: Variance the vendor shows against itself is not a host difference.
   Date/Author: 2026-10-14, session ruling, recorded by the plan-executor.
@@ -737,3 +825,7 @@ owned browser service/extension host. The new docs directory must be included in
 - M0 (2026-10-14T22:30Z): the oracle exists and the vendor route measures identically twice. Mini `cells --through M1`: 111 cases, 145 cells, 0 differences, all assertions pass. cua-linux: 112 recorded, 111 passing, 146 cells, 0 differences, with the vendor's runtime sandbox fail-open recorded as a declared defect (hardening is #135). Linux native baseline: three vendor runs, 18 attested connections, no errors; typeText/paste crash gedit 46.2. Defaults unchanged (vendor). Lessons: the harness needed four review waves before it could not pass a wrong host (field-dropping normalization, subset selection, stale provenance, case-wide exemptions), so later milestones should treat any oracle change as review-critical; M0 had to own the whole M1 vendor control so M1 never writes its own oracle. Final outcomes are written at M5.
 - M1 (2026-10-15T00:23Z): an explicitly selected own host runs raw persistent cells on user Node 24 under the retained sandbox, with zero unexpected differences on both platforms. The accepted entries are 134 identity slots, plus the #135 security departure on Linux, where the own host refuses a failed sandbox launch and the vendor runs unconfined. Defaults remain vendor. Lessons: lifecycle edges (dead-launch descendants, drain against forced shutdown, policy-change races) took three review waves and none of them is reachable by the cells suite, so M2's trusted worker should get real-process lifecycle tests from the start. Device-global configuration is off-limits to executors; harness-owned environments carry device settings.
 - M2 (2026-10-15T07:04Z): the own host now runs the retained trusted services and MAWS browser-only on macOS. On the mini, the services suite, the effective tools and the 59-case browser corpus all match the vendor host, apart from exact identity slots, the approved Table 2 tool-text transform and vendor-spread trace counts. The vendor oracle surfaced behaviours the recovered JS does not show: elicitation suspends the budget, response meta merges, duplicate acks wait for the shared completion, and a peer abort is close-only. The port now matches all four. It also found a macOS sandboxed time-zone lookup hang that affects the vendor route today (#138). The own host avoids it by warming the zone at load and replacing a child that fails to start. Lessons: writing the oracle in a separate worktree in parallel with the port worked, and the oracle's vendor probes corrected the port twice. Hand-written trace allowances do not scale, so M3 derives them from recorded vendor variance. Environment interruptions (TCC consent, a closed Chrome window) cost more wall time than any code defect.
+- M3 (2026-10-15T13:17Z): the own route imports no vendor REPL facade. The owned bootstrap, facade, browser client and first-call documents answer every M3 api, secrets and document case exactly as the vendor does, apart from the host identity slot. The oracle now derives its trace tolerance from vendor-against-vendor runs, and requires live counterparts or named unit proofs for every obligation (491/491 at M3). Lessons:
+  - The parallel oracle took more review waves than the port (four against one). Most findings were ways the oracle could pass a wrong host: empty or malformed traces, missing negative cases, ids projected before they were issued. Treat oracle review as the critical path.
+  - Vendor nondeterminism needs mechanical absorption: the browser-id race and the locator polling counts are M4/M5 inputs.
+  - The owner's document ruling held, with one narrow amendment for sentences the exclusion itself broke.

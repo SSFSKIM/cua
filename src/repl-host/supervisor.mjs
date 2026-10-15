@@ -46,7 +46,15 @@
 //   worker is taken for hung and stopped, so the cell gets its result, the turn's one acknowledgement is sent and the EOF
 //   drain finishes.
 // - EOF on stdin: nothing new is admitted; what was admitted settles and is answered, then the children are stopped
-//   and the host exits 0. A signal stops them at once.
+//   and the host exits 0. A signal stops them at once. What waits on the departed client cannot finish, so the drain
+//   bounds itself: the elicitations the client never answered are withdrawn (`notifications/cancelled`) and fail in
+//   the worker with ELICITATION_CANCELLED_SENTENCE, new ones fail the same way without being asked, and every
+//   admitted execution's budget suspensions end (no new ones begin), so a cell whose worker went silent inside one runs
+//   out of what was left of its budget. Each admitted execution has a drain deadline as well, set from where it stands
+//   and set again as it moves on: its budget left while its code runs, the bound of its after-code hooks while they
+//   run (the bound the host sends them under, so hooks registered after EOF keep theirs), then DRAIN_MARGIN_MS on top.
+//   One still unsettled then (a kernel that never reports its result) takes the forced path. A live connection's
+//   suspensions are untouched.
 //
 // What crosses the host between the children and the client is re-serialized with its object keys sorted (arrays kept
 // in order), as the vendor's serde maps do: request meta, service requests and results, elicitation schemas and
@@ -69,11 +77,14 @@ import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
 import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
 import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
-import {elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
+import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError, sandboxArgs, sandboxPolicy} from '../runtime/sandbox.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
+// What a kernel reads beyond its own code under a restricted profile: cua's facade (src/cua-api), which the banner
+// imports, and the first-call documents it reads (docs/cua-api).
+export const CUA_API_READ_PATHS = [fileURLToPath(new URL('../cua-api', import.meta.url)), fileURLToPath(new URL('../../docs/cua-api', import.meta.url))];
 export const TRUSTED_WORKER = fileURLToPath(new URL('./trusted-worker.mjs', import.meta.url));
 const KERNEL_ENV = ['HOME', 'PATH', 'TMPDIR', 'TMP', 'LC_ALL'];
 const KERNEL_SETTINGS = ['CUA_REPL_JS_BANNER', 'CUA_REPL_UNTRUSTED_ENV_ALLOWLIST', 'CUA_REPL_NODE_MODULE_DIRS'];
@@ -93,6 +104,9 @@ export const START_ATTEMPTS = 3;
 // it for hung and stops it: a run_hooks or turn_ended it never answers then fails or is acknowledged, and the EOF drain
 // can finish.
 export const TURN_MARGIN_MS = 2_000;
+// What the EOF drain allows an admitted execution beyond its budget left and its hooks' bound before it gives up on it
+// (the header's EOF): enough that the bounds the host already keeps answer first.
+export const DRAIN_MARGIN_MS = 2_000;
 const hostMarker = {host: 'cua', version: REPL_HOST_VERSION};
 
 // serde_json's maps are sorted, so a JSON value crossing the vendor's host has its keys in byte order, at every depth;
@@ -123,7 +137,7 @@ export function hostSettings(env, {cwd}) {
   return {node, codexCli, codexHome: env.CODEX_HOME ?? null, workingDir: cwd, kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
-    readPaths: [dirname(node), dirname(KERNEL), ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
+    readPaths: [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS, ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
 }
 
 // A child launch of `command` ([node, ...args]) with `env` for `policy` (sandboxPolicy) -> {command, args, env, cwd,
@@ -232,6 +246,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         if (current) {
           current.durationMs = typeof message.execution_duration_ms === 'number' ? message.execution_duration_ms : null;
           current.budget.stop();
+          armDrainDeadline(current);
         }
         return;
       case 'exec_result':
@@ -255,6 +270,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (current.settled) return;
     current.settled = true;
     current.budget?.stop();
+    current.cancelDrainDeadline?.();
     worker?.suspensions.delete(current);
     if (execution === current) execution = null;
     current.resolve(result);
@@ -281,7 +297,11 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!sent) {
       self.pending.delete(message.id);
       answer({ok: false, error: TRUSTED_EXIT_SENTENCE});
-    } else if (hooks) boundAnswer(self, message.id, 'run_hooks', self.deadlines.afterCode + TURN_MARGIN_MS);
+    } else if (hooks) {
+      const limit = boundAnswer(self, message.id, 'run_hooks', self.deadlines.afterCode + TURN_MARGIN_MS);
+      current.hooks = {id: message.id, until: performance.now() + limit};
+      armDrainDeadline(current);
+    }
   }
 
   function launchWorker(policy) {
@@ -353,6 +373,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       workerEnded(self, {expected: true, diagnostic: ''});
       stopping(self.child);
     }));
+    return limit;
   }
   const answered = (self, id) => { self.bounds.get(id)?.(); self.bounds.delete(id); };
 
@@ -364,7 +385,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.queue.length = 0;
     self.relay.closeAll();
     // The service requests it held fail for whichever kernel still waits on them; its turn handlers are over.
-    for (const [id, kernelSelf] of self.pending) kernelSelf.child.send({type: 'trusted_service_response', id, ok: false, error: sentence, output: [], content_items: []});
+    for (const [id, kernelSelf] of self.pending) {
+      kernelSelf.child.send({type: 'trusted_service_response', id, ok: false, error: sentence, output: [], content_items: []});
+      hooksAnswered(id);
+    }
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
@@ -397,6 +421,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         if (!kernelSelf) return;
         self.pending.delete(message.id);
         answered(self, message.id);
+        hooksAnswered(message.id);
         // Only to the kernel that asked, and only while it lives: a later generation never sees an earlier one's reply.
         if (kernel === kernelSelf) kernelSelf.child.send(sortedJson(message));
         return;
@@ -449,6 +474,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!current) return answer({ok: false, error: EXEC_CONTEXT_NOT_FOUND});
     const {params, error} = elicitationParams(message, {formSupported});
     if (error) return answer({ok: false, error});
+    // The client is gone (the EOF drain): nobody can answer it.
+    if (closing) return answer({ok: false, error: ELICITATION_CANCELLED_SENTENCE});
     const id = clientRequestCounter++;
     // The vendor host pauses the cell's budget while the client decides, as withSuspendedTimeout would (observed on the
     // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives.
@@ -491,6 +518,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       if (kernel && kernel === current.kernel) await stopKernel();
       settle(current, sentenceResult(TIMEOUT_SENTENCE));
     });
+    if (closing) drainExecution(current);
     // The exec goes to a kernel that announced it is ready; one that stays silent is replaced (the header).
     for (let attempt = 1; !current.settled && !current.expired; attempt++) {
       kernel ??= launchKernel(launch);
@@ -612,9 +640,52 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   const flushed = () => new Promise(resolve => (output.writableEnded || output.destroyed ? resolve() : output.write('', resolve)));
   let draining = null;
   let forced = null;
+  // An admitted execution under the drain (the header's EOF): its budget can no longer be suspended, and past its
+  // deadline the drain gives up on it.
+  function drainExecution(current) {
+    current.budget.endSuspensions();
+    armDrainDeadline(current);
+  }
+
+  // (Re)sets a draining execution's deadline from where it stands: the budget left while its code runs (the budget
+  // ends that phase itself), the bound its after-code hooks were sent under while they run, then DRAIN_MARGIN_MS for
+  // the kernel to report. Each phase sets it once, so the drain stays bounded.
+  function armDrainDeadline(current) {
+    if (!closing || current.settled) return;
+    const hooks = current.hooks && !current.hooks.answered ? Math.max(0, current.hooks.until - performance.now()) : 0;
+    const ms = Math.ceil(current.budget.remaining + hooks + DRAIN_MARGIN_MS);
+    current.cancelDrainDeadline?.();
+    current.cancelDrainDeadline = timer(ms, () => {
+      if (current.settled) return;
+      log(`EOF drain did not finish within ${ms} ms; stopping`);
+      shutdown({drain: false});
+    });
+  }
+
+  // The worker answered (or, ending, failed) the execution's after-code hooks: the kernel has only its result to send.
+  function hooksAnswered(id) {
+    if (!execution?.hooks || execution.hooks.id !== id) return;
+    execution.hooks.answered = true;
+    armDrainDeadline(execution);
+  }
+
+  // The client is gone: the elicitations it never answered are withdrawn, and the worker that asked is told so.
+  function cancelClientRequests() {
+    for (const [id, request] of clientRequests) {
+      clientRequests.delete(id);
+      request.execution.budget.resume();
+      write({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: id, reason: ELICITATION_CANCELLED_SENTENCE}});
+      if (worker === request.worker) request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ok: false, error: ELICITATION_CANCELLED_SENTENCE}));
+    }
+  }
+
   function shutdown({drain}) {
     closing = true;
     if (drain) {
+      if (!draining) {
+        cancelClientRequests();
+        if (execution) drainExecution(execution);
+      }
       draining ??= (async () => {
         await Promise.all([work, ...turns.values()]);
         await Promise.all([stopKernel(), stopWorker()]);

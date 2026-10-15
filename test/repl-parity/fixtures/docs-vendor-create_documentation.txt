@@ -1,0 +1,52 @@
+// source: create_documentation.js | webcrack+prettier
+import { __awaiter as o } from "../../../oai_js/node_modules/tslib/tslib.es6.js";
+function n(n) {
+  const r = globalThis.nodeRepl;
+  const t = (r == null ? undefined : r.env)?.TINYSKY_ALT_INITIALIZE_DOCS ?? "core-cua-repl";
+  const l = t === "core-cua-repl";
+  return {
+    read: n,
+    read_core: function () {
+      return o(this, undefined, undefined, function* () {
+        const i = yield n(t);
+        if (!l) {
+          return i;
+        }
+        const e = yield (function () {
+          return o(this, undefined, undefined, function* () {
+            const i = globalThis.nodeRepl;
+            const e = (function (o) {
+              const n = o == null ? undefined : o["openai/confirmation_policies"];
+              const i = typeof n != "object" || n === null || Array.isArray(n) ? undefined : n;
+              const e = i == null ? undefined : i.computer_use;
+              if (
+                typeof e == "string" &&
+                e.trim() !== "" &&
+                new TextEncoder().encode(e).byteLength <= 12000
+              ) {
+                return e;
+              }
+              return;
+            })(i == null ? undefined : i.requestMeta);
+            if (e !== undefined) {
+              return e;
+            }
+            const r = (i == null ? undefined : i.env)?.CUA_REPL_BROWSER_ENV;
+            if (r === "training" || r === "orbit") {
+              return "";
+            } else {
+              return n("confirmations");
+            }
+          });
+        })();
+        if (e === "") {
+          return i;
+        } else {
+          return `${i}\n${e}`;
+        }
+      });
+    },
+    exclude_browser_confirmations: l,
+  };
+}
+export { n as create_documentation };

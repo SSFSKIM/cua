@@ -120,13 +120,12 @@ test('the effective text is the vendor launcher\'s assembly for each platform an
   assert.throws(() => toolOverrides({platform: 'win32', surfaces: ['browser']}), /unsupported cua_repl platform=win32/);
 });
 
-test('the copies are the pinned vendor bytes (26.928.40906 @oai/cua-repl/instructions) and the banner imports the unmodified facade', async () => {
+test('the copies are the pinned vendor bytes (26.928.40906 @oai/cua-repl/instructions)', async () => {
   const {createHash} = await import('node:crypto');
   const {readFileSync} = await import('node:fs');
-  const {VENDOR_FACADE_BANNER} = await import('../../src/repl-host/instructions.mjs');
   const sha = name => createHash('sha256').update(readFileSync(new URL(`../../src/repl-host/instructions/${name}`, import.meta.url))).digest('hex');
   const PINNED = {
-    'banner.js': 'db4a56c4a1cb6f9ec2ca663694fbe8941846aaa83d0bf12d3a5699f92126105a', 'browser-disabled.md': '6d1be6d881b8b340dabb04d277bfc5c0690fb855031f023bc882284904dd6d9a',
+    'browser-disabled.md': '6d1be6d881b8b340dabb04d277bfc5c0690fb855031f023bc882284904dd6d9a',
     'code.md': 'c0cc551f6c6116c5276baecc68c1139d25c205570281e02b6ad483526e4bede9', 'computer-disabled.md': 'c34c37e1549a55281eaecf6e29b4878313cfecf5983559a98a6fca1f6d1cf53c',
     'reset.md': '8293a9ec45999391940bdfce1637fb5c4d708f89b5d726b4d03800df9cb795af', 'server.md': '6001fb94250c49c234d96cbe08913ad9340e71e48b1709d8c0d598b46a25ea9e',
     'browser.md': '063027bad00dd242148c8f798a55f420ce5c893547b4d5b352747c8d04e79ed5', 'computer.md': 'e8318bd16b9792b517d300802583961317d7e0cb3a3a4ed776a681ed20f16f7d',
@@ -136,5 +135,4 @@ test('the copies are the pinned vendor bytes (26.928.40906 @oai/cua-repl/instruc
     if (['browser.md', 'computer.md', 'description.md', 'output.md'].includes(name)) for (const dir of ['macos', 'linux']) assert.equal(sha(`${dir}/${name}`), hash, `${dir}/${name}`);
     else assert.equal(sha(name), hash, name);
   }
-  assert.equal(VENDOR_FACADE_BANNER, 'await import("@oai/cua/tinyskyAlt");\n');
 });

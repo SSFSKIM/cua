@@ -10,6 +10,7 @@
 export const FORM_UNSUPPORTED_SENTENCE = 'nodeRepl.createElicitation is unavailable because the MCP client does not support form elicitation';
 export const INVALID_SCHEMA_PREFIX = 'nodeRepl.createElicitation requested_schema is invalid: ';
 export const UNEXPECTED_RESPONSE_SENTENCE = 'MCP elicitation request returned an unexpected response';
+export const ELICITATION_CANCELLED_SENTENCE = 'MCP elicitation request was cancelled because the client closed the connection';
 const ACTIONS = ['accept', 'decline', 'cancel'];
 const PRIMITIVE_TYPES = ['string', 'number', 'integer', 'boolean'];
 

@@ -24,6 +24,7 @@ import {prepareCapabilityHome} from '../../../../../scripts/browser-parity/capab
 import {cellsServeEnv} from '../../../../../test/repl-parity/fixture-launch.mjs';
 
 const BOUND_MS = 5000;
+const LAUNCHER = /(^|\/)codex sandbox |(^|\/)sandbox-exec /;
 const SELF = fileURLToPath(import.meta.url);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const table = () => execFileSync('ps', ['-axo', 'pid=,ppid=,pcpu=,command='], {encoding: 'utf8'}).trim().split('\n')
@@ -64,14 +65,15 @@ async function session() {
   await sleep(1500);
   const tree = descendants(process.pid);
   const pick = re => tree.filter(p => re.test(p.command));
-  const role = p => (/anchor\.mjs/.test(p.command) ? 'anchor' : /supervisor\.mjs/.test(p.command) ? 'supervisor' : /kernel\.mjs/.test(p.command) ? 'kernel'
-    : /trusted-worker\.mjs/.test(p.command) ? 'worker' : /(^|\/)codex( |$)|sandbox-exec/.test(p.command) ? 'launcher' : 'other');
-  const launchers = pick(/(^|\/)codex( |$)|sandbox-exec/);
+  // The launcher's own command line names the child it runs, so it is told apart first.
+  const role = p => (LAUNCHER.test(p.command) ? 'launcher' : /anchor\.mjs/.test(p.command) ? 'anchor' : /supervisor\.mjs/.test(p.command) ? 'supervisor'
+    : /kernel\.mjs/.test(p.command) ? 'kernel' : /trusted-worker\.mjs/.test(p.command) ? 'worker' : 'other');
+  const launchers = pick(LAUNCHER);
   const facts = {
     serverInfo: init.result?.serverInfo, launch,
     cells: {warm: warm?.content?.[0]?.text, spin: spin?.content?.[0]?.text, kernel: kernelBusy?.content?.[0]?.text, replHost: kernelBusy?._meta?.['cua/replHost']},
     processes: tree.map(p => ({pid: p.pid, ppid: p.ppid, role: role(p), cpu: p.cpu, fifos: ['kernel', 'worker'].includes(role(p)) ? fifos(p.pid) : undefined})),
-    launcherPolicy: launchers.map(p => ({sandbox: / sandbox /.test(p.command) || /sandbox-exec/.test(p.command), nodeReplPermissions: p.command.includes('default_permissions="node_repl"'), networkOff: p.command.includes('network={enabled=false}')})),
+    launcherPolicy: launchers.map(p => ({sandbox: / sandbox /.test(p.command) || /sandbox-exec/.test(p.command), nodeReplPermissions: p.command.includes('default_permissions="node_repl"'), networkOff: /network\s*=\s*\{\s*enabled\s*=\s*false\s*\}/.test(p.command), launches: /kernel\.mjs/.test(p.command) ? 'kernel' : /trusted-worker\.mjs/.test(p.command) ? 'worker' : null})),
     proxy: process.pid, scratch: scratch.dir,
   };
   process.stdout.write(JSON.stringify(facts) + '\n');

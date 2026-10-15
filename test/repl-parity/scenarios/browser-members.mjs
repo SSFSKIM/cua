@@ -1,3 +1,4 @@
+import {classifyPendingCell} from '../../../scripts/repl-parity/pending-cells.mjs';
 import {closeObservedTab} from '../fixtures/close-observed-tab.mjs';
 // All observations come from this task's fixture tabs. Raw MCP content is never rewritten by the adapter.
 // Member semantics: surface-inventory.md Table 1, pinned browser-client.js (chatgpt-26.928.40906)
@@ -40,7 +41,12 @@ function add(member,source,witnessCells,options={}) {
    try {
     if(input.results.length!==source.cells.length)return {ok:false,reason:`${id}: unexpected raw cell count`};
     const results=input.results.map((r,i)=>({cell:source.cells[i].label,...parseCell(r)}));
-    return await source.assert({...input,results});
+    const pending=input.pendingCells??[];
+    if(!pending.length)return await source.assert({...input,results});
+    for(const label of pending){const index=source.cells.findIndex(c=>c.label===label);if(index<0)throw Error('Unknown pending cell');classifyPendingCell(input.results[index]);}
+    if(typeof source.assert.withPendingCells!=='function')throw Error('This oracle cannot declare a pending cell');
+    const assertion=await source.assert.withPendingCells({...input,results},pending);
+    return assertion.ok?{...assertion,pendingCells:pending,covered:!witnessCells.every(cell=>pending.includes(cell))}:assertion;
    }catch(error){return {ok:false,reason:`${id}: ${error.message}`};}
   },
  });

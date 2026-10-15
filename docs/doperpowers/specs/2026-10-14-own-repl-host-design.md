@@ -539,6 +539,13 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: On cua-linux, `prepare` and every live run of the cua browser service use `CUA_HOME=/home/admin/.local/share/cua-h4`, #113's cua-route home. The value travels in the harness's remote command environment, exactly like `CUA_NODE`, and the prepare facts record the home, the registration manifest and the route provenance.
+  - The VM's default home is vendor-routed: its registration and bindings belong to the OpenAI extension. It stays as it is.
+  - Nothing on the VM is re-registered or rebound.
+  - Root cause of the "no ready candidates" failure: since acd2e68 (M2), prepare has run `profiles list` with `CUA_BROWSER_SERVICE=cua` against the default home, where no cua host serves the bindings. M0 and M1 recorded on the Linux route resolved before that change.
+  - Separate gap, outside M4's scope: if `profiles list` with an explicit `CUA_BROWSER_SERVICE=cua` on a vendor-routed home reports `host_not_live` instead of refusing with a route diagnostic, that contradicts the explicit-override rule. It goes in tech-debt.
+  Rationale: The cua route exists on the VM only in the H4 home. The harness must name its home explicitly instead of inheriting a default that routes elsewhere.
+  Date/Author: 2026-10-15, session ruling after reproducing the cause on the VM, recorded by the plan-executor.
 - Decision: M4 runs as three tasks in one PR, against the cua-linux VM.
   - **Task 1 (astra, sibling worktree, in parallel): the M4 oracle.**
     - Vendor-side executable `native/` Linux cases for the 51 pending M4 obligations: bind, observe AX, act, verify, screenshot and end_task against harness-owned gedit windows, plus unsupported operations and observable vendor errors. Native secret rows cover the text methods.

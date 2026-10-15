@@ -539,6 +539,12 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: `exportGsuite` and `exportYouTubeTranscript` are covered at two levels.
+  - Real-service cases on a scratch page assert the source-defined rejection and error contracts.
+  - Source-boundary success-marshalling cases under the capability case are labelled boundary-double and cite vendor source lines.
+  - Authenticated live export success is an explicit external-fixture limitation: no authenticated Workspace or stable captioned-YouTube fixture exists, the same as #113's corpus. It is not claimed.
+  Rationale: Acceptance 3 requires an executable proof of every member's contract. A rejection-only case leaves the success shape untested, and the owner's accounts are never used as fixtures.
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
 - Decision: `--suite all` selects live-lane cases only, and fake rows are never compared live. The inventory completeness gate counts a row as covered when it has live coverage, or when its obligation is a unit/double proof and the row names a unit test, checked to exist and run under `npm test`. A row whose acceptance requires live proof must point at a live-lane case. This is implemented in M3, not deferred to M5.
   Rationale: Otherwise the final M5 `all` diff could never pass while fake secret rows remain, and silently exempting fake rows in the comparator would weaken the oracle.
   Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.

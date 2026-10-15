@@ -232,3 +232,62 @@ const recoveryObservations=[
  {rejected:true,name:'BrowserCredentialRecoveryError',message:'Browser observation is unavailable because native credential state cannot be safely resumed. Start a new browser runtime to continue. Recovery v1: command=tab_content_export, phase=before_command, reason=credential_state_unavailable, next_action=restart_browser_runtime.',details:{schema_version:1,command:'tab_content_export',phase:'before_command',reason:'credential_state_unavailable',next_action:'restart_browser_runtime'},detailsFrozen:true},
  [{rejected:false,value:'/fixture/recovered.pdf'},{rejected:false,value:17},{rejected:false,value:{kind:'undefined'}},{rejected:true,name:'Error',message:'transport send returned empty response'},{rejected:true,name:'Error',message:'transport send returned empty response'}],
 ];
+
+test('real-service WebMCP registrations are witnessed in first-issued order without changing delegated replies',async()=>{
+ const first={tools:[{name:'search',call_name:'search__id-a',registration_id:'id-a',input_schema:{}}]};
+ const second={tools:[{name:'search',call_name:'search__id-a',registration_id:'id-a',input_schema:{}},{name:'details',call_name:'details__id-b',registration_id:'id-b',input_schema:{}}]};
+ let reply=first;
+ const fixture=createCapabilityOracleService({handleRpc:async()=>reply});
+ const command={type:'webmcp_list_tools',browser_id:'browser-1',tab_id:'tab-1'};
+ assert.equal(await rpc(fixture,'execute',command),first);
+ reply=second;assert.equal(await rpc(fixture,'execute',command),second);
+ assert.deepEqual(await rpc(fixture,'oracle.registrations'),[
+  {browser_id:'browser-1',tab_id:'tab-1',registration_id:'id-a'},
+  {browser_id:'browser-1',tab_id:'tab-1',registration_id:'id-b'},
+ ]);
+ const witness=await rpc(fixture,'oracle.registrations');witness[0].registration_id='tampered';
+ assert.equal((await rpc(fixture,'oracle.registrations'))[0].registration_id,'id-a');
+ await rpc(fixture,'oracle.configure',{mode:'real-service'});
+ assert.deepEqual(await rpc(fixture,'oracle.registrations'),[]);
+ reply={ok:true,value:first};assert.equal(await rpc(fixture,'executeWithRecovery',command),reply);
+ assert.deepEqual(await rpc(fixture,'oracle.registrations'),[{browser_id:'browser-1',tab_id:'tab-1',registration_id:'id-a'}]);
+});
+test('WebMCP observation maps only an issued registration reference and preserves every other value',async()=>{
+ const {normalizeIssuedWebMcpCommand}=await import('./scenarios/capability-api.mjs');
+ assert.equal(typeof normalizeIssuedWebMcpCommand,'function');
+ const issued=[{browser_id:'browser-1',tab_id:'tab-1',registration_id:'id-a'},{browser_id:'browser-1',tab_id:'tab-1',registration_id:'id-b'}];
+ const command={type:'webmcp_invoke_tool',browser_id:'browser-1',tab_id:'tab-1',registration_id:'id-a',input:{q:'id-a'},tool_name:'search',tool_description:'id-a',extra:'id-b'};
+ const before=structuredClone(command);
+ assert.deepEqual(normalizeIssuedWebMcpCommand(command,issued),{...command,registration_id:'<webmcp-registration:1>'});
+ assert.deepEqual(normalizeIssuedWebMcpCommand({...command,registration_id:'id-b'},issued),{...command,registration_id:'<webmcp-registration:2>'});
+ assert.equal(normalizeIssuedWebMcpCommand(command,issued).registration_id,'<webmcp-registration:1>');
+ assert.deepEqual(command,before);
+ for(const mutation of [{registration_id:'unknown'},{tab_id:'other-tab'},{browser_id:'other-browser'}])assert.throws(()=>normalizeIssuedWebMcpCommand({...command,...mutation},issued),/unissued WebMCP registration/);
+ const unrelated={...command,type:'other_command',registration_id:'unknown'};
+ assert.equal(normalizeIssuedWebMcpCommand(unrelated,issued),unrelated);
+});
+
+test('WebMCP witness never treats unrelated replies, failed recovery replies, or boundary doubles as issuance',async()=>{
+ const tool={name:'search',call_name:'search__id-a',registration_id:'id-a',input_schema:{}};
+ let response={tools:[tool]};
+ const fixture=createCapabilityOracleService({handleRpc:async()=>response});
+ await rpc(fixture,'execute',{type:'other_command',browser_id:'b',tab_id:'t'});
+ response={ok:false,value:{tools:[tool]},error:{}};
+ await rpc(fixture,'executeWithRecovery',{type:'webmcp_list_tools',browser_id:'b',tab_id:'t'});
+ assert.deepEqual(await rpc(fixture,'oracle.registrations'),[]);
+ await rpc(fixture,'oracle.configure',{mode:'boundary-double'});
+ await rpc(fixture,'oracle.reply',{type:'webmcp_list_tools',value:{tools:[tool]}});
+ await rpc(fixture,'execute',{type:'webmcp_list_tools',browser_id:'b',tab_id:'t'});
+ assert.deepEqual(await rpc(fixture,'oracle.registrations'),[]);
+});
+test('WebMCP call oracle requires the first issued token while keeping payload and result checks exact',()=>{
+ const s=scenario('capability-host/webmcptools/call');
+ const setup=result({ready:true,proof:'real-service'});
+ const validation=result({rejected:true,noCommand:true,message:'WebMCP tool "missing" is not available in this snapshot. Call fetchTools() again.'});
+ const observation={value:'results for lamps',commands:[{type:'webmcp_list_tools',browser_id:'$browser',tab_id:'$tab'},{type:'webmcp_invoke_tool',browser_id:'$browser',tab_id:'$tab',tool_name:'search',tool_description:'Search the catalogue',tool_title:'Search',registration_id:'<webmcp-registration:1>',input:{q:'lamps'},timeout_ms:1200}]};
+ assert.equal(s.assert({results:[setup,result(observation),validation]}).ok,true);
+ for(const mutate of [o=>{o.commands[1].registration_id='<webmcp-registration:2>';},o=>{o.commands[1].input.q='other';},o=>{o.value='wrong result';}]){
+  const changed=structuredClone(observation);mutate(changed);
+  assert.throws(()=>s.assert({results:[setup,result(changed),validation]}));
+ }
+});

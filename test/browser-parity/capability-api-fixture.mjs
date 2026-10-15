@@ -19,14 +19,15 @@ export const ASSET_INVENTORY={assets:[{id:'asset-1',kind:'image',name:'lamp.png'
 export const ASSET_BUNDLE={assets:[{contentType:'image/png',id:'asset-1',kind:'image',name:'lamp.png',path:'/fixture/assets/lamp.png',url:'https://cua-capability.example/lamp.png'}],directoryPath:'/fixture/assets',failures:[{contentType:null,id:'asset-2',name:'missing.png',reason:'not available',url:'https://cua-capability.example/missing.png'}],manifestPath:'/fixture/assets/manifest.json',summary:{downloadedCount:1,elapsedMs:1,failedCount:1,requestedCount:2}};
 export const AUDIT={changes:[{args:[{title:'Fixture'}],method:'create',namespace:'bookmarks',createdAt:1,before:{bookmarks:[{id:'b0',index:0,parentId:'root',title:'Before',url}],tabLayout:{groups:[{collapsed:false,color:'blue',id:1,title:'Group',windowId:1}],tabs:[{autoDiscardable:true,groupId:1,id:7,index:0,pinned:false,url,windowId:1}]},windows:[{focused:true,height:600,id:1,left:0,state:'normal',top:0,width:800}]},result:{id:'b1'}}]};
 export function createCapabilityOracleService(delegate){
- let mode='real-service',disabled=[],trace=[],overrides=new Map(),recovery=false,envelopes=new Map();
+ let mode='real-service',disabled=[],trace=[],overrides=new Map(),recovery=false,envelopes=new Map(),registrations=[];
  return {async handleRpc(request){
   const {method,params}=request;
   if(method==='oracle.configure'){
    if(!['real-service','boundary-double','hidden'].includes(params?.mode))throw Error('Invalid oracle mode');
-   mode=params.mode;disabled=params.disabledMemberIds??[];trace=[];overrides=new Map();recovery=false;envelopes=new Map();return {mode};
+   mode=params.mode;disabled=params.disabledMemberIds??[];trace=[];overrides=new Map();recovery=false;envelopes=new Map();registrations=[];return {mode};
   }
   if(method==='oracle.trace')return structuredClone(trace);
+  if(method==='oracle.registrations')return structuredClone(registrations);
   // BC:10238-10284: select recovery v1 at setup; inject raw transport envelopes, not wrapped command values.
   if(method==='oracle.recovery'||method==='oracle.envelope'){
    if(mode!=='boundary-double')throw Error('Recovery injection requires boundary-double mode');
@@ -38,7 +39,22 @@ export function createCapabilityOracleService(delegate){
    if(mode==='real-service')throw Error('Cannot replace a real-service reply');
    overrides.set(params.type,params.value);return {};
   }
-  if(mode==='real-service'){if(['execute','executeWithRecovery'].includes(method))trace.push(JSON.parse(JSON.stringify(params)));return delegate.handleRpc(request);}
+  if(mode==='real-service'){
+   const execution=method==='execute'||method==='executeWithRecovery';
+   if(execution)trace.push(JSON.parse(JSON.stringify(params)));
+   const response=await delegate.handleRpc(request);
+   // BC:4981-5008,9162-9232: list returns tools[].registration_id; invoke sends the issued value unchanged.
+   // Observe only real delegated replies, retaining first-issuance order within the configured fixture session.
+   const value=method==='executeWithRecovery'?(response?.ok===true?response.value:undefined):response;
+   if(execution&&params.type==='webmcp_list_tools'&&Array.isArray(value?.tools)){
+    for(const tool of value.tools){
+     if(typeof tool?.registration_id!=='string')continue;
+     const issued={browser_id:params.browser_id,tab_id:params.tab_id,registration_id:tool.registration_id};
+     if(!registrations.some(r=>r.browser_id===issued.browser_id&&r.tab_id===issued.tab_id&&r.registration_id===issued.registration_id))registrations.push(issued);
+    }
+   }
+   return response;
+  }
   if(method==='setup')return {apiManifest:structuredClone(apiManifest),disabledMemberIds:[...disabled],...(recovery?{credentialRecoveryErrorVersion:1}:{})};
   if(!['execute','executeWithRecovery'].includes(method))throw Error(`Unscripted fixture method ${method}`);
   trace.push(JSON.parse(JSON.stringify(params)));

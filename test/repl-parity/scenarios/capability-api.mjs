@@ -93,11 +93,20 @@ add('cdptabcapability/readevents','real-service',`var initial=await cap.readEven
  assert.equal(commands.length,3);assert.deepEqual(commands[0],tabCommand('tab_cdp_events',{limit:1}));assert.deepEqual(commands[1],tabCommand('tab_cdp_call',{method:'Page.reload'}));assert.ok(Number.isInteger(commands[2].after_sequence)&&commands[2].after_sequence>=0);assert.deepEqual({...commands[2],after_sequence:0},tabCommand('tab_cdp_events',{after_sequence:0,methods:['Page.frameNavigated'],timeout_ms:2000,client_timeout_ms:4000}));
 }});
 // BC:9144-9233. Public description is parsed, registration identity is the one documented volatile slot.
+// Only this known command field is volatile. The trusted fixture witnesses IDs issued by the real list reply;
+// neither UUID-looking input strings nor references absent from that browser/tab's issuance list may be masked.
+export function normalizeIssuedWebMcpCommand(command,issued){
+ if(command.type!=='webmcp_invoke_tool')return command;
+ const index=issued.findIndex(r=>r.browser_id===command.browser_id&&r.tab_id===command.tab_id&&r.registration_id===command.registration_id);
+ if(index<0)throw new Error('unissued WebMCP registration reference');
+ return {...command,registration_id:`<webmcp-registration:${index+1}>`};
+}
+const webMcpCallSetup=capSetup('tab','webmcp')+`globalThis.__webMcpRegistrations=[];globalThis.__ordinaryCommand=__command;globalThis.__command=c=>__ordinaryCommand((${normalizeIssuedWebMcpCommand.toString()})(c,__webMcpRegistrations));`;
 const toolsExpected=[{name:'search__<registration>',title:'Search',description:'Search the catalogue',inputSchema:{properties:{q:{type:'string'}},type:'object'},origin:'https://cua-capability.example',pageUrl:PAGE}];
 const describeTools=`var text=tools.description();var list=JSON.parse(text.slice(text.indexOf('['),text.lastIndexOf(']')+1));return {frozen:Object.isFrozen(tools),prefix:text.startsWith('WebMCP tools available in this document:\\n'),suffix:text.endsWith('Call tools.call(name, input) to invoke one.'),tools:list.map(t=>({...t,name:t.name.replace(/__[0-9a-f-]{36}$/,'__<registration>')}))};`;
 for(const id of ['tabwebmcpcapability/fetchtools','webmcptools/description'])add(id,'real-service',`var tools=await cap.fetchTools();${describeTools}`,{frozen:true,prefix:true,suffix:true,tools:toolsExpected},{setup:capSetup('tab','webmcp'),commands:[tabCommand('webmcp_list_tools')]});
-add('webmcptools/call','real-service',`var tools=await cap.fetchTools();var text=tools.description();var name=JSON.parse(text.slice(text.indexOf('['),text.lastIndexOf(']')+1))[0].name;return await tools.call(' '+name+' ',{q:'lamps'},{timeoutMs:1200});`,'results for lamps',{setup:capSetup('tab','webmcp'),commands:commands=>{
- assert.equal(commands.length,2);assert.deepEqual(commands[0],tabCommand('webmcp_list_tools'));assert.match(commands[1].registration_id,/^[0-9a-f-]{36}$/);assert.deepEqual({...commands[1],registration_id:'<registration>'},tabCommand('webmcp_invoke_tool',{tool_name:'search',tool_description:'Search the catalogue',tool_title:'Search',registration_id:'<registration>',input:{q:'lamps'},timeout_ms:1200}));
+add('webmcptools/call','real-service',`var tools=await cap.fetchTools();globalThis.__webMcpRegistrations=await nodeRepl.rpc('browser',{method:'oracle.registrations'});var text=tools.description();var name=JSON.parse(text.slice(text.indexOf('['),text.lastIndexOf(']')+1))[0].name;return await tools.call(' '+name+' ',{q:'lamps'},{timeoutMs:1200});`,'results for lamps',{setup:webMcpCallSetup,commands:commands=>{
+ assert.deepEqual(commands,[tabCommand('webmcp_list_tools'),tabCommand('webmcp_invoke_tool',{tool_name:'search',tool_description:'Search the catalogue',tool_title:'Search',registration_id:'<webmcp-registration:1>',input:{q:'lamps'},timeout_ms:1200})]);
 },extra:[validation(`var tools=await cap.fetchTools();var before=(await __trace()).length;try{await tools.call('missing',{});return {rejected:false};}catch(e){return {rejected:true,noCommand:(await __trace()).length===before,message:e.message};}`,{rejected:true,noCommand:true,message:'WebMCP tool "missing" is not available in this snapshot. Call fetchTools() again.'})]});
 
 // BC:9013-9130,9759-9798,9580-9721: complete typed fixture examples, including nested records, nullable fields and

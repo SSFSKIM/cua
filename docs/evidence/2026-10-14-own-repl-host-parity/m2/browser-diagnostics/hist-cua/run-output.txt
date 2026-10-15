@@ -1,0 +1,4 @@
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/wait-for ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/history ok

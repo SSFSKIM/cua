@@ -1,0 +1,121 @@
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/concurrent-fill ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/doubleclick ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/locators ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/overlay ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/slow-budget ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/strict-error ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case actions/wait-for ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/clipboard-page ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/clipboard ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/cursor ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/export-authenticated ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/export-rejections ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/history FAIL assertion
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/logs ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/m2-disabled ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/m3-disabled ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/m3-members ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/page-assets ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case capabilities/viewport ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case dialogs/alert ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case dialogs/paused-response ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case dialogs/prompt ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case downloads/ask-where-to-save ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case downloads/blocked-navigation ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case downloads/chooser FAIL path: js execution timed out; kernel reset, rerun your request
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case downloads/media FAIL media: js execution timed out; kernel reset, rerun your request
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case downloads/two-tabs FAIL [["second-tab",true,true],["both",false,"js execution timed out; kernel reset, rerun your request"]]
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/attributes ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/budget ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/context-loss ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/counter ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/late-completion ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/mutation ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/no-replay ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case evaluate/read ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case examples/concurrency ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case examples/tabs ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/ax-disabled ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/coordinates ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/dom ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/long-type ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/oopif-type ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/queued-shortcuts ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case input/rich-text ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case reads/frames ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case reads/locators ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case reads/oopif ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case reads/snapshot ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case reads/visible-dom-dense ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case reads/zero-budget ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case screenshot/clip ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case screenshot/modes ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case tabs/discovery ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case tabs/lifecycle ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case tabs/manual-handoff-disabled ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case tabs/navigation ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case waits/networkidle ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case waits/page ok
+attested: cua (# Selected Browser) at aff75b4c9a489dda80308c9b95c16a0598ca3893
+case waits/zero-budget ok
+cua exit 1

@@ -539,6 +539,13 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The nativePipe connect-timeout expiry, owed live since M2, is unreachable on both platforms and is proven by its socket-double unit test.
+  - On cua-linux the pinned vendor's connect to a saturated AF_UNIX listener also fails at once: `failed to connect native pipe: Resource temporarily unavailable (os error 11)` after about 1 ms, under the 1,000 ms budget. That is consistent with a non-blocking connect, which never waits on a full Unix-socket backlog.
+  - The live Linux case records the configured budget and that exact sentence, and both hosts must match it.
+  - The M2 socket-double expiry test is linked as the row's unit proof and labelled "live-unreachable: non-blocking connect".
+  - Linux transport abort differs from Darwin. On Linux the vendor delivers error-before-close and late replay with `Connection reset by peer (os error 104)`, and the oracle records platform-specific observed values.
+  Rationale: This revises the M2 premise that "a full backlog leaves connect pending on Linux". The vendor's observed behaviour refutes it, and inventing a fixture to force expiry would test something the vendor never does.
+  Date/Author: 2026-10-15, plan-executor ruling on M4 task 1's live probe.
 - Decision: M4 task 2 as built.
   - **ApprovalStorage:** a no-callers verdict, with nothing ported. Neither the retained Linux Sky path (stdio transport) nor the owned wrappers and services call `config`/`readToml`/`writeToml`. The only caller is the vendor browser service, which never runs on the own host. Approval persistence stays proxy-owned. The verdict lives in the header of `privileged-node-repl.mjs`, and a guard test pins the worker's privileged API.
   - **Linux native route:** it needed no production change. Tests on the production launch path cover it end to end: `sky_linux` runs as the trusted worker's non-detached stdio child, inside the worker's `own()` subtree, survives timeout and reset, is reaped on idle stop, close and worker death, and starts fresh on relaunch.

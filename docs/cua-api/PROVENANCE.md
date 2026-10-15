@@ -16,9 +16,12 @@ the edits of the surface inventory's Tables 2 and 3
 (`docs/doperpowers/research/2026-10-14-own-repl-host/surface-inventory.md`): the `"iab"` and `"mcpapps"` browser types
 and `codexSessionId` (:66, :68), the `"windows"` target (:128), the MCP App tabs paragraph (:154), and the Windows words,
 clauses and sentences at :160, :162, :164, :170, :198, :204, :205 and :206, and the Orbit new-tab page clause (:175).
-Product names appear in the vendor's prose only inside that removed text, so no rename remains. Everything else is the
-vendor's wording. `test/cua-api/core-documentation.test.mjs` applies the same edits to the pinned vendor documents
-(SHA-256-checked copies under `test/cua-api/fixtures/vendor-docs/`) and requires these bytes.
+After those deletions, the surface inventory's "Table 3 amendment (2026-10-15, owner ruling)" repairs the grammar of the
+two sentences they broke: "Linux always return" becomes "Linux always returns" (:170), and "Linux app `paste` support
+only `text` and use" becomes "supports … uses" (:204). Product names appear in the vendor's prose only inside the
+removed text, so no rename remains. Everything else is the vendor's wording. `test/cua-api/core-documentation.test.mjs`
+applies the same edits, then the amendment, to the pinned vendor documents (SHA-256-checked copies under
+`test/cua-api/fixtures/vendor-docs/`) and requires these bytes.
 
 Not ported: `docs/tinysky-alt-core-node-repl.md`, the dormant alternate first-call document (Table 2). #120's
 clean-room rewrite replaces these copies before distribution.

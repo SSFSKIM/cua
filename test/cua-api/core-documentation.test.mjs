@@ -53,14 +53,21 @@ const CORE_EDITS = [
   ['`selectText` is unavailable on Linux and Windows.', '`selectText` is unavailable on Linux.'],
 ];
 
+// The surface inventory's "Table 3 amendment (2026-10-15, owner ruling)": two grammar repairs of sentences the Windows
+// deletions above broke, applied after them and to nothing else.
+const AMENDMENT_EDITS = [
+  ['Linux always return full accessibility state.', 'Linux always returns full accessibility state.'],
+  ['Linux app `paste` support only `text` and use the platform\'s native text input.', 'Linux app `paste` supports only `text` and uses the platform\'s native text input.'],
+];
+
 test('the vendor fixtures are the pinned chatgpt-26.928.40906 documents', () => {
   for (const [name, hash] of Object.entries(PINNED)) assert.equal(sha(read(VENDOR, name)), hash, name);
   const dir = process.env.CUA_VENDOR_DOCS;
   if (dir) for (const name of Object.keys(PINNED)) assert.equal(readFileSync(join(dir, name), 'utf8'), read(VENDOR, name), `${name} against ${dir}`);
 });
 
-test('core.md is the vendor first-call document with exactly the Table 2/3 edits', () => {
-  assert.equal(read(DOCS, 'core.md'), applyEdits(read(VENDOR, 'tinysky-alt-core-cua-repl.md'), CORE_EDITS));
+test('core.md is the vendor first-call document with exactly the Table 2/3 edits, then the Table 3 amendment', () => {
+  assert.equal(read(DOCS, 'core.md'), applyEdits(applyEdits(read(VENDOR, 'tinysky-alt-core-cua-repl.md'), CORE_EDITS), AMENDMENT_EDITS));
 });
 
 test('the confirmations policy and the "Other Browser APIs" document are the vendor bytes', () => {

@@ -46,7 +46,13 @@
 //   worker is taken for hung and stopped, so the cell gets its result, the turn's one acknowledgement is sent and the EOF
 //   drain finishes.
 // - EOF on stdin: nothing new is admitted; what was admitted settles and is answered, then the children are stopped
-//   and the host exits 0. A signal stops them at once.
+//   and the host exits 0. A signal stops them at once. What waits on the departed client cannot finish, so the drain
+//   bounds itself: the elicitations the client never answered are withdrawn (`notifications/cancelled`) and fail in
+//   the worker with ELICITATION_CANCELLED_SENTENCE, new ones fail the same way without being asked, and every
+//   admitted execution's budget suspensions end (no new ones begin), so a cell whose worker went silent inside one runs
+//   out of what was left of its budget. Each admitted execution has a drain deadline as well, its budget left plus its
+//   hooks' bound and DRAIN_MARGIN_MS; one still unsettled then (a kernel that never reports its result) takes the
+//   forced path. A live connection's suspensions are untouched.
 //
 // What crosses the host between the children and the client is re-serialized with its object keys sorted (arrays kept
 // in order), as the vendor's serde maps do: request meta, service requests and results, elicitation schemas and
@@ -69,7 +75,7 @@ import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
 import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
 import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
-import {elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
+import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError, sandboxArgs, sandboxPolicy} from '../runtime/sandbox.mjs';
 
@@ -93,6 +99,9 @@ export const START_ATTEMPTS = 3;
 // it for hung and stops it: a run_hooks or turn_ended it never answers then fails or is acknowledged, and the EOF drain
 // can finish.
 export const TURN_MARGIN_MS = 2_000;
+// What the EOF drain allows an admitted execution beyond its budget left and its hooks' bound before it gives up on it
+// (the header's EOF): enough that the bounds the host already keeps answer first.
+export const DRAIN_MARGIN_MS = 2_000;
 const hostMarker = {host: 'cua', version: REPL_HOST_VERSION};
 
 // serde_json's maps are sorted, so a JSON value crossing the vendor's host has its keys in byte order, at every depth;
@@ -255,6 +264,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (current.settled) return;
     current.settled = true;
     current.budget?.stop();
+    current.cancelDrainDeadline?.();
     worker?.suspensions.delete(current);
     if (execution === current) execution = null;
     current.resolve(result);
@@ -449,6 +459,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!current) return answer({ok: false, error: EXEC_CONTEXT_NOT_FOUND});
     const {params, error} = elicitationParams(message, {formSupported});
     if (error) return answer({ok: false, error});
+    // The client is gone (the EOF drain): nobody can answer it.
+    if (closing) return answer({ok: false, error: ELICITATION_CANCELLED_SENTENCE});
     const id = clientRequestCounter++;
     // The vendor host pauses the cell's budget while the client decides, as withSuspendedTimeout would (observed on the
     // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives.
@@ -491,6 +503,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       if (kernel && kernel === current.kernel) await stopKernel();
       settle(current, sentenceResult(TIMEOUT_SENTENCE));
     });
+    if (closing) drainExecution(current);
     // The exec goes to a kernel that announced it is ready; one that stays silent is replaced (the header).
     for (let attempt = 1; !current.settled && !current.expired; attempt++) {
       kernel ??= launchKernel(launch);
@@ -612,9 +625,36 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   const flushed = () => new Promise(resolve => (output.writableEnded || output.destroyed ? resolve() : output.write('', resolve)));
   let draining = null;
   let forced = null;
+  // An admitted execution under the drain (the header's EOF): its budget can no longer be suspended, and past its
+  // deadline the drain gives up on it.
+  function drainExecution(current) {
+    current.budget.endSuspensions();
+    const hooks = worker ? worker.deadlines.afterCode + TURN_MARGIN_MS + (worker.ready ? 0 : readyTimeoutMs * START_ATTEMPTS) : 0;
+    const ms = current.budget.remaining + hooks + DRAIN_MARGIN_MS;
+    current.cancelDrainDeadline = timer(ms, () => {
+      if (current.settled) return;
+      log(`EOF drain did not finish within ${ms} ms; stopping`);
+      shutdown({drain: false});
+    });
+  }
+
+  // The client is gone: the elicitations it never answered are withdrawn, and the worker that asked is told so.
+  function cancelClientRequests() {
+    for (const [id, request] of clientRequests) {
+      clientRequests.delete(id);
+      request.execution.budget.resume();
+      write({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: id, reason: ELICITATION_CANCELLED_SENTENCE}});
+      if (worker === request.worker) request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ok: false, error: ELICITATION_CANCELLED_SENTENCE}));
+    }
+  }
+
   function shutdown({drain}) {
     closing = true;
     if (drain) {
+      if (!draining) {
+        cancelClientRequests();
+        if (execution) drainExecution(execution);
+      }
       draining ??= (async () => {
         await Promise.all([work, ...turns.values()]);
         await Promise.all([stopKernel(), stopWorker()]);

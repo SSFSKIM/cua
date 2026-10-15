@@ -7,7 +7,8 @@
 // Meriyah 7.0.0 (./vendor/meriyah/, scripts/extract-meriyah.mjs); the host's settings are read under owned CUA_REPL_
 // names (CUA_REPL_JS_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST, CUA_REPL_NODE_MODULE_DIRS, CUA_REPL_TRUSTED_RPC_ENABLED),
 // never the vendor's NODE_REPL_ ones; no `exec_redacted_source` diagnostics (NR:diagnostics.js feeds only the vendor's
-// telemetry), no `add_node_module_dir` (the hidden js_add_node_module_dir tool is not a cua surface) and no audio. Every
+// telemetry), no `add_node_module_dir` (the hidden js_add_node_module_dir tool is not a cua surface) and no audio; cua's
+// lifeline watcher (./lifeline.mjs) is added, so a kernel never outlives its supervisor. Every
 // sentence a cell can observe, and the internal binding names, are the vendor's. #120's clean-room rewrite replaces
 // this port before distribution.
 //
@@ -31,6 +32,11 @@ import {
   makeRejectedThenable,
   trackExecBackgroundOperation,
 } from "./worker-runtime.mjs";
+import { watchLifeline } from "./lifeline.mjs";
+
+// cua: a cell busy in synchronous code never lets the kernel read its stdin's end, so a watcher thread ends it once
+// its supervisor is gone (./lifeline.mjs). First, so the setting has left the environment before anything copies it.
+watchLifeline();
 
 const { SourceTextModule, SyntheticModule } = vm;
 const meriyahPromise = import("./vendor/meriyah/meriyah.mjs").then(

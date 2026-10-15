@@ -20,11 +20,12 @@
 // kernel ends, expectedly or not, `reap` (the supervisor's ownedGroupReaper) then removes what it left in the owned
 // group: a process a cell started is reparented when its kernel dies, so no tree leads to it any more.
 import {spawn, execFileSync} from 'node:child_process';
-import {closeSync, constants as fsConstants, mkdtempSync, openSync, rmSync} from 'node:fs';
+import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, rmSync} from 'node:fs';
 import {Socket} from 'node:net';
 import {constants, tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
+import {LIFELINE_ENV} from './lifeline.mjs';
 
 const TAIL_LINES = 20;
 const TAIL_LINE_CHARS = 512;
@@ -173,12 +174,41 @@ export function kernelPipes() {
   }
 }
 
+// The child's lifeline (./lifeline.mjs): a FIFO of this process's own, in a private directory, whose only write end this
+// process keeps (opened close-on-exec, so no child inherits it) until the child is gone -> {setting, unlink(), release()}.
+// The child opens the read end itself, by the path in its setting (CUA_REPL_LIFELINE, `<dev>:<ino>:<path>`, so it reads
+// only that pipe), without blocking: a descriptor inherited at spawn would be put in blocking mode for the child, and a
+// thread blocked in a read keeps its process from exiting. unlink() removes the path once the child is ready (it has
+// opened it by then); release() closes the write end, from when on the child's read finds the pipe's end.
+export function lifelinePipe() {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-lifeline-'));
+  let reader = null;
+  let writer = null;
+  try {
+    const path = join(dir, 'lifeline');
+    execFileSync('mkfifo', ['-m', '600', path], {stdio: 'ignore'});
+    // A write end opens without blocking only while a reader exists; this one goes once the writer is open.
+    reader = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
+    writer = openSync(path, fsConstants.O_WRONLY | fsConstants.O_NONBLOCK);
+    const {dev, ino} = fstatSync(writer, {bigint: true});
+    closeSync(reader);
+    const unlink = () => rmSync(dir, {recursive: true, force: true});
+    return {setting: `${dev}:${ino}:${path}`, unlink,
+      release() { if (writer !== null) { closeSync(writer); writer = null; } unlink(); },
+      get held() { return writer !== null; }};
+  } catch (failure) {
+    for (const fd of [reader, writer]) if (fd !== null) try { closeSync(fd); } catch { /* closed above */ }
+    rmSync(dir, {recursive: true, force: true});
+    throw failure;
+  }
+}
+
 // Starts a kernel child (or the trusted worker, which the same wire and lifecycle serve; `exitSentence` opens its exit
 // diagnostic). `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print plain
 // text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when `stop()`
 // ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
 export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null, reap = () => {},
-  exitSentence = KERNEL_EXIT_SENTENCE}) {
+  exitSentence = KERNEL_EXIT_SENTENCE, lifelines = lifelinePipe}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
@@ -186,9 +216,11 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   let spawnError = null;
   let child = null;
   let fifos = null;
+  let lifeline = null;
   try {
     fifos = pipes?.() ?? null;
-    child = spawnProcess(command, args, {env, cwd, stdio: fifos?.child ?? ['pipe', 'pipe', 'pipe']});
+    lifeline = lifelines?.() ?? null;
+    child = spawnProcess(command, args, {env: lifeline ? {...env, [LIFELINE_ENV]: lifeline.setting} : env, cwd, stdio: fifos?.child ?? ['pipe', 'pipe', 'pipe']});
   } catch (error) {
     spawnError = error;
   } finally {
@@ -211,6 +243,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     if (ended || !line.trim()) return;
     let message;
     try { message = JSON.parse(line); } catch { return; }
+    if (message?.type === 'runtime_ready') lifeline?.unlink();
     if (message && typeof message === 'object') onMessage(message);
   });
 
@@ -226,6 +259,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   async function finish() {
     ended = true;
     if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
+    lifeline?.release();
     reap();
     await within(stderrClosed, EXIT_GRACE_MS);
     for (const stream of [stdin, stdout, stderr]) stream?.destroy();

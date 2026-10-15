@@ -98,7 +98,7 @@ test('during the drain a new elicitation is not asked of the departed client: th
   assert.deepEqual(host.serverRequests.filter(m => m.method === 'elicitation/create' && m.params.message === 'late'), []);
 });
 
-test('EOF while the kernel never reports its result (its event loop blocked during the after-code hooks): the drain gives up at its deadline, answers that the host is shutting down and stops the children', own, async t => {
+test('EOF while the kernel never reports its result (its event loop blocked during the after-code hooks): once its hooks answered, the drain gives the kernel DRAIN_MARGIN_MS, then answers that the host is shutting down and stops the children', own, async t => {
   const host = await startHost(t, {node, services: {hooks: `${SLEEP}export async function handleRpc() {
     nodeRepl.addAfterSubmittedCodeHook({timeoutMs: 500, run: () => sleep(300)});
     return 'registered';
@@ -106,12 +106,45 @@ test('EOF while the kernel never reports its result (its event loop blocked duri
   assert.deepEqual(texts(await host.js(rpc('hooks', {}))), ['"registered"']);
   const cell = host.js('setTimeout(() => { for (;;) {} }, 100); nodeRepl.write("x")');
   await delay(800);
-  assert.equal(await state(cell), 'pending', 'the budget ended with the submitted code, and the kernel never answers');
+  assert.equal(await state(cell), 'pending', 'the budget ended with the submitted code, the hooks answered, and the kernel never answers');
   const {elapsed, status} = await endInput(host);
   assert.deepEqual(status, {code: 0, signal: null});
   const result = await cell;
   assert.deepEqual({text: texts(result), isError: result.isError}, {text: [SHUTTING_DOWN_SENTENCE], isError: true});
-  const deadline = 500 + TURN_MARGIN_MS + DRAIN_MARGIN_MS;
-  assert.ok(elapsed >= deadline - 300 && elapsed < deadline + 2500, `the hooks' deadline and the margins, then forced (${Math.round(elapsed)} ms)`);
+  assert.ok(elapsed >= DRAIN_MARGIN_MS - 300 && elapsed < DRAIN_MARGIN_MS + 2500, `the margin after the hooks' answer, then forced (${Math.round(elapsed)} ms)`);
   assert.match(host.stderr(), /EOF drain did not finish within \d+ ms; stopping/);
+});
+
+// A service whose `register` adds an after-code hook that runs `ms` and declares `timeoutMs`.
+const LATE_HOOK_SERVICE = {hooks: `${SLEEP}export async function handleRpc(request) {
+  if (request.op === 'warm') return 'warm';
+  nodeRepl.addAfterSubmittedCodeHook({timeoutMs: request.timeoutMs, run: async () => { await sleep(request.ms); nodeRepl.write('hook done'); }});
+  return 'registered';
+}`};
+const lateHookCell = (ms, timeoutMs) => `await new Promise(r => setTimeout(r, 300)); ${rpc('hooks', {op: 'register', ms, timeoutMs})} nodeRepl.write(" done");`;
+
+test('a hook registered after the drain began keeps its own declared bound: the cell completes, not shut down at a deadline taken at EOF', own, async t => {
+  const host = await startHost(t, {node, services: LATE_HOOK_SERVICE});
+  assert.deepEqual(texts(await host.js(rpc('hooks', {op: 'warm'}))), ['"warm"'], 'a warm worker with no hooks');
+  const cell = host.js(lateHookCell(5500, 6500), {timeoutMs: 1000});
+  await delay(100);
+  const {elapsed, status} = await endInput(host);
+  assert.deepEqual(status, {code: 0, signal: null});
+  const result = await cell;
+  assert.deepEqual({text: texts(result), isError: result.isError}, {text: ['"registered" donehook done'], isError: false});
+  assert.ok(elapsed >= 5500, `the 5,500 ms hook ran to its end (${Math.round(elapsed)} ms)`);
+  assert.doesNotMatch(host.stderr(), /EOF drain did not finish/);
+});
+
+test('a worker first started during the drain gets its hooks\' declared bound too', own, async t => {
+  const host = await startHost(t, {node, services: LATE_HOOK_SERVICE});
+  assert.deepEqual(texts(await host.js('nodeRepl.write("kernel warm")')), ['kernel warm'], 'no worker yet');
+  const cell = host.js(lateHookCell(5500, 7000), {timeoutMs: 3000});
+  await delay(100);
+  const {elapsed, status} = await endInput(host);
+  assert.deepEqual(status, {code: 0, signal: null});
+  const result = await cell;
+  assert.deepEqual({text: texts(result), isError: result.isError}, {text: ['"registered" donehook done'], isError: false});
+  assert.ok(elapsed >= 5500, `the 5,500 ms hook ran to its end (${Math.round(elapsed)} ms)`);
+  assert.doesNotMatch(host.stderr(), /EOF drain did not finish/);
 });

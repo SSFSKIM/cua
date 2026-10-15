@@ -286,16 +286,17 @@ export const SCENARIOS = [
         await items[0].textContent(), await items[1].innerText(), await items[0].getAttribute('href'), await items[1].getAttribute('href'),
         await items[1].locator('span').textContent(), await items[0].locator('span').innerText(),
         await errorOf(items[0].locator('em').textContent()),
+        await items[1].locator('em').innerText(),
         await items[0].click().then(() => 'clicked'),
         await items[1].textContent(),
-        await items[0].locator('em').innerText(),
       ];
     },
     check(record) {
       const reads = commands(record).filter(c => c.type === 'playwright_locator_read_all');
-      assert.deepEqual(reads.map(c => [c.selector, c.relative_selector]), [['li', undefined], ['li', 'span'], ['li', 'em'], ['li', undefined], ['li', 'em']]);
+      assert.deepEqual(reads.map(c => [c.selector, c.relative_selector]), [['li', undefined], ['li', 'span'], ['li', 'em'], ['li', 'em'], ['li', undefined]],
+        'the failed em read is retried with a new read before anything clears the cache');
       assert.deepEqual(commands(record).filter(c => c.type === 'playwright_locator_click').map(c => c.selector), ['li >> nth=0']);
-      assert.deepEqual(record.result, ['One 1', 'two-1', '/one', null, null, 'one-2', {name: 'Error', message: 'read failed'}, 'clicked', null, 'one-5']);
+      assert.deepEqual(record.result, ['One 1', 'two-1', '/one', null, null, 'one-2', {name: 'Error', message: 'read failed'}, 'two-4', 'clicked', null]);
     },
   },
   {

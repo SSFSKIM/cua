@@ -50,9 +50,11 @@
 //   bounds itself: the elicitations the client never answered are withdrawn (`notifications/cancelled`) and fail in
 //   the worker with ELICITATION_CANCELLED_SENTENCE, new ones fail the same way without being asked, and every
 //   admitted execution's budget suspensions end (no new ones begin), so a cell whose worker went silent inside one runs
-//   out of what was left of its budget. Each admitted execution has a drain deadline as well, its budget left plus its
-//   hooks' bound and DRAIN_MARGIN_MS; one still unsettled then (a kernel that never reports its result) takes the
-//   forced path. A live connection's suspensions are untouched.
+//   out of what was left of its budget. Each admitted execution has a drain deadline as well, set from where it stands
+//   and set again as it moves on: its budget left while its code runs, the bound of its after-code hooks while they
+//   run (the bound the host sends them under, so hooks registered after EOF keep theirs), then DRAIN_MARGIN_MS on top.
+//   One still unsettled then (a kernel that never reports its result) takes the forced path. A live connection's
+//   suspensions are untouched.
 //
 // What crosses the host between the children and the client is re-serialized with its object keys sorted (arrays kept
 // in order), as the vendor's serde maps do: request meta, service requests and results, elicitation schemas and
@@ -241,6 +243,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         if (current) {
           current.durationMs = typeof message.execution_duration_ms === 'number' ? message.execution_duration_ms : null;
           current.budget.stop();
+          armDrainDeadline(current);
         }
         return;
       case 'exec_result':
@@ -291,7 +294,11 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!sent) {
       self.pending.delete(message.id);
       answer({ok: false, error: TRUSTED_EXIT_SENTENCE});
-    } else if (hooks) boundAnswer(self, message.id, 'run_hooks', self.deadlines.afterCode + TURN_MARGIN_MS);
+    } else if (hooks) {
+      const limit = boundAnswer(self, message.id, 'run_hooks', self.deadlines.afterCode + TURN_MARGIN_MS);
+      current.hooks = {id: message.id, until: performance.now() + limit};
+      armDrainDeadline(current);
+    }
   }
 
   function launchWorker(policy) {
@@ -363,6 +370,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       workerEnded(self, {expected: true, diagnostic: ''});
       stopping(self.child);
     }));
+    return limit;
   }
   const answered = (self, id) => { self.bounds.get(id)?.(); self.bounds.delete(id); };
 
@@ -374,7 +382,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.queue.length = 0;
     self.relay.closeAll();
     // The service requests it held fail for whichever kernel still waits on them; its turn handlers are over.
-    for (const [id, kernelSelf] of self.pending) kernelSelf.child.send({type: 'trusted_service_response', id, ok: false, error: sentence, output: [], content_items: []});
+    for (const [id, kernelSelf] of self.pending) {
+      kernelSelf.child.send({type: 'trusted_service_response', id, ok: false, error: sentence, output: [], content_items: []});
+      hooksAnswered(id);
+    }
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
@@ -407,6 +418,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         if (!kernelSelf) return;
         self.pending.delete(message.id);
         answered(self, message.id);
+        hooksAnswered(message.id);
         // Only to the kernel that asked, and only while it lives: a later generation never sees an earlier one's reply.
         if (kernel === kernelSelf) kernelSelf.child.send(sortedJson(message));
         return;
@@ -629,13 +641,29 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // deadline the drain gives up on it.
   function drainExecution(current) {
     current.budget.endSuspensions();
-    const hooks = worker ? worker.deadlines.afterCode + TURN_MARGIN_MS + (worker.ready ? 0 : readyTimeoutMs * START_ATTEMPTS) : 0;
-    const ms = current.budget.remaining + hooks + DRAIN_MARGIN_MS;
+    armDrainDeadline(current);
+  }
+
+  // (Re)sets a draining execution's deadline from where it stands: the budget left while its code runs (the budget
+  // ends that phase itself), the bound its after-code hooks were sent under while they run, then DRAIN_MARGIN_MS for
+  // the kernel to report. Each phase sets it once, so the drain stays bounded.
+  function armDrainDeadline(current) {
+    if (!closing || current.settled) return;
+    const hooks = current.hooks && !current.hooks.answered ? Math.max(0, current.hooks.until - performance.now()) : 0;
+    const ms = Math.ceil(current.budget.remaining + hooks + DRAIN_MARGIN_MS);
+    current.cancelDrainDeadline?.();
     current.cancelDrainDeadline = timer(ms, () => {
       if (current.settled) return;
       log(`EOF drain did not finish within ${ms} ms; stopping`);
       shutdown({drain: false});
     });
+  }
+
+  // The worker answered (or, ending, failed) the execution's after-code hooks: the kernel has only its result to send.
+  function hooksAnswered(id) {
+    if (!execution?.hooks || execution.hooks.id !== id) return;
+    execution.hooks.answered = true;
+    armDrainDeadline(execution);
   }
 
   // The client is gone: the elicitations it never answered are withdrawn, and the worker that asked is told so.

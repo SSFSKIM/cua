@@ -11,6 +11,7 @@ import {validateAttestations} from './repl-parity/compare.mjs';
 import {StdioClient,textOf} from './browser-parity/mcp.mjs';
 import {attest,runScenario} from './browser-parity/runner.mjs';
 import {compareRuns} from './browser-parity/compare.mjs';
+import {loadTraceAllowances} from './browser-parity/trace-tolerance.mjs';
 import {miniPrepareCommand,serveCommand,localCuaServeCommand,root,execute,remoteCommand,quote} from './browser-parity/topology.mjs';
 import {prepareCapabilityHome} from './browser-parity/capability-home.mjs';
 import {startCapabilityHost} from '../test/browser-parity/capability-host.mjs';
@@ -55,17 +56,19 @@ export function declarePending(scenarios,{pending,reason}={}) {
   return {scenarios:scenarios.map(s=>ids.includes(s.id)?{...s,skip:PENDING_PREFIX+reason.trim()}:s),pending:{cases:ids,reason:reason.trim()}};
 }
 export const pendingCases=rows=>rows.filter(r=>typeof r.skip==='string'&&r.skip.startsWith(PENDING_PREFIX)).map(r=>({case:r.case,reason:r.skip.slice(PENDING_PREFIX.length)}));
-// REPL-host allowances (axis 'repl-host', test/browser-parity/repl-host-expected-differences.json) are for one comparison:
-// a vendor-host run against a cua-host run of the same service, both attested (main validates the attestations of any
-// run that names its host). Vendor-against-vendor runs never use them, and a host comparison takes no service departures
-// (entries with no axis); the service axis keeps its entries as before.
+// Host trace tolerances are derived from committed vendor-against-vendor evidence, and apply only to a vendor-host
+// versus cua-host comparison of the same service. Service departures never apply across the host axis.
 export function allowancesFor(ma,mb,expected) {
-  if(expected.some(e=>e.axis!==undefined&&e.axis!=='repl-host'))throw new Error('Invalid expected-differences axis');
   const hosts=[ma.host,mb.host];
   const hostPair=ma.service===mb.service&&hosts.includes('vendor')&&hosts.includes('cua');
-  const hostEntries=expected.filter(e=>e.axis==='repl-host').length;
-  if(hostEntries&&!hostPair)throw new Error('REPL-host allowances apply only to a vendor-host run against a cua-host run of the same service');
-  if(hostPair&&hostEntries!==expected.length)throw new Error('A REPL-host comparison takes only REPL-host allowances');
+  if(expected?.axis==='repl-host'&&!Array.isArray(expected)) {
+    if(!hostPair)throw new Error('REPL-host allowances apply only to a vendor-host run against a cua-host run of the same service');
+    return loadTraceAllowances(expected,{targetMetas:[ma,mb]});
+  }
+  if(!Array.isArray(expected))throw new Error('Invalid expected-differences entry');
+  if(expected.some(e=>e.axis!==undefined&&e.axis!=='repl-host'))throw new Error('Invalid expected-differences axis');
+  if(expected.some(e=>e.axis==='repl-host'))throw new Error('REPL-host trace allowances must be derived from committed vendor variance');
+  if(hostPair&&expected.length)throw new Error('A REPL-host comparison takes only REPL-host allowances');
   return expected;
 }
 export const CAPABILITY_GROUP='capability-host/';
@@ -97,7 +100,7 @@ export async function main(argv=process.argv.slice(2)) {
     // subset a case or cell missing from either run is still a cardinality difference.
     const inSubset=values.scenarios?scenarioMatcher(values.scenarios):null;
     const rows=dir=>inSubset?jsonl(dir).filter(r=>typeof r.case==='string'&&inSubset(`${r.case}.mjs`)):jsonl(dir);
-    const result=compareRuns(rows(a),rows(b),{expected});
+    const result=compareRuns(rows(a),rows(b),{expected,requireTraceParity:ma.host!==mb.host});
     for(const d of result.differences)console.log(JSON.stringify(d));
     const pending=[...new Map([...pendingCases(rows(a)),...pendingCases(rows(b))].map(p=>[p.case,p])).values()];
     for(const p of pending)console.log(JSON.stringify({kind:'pending',...p}));

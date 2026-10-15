@@ -1,6 +1,15 @@
+import {augmentLocatorContracts,augmentCapabilityLocatorContracts} from '../../../scripts/repl-parity/locator-contracts.mjs';
+import liveSecrets from './live-secrets.mjs';
+import sharedFacade from './browser-facade-behaviors.mjs';
+import {bindMacSupplements} from '../../../scripts/repl-parity/binder-coverage.mjs';
+import capabilityApi from './capability-api.mjs';
+import docsProfiles from './docs-profiles.mjs';
+import binder from './binder.mjs';
+import browserMembers from './browser-members.mjs';
+import facadeApi from './facade-api.mjs';
 import services from './services.mjs';
 import cells from './cells.mjs';
 import boundaries from './boundaries.mjs';
 import secrets from './secrets.mjs';
 import {validateRegistry} from '../../../scripts/repl-parity/registry.mjs';
-export default validateRegistry([...cells,...boundaries,...secrets,...services]);
+export default validateRegistry([...cells,...boundaries,...secrets,...services,...facadeApi,...augmentLocatorContracts(browserMembers),...bindMacSupplements(binder,sharedFacade),...sharedFacade,...docsProfiles,...augmentCapabilityLocatorContracts(capabilityApi),...liveSecrets]);

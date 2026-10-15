@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "differences": [],
+  "expected": [],
+  "cases": 290,
+  "cells": 1072,
+  "recordedCases": 290,
+  "vendorDefects": [],
+  "allAssertionsPassed": true,
+  "doubleCases": 0
+}

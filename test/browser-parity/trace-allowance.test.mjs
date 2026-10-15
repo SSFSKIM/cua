@@ -1,11 +1,11 @@
-// A trace allowance (expected-differences, kind 'trace') may name the CDP methods it covers and the largest count change
-// it accepts; the host-comparison allowance for actions/wait-for's polling does both (M2 task 3 review).
+// The derived host-comparison allowance for actions/wait-for remains bounded to its recorded polling methods.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {compareRuns} from '../../scripts/browser-parity/compare.mjs';
+import {loadTraceAllowances} from '../../scripts/browser-parity/trace-tolerance.mjs';
 
-const expected = JSON.parse(readFileSync(new URL('./repl-host-expected-differences.json', import.meta.url), 'utf8'));
+const expected = loadTraceAllowances(JSON.parse(readFileSync(new URL('./repl-host-expected-differences.json', import.meta.url), 'utf8')));
 const trace = counts => Object.entries(counts).flatMap(([cdp, n]) => Array.from({length: n}, () => ({kind: 'request', method: 'executeCdp', cdp})));
 const run = counts => [
   {case: 'actions/wait-for', cell: 'visible', ok: true, value: 'ready', trace: trace(counts)},

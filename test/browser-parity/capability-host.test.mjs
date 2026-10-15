@@ -109,3 +109,17 @@ test('a home without an installed runtime is refused', () => {
     assert.throws(() => prepareCapabilityHome({source: source.dir}), /no installed runtime/);
   } finally { source.cleanup(); }
 });
+
+test('optional synthetic user tabs are visible and claimable without seeding ordinary capability runs', async t => {
+  const scratch=shortScratch('cua-cap-user-');
+  const host=await startCapabilityHost({home:scratch.dir,userTabs:[{url:`${CAPABILITY_ORIGIN}/user`,title:'Capability user fixture'}]});
+  t.after(async()=>{await host.close();scratch.cleanup();});
+  const call=serviceOn(t,host.socketPath);
+  const browser=await call('get_browser',{id:'chrome'});
+  const result=await call('browser_user_open_tabs',{browser_id:browser.id});
+  assert.equal(result.tabs.length,1);
+  assert.equal(result.tabs[0].title,'Capability user fixture');
+  assert.equal(result.tabs[0].url,`${CAPABILITY_ORIGIN}/user`);
+  const claimed=await call('browser_user_claim_tab',{browser_id:browser.id,tab_id:result.tabs[0].id});
+  assert.equal(claimed.id,result.tabs[0].id);
+});

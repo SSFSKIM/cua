@@ -539,6 +539,12 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Three M3 task 4 findings are settled as follows.
+  - **`REPL_HOST_VERSION` stays 0.3.0 through M3.** M4 bumps it once, since M4 changes the host again (ApprovalStorage, the Linux native path), and records all M4 evidence at the bumped version. M3's evidence tells the M2 and M3 0.3.0 hosts apart by attested source commit. Nothing ships to users before M5's default switch.
+  - **Browser numbering race (M4 oracle input).** The browser service numbers browsers in the order backends answer, so with two bound mini profiles (ssfs, school) `browser-docs-before-state` can flip on either host. The harness will map browser ids by backend/profile identity, as a declared schema-known dynamic id, rather than by creation order. Until then, M3 records docs-profiles first and keeps the race runs as labelled diagnostics.
+  - **`actions/locators` polling counts (M4/M5 oracle input).** These drift by one or two between vendor runs, and no vendor-against-vendor calibration pair covers the case. The derived tolerance will be recalibrated from at least two vendor-against-vendor pairs, taking the union of spreads, before M5's repeat runs.
+  Rationale: One version bump per host change avoids recording all the evidence twice. The two oracle issues are vendor-side nondeterminism that the oracle must absorb mechanically, never with hand allowances.
+  Date/Author: 2026-10-15, plan-executor rulings on M3 task 4's concerns.
 - Decision: M3 task 1, the oracle, as built.
   - **Suites:** `api`, with 290 cases and 1,072 cells; `secrets-live`, 25 cases; and `docs-profiles`, 12 cases. The M0 double rows stay in `secrets`, labelled fake.
   - **Proof classes**, recorded per case: Chrome-live, real-service, mixed, boundary-double, hidden-boundary and binder-double.

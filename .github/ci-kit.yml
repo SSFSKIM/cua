@@ -1,0 +1,25 @@
+# cua's CI gates, run by ci-kit (https://github.com/SSFSKIM/ci-kit/blob/main/docs/adopting.md): on pull requests, and
+# from any worktree with `ci-gate`. Both gates run on GitHub's hosted macOS runner, free for a public repo; an ubuntu
+# leg waits for the Linux fixes in #142. Live checks (verify.mjs, accept-native, accept-chrome) need the real $CUA_HOME,
+# the native helper and the GUI, so they stay local.
+version: 1
+setup:
+  node: "24"          # Node 22 skips the own REPL host's tests
+  install: npm ci
+  fetch_depth: 0      # browser-parity and repl-parity tests read committed evidence revisions
+gates:
+  - name: test
+    run: npm test
+    lane: hosted-macos
+    timeout: 20
+  - name: plugin
+    lane: hosted-macos
+    timeout: 15
+    # The claude CLI install hung once for 6 minutes on a hosted runner: each attempt is cut at 3 minutes, 3 attempts.
+    run: |
+      for attempt in 1 2 3; do
+        perl -e 'alarm 180; exec @ARGV' npm i -g @anthropic-ai/claude-code && break
+        [ "$attempt" = 3 ] && exit 1
+      done
+      claude plugin validate .
+      npm run test:mods

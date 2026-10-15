@@ -20,9 +20,17 @@ test('native lane refuses local or macOS execution and assigns unique owned wind
 test('a no-op native drag or scroll cannot pass by returning undefined and leaving the owned window unchanged',()=>{
  const end={isError:false,structuredContent:{status:'ended'}};
  const samples={
+  'native/target-app-decorated-tab/click':['undefined',true],
   'native/target-app-decorated-tab/drag':['undefined',true],
   'native/app/scroll':['undefined',{error:'Linux scroll accepts { pixels }, not pages.'},...Array(4).fill({error:'pixels must be a positive finite number.'})],
   'native/target-app-decorated-tab/scroll':['undefined',{error:'Linux scroll accepts { pixels }, not pages.'},...Array(4).fill({error:'pixels must be a positive finite number.'})],
  };
  for(const [id,values] of Object.entries(samples))assert.throws(()=>scenarios.find(s=>s.id===id).assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(values)}]},end]}),id);
+});
+
+test('Linux full snapshots may change between observations without becoming diffs',async()=>{
+ const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate');
+ const filename='owned-fixture.txt',a=`Accessibility source: at_spi\n0 container ${filename}\n 1 text (focused, settable)\n 2 button Save`,b=a.replace('Save','Save document');let n=0,value;
+ await new (Object.getPrototypeOf(async()=>{}).constructor)('app','nativeFilename','nativeSay',scenario.cells[0].code)({getAXState:async()=>n++?b:a},filename,v=>{value=v;});
+ assert.equal(scenario.assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(value)}]},{isError:false,structuredContent:{status:'ended'}}]}).ok,true);
 });

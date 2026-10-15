@@ -21,3 +21,9 @@ export async function observeScroll(app,readText){
  await app.pressKey('ctrl+Home');const before=await witness();await app.pressKey('ctrl+Home');
  await app.scroll([100,150],'down',{pixels:400});const after=await witness();return {before,after};
 }
+export async function observeClick(app,readText){
+ await app.pressKey('ctrl+Home');const before=await readText();
+ const result=await app.click([100,150],{mouseButton:'left',clickCount:1});await app.pressKey('Delete');const after=await readText();
+ let index=0;while(index<after.length&&before[index]===after[index])index++;
+ await app.pressKey('ctrl+z');return {returnedUndefined:result===undefined,removed:before.length-after.length,index,line:before.slice(0,index).split('\n').length,restored:await readText()===before};
+}

@@ -107,7 +107,9 @@ export async function main(argv=process.argv.slice(2)){
   await pool.close();for(const resource of resources.reverse())await resource.close();resources.length=0;Object.assign(meta,pool.metadata(),{complete:true});validateAttestations(meta);
  }catch(error){meta.error=error.message;throw error;}
  // A failed run's cleanup must not mask why it failed: meta.error keeps the cause, and a cleanup failure names both.
- finally{try{if(!meta.complete)await pool.close();for(const resource of resources.reverse())await resource.close();}catch(cleanup){if(meta.error)throw new Error(`${meta.error} (then cleanup: ${cleanup.message})`);throw cleanup;}finally{Object.assign(meta,pool.metadata());save(join(out,'meta.json'),meta);}}
+ // Every owned resource is closed even when an earlier close fails, so a failed run never leaves device processes behind.
+ finally{const cleanup=[];try{if(!meta.complete)try{await pool.close();}catch(e){cleanup.push(e.message);}for(const resource of resources.reverse())try{await resource.close();}catch(e){cleanup.push(e.message);}}finally{Object.assign(meta,pool.metadata());save(join(out,'meta.json'),meta);}
+  if(cleanup.length){const failed=cleanup.join('; ');throw new Error(meta.error?`${meta.error} (then cleanup: ${failed})`:failed);}}
  console.log(JSON.stringify({out,cases:selected.length,pending:pending.length,pendingEnvironmentCells:meta.pendingEnvironment.flatMap(d=>d.cases).length,pendingObligations:meta.pendingObligations,complete:meta.complete,assertions:failed?'FAIL':meta.vendorDefects?.length?'RECORDED_VENDOR_DEFECT':'PASS',coveredCases:meta.coveredCases,recordedVendorDefects:meta.vendorDefects?.length??0}));if(failed)process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.error(e.message);process.exitCode=1;});

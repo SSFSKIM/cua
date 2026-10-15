@@ -8,7 +8,7 @@ import {prepareLiveSecretsLaunch} from './serve-live-secrets.mjs';
 const ref='{{secret:PARITY_SYNTHETIC}}';
 const rpc=(s,method,params)=>s.handleRpc({method,params});
 const fill=(method='execute',value=ref)=>({method,params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'7',selector:'#fixture',value,replace:true}});
-async function scratch(t){const capabilityHome=await realpath(await mkdtemp(join(tmpdir(),'cua-cap-')));const userHome=join(capabilityHome,'home'),runDirectory=join(capabilityHome,'run','unit'),workerHome=join(runDirectory,'home');await mkdir(userHome);await mkdir(workerHome,{recursive:true});t.after(()=>rm(capabilityHome,{recursive:true,force:true}));return {capabilityHome,userHome,runDirectory,workerHome};}
+async function scratch(t,prefix='cua-cap-'){const capabilityHome=await realpath(await mkdtemp(join(tmpdir(),prefix)));const userHome=join(capabilityHome,'home'),runDirectory=join(capabilityHome,'run','unit'),workerHome=join(runDirectory,'home');await mkdir(userHome);await mkdir(workerHome,{recursive:true});t.after(()=>rm(capabilityHome,{recursive:true,force:true}));return {capabilityHome,userHome,runDirectory,workerHome};}
 async function configured(t,tail){const dirs=await scratch(t),s=await createLiveSecretOracle({...dirs,userHome:dirs.workerHome});await rpc(s,'secret.configure',{id:`secrets/browser-live/${tail}`});return s;}
 // These are unit tests of the recorder/control boundary, not live host/client evidence.
 async function exercise(s,request){let error;try{await s.handleRpc(request);}catch(e){error=e;}return rpc(s,'secret.observe',{rejected:!!error,message:error?.message,stack:error?.stack,cause:String(error?.cause),serialized:JSON.stringify(error),messageOnly:true});}
@@ -113,4 +113,15 @@ test('launch refuses a symlinked session before creating HOME through it',async 
  assert.throws(()=>prepareLiveSecretsLaunch(launch,{host:'vendor',...dirs,remote:true}),/symlinked scratch/);
  assert.deepEqual(await readdir(dirs.userHome),[]);
  await assert.rejects(assertScratchHome({...dirs,runDirectory:cwd,userHome:join(cwd,'home')}));
+});
+test('both live-secret guards accept the capability home of a run-labelled parity scratch prefix, and no other name',async t=>{
+ const launchFor=dirs=>({command:'node',args:['serve'],cwd:dirs.runDirectory,env:{CUA_REPL_TRUSTED_SERVICES:JSON.stringify({browser:'/production/browser.mjs',sky:'/production/sky.mjs'}),CUA_REPL_TRUSTED_CODE_PATHS:'/production'}});
+ const labelled=await scratch(t,'cua-m4t3-cap-');
+ assert.equal(await assertScratchHome({...labelled,userHome:labelled.workerHome}),labelled.workerHome);
+ prepareLiveSecretsLaunch(launchFor(labelled),{host:'cua',...labelled,remote:true,ownClient:'/own/browser-client.mjs'});
+ for(const prefix of ['cua-m4t3-other-','cuax-cap-']){
+  const other=await scratch(t,prefix);
+  await assert.rejects(assertScratchHome({...other,userHome:other.workerHome}),/scratch HOME/,prefix);
+  assert.throws(()=>prepareLiveSecretsLaunch(launchFor(other),{host:'cua',...other,remote:true,ownClient:'/own/browser-client.mjs'}),/capability scratch HOME/,prefix);
+ }
 });

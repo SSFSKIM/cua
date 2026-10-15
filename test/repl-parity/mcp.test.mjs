@@ -27,3 +27,11 @@ test('harness cleanup has its own configurable wait without changing production 
  const short=new StdioClient({...command,closeTimeoutMs:20});assert.equal((await short.close()).signal,'SIGKILL');
  const enough=new StdioClient({...command,closeTimeoutMs:1000});assert.equal((await enough.close()).code,0);
 });
+
+test('closing the attested connections closes every one before reporting those that failed',async()=>{
+ const {AttestedConnections}=await import('../../scripts/repl-parity/runner.mjs');const pool=new AttestedConnections('cua'),closed=[];
+ const fake=(name,code)=>({connection:name,client:{close:async()=>{closed.push(name);return {code,signal:null};}}});
+ pool.clients.push(fake('connection-1',0),fake('connection-2',1),fake('connection-3',0));
+ await assert.rejects(pool.close(),/Harness connection cleanup failed: connection-2 \(1\)$/);
+ assert.deepEqual(closed,['connection-1','connection-2','connection-3']);
+});

@@ -539,6 +539,30 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M4 runs as three tasks in one PR, against the cua-linux VM.
+  - **Task 1 (astra, sibling worktree, in parallel): the M4 oracle.**
+    - Vendor-side executable `native/` Linux cases for the 51 pending M4 obligations: bind, observe AX, act, verify, screenshot and end_task against harness-owned gedit windows, plus unsupported operations and observable vendor errors. Native secret rows cover the text methods.
+    - The browser `api` rows on Linux.
+    - The Linux live expiry of the nativePipe connect timeout, owed since M2.
+    - Browser ids mapped by backend/profile identity as a declared schema-known dynamic id. This is binding, carried from M3.
+    - Vendor `--suite all` controls on cua-linux.
+  - **Task 2 (opus): the port side.**
+    - The ApprovalStorage caller audit (`config`/`readToml`/`writeToml`), with only the needed subset implemented or an explicit no-callers verdict.
+    - The Linux native route through the owned worker: the unchanged Sky service and `sky_linux` as a supervised stdio child, with session cleanup.
+    - Native secret substitution.
+    - The single `REPL_HOST_VERSION` bump, binding from M3.
+  - **Task 3 (opus, after both are reviewed): the live runs.**
+    - Own `--suite all` on cua-linux against the vendor control.
+    - Three own native-baseline runs, then `compare` against M0's vendor baseline.
+    - The unchanged `linux-native`, `linux-chrome` and `linux-chrome-features` runners under host-attesting wrappers.
+  - **Binding:**
+    - `CUA_NODE` reaches the VM only through the harness's own command environment.
+    - The VM's `~/cua` and `~/cua-m4` stay untouched.
+    - Only harness-owned gedit windows are used, and the X session environment is used.
+    - Profile `me`.
+  - Locator polling recalibration from two or more vendor pairs happens before M5's repeats.
+  Rationale: Same oracle/subject separation as M0–M3. The three carried items are scheduled where their producers live.
+  Date/Author: 2026-10-15, plan-executor M4 pre-flight, with the session's post-merge instruction.
 - Decision: Three M3 task 4 findings are settled as follows.
   - **`REPL_HOST_VERSION` stays 0.3.0 through M3.** M4 bumps it once, since M4 changes the host again (ApprovalStorage, the Linux native path), and records all M4 evidence at the bumped version. M3's evidence tells the M2 and M3 0.3.0 hosts apart by attested source commit. Nothing ships to users before M5's default switch.
   - **Browser numbering race (M4 oracle input).** The browser service numbers browsers in the order backends answer, so with two bound mini profiles (ssfs, school) `browser-docs-before-state` can flip on either host. The harness will map browser ids by backend/profile identity, as a declared schema-known dynamic id, rather than by creation order. Until then, M3 records docs-profiles first and keeps the race runs as labelled diagnostics.

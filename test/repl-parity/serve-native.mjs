@@ -12,7 +12,7 @@ if(process.env.CUA_PARITY_REMOTE!=='1'||process.platform!=='linux')throw Error('
 const source=process.env.CUA_HOME,host=process.env.CUA_REPL_HOST,facts=executionFacts({source});
 assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
 const name=process.env.CUA_PARITY_NATIVE_FILENAME;if(!/^cua-m4-[a-f0-9-]{36}\.txt$/.test(name??''))throw Error('Native fixture requires a unique owned filename');
-const scratch=prepareCapabilityHome({source,prefix:'cua-m4t1-cap-'}),file=join(scratch.userHome,name);
+const scratch=prepareCapabilityHome({source,prefix:(process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-m4t1-')+'cap-'}),file=join(scratch.userHome,name);
 let child,connection,exited;
 try{
  const mode=process.env.CUA_PARITY_NATIVE_MODE;if(!['blank','drag','scroll'].includes(mode))throw Error('Unknown native fixture mode');

@@ -66,3 +66,20 @@ test('the serve detector matches the command line serveCommand launches, and not
   const shell = execFileSync('/bin/sh', ['-c', `printf '%s\\n' 'node /Users/someone/cua-parity/bin/cua.mjs serve' | grep -cE '${servePattern('/Users/someone/cua-parity')}'`], {encoding: 'utf8'});
   assert.equal(shell.trim(), '1');
 });
+
+test('the own host\'s Node reaches the serve only through its command environment: absolute, and for the cua host only', () => {
+  const node = '/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node';
+  const at = {device: 'cua-linux', checkout: '/home/admin/Developer/GitHub/cua-parity', home: '/home/admin/.local/share/cua', platform: 'linux', display: ':0'};
+  const {args} = serveCommand({...at, host: 'cua', node});
+  assert.match(args[3], /CUA_REPL_HOST=cua CUA_NODE='\/home\/admin\/\.local\/share\/cua-parity-node\/node-v24\.18\.0-linux-arm64\/bin\/node' CUA_SHIM_SURFACES=computer /);
+  // The proxy itself stays on the device's node; only the own host's executable is named.
+  assert.match(args[3], / node '\/home\/admin\/Developer\/GitHub\/cua-parity\/bin\/cua\.mjs' serve$/);
+  assert.throws(() => serveCommand({...at, host: 'vendor', node}), /--node names the own host's Node; the vendor host uses its pinned one/);
+  assert.throws(() => serveCommand({...at, host: 'cua', node: 'bin/node'}), /absolute path/);
+  assert.throws(() => serveCommand({...at, host: 'cua', node: "/x'; rm -rf ~; '"}), /absolute path/);
+  const script = preflightScript({host: 'cua', display: ':0', node});
+  assert.match(script, /ownNode/);
+  assert.ok(script.includes(JSON.stringify(node).replace(/'/g, "'\\''")));
+  assert.doesNotMatch(preflightScript({host: 'cua', display: ':0'}), /cua-parity-node/);
+  assert.throws(() => preflightScript({host: 'vendor', display: ':0', node}), /vendor host uses its pinned one/);
+});

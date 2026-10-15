@@ -1,11 +1,18 @@
 import {discoverDesktopEnvironment} from './desktop.mjs';
 import {remoteCommand,quote,root,execute,miniPrepareCommand} from '../browser-parity/topology.mjs';
 export {root,execute,quote,remoteCommand};
+// The prefix of every scratch path the device side creates under its TMPDIR, so a run cleans up and audits only its
+// own: CUA_PARITY_SCRATCH_PREFIX in the harness's environment (a run's label, such as cua-m4t3-), else M4 task 1's.
+export function parityScratchPrefix(env){
+ const prefix=env.CUA_PARITY_SCRATCH_PREFIX??'cua-m4t1-';
+ if(!/^cua-[a-z0-9]+(-[a-z0-9]+)*-$/.test(prefix))throw new Error(`Invalid parity scratch prefix ${JSON.stringify(prefix)}: lower-case cua-<label>- only`);
+ return prefix;
+}
 // Obtain only X-session keys, never dump the process environment (which may contain credentials).
 export const linuxSession=`if [ "$(uname -s)" = Linux ]; then
  cua_parity_desktop_env=$(node --input-type=module -e ${quote(`import * as fs from 'node:fs';const env=(${discoverDesktopEnvironment.toString()})(fs);for(const [key,value] of Object.entries(env))console.log('export '+key+'='+(${quote.toString()})(value));`)} ) || exit 1
  eval "$cua_parity_desktop_env"
- export CUA_PARITY_SCRATCH_PREFIX=cua-m4t1-
+ export CUA_PARITY_SCRATCH_PREFIX=${parityScratchPrefix(process.env)}
 fi`;
 // The device's own-host Node, passed in the harness's remote command environment (never a shell profile): the path
 // `prepare --node` named and recorded (facts.ownNode), or nothing, leaving the device's PATH to resolve it.

@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {prepareCommand,cellsCommand} from '../../scripts/repl-parity/topology.mjs';
+import {prepareCommand,cellsCommand,linuxSession,parityScratchPrefix} from '../../scripts/repl-parity/topology.mjs';
 import {capabilityFixtureCommand} from '../../scripts/repl-parity/capability.mjs';
 test('remote prepare uses only the parity clone and profile discovery never rebinds',()=>{
  const c=prepareCommand({device:'cua-linux',commit:'1234567890abcdef'});assert.equal(c.command,'ssh');assert.ok(c.args.includes('BatchMode=yes'));assert.match(c.args.at(-1),/cua-parity/);
@@ -22,4 +22,11 @@ test('Linux prepare names the H4 cua-route home without changing another home or
  const script=prepareCommand({device:'cua-linux',commit:'1234567890abcdef',profile:'me'}).args.at(-1);
  assert.ok(script.includes("export CUA_HOME='/home/admin/.local/share/cua-h4'"));
  assert.throws(()=>prepareCommand({device:'cua-linux',commit:'1234567890abcdef',profile:'me',home:'relative'}),/absolute/);
+});
+
+test('the device scratch prefix is the harness run\'s own, validated before it reaches the remote shell',()=>{
+ assert.equal(parityScratchPrefix({}),'cua-m4t1-');
+ assert.equal(parityScratchPrefix({CUA_PARITY_SCRATCH_PREFIX:'cua-m4t3-'}),'cua-m4t3-');
+ for(const bad of ['m4t3-','cua-m4t3','cua-$(id)-','cua-a/b-','cua-A b-'])assert.throws(()=>parityScratchPrefix({CUA_PARITY_SCRATCH_PREFIX:bad}),/scratch prefix/);
+ assert.ok(linuxSession.includes(`export CUA_PARITY_SCRATCH_PREFIX=${parityScratchPrefix(process.env)}\n`));
 });

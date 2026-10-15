@@ -233,3 +233,27 @@ test('a run refuses a device whose sandbox policy cannot be resolved', async t =
   pre.sandbox = {mode: null, error: 'CUA_SHIM_SANDBOX must be scoped, disabled or default'};
   await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'vendor', ...plan, io}), /sandbox policy.*CUA_SHIM_SANDBOX must be/);
 });
+
+test('a cua-host run names the own host\'s Node in every serve and records it, keeping the proxy on the device\'s node', async t => {
+  const NODE = '/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node';
+  const {state, pre, io} = fakeDevice({host: 'cua'});
+  state.answeringHost = 'cua';
+  pre.ownNode = {path: NODE, version: 'v24.18.0'};
+  const out = outDir(t);
+  assert.equal(await run({device: 'cua-linux', out, host: 'cua', node: NODE, ...plan, io}), 0);
+  const meta = metaOf(out);
+  assert.equal(meta.complete, true, meta.error);
+  assert.equal(meta.environment.CUA_NODE, NODE);
+  assert.deepEqual(meta.ownNode, {path: NODE, version: 'v24.18.0'});
+  assert.equal(meta.node, 'v22.23.3');
+  assert.ok(state.scripts.find(s => /hostIdentity/.test(s)).includes(NODE));
+  assert.ok(state.serves.length > 0 && state.serves.every(s => s.includes(`CUA_NODE='${NODE}'`)), state.serves.join('\n'));
+});
+
+test('a cua-host run refuses an own-host Node the device cannot run, before any serve starts', async t => {
+  const {state, pre, io} = fakeDevice({host: 'cua'});
+  state.answeringHost = 'cua';
+  pre.ownNode = {path: '/nowhere/node', version: null};
+  await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', node: '/nowhere/node', ...plan, io}), /own host's Node \/nowhere\/node did not run on the device/);
+  assert.equal(state.serves, undefined);
+});

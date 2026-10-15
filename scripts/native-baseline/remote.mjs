@@ -11,6 +11,13 @@ export const PROTOCOL_VERSION = '2025-06-18';
 export const HOSTS = ['vendor', 'cua'];
 const assertHost = host => { if (!HOSTS.includes(host)) throw new Error('host must be vendor or cua'); };
 // An X display name (:0, :1.0, localhost:10.0), nothing a shell could read otherwise.
+// The own host's Node: an absolute path a shell cannot read otherwise, and only for the cua host (the vendor host runs on
+// its pinned Node, so naming one there would change nothing but the baseline's recorded environment).
+export function assertOwnNode(host, node) {
+  if (node === undefined) return;
+  if (host !== 'cua') throw new Error("--node names the own host's Node; the vendor host uses its pinned one");
+  if (!/^\/[A-Za-z0-9._\/+-]+$/.test(node) || node.split('/').includes('..')) throw new Error('--node must be the absolute path of a Node executable on the device');
+}
 export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.test(display ?? '')) throw new Error('display must be an X display name such as :0'); };
 
 // Native surface only, the REPL host the run measures (explicit, so the selection is never a default that moves under
@@ -20,11 +27,15 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // from the ssh session's XDG_RUNTIME_DIR, src/runtime/linux-desktop.mjs). The script is named by its absolute path, so
 // the serve's command line names the checkout and servePattern finds it (and no other checkout's serve, such as the
 // resident agent's).
-export function serveCommand({device, checkout, home, host, platform, display}) {
+// `node` (cua host only) is the own host's Node, an absolute path on the device passed as CUA_NODE in this command's
+// environment, never a shell profile; the serve itself stays on the device's node, as the vendor baseline's did.
+export function serveCommand({device, checkout, home, host, platform, display, node}) {
   assertHost(host);
+  assertOwnNode(host, node);
   let x = '';
   if (platform === 'linux') { assertDisplay(display); x = ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"`; }
-  return remoteCommand(device, `cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_REPL_HOST=${host} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x} node ${quote(`${checkout}/bin/cua.mjs`)} serve`);
+  const own = node === undefined ? '' : ` CUA_NODE=${quote(node)}`;
+  return remoteCommand(device, `cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${own} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x} node ${quote(`${checkout}/bin/cua.mjs`)} serve`);
 }
 // The extended regular expression (for pgrep -f) of a serve that serveCommand started from `checkout`. The bracketed
 // [b] keeps it from matching the command line of the shell that runs pgrep with it.
@@ -43,15 +54,17 @@ export function xDisplayFacts(text) {
   return {pixels: `${size[1]} x ${size[2]}`, resolution: `${size[1]} x ${size[2]}`, scale: 1, depth: Number(/depth of root window:\s+(\d+)/.exec(text)?.[1] ?? NaN) || null};
 }
 
-// One JSON line: the platform, the clone's commit and cleanliness, the Node that runs the serve, the home and runtime
+// One JSON line: the platform, the clone's commit and cleanliness, the Node that runs the serve (and, given `node`, the
+// own host's Node and the version it reports, null when it does not run), the home and runtime
 // release a serve there uses, the handshake record's path for the native surface and the selected host
 // (src/repl-host/identity.mjs hostIdentity, as src/mcp/lazy-runtime.mjs handshakeRecords keys it), the sandbox policy
 // the serve resolves in this environment (src/runtime/sandbox.mjs sandboxModeFrom, computer surface), the machine and what
 // is running that the run must know about (a cua-116-spike process, serves of the clone, the scratch app). macOS: model,
 // chip, memory, macOS, main display, TextEdit. Linux: CPU and memory, distribution and kernel, the X display (DISPLAY
 // `display`, the cookie in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
-export function preflightScript({host, display = ':0'}) {
+export function preflightScript({host, display = ':0', node: ownNode}) {
   assertHost(host);
+  assertOwnNode(host, ownNode);
   assertDisplay(display);
   // The pattern is servePattern's, for the checkout the script runs in.
   const node = `import {execFileSync} from 'node:child_process';
@@ -63,6 +76,7 @@ import {hostIdentity} from './src/repl-host/identity.mjs';
 import {sandboxModeFrom} from './src/runtime/sandbox.mjs';
 const sh = (c, a, env) => { try { return execFileSync(c, a, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, ...(env ? {env} : {})}).trim(); } catch { return ''; } };
 const read = path => { try { return readFileSync(path, 'utf8'); } catch { return ''; } };
+const ownNodePath = ${JSON.stringify(ownNode ?? null)};
 const home = defaultHome(), release = readPointer(home), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
 const common = {
   platform: process.platform, node: process.version,
@@ -71,6 +85,7 @@ const common = {
   runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null,
   spikeRunning: sh('pgrep', ['-f', 'cua-116-[s]pike']) !== '',
   serves: sh('pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
+  ...(ownNodePath === null ? {} : {ownNode: {path: ownNodePath, version: sh(ownNodePath, ['--version']) || null}}),
   sandbox: (() => { try { return {mode: sandboxModeFrom(process.env, {platform: process.platform, surfaces: ['computer']}), explicit: process.env.CUA_SHIM_SANDBOX !== undefined}; } catch (e) { return {mode: null, error: e.message}; } })(),
 };
 let own;

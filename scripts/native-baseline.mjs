@@ -9,7 +9,9 @@
 // session (scripts/native-baseline/linux.mjs, --display, default :0), and no gedit may be running either. Either way
 // every window the run touches is its own.
 //
-//   node scripts/native-baseline.mjs run --device <alias> --host vendor|cua --out docs/evidence/<dir>/run-1
+//   node scripts/native-baseline.mjs run --device <alias> --host vendor|cua [--node <path>] --out docs/evidence/<dir>/run-1
+//     --node (cua only): the absolute path of the device's Node for cua's own host, passed as CUA_NODE in the serve's
+//     command environment; the serve itself runs on the device's node, as the vendor baseline's does.
 //   node scripts/native-baseline.mjs summary docs/evidence/<dir>
 //   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //
@@ -42,7 +44,7 @@ import {execute, remoteCommand} from './browser-parity/topology.mjs';
 import * as cells from './native-baseline/cells.mjs';
 import {linuxAdapter} from './native-baseline/linux.mjs';
 import {macosAdapter} from './native-baseline/macos.mjs';
-import {handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
+import {assertOwnNode, handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
 import {hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
 import {compare, renderComparison} from './native-baseline/compare.mjs';
 
@@ -72,9 +74,10 @@ const liveIo = device => ({
   connect: options => new StdioClient(options),
 });
 
-export async function run({device, out, host, samples = 30, cold = 5, tasks = 10, display = ':0', spikeWaitMs = 3 * 3600_000, io = liveIo(device), log = console.log}) {
+export async function run({device, out, host, node, samples = 30, cold = 5, tasks = 10, display = ':0', spikeWaitMs = 3 * 3600_000, io = liveIo(device), log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
+  assertOwnNode(host, node);
   const dir = resolve(out);
   if (existsSync(join(dir, 'meta.json')) || existsSync(join(dir, 'results.jsonl'))) throw new Error('Output directory already contains a run');
   const remote = io.remote;
@@ -86,7 +89,7 @@ export async function run({device, out, host, samples = 30, cold = 5, tasks = 10
     log('waiting for cua-116-spike on the device to finish');
     await sleep(30_000);
   }
-  const pre = JSON.parse(remote(preflightScript({host, display})).split('\n').at(-1));
+  const pre = JSON.parse(remote(preflightScript({host, display, node})).split('\n').at(-1));
   const adapter = ADAPTERS[pre.platform];
   if (!adapter) throw new Error(`the native baseline has no adapter for ${pre.platform}`);
   if (pre.dirty) throw new Error('the parity clone is dirty');
@@ -95,15 +98,16 @@ export async function run({device, out, host, samples = 30, cold = 5, tasks = 10
   const refusal = adapter.refuse(pre);
   if (refusal) throw new Error(refusal);
   if (pre.serves) throw new Error('a serve of the parity clone is already running on the device');
+  if (node !== undefined && !pre.ownNode?.version) throw new Error(`the own host's Node ${node} did not run on the device`);
 
   mkdirSync(dir, {recursive: true});
   writeFileSync(join(dir, 'results.jsonl'), '');
   const emit = row => { appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(row) + '\n'); return row; };
   const linux = pre.platform === 'linux';
   const meta = {device, platform: pre.platform, host, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
-    environment: {CUA_REPL_HOST: host, CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? {DISPLAY: display, XAUTHORITY: '~/.Xauthority'} : {})},
+    environment: {CUA_REPL_HOST: host, ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? {DISPLAY: display, XAUTHORITY: '~/.Xauthority'} : {})},
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false};
-  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
+  Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
   adapter.start(meta, pre);
   log(`device ${device} (${pre.platform}): ${[pre.hardware?.model, pre.hardware?.chip].filter(Boolean).join(', ')} ${pre.os?.name ?? ''} ${pre.os?.version ?? ''}, runtime ${pre.release}, clone ${pre.commit.slice(0, 10)}, host ${host}`);
   const ops = io.device ? io.device(adapter, {pre, display}) : adapter.device(remote, {pre, display});
@@ -120,7 +124,7 @@ export async function run({device, out, host, samples = 30, cold = 5, tasks = 10
   };
   meta.helperAtStart = helperAttestation();
   const connect = () => {
-    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, host, platform: pre.platform, display}), clientName: 'cua-native-baseline',
+    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, host, platform: pre.platform, display, node}), clientName: 'cua-native-baseline',
       answer: adapter.answer,
       onElicitation: (row, msg) => {
         const entry = {t: row.t, at: performance.now(), app: msg.params?._meta?.tool_params?.app ?? null, action: row.action};
@@ -277,17 +281,17 @@ export function compareDirs(baselineDir, candidateDir, {out} = {}) {
 
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
-    device: {type: 'string'}, host: {type: 'string'}, display: {type: 'string', default: ':0'}, out: {type: 'string'},
+    device: {type: 'string'}, host: {type: 'string'}, node: {type: 'string'}, display: {type: 'string', default: ':0'}, out: {type: 'string'},
     samples: {type: 'string', default: '30'}, cold: {type: 'string', default: '5'}, tasks: {type: 'string', default: '10'}}});
   const [action, dir, other] = positionals;
   if (action === 'summary') { if (!dir) throw new Error('summary requires the evidence directory'); return summary(dir); }
   if (action === 'compare') { if (!dir || !other) throw new Error('compare requires <vendor-dir> <cua-dir>'); return compareDirs(dir, other, {out: values.out}); }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs run --device <alias> --host vendor|cua [--display :0] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>]');
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs run --device <alias> --host vendor|cua [--node <own host Node, cua only>] [--display :0] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>]');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
   if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');
   const count = name => { const n = Number(values[name]); if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };
-  return run({device: values.device, host: values.host, display: values.display, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
+  return run({device: values.device, host: values.host, node: values.node, display: values.display, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

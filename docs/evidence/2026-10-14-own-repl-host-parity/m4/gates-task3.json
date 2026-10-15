@@ -1,0 +1,67 @@
+{
+ "sourceHead": "a5ccc1b40b85fd688cd4f47d52a70ee3a09ec09b",
+ "evidenceHead": "041192a",
+ "note": "Run sequentially, one full suite at a time, while this Mac's load average was 57-117 from other sessions' work. Both full-suite failures are timing tests outside this task's change, and each passed twice when re-run focused.",
+ "attempts": [
+  {
+   "phase": "final-default-1",
+   "command": "HOME=<scratch> npm test",
+   "load": "57.64 71.77 101.82",
+   "tests": 2448,
+   "pass": 2293,
+   "fail": 1,
+   "skipped": 154,
+   "cancelled": 0,
+   "failedTests": [
+    "a first attachment gives each setup command what the command has left, not the allowance it started with (test/browser-service/cdp.test.mjs: 'Emulation.setFocusEmulationEnabled: timeoutMs 368 with 365 ms left')"
+   ]
+  },
+  {
+   "phase": "focused-rerun",
+   "command": "node --test --test-name-pattern='a first attachment gives each setup command' test/browser-service/cdp.test.mjs (x2)",
+   "pass": 2,
+   "fail": 0
+  },
+  {
+   "phase": "final-own",
+   "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+   "load": "108.22 88.14 105.28",
+   "tests": 2448,
+   "pass": 2372,
+   "fail": 0,
+   "skipped": 76,
+   "cancelled": 0,
+   "failedTests": []
+  },
+  {
+   "phase": "mods",
+   "command": "npm run test:mods",
+   "pass": 32,
+   "fail": 0
+  },
+  {
+   "phase": "validate",
+   "command": "claude plugin validate .",
+   "result": "passed with the one known root CLAUDE.md warning"
+  },
+  {
+   "phase": "final-default-2",
+   "command": "HOME=<scratch> npm test",
+   "load": "116.90 100.44 108.45",
+   "tests": 2448,
+   "pass": 2293,
+   "fail": 1,
+   "skipped": 154,
+   "cancelled": 0,
+   "failedTests": [
+    "commands in flight when the user cancels debugging or closes the tab fail with Chrome's \"Detached while handling command.\" (test/extension-host.test.mjs: connect ECONNREFUSED on the scratch backend socket)"
+   ]
+  },
+  {
+   "phase": "focused-rerun",
+   "command": "node --test --test-name-pattern='commands in flight when the user cancels debugging' test/extension-host.test.mjs (x2)",
+   "pass": 2,
+   "fail": 0
+  }
+ ]
+}

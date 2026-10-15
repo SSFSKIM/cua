@@ -8,7 +8,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 |---|---|---|---|
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
-| M2 | feat/own-repl-host-m2 | pending | whole-branch fix wave |
+| M2 | feat/own-repl-host-m2 | (PR pending) | whole-branch reviewer-high correct at bb3d59a |
 
 ## Log
 

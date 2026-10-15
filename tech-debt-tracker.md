@@ -2,6 +2,11 @@
 
 ## Open
 
+- **2026-10-15 — Own REPL host (#116): two minor gaps left after M2/M3 review.**
+  - (a) On a live connection, a kernel whose event loop blocks after its submitted code completes still holds the call with no bound. Only EOF is bounded, by M3's drain. The vendor behaves the same way, and nothing observed hits it. A per-execution watchdog in `src/repl-host/supervisor.mjs` would close it.
+  - (b) Under a heavy machine load (load average 40–180), the full suite intermittently fails timing-sensitive tests in files #116 didn't touch: `mcp-upstream` (anchor/group tests), `extension-host`, `chrome-host-run`, a `browser-service` CDP budget, `browser-service/actions` "element without a box", and `eof-drain` "new elicitation during drain". Each passes alone, and gates are re-run until clean. Widening those budgets, or running those files serially, would remove the noise.
+  Sources: `.doperpowers` M3 task reports, summarised in `docs/doperpowers/specs/2026-10-14-own-repl-host-execution-report.md`.
+
 - **2026-10-08 — MAWS in-app browser: what the live acceptance left (minor, issue #13).** (a) A refused action on a
   tab the person holds reaches the agent's locator as the vendor's `Playwright selector deadline exceeded … action_failed`
   at its 3 s budget, never as MAWS's "A person is using this tab; wait and retry": the vendor retries the refused step

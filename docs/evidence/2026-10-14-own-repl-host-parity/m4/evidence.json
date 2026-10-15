@@ -1,0 +1,65 @@
+{
+  "source": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+  "device": "cua-linux",
+  "profile": "me",
+  "controls": [
+    {
+      "directory": "vendor-1",
+      "source": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+      "harnessSource": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+      "recordedCases": 493,
+      "coveredCases": 490,
+      "pendingMembers": [
+        "api/browser-cuaapi/scroll",
+        "api/browser-domcuaapi/scroll"
+      ],
+      "attestedConnections": 91
+    },
+    {
+      "directory": "vendor-2",
+      "source": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+      "harnessSource": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+      "recordedCases": 493,
+      "coveredCases": 490,
+      "pendingMembers": [
+        "api/browser-cuaapi/scroll",
+        "api/browser-domcuaapi/scroll"
+      ],
+      "attestedConnections": 91
+    }
+  ],
+  "comparison": {
+    "command": "node scripts/repl-parity.mjs diff <m4/vendor-1> <m4/vendor-2>",
+    "differences": 0,
+    "allowances": 0,
+    "pendingCells": 14,
+    "pendingUnexpectedPasses": 0,
+    "vendorDefects": [
+      "linux-vendor-sandbox-launcher-fail-open"
+    ]
+  },
+  "runCommand": "node scripts/repl-parity.mjs run --host vendor --device cua-linux --suite all --through M4 --pending-cell input/coordinates#scroll --pending-cell input/dom#scroll --pending-reason \"#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api\" --out <new-directory>",
+  "cleanup": {
+    "ownedVmProcesses": 0,
+    "ownedTmpEntries": 0,
+    "prefix": "/tmp/cua-m4t1-",
+    "confirmed": true
+  },
+  "limitations": [
+    "#141: two logical browser scroll operations remain pending on Linux across 14 consumer cells; pinned M3 mini vendor and own live proofs establish alternate-platform coverage. All other cells and assertions still run.",
+    "The M0-declared Linux vendor sandbox launcher fail-open remains a recorded defect, not covered.",
+    "nativePipe non-blocking connect refuses immediately on Linux and Darwin; the expiry branch is linked to its named socket-double unit proof.",
+    "Four downloads from the pre-calibration upload-permission failures may remain in VM Downloads: no private descriptor proof was recorded, so no glob deletion was attempted. Final successful chooser cases use the attested cleanup helper."
+  ],
+  "diagnostics": {
+    "pre-calibration": "Superseded by environment permission and asynchronous tab-close fixes.",
+    "post-permission-gesture-timeout": "Superseded by declared #141 pending and corrected native full-snapshot assertions.",
+    "before-final-review": "Superseded by final AX grammar, pending item-field preservation and Chrome argv guard; second run also observed load-sensitive locator failures."
+  },
+  "notes": [
+    "Both final controls and their comparator are at the same final oracle head; no native-only splice or older assertion version is used.",
+    "The background shell wrapper assigned zsh readonly variable status after the commands had completed; the diff was rerun directly and exited zero.",
+    "Chrome flags, the prepared display provenance and H4 registration manifest are recorded in prepare.json.",
+    "No files under src/ changed."
+  ]
+}

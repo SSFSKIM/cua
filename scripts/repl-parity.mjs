@@ -13,6 +13,10 @@ import {runSecretCase} from '../test/repl-parity/fixtures/secret-cases.mjs';
 import {declaredVendorDefect,assessAssertions} from './repl-parity/vendor-defects.mjs';
 import {runBoundaryScenario} from './repl-parity/boundaries.mjs';
 import {remoteCapabilityLane} from './repl-parity/capability.mjs';
+import {documentComparisonRun} from './repl-parity/document-comparison.mjs';
+import {apiCommand} from './repl-parity/api-lanes.mjs';
+import {runBrowserApiScenario} from './repl-parity/browser-api.mjs';
+import {fixtureProcess} from './browser-parity/resources.mjs';
 import {compareParityRuns,validateAttestations} from './repl-parity/compare.mjs';
 const json=p=>JSON.parse(readFileSync(p,'utf8'));
 const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
@@ -32,7 +36,7 @@ export async function main(argv=process.argv.slice(2)){
   if(v.expected&&left.meta.host==='vendor'&&right.meta.host==='vendor')throw new Error('No expected-differences file permitted for vendor determinism');
   const selected=selectScenarios(scenarios,inventory,{suite:v.suite??left.meta.suite,through:v.through??left.meta.through??undefined,platform:left.meta.platform}).scenarios;
   const caseIds=selected.map(s=>s.id);
-  const result=compareParityRuns(left,right,{expected:v.expected?json(v.expected):[],caseIds,caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)]))});console.log(JSON.stringify(result,null,2));if(!result.ok)process.exitCode=1;return;
+  const result=compareParityRuns(documentComparisonRun(left),documentComparisonRun(right),{expected:v.expected?json(v.expected):[],caseIds,caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)]))});console.log(JSON.stringify(result,null,2));if(!result.ok)process.exitCode=1;return;
  }
  v.suite??='cells';
  if(action!=='run'||!v.out)throw new Error('Usage: repl-parity prepare|run|diff; run requires --out');
@@ -48,9 +52,20 @@ export async function main(argv=process.argv.slice(2)){
  const prepared=json(state(v.device)),{scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:prepared.platform});
  if(!selected.length)throw new Error('No executable cases selected');
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:selected.some(s=>s.backend==='fixture-services')?(selected.every(s=>s.backend==='fixture-services')?'fixture-services':'no-services+fixture-services'):'no-services',profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:[...new Set(selected.map(s=>s.backend))].sort().join('+'),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),complete:false,connections:[],hostAttestations:[]};
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
  const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
+ const clients=new Map();let browserFixture,profileClient;const profileObservations=[];
+ const profiles=async()=>{
+  if(!profileClient)profileClient=await pool.open({...apiCommand({...prepared,host:v.host},{lane:'profiles'}),onNotification:message=>{if(message.method==='cua/parityProfiles')profileObservations.push(message.params);}});
+  // The ordinary proxy connection and the separate bounded listing must both attest a real call.
+  await profileClient.call('js_reset');
+  const before=profileObservations.length,result=await profileClient.call('profiles_list');
+  if(profileObservations.length!==before+1)throw new Error('Missing bounded profiles host observation');
+  const observation=profileObservations.at(-1),connection='listing-'+profileObservations.length;
+  pool.addObservations({connections:[connection],hostAttestations:[{connection,host:v.host,serverInfo:observation.serverInfo,_meta:observation._meta,executionFacts:observation.executionFacts}]},'profiles');
+  return {result,observation};
+ };
  const emit=row=>{const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
  try{
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
@@ -66,11 +81,20 @@ export async function main(argv=process.argv.slice(2)){
     if(scenario.backend==='secret-double'){
       const result=await runSecretCase(scenario.id);for(const row of [{case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true}])emit(row);continue;
     }
+    if(scenario.backend==='chrome'){
+      if(!clients.has('chrome'))clients.set('chrome',await pool.open(apiCommand({...prepared,host:v.host})));
+      if(scenario.browserCase&&!browserFixture){browserFixture=await fixtureProcess({device:prepared.device,checkout:prepared.checkout,port:48733});resources.push(browserFixture);}
+      const assertion=await runBrowserApiScenario(scenario,{client:clients.get('chrome'),fixture:browserFixture,instanceId:prepared.extensionInstanceId,host:v.host,checkout:prepared.checkout,emit,profiles});if(!assertion.ok)failed=true;continue;
+    }
+    if(scenario.backend==='binder-double'){
+      if(!clients.has('binder-double'))clients.set('binder-double',await pool.open(apiCommand({...prepared,host:v.host},{lane:'binder-double'})));
+      const assertion=await runRawScenario(scenario,{client:clients.get('binder-double'),checkout:prepared.checkout,emit,context:{host:v.host}});if(!assertion.ok)failed=true;continue;
+    }
     if(scenario.backend!==lane){
       if(scenario.backend!=='capability-host')throw new Error(`Backend not configured: ${scenario.backend}`);
-      const resource=await remoteCapabilityLane({...prepared,host:v.host});resources.push(resource);client=await pool.open(resource.command);lane='capability-host';
+      const resource=await remoteCapabilityLane({...prepared,host:v.host,api:true});resources.push(resource);client=await pool.open(resource.command);lane='capability-host';
     }
-    const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit});if(!assertion.ok)failed=true;
+    const assertion=await runRawScenario(scenario,{client,checkout:prepared.checkout,emit,context:{host:v.host}});if(!assertion.ok)failed=true;
   }
   const assertions=assessAssertions(meta,runRows);failed=assertions.unexpectedFailures.length>0;Object.assign(meta,{vendorDefects:assertions.vendorDefects,coveredCases:assertions.coveredCases,recordedCases:assertions.recordedCases});
   const ended=await client.call('end_task');if(ended.isError)throw new Error('Task cleanup failed');

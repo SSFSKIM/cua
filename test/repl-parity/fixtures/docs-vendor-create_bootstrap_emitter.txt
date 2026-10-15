@@ -1,0 +1,105 @@
+// source: create_bootstrap_emitter.js | webcrack+prettier
+import { __awaiter as e } from "../../../oai_js/node_modules/tslib/tslib.es6.js";
+function o(o) {
+  const t = new Map();
+  let i;
+  let r;
+  const n = new Map();
+  let d = false;
+  let s = Promise.resolve();
+  function l(e) {
+    var o;
+    const t = globalThis.nodeRepl;
+    const i =
+      (o = t == null ? undefined : t.write) === null || o === undefined ? undefined : o.bind(t);
+    if (i === undefined) {
+      return Promise.resolve();
+    }
+    const r = t == null ? undefined : t.requestMeta;
+    const n = s.then(() => e(i, r));
+    s = n.catch(() => {});
+    return n;
+  }
+  return {
+    load_browser_documentation: function (o) {
+      return e(this, undefined, undefined, function* () {
+        const e = globalThis.nodeRepl;
+        if ((e == null ? undefined : e.write) !== undefined) {
+          let e = t.get(o.browserId);
+          if (e === undefined) {
+            e = o.documentation().catch((e) => {
+              t.delete(o.browserId);
+              throw e;
+            });
+            t.set(o.browserId, e);
+          }
+          yield e;
+        }
+      });
+    },
+    emit: function (s = "", u) {
+      return l((l, c) =>
+        e(this, undefined, undefined, function* () {
+          const e = u == null ? undefined : u.browser;
+          let a = "";
+          let v = "";
+          let w = "";
+          if (i === undefined) {
+            a = yield o.read_core();
+          }
+          if (e !== undefined) {
+            const i = yield t.get(e.browserId);
+            if (!d) {
+              v = yield o.read("other-browser-apis");
+            }
+            if (i !== undefined && !n.has(e.browserId)) {
+              w = i;
+            }
+          }
+          let b = "";
+          if ((u == null ? undefined : u.emit) !== false) {
+            b = typeof s == "string" ? s : JSON.stringify(s);
+          }
+          if (a !== "") {
+            yield l(a, "cua.core");
+            r = c;
+          }
+          if (i == null) {
+            i = a;
+          }
+          const f = [v, w].filter((e) => e !== "").join("\n\n");
+          if (e !== undefined && f !== "") {
+            yield l(f, `cua.browser.${e.browserId}`);
+            n.set(e.browserId, {
+              text: f,
+              request_meta: c,
+            });
+          }
+          if (e !== undefined) {
+            d = true;
+          }
+          if (b !== "") {
+            yield l(b, "cua.state");
+          }
+        }),
+      );
+    },
+    rewrite_documentation: function () {
+      return l((o, t) =>
+        e(this, undefined, undefined, function* () {
+          if (!!i && (t == null || t !== r)) {
+            yield o(i, "cua.core");
+            r = t;
+          }
+          for (const [e, i] of n) {
+            if (t == null || t !== i.request_meta) {
+              yield o(i.text, `cua.browser.${e}`);
+              i.request_meta = t;
+            }
+          }
+        }),
+      );
+    },
+  };
+}
+export { o as create_bootstrap_emitter };

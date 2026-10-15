@@ -1,0 +1,41 @@
+{
+  "release": "chatgpt-26.928.40906",
+  "table": "docs/doperpowers/research/2026-10-14-own-repl-host/surface-inventory.md#table-3--document-text",
+  "files": {
+    "core": {
+      "path": "cua_node/@oai/cua/docs/tinysky-alt-core-cua-repl.md",
+      "fixture": "vendor-core.md",
+      "sha256": "0a08dbe6ce18cadb55215be30ebbba9afd6195a7333023795424ef6aee2ad148"
+    },
+    "confirmations": {
+      "path": "cua_node/@oai/cua/docs/tinysky-alt-confirmations.md",
+      "fixture": "vendor-confirmations.md",
+      "sha256": "68474884543a6a1e72275b59f27f383313fd6aa8604ccedabb5d5cd37077e6fc"
+    },
+    "auxiliary": {
+      "path": "cua_node/@oai/cua/docs/tinysky-alt-other-browser-apis.md",
+      "fixture": "vendor-auxiliary.md",
+      "sha256": "174672af7e028a5e4815318c4133fdab0a5189c5701396df837d7aac76e90fd4"
+    },
+    "create_documentation": {
+      "path": "cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_documentation.js",
+      "fixture": "vendor-create_documentation.txt",
+      "sha256": "fff13c216ea1d1801b0b9ee0bd62dda3373a4a5863b90d7ab60acc55f8b8e1ac"
+    },
+    "create_bootstrap_emitter": {
+      "path": "cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_bootstrap_emitter.js",
+      "fixture": "vendor-create_bootstrap_emitter.txt",
+      "sha256": "69f71dfc3b5b75c02479004be0e6dec68058f7470ea8ec1245b5862426225333"
+    },
+    "browser_builder": {
+      "path": "cua_node/@oai/browser-desktop/scripts/browser-service.mjs",
+      "fixture": "vendor-browser-builder.txt",
+      "sha256": "a04c98b20499446874649c8b475dc1152a516e9f5b0a26af6a9e1a320db8db8a",
+      "sourceSha256": "e0cd74e548ff8fc209842cea0f48eccd60ac6158112a08cbdf3bcc85cbc8c93f",
+      "lines": [
+        65338,
+        65480
+      ]
+    }
+  }
+}

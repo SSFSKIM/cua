@@ -1,0 +1,143 @@
+  let i = [
+    "# API Reference",
+    "",
+    "Use this as the supported `agent.browsers.*` surface.",
+    "",
+    "```ts",
+    "// Returned by setupBrowserRuntime().",
+    "// browser was selected during bootstrap.",
+  ];
+  for (let [s, a] of Object.entries(t.interfaces)) {
+    if (n.has(s)) {
+      i.push(...Tee(s, a, e, r), "");
+    }
+  }
+  for (let [s, a] of Object.entries(t.types)) {
+    if (n.has(s)) {
+      i.push(a.text, "");
+    }
+  }
+  i[i.length - 1] = "```";
+  return `${i.join("\n").trim()}
+`;
+}
+function Tee(t, e, r, n) {
+  return [`interface ${t} {`, ...RN(t, e, r, n).map(({ text: o }) => `  ${o}`), "}"];
+}
+function RN(t, e, r, n) {
+  return Object.entries(e).flatMap(([o, i]) =>
+    n.has(`${t}.${o}`) || i.documented === false
+      ? []
+      : i.declarations.filter(
+          ({ documented: s, unsupportedByDefaultIn: a }) => s !== false && a?.includes(r) !== true,
+        ),
+  );
+}
+var nh = class {
+  constructor(e) {
+    this.options = e;
+  }
+  options;
+  readNames = new Set();
+  async read(e) {
+    if (!this.options.documentManifest.some((n) => n.name === e)) {
+      throw new Error(`Documentation is not available: ${e}`);
+    }
+    let r = await this.options.readDocumentation(e);
+    this.readNames.add(e);
+    return r;
+  }
+  async readBrowser(e) {
+    let { apiManifest: r, disabledMemberIds: n, documentManifest: o } = this.options;
+    let i = new Set(
+      PN({
+        apiManifest: r,
+        browserInfo: e,
+        disabledMemberIds: n,
+      }),
+    );
+    for (let m of this.options.undocumentedApiMembers ?? []) {
+      i.add(m);
+    }
+    let s = kN(o, {
+      browserType: e.type,
+      capabilities: e.capabilities,
+      disabledApiMembers: i,
+    });
+    let a = await Promise.all(
+      s.guidanceNames
+        .filter((m) => !this.options.excludedDocumentation?.includes(m))
+        .map(this.options.readDocumentation),
+    );
+    let l = [
+      "# Selected Browser",
+      `- Name: ${e.name}`,
+      `- Type: ${e.type}`,
+      `- ID: ${e.id}`,
+      "Reuse this browser binding across later turns. A new user turn or tab error does not invalidate it; select another browser only when the browser-selection policy requires it.",
+      "If a tab is stale or missing later, obtain or create a fresh tab from this browser; never reselect a browser to recover a tab. Empty tab lists are normal after cleanup and do not invalidate this browser binding.",
+    ].join("\n");
+    let u = [
+      "# Additional Capabilities",
+      DN("browser", e.capabilities.browser),
+      DN("tab", e.capabilities.tab),
+    ].join("\n");
+    let d = [
+      l,
+      ...a,
+      s.lookup.length === 0
+        ? undefined
+        : [
+            "# Additional Documentation",
+            'Use `await agent.documentation.get("<name>")` when you need one of these topics:',
+            ...s.lookup.map(({ description: m, name: h }) => `- \`${h}\`: ${m}`),
+          ].join("\n"),
+      u,
+      IN(r, e.type, i),
+      this.options.addendum,
+    ]
+      .filter((m) => m != null)
+      .join("\n\n");
+    for (let m of s.guidanceNames) {
+      this.readNames.add(m);
+    }
+    return d;
+  }
+  assertRequiredDocumentationRead(e) {
+    let r = this.options.documentManifest
+      .filter(({ name: n, requiredFor: o }) => o?.includes(e) === true && !this.readNames.has(n))
+      .map(({ name: n }) => n);
+    if (r.length !== 0) {
+      throw new Error(
+        `Required documentation has not been read: ${r.map((n) => JSON.stringify(n)).join(", ")}. Read the instructions with ${r.map((n) => `await agent.documentation.get(${JSON.stringify(n)})`).join("; ")}.`,
+      );
+    }
+  }
+};
+function DN(t, e) {
+  let r = t === "browser" ? Dp : Sp;
+  let n = new Map(r.map(({ id: i, info: s }) => [i, s]));
+  let o = (e ?? []).flatMap(({ id: i }) => {
+    let s = n.get(i);
+    if (s == null) {
+      return [];
+    } else {
+      return [
+        `- \`${i}\`: ${s.description}
+  Read with \`await (await ${t}.capabilities.get("${i}")).documentation()\`.`,
+      ];
+    }
+  });
+  return [
+    `## ${t === "browser" ? "Browser" : "Tab"} Capabilities`,
+    ...(o.length === 0 ? ["- None"] : o),
+  ].join("\n");
+}
+c();
+function BN() {
+  let t;
+  let e;
+  let r = new Set();
+  let n = new Map();
+  return {
+    recordCommand(o, i) {

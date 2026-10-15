@@ -123,9 +123,9 @@ function scriptedPages() {
 
 // Starts the host on `<home>/chrome/b/<socketName>.sock` -> {socketPath, instanceId, close()}. The host's own state
 // (its status and the harness's trace activation, $CUA_HOME/state/host-trace.json) lives in `home` too.
-export async function startCapabilityHost({home, socketName = 'capability-host'}) {
+export async function startCapabilityHost({home, socketName = 'capability-host', userTabs = []}) {
   const pages = scriptedPages();
-  const ext = createFakeCuaExtension({cdp: pages.cdp});
+  const ext = createFakeCuaExtension({cdp: pages.cdp, tabs: userTabs});
   pages.bind(ext);
   const host = createHost({extension: ext.api, hello: ext.hello(), home});
   ext.onNotify = (method, params) => host.onExtensionNotification({method, params});

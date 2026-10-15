@@ -1,6 +1,11 @@
+import capabilityApi from './capability-api.mjs';
+import docsProfiles from './docs-profiles.mjs';
+import binder from './binder.mjs';
+import browserMembers from './browser-members.mjs';
+import facadeApi from './facade-api.mjs';
 import services from './services.mjs';
 import cells from './cells.mjs';
 import boundaries from './boundaries.mjs';
 import secrets from './secrets.mjs';
 import {validateRegistry} from '../../../scripts/repl-parity/registry.mjs';
-export default validateRegistry([...cells,...boundaries,...secrets,...services]);
+export default validateRegistry([...cells,...boundaries,...secrets,...services,...facadeApi,...browserMembers,...binder,...docsProfiles,...capabilityApi]);

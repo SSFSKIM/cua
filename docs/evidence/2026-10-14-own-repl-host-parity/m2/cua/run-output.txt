@@ -1,2 +1,0 @@
-{"out":"/Users/new/Developer/GitHub/cua-wt-repl-host/docs/evidence/2026-10-14-own-repl-host-parity/m2/cua","cases":41,"pending":0,"complete":true,"assertions":"PASS","coveredCases":41,"recordedVendorDefects":0}
-svc exit 0

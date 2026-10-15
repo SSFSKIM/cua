@@ -29,9 +29,15 @@ function imageEqual(a,b,tolerance,{raw=false,path='',mcpImage=false}={}) {
 }
 export function compareRuns(a, b, {expected = [], raw = false, recordedAssertionFailures = {a:new Set(),b:new Set()}} = {}) {
   const differences = [], accepted = [];
-  if (!Array.isArray(expected) || expected.some(e => !e.reason || !Array.isArray(e.cases) || !Array.isArray(e.cells) || !['semantic','trace'].includes(e.kind))) throw new Error('Invalid expected-differences entry');
+  // A trace allowance may name the CDP `methods` it covers and the largest count change (`maxDelta`) it accepts; when
+  // given, a difference outside them is still a difference.
+  const traceScope = e => (e.methods === undefined || (Array.isArray(e.methods) && e.methods.length > 0 && e.methods.every(m => typeof m === 'string')))
+    && (e.maxDelta === undefined || (Number.isSafeInteger(e.maxDelta) && e.maxDelta >= 0));
+  if (!Array.isArray(expected) || expected.some(e => !e.reason || !Array.isArray(e.cases) || !Array.isArray(e.cells) || !['semantic','trace'].includes(e.kind) || !traceScope(e))) throw new Error('Invalid expected-differences entry');
+  const covers = (e, d) => e.cases.includes(d.case) && e.cells.includes(d.cell) && e.kind === d.kind
+    && (d.kind !== 'trace' || ((e.methods === undefined || e.methods.includes(d.method)) && (e.maxDelta === undefined || Math.abs(d.a - d.b) <= e.maxDelta)));
   const add = d => {
-    const allowance = expected.find(e => e.cases.includes(d.case) && e.cells.includes(d.cell) && e.kind === d.kind);
+    const allowance = expected.find(e => covers(e, d));
     (allowance ? accepted : differences).push({...d, ...(allowance ? {reason:allowance.reason} : {})});
   };
   function index(rows, side) {

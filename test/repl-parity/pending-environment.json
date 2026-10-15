@@ -1,0 +1,54 @@
+{
+  "issue": "#141",
+  "platform": "linux",
+  "through": "M4",
+  "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+  "scopes": [
+    {
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "corpus": "input/coordinates",
+      "cases": [
+        "api/browser-cuaapi/click",
+        "api/browser-cuaapi/double-click",
+        "api/browser-cuaapi/drag",
+        "api/browser-cuaapi/keypress",
+        "api/browser-cuaapi/scroll",
+        "api/browser-cuaapi/type",
+        "api/browser-tab/cua"
+      ],
+      "member": "api/browser-cuaapi/scroll"
+    },
+    {
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "corpus": "input/dom",
+      "cases": [
+        "api/browser-domcuaapi/click",
+        "api/browser-domcuaapi/double-click",
+        "api/browser-domcuaapi/get-visible-dom",
+        "api/browser-domcuaapi/keypress",
+        "api/browser-domcuaapi/scroll",
+        "api/browser-domcuaapi/type",
+        "api/browser-tab/dom-cua"
+      ],
+      "member": "api/browser-domcuaapi/scroll"
+    }
+  ],
+  "proofs": [
+    {
+      "path": "docs/evidence/2026-10-14-own-repl-host-parity/m3/vendor-api-1",
+      "files": {
+        "meta.json": "a3f39d21b7d4246fb10a00d62281bf2500bba5a2cba446f212f51e06fc9bd56b",
+        "results.jsonl": "0fe6f58f45e632a5c0e84c5038a0990f6f4771b9ef60b44a87e696ce9f206330"
+      }
+    },
+    {
+      "path": "docs/evidence/2026-10-14-own-repl-host-parity/m3/cua-api",
+      "files": {
+        "meta.json": "6411921d8ad7d900873df1d874dfb127e21b43397abeef04e5fa603b49d8a233",
+        "results.jsonl": "8862049ffc5c11bf0d06390cfdd109ee378ecd906bc20beb91a87c3df5c8e37c"
+      }
+    }
+  ]
+}

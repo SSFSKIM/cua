@@ -1,0 +1,70 @@
+{
+  "checkout": "/home/admin/Developer/GitHub/cua-parity",
+  "home": "/home/admin/.local/share/cua-h4",
+  "commit": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+  "dirty": false,
+  "release": "26.928.40906-linux-arm64",
+  "node": "v22.23.3",
+  "runtimeNode": "v24.21.0",
+  "platform": "linux",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+    "version": "v24.18.0"
+  },
+  "browserRoute": {
+    "selection": {
+      "service": "cua",
+      "reason": "cua_route",
+      "explicit": false,
+      "route": "cua",
+      "registration": {
+        "route": "cua",
+        "at": 1791989115345.3613
+      }
+    },
+    "recordPath": "/home/admin/.local/share/cua-h4/chrome/cua-registration.json",
+    "manifests": [
+      {
+        "browser": "chrome",
+        "path": "/home/admin/.config/google-chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+        "sha256": "37f4d13e31925131fbb7d1a67d6b36a51801f00c2cbf5d804b7b7445f4ebbe8b",
+        "name": "io.github.ssfskim.cua",
+        "type": "stdio",
+        "launcher": "/home/admin/.local/share/cua-h4/chrome/host",
+        "allowedOrigins": [
+          "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+        ]
+      }
+    ]
+  },
+  "chromeLaunch": [
+    {
+      "executable": "/opt/google/chrome/chrome",
+      "flags": [
+        "--profile-directory=Default",
+        "--disable-gpu",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling"
+      ],
+      "display": ":0",
+      "displaySource": "prepared-X-session (process environment unavailable)",
+      "profileDirectory": "Default",
+      "registrationHome": "/home/admin/.local/share/cua-h4",
+      "unrecordedFlagNames": [],
+      "omittedPositionalArguments": 1
+    }
+  ],
+  "device": "cua-linux",
+  "profile": "me",
+  "chromeProfileDirectory": "Default",
+  "extensionInstanceId": "ee43424f-bb6d-4f91-9101-226f44c4ad9e",
+  "display": ":0",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  }
+}

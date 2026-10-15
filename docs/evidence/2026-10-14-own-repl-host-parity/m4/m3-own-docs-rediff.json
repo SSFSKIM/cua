@@ -1,0 +1,231 @@
+{
+  "ok": true,
+  "differences": [],
+  "expected": [
+    {
+      "case": "cells/documentation/first-call-core-policy-bytes",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/browser-docs-before-state",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/emit-false-keeps-first-use-docs",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/core-once",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/core-once",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/browser-once",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/browser-once",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/rewrite-cached-order",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/rewrite-cached-order",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/rewrite-same-request-meta-suppressed",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/rewrite-later-request-meta",
+      "cell": "first",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/rewrite-later-request-meta",
+      "cell": "later",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/rewrite-later-request-meta",
+      "cell": "later-again",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/reset-timeout-fresh-bootstrap",
+      "cell": "first",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/reset-timeout-fresh-bootstrap",
+      "cell": "reset",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/reset-timeout-fresh-bootstrap",
+      "cell": "after-reset",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/reset-timeout-fresh-bootstrap",
+      "cell": "timeout",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/reset-timeout-fresh-bootstrap",
+      "cell": "after-timeout",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "valid-whitespace",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-utf8-at-limit",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "utf8-at-limit",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-utf8-over-limit",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "utf8-over-limit",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-blank",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "blank",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-non-string",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "non-string",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-array",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "array",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-null",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "null",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "reset-cached",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "cached",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/confirmations-policy-override",
+      "cell": "later-policy-cannot-replace-cache",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/auxiliary-other-browser-apis",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    },
+    {
+      "case": "cells/documentation/auxiliary-other-browser-apis",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+    }
+  ],
+  "cases": 12,
+  "cells": 37,
+  "recordedCases": 12,
+  "vendorDefects": [],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "allAssertionsPassed": true,
+  "doubleCases": 0
+}

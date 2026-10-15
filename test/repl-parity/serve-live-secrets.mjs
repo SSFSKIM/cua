@@ -5,7 +5,7 @@ import {mkdirSync,realpathSync} from 'node:fs';
 import {prepareCapabilityApiLaunch} from './serve-capability-api.mjs';
 export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,userHome,capabilityHome,remote}={}){
  if(remote!==true)throw Error('Live secret launch requires the remote capability lane');
- if(typeof capabilityHome!=='string'||typeof userHome!=='string'||resolve(userHome)!==join(resolve(capabilityHome),'home')||!/^cua-cap-/.test(basename(capabilityHome)))throw Error('Live secret launch requires the capability scratch HOME');
+ if(typeof capabilityHome!=='string'||typeof userHome!=='string'||resolve(userHome)!==join(resolve(capabilityHome),'home')||!/^cua-(?:m4t1-)?cap-/.test(basename(capabilityHome)))throw Error('Live secret launch requires the capability scratch HOME');
  // scoped permits writes only under launch.cwd/TMPDIR. Keep its policy unchanged; move only this fixture's HOME.
  if(typeof launch.cwd!=='string'||dirname(resolve(launch.cwd))!==join(resolve(capabilityHome),'run')||!/^[A-Za-z0-9-]{1,128}$/.test(basename(launch.cwd))||realpathSync(capabilityHome)!==resolve(capabilityHome)||realpathSync(userHome)!==resolve(userHome))throw Error('Live secret launch requires a canonical capability scratch run directory');
  const workerHome=join(launch.cwd,'home');

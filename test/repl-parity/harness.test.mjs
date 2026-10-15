@@ -100,3 +100,17 @@ test('an identity-only meta container may be introduced, but no sibling metadata
  const expected=[{reason:'Host identity only',cases:[scenario.id],cells:['one'],field:'meta.cua/replHost',vendor:{present:false},cua:{present:true,value:{host:'cua',version:'1'}}}];
  assert.equal(compareParityRuns(a,b,{expected}).ok,true);b.rows[0].meta.extra=true;assert.equal(compareParityRuns(a,b,{expected}).ok,false);
 });
+
+test('per-case native sandbox configuration is compared, not hidden by the mixed run summary',()=>{
+ const a=run(),b=run();a.meta.caseConfigurations=b.meta.caseConfigurations={[scenario.id]:{surfaces:['computer'],sandbox:'disabled'}};
+ assert.equal(compareParityRuns(a,b).ok,true);
+ b.meta.caseConfigurations={[scenario.id]:{surfaces:['browser'],sandbox:'scoped'}};
+ assert.equal(compareParityRuns(a,b).ok,false);
+});
+
+test('native live cases cannot compare without their declared proof class',()=>{
+ const a=run(),b=run(),id='native/cua/computer';for(const r of [a,b]){r.meta.caseIds=[id];r.meta.caseConfigurations={[id]:{surfaces:['computer'],sandbox:'disabled'}};for(const row of r.rows)row.case=id;}
+ assert.equal(compareParityRuns(a,b).ok,false);
+ for(const r of [a,b])r.meta.caseProofs={[id]:'native-live'};
+ assert.equal(compareParityRuns(a,b).ok,true);
+});

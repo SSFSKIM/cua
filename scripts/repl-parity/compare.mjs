@@ -1,3 +1,4 @@
+import {pendingProjection,validatePendingMetadata} from './pending-cells.mjs';
 import {attestedSourceVersion} from './source-identity.mjs';
 import {validateToolAllowance} from './tool-contract.mjs';
 import {compareRuns} from '../browser-parity/compare.mjs';
@@ -36,11 +37,24 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
   const departures=expected.filter(e=>e.kind==='security-departure');expected=expected.filter(e=>e.kind!=='security-departure');
   const accepted=[];
   const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
+  const pa=validatePendingMetadata(a.meta),pb=validatePendingMetadata(b.meta);if(!isDeepStrictEqual(pa,pb))throw new Error('Both runs must declare identical pending cells');
+  const pendingLeft=pendingProjection(a,ids),pendingRight=pendingProjection(b,ids);
   const differences=[];const fakeCases=new Set([...a.rows,...b.rows].filter(r=>ids?.includes(r.case)&&r.fake).map(r=>r.case));
   for(const id of fakeCases)differences.push({kind:'evidence',case:id,message:'double output cannot establish live host parity'});
   if(!isDeepStrictEqual(a.tools,b.tools))differences.push({kind:'tools',message:'effective tool contract changed'});
   for(const key of ['platform','service','backend','sandbox','surfaces'])if(!isDeepStrictEqual(a.meta[key],b.meta[key]))differences.push({kind:'configuration',field:key});
-  if(a.meta.caseProofs&&b.meta.caseProofs||(ids??[]).some(id=>/^(api|hidden|capability-host)\//.test(id)||/^secrets\/(browser|native)-live\//.test(id)||/^cells\/(facade|documentation|profiles)\//.test(id)))for(const id of ids??[])if(!a.meta.caseProofs?.[id]||a.meta.caseProofs[id]!==b.meta.caseProofs?.[id])differences.push({kind:'configuration',case:id,field:'caseProofs'});
+  for(const id of ids??[]){
+    const native=id.startsWith('native/'),configs=[a,b].map(run=>{
+      const explicit=run.meta.caseConfigurations?.[id];
+      if(explicit)return explicit;
+      if(native)return undefined;
+      // Old controls recorded a homogeneous lane. Never invent an equivalent for a mixed or absent configuration.
+      return Array.isArray(run.meta.surfaces)&&['scoped','default','disabled'].includes(run.meta.sandbox)?{surfaces:run.meta.surfaces,sandbox:run.meta.sandbox}:undefined;
+    });
+    const declared=a.meta.caseConfigurations?.[id]||b.meta.caseConfigurations?.[id];
+    if(native?configs.some(c=>!isDeepStrictEqual(c,{surfaces:['computer'],sandbox:'disabled'})):declared&&(!configs[0]||!configs[1]||!isDeepStrictEqual(...configs)))differences.push({kind:'configuration',case:id,field:'caseConfigurations'});
+  }
+  if(a.meta.caseProofs&&b.meta.caseProofs||(ids??[]).some(id=>/^(api|native|hidden|capability-host)\//.test(id)||/^secrets\/(browser|native)-live\//.test(id)||/^cells\/(facade|documentation|profiles)\//.test(id)))for(const id of ids??[])if(!a.meta.caseProofs?.[id]||a.meta.caseProofs[id]!==b.meta.caseProofs?.[id])differences.push({kind:'configuration',case:id,field:'caseProofs'});
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});
   for(const [side,run] of [['a',a],['b',b]]) {
     if(!caseIds&&!isDeepStrictEqual(run.meta.caseIds,ids))differences.push({kind:'cardinality',side,message:'case manifests differ'});
@@ -54,7 +68,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
     if(!r.meta||!Object.hasOwn(r.meta,'codex/nodeReplExecutionDurationMs'))return r;
     const meta={...r.meta};delete meta['codex/nodeReplExecutionDurationMs'];return {...r,meta};
   });
-  const left=semanticRows(a.rows).map(r=>({...r,...(r.meta?{meta:{...r.meta}}:{})})),right=semanticRows(b.rows).map(r=>({...r,...(r.meta?{meta:{...r.meta}}:{})}));
+  const left=semanticRows(pendingLeft.rows).map(r=>({...r,...(r.meta?{meta:{...r.meta}}:{})})),right=semanticRows(pendingRight.rows).map(r=>({...r,...(r.meta?{meta:{...r.meta}}:{})}));
   if(a.meta.host!==b.meta.host)for(const x of left){
     const y=right.find(r=>r.case===x.case&&r.cell===x.cell);if(!y||!x.cell)continue;
     const allowance=expected.find(e=>e.cases.includes(x.case)&&e.cells.includes(x.cell));if(!allowance)continue;
@@ -85,7 +99,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
   for(const [side,assessment] of [['a',leftAssertions],['b',rightAssertions]])for(const row of assessment.unexpectedFailures){
     if(!differences.some(d=>d.kind==='assertion'&&d.side===side&&d.case===row.case&&d.cell===row.cell))differences.push({kind:'assertion',side,case:row.case,cell:row.cell,message:'undeclared assertion failure'});
   }
-  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,allAssertionsPassed:!differences.length&&!vendorDefects.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
+  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],allAssertionsPassed:!differences.length&&!vendorDefects.length&&!pendingLeft.observations.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }
 
 // The expected-differences file: exact identity-slot allowances (field meta.cua/replHost, both sides' values named) and

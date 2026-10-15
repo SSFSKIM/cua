@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
+const base=new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m0/linux-vendor-1/',import.meta.url);
+const load=()=>({meta:JSON.parse(readFileSync(new URL('meta.json',base))),tools:JSON.parse(readFileSync(new URL('tools.json',base))),rows:readFileSync(new URL('results.jsonl',base),'utf8').trim().split('\n').map(JSON.parse)});
+test('M0 homogeneous configuration is equivalent to the same selected-case map',()=>{const a=load(),b=load();b.meta.caseConfigurations=Object.fromEntries(b.meta.caseIds.map(id=>[id,{surfaces:b.meta.surfaces,sandbox:b.meta.sandbox}]));assert.equal(compareParityRuns(a,b).ok,true);});
+test('configuration comparison ignores unselected cases but fails on selected-case drift or unestablished legacy fields',()=>{const a=load(),b=load(),id=a.meta.caseIds[0];b.meta.caseConfigurations={[id]:{surfaces:b.meta.surfaces,sandbox:b.meta.sandbox},unselected:{surfaces:['computer'],sandbox:'disabled'}};assert.equal(compareParityRuns(a,b,{caseIds:[id]}).ok,true);b.meta.caseConfigurations[id].sandbox='disabled';assert.equal(compareParityRuns(a,b,{caseIds:[id]}).ok,false);delete a.meta.sandbox;assert.equal(compareParityRuns(a,b,{caseIds:[id]}).ok,false);});

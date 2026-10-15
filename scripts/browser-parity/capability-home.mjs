@@ -17,11 +17,12 @@ import {cuaRecordFile} from '../../src/chrome/route.mjs';
 import {backendDir} from '../../src/chrome/extension.mjs';
 
 // -> {dir, userHome, release, cleanup()}; throws when `source` has no installed runtime.
-export function prepareCapabilityHome({source = defaultHome(), platform = process.platform} = {}) {
+export function prepareCapabilityHome({source = defaultHome(), platform = process.platform, prefix = (process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'cap-'} = {}) {
   const release = readPointer(source);
   const runtime = release && join(homeLayout(source).runtimes, release);
   if (!runtime || !existsSync(runtime)) throw new Error(`no installed runtime in ${source}; run \`cua install\` first`);
-  const dir = realpathSync(mkdtempSync('/tmp/cua-cap-'));
+  if(!/^cua-[a-z0-9-]+-$/.test(prefix))throw new Error('Invalid capability scratch prefix');
+  const dir = realpathSync(mkdtempSync('/tmp/'+prefix));
   const userHome = join(dir, 'home');
   try {
     mkdirSync(userHome, {mode: 0o700});

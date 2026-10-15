@@ -539,6 +539,16 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M2 tasks 1 and 2 as built.
+  - The oracle adds `--suite services`, which covers 41 cases, the two staged worker-secret cases among them, through isolated fixture trusted services. A fixture-only host-tap reaches the host's private `turn_ended`. Turn acknowledgements are timed on the device clock against hook-completion witnesses; controller wall time across ssh varies by seconds and is never asserted.
+  - Identity allowances use `versionFrom:'attested-source'`, the host version read from the evidence's recorded commit. The effective-tools comparison applies the four exact Table 2 `browser.md` removals to a hash-pinned vendor fixture.
+  - The port's trusted worker starts on the first service request and survives kernel resets and timeouts. A sandbox-policy change, its own exit or shutdown ends it.
+  - Every live child, kernel or worker, is protected through the reaper's `own(pid)` while it lives. Ancestors of the supervisor are spared. Values crossing the host between children and client get sorted object keys.
+  - `REPL_HOST_VERSION` is 0.3.0, and effective tool text travels in `CUA_REPL_TOOL_OVERRIDES`, which only production launches set.
+  - Not ported: package-name service resolution, `config`, `fetch`, `otel`, `telemetry`, `gaasBrowserConfig`.
+  - `sandbox.mjs` refuses with `trusted_service_untrusted` any trusted service whose real path lies outside the trusted roots.
+  Rationale: Recorded so task 3 and later milestones consume the same contracts. M2 task 3 must change the port where the vendor evidence contradicts it: suspend the budget during elicitation, merge response meta.
+  Date/Author: 2026-10-14, M2 task 1 and task 2 executors and their reviews, folded by the plan-executor.
 - Decision: nativePipe transport-error delivery is proven at the bridge, not over a live macOS transport.
   - Across real Darwin peer failures (an abort during a large write, an SO_LINGER=0 abort, SHUT_RD), the vendor reports only close and a late close. Rust's EOF close wins and the bridge suppresses the later write error.
   - The live case records that close-only outcome, and the own host must match it.

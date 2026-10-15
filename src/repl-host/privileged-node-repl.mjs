@@ -2,9 +2,14 @@
 // lifecycle hooks, elicitation, timeout suspension, response meta, LaunchServices, the native pipe proxy and content
 // items), for docs/doperpowers/specs/2026-10-14-own-repl-host-design.md (M2, interface PrivilegedRuntime; Design
 // "Trusted services and privileged APIs"). Changes from the source: an ES module; the privileged API is the one the
-// spec retains, so `config` (NR:privileged-node-repl-config.js, M4 audits its callers), `fetch` (authenticated fetch),
-// `otel`, `telemetry` and `gaasBrowserConfig` are not ported: they reach the vendor's app-server, account and
-// telemetry bridges, which the own route excludes; and the hooks' deadlines are reported to the supervisor
+// spec retains, so `config` (NR:privileged-node-repl-config.js), `fetch` (authenticated fetch), `otel`, `telemetry` and
+// `gaasBrowserConfig` are not ported: they reach the vendor's app-server, account and telemetry bridges, which the own
+// route excludes. `config` (readToml, writeToml and the app-server config reads and writes) has no caller on the own
+// route (#116 M4's ApprovalStorage audit): the vendor's Sky service on Linux and its linux target use no privileged API
+// at all and request no approval; cua's browser service and wrappers never touch it; its one caller, the vendor's
+// browser service (browser/sessions/<id>.toml and the config reads), runs only on the vendor host, which a vendor
+// browser route always selects. The proxy's removal of a session's approval file at close (src/mcp/connection.mjs)
+// is host-independent and unchanged. The hooks' deadlines are reported to the supervisor
 // (`hook_deadlines`, cua's) whenever a hook is added or removed. Every sentence trusted code can observe is the vendor's. #120's
 // clean-room rewrite replaces this port before distribution.
 

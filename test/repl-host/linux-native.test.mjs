@@ -1,0 +1,161 @@
+// The Linux native route on cua's own REPL host (#116 M4; docs/doperpowers/specs/2026-10-14-own-repl-host-design.md,
+// "M4 — Make the Linux native route real", acceptance 5 and 6's native substitution): a Linux computer-only or
+// combined session that explicitly selects cua runs the trusted sky wrapper (src/services/sky.mjs) and the vendor's Sky
+// service in the owned trusted worker, which starts sky_linux as its own stdio child. Everything below the vendor is a
+// double (test/fixtures/linux-native-runtime.mjs), so this runs on any machine with Node 24 (CUA_NODE); the launch is
+// the production one (buildLaunch on the Linux pin, the sandbox the proxy derives for Linux, the proxy's anchored process
+// group, its lazy runtime and idle stop), and so are the supervisor, kernel, worker, the owned facade the production
+// banner imports, and the wrapper (on a machine that is not Linux, with its platform pinned to linux:
+// test/fixtures/linux-sky-service.mjs). Secrets are synthetic, in a scratch store; nothing records a value.
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
+import {mkdirSync} from 'node:fs';
+import {dirname, join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {BROWSER_SERVICE, SKY_SERVICE, buildLaunch} from '../../src/runtime/launch.mjs';
+import {SANDBOX_META_KEY, sandboxModeFrom, sandboxState} from '../../src/runtime/sandbox.mjs';
+import {spawnUpstream} from '../../src/mcp/upstream.mjs';
+import {handshakeRecords, lazyRuntime} from '../../src/mcp/lazy-runtime.mjs';
+import {REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION, hostIdentity} from '../../src/repl-host/identity.mjs';
+import {TRUSTED_WORKER} from '../../src/repl-host/supervisor.mjs';
+import {kernelNode} from './kernel-harness.mjs';
+import {alive, descendants, texts} from './supervisor-harness.mjs';
+import {linuxNativeRuntime, sha256} from '../fixtures/linux-native-runtime.mjs';
+
+const {node, skip} = kernelNode();
+const own = {skip};
+const LINUX_SKY = process.platform === 'linux' ? SKY_SERVICE : fileURLToPath(new URL('../fixtures/linux-sky-service.mjs', import.meta.url));
+const DESKTOP = {DISPLAY: ':0', XAUTHORITY: '/home/u/.Xauthority', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus', XDG_RUNTIME_DIR: '/run/user/1000'};
+const SENTINEL = 'synthetic-Sentinel-7f3a';
+const DEADLINE_MS = 20_000;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const pgidOf = pid => Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], {encoding: 'utf8'}).trim());
+const caught = code => `try { ${code} nodeRepl.write("resolved"); } catch (e) { nodeRepl.write(e.message); }`;
+
+// A connection's runtime for a Linux session on `surfaces`, CUA_REPL_HOST=cua -> the driver: {call, js, stop,
+// terminate, worker(), fixture, launch}. Calls carry the sandbox state the proxy derives for Linux and these surfaces
+// (sandboxModeFrom with CUA_SHIM_SANDBOX unset).
+async function linuxSession(t, {surfaces, secrets = {}}) {
+  const fixture = linuxNativeRuntime(t, {node, secrets});
+  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', CUA_BROWSER_SERVICE: 'cua', ...DESKTOP};
+  const services = {...(surfaces.includes('computer') ? {sky: LINUX_SKY} : {}), ...(surfaces.includes('browser') ? {browser: BROWSER_SERVICE} : {})};
+  const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, ownNode: node});
+  // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.
+  if (services.sky && LINUX_SKY !== SKY_SERVICE) launch.env.CUA_REPL_TRUSTED_CODE_PATHS += `:${dirname(SKY_SERVICE)}`;
+  for (const dir of [launch.cwd, launch.env.CODEX_HOME]) mkdirSync(dir, {recursive: true, mode: 0o700});
+  const meta = {[SANDBOX_META_KEY]: sandboxState(sandboxModeFrom({}, {platform: 'linux', surfaces}), launch.cwd)};
+  let current = null;
+  const upstream = lazyRuntime({start: async () => (current = spawnUpstream(launch, {stderr: 'ignore'})),
+    records: handshakeRecords({dir: join(fixture.home, 'state', 'handshake'), surfaces, host: hostIdentity({host: 'cua', release: fixture.runtime.release})})});
+  const pending = new Map();
+  upstream.onMessage(msg => { pending.get(msg.id)?.(msg); pending.delete(msg.id); });
+  let id = 0;
+  const request = (method, params) => new Promise((resolve, reject) => {
+    const n = ++id;
+    const timer = setTimeout(() => { pending.delete(n); reject(new Error(`no reply to ${method} within ${DEADLINE_MS} ms`)); }, DEADLINE_MS);
+    pending.set(n, msg => { clearTimeout(timer); resolve(msg); });
+    upstream.send({jsonrpc: '2.0', id: n, method, params});
+  });
+  t.after(() => upstream.terminate({budgetMs: 5000}));
+  const initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'linux-native-test', version: '0'}});
+  const call = async (name, args = {}) => (await request('tools/call', {name, arguments: args, _meta: meta})).result;
+  const js = async (code, extra = {}) => call('js', {code, ...extra});
+  const worker = () => descendants(current.pid).filter(p => p.command.includes(TRUSTED_WORKER));
+  return {fixture, launch, initialized, call, js, worker, group: () => current.pid,
+    stop: () => upstream.stop({budgetMs: 5000}), terminate: () => upstream.terminate({budgetMs: 5000})};
+}
+
+const ok = result => { assert.equal(result.isError, false, JSON.stringify(result.content)); return result; };
+
+test('a Linux computer session on the own host drives sky_linux through the owned facade and trusted worker; the helper is the worker\'s stdio child in the owned group, outlives kernel ends and goes with the runtime', own, async t => {
+  const session = await linuxSession(t, {surfaces: ['computer']});
+  assert.deepEqual(session.initialized.result.serverInfo, {name: REPL_HOST_NAME, version: REPL_HOST_VERSION});
+  const first = ok(await session.js(`const windows = await cua.listWindows({emit: false});
+    const app = await cua.getApp({windowId: windows[0].id});
+    await app.typeText('hello'); await app.pressKey('ctrl+a');
+    nodeRepl.write(JSON.stringify({target: cua.computer.target, windows: windows.map(w => w.id), keys: Object.keys(cua).sort()}));`));
+  assert.deepEqual(first._meta[REPL_HOST_META_KEY], {host: 'cua', version: REPL_HOST_VERSION});
+  assert.deepEqual(JSON.parse(texts(first).at(-1)), {target: 'linux', windows: [7, 8],
+    keys: ['computer', 'getApp', 'getState', 'initialize', 'listApps', 'listWindows', 'rewriteDocumentation']});
+  assert.deepEqual(session.fixture.helperLog().map(({command, window, text}) => [command, window, text]), [
+    ['list_windows', null, undefined], ['list_windows', null, undefined], ['get_window_state', 7, undefined],
+    ['type_text', 7, sha256('hello')], ['press_key', 7, undefined]]);
+  assert.deepEqual(session.fixture.launches(), [], 'the Linux computer default sandbox is disabled: no child went through the launcher');
+
+  const [helper] = new Set(session.fixture.helperLog().map(entry => entry.pid));
+  const [worker] = session.worker();
+  assert.ok(worker, 'one trusted worker');
+  const helperRow = descendants(session.group()).find(p => p.pid === helper);
+  assert.equal(helperRow?.ppid, worker.pid, 'sky_linux is the trusted worker\'s own child');
+  assert.equal(pgidOf(helper), session.group(), 'in the owned process group, not a session of its own');
+
+  // A kernel's end reaps what it left in the owned group; the worker's tree, the helper in it, is not that.
+  const timedOut = await session.js('for (;;) {}', {timeout_ms: 300});
+  assert.match(texts(timedOut).join('\n'), /timed out/);
+  assert.deepEqual(texts(await session.call('js_reset')), ['js kernel reset']);
+  await delay(300);
+  assert.equal(alive(helper), true, 'the helper survived the kernel\'s timeout and the reset');
+  ok(await session.js('const again = await cua.getApp({windowId: 7}); await again.typeText("after");'));
+  assert.deepEqual([...new Set(session.fixture.helperLog().map(entry => entry.pid))], [helper], 'the same helper answered after the kernel was replaced');
+
+  // The idle stop (lazy-runtime stop: the owned group's teardown) takes the worker and its helper; the next call starts
+  // fresh ones.
+  assert.equal((await session.stop()).confirmed, true, 'the group emptied, the helper with it');
+  assert.equal(alive(helper), false);
+  assert.equal(alive(worker.pid), false);
+  ok(await session.js('const later = await cua.getApp({windowId: 7}); await later.pressKey("Return");'));
+  const relaunched = session.fixture.helperLog().at(-1).pid;
+  assert.notEqual(relaunched, helper, 'a fresh helper after the idle stop');
+  assert.equal((await session.terminate()).confirmed, true, 'the connection\'s close empties the group too');
+  assert.equal(alive(relaunched), false);
+});
+
+test('Linux native secret substitution: a whole-field reference in typeText and paste reaches sky_linux as the stored value and nowhere else; refusals come before input and errors carry labels only', own, async t => {
+  const session = await linuxSession(t, {surfaces: ['computer'], secrets: {WORK_PASSWORD: SENTINEL}});
+  ok(await session.js('const app = await cua.getApp({windowId: 7}); const failing = await cua.getApp({windowId: 8});'));
+  const typed = () => session.fixture.helperLog().filter(entry => entry.command === 'type_text');
+  const results = [];
+  const run = async code => { const result = ok(await session.js(code)); results.push(result); return texts(result).at(-1); };
+
+  assert.equal(await run(caught('await app.typeText("{{secret:WORK_PASSWORD}}"); await app.paste("{{secret:WORK_PASSWORD}}");')), 'resolved');
+  assert.deepEqual(typed().map(({window, text}) => [window, text]), [[7, sha256(SENTINEL)], [7, sha256(SENTINEL)]], 'typeText and paste (sent as type_text) both substituted');
+
+  assert.equal(await run(caught('await app.typeText("x {{secret:WORK_PASSWORD}}");')), 'resolved');
+  assert.equal(typed().at(-1).text, sha256('x {{secret:WORK_PASSWORD}}'), 'a marker inside other text is typed as it is');
+
+  const before = typed().length;
+  assert.match(await run(caught('await app.typeText("{{secret:NOT_STORED}}");')), /^cua: no secret named "NOT_STORED" .*\[secret_not_found\]$/);
+  assert.match(await run(caught('await app.typeText("{{secret:CUA_DEVICE_TOKEN}}");')), /\[secret_reserved\]$/);
+  assert.match(await run(caught('await app.typeText("{{secret:bad label}}");')), /\[invalid_secret_label\]$/);
+  assert.equal(await run(caught('await app.paste("{{secret:WORK_PASSWORD}}", {format: "html"});')), 'Linux paste supports only text format.');
+  assert.equal(typed().length, before, 'nothing reached the helper for any refusal');
+
+  const failed = await run(caught('await failing.typeText("{{secret:WORK_PASSWORD}}");'));
+  assert.match(failed, /^cua: type_text with secret "WORK_PASSWORD" failed \(failed\) after the secret was read; .*\[secret_input_failed\]$/);
+  assert.deepEqual([typed().at(-1).window, typed().at(-1).text], [8, sha256(SENTINEL)], 'the value was delivered, then the native error was withheld');
+  assert.equal(await run(caught('await failing.typeText("plain");')), 'AT-SPI could not insert plain', 'an ordinary failure keeps the native error');
+
+  assert.equal(JSON.stringify(results).includes(SENTINEL), false, 'no result carries the value');
+});
+
+test('a combined Linux session on the own host has both surfaces, keeps the disabled default and the same helper; a browser-only one stays scoped', own, async t => {
+  const combined = await linuxSession(t, {surfaces: ['computer', 'browser']});
+  const result = ok(await combined.js(`const windows = await cua.listWindows({emit: false});
+    nodeRepl.write(JSON.stringify({target: cua.computer.target, windows: windows.length, browsers: await cua.listBrowsers({emit: false}), agent: typeof agent.browsers.list}));`));
+  assert.deepEqual(JSON.parse(texts(result).at(-1)), {target: 'linux', windows: 2, browsers: [], agent: 'function'});
+  assert.equal(combined.launch.env.CUA_REPL_ENABLED_SURFACES, 'computer,browser');
+  assert.deepEqual(combined.fixture.launches(), [], 'disabled with the computer surface, browser or not');
+  const [helper] = combined.fixture.helperLog().map(entry => entry.pid);
+  assert.equal(descendants(combined.group()).find(p => p.pid === helper)?.ppid, combined.worker()[0].pid);
+  assert.equal((await combined.terminate()).confirmed, true);
+  assert.equal(alive(helper), false);
+
+  const browserOnly = await linuxSession(t, {surfaces: ['browser']});
+  ok(await browserOnly.js('nodeRepl.write(JSON.stringify(await cua.listBrowsers({emit: false})));'));
+  const launched = browserOnly.fixture.launches();
+  assert.equal(launched.length, 2, 'kernel and trusted worker, each through the sandbox launcher');
+  for (const argv of launched) assert.match(argv[6], /":tmpdir" = "write", ":workspace_roots" = \{"\." = "write"\}\}, network = \{enabled = false\}\}$/, 'the scoped policy');
+  assert.equal(browserOnly.fixture.helperLog().length, 0, 'no computer-use helper without the computer surface');
+  assert.equal('OAI_SKY_LINUX_BIN' in browserOnly.launch.env, false);
+});

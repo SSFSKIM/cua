@@ -564,6 +564,9 @@ test('the host identity names the answering host and its version: the own host\'
   assert.equal(REPL_HOST_NAME, 'cua-repl-host');
   assert.equal(REPL_HOST_META_KEY, 'cua/replHost');
   assert.match(REPL_HOST_VERSION, /^\d+\.\d+\.\d+$/);
+  // Bumped once per milestone that changes what the own host answers (#116): 0.2.0 at M1, 0.3.0 for M2 and M3, 0.4.0
+  // for M4's Linux native route, so no recorded handshake or evidence of an earlier host passes for this one.
+  assert.equal(REPL_HOST_VERSION, '0.4.0');
   assert.deepEqual(hostIdentity({host: 'cua', release: '26.928.40906-darwin-arm64'}), {host: 'cua', version: REPL_HOST_VERSION});
   assert.deepEqual(hostIdentity({host: 'vendor', release: '26.928.40906-darwin-arm64'}), {host: 'vendor', version: '26.928.40906-darwin-arm64'});
 });

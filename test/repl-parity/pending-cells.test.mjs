@@ -49,3 +49,7 @@ test('pending skips only the classified scroll value check, never sibling result
 });
 
 test('no alternate-platform coverage can be manufactured by an empty or duplicate control set',()=>{assert.throws(()=>assertAlternativeCoverage([], 'api/browser-cuaapi/scroll'));const proof=loadAlternativeProofs()[0];assert.throws(()=>assertAlternativeCoverage([proof,proof], 'api/browser-cuaapi/scroll'));});
+
+test('pending projection preserves annotations and metadata siblings on its classified text item',()=>{
+ const a=run();for(const [field,value] of [['annotations',{audience:['assistant']}],['_meta',{fixture:'changed'}]]){const b=run();b.rows[0].content[0][field]=value;assert.equal(compareParityRuns(a,b).ok,false,field);}
+});

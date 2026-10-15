@@ -12,3 +12,8 @@ test('Chrome rewritten process titles expose safe flags without mistaking subpro
  const fs={readdirSync:()=>Object.keys(records),readFileSync:path=>{const [,pid,file]=/^\/proc\/(\d+)\/(.*)$/.exec(path);return file==='comm'?'chrome\n':file==='cmdline'?records[pid][0]+'\0':records[pid][1];}};
  const facts=chromeLaunchFacts(fs,{display:':0',home:'/fixture/h4'});assert.equal(facts.length,1);assert.equal(facts[0].executable,'/opt/google/chrome/chrome');assert.equal(facts[0].profileDirectory,'Default');assert.equal(facts[0].displaySource,'prepared-X-session (process environment unavailable)');assert.deepEqual(facts[0].flags,['--profile-directory=Default','--disable-gpu','--disable-background-timer-throttling']);assert.ok(!JSON.stringify(facts).includes('private'));
 });
+
+test('a value-taking Chrome switch cannot consume and record a following private switch',()=>{
+ const fs={readdirSync:()=>['1'],readFileSync:path=>path.endsWith('/comm')?'chrome\n':path.endsWith('/cmdline')?'/opt/google/chrome/chrome\0--use-gl\0--token=synthetic-private\0':'DISPLAY=:0\0'};
+ assert.throws(()=>chromeLaunchFacts(fs,{display:':0',home:'/fixture/h4'}),/Chrome launch flag/);
+});

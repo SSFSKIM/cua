@@ -19,7 +19,7 @@ export function chromeLaunchFacts(fs,{display,home}){
    const arg=argv[i],key=arg.split('=')[0];
    if(booleanFlags.has(arg))flags.push(arg);
    else if(valueFlags.has(key)){
-    const value=arg.includes('=')?arg.slice(key.length+1):argv[++i];if(value===undefined)throw Error('Incomplete Chrome launch flag');
+    const value=arg.includes('=')?arg.slice(key.length+1):argv[++i];if(value===undefined||value.startsWith('--'))throw Error('Incomplete Chrome launch flag: '+key);
     flags.push(key+'='+value);if(key==='--profile-directory')profileDirectory=value;
    }else if(arg.startsWith('--'))unrecordedFlagNames.push(key);else omittedPositionalArguments++;
   }

@@ -30,7 +30,16 @@ test('a no-op native drag or scroll cannot pass by returning undefined and leavi
 
 test('Linux full snapshots may change between observations without becoming diffs',async()=>{
  const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate');
- const filename='owned-fixture.txt',a=`Accessibility source: at_spi\n0 container ${filename}\n 1 text (focused, settable)\n 2 button Save`,b=a.replace('Save','Save document');let n=0,value;
+ const filename='owned-fixture.txt',a=`Accessibility source: at_spi\n0 frame ${filename}\n\t1 text (focused, settable)\n\t2 button Save`,b=a.replace('Save','Save document');let n=0,value;
  await new (Object.getPrototypeOf(async()=>{}).constructor)('app','nativeFilename','nativeSay',scenario.cells[0].code)({getAXState:async()=>n++?b:a},filename,v=>{value=v;});
  assert.equal(scenario.assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(value)}]},{isError:false,structuredContent:{status:'ended'}}]}).ok,true);
+});
+
+test('native snapshot assertions reject flat, ID-less, truncated and non-window trees',async()=>{
+ const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate'),filename='owned-fixture.txt';
+ for(const body of [`0 frame ${filename}\n1 text (settable)`,`frame ${filename}\n\ttext (settable)`,`0 frame ${filename} text (settable)`,`0 text (settable) ${filename}\n\t1 frame child`,`0 frame ${filename}\n\t\t1 text (settable)`]){
+  const ax='Accessibility source: at_spi\n'+body;let value;
+  await new (Object.getPrototypeOf(async()=>{}).constructor)('app','nativeFilename','nativeSay',scenario.cells[0].code)({getAXState:async()=>ax},filename,v=>{value=v;});
+  assert.throws(()=>scenario.assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(value)}]},{isError:false,structuredContent:{status:'ended'}}]}),body);
+ }
 });

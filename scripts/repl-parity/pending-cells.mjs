@@ -73,7 +73,7 @@ export function pendingProjection(run,ids){
   const status=classifyPendingCell(row);assert.deepEqual(row.pendingCell,{...declaration,status},'pending outcome annotation mismatch');
   observations.push({case:row.case,...declaration,status});
   // Raw evidence is untouched. Only this exact, classified content slot is projected; sibling fields still compare.
-  return {...row,content:[{type:'text',text:`<pending ${declaration.logicalCell}>`}]};
+  return {...row,content:[{...row.content[0],text:`<pending ${declaration.logicalCell}>`}]};
  });
  return {rows,observations};
 }

@@ -639,6 +639,8 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (M2 input, 2026-10-14): `buildLaunch` sets `CUA_REPL_OWNED_GROUP=1`. When the supervisor really is in the anchor's process group, every kernel end, expected or not, freezes and kills the group's other members, sparing the supervisor, the anchor and the supervisor's direct children. This kills reparented descendants of a dead or reset kernel. M2 must exclude the trusted worker's tree from this reaper.
+  Evidence: M1 task 2 review fix c6cd0d9, with a real-process regression through `spawnUpstream`.
 - Observation (M5 input, 2026-10-14): the cua-linux VM's system Node is 22.23.3, and its sshd accepts no user environment. Once Linux defaults to the own host at M5, how the resident agent resolves Node becomes a product question: an install-time check plus a `CUA_NODE` setting in the agent's own launcher or job environment, never a shell profile.
   Evidence: M1 task 2 report; session ruling recorded in the Decision Log the same day.
 - Observation (2026-10-14): the parity fixtures carry `CUA_NODE` through `serve-cells.mjs`, the boundary probe's child serves and the capability lane only when it is already set in the device's ssh environment; the controller Mac's value is deliberately not forwarded (it names a Mac path).

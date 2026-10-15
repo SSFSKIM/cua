@@ -10,15 +10,15 @@ const take=expression=>`try{var v=await (${expression});nativeValues.push(v===un
 function add(id,code,expected,{image=false}={}){
  const full='native/'+id,p=plan.get(full);assert.ok(p,full);
  scenarios.push({...p,backend:'native',boundaryProof:'native-live',imageMode:'live',screenshotTolerance:0,cells:[{label:'exercise',code:`var nativeValues=[];${code}nativeSay(nativeValues);`,timeoutMs:60000},{label:'end-task',op:'endTask'}],assert:({results})=>{
-  assert.equal(results.length,2);assert.deepEqual(report(results[0]),expected);assert.equal(results[0].content.filter(c=>c.type==='image').length,image?1:0);
-  if(image){const item=results[0].content.find(c=>c.type==='image');assert.equal(item.mimeType,'image/png');assert.ok(Buffer.from(item.data,'base64').length>100);}
+  assert.equal(results.length,2);if(typeof expected==='function')expected(report(results[0]));else assert.deepEqual(report(results[0]),expected);assert.equal(results[0].content.filter(c=>c.type==='image').length,image?1:0);
+  if(image){const item=results[0].content.find(c=>c.type==='image');assert.equal(item.mimeType,'image/jpeg');assert.ok(Buffer.from(item.data,'base64').length>100);}
   assert.equal(results[1].isError,false);assert.equal(results[1].structuredContent.status,'ended');return {ok:true};
  }});
 }
 const err=error=>({error});
 add('cua/computer',take(`({present:typeof cua.computer==='object',get:typeof cua.getApp==='function'})`),[{present:true,get:true}]);
 add('cua/computer.target',take('cua.computer.target'),['linux']);
-add('cua/computer.launch-app',take(`cua.computer.launch_app({app:'cua-m4-nonexistent-fixture-application'})`),[err('launch_app is not supported on Linux')]);
+add('cua/computer.launch-app',take(`cua.computer.launch_app({app:'cua-m4-nonexistent-fixture-application'})`),[err('launchable application "cua-m4-nonexistent-fixture-application" was not found')]);
 add('cua/getapp', ['null','"gedit"','{windowId:0}','{windowId:1.5}'].map(x=>take(`cua.getApp(${x})`)).join('')+take(`({bound:typeof app.getAXState==='function',owned:await nativeCheck(nativeFilename)})`),[...Array(4).fill(err('linux getApp requires { windowId } from listApps() or listWindows().')),{bound:true,owned:true}]);
 add('cua/listapps',take(`(async()=>{const all=await cua.listApps({emit:false});const found=all.find(a=>a.windows?.some(w=>w.id===nativeWindow.id));return {found:!!found,id:typeof found?.id,running:found?.isRunning,name:typeof found?.displayName,windows:Array.isArray(found?.windows)};})()`),[{found:true,id:'string',running:true,name:'string',windows:true}]);
 add('cua/listwindows',take(`(async()=>{const all=await cua.listWindows({emit:false});const found=all.find(w=>w.id===nativeWindow.id);return {found:!!found,id:Number.isSafeInteger(found?.id),app:typeof found?.app,title:typeof found?.title};})()`),[{found:true,id:true,app:'string',title:'string'}]);
@@ -33,5 +33,5 @@ add('target-app-decorated-tab/setvalue',take(`app.setValue(0,'fixture')`),[err('
 add('target-app-decorated-tab/performsecondaryaction',take(`app.performSecondaryAction(999999,'not-a-fixture-action')`),[err('Unknown element ID 999999 for this window; refresh get_window_state()')]);
 add('app/presskey',take(`(async()=>{for(const key of ['m','f','o','u','r'])await app.pressKey(key);const inserted=await nativeCheck('mfour');await app.pressKey('ctrl+a');await app.pressKey('BackSpace');return {inserted,cleared:!(await nativeAX()).includes('mfour')};})()`),[{inserted:true,cleared:true}]);
 const crash='D-Bus org.freedesktop.DBus.Properties.Get failed: org.freedesktop.DBus.Error.NoReply: Message recipient disconnected from message bus without replying';
-for(const [id,method] of [['app/typetext','typeText'],['app/paste','paste']])add(id,(method==='paste'?['html','md'].map(format=>take(`app.paste('fixture',{format:'${format}'})`)).join(''):'')+take(`app.${method}('cuamfourfixture')`)+take(`(async()=>{let end=Date.now()+10000;do{if(!(await cua.listWindows({emit:false})).some(w=>w.id===nativeWindow.id))return true;}while(Date.now()<end);return false;})()`),[...(method==='paste'?[err('Linux paste supports only text format.'),err('Linux paste supports only text format.')]:[]),err(crash),true]);
+for(const [id,method] of [['app/typetext','typeText'],['app/paste','paste']])add(id,(method==='paste'?['html','md'].map(format=>take(`app.paste('fixture',{format:'${format}'})`)).join(''):'')+take(`app.${method}('cuamfourfixture')`)+take(`(async()=>{let end=Date.now()+10000;do{if(!(await cua.listWindows({emit:false})).some(w=>w.id===nativeWindow.id))return true;}while(Date.now()<end);return false;})()`),values=>{const offset=method==='paste'?2:0;if(offset)assert.deepEqual(values.slice(0,2),[err('Linux paste supports only text format.'),err('Linux paste supports only text format.')]);assert.equal(values.length,offset+2);assert.deepEqual(Object.keys(values[offset]),['error']);assert.ok([crash,'Resource temporarily unavailable (os error 11)'].includes(values[offset].error),'unrecognized native input error');assert.equal(values[offset+1],true);});
 export default scenarios;

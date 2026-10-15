@@ -18,10 +18,16 @@ test('worker stdin injection is refused outside the isolated trusted fixture env
  try{await assert.rejects(handleRpc({op:'pipe',mode:'wire-error'}),/harness-only/);}finally{if(previous)Object.defineProperty(globalThis,'nodeRepl',previous);else delete globalThis.nodeRepl;}
 });
 
-test('Linux pending connect must expire at its configured budget with the vendor sentence',()=>{
+test('Linux live non-blocking connect refuses within its configured budget with the exact vendor sentence',()=>{
  const timeout=services.find(s=>s.id==='cells/native-pipe/connect-timeout');
  const run=value=>timeout.assert({results:[result({value:'warm'}),{...result(value),_meta:{'codex/nodeReplExecutionDurationMs':1100}}],timings:[0,1100]});
- const valid={refused:true,budget:1000,observation:'timer-expired',platform:'linux',message:'native pipe initial connect timed out',elapsedMatches:true};
+ const valid={refused:true,budget:1000,observation:'saturated-peer-refused',platform:'linux',message:'failed to connect native pipe: Resource temporarily unavailable (os error 11)',boundedRefusal:true};
  assert.equal(run(valid).ok,true);
- for(const patch of [{elapsedMatches:false},{message:'other timeout'},{budget:10},{observation:'saturated-peer-refused'}])assert.throws(()=>run({...valid,...patch}));
+ for(const patch of [{boundedRefusal:false},{message:'other timeout'},{budget:10},{observation:'timer-expired'}])assert.throws(()=>run({...valid,...patch}));
+});
+
+test('Linux abort preserves error-before-close and late replay from the real vendor observation',()=>{
+ const message='Connection reset by peer (os error 104)',linux={proof:'live-abort',events:['error','close'],lateEvents:[{event:'error',message},{event:'close'}],message};
+ assert.equal(scenario.assert({results:[result(linux),result(wire)],timings:[0,0],platform:'linux'}).ok,true);
+ assert.throws(()=>scenario.assert({results:[result(live),result(wire)],timings:[0,0],platform:'linux'}));
 });

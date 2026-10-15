@@ -76,7 +76,7 @@ export async function main(argv=process.argv.slice(2)){
     if(scenario.backend==='native'){await runNativeScenario(scenario,{pool,prepared,host:v.host,emit});continue;}
     if(scenario.backend==='fixture-services'){
       const fixture=await pool.open(cellsCommand({...prepared,host:v.host,fixtureServices:true,fixtureCase:scenario.id}),{capabilities:scenario.capabilities});
-      const assertion=await runRawScenario(scenario,{client:fixture,checkout:prepared.checkout,emit});if(!assertion.ok)failed=true;
+      const assertion=await runRawScenario(scenario,{client:fixture,checkout:prepared.checkout,emit,context:{platform:prepared.platform}});if(!assertion.ok)failed=true;
       const status=await fixture.close();if(status.code!==0)throw new Error('Fixture service cleanup failed');continue;
     }
     if(scenario.backend==='host-boundary'){const result=await runBoundaryScenario(scenario,{prepared,host:v.host});pool.addObservations(result.observations,scenario.id);const assertion=scenario.assert({results:result.rows.filter(r=>r.cell==='boundary').map(r=>r.value)});for(const row of result.rows)emit(row.assertion?{...row,assertion}:row);continue;}

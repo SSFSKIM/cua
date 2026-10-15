@@ -6248,7 +6248,14 @@
     "milestone": "M2",
     "cases": [
       "cells/native-pipe/connect-timeout"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-host/native-pipe.test.mjs",
+      "name": "a connect that never completes expires after the connect budget with the vendor sentence; the pending socket is destroyed and a late connect is never delivered"
+    },
+    "proofs": {
+      "cells/native-pipe/connect-timeout": "live-unreachable: non-blocking connect"
+    }
   },
   {
     "id": "cell/native-pipe/base64-correlation",

@@ -159,7 +159,7 @@ export function requiredBehaviors() {
   for (const name of secretNative) add('secret', `native/${name}`, 'M4', 'src/services/sky.mjs');
   for (const name of ['paste', 'type-text', 'set-value']) add('secret', `native/darwin/${name}`, 'M4', 'src/services/sky.mjs', ['darwin']);
   add('secret', 'native/linux/type-text', 'M4', 'src/services/sky.mjs', ['linux']);
-  return rows.map(secretProofContract);
+  return rows.map(row=>{if(row.id==='cell/native-pipe/connect-timeout')row.unitProof={file:'test/repl-host/native-pipe.test.mjs',name:'a connect that never completes expires after the connect budget with the vendor sentence; the pending socket is destroyed and a late connect is never delivered'};return secretProofContract(row);});
 }
 
 export function validateInventory(rows, contracts) {
@@ -170,7 +170,7 @@ export function validateInventory(rows, contracts) {
   assert.deepEqual(sorted(rows.map(row => row.id)), sorted(expected.keys()), 'exact Table 1 and cell/secret membership');
   const consumers = typeConsumers(contracts);
   for (const row of rows) {
-    assert.deepEqual(sorted(Object.keys(row)), sorted(['cases', 'id', 'kind', 'milestone', 'platforms', ...(row.proofs?['proofs']:[]), ...(row.kind==='secret'?['liveRequired',...(row.unitCases?['unitCases','unitProof']:[])]:[]), 'source']), row.id);
+    assert.deepEqual(sorted(Object.keys(row)), sorted(['cases', 'id', 'kind', 'milestone', 'platforms', ...(row.proofs?['proofs']:[]), ...(row.kind!=='secret'&&row.unitProof?['unitProof']:[]), ...(row.kind==='secret'?['liveRequired',...(row.unitCases?['unitCases','unitProof']:[])]:[]), 'source']), row.id);
 
     assert.match(row.id, /^(member|type|cell|secret)\/[a-z0-9.-]+(?:\/[a-z0-9.-]+)+$/);
     const contract = expected.get(row.id);
@@ -194,6 +194,7 @@ export function validateInventory(rows, contracts) {
     } else {
       assert.equal(row.milestone, contract.milestone, `${row.id}: due milestone`);
       assert.deepEqual(row.cases, contract.cases, `${row.id}: required behavior case`);
+      if(contract.unitProof)assert.deepEqual(row.unitProof,contract.unitProof,`${row.id}: required unit proof`);
       if(row.kind==='secret')for(const key of ['liveRequired','unitCases','unitProof'])assert.deepEqual(row[key],contract[key],`${row.id}: ${key} proof obligation`);
     }
     const proofs=Object.fromEntries(row.cases.flatMap(id=>{const scenario=scenarios.find(s=>s.id===id);const proof=scenario?.boundaryProof??(scenario?.backend==='binder-double'?'binder-double':undefined);return proof?[[id,proof]]:[];}));

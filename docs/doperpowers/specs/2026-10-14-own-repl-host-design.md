@@ -539,6 +539,11 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision (amends the #141 entry): the pending-environment declaration works per cell. On Linux, the two logical scroll operations (coordinate and DOM) are declared once, citing #141. That declaration applies to all 14 api cases that execute those cells: every CuaAPI and DomCuaAPI member, plus `tab.cua`/`tab.dom_cua`. Every other cell in those cases still runs and is compared.
+  - Both runs must declare the same pending set, and the diff lists pending cells visibly. A pending cell that passes is reported.
+  - The two scroll-member obligations are pending on Linux and never counted as covered. The completeness gate accepts that only because a live proof on another platform exists, the mini's M3 api suite.
+  Rationale: Marking 14 whole cases pending would discard live Linux coverage of 12 members that work.
+  Date/Author: 2026-10-15, plan-executor ruling on M4 task 1's finding.
 - Decision: On cua-linux, the final M4 vendor and own pairs record exactly the two browser scroll cases (coordinate and DOM) as pending-environment, through the harness's declared `--pending` reason, citing #141.
   - Those two cases are visible in the diff and never counted as covered.
   - In the VM's Chrome, `Input.synthesizeScrollGesture` stalls at the 10,000 ms timeout for both hosts. It kept stalling after relaunches with the anti-throttling flags and with `--disable-gpu`.

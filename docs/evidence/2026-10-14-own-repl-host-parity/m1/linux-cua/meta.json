@@ -2,8 +2,8 @@
   "schema": 1,
   "host": "cua",
   "observedHost": "cua",
-  "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
-  "harnessCommit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+  "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+  "harnessCommit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
   "node": "v22.23.3",
   "runtimeRelease": "26.928.40906-linux-arm64",
   "ownNode": {
@@ -689,7 +689,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -705,7 +705,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "fb9a8c18-d9a6-4595-bd4a-29e7e3615c8a"
+        "cua/taskId": "878686a3-ba3c-4388-a321-dd2cb2ad7c18"
       }
     },
     {
@@ -718,7 +718,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -734,7 +734,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "91a9d82c-c3f4-481e-9903-b70edcc9ece7"
+        "cua/taskId": "b1746da6-a36e-4c83-9ebd-3008ac791ee9"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -752,7 +752,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -769,7 +769,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "0de50c6e-357f-44e7-9b20-a4eaabbe1ee5"
+        "cua/taskId": "b0aee525-6da9-4f34-b33f-cba8d2874e57"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -787,7 +787,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -804,7 +804,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "e2e77d23-af01-4e55-b9ae-daed63716412"
+        "cua/taskId": "0b4e954b-24bd-4e62-9e4f-da4d1f435a74"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -822,7 +822,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -839,7 +839,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "9bf2bdfb-e329-469b-bdc0-24c1c1b70b1c"
+        "cua/taskId": "64b8c37b-09dc-4bbf-9729-56eb46cf74ff"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -857,7 +857,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -874,7 +874,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "dc16ebd6-1c07-4396-855a-8b56ee1d0615"
+        "cua/taskId": "1778c63c-6cfd-45a7-84ec-81aa54a837e2"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -892,7 +892,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -909,7 +909,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "807330a4-0729-4e1a-94cd-bd9a47363a89"
+        "cua/taskId": "f3cb0517-8092-478d-8660-a5bb3fbad5e8"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -927,7 +927,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -944,7 +944,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "e15e6ed4-a335-421e-809c-248a1ee0107a"
+        "cua/taskId": "c933bca4-fed9-41a7-b480-c8091e9f3391"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -962,7 +962,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -974,12 +974,12 @@
         }
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 3,
+        "codex/nodeReplExecutionDurationMs": 2,
         "cua/replHost": {
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "5b35111e-c96a-4bde-a66c-68e441600307"
+        "cua/taskId": "1824f902-b2be-4787-a369-d35d198650e0"
       },
       "fixture": {
         "sandbox": "default",
@@ -997,7 +997,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -1014,7 +1014,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "7448e852-37f3-483d-a1ab-c7a271a4df53"
+        "cua/taskId": "2f1dd374-ca03-4304-90ca-80387cc0e126"
       },
       "fixture": {
         "sandbox": "scoped",
@@ -1032,7 +1032,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -1044,12 +1044,12 @@
         }
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 10,
+        "codex/nodeReplExecutionDurationMs": 3,
         "cua/replHost": {
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "46cc0340-0293-4767-8d05-30f45b144f0a"
+        "cua/taskId": "baf94d26-2c8c-4d91-aba4-7b1ef1213433"
       },
       "fixture": {
         "sandbox": "disabled",
@@ -1067,7 +1067,7 @@
       "executionFacts": {
         "checkout": "/home/admin/Developer/GitHub/cua-parity",
         "home": "/home/admin/.local/share/cua",
-        "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
         "dirty": false,
         "release": "26.928.40906-linux-arm64",
         "node": "v22.23.3",
@@ -1083,7 +1083,7 @@
           "host": "cua",
           "version": "0.2.0"
         },
-        "cua/taskId": "7a738adf-c30f-4d76-bcd6-aa30e4bcdafd"
+        "cua/taskId": "534601a2-2e02-4131-a2bb-c4c5bc1346bc"
       },
       "fixture": {
         "sandbox": "scoped",

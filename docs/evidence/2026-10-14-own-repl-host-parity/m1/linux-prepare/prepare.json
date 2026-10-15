@@ -1,7 +1,7 @@
 {
   "checkout": "/home/admin/Developer/GitHub/cua-parity",
   "home": "/home/admin/.local/share/cua",
-  "commit": "c6cd0d93035121bb7a5f6cc8b59dd5be3a798657",
+  "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
   "dirty": false,
   "release": "26.928.40906-linux-arm64",
   "node": "v22.23.3",

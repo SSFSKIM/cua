@@ -11,7 +11,7 @@ cell environment). The suite is `cells --through M1`, compared against `m0/vendo
   `results.jsonl` and the effective MCP tool contract in `tools.json`.
 - `mini-prepare/`, `linux-prepare/`: readiness and source/runtime facts. `mini-diff.json`, `linux-diff.json`,
   `summary.json`: verdicts and counts.
-- Source and harness commit: `c6cd0d9 (the review-fix head)`.
+- Source and harness commit: `8f56fb5 (the re-review-fix head)`.
 
 ## Result
 
@@ -24,7 +24,7 @@ cell environment). The suite is `cells --through M1`, compared against `m0/vendo
   `m0/linux-vendor-1`: **0 unexpected differences**; the same 134 identity slots plus the one declared security departure
   below. The comparison still reports `allAssertionsPassed: false` because the vendor control carries its declared defect.
 - The default budget was exercised, not inferred: `cells/timeouts/default-30000` sent no `timeout_ms` and was answered
-  `js execution timed out; kernel reset, rerun your request` after 30,150 ms (mini) and 30,192 ms (cua-linux); the vendor
+  `js execution timed out; kernel reset, rerun your request` after 30,141 ms (mini) and 30,054 ms (cua-linux); the vendor
   control took 30,036 ms.
 - 63 exact image observations per run; no raw image bytes are stored.
 
@@ -49,7 +49,7 @@ own side (`scripts/repl-parity/compare.mjs validateExpected`); any other differe
 ## Reproduce
 
 ```sh
-node scripts/repl-parity.mjs prepare --device mini --commit c6cd0d9 --profile ssfs
+node scripts/repl-parity.mjs prepare --device mini --commit 8f56fb5 --profile ssfs
 node scripts/repl-parity.mjs run --host cua --device mini --suite cells --through M1 --out /tmp/repl-m1-mini
 node scripts/repl-parity.mjs diff docs/evidence/2026-10-14-own-repl-host-parity/m0/vendor-1 /tmp/repl-m1-mini --through M1 --expected test/repl-parity/expected-differences.json
 ```

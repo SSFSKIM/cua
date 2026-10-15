@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The nativePipe connect-timeout case records only what macOS can show. On the mini, the vendor case records the explicit 1,000 ms configuration and bounded refusal against a saturated, owned AF_UNIX peer. There, a full backlog refuses immediately, so the timer-expiry branch is not claimed live, and no allowance is added. M2 task 2 proves expiry with a socket-double unit test: the vendor sentence, the pending socket destroyed, and no late delivery. A Linux variant due M4 exercises real expiry on cua-linux, where a full backlog leaves connect pending.
+  Rationale: An honest oracle over a claimed-but-unreachable branch; the branch is proven where the OS allows it.
+  Date/Author: 2026-10-14, plan-executor ruling on M2 task 1's report.
 - Decision: The M2 tools oracle compares against an **effective** vendor control, not M0's base `tools.json`.
   - `m0/vendor-1/tools.json` is the base, no-services surface and stays as it is.
   - M2 task 1 records the vendor's effective `tools/list` through a production-shaped, browser-only vendor launch and commits it as the M2 vendor control.

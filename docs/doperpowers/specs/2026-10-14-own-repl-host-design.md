@@ -539,6 +539,17 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M4 task 1 (the Linux oracle) as built.
+  - **Native cases:** 19 live cases on real `sky_linux` with harness-owned gedit. Drag, scroll and click have reversible action witnesses: drag removes 15 contiguous characters, scroll moves a fixed-point witness from index 192 to index 821, and click removes one character at line 6. Each change is undone afterwards.
+  - **Full-tree check:** the AX tree must follow the pinned formatter's grammar: a named frame root, decimal ID-prefixed lines, tab hierarchy with no depth jumps, empty tails allowed, and a nested editable text node. Successive snapshots are not compared byte for byte.
+  - **Native secrets:** 14 secret cases at the service boundary.
+  - **Browser ids:** mapped by backend/profile identity.
+  - **Comparison scoping:** per-case configurations are compared only for selected cases, with legacy run-level equivalence.
+  - **Pending cells:** cell-level pending scoped to Linux/M4. The declaration hash-pins both M3 mini proofs, the projection replaces only the pending text, and an unexpected pass is reported.
+  - **Chrome launch provenance:** safe flags only; a value flag never consumes a following switch.
+  - **Vendor controls** at a5bb1cf: 493 cases (490 covered), 1,392 cells, 91 attestations per run, 0 differences, 0 allowances.
+  Rationale: This is the Linux oracle task 3 is graded against.
+  Date/Author: 2026-10-15, M4 task 1 executor and its reviews, folded by the plan-executor.
 - Decision: Two rules to keep machine load down, at the owner's request.
   - (1) The session stops the cua-linux VM as soon as M4 task 3's live runs end, and restarts it when M5 reaches its Linux steps. The controller tells the session the moment task 3 is done with the VM, before review and PR work. M5 orders its code tasks and its mini-side runs before anything that needs cua-linux.
   - (2) Local full `npm test` suites run one at a time and are never concurrent across executors. Focused test files may run in parallel.

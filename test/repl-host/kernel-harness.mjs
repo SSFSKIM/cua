@@ -40,10 +40,14 @@ export function startKernel(t, {node, env = {}, sessionId = 'kernel-test', args}
   child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
   const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({code, signal})));
   const received = [];
+  let markReady;
+  const ready = new Promise(resolve => { markReady = resolve; });
   let waiters = [];
   createInterface({input: child.stdout}).on('line', line => {
     let message;
     try { message = JSON.parse(line); } catch { message = {raw: line}; }
+    // runtime_ready (the runtime's start-up announcement) is the supervisor's signal, not execution traffic: kept apart.
+    if (message?.type === 'runtime_ready') { markReady(message); return; }
     received.push(message);
     const woken = waiters;
     waiters = [];
@@ -95,5 +99,5 @@ export function startKernel(t, {node, env = {}, sessionId = 'kernel-test', args}
     }
   }
 
-  return {child, cwd, exec, send, next, received, exited, stderr: () => stderr};
+  return {child, cwd, exec, send, next, received, ready, exited, stderr: () => stderr};
 }

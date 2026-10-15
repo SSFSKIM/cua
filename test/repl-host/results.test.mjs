@@ -47,3 +47,11 @@ test('emitted images: image/* data URLs only, canonical base64 or percent-encode
   assert.deepEqual(imageFromDataUrl('data:image/png;base64'), {error: 'nodeRepl.emitImage received a malformed data URL'});
   assert.deepEqual(imageFromDataUrl('https://example.invalid/x.png'), {error: 'nodeRepl.emitImage only accepts data URLs'});
 });
+
+test('content items trusted code adds are text items after the images; response meta joins the duration in _meta, on success and error', () => {
+  assert.deepEqual(assembleResult({ok: true, output: 'x', images: [image()], contentItems: ['Browser notifications: one']}).content, [text('x'), image(), text('Browser notifications: one')]);
+  assert.deepEqual(assembleResult({ok: true, output: 'x', durationMs: 4, responseMeta: {a: 1}})._meta, {a: 1, 'codex/nodeReplExecutionDurationMs': 4});
+  assert.deepEqual(assembleResult({ok: true, output: 'x', responseMeta: {'codex/nodeReplExecutionDurationMs': 'forged'}, durationMs: 4})._meta, {'codex/nodeReplExecutionDurationMs': 4}, 'the host\'s key wins');
+  assert.deepEqual(assembleResult({ok: false, error: 'boom', responseMeta: {a: 1}})._meta, {a: 1});
+  assert.equal(Object.hasOwn(assembleResult({ok: true, output: 'x', responseMeta: {}}), '_meta'), false);
+});

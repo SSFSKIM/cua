@@ -1,0 +1,22 @@
+{
+  "harnessCommit": "edab6affd0aa07e510f4d43565d71e0f9b500ce3",
+  "comparison": "Unmodified M0 vendor controls versus unmodified M1 own evidence, through M1, with source-pinned allowances",
+  "results": [
+    {
+      "platform": "mini",
+      "ok": true,
+      "coveredCases": 111,
+      "recordedCases": 111,
+      "differences": 0,
+      "accepted": 134
+    },
+    {
+      "platform": "linux",
+      "ok": true,
+      "coveredCases": 111,
+      "recordedCases": 112,
+      "differences": 0,
+      "accepted": 135
+    }
+  ]
+}

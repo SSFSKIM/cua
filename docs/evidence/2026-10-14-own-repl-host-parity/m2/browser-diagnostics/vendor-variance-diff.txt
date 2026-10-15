@@ -1,0 +1,4 @@
+# node scripts/browser-parity.mjs diff m2/browser-diagnostics/hist-vendor m2/browser-diagnostics/vendor-variance-1 --scenarios actions/wait-for.mjs   (vendor host both sides, rmcp 1.5.0 attested, no allowances)
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.evaluate","a":11,"b":12}
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.releaseObject","a":7,"b":8}
+2 differences (1 cases, 1 cells; scenarios actions/wait-for.mjs)

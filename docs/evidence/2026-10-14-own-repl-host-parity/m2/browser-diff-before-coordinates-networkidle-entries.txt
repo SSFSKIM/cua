@@ -1,0 +1,4 @@
+{"case":"input/coordinates","cell":"drag","kind":"trace","method":"Runtime.evaluate","a":2,"b":3}
+{"case":"input/coordinates","cell":"drag","kind":"trace","method":"Runtime.releaseObject","a":0,"b":1}
+{"case":"waits/networkidle","cell":"idle","kind":"trace","method":"Page.lifecycleEvent","a":12,"b":11}
+3 unexpected differences (59 cases, 151 cells, 4 expected)

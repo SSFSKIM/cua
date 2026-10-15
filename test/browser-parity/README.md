@@ -56,7 +56,7 @@ Binary cell results travel as MCP image blocks (not large JSON arrays subject to
 
 Trace comparison counts CDP methods as a multiset, ignoring event order/IDs/timing. Optional case `pollingAllowance:{'Runtime.callFunctionOn':3, 'DOM.*':2, 'Page.getLayoutMetrics':1}` allows only bounded count differences for those polling methods. Non-polling methods cannot receive allowances. The allowance declarations must agree between runs.
 
-An expected-difference entry is `{cases:['concern/case'], cells:['label'], kind:'semantic'|'trace', reason:'why'}`. It cannot waive cardinality, invalid evidence, changed comparison settings or a failing assertion. Keep entries narrowly scoped. `expected-differences.json` started empty; M1a added its first entry (`dialog_open` for a locator action while a dialog is open, `dialogs/alert` `blocked`).
+An expected-difference entry is `{cases:['concern/case'], cells:['label'], kind:'semantic'|'trace', reason:'why'}`. It cannot waive cardinality, invalid evidence, changed comparison settings or a failing assertion. Keep entries narrowly scoped. A trace entry may also name its `methods` and a `maxDelta`; a difference outside them stays a difference. REPL-host allowances live in `repl-host-expected-differences.json`, each with `axis:'repl-host'`. `diff` applies them only to a vendor-host run against a cua-host run of the same service, and such a comparison takes no other entries; vendor-against-vendor runs never take them. `expected-differences.json` started empty; M1a added its first entry (`dialog_open` for a locator action while a dialog is open, `dialogs/alert` `blocked`).
 
 ## Fixture surface
 

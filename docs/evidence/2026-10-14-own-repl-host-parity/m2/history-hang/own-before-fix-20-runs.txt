@@ -1,0 +1,26 @@
+cua-1 exit 0 case capabilities/history ok
+cua-2 exit 0 case capabilities/history ok
+cua-3 exit 0 case capabilities/history ok
+cua-4 exit 0 case capabilities/history ok
+cua-5 exit 0 case capabilities/history ok
+cua-6 exit 0 case capabilities/history ok
+cua-7 exit 1 case capabilities/history FAIL assertion
+cua-8 exit 0 case capabilities/history ok
+cua-9 exit 0 case capabilities/history ok
+cua-10 exit 0 case capabilities/history ok
+cua-11 exit 0 case capabilities/history ok
+cua-12 exit 1 case capabilities/history FAIL assertion
+cua-13 exit 0 case capabilities/history ok
+cua-14 exit 0 case capabilities/history ok
+cua-15 exit 0 case capabilities/history ok
+cua-16 exit 0 case capabilities/history ok
+cua-17 exit 1 case capabilities/history FAIL assertion
+cua-18 exit 0 case capabilities/history ok
+cua-19 exit 0 case capabilities/history ok
+cua-20 exit 0 case capabilities/history ok
+vendor-1 exit 0 case capabilities/history ok
+vendor-2 exit 0 case capabilities/history ok
+vendor-3 exit 0 case capabilities/history ok
+vendor-4 exit 0 case capabilities/history ok
+vendor-5 exit 0 case capabilities/history ok
+LOOP-DONE

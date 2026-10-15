@@ -3,13 +3,24 @@
 // `nodeRepl` bridge with `write` and `emitImage`) and NR:realmChecks.js:1-26 (`isArrayBuffer`, inlined below), for
 // docs/doperpowers/specs/2026-10-14-own-repl-host-design.md (M1, interfaces KernelWire and CellRuntime). Changes from
 // the source: an ES module; `emitAudio` and the per-execution GAAS browser configuration are not ported (audio and GAAS
-// are not cua surfaces). Every sentence a cell can observe is the vendor's. #120's clean-room rewrite replaces this
-// port before distribution.
+// are not cua surfaces); the process's time zone is settled as this module loads, and `listen` announces
+// `runtime_ready` before it reads any work (both below, both cua's: a start-up that blocks must be detectable). Every
+// sentence a cell can observe is the vendor's. Since M2 the trusted worker
+// (./trusted-worker.mjs) runs on it too, as the vendor's does; it needed no part the kernel had not already ported.
+// #120's clean-room rewrite replaces this port before distribution.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
+
+// cua: the process's time zone is settled now, while it starts. A sandboxed process's first local-time use asks
+// launchd for the notification service (ICU's host time-zone detection -> tzset -> notify_register_tz ->
+// bootstrap_look_up2), and under the macOS sandbox that lookup, made seconds into a busy process, can block for good: a
+// kernel hung in Date.prototype.toISOString in about one browser history run in eight on the mini, on the vendor host
+// as on this one, and a sandboxed probe blocked in 15 of 80 late lookups against none of 280 made at startup
+// (2026-10-15). Both the kernel and the trusted worker load this module first.
+new Date(0).getTimezoneOffset();
 
 /**
  * Realm-safe checks for values passed from a Node REPL VM context.
@@ -386,6 +397,9 @@ export function createWorkerRuntime({ cwd, env, homeDir, tmpDir }) {
   }
 
   function listen(handleMessage) {
+    // cua: the process has loaded (its time zone settled above) and now reads work; the supervisor holds work for it
+    // until this arrives and replaces a child that never sends it (src/repl-host/supervisor.mjs).
+    send({ type: "runtime_ready" });
     let pendingInputSegments = [];
 
     function handleInputFrame(frame) {

@@ -21,3 +21,9 @@ test('the connection collector records both reconnects rather than recycling the
  assert.equal(pool.metadata().hostAttestations.length,2);
  assert.notEqual(pool.metadata().hostAttestations[0].connection,pool.metadata().hostAttestations[1].connection);
 });
+
+test('harness cleanup has its own configurable wait without changing production completion deadlines',async()=>{
+ const command={command:process.execPath,args:['-e',`process.stdin.resume();process.stdin.on('end',()=>setTimeout(()=>{},300));`]};
+ const short=new StdioClient({...command,closeTimeoutMs:20});assert.equal((await short.close()).signal,'SIGKILL');
+ const enough=new StdioClient({...command,closeTimeoutMs:1000});assert.equal((await enough.close()).code,0);
+});

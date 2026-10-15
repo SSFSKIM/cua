@@ -174,3 +174,23 @@ test('rpc exists only when configured, and correlates trusted service requests a
   failed(thrown.result, 'cell-error');
   assert.deepEqual(types(thrown.messages), ['submitted_code_complete', 'trusted_service_hooks', 'exec_result']);
 });
+
+test('the shared runtime settles the process\'s time zone as it loads, before any cell or service runs', async () => {
+  // A sandboxed process's first local-time use asks launchd for the notification service (ICU -> tzset ->
+  // notify_register_tz); made seconds into a busy process, that lookup blocked in about one run in six on the mini
+  // (2026-10-15), hanging the kernel, while at startup it never did. The runtime makes that first use at load.
+  const {execFileSync} = await import('node:child_process');
+  const {mkdtempSync, writeFileSync, rmSync} = await import('node:fs');
+  const {tmpdir} = await import('node:os');
+  const {join} = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'cua-tz-'));
+  try {
+    const preload = join(dir, 'record.mjs');
+    writeFileSync(preload, 'const original = Date.prototype.getTimezoneOffset; globalThis.__tzUses = [];\n'
+      + 'Date.prototype.getTimezoneOffset = function () { globalThis.__tzUses.push(globalThis.__phase ?? "before-import"); return original.call(this); };\n');
+    const runtime = new URL('../../src/repl-host/worker-runtime.mjs', import.meta.url).href;
+    const out = execFileSync(process.execPath, ['--import', preload, '--input-type=module', '-e',
+      `globalThis.__phase = 'import'; await import(${JSON.stringify(runtime)}); globalThis.__phase = 'after'; console.log(JSON.stringify(globalThis.__tzUses));`], {encoding: 'utf8'});
+    assert.deepEqual(JSON.parse(out), ['import']);
+  } finally { rmSync(dir, {recursive: true, force: true}); }
+});

@@ -8,6 +8,10 @@
 // but keeps every sentence of the base text, which cua's proxy layers its own rules above (src/mcp/surface.mjs).
 // Argument errors are JSON-RPC invalid-params errors worded as the vendor's serde deserializer words them (observed on
 // the pinned runtime, 2026-10-14); an unknown tool is a tool result, as the vendor's is.
+// Overrides (`toolOverrides`, M2): the vendor's launcher replaces the base text with its own through
+// NODE_REPL_TOOL_OVERRIDES ({server_instructions, tools: {<tool>: {description, field_descriptions: {<field>}}}}); the
+// own host takes the same JSON from CUA_REPL_TOOL_OVERRIDES (built by src/runtime/launch.mjs from ./instructions.mjs) and
+// applies it the same way. Without it (cua's no-services parity lane) the base text is served.
 import {REPL_HOST_NAME, REPL_HOST_VERSION} from './identity.mjs';
 
 // The protocol versions the vendor's rmcp 1.5.0 knows: a client asking for one of them gets it, any other gets the latest.
@@ -19,9 +23,44 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 const JS_DESCRIPTION = 'Execute JavaScript in a persistent `node_repl` with top-level await. Top-level bindings persist until `js_reset` and can be redeclared. Use `const` for stable values and `let` for changing values. Use dynamic imports such as `await import("playwright")`; top-level static imports and `node:process` are unavailable. Use `nodeRepl.write(value)` for output and `await nodeRepl.emitImage(image)` for images. Execution context is available through `nodeRepl.cwd`, `nodeRepl.homeDir`, `nodeRepl.tmpDir`, and `nodeRepl.requestMeta`. The default timeout is 30000 ms (30 seconds); increase `timeout_ms` for longer operations. Use `js_add_node_module_dir` when an additional package directory is required.';
 const SANDBOXED_ANNOTATIONS = {readOnlyHint: true, destructiveHint: false, openWorldHint: false};
 
-// The tools in the vendor's order. `js` carries its annotations only when the host can sandbox (the vendor's
-// Option<SandboxConfig>); js_reset's are unconditional.
-export function toolsFor({sandboxed}) {
+const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isText = value => typeof value === 'string';
+
+// The CUA_REPL_TOOL_OVERRIDES value -> the overrides, or null when unset or empty. Throws on a value that is not the
+// overrides' shape: a host must not serve a half-applied tool text.
+export function parseToolOverrides(value) {
+  if (value === undefined || value === '') return null;
+  let parsed;
+  try { parsed = JSON.parse(value); } catch { throw new Error('CUA_REPL_TOOL_OVERRIDES must be JSON'); }
+  const valid = isPlainObject(parsed) && (parsed.server_instructions === undefined || isText(parsed.server_instructions))
+    && (parsed.tools === undefined || (isPlainObject(parsed.tools) && Object.values(parsed.tools).every(tool => isPlainObject(tool)
+      && (tool.description === undefined || isText(tool.description))
+      && (tool.field_descriptions === undefined || (isPlainObject(tool.field_descriptions) && Object.values(tool.field_descriptions).every(isText))))));
+  if (!valid) throw new Error('CUA_REPL_TOOL_OVERRIDES must be {server_instructions?, tools?: {<tool>: {description?, field_descriptions?}}} of strings');
+  return parsed;
+}
+
+// `tool` with its override applied: the description replaced, and each named field's description replaced where the
+// field exists.
+function overridden(tool, override) {
+  if (!override) return tool;
+  const out = {...tool, ...(override.description !== undefined ? {description: override.description} : {})};
+  if (override.field_descriptions) {
+    const properties = {...out.inputSchema.properties};
+    for (const [field, description] of Object.entries(override.field_descriptions))
+      if (Object.hasOwn(properties, field)) properties[field] = {...properties[field], description};
+    out.inputSchema = {...out.inputSchema, properties};
+  }
+  return out;
+}
+
+// The tools in the vendor's order, with `overrides` (parseToolOverrides) applied. `js` carries its annotations only when
+// the host can sandbox (the vendor's Option<SandboxConfig>); js_reset's are unconditional.
+export function toolsFor({sandboxed, overrides = null}) {
+  return baseTools({sandboxed}).map(tool => overridden(tool, overrides?.tools?.[tool.name]));
+}
+
+function baseTools({sandboxed}) {
   return [
     {
       name: 'js',
@@ -59,12 +98,12 @@ export function toolsFor({sandboxed}) {
   ];
 }
 
-export function initializeResult({protocolVersion, sandboxed}) {
+export function initializeResult({protocolVersion, sandboxed, overrides = null}) {
   return {
     protocolVersion: PROTOCOL_VERSIONS.includes(protocolVersion) ? protocolVersion : PROTOCOL_VERSIONS.at(-1),
     capabilities: {...(sandboxed ? {experimental: {[SANDBOX_CAPABILITY]: {}}} : {}), tools: {listChanged: true}},
     serverInfo: {name: REPL_HOST_NAME, version: REPL_HOST_VERSION},
-    instructions: SERVER_INSTRUCTIONS,
+    instructions: overrides?.server_instructions ?? SERVER_INSTRUCTIONS,
   };
 }
 

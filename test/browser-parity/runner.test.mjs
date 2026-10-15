@@ -156,6 +156,6 @@ test('the capability-host serve gets only its scratch homes and fixed settings, 
     CUA_BROWSER_DEFAULT_INSTANCE:'maws:x',CUA_SHIM_SURFACES:'computer,browser',NODE_OPTIONS:'--require /synthetic/hook.js',MAWS_E2E_QUIET:'1'};
   const command=localCuaServeCommand({service:'cua',home:'/tmp/cua-cap-x',userHome:'/tmp/cua-cap-x/home'},ambient);
   assert.deepEqual(command.env,{PATH:'/synthetic/bin',TMPDIR:'/synthetic/tmp/',LANG:'en_US.UTF-8',USER:'owner',
-    HOME:'/tmp/cua-cap-x/home',CUA_HOME:'/tmp/cua-cap-x',CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off'});
+    HOME:'/tmp/cua-cap-x/home',CUA_HOME:'/tmp/cua-cap-x',CUA_BROWSER_SERVICE:'cua',CUA_REPL_HOST:'vendor',CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off'});
   assert.throws(()=>localCuaServeCommand({service:'cua',home:'/tmp/cua-cap-x',userHome:'/Users/owner'},ambient),/inside the scratch home/);
 });

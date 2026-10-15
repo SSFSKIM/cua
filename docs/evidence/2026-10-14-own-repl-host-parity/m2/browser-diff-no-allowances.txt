@@ -1,0 +1,8 @@
+{"case":"actions/slow-budget","cell":"late","kind":"trace","method":"Runtime.evaluate","a":80,"b":79}
+{"case":"actions/slow-budget","cell":"late","kind":"trace","method":"Runtime.releaseObject","a":76,"b":75}
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.evaluate","a":11,"b":12}
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.releaseObject","a":7,"b":8}
+{"case":"input/coordinates","cell":"drag","kind":"trace","method":"Runtime.evaluate","a":2,"b":3}
+{"case":"input/coordinates","cell":"drag","kind":"trace","method":"Runtime.releaseObject","a":0,"b":1}
+{"case":"waits/networkidle","cell":"idle","kind":"trace","method":"Page.lifecycleEvent","a":12,"b":11}
+7 differences (59 cases, 151 cells)

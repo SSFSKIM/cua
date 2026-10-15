@@ -1,0 +1,2 @@
+{"case":"dialogs/paused-response","cell":"start","kind":"trace","method":"Fetch.requestPaused","a":1,"b":0}
+1 unexpected differences (59 cases, 151 cells, 4 expected)

@@ -1,0 +1,121 @@
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/concurrent-fill ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/doubleclick ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/locators ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/overlay ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/slow-budget ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/strict-error ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case actions/wait-for ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/clipboard-page ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/clipboard ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/cursor ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/export-authenticated ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/export-rejections ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/history ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/logs ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/m2-disabled ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/m3-disabled ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/m3-members ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/page-assets ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case capabilities/viewport ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case dialogs/alert ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case dialogs/paused-response ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case dialogs/prompt ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case downloads/ask-where-to-save ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case downloads/blocked-navigation ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case downloads/chooser ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case downloads/media ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case downloads/two-tabs ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/attributes ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/budget ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/context-loss ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/counter ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/late-completion ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/mutation ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/no-replay ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case evaluate/read ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case examples/concurrency ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case examples/tabs ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/ax-disabled ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/coordinates ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/dom ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/long-type ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/oopif-type ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/queued-shortcuts ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case input/rich-text ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case reads/frames ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case reads/locators ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case reads/oopif ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case reads/snapshot ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case reads/visible-dom-dense ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case reads/zero-budget ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case screenshot/clip ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case screenshot/modes ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case tabs/discovery ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case tabs/lifecycle ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case tabs/manual-handoff-disabled ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case tabs/navigation ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case waits/networkidle ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case waits/page ok
+attested: cua (# Selected Browser) at c49777cc9c96383f9b858abaf449f8581baee9cc
+case waits/zero-budget ok
+vendor exit 0

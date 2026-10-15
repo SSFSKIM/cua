@@ -267,7 +267,7 @@ test('closed resolves only after every kernel stop in flight has finished, howev
   const stopDone = new Promise(resolve => { finishStop = resolve; });
   let stopFinished = false;
   // A kernel that never answers and whose stop (its tree kill and reaping) completes only when the test says so.
-  const startKernel = () => ({send: () => true, stop: () => stopDone.then(() => { stopFinished = true; })});
+  const startKernel = (launch, {onMessage}) => { setImmediate(() => onMessage({type: 'runtime_ready'})); return {send: () => true, stop: () => stopDone.then(() => { stopFinished = true; })}; };
   const input = new PassThrough(), output = new PassThrough();
   output.resume();
   const supervisor = createSupervisor({input, output, env: {CUA_REPL_NODE_PATH: '/fixture/node', PATH: '/usr/bin:/bin'}, cwd: '/fixture/run', startKernel, log: () => {}});
@@ -297,6 +297,7 @@ test('a forced shutdown that arrives while a policy change stops the old kernel 
   const launched = [];
   const startKernel = (launch, {onMessage}) => {
     launched.push(launch.key);
+    setImmediate(() => onMessage({type: 'runtime_ready'}));
     return {send: message => { if (message.type === 'exec') setImmediate(() => onMessage({type: 'exec_result', id: message.id, ok: true, output: 'ran', named_outputs: []})); return true; },
       stop: () => stopHeld};
   };

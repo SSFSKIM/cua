@@ -36,6 +36,11 @@
 // - a child ends while an execution waits on it: the kernel's exit diagnostic answers the execution; the worker's exit
 //   fails the service requests it held (`trusted Node process exited unexpectedly`) and the next request starts a fresh
 //   one. Nothing uncertain is ever replayed.
+// - a child does not finish starting: each child announces `runtime_ready` (./worker-runtime.mjs) once loaded, and the
+//   host holds its work until then. Under the macOS sandbox a start-up can block for good (the time zone's launchd
+//   lookup; docs/evidence/2026-10-14-own-repl-host-parity/m2/history-hang/), so a child still not ready after
+//   READY_TIMEOUT_MS is stopped and another started, START_ATTEMPTS in all; then the waiting work fails with a sentence.
+//   A child that exits while starting is not retried: its exit answers the work, as before.
 // - EOF on stdin: nothing new is admitted; what was admitted settles and is answered, then the children are stopped
 //   and the host exits 0. A signal stops them at once.
 //
@@ -58,7 +63,7 @@ import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
 import {InvalidParams, initializeResult, jsArguments, parseToolOverrides, resetArguments, toolsFor, turnEndedArguments} from './tools.mjs';
 import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
 import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
-import {executionBudget} from './budget.mjs';
+import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
 import {elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
@@ -76,6 +81,10 @@ export const NO_SANDBOX_SENTENCE = 'js sandbox unavailable: no sandbox launcher 
 export const NO_TRUSTED_SERVICES = 'No trusted RPC services are configured';
 export const TRUSTED_EXIT_SENTENCE = 'trusted Node process exited unexpectedly';
 export const EXEC_CONTEXT_NOT_FOUND = 'node_repl exec context not found';
+// How long a child may take to announce runtime_ready, and how many children are started for one piece of work, before
+// the work fails (see the header's "a child does not finish starting").
+export const READY_TIMEOUT_MS = 10_000;
+export const START_ATTEMPTS = 3;
 const hostMarker = {host: 'cua', version: REPL_HOST_VERSION};
 
 // serde_json's maps are sorted, so a JSON value crossing the vendor's host has its keys in byte order, at every depth;
@@ -129,7 +138,7 @@ export function workerLaunch(settings, policy) {
 // Serves MCP on `input`/`output` -> {closed: Promise<exit code>, shutdown()}. `startKernel` is the child seam for both
 // children (tests); `launchServices` the LaunchServices boundary; `log` gets diagnostics (stderr).
 export function createSupervisor({input, output, env, cwd = process.cwd(), startKernel = startKernelChild, log = line => process.stderr.write(`cua-repl-host: ${line}\n`),
-  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction}) {
+  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction, readyTimeoutMs = READY_TIMEOUT_MS}) {
   const settings = hostSettings(env, {cwd});
   // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
   // whatever a finished child left in the group is removed with it. Every live child, kernel and trusted worker alike, is
@@ -164,10 +173,16 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // Each child's tree is protected from the reaper while it lives (`own`), so a reap after another child's end never
   // takes it; a child releases its own protection only in its own cleanup, then reaps what it left.
   function launchKernel(launch) {
-    const self = {key: launch.key, release: () => {}};
+    const self = {key: launch.key, release: () => {}, ready: false};
+    self.readied = new Promise(resolve => { self.markReady = resolve; });
     self.child = startKernel(launch, {reap: () => { self.release(); reap(); },
-      onMessage: message => { if (kernel === self) fromKernel(self, message); },
+      onMessage: message => {
+        if (kernel !== self) return;
+        if (message.type === 'runtime_ready') { self.ready = true; return self.markReady(true); }
+        fromKernel(self, message);
+      },
       onEnd: ({expected, diagnostic}) => {
+        self.markReady(false);
         if (kernel === self) kernel = null;
         if (expected) return;
         if (execution?.kernel === self) settle(execution, sentenceResult(diagnostic));
@@ -183,7 +198,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // for every stop in flight, so nothing (a drain, a forced shutdown) sees a child gone while its cleanup, reaping
   // included, is still running.
   const stops = new Set();
-  const stopping = child => { const stop = child.stop(); stops.add(stop); stop.finally(() => stops.delete(stop)); };
+  const stopping = child => { const stop = Promise.resolve(child.stop()); stops.add(stop); stop.finally(() => stops.delete(stop)); };
   async function stopKernel() {
     const current = kernel;
     if (current) {
@@ -249,7 +264,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const self = worker ?? launchWorker(current.policy);
     if (!self) return answer({ok: false, error: TRUSTED_EXIT_SENTENCE});
     self.pending.set(message.id, kernelSelf);
-    const sent = self.child.send(sortedJson({
+    const sent = self.post(sortedJson({
       type: hooks ? 'run_hooks' : 'service', id: message.id, exec_id: current.id,
       ...(hooks ? {} : {service: message.service, request: message.request}),
       request_meta: current.requestMeta, form_elicitation_supported: formSupported,
@@ -262,25 +277,68 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
 
   function launchWorker(policy) {
     if (terminated) return null;
-    const launch = workerLaunch(settings, policy);
-    const self = {key: launch.key, pending: new Map(), turns: new Map(), release: () => {}};
-    self.relay = nativePipeRelay({send: message => self.child.send(message), connectTimeoutMs: settings.pipeConnectTimeoutMs});
-    self.child = startKernel(launch, {exitSentence: TRUSTED_EXIT_SENTENCE,
-      reap: () => { self.release(); reap(); },
-      onMessage: message => { if (worker === self) fromWorker(self, message); },
-      onEnd: ending => workerEnded(self, ending),
-    });
+    const self = {key: null, launch: workerLaunch(settings, policy), pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false};
+    self.key = self.launch.key;
+    // Work for the worker waits in `queue` until it announced it is ready (the header).
+    self.post = message => {
+      if (self.ready) return self.child.send(message);
+      self.queue.push(message);
+      return true;
+    };
     worker = self;
-    // Registered before anything else can run: no kernel's end may take the worker or what it starts.
-    if (self.child.pid && groupReaper) self.release = groupReaper.own(self.child.pid);
+    startWorkerChild(self);
     return self;
   }
 
-  function workerEnded(self, {expected, diagnostic}) {
+  function startWorkerChild(self) {
+    self.attempts++;
+    self.ready = false;
+    let release = () => {};
+    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE,
+      reap: () => { release(); reap(); },
+      onMessage: message => {
+        if (worker !== self || self.child !== child) return;
+        if (message.type === 'runtime_ready') return workerReady(self);
+        fromWorker(self, message);
+      },
+      onEnd: ending => { if (self.child === child && !self.failed) workerEnded(self, ending); },
+    });
+    self.child = child;
+    self.relay = nativePipeRelay({send: message => child.send(message), connectTimeoutMs: settings.pipeConnectTimeoutMs});
+    // Registered before anything else can run: no other child's end may take the worker or what it starts.
+    if (child.pid && groupReaper) release = groupReaper.own(child.pid);
+    self.cancelReady = timer(readyTimeoutMs, () => workerNotReady(self, child));
+  }
+
+  function workerReady(self) {
+    self.ready = true;
+    self.cancelReady();
+    for (const message of self.queue.splice(0)) self.child.send(message);
+  }
+
+  // The worker stayed silent past its bound: another is started, or, after START_ATTEMPTS, the work it held fails.
+  function workerNotReady(self, child) {
+    if (self.ready || self.child !== child || worker !== self) return;
+    if (self.attempts >= START_ATTEMPTS) {
+      self.failed = true;
+      const sentence = `trusted Node process did not start within ${readyTimeoutMs} ms, ${START_ATTEMPTS} attempts`;
+      workerEnded(self, {expected: false, diagnostic: sentence, sentence});
+      stopping(child);
+      return;
+    }
+    log(`trusted Node process did not start within ${readyTimeoutMs} ms; starting another (attempt ${self.attempts + 1} of ${START_ATTEMPTS})`);
+    self.relay.closeAll();
+    startWorkerChild(self);
+    stopping(child);
+  }
+
+  function workerEnded(self, {expected, diagnostic, sentence = TRUSTED_EXIT_SENTENCE}) {
     if (worker === self) worker = null;
+    self.cancelReady?.();
+    self.queue.length = 0;
     self.relay.closeAll();
     // The service requests it held fail for whichever kernel still waits on them; its turn handlers are over.
-    for (const [id, kernelSelf] of self.pending) kernelSelf.child.send({type: 'trusted_service_response', id, ok: false, error: TRUSTED_EXIT_SENTENCE, output: [], content_items: []});
+    for (const [id, kernelSelf] of self.pending) kernelSelf.child.send({type: 'trusted_service_response', id, ok: false, error: sentence, output: [], content_items: []});
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
@@ -292,6 +350,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const current = worker;
     if (current) {
       worker = null;
+      current.cancelReady?.();
       stopping(current.child);
     }
     await Promise.all([...stops]);
@@ -382,17 +441,37 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (worker && worker.key !== launch.key) await stopWorker();
     // A forced shutdown may have begun while the old children stopped: then nothing launches or runs.
     if (terminated) return toolResult(id, sentenceResult(SHUTTING_DOWN_SENTENCE));
-    kernel ??= launchKernel(launch);
-    const current = {id: `exec-${++execCounter}`, kernel, policy, requestMeta, images: [], durationMs: null, responseMeta: null, settled: false};
+    const current = {id: `exec-${++execCounter}`, kernel: null, policy, requestMeta, images: [], durationMs: null, responseMeta: null, settled: false};
     const result = new Promise(resolve => { current.resolve = resolve; });
     execution = current;
     current.budget = executionBudget(timeoutMs, async () => {
       if (current.settled) return;
-      if (kernel === current.kernel) await stopKernel();
+      current.expired = true;
+      if (kernel && kernel === current.kernel) await stopKernel();
       settle(current, sentenceResult(TIMEOUT_SENTENCE));
     });
-    current.kernel.child.send({type: 'exec', id: current.id, code, ...(requestMeta ? {request_meta: requestMeta} : {}), form_elicitation_supported: formSupported});
+    // The exec goes to a kernel that announced it is ready; one that stays silent is replaced (the header).
+    for (let attempt = 1; !current.settled && !current.expired; attempt++) {
+      kernel ??= launchKernel(launch);
+      const self = current.kernel = kernel;
+      const ready = self.ready || await within(self.readied, readyTimeoutMs);
+      if (current.settled || current.expired) break;   // its exit, the budget or a shutdown answered the call
+      if (ready) {
+        self.child.send({type: 'exec', id: current.id, code, ...(requestMeta ? {request_meta: requestMeta} : {}), form_elicitation_supported: formSupported});
+        break;
+      }
+      await stopKernel();
+      if (attempt >= START_ATTEMPTS) settle(current, sentenceResult(`failed to start Node runtime: the kernel did not start within ${readyTimeoutMs} ms, ${START_ATTEMPTS} attempts`));
+      else if (terminated) settle(current, sentenceResult(SHUTTING_DOWN_SENTENCE));
+      else log(`node_repl kernel did not start within ${readyTimeoutMs} ms; starting another (attempt ${attempt + 1} of ${START_ATTEMPTS})`);
+    }
     toolResult(id, await result);
+  }
+
+  // `promise`'s value, or false once `ms` passed first.
+  function within(promise, ms) {
+    let cancel;
+    return Promise.race([promise, new Promise(resolve => { cancel = timer(ms, () => resolve(false)); })]).finally(() => cancel());
   }
 
   async function runReset(id) {
@@ -408,7 +487,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const id = `turn-ended-${turnCounter++}`;
     return new Promise(resolve => {
       self.turns.set(id, resolve);
-      const sent = self.child.send(sortedJson({type: 'turn_ended', id, event: {hook_event_name: hookEventName, session_id: sessionId, turn_id: turnId}, request_meta: requestMeta}));
+      const sent = self.post(sortedJson({type: 'turn_ended', id, event: {hook_event_name: hookEventName, session_id: sessionId, turn_id: turnId}, request_meta: requestMeta}));
       if (!sent) { self.turns.delete(id); resolve(); }
     });
   }

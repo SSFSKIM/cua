@@ -17,3 +17,9 @@ test('the capability fixture refuses direct local invocation before opening a ru
  const result=spawnSync(process.execPath,[fileURLToPath(new URL('./serve-capability.mjs',import.meta.url))],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:'/tmp/cua-unconfigured-fixture',CUA_HOME:'/tmp/cua-unconfigured-fixture'}});
  assert.equal(result.status,1);assert.match(result.stderr,/remote-only/);
 });
+
+test('Linux prepare names the H4 cua-route home without changing another home or the shell profile',()=>{
+ const script=prepareCommand({device:'cua-linux',commit:'1234567890abcdef',profile:'me'}).args.at(-1);
+ assert.ok(script.includes("export CUA_HOME='/home/admin/.local/share/cua-h4'"));
+ assert.throws(()=>prepareCommand({device:'cua-linux',commit:'1234567890abcdef',profile:'me',home:'relative'}),/absolute/);
+});

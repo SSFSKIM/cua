@@ -17,7 +17,7 @@ import {ownedProcesses,killOwnedKernel,alive} from '../../scripts/repl-parity/pr
 if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Boundary probes are remote-only');
 const probe=process.argv[2],id=`cells/${probe}`,host=process.env.CUA_REPL_HOST??'vendor';
 const facts=executionFacts({source:process.env.CUA_HOME});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
-const dir=mkdtempSync(join(tmpdir(),'cua-bounds-'));mkdirSync(join(dir,'tmp'));
+const dir=mkdtempSync(join(tmpdir(),(process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'bounds-'));mkdirSync(join(dir,'tmp'));
 const pool=new AttestedConnections(host),clients=[],rows=[],normalize=createNormalizer({imageMode:'exact',schemaFields:false});
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 async function until(check,ms=10000){const deadline=Date.now()+ms;while(!check()){if(Date.now()>deadline)throw new Error('Fixture condition timed out');await delay(20);}}

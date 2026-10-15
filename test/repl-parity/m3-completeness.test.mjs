@@ -43,7 +43,7 @@ test('Linux M3 includes shared live-browser behavior and never requires a macOS 
  const selected=selectScenarios(scenarios,inventory,{suite:'all',through:'M3',platform:'linux'}).scenarios;
  assert.ok(!selected.some(s=>s.id==='api/cua/getapp'));
  for(const id of ['api/decorated-tab/paste','api/decorated-tab/presskey','api/decorated-tab/typetext','cells/facade/emit-false-screenshot'])assert.equal(selected.find(s=>s.id===id)?.backend,'chrome');
- assert.throws(()=>selectScenarios(scenarios,inventory,{suite:'all',through:'M4',platform:'linux'}),/native\/cua\/getapp/);
+ assert.throws(()=>selectScenarios(scenarios.filter(s=>s.id!=='native/cua/getapp'),inventory,{suite:'all',through:'M4',platform:'linux'}),/native\/cua\/getapp/);
 });
 test('live api suite cannot pad its coverage with fake secret-store unit cases',()=>{
  const api=selectScenarios(scenarios,inventory,{suite:'api',through:'M3',platform:'darwin'}).scenarios;

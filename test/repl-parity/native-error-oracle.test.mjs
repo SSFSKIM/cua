@@ -17,3 +17,11 @@ test('worker stdin injection is refused outside the isolated trusted fixture env
  Object.defineProperty(globalThis,'nodeRepl',{configurable:true,value:{env:Object.freeze({})}});
  try{await assert.rejects(handleRpc({op:'pipe',mode:'wire-error'}),/harness-only/);}finally{if(previous)Object.defineProperty(globalThis,'nodeRepl',previous);else delete globalThis.nodeRepl;}
 });
+
+test('Linux pending connect must expire at its configured budget with the vendor sentence',()=>{
+ const timeout=services.find(s=>s.id==='cells/native-pipe/connect-timeout');
+ const run=value=>timeout.assert({results:[result({value:'warm'}),{...result(value),_meta:{'codex/nodeReplExecutionDurationMs':1100}}],timings:[0,1100]});
+ const valid={refused:true,budget:1000,observation:'timer-expired',platform:'linux',message:'native pipe initial connect timed out',elapsedMatches:true};
+ assert.equal(run(valid).ok,true);
+ for(const patch of [{elapsedMatches:false},{message:'other timeout'},{budget:10},{observation:'saturated-peer-refused'}])assert.throws(()=>run({...valid,...patch}));
+});

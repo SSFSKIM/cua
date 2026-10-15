@@ -20,6 +20,12 @@ Later commits touch only the harness, the corpus and the tests:
 | MAWS, `maws/` (at `c49777c`) | the probe below | Verdict PASS. Served by `cua browser service 0.1.0`. All 3 serve sessions answered initialize as `cua-repl-host 0.3.0`, and every js result carried the own-host marker (`maws/attest-cua-summary.json`). |
 | Browser corpus pair, `browser-vendor-host/`, `browser-cua-host/` (at `e4ea7eb`) | `browser-parity.mjs prepare --commit e4ea7eb --profile ssfs`, then `run --service cua --repl-host vendor` and `run --service cua --repl-host cua`, then `diff --expected test/browser-parity/repl-host-expected-differences.json` | All 59 cases on both sides, downloads included, every case passing, no hang. Vendor side: 61/61 connections `rmcp 1.5.0`. Own side: 61/61 `cua-repl-host 0.3.0`. Every connection's service was `cua browser service 0.1.0`. **0 unexpected differences (59 cases, 151 cells, 7 expected)**, in `browser-diff.txt`. |
 
+**Evidence commit after the whole-branch review.** The host code later changed at the commit that follows `2d4378a`: a worker's open `withSuspendedTimeout` levels are released when it dies. That change is not re-recorded, because no recorded case reaches the path:
+- No services fixture op (`test/repl-parity/fixtures/trusted-service.mjs`) ends its worker. Its `suspend`, `background` and `approval-wait` suspensions all close normally.
+- Nothing outside `src/repl-host/` and that fixture calls `withSuspendedTimeout`, so the browser corpus and MAWS never suspend a budget from a worker.
+
+The services suite, tools and MAWS evidence therefore stays the `c49777c` recording, and the corpus pair stays the `e4ea7eb` recording. The same commit lets the REPL-host allowances (`axis: repl-host`) apply only to a vendor-host against cua-host pair. Re-diffed after it: services 0 differences (identical to `cua-diff.json`), tools 0 (identical to `tools-diff.json`), corpus pair 0 unexpected (59 cases, 151 cells, 7 expected).
+
 The corpus pair has no semantic differences: the 7 differences without allowances (`browser-diff-no-allowances.txt`) are all trace counts, in four cases. Two full vendor-host runs differ from each other in exactly the same 4 cases, cells and methods (`browser-diagnostics/vendor-c49777c-vs-vendor-e4ea7eb-diff.txt`, 7 differences). Each case has a scoped entry in `test/browser-parity/repl-host-expected-differences.json`:
 
 | Case, cell | Methods | maxDelta | Vendor against itself | Own host |

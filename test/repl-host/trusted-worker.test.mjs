@@ -415,6 +415,20 @@ test('launchServices.openApplication reaches the host\'s LaunchServices boundary
   ], 'normalized by the worker; refused targets never reach the boundary');
 });
 
+test('a worker that dies inside withSuspendedTimeout releases its suspensions: a cell that catches the exit is still held to its budget', own, async t => {
+  const host = await startHost(t, {node, services: {svc: `${SLEEP}export async function handleRpc(request) {
+    if (request.op === 'warm') return 'warm';
+    return nodeRepl.withSuspendedTimeout(() => nodeRepl.withSuspendedTimeout(async () => { setTimeout(() => process.exit(5), 50); await sleep(10_000); }));
+  }`}});
+  assert.deepEqual(texts(await host.js(rpc('svc', {op: 'warm'}))), ['"warm"']);
+  const started = performance.now();
+  const result = await host.js(`try { await nodeRepl.rpc('svc', {op: 'die'}); } catch {} await new Promise(r => setTimeout(r, 1200)); nodeRepl.write('carried on');`, {timeoutMs: 300});
+  const elapsed = performance.now() - started;
+  assert.deepEqual({text: texts(result), isError: result.isError}, {text: ['js execution timed out; kernel reset, rerun your request'], isError: true},
+    `the budget fires after the catch (${Math.round(elapsed)} ms)`);
+  assert.ok(elapsed < 1100, `within the budget left after the worker's death, not after the 1,200 ms wait (${Math.round(elapsed)} ms)`);
+});
+
 test('a bare createElicitation suspends the cell\'s budget until the client answers, as the vendor host does', own, async t => {
   const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {elicit: ELICIT_SERVICE},
     onServerRequest: () => delay(650).then(() => ({result: {action: 'accept', content: {name: 'late'}}}))});

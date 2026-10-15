@@ -22,7 +22,7 @@
 //   execution's request meta and form-elicitation support; the worker's `trusted_service_response` goes back to the
 //   kernel that asked, by request id, and never to a later kernel generation.
 // - running + suspend_timeout / resume_timeout from the worker, or an elicitation awaiting the client: the budget pauses
-//   and resumes (nested).
+//   and resumes (nested). A worker's open levels end with it, so a cell that catches its exit is back on its budget.
 // - running + submitted_code_complete: the submitted code and its tracked background work have drained; the budget
 //   ends there, and the after-code hooks run under their own per-hook deadlines (the worker's), on success and error.
 // - running + exec_result: the result is assembled once, with the response meta trusted code set, merged across the
@@ -255,6 +255,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (current.settled) return;
     current.settled = true;
     current.budget?.stop();
+    worker?.suspensions.delete(current);
     if (execution === current) execution = null;
     current.resolve(result);
   }
@@ -286,7 +287,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function launchWorker(policy) {
     if (terminated) return null;
     const self = {key: null, launch: workerLaunch(settings, policy), pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false,
-      deadlines: {afterCode: 0, turnEnded: 0}, bounds: new Map()};
+      deadlines: {afterCode: 0, turnEnded: 0}, bounds: new Map(), suspensions: new Map()};
     self.key = self.launch.key;
     // Work for the worker waits in `queue` until it announced it is ready (the header).
     self.post = message => {
@@ -368,6 +369,9 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
     for (const [id, request] of clientRequests) if (request.worker === self) { clientRequests.delete(id); request.execution.budget.resume(); }
+    // A withSuspendedTimeout it never closed ends with it: the cell that catches the failure is back on its budget.
+    for (const [execution, depth] of self.suspensions) for (let i = 0; i < depth; i++) execution.budget.resume();
+    self.suspensions.clear();
     if (!expected) log(diagnostic);
   }
 
@@ -407,10 +411,17 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         return reply(emitImage(current, message));
       case 'elicit':
         return elicit(self, current, message);
+      // The levels each worker holds are counted, so the ones a dying worker leaves open are released (workerEnded).
       case 'suspend_timeout':
-        return current?.budget.suspend();
-      case 'resume_timeout':
-        return current?.budget.resume();
+        if (!current) return;
+        self.suspensions.set(current, (self.suspensions.get(current) ?? 0) + 1);
+        return current.budget.suspend();
+      case 'resume_timeout': {
+        const depth = current ? self.suspensions.get(current) ?? 0 : 0;
+        if (!depth) return;
+        if (depth === 1) self.suspensions.delete(current); else self.suspensions.set(current, depth - 1);
+        return current.budget.resume();
+      }
       case 'response_meta':
         // Each service request and hook run has its own worker-side state, so the host merges what they set across the
         // execution (the vendor host keeps every RPC's and hook's keys; a later value for a key wins).

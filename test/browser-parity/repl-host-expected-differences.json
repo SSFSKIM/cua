@@ -1,5 +1,6 @@
 [
   {
+    "axis": "repl-host",
     "cases": [
       "actions/wait-for"
     ],
@@ -15,6 +16,7 @@
     "reason": "Volatile polling count, not a host difference: locator.waitFor polls with Runtime.evaluate (and releases each result) until the element appears, so the count moves by one with timing. The vendor host varies against itself on the mini with the same service (11/7 in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/hist-vendor, 12/8 in m2/browser-diagnostics/vendor-variance-* and the final pair's m2/browser-vendor-host), and the own host shows both. Scoped to this case and cell, to those two methods and to a change of one, for REPL-host comparisons only (vendor host against own host, both with --service cua); the service departures of expected-differences.json do not apply to such a comparison. M2 task 3, ruled by the controller 2026-10-15."
   },
   {
+    "axis": "repl-host",
     "cases": [
       "actions/slow-budget"
     ],
@@ -30,6 +32,7 @@
     "reason": "Volatile polling count, not a host difference: the cell's locator click waits about 8 s for #late, polling with Runtime.evaluate (and releasing each result) until it appears, so the count moves with timing. The vendor host varies against itself on the mini with the same service by two (78/74 in the c49777c pair's run, docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host; 80/76 in each of m2/browser-diagnostics/reruns-slow-budget-paused-response/vendor-1..3), and the own host shows 80/76 in m2/browser-diagnostics/reruns-slow-budget-paused-response/cua-1..3. Scoped to this case and cell, to those two methods and to a change of two, for REPL-host comparisons only, as the wait-for entry. M2 task 3."
   },
   {
+    "axis": "repl-host",
     "cases": [
       "input/coordinates"
     ],
@@ -45,6 +48,7 @@
     "reason": "Volatile count, not a host difference: the drag cell's Runtime.evaluate (and the release of its result) is issued once or twice with timing. The vendor host varies against itself on the mini with the same service, 3/1 in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host and 2/0 in the e4ea7eb pair's docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-vendor-host; in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/reruns-coordinates-networkidle the vendor host shows 2/0, 3/1, 2/0 and the own host 2/0, 3/1, 2/0. Scoped to this case and cell, to those two methods and to a change of one, for REPL-host comparisons only, as the wait-for entry. M2 task 3."
   },
   {
+    "axis": "repl-host",
     "cases": [
       "waits/networkidle"
     ],

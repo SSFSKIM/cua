@@ -55,6 +55,19 @@ export function declarePending(scenarios,{pending,reason}={}) {
   return {scenarios:scenarios.map(s=>ids.includes(s.id)?{...s,skip:PENDING_PREFIX+reason.trim()}:s),pending:{cases:ids,reason:reason.trim()}};
 }
 export const pendingCases=rows=>rows.filter(r=>typeof r.skip==='string'&&r.skip.startsWith(PENDING_PREFIX)).map(r=>({case:r.case,reason:r.skip.slice(PENDING_PREFIX.length)}));
+// REPL-host allowances (axis 'repl-host', test/browser-parity/repl-host-expected-differences.json) are for one comparison:
+// a vendor-host run against a cua-host run of the same service, both attested (main validates the attestations of any
+// run that names its host). Vendor-against-vendor runs never use them, and a host comparison takes no service departures
+// (entries with no axis); the service axis keeps its entries as before.
+export function allowancesFor(ma,mb,expected) {
+  if(expected.some(e=>e.axis!==undefined&&e.axis!=='repl-host'))throw new Error('Invalid expected-differences axis');
+  const hosts=[ma.host,mb.host];
+  const hostPair=ma.service===mb.service&&hosts.includes('vendor')&&hosts.includes('cua');
+  const hostEntries=expected.filter(e=>e.axis==='repl-host').length;
+  if(hostEntries&&!hostPair)throw new Error('REPL-host allowances apply only to a vendor-host run against a cua-host run of the same service');
+  if(hostPair&&hostEntries!==expected.length)throw new Error('A REPL-host comparison takes only REPL-host allowances');
+  return expected;
+}
 export const CAPABILITY_GROUP='capability-host/';
 export function selectScenarioPaths(relativePaths,{local,backend,scenarios,corpus='parity'}={}) {
   if(corpus==='bench') {
@@ -79,7 +92,7 @@ export async function main(argv=process.argv.slice(2)) {
     if(ma.complete!==true||mb.complete!==true)throw new Error('Cannot compare incomplete runs');
     if(ma.backend!==mb.backend || ma.profile!==mb.profile || ma.device!==mb.device)throw new Error('Cannot compare different devices, profiles or fake/live backends');
     if(ma.service==='vendor'&&mb.service==='vendor'&&values.expected)throw new Error('Vendor determinism must not use expected differences');
-    const expected=values.expected?readJson(resolve(values.expected)):[];
+    const expected=values.expected?allowancesFor(ma,mb,readJson(resolve(values.expected))):[];
     // A milestone's comparison covers its scenarios only: both runs are restricted to the same cases, and inside that
     // subset a case or cell missing from either run is still a cardinality difference.
     const inSubset=values.scenarios?scenarioMatcher(values.scenarios):null;

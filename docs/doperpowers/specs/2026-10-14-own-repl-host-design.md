@@ -539,6 +539,12 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: nativePipe transport-error delivery is proven at the bridge, not over a live macOS transport.
+  - Across real Darwin peer failures (an abort during a large write, an SO_LINGER=0 abort, SHUT_RD), the vendor reports only close and a late close. Rust's EOF close wins and the bridge suppresses the later write error.
+  - The live case records that close-only outcome, and the own host must match it.
+  - Error-before-close and late-error replay are proven differentially with a source-grounded wire double. It feeds `native_pipe_closed` with an error into the recovered vendor bridge and into the own bridge, with mutation tests, and is labelled boundary-double proof.
+  Rationale: Same rule as the timeout branch. Claim live only what the OS lets the vendor exhibit, and prove the rest at the narrowest grounded boundary.
+  Date/Author: 2026-10-14, plan-executor ruling on M2 task 1's experiments.
 - Decision: The nativePipe connect-timeout case records only what macOS can show. On the mini, the vendor case records the explicit 1,000 ms configuration and bounded refusal against a saturated, owned AF_UNIX peer. There, a full backlog refuses immediately, so the timer-expiry branch is not claimed live, and no allowance is added. M2 task 2 proves expiry with a socket-double unit test: the vendor sentence, the pending socket destroyed, and no late delivery. A Linux variant due M4 exercises real expiry on cua-linux, where a full backlog leaves connect pending.
   Rationale: An honest oracle over a claimed-but-unreachable branch; the branch is proven where the OS allows it.
   Date/Author: 2026-10-14, plan-executor ruling on M2 task 1's report.

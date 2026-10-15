@@ -539,6 +539,14 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: On cua-linux, the final M4 vendor and own pairs record exactly the two browser scroll cases (coordinate and DOM) as pending-environment, through the harness's declared `--pending` reason, citing #141.
+  - Those two cases are visible in the diff and never counted as covered.
+  - In the VM's Chrome, `Input.synthesizeScrollGesture` stalls at the 10,000 ms timeout for both hosts. It kept stalling after relaunches with the anti-throttling flags and with `--disable-gpu`.
+  - The gesture is synthesized by the cua browser service over CDP, on the same path in both lanes.
+  - The REPL-host path for these members is already proven live on the mini by M3's api suite.
+  - The Linux prepare facts record the Chrome launch line: flags, display and home.
+  Rationale: The failure is environmental and belongs to the browser service, not the host under test (session registered #141, parent #113). Holding M4 on it would not add evidence about the REPL host.
+  Date/Author: 2026-10-15, session ruling on the plan-executor's recommendation.
 - Decision: The nativePipe connect-timeout expiry, owed live since M2, is unreachable on both platforms and is proven by its socket-double unit test.
   - On cua-linux the pinned vendor's connect to a saturated AF_UNIX listener also fails at once: `failed to connect native pipe: Resource temporarily unavailable (os error 11)` after about 1 ms, under the 1,000 ms budget. That is consistent with a non-blocking connect, which never waits on a full Unix-socket backlog.
   - The live Linux case records the configured budget and that exact sentence, and both hosts must match it.

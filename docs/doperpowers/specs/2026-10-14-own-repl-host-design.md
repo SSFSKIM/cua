@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: `--suite all` selects live-lane cases only, and fake rows are never compared live. The inventory completeness gate counts a row as covered when it has live coverage, or when its obligation is a unit/double proof and the row names a unit test, checked to exist and run under `npm test`. A row whose acceptance requires live proof must point at a live-lane case. This is implemented in M3, not deferred to M5.
+  Rationale: Otherwise the final M5 `all` diff could never pass while fake secret rows remain, and silently exempting fake rows in the comparator would weaken the oracle.
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
 - Decision: Acceptance 6's M3 slice (browser substitution) is proven through the real client in the remote capability-host lane.
   - The rows are browser fill/AX actions at their supported shapes, refusal before read, and sanitized post-read errors. They run with the real selected host and client, a synthetic sentinel store in the lane's scratch HOME, and a fake backend that records only booleans, labels and hashes.
   - M0's 27 source/service-double secret rows move to `--suite secrets` and stay labelled fake. They are never counted as live proof.

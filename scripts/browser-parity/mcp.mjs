@@ -3,8 +3,8 @@ import {spawn} from 'node:child_process';
 import {createInterface} from 'node:readline';
 export class StdioClient {
   // `answer(msg)` decides an elicitation (default: accept, as the parity runs do); `onElicitation(row, msg)` records it.
-  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),onNotification = () => {},clientName = 'cua-browser-parity'}) {
-    this.clientName = clientName; this.answer=answer;
+  constructor({command,args = [],env = process.env,cwd,timeoutMs = 150000,closeTimeoutMs = 5000,onElicitation = () => {},answer = () => ({action:'accept',content:{}}),onNotification = () => {},clientName = 'cua-browser-parity'}) {
+    this.clientName = clientName; this.answer=answer;this.closeTimeoutMs=closeTimeoutMs;
     this.child = spawn(command,args,{env,cwd,stdio:['pipe','pipe','pipe']});
     this.pending = new Map(); this.nextId=0; this.timeoutMs=timeoutMs; this.closed=false;
     this.exited = new Promise(resolve => this.child.once('close',(code,signal) => {this.closed=true;this.failAll(new Error(`MCP exited (${code ?? signal})`));resolve({code,signal});}));
@@ -51,17 +51,17 @@ export class StdioClient {
   }
   setElicitationAnswer(answer) {if(typeof answer!=='function')throw new Error('answer must be a function');this.answer=answer;}
   cancel(requestId,reason='parity cancellation') {this.write({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId,reason}});}
-  async initialize() {
-    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities:{elicitation:{form:{}}},clientInfo:{name:this.clientName,version:'1'}});
+  async initialize(capabilities={elicitation:{form:{}}}) {
+    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities,clientInfo:{name:this.clientName,version:'1'}});
     this.write({jsonrpc:'2.0',method:'notifications/initialized'});return value;
   }
-  call(name,args={}) {return this.request('tools/call',{name,arguments:args});}
+  call(name,args={},meta) {return this.request('tools/call',{name,arguments:args,...(meta?{_meta:meta}:{})});}
   async close({drop=false}={}) {
     if (!this.closed) {
       if(drop) this.child.kill('SIGTERM'); else this.child.stdin.end();
     }
     let timer;
-    const exited=await Promise.race([this.exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),5000);})]);clearTimeout(timer);
+    const exited=await Promise.race([this.exited,new Promise(resolve=>{timer=setTimeout(()=>resolve(null),this.closeTimeoutMs);})]);clearTimeout(timer);
     if(exited) return exited;
     this.child.kill('SIGKILL'); return this.exited;
   }

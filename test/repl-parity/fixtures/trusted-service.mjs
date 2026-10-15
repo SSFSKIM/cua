@@ -2,8 +2,9 @@
 // and NR:trusted-worker.js:134-230. Not a host implementation; the selected real host supplies nodeRepl.
 import {createBrowserService,PINNED_VENDOR_VERSION} from '../../../src/services/browser.mjs';
 import {createSkyService} from '../../../src/services/sky.mjs';
+import {writeFileSync} from 'node:fs';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
-const events=[];let calls=0;
+const events=[];let calls=0,completedHooks=0;
 const request={message:'Synthetic fixture approval',requestedSchema:{type:'object',properties:{fixture:{type:'string'}}},meta:{fixture:'request'}};
 export async function handleRpc(r){
  switch(r.op){
@@ -16,6 +17,8 @@ export async function handleRpc(r){
    if(h.hang)await new Promise(()=>{});else await delay(h.delay??0);
    if(h.error)throw new Error('fixture hook rejection');
    events.push(`${h.name}:end`);if(h.write)nodeRepl.write(`${h.name}:end|`);
+   if(h.meta)nodeRepl.setResponseMeta(h.meta);
+   if(h.witness)writeFileSync(nodeRepl.cwd+'/.parity-turn-completed.json',JSON.stringify({count:++completedHooks,atNs:process.hrtime.bigint().toString()}));
   }});if(h.unregister)unregister();}return 'registered';
  }
  case 'invalid-hooks':return [0,-1,1.5,null].map(timeoutMs=>{try{nodeRepl.addAfterSubmittedCodeHook({run(){},timeoutMs});return false;}catch{return true;}});
@@ -23,6 +26,7 @@ export async function handleRpc(r){
  case 'elicit':return nodeRepl.createElicitation(request);
  case 'suspend':return nodeRepl.withSuspendedTimeout(async()=>{await delay(r.wait??200);if(r.nested)await nodeRepl.withSuspendedTimeout(async()=>{await delay(150);});await delay(r.after??0);return 'resumed';});
  case 'approval-wait':return nodeRepl.withSuspendedTimeout(async()=>{await delay(150);return nodeRepl.createElicitation(request);});
+ case 'meta-patch':nodeRepl.setResponseMeta(r.meta);return 'patched';
  case 'meta':{const first={fixture:{one:1},replace:'old'};nodeRepl.setResponseMeta(first);first.fixture.one=999;nodeRepl.setResponseMeta({replace:'new',second:true});return 'meta-set';}
  case 'content':nodeRepl.emitContentItem('item-one');nodeRepl.write('worker-write|');nodeRepl.emitContentItem('item-two');return 'content-set';
  case 'env':return {frozen:Object.isFrozen(nodeRepl.env),worker:nodeRepl.env.PARITY_WORKER_ONLY,cellMarker:nodeRepl.env.PARITY_CELL_VISIBLE};
@@ -41,7 +45,13 @@ export async function handleRpc(r){
   if(r.mode==='relative')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_RELATIVE);
   if(r.mode==='timeout'){try{await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);return {refused:false};}catch(e){return {refused:true,budget:Number(nodeRepl.env.NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS??nodeRepl.env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS),observation:/timed out|timeout/i.test(e.message)?'timer-expired':/refused|temporarily unavailable/i.test(e.message)?'saturated-peer-refused':'unexpected-error',platform:process.platform};}}
   if(r.mode==='missing')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_MISSING);
-  const socket=await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE);
+  const socket=await nodeRepl.nativePipe.createConnection(r.mode==='transport-error'?nodeRepl.env.PARITY_PIPE_ERROR:nodeRepl.env.PARITY_PIPE);
+  if(r.mode==='transport-error')return await new Promise(resolve=>{
+   const events=[],lateEvents=[];let message;
+   socket.on('error',e=>{events.push('error');message=e.message;});
+   socket.on('close',()=>{events.push('close');socket.on('error',e=>lateEvents.push({event:'error',message:e.message}));socket.on('close',()=>lateEvents.push({event:'close'}));queueMicrotask(()=>resolve({events,lateEvents,message:message??null}));});
+   socket.write(new Uint8Array(2*1024*1024).fill(65));
+  });
   if(r.mode==='interface'){
    const value={frozen:Object.isFrozen(socket),keys:Object.keys(socket).sort(),destroy:typeof socket.destroy};
    try{socket.on('end',()=>{});value.endAccepted=true;}catch{value.endAccepted=false;}

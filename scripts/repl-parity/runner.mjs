@@ -1,3 +1,4 @@
+import {observeTurnReplies,turnCellLabels} from './turns.mjs';
 import {StdioClient} from '../browser-parity/mcp.mjs';
 import {cellCode,captureRawResult} from '../browser-parity/runner.mjs';
 import {createNormalizer} from '../browser-parity/normalize.mjs';
@@ -36,6 +37,11 @@ export async function runRawScenario(scenario,{client,emit,checkout}) {
   for(const cell of scenario.cells){
     if(cell.answer)client.setElicitationAnswer(async()=>{if(cell.answerDelayMs)await new Promise(r=>setTimeout(r,cell.answerDelayMs));return cell.answer;});
     const start=performance.now();let result,timer;
+    if(cell.op==='turn'&&cell.witnessCount!==undefined){
+      const replies=await observeTurnReplies(cell,{client});results.push({replies});timings.push(performance.now()-start);
+      for(const [index,reply] of replies.entries()){const {afterHookMs,...proof}=reply.observation;await emit({case:scenario.id,cell:turnCellLabels(cell)[index],ok:true,...await normalizeRawResult(reply.result,{normalize}),value:proof,ms:{elapsed:reply.elapsed,afterHook:afterHookMs}});}
+      continue;
+    }
     try {
       if(cell.op==='reset')result=await client.call('js_reset');
       else if(cell.op==='turn'){const replies=await Promise.all(Array.from({length:cell.repeat??1},()=>client.request('parity/turn-ended',cell.args)));result=replies[0];if(replies.some(r=>r.isError))throw new Error('Turn completion refused');}

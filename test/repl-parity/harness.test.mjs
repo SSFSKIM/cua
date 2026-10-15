@@ -93,3 +93,10 @@ test('a non-image MCP item cannot make its application data a screenshot slot',(
  const a=run(),b=run();a.rows[0].content=[{type:'text',text:'fixture',data:{$image:'ahash64',width:8,height:8,hash:'0000000000000000',application:'one'}}];b.rows[0].content=structuredClone(a.rows[0].content);b.rows[0].content[0].data.application='two';
  assert.equal(compareParityRuns(a,b).ok,false);
 });
+
+test('an identity-only meta container may be introduced, but no sibling metadata is waived',()=>{
+ const a=run(),b=run();delete a.rows[0].meta;
+ b.meta.host='cua';b.meta.hostAttestations=[{connection:'c1',host:'cua',serverInfo:{name:'cua-repl-host',version:'1'},executionFacts:{ownNode:{path:'/device/node',version:'v24.18.0'}},_meta:{'cua/replHost':{host:'cua',version:'1'}}}];b.rows[0].meta={'cua/replHost':{host:'cua',version:'1'}};
+ const expected=[{reason:'Host identity only',cases:[scenario.id],cells:['one'],field:'meta.cua/replHost',vendor:{present:false},cua:{present:true,value:{host:'cua',version:'1'}}}];
+ assert.equal(compareParityRuns(a,b,{expected}).ok,true);b.rows[0].meta.extra=true;assert.equal(compareParityRuns(a,b,{expected}).ok,false);
+});

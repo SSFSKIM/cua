@@ -1,3 +1,5 @@
+import {turnCellLabels} from './turns.mjs';
+export const scenarioCellLabels=scenario=>scenario.cells.flatMap(turnCellLabels);
 import {readFileSync} from 'node:fs';
 export const inventory=JSON.parse(readFileSync(new URL('../../test/repl-parity/inventory.json',import.meta.url),'utf8'));
 export const milestones=['M0','M1','M2','M3','M4','M5'];
@@ -26,6 +28,8 @@ export function validateRegistry(scenarios,rows=inventory) {
     if(s.screenshotTolerance!==undefined&&(s.imageMode!=='live'||!Number.isInteger(s.screenshotTolerance)||s.screenshotTolerance<0||s.screenshotTolerance>64))throw new Error(`${s.id}: screenshot tolerance only applies to live images`);
     if(typeof s.assert!=='function')throw new Error(`${s.id}: missing independent assert`);
     if(!Array.isArray(s.cells)||!s.cells.length||new Set(s.cells.map(c=>c.label)).size!==s.cells.length)throw new Error(`${s.id}: invalid cells`);
+    if(new Set(scenarioCellLabels(s)).size!==scenarioCellLabels(s).length)throw new Error(`${s.id}: duplicate expanded cell labels`);
+    for(const c of s.cells)if(c.repeat!==undefined&&(c.op!=='turn'||!Number.isSafeInteger(c.repeat)||c.repeat<2||!Number.isSafeInteger(c.witnessCount)||c.witnessCount<1))throw new Error(`${s.id}: repeated turns require a completion witness`);
     for(const c of s.cells)if(!c.label||(!c.op&&typeof c.code!=='string'))throw new Error(`${s.id}: invalid cell`);
   }
   return scenarios;

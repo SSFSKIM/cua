@@ -62,7 +62,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
     // A named identity slot must hold exactly its declared value on the own side; absent or different is a difference.
     const identity=allowance.cua.value.versionFrom==='attested-source'?{host:'cua',version:sourceVersion}:allowance.cua.value;
     if(!isDeepStrictEqual(own.meta?.['cua/replHost'],identity)){differences.push({kind:'identity',case:x.case,cell:x.cell,field:allowance.field,message:'declared own-host identity slot missing or different'});continue;}
-    delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
+    delete own.meta['cua/replHost'];if(!Object.hasOwn(vendor,'meta')&&Object.keys(own.meta).length===0)delete own.meta;accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
   const leftAssertions=assessAssertions(a.meta,left),rightAssertions=assessAssertions(b.meta,right);
   if(a.meta.host!==b.meta.host)for(const d of departures){

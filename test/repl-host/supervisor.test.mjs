@@ -258,3 +258,32 @@ test('a signal during an EOF drain forces the shutdown: the waiting cell is answ
   for (let i = 0; i < 100 && kernels.some(p => alive(p.pid)); i++) await delay(20);
   assert.deepEqual(kernels.filter(p => alive(p.pid)), []);
 });
+
+test('closed resolves only after every kernel stop in flight has finished, however shutdown was reached', async () => {
+  const {PassThrough} = await import('node:stream');
+  const {createSupervisor} = await import('../../src/repl-host/supervisor.mjs');
+  let finishStop;
+  const stopDone = new Promise(resolve => { finishStop = resolve; });
+  let stopFinished = false;
+  // A kernel that never answers and whose stop (its tree kill and reaping) completes only when the test says so.
+  const startKernel = () => ({send: () => true, stop: () => stopDone.then(() => { stopFinished = true; })});
+  const input = new PassThrough(), output = new PassThrough();
+  output.resume();
+  const supervisor = createSupervisor({input, output, env: {CUA_REPL_NODE_PATH: '/fixture/node', PATH: '/usr/bin:/bin'}, cwd: '/fixture/run', startKernel, log: () => {}});
+  let closedAt = null;
+  supervisor.closed.then(() => { closedAt = stopFinished; });
+  const send = msg => input.write(`${JSON.stringify(msg)}\n`);
+  send({jsonrpc: '2.0', id: 1, method: 'initialize', params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 't', version: '0'}}});
+  send({jsonrpc: '2.0', id: 2, method: 'tools/call', params: {name: 'js', arguments: {code: 'await new Promise(()=>{})'},
+    _meta: {'codex/sandbox-state-meta': {permissionProfile: {type: 'disabled'}, sandboxCwd: 'file:///fixture/run'}}}});
+  await delay(50);
+  input.end();                    // EOF: a drain begins, waiting on the running cell
+  await delay(20);
+  supervisor.shutdown();          // a signal: forced; it answers the cell, which releases the drain too
+  await delay(100);
+  assert.equal(closedAt, null, 'not closed while the forced stop is still running');
+  finishStop();
+  await supervisor.closed;
+  await delay(0);
+  assert.equal(closedAt, true, 'closed after the stop finished');
+});

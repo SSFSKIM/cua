@@ -95,8 +95,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null}) {
   const settings = hostSettings(env, {cwd});
   // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
-  // whatever a finished kernel generation left in the group is removed with it.
-  const reap = reaper() ?? (() => {});
+  // whatever a finished kernel generation left in the group is removed with it. A long-lived child of the host other
+  // than a kernel (#116 M2's trusted worker) is registered with `own` so that its whole subtree is spared.
+  const groupReaper = reaper();
+  const reap = groupReaper?.reap ?? (() => {});
   const sandboxed = settings.codexCli !== null;
   let initialized = false;
   let closing = false;
@@ -130,11 +132,18 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   }
 
   // Ends the kernel's generation, then stops it: nothing it sends from here on reaches an execution.
+  // Every caller waits for every stop in flight, so nothing (a drain, a forced shutdown) sees the kernel gone while its
+  // cleanup, reaping included, is still running.
+  const stops = new Set();
   async function stopKernel() {
     const current = kernel;
-    if (!current) return;
-    kernel = null;
-    await current.child.stop();
+    if (current) {
+      kernel = null;
+      const stop = current.child.stop();
+      stops.add(stop);
+      stop.finally(() => stops.delete(stop));
+    }
+    await Promise.all([...stops]);
   }
 
   function fromKernel(self, message) {

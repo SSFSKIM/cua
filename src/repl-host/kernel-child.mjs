@@ -78,26 +78,44 @@ export function killProcessTree(root, {list = descendantsOf, signal = sendSignal
   return [...frozen];
 }
 
-// [pid, ppid, pgid] of every process, from one `ps` listing ([] when it fails).
+// [pid, ppid, pgid, command name] of every process, from one `ps` listing ([] when it fails).
 export function processTable() {
   let listing;
-  try { listing = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid='], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000}); } catch { return []; }
-  return listing.split('\n').map(line => line.trim().split(/\s+/).map(Number)).filter(row => row.length === 3 && row.every(Number.isInteger));
+  try { listing = execFileSync('ps', ['-axo', 'pid=,ppid=,pgid=,comm='], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000}); } catch { return []; }
+  return listing.split('\n').map(line => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s*(.*)$/)).filter(Boolean)
+    .map(([, pid, ppid, pgid, comm]) => [Number(pid), Number(ppid), Number(pgid), comm]);
 }
 
-// The owned-group reaper for a supervisor whose process group is its parent's (the proxy's anchor leads it): -> reap(),
-// which freezes then SIGKILLs every member of the group except the supervisor, the anchor and the supervisor's own
-// direct children (each managed by its own record: a kernel launcher already stopped, a listing `ps` already gone), or
-// null when this process does not run in such a group (then only a kernel's tree is ever killed). It is called only
-// when a kernel generation has ended and before the next starts, so the members it finds are what that generation left
-// behind: processes a cell started, reparented when their kernel died. (A process that leaves the group, as bwrap's
-// --new-session sandbox does, is not found; that sandbox dies with its parent.) #116 M2's trusted worker, a second
-// long-lived child, will need its own tree excluded here.
+// The pids of `roots` and of every process descending from them in `rows` ([pid, ppid, ...]).
+function subtrees(rows, roots) {
+  const owned = new Set(roots);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [pid, ppid] of rows) if (owned.has(ppid) && !owned.has(pid)) { owned.add(pid); changed = true; }
+  }
+  return owned;
+}
+
+// The owned-group reaper for a supervisor whose process group is its parent's (the proxy's anchor leads it), or null
+// when this process does not run in such a group (then only a kernel's tree is ever killed) -> {reap, own}.
+// reap() freezes then SIGKILLs every member of the group except the supervisor, the anchor, the `ps` listing the
+// reaper itself ran, and every process in a protected subtree. own(pid) protects the live child `pid` and everything
+// descending from it until the release it returns is called: the supervisor registers each long-lived child it owns
+// besides its kernels (#116 M2's trusted worker and the helpers it starts). reap() is called only when a kernel
+// generation has ended and before the next starts, so every unprotected member is what that generation left behind:
+// processes a cell started, reparented when their kernel died. (A process that leaves the group, as bwrap's
+// --new-session sandbox does, is not found; that sandbox dies with its parent.)
 export function ownedGroupReaper({self = process.pid, parent = process.ppid, table = processTable, signal = sendSignal} = {}) {
   const row = table().find(([pid]) => pid === self);
   if (!row || row[2] !== parent || parent <= 1) return null;
-  const strays = () => table().filter(([pid, ppid, pgid]) => pgid === parent && pid !== self && pid !== parent && ppid !== self).map(([pid]) => pid);
-  return () => {
+  const protectedRoots = new Set();
+  const strays = () => {
+    const rows = table();
+    const spared = subtrees(rows, protectedRoots);
+    return rows.filter(([pid, ppid, pgid, comm]) => pgid === parent && pid !== self && pid !== parent && !spared.has(pid)
+      && !(ppid === self && /(^|\/)ps$/.test(comm ?? ''))).map(([pid]) => pid);
+  };
+  const reap = () => {
     const frozen = new Set();
     for (let pass = 0; pass < 8; pass++) {
       const found = strays().filter(pid => !frozen.has(pid));
@@ -107,16 +125,13 @@ export function ownedGroupReaper({self = process.pid, parent = process.ppid, tab
     for (const pid of frozen) signal(pid, 'SIGKILL');
     return [...frozen];
   };
+  const own = pid => { protectedRoots.add(pid); return () => protectedRoots.delete(pid); };
+  return {reap, own};
 }
 
 // Every process descending from `pid`, from one `ps` listing.
 export function descendantsOf(pid) {
-  const rows = processTable();
-  const owned = new Set([pid]);
-  for (let changed = true; changed;) {
-    changed = false;
-    for (const [p, pp] of rows) if (owned.has(pp) && !owned.has(p)) { owned.add(p); changed = true; }
-  }
+  const owned = subtrees(processTable(), [pid]);
   owned.delete(pid);
   return [...owned];
 }
@@ -187,8 +202,10 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   };
   const killTree = () => { if (child?.pid) killProcessTree(child.pid); };
 
-  async function end() {
-    if (ended) return;
+  // Once, however it is reached: every caller (stdout's close, the exit, stop()) waits for the same cleanup.
+  let ending = null;
+  const end = () => (ending ??= finish());
+  async function finish() {
     ended = true;
     if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
     reap();

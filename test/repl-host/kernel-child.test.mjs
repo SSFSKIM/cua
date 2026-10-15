@@ -77,14 +77,20 @@ test('a launcher that cannot start is reported as the vendor reports a Node runt
   assert.match((await done).diagnostic, /^failed to start Node runtime: spawn \/nonexistent\/launcher ENOENT/);
 });
 
-test('the owned-group reaper works only in the anchor\'s group, and takes every stray there but the host, the anchor and its own children', () => {
-  // [pid, ppid, pgid]: 100 anchor (leader), 200 supervisor, 300 a launcher still recorded (its child), 400 a stray a dead
-  // kernel left (reparented to 1), 500 its child, 600 another group's process.
-  const table = () => [[100, 1, 100], [200, 100, 100], [300, 200, 100], [400, 1, 100], [500, 400, 100], [600, 1, 600]];
+test('the owned-group reaper works only in the anchor\'s group, takes every stray there and spares the host, the anchor, its own listing and every protected subtree', () => {
+  // [pid, ppid, pgid, comm]: 100 anchor (leader), 200 supervisor, 210 its `ps` listing, 300 a stopped kernel launcher,
+  // 400 a stray a dead kernel left (reparented to 1), 500 its child, 600 another group's process, 700 a worker the host
+  // owns, 710 a helper it started, 720 that helper's child.
+  const rows = [[100, 1, 100, 'node'], [200, 100, 100, 'node'], [210, 200, 100, '/bin/ps'], [300, 200, 100, 'codex'], [400, 1, 100, 'sh'], [500, 400, 100, 'sleep'],
+    [600, 1, 600, 'other'], [700, 200, 100, 'node'], [710, 700, 100, 'sky_linux'], [720, 710, 100, 'helper']];
+  const table = () => rows;
   assert.equal(ownedGroupReaper({self: 200, parent: 999, table}), null, 'not led by the parent: never reaps');
-  assert.equal(ownedGroupReaper({self: 200, parent: 100, table: () => [[200, 100, 50]]}), null);
+  assert.equal(ownedGroupReaper({self: 200, parent: 100, table: () => [[200, 100, 50, 'node']]}), null);
   const signals = [];
-  const reap = ownedGroupReaper({self: 200, parent: 100, table, signal: (pid, name) => { signals.push([pid, name]); return true; }});
-  assert.deepEqual(reap().sort(), [400, 500]);
-  assert.deepEqual(signals.map(([, n]) => n), ['SIGSTOP', 'SIGSTOP', 'SIGKILL', 'SIGKILL'], 'frozen before killed');
+  const {reap, own} = ownedGroupReaper({self: 200, parent: 100, table, signal: (pid, name) => { signals.push([pid, name]); return true; }});
+  const release = own(700);
+  assert.deepEqual(reap().sort(), [300, 400, 500], 'the worker, its helper and the helper\'s child are spared');
+  assert.deepEqual(signals.map(([, n]) => n), ['SIGSTOP', 'SIGSTOP', 'SIGSTOP', 'SIGKILL', 'SIGKILL', 'SIGKILL'], 'frozen before killed');
+  release();
+  assert.deepEqual(reap().sort(), [300, 400, 500, 700, 710, 720], 'released, the subtree is a stray like any other');
 });

@@ -539,6 +539,18 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M3 task 1, the oracle, as built.
+  - **Suites:** `api`, with 290 cases and 1,072 cells; `secrets-live`, 25 cases; and `docs-profiles`, 12 cases. The M0 double rows stay in `secrets`, labelled fake.
+  - **Proof classes**, recorded per case: Chrome-live, real-service, mixed, boundary-double, hidden-boundary and binder-double.
+  - **Fail-closed rules:** host trace comparison needs a target trace of the right schema (array entries matching the producer's request/notification kinds) wherever the control has one. Tolerances are derived from recorded vendor-against-vendor pairs, and the M2 replay still reports 7 derived differences.
+  - **Downloads:** cleaned by an outer, harness-owned helper given a private proof over stdin.
+  - **WebMCP:** registration ids are projected only after the real service issues them, scoped by browser and tab; unknown references are rejected.
+  - **Locator diagnostics:** the expectation is the RPC-sorted payload (Rust serde order).
+  - **Download filenames:** after many downloads, Chrome's collision filenames take the form `parity - YYYY-MM-DDTdddddd.ddd.txt`. The REPL chooser case accepts that observed grammar. The #113 corpus download cases do not yet, and need the same narrow grammar if they hit it.
+  - **Completeness:** 491 of the 491 obligations due at M3 are linked; 51 M4 obligations are pending.
+  - **Vendor controls** at d75a105: all three pairs show 0 differences with no allowances.
+  Rationale: This is the oracle that task 4 and later milestones are graded by.
+  Date/Author: 2026-10-15, M3 task 1 executor and its reviews, folded by the plan-executor.
 - Decision: Table 3 gains a dated amendment, recorded in `surface-inventory.md` under "Table 3 amendment (2026-10-15)". It repairs the two sentences that the literal Windows deletions made ungrammatical: "Linux always returns full accessibility state." and "Linux app `paste` supports only `text` and uses the platform's native text input." The oracle derives these bytes independently, and the facade's `core.md` applies the same repair. The principle stays as before: vendor wording verbatim, the name changed to cua, exclusions explicit. The amendment covers only sentences the exclusion itself broke.
   Rationale: The owner's ruling, relayed by the session. A deletion that breaks a sentence's grammar is not "verbatim" in any useful sense.
   Date/Author: 2026-10-15, owner ruling, recorded by the plan-executor.

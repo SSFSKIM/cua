@@ -539,6 +539,11 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M2's host comparison of the browser corpus allows two exactly scoped differences, both in the new host-only file `test/browser-parity/repl-host-expected-differences.json`.
+  - The allowances cover polling-count variance in `actions/wait-for` and `actions/slow-budget`. Each is limited to the `Runtime.evaluate`/`Runtime.releaseObject` trace methods with a stated maximum delta, which the comparator enforces, and each cites committed vendor-against-vendor reruns that show the variance.
+  - `dialogs/paused-response`'s start cell is lengthened so that it outlasts the response pause it traces. Without that, `Fetch.requestPaused` could land between cells on either host. This changes one case's timing, not its assertions, and so departs narrowly from "without changing its corpus". It was justified by host traces showing the event at the same offset on both hosts.
+  Rationale: Timing-only variance that the vendor shows against itself is not a host difference. Fixing the cell boundary race keeps the oracle deterministic without an allowance.
+  Date/Author: 2026-10-14, M2 task 3 executor, accepted and recorded by the plan-executor (task review pending).
 - Decision: the own host warms the time zone at load. `worker-runtime.mjs`, loaded first by both the kernel and the trusted worker, makes one `getTimezoneOffset()` as it loads. This is a deliberate departure in cua's favour from a vendor hang. The browser-corpus oracle stays strict: a vendor-side hang is answered by re-running the vendor control until it answers, never by an allowance, and the hung runs are committed as labelled evidence.
   Rationale: the hang is a macOS sandbox/launchd interaction that can strike any first local-time use (see Surprises). Warming at startup removes it without touching the vendor. An intermittent allowance would weaken the oracle for every other cause of the same symptom.
   Date/Author: 2026-10-14, plan-executor ruling on M2 task 3's diagnosis.

@@ -659,6 +659,12 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (2026-10-14): the vendor's Rust host itself does two things the recovered JS doesn't show.
+  - It suspends the cell budget during a bare `createElicitation`: a 650 ms delayed answer succeeds under `timeout_ms=300`.
+  - It merges response meta across RPCs and after-code hooks; keys from the first and second RPC and from the hook all survive.
+  - Duplicate `turn_ended` acknowledgements arrive only after the shared completion, about 2 ms later.
+  - A peer that aborts mid-stream yields close only, because reader EOF wins the write-error race.
+  Evidence: M2 task 1 vendor probes on the mini, cases `cells/budget/approval-and-startup-waits`, `cells/trusted/response-meta`, the turn-dedup case and the nativePipe terminal case. M2 task 2's host did neither the suspension nor the merge, so task 3 changes both to match the vendor.
 - Observation (2026-10-14): when a trusted-service RPC response crosses the vendor's Rust host (a serde map), its object keys reach the cell sorted: a service returning `{value,meta}` prints `{meta,value}`. Proxy-side elicitation persistence is conditional. An accept without content becomes `{}`. `_meta.persist:'session'` is added only when the client supplied no `_meta` at all; an existing client `_meta` survives without it. Sub-second budget cases need a warm call first, because vendor child startup consumes the first cell's budget.
   Evidence: M2 task 1's vendor probes on the mini; the own route must reproduce the sorted-key boundary (relayed to M2 task 2).
 - Observation (M2 input, 2026-10-14): `buildLaunch` sets `CUA_REPL_OWNED_GROUP=1`. When the supervisor really is in the anchor's process group, every kernel end, expected or not, freezes and kills the group's other members, sparing the supervisor, the anchor and the supervisor's direct children. This kills reparented descendants of a dead or reset kernel. M2 must exclude the trusted worker's tree from this reaper.

@@ -55,7 +55,7 @@ export class StdioClient {
     const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities,clientInfo:{name:this.clientName,version:'1'}});
     this.write({jsonrpc:'2.0',method:'notifications/initialized'});return value;
   }
-  call(name,args={}) {return this.request('tools/call',{name,arguments:args});}
+  call(name,args={},meta) {return this.request('tools/call',{name,arguments:args,...(meta?{_meta:meta}:{})});}
   async close({drop=false}={}) {
     if (!this.closed) {
       if(drop) this.child.kill('SIGTERM'); else this.child.stdin.end();

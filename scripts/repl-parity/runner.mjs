@@ -12,8 +12,8 @@ export class AttestedConnections {
     const init=await client.initialize(capabilities);
     const executionFacts=init._meta?.['cua/parityExecution'];if(command.expectedFacts)assertPreparedFacts(command.expectedFacts,executionFacts);
     const call=client.call.bind(client);let observation;
-    client.call=(name,args)=>{
-      const pending=call(name,args);
+    client.call=(name,args,meta)=>{
+      const pending=call(name,args,meta);
       const result=pending.then(r=>{
         // Proxy-local tools cannot establish host identity. Every real host result is checked, not just the first.
         if(name==='js'||name==='js_reset'){
@@ -42,7 +42,7 @@ export async function runRawScenario(scenario,{client,emit,checkout}) {
       else if(cell.op==='endTask')result=await client.call('end_task');
       else {
         const code=cellCode({...cell,raw:true,code:cell.code.replaceAll('@@CHECKOUT@@',checkout)});
-        const pending=client.call('js',{code,title:'REPL parity fixture',...(cell.timeoutMs?{timeout_ms:cell.timeoutMs}:{})});
+        const pending=client.call('js',{code,title:'REPL parity fixture',...(cell.timeoutMs?{timeout_ms:cell.timeoutMs}:{})},cell.requestMeta);
         if(cell.cancelAfterMs!==undefined)timer=setTimeout(()=>client.cancel(pending.requestId),cell.cancelAfterMs);
         if(cell.ping){let settled=false;pending.then(()=>{settled=true;},()=>{settled=true;});await client.request('ping',{},1000);if(settled)throw new Error('ping completed only after the cell settled');}
         result=await pending;

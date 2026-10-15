@@ -34,11 +34,12 @@ export async function handleRpc(r){
   // Synthetic in-memory store only; real wrappers, real worker/kernel error serialization, no filesystem secret reads.
   const sentinel='fixture-private-value',secrets={read:async()=>sentinel};
   const backend={handleRpc:async()=>{const e=new Error(sentinel);e.cause={value:sentinel};e.stack=sentinel;e.custom=sentinel;throw e;}};
-  if(r.surface==='browser')return createBrowserService({loadService:async()=>backend,actualServiceVersion:async()=>PINNED_VENDOR_VERSION,expectedVersion:PINNED_VENDOR_VERSION,serviceName:'vendor',secrets}).handleRpc({method:'execute',params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'1',selector:'#fixture',value:'{{secret:PARITY_SYNTHETIC}}'}});
+  if(r.surface==='browser')return createBrowserService({loadService:async()=>backend,actualServiceVersion:async()=>PINNED_VENDOR_VERSION,expectedVersion:PINNED_VENDOR_VERSION,serviceName:'vendor',secrets}).handleRpc({method:'execute',params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'1',selector:'#fixture',value:'{{secret:PARITY_SYNTHETIC}}',replace:true}});
   return createSkyService({loadVendor:async()=>backend,secrets,platform:'darwin'}).handleRpc({type:'execute',method:'type_text',args:[{app:'fixture',text:'{{secret:PARITY_SYNTHETIC}}'}]});
  }
  case 'pipe':{
-  if(r.mode==='relative')return nodeRepl.nativePipe.createConnection('fixture-relative.sock');
+  if(r.mode==='relative')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_RELATIVE);
+  if(r.mode==='timeout')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);
   if(r.mode==='missing')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_MISSING);
   const socket=await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE);
   if(r.mode==='interface'){

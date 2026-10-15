@@ -21,7 +21,7 @@ test -z "$(git status --porcelain)" || { echo 'parity clone is dirty' >&2; exit 
 git fetch -q origin
 git checkout --detach ${quote(commit)}
 npm ci --silent
-node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';const key=${JSON.stringify(profile)};const r=JSON.parse(execFileSync(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8'}));(${assertPreparedProfile.toString()})(r,key);`)}
+node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';const key=${JSON.stringify(profile)};const r=JSON.parse(execFileSync(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',env:{...process.env,CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off',CUA_REPL_HOST:'vendor',CUA_BROWSER_SERVICE:'cua'}}));(${assertPreparedProfile.toString()})(r,key);`)}
 node --input-type=module -e ${quote(`import {defaultHome} from './src/runtime/layout.mjs';import {execFileSync} from 'node:child_process';console.log(JSON.stringify({commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),checkout:process.cwd(),home:defaultHome(),profile:${JSON.stringify(profile)},device:${JSON.stringify(device)},fixturePort:48732}))`)}`);
 }
 export function serveCommand({device,service,replHost='vendor',home,checkout=root}) {

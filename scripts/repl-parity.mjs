@@ -48,16 +48,17 @@ export async function main(argv=process.argv.slice(2)){
  const prepared=json(state(v.device)),{scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:prepared.platform});
  if(!selected.length)throw new Error('No executable cases selected');
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:'no-services',profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,s.cells.map(c=>c.label)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:selected.some(s=>s.backend==='fixture-services')?(selected.every(s=>s.backend==='fixture-services')?'fixture-services':'no-services+fixture-services'):'no-services',profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,s.cells.map(c=>c.label)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),complete:false,connections:[],hostAttestations:[]};
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
  const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
  const emit=row=>{const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
  try{
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));
+  await client.call('js_reset'); // Even a fixture-only suite must attest its base-tools connection with a real host call.
   for(const scenario of selected){
     if(scenario.backend==='fixture-services'){
-      const fixture=await pool.open(cellsCommand({...prepared,host:v.host,fixtureServices:true}),{capabilities:scenario.capabilities});
+      const fixture=await pool.open(cellsCommand({...prepared,host:v.host,fixtureServices:true,fixtureCase:scenario.id}),{capabilities:scenario.capabilities});
       const assertion=await runRawScenario(scenario,{client:fixture,checkout:prepared.checkout,emit});if(!assertion.ok)failed=true;
       const status=await fixture.close();if(status.code!==0)throw new Error('Fixture service cleanup failed');continue;
     }

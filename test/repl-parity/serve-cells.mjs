@@ -1,6 +1,6 @@
 // Isolated no-services parity lane, not a production empty-surface option. Remote device only.
 import {writeFileSync} from 'node:fs';
-import {join,delimiter} from 'node:path';
+import {join,delimiter,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fixtureServices as createFixtureServices} from './fixtures/service-home.mjs';
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
@@ -17,6 +17,7 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
   if(fixtureServices){
     const prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
     Object.assign(env,fixtureServices.env,{[`${prefix}_TRUSTED_SERVICES`]:JSON.stringify(fixtureServices.services),[`${prefix}_TRUSTED_CODE_PATHS`]:fixtureServices.roots.join(delimiter),[`${prefix}_TRUSTED_RPC_ENABLED`]:'1',[`${prefix}_JS_BANNER`]:banner,[`${prefix}_UNTRUSTED_ENV_ALLOWLIST`]:'PARITY_CELL_VISIBLE'});
+    if(launch.cwd&&fixtureServices.env.PARITY_PIPE)env.PARITY_PIPE_RELATIVE=relative(launch.cwd,fixtureServices.env.PARITY_PIPE);
     const command=host==='vendor'?env.CUA_REPL_NODE_REPL_PATH:launch.command,args=host==='vendor'?[]:launch.args;
     env.PARITY_HOST_COMMAND=JSON.stringify([command,...args]);
     return {...launch,command:process.execPath,args:[fileURLToPath(new URL('./fixtures/host-tap.mjs',import.meta.url))],env};
@@ -37,7 +38,7 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   output=attestedOutput(output,facts);
   const scratch=prepareCapabilityHome({source});
   const env=cellsServeEnv(process.env,{scratch,sandbox,host});
-  let connection;const fixtureServices=services?await createFixtureServices():null;
+  let connection;const fixtureServices=services?await createFixtureServices({timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout'}):null;
   try {
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
       chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{if(host==='cua'&&l.command!==facts.ownNode?.path)throw new Error('The own host launch does not run the Node its provenance names');if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});

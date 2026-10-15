@@ -1,0 +1,4743 @@
+{
+  "schema": 1,
+  "pendingEnvironment": [],
+  "pendingObligations": [],
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+  "harnessCommit": "1704977604125fdbd1f95f2a2dae756cf643d03c",
+  "node": "v24.18.0",
+  "runtimeRelease": "26.928.40906-darwin-arm64",
+  "ownNode": {
+    "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+    "version": "v24.18.0"
+  },
+  "hostVersion": "0.4.0",
+  "apiVersion": "0.4.0",
+  "device": "mini",
+  "platform": "darwin",
+  "surfaces": [
+    "browser"
+  ],
+  "sandbox": "scoped",
+  "caseConfigurations": {
+    "cells/elicitation/accept": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/decline": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/cancel": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/content-and-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/accepted-response-persistence": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/unsupported-form": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/malformed-reply": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/suspend-resume": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/nested-suspension": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/remaining-budget": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/approval-and-startup-waits": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/after-success": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/after-ordinary-error": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/sequential-after-code": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/background-drain": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/submitted-code-phase": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/separate-positive-timeouts": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/unregister": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/concurrent-best-effort-turn-end": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/turn-end-deadlines": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/end-task-after-hooks": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/deduplicated-turn-end": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/realpath-roots": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/symlink-escape-refused": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/no-privileges-through-cell-import": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/lazy-service-cache": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/execution-request-correlation": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/message-only-error-boundary": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/response-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/output/structured-content-and-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/emit-content-item-order": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/privileged-env-allowlist": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/no-account-telemetry-app-server": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/absolute-path": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/connect-timeout": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/frozen-interface": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/base64-correlation": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/data-close-error": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/launch-services/open-application-macos-boundary": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/browser/errors/worker-rejection-message-only": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native/errors/worker-rejection-message-only": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    }
+  },
+  "service": "cua",
+  "backend": "fixture-services",
+  "profile": "ssfs",
+  "suite": "services",
+  "through": null,
+  "caseIds": [
+    "cells/elicitation/accept",
+    "cells/elicitation/decline",
+    "cells/elicitation/cancel",
+    "cells/elicitation/content-and-meta",
+    "cells/elicitation/accepted-response-persistence",
+    "cells/elicitation/unsupported-form",
+    "cells/elicitation/malformed-reply",
+    "cells/budget/suspend-resume",
+    "cells/budget/nested-suspension",
+    "cells/budget/remaining-budget",
+    "cells/budget/approval-and-startup-waits",
+    "cells/hooks/after-success",
+    "cells/hooks/after-ordinary-error",
+    "cells/hooks/sequential-after-code",
+    "cells/hooks/background-drain",
+    "cells/hooks/submitted-code-phase",
+    "cells/hooks/separate-positive-timeouts",
+    "cells/hooks/unregister",
+    "cells/hooks/concurrent-best-effort-turn-end",
+    "cells/hooks/turn-end-deadlines",
+    "cells/hooks/end-task-after-hooks",
+    "cells/hooks/deduplicated-turn-end",
+    "cells/trusted/realpath-roots",
+    "cells/trusted/symlink-escape-refused",
+    "cells/trusted/no-privileges-through-cell-import",
+    "cells/trusted/lazy-service-cache",
+    "cells/trusted/execution-request-correlation",
+    "cells/trusted/message-only-error-boundary",
+    "cells/trusted/response-meta",
+    "cells/output/structured-content-and-meta",
+    "cells/trusted/emit-content-item-order",
+    "cells/trusted/privileged-env-allowlist",
+    "cells/trusted/no-account-telemetry-app-server",
+    "cells/native-pipe/absolute-path",
+    "cells/native-pipe/connect-timeout",
+    "cells/native-pipe/frozen-interface",
+    "cells/native-pipe/base64-correlation",
+    "cells/native-pipe/data-close-error",
+    "cells/launch-services/open-application-macos-boundary",
+    "secrets/browser/errors/worker-rejection-message-only",
+    "secrets/native/errors/worker-rejection-message-only"
+  ],
+  "caseCells": {
+    "cells/elicitation/accept": [
+      "reply"
+    ],
+    "cells/elicitation/decline": [
+      "reply"
+    ],
+    "cells/elicitation/cancel": [
+      "reply"
+    ],
+    "cells/elicitation/content-and-meta": [
+      "reply"
+    ],
+    "cells/elicitation/accepted-response-persistence": [
+      "reply"
+    ],
+    "cells/elicitation/unsupported-form": [
+      "cell-1"
+    ],
+    "cells/elicitation/malformed-reply": [
+      "reply"
+    ],
+    "cells/budget/suspend-resume": [
+      "warm",
+      "suspended"
+    ],
+    "cells/budget/nested-suspension": [
+      "warm",
+      "suspended"
+    ],
+    "cells/budget/remaining-budget": [
+      "warm",
+      "remaining",
+      "cell-2"
+    ],
+    "cells/budget/approval-and-startup-waits": [
+      "warm",
+      "approval",
+      "bare-elicitation"
+    ],
+    "cells/hooks/after-success": [
+      "cell-1"
+    ],
+    "cells/hooks/after-ordinary-error": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/sequential-after-code": [
+      "cell-1"
+    ],
+    "cells/hooks/background-drain": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/submitted-code-phase": [
+      "warm",
+      "hook-budget"
+    ],
+    "cells/hooks/separate-positive-timeouts": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/unregister": [
+      "cell-1"
+    ],
+    "cells/hooks/concurrent-best-effort-turn-end": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "cells/hooks/turn-end-deadlines": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "cells/hooks/end-task-after-hooks": [
+      "cell-1",
+      "end",
+      "cell-3"
+    ],
+    "cells/hooks/deduplicated-turn-end": [
+      "cell-1",
+      "duplicates-1",
+      "duplicates-2",
+      "duplicates-3",
+      "cell-3",
+      "again",
+      "cell-5",
+      "other-session",
+      "cell-7",
+      "other-turn",
+      "cell-9"
+    ],
+    "cells/trusted/realpath-roots": [
+      "cell-1"
+    ],
+    "cells/trusted/symlink-escape-refused": [
+      "cell-1"
+    ],
+    "cells/trusted/no-privileges-through-cell-import": [
+      "cell-1"
+    ],
+    "cells/trusted/lazy-service-cache": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/execution-request-correlation": [
+      "correlated"
+    ],
+    "cells/trusted/message-only-error-boundary": [
+      "cell-1"
+    ],
+    "cells/trusted/response-meta": [
+      "cell-1",
+      "cell-2",
+      "across-rpcs-and-hook"
+    ],
+    "cells/output/structured-content-and-meta": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/emit-content-item-order": [
+      "cell-1"
+    ],
+    "cells/trusted/privileged-env-allowlist": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/no-account-telemetry-app-server": [
+      "cell-1"
+    ],
+    "cells/native-pipe/absolute-path": [
+      "cell-1"
+    ],
+    "cells/native-pipe/connect-timeout": [
+      "warm",
+      "cell-1"
+    ],
+    "cells/native-pipe/frozen-interface": [
+      "cell-1"
+    ],
+    "cells/native-pipe/base64-correlation": [
+      "cell-1"
+    ],
+    "cells/native-pipe/data-close-error": [
+      "live-abort",
+      "wire-error"
+    ],
+    "cells/launch-services/open-application-macos-boundary": [
+      "cell-1"
+    ],
+    "secrets/browser/errors/worker-rejection-message-only": [
+      "cell-1"
+    ],
+    "secrets/native/errors/worker-rejection-message-only": [
+      "cell-1"
+    ]
+  },
+  "pending": [],
+  "limitations": [
+    {
+      "case": "cells/native-pipe/connect-timeout",
+      "notes": [
+        "A full AF_UNIX backlog refuses immediately on both platforms. Live proof records the 1,000 ms setting and bounded refusal; socket-double unit proof covers timer expiry."
+      ]
+    },
+    {
+      "case": "cells/native-pipe/data-close-error",
+      "notes": [
+        "Real macOS abort is close-only (EOF wins); Linux emits error-before-close with os error 104 and late replay. Error-before-close and late error are boundary-double proof injected into the selected worker stdin, not the supervisor."
+      ]
+    }
+  ],
+  "caseProofs": {
+    "cells/elicitation/accept": "fixture-services",
+    "cells/elicitation/decline": "fixture-services",
+    "cells/elicitation/cancel": "fixture-services",
+    "cells/elicitation/content-and-meta": "fixture-services",
+    "cells/elicitation/accepted-response-persistence": "fixture-services",
+    "cells/elicitation/unsupported-form": "fixture-services",
+    "cells/elicitation/malformed-reply": "fixture-services",
+    "cells/budget/suspend-resume": "fixture-services",
+    "cells/budget/nested-suspension": "fixture-services",
+    "cells/budget/remaining-budget": "fixture-services",
+    "cells/budget/approval-and-startup-waits": "fixture-services",
+    "cells/hooks/after-success": "fixture-services",
+    "cells/hooks/after-ordinary-error": "fixture-services",
+    "cells/hooks/sequential-after-code": "fixture-services",
+    "cells/hooks/background-drain": "fixture-services",
+    "cells/hooks/submitted-code-phase": "fixture-services",
+    "cells/hooks/separate-positive-timeouts": "fixture-services",
+    "cells/hooks/unregister": "fixture-services",
+    "cells/hooks/concurrent-best-effort-turn-end": "fixture-services",
+    "cells/hooks/turn-end-deadlines": "fixture-services",
+    "cells/hooks/end-task-after-hooks": "fixture-services",
+    "cells/hooks/deduplicated-turn-end": "fixture-services",
+    "cells/trusted/realpath-roots": "fixture-services",
+    "cells/trusted/symlink-escape-refused": "fixture-services",
+    "cells/trusted/no-privileges-through-cell-import": "fixture-services",
+    "cells/trusted/lazy-service-cache": "fixture-services",
+    "cells/trusted/execution-request-correlation": "fixture-services",
+    "cells/trusted/message-only-error-boundary": "fixture-services",
+    "cells/trusted/response-meta": "fixture-services",
+    "cells/output/structured-content-and-meta": "fixture-services",
+    "cells/trusted/emit-content-item-order": "fixture-services",
+    "cells/trusted/privileged-env-allowlist": "fixture-services",
+    "cells/trusted/no-account-telemetry-app-server": "fixture-services",
+    "cells/native-pipe/absolute-path": "fixture-services",
+    "cells/native-pipe/connect-timeout": "live-unreachable: non-blocking connect",
+    "cells/native-pipe/frozen-interface": "fixture-services",
+    "cells/native-pipe/base64-correlation": "fixture-services",
+    "cells/native-pipe/data-close-error": "fixture-services",
+    "cells/launch-services/open-application-macos-boundary": "fixture-services",
+    "secrets/browser/errors/worker-rejection-message-only": "fixture-services",
+    "secrets/native/errors/worker-rejection-message-only": "fixture-services"
+  },
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "connection-2",
+    "connection-3",
+    "connection-4",
+    "connection-5",
+    "connection-6",
+    "connection-7",
+    "connection-8",
+    "connection-9",
+    "connection-10",
+    "connection-11",
+    "connection-12",
+    "connection-13",
+    "connection-14",
+    "connection-15",
+    "connection-16",
+    "connection-17",
+    "connection-18",
+    "connection-19",
+    "connection-20",
+    "connection-21",
+    "connection-22",
+    "connection-23",
+    "connection-24",
+    "connection-25",
+    "connection-26",
+    "connection-27",
+    "connection-28",
+    "connection-29",
+    "connection-30",
+    "connection-31",
+    "connection-32",
+    "connection-33",
+    "connection-34",
+    "connection-35",
+    "connection-36",
+    "connection-37",
+    "connection-38",
+    "connection-39",
+    "connection-40",
+    "connection-41",
+    "connection-42"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "d5536f76-a31c-4abb-bd00-58150c869c2d"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "8a0f34b1-daa2-4ccc-a89f-4f157a91a789"
+      }
+    },
+    {
+      "connection": "connection-3",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "8c97c63e-f880-4611-8c66-77d868ec13c3"
+      }
+    },
+    {
+      "connection": "connection-4",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "c14e231f-e60c-457b-8c77-637fc5a7eb10"
+      }
+    },
+    {
+      "connection": "connection-5",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "832e2351-917d-405e-9bf4-d3e985399614"
+      }
+    },
+    {
+      "connection": "connection-6",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "7dbfa0b1-45b1-476b-b922-2d3da59ffa76"
+      }
+    },
+    {
+      "connection": "connection-7",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "7b9ea4d7-661c-456e-9058-aabba70c489d"
+      }
+    },
+    {
+      "connection": "connection-8",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "e83c3708-54b3-4a71-a8a6-051c2130801f"
+      }
+    },
+    {
+      "connection": "connection-9",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "4322468a-4061-4e8c-a82b-712c1f8cd519"
+      }
+    },
+    {
+      "connection": "connection-10",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "b74ee277-0336-476b-abd8-e34c29aa928f"
+      }
+    },
+    {
+      "connection": "connection-11",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "9da409c2-0dbe-4fd7-a749-8a3052138440"
+      }
+    },
+    {
+      "connection": "connection-12",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "dd60890b-ffbd-4aa2-af6d-a95fced2da6f"
+      }
+    },
+    {
+      "connection": "connection-13",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "c670b054-aa00-4ae1-a085-a731f95ad5cc"
+      }
+    },
+    {
+      "connection": "connection-14",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "e763446a-ab41-4918-98b0-811a6b4a3e08"
+      }
+    },
+    {
+      "connection": "connection-15",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "ad37198b-2e87-485d-9f54-278d553fef77"
+      }
+    },
+    {
+      "connection": "connection-16",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "3b009a94-6a6e-4f7a-8f3c-95f7bf32d79b"
+      }
+    },
+    {
+      "connection": "connection-17",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "138a1aa4-93bf-4810-b2c4-1d7b6bcafbb8"
+      }
+    },
+    {
+      "connection": "connection-18",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "f992a9c8-e54d-4c9b-812c-5e1792a45d86"
+      }
+    },
+    {
+      "connection": "connection-19",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "abed7934-4335-419c-8dbd-ee67eae1d086"
+      }
+    },
+    {
+      "connection": "connection-20",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "e0d85136-26c0-4521-b37a-f239d8489783"
+      }
+    },
+    {
+      "connection": "connection-21",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "359d292c-a793-4d7b-9e0e-be177e607fb1"
+      }
+    },
+    {
+      "connection": "connection-22",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "862c6105-5d5b-420e-90f1-0fdfc5e01e2f"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "89f474ab-3650-4c82-a20c-19088b943058"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "c03b1961-be8a-4393-826c-bb8db7ddf943"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "4ef94c08-fcf9-469a-88b9-deb37187afd1"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "eafcca9f-5c5e-4488-9d7c-0fdb326c871f"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "05e85227-8cae-488a-b96d-711cd6bb005a"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "c78ecff6-2510-4b82-8add-3584fc6d5208"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "b2437a19-411f-4251-8dc7-ef826d6fddf9"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "60ce6852-afb5-4aea-81bd-7ea2579d8708"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "f41ab581-eb0a-4c03-a8ef-d4b94790089e"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "24dd4175-3541-46f6-8e76-40add8c45952"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "da4147f2-c02a-47b7-bd0c-e8d121f5a265"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "449666a7-c845-4d28-b797-b834635e9b7e"
+      }
+    },
+    {
+      "connection": "connection-35",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "2df4c4ae-09a3-44ba-a77f-ad6013e6c791"
+      }
+    },
+    {
+      "connection": "connection-36",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "8d5bb409-f612-4593-9c11-9d063bc7848b"
+      }
+    },
+    {
+      "connection": "connection-37",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "3d290bb9-35e1-4fd7-8ed1-736ba63a64b2"
+      }
+    },
+    {
+      "connection": "connection-38",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "e992ff48-ef1d-42af-8cbb-9e3dea010ee1"
+      }
+    },
+    {
+      "connection": "connection-39",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "7f5ff0af-6700-4657-8aa4-a6e2f569208a"
+      }
+    },
+    {
+      "connection": "connection-40",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "faea6bcd-3907-4648-b105-82717462c03f"
+      }
+    },
+    {
+      "connection": "connection-41",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "4c72633a-9d54-4b86-84b8-23b507d1d592"
+      }
+    },
+    {
+      "connection": "connection-42",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.4.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "6f7cf58b948cb7b98d6188fb8441ba43efdd2c27",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1791904712778.319
+            }
+          },
+          "recordPath": "/Users/new/Library/Application Support/cua/chrome/cua-registration.json",
+          "manifests": [
+            {
+              "browser": "chrome",
+              "path": "/Users/new/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "edge",
+              "path": "/Users/new/Library/Application Support/Microsoft Edge/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "brave",
+              "path": "/Users/new/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "opera",
+              "path": "/Users/new/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            },
+            {
+              "browser": "vivaldi",
+              "path": "/Users/new/Library/Application Support/Vivaldi/NativeMessagingHosts/io.github.ssfskim.cua.json",
+              "sha256": "f9f1bc68488cb9e65c051471c9dc89263f4a2fa6be89d46e5f996f94d3857f5f",
+              "name": "io.github.ssfskim.cua",
+              "type": "stdio",
+              "launcher": "/Users/new/Library/Application Support/cua/chrome/host",
+              "allowedOrigins": [
+                "chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+              ]
+            }
+          ]
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.4.0"
+        },
+        "cua/taskId": "295b29f8-2a0a-4e90-8343-a6f7d32873b6"
+      }
+    }
+  ],
+  "vendorDefects": [],
+  "coveredCases": 41,
+  "recordedCases": 41
+}

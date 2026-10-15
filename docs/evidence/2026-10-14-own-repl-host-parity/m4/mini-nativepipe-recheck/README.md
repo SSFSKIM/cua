@@ -35,3 +35,5 @@ node scripts/repl-parity.mjs run --host vendor --device mini --suite services --
 node scripts/repl-parity.mjs diff m4/mini-nativepipe-recheck/vendor m4/mini-nativepipe-recheck/cua --expected test/repl-parity/expected-differences.json
 node scripts/repl-parity.mjs diff m2/vendor-1 m4/mini-nativepipe-recheck/cua --expected test/repl-parity/expected-differences.json
 ```
+
+**Repeated at `6f7cf58`** (after the fail-closed lifeline and the ENOTSUP entries): `cua-at-6f7cf58/` is the own host's services suite (41 cases, assertions PASS). Diffed against the same `vendor/` control, it gives **0 differences** (`vendor-cua-at-6f7cf58-diff.json`). The ENOTSUP sentence is not reached by any services case; its unit fixtures cover it.

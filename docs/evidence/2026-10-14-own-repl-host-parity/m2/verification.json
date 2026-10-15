@@ -1,0 +1,57 @@
+{
+  "harnessCommit": "edab6affd0aa07e510f4d43565d71e0f9b500ce3",
+  "vendorControl": {
+    "cases": 41,
+    "cells": 74,
+    "differences": 0,
+    "allowances": 0,
+    "allAssertionsPassed": true,
+    "connectionsPerRun": 42
+  },
+  "gates": [
+    {
+      "command": "HOME=/tmp/cua-scratch-home-m2t1 npm test",
+      "tests": 1926,
+      "passed": 1878,
+      "failed": 0,
+      "skipped": 48
+    },
+    {
+      "command": "HOME=/tmp/cua-scratch-home-m2t1 CUA_NODE=/opt/homebrew/bin/node npm test",
+      "tests": 1926,
+      "passed": 1918,
+      "failed": 0,
+      "skipped": 8
+    },
+    {
+      "command": "npm run test:mods",
+      "passed": 32,
+      "failed": 0
+    },
+    {
+      "command": "claude plugin validate .",
+      "passed": true,
+      "knownWarning": true
+    }
+  ],
+  "node": {
+    "default": "v22.23.2",
+    "explicitKernel": "v26.7.0"
+  },
+  "offlineEvidenceReplay": {
+    "passed": 2,
+    "failed": 0
+  },
+  "browserSmoke": {
+    "host": "vendor",
+    "service": "cua",
+    "cases": 1,
+    "passed": true,
+    "fullCorpus": false
+  },
+  "limitations": [
+    "macOS saturated Unix connect proves configured bound and bounded refusal, not timer expiry; M4 owns the Linux live expiry proof.",
+    "Native terminal error ordering is a labelled boundary double at real worker stdin, not supervisor emission or a natural macOS transport error. The natural abort is separately close-only.",
+    "Own-host M2 services, full browser corpus and MAWS are task 3; no such live result is claimed here."
+  ]
+}

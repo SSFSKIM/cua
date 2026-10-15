@@ -33,7 +33,7 @@
 // It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
-// src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
+// src/repl-host, src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
 // Another mode is the user's choice and only described.
 // On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
 // not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
@@ -55,7 +55,7 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, browserSelectionFor, browserServiceFor, describeBrowserRoute, ownHostUnavailable, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, REPL_HOST_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, browserSelectionFor, browserServiceFor, describeBrowserRoute, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -196,7 +196,8 @@ function replHostSelection(home, env, platform, surfaces) {
   try {
     browser = surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
     const selected = replHostFor({platform, surfaces, ambient: env, browserSelection: browser});
-    if (selected.host === 'cua') ownHostUnavailable();
+    // The own host runs only on a Node this environment resolves (the launch's own check, repl_host_node).
+    if (selected.host === 'cua') return {...selected, browser, node: ownHostNode({ambient: env})};
     return {...selected, browser};
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -212,7 +213,7 @@ function replHostCheck(home, env, platform) {
   }
   const session = replHostSelection(home, env, platform, surfaces);
   const listing = replHostSelection(home, env, platform, ['browser']);
-  const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason}): ${REPL_HOST_REASONS[r.reason](r.host)}`);
+  const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason}): ${REPL_HOST_REASONS[r.reason](r.host)}${r.node ? `, on Node ${r.node}` : ''}`);
   const route = !surfaces.includes('browser') ? 'none, no browser surface' : (session.browser ? describeBrowserRoute(session.browser) : 'not resolved');
   return result('repl.host', session.code || listing.code ? 'fail' : 'pass',
     `${words(session)}. Browser route: ${route}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
@@ -260,7 +261,7 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
   const owned = homeLayout(realHome(home));
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
+    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
     writeRoots: scopedWriteRoots({cwd: owned.run, cwdLabel: '$CUA_HOME/run', tmpdir: env.TMPDIR}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);

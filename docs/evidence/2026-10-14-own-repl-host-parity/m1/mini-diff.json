@@ -1,0 +1,816 @@
+{
+  "ok": true,
+  "differences": [],
+  "expected": [
+    {
+      "case": "cells/bindings/persistent",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/bindings/persistent",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/bindings/redeclare",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/bindings/redeclare",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/bindings/ordinary-error-partial-bindings",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/bindings/ordinary-error-partial-bindings",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/await/top-level",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/imports/dynamic",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/imports/builtins",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/imports/static-refused",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/imports/process-global-refused",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/imports/process-module-refused",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/string-codegen-refused",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/wasm-codegen-refused",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/errors/vendor-sentences-is-error",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/errors/thrown-cell-recovery",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/errors/thrown-cell-recovery",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/node-repl-immutable",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/tmp-dir-immutable",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/context",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/env-frozen-allowlist",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/request-meta",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/globals/rpc-configured-only",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/clears-bindings",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/clears-bindings",
+      "cell": "reset",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/clears-bindings",
+      "cell": "cell-3",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/preserves-task-id",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/preserves-task-id",
+      "cell": "reset",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/preserves-task-id",
+      "cell": "cell-3",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/default-30000",
+      "cell": "timeout",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/default-30000",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/explicit-short",
+      "cell": "timeout",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/explicit-short",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/fresh-heap",
+      "cell": "timeout",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/fresh-heap",
+      "cell": "cell-2",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/write-values",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/write-ids",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/console-grouping-newlines",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/ordered-content",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/running-cancellation-eventual-result",
+      "cell": "running",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/control-traffic-while-running",
+      "cell": "running",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/data-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/data-url-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/file-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/file-url-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/buffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/buffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/uint8array",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/uint8array-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/arraybuffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/arraybuffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/arraybuffer-view",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/arraybuffer-view-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-buffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-buffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-uint8array",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-uint8array-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-arraybuffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-arraybuffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-arraybuffer-view",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/png/object-arraybuffer-view-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/data-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/data-url-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/file-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/file-url-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/buffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/buffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/uint8array",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/uint8array-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/arraybuffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/arraybuffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/arraybuffer-view",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/arraybuffer-view-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-buffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-buffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-uint8array",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-uint8array-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-arraybuffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-arraybuffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-arraybuffer-view",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/jpeg/object-arraybuffer-view-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/data-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/data-url-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/file-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/file-url-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/buffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/buffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/uint8array",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/uint8array-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/arraybuffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/arraybuffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/arraybuffer-view",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/arraybuffer-view-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-buffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-buffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-uint8array",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-uint8array-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-arraybuffer",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-arraybuffer-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-arraybuffer-view",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/emit-image/webp/object-arraybuffer-view-promised",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/image-acknowledgement",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/ordered-images",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/output/unawaited-emissions",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/invalid-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/empty-url",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/unknown-bytes",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/empty-bytes",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/invalid-object",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/invalid-mime",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/images/rejected-promise",
+      "cell": "cell-1",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/late-reply-generation-fence",
+      "cell": "timeout",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/timeouts/late-reply-generation-fence",
+      "cell": "fresh",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/generation-fence",
+      "cell": "schedule",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/generation-fence",
+      "cell": "reset",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/generation-fence",
+      "cell": "fresh",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/fresh-banner",
+      "cell": "first",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/fresh-banner",
+      "cell": "again",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/fresh-banner",
+      "cell": "reset",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/fresh-banner",
+      "cell": "fresh",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/fresh-banner",
+      "cell": "timeout",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/reset/fresh-banner",
+      "cell": "after-timeout",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/eof-settles-no-replay",
+      "cell": "warm",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/eof-settles-no-replay",
+      "cell": "interrupted",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/eof-settles-no-replay",
+      "cell": "reconnect",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/child-exit-settles",
+      "cell": "warm",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/child-exit-settles",
+      "cell": "interrupted",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/owned-group-teardown",
+      "cell": "warm",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/lifecycle/owned-group-teardown",
+      "cell": "background",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/confinement/default",
+      "cell": "filesystem-network",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/confinement/scoped",
+      "cell": "filesystem-network",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/confinement/disabled",
+      "cell": "filesystem-network",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/confinement/no-unsandboxed-fallback",
+      "cell": "reset",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    },
+    {
+      "case": "cells/confinement/no-unsandboxed-fallback",
+      "cell": "refused",
+      "field": "meta.cua/replHost",
+      "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends"
+    }
+  ],
+  "cases": 111,
+  "cells": 145,
+  "recordedCases": 111,
+  "vendorDefects": [],
+  "allAssertionsPassed": true,
+  "doubleCases": 0
+}

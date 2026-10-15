@@ -17,7 +17,10 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
     env.NODE_REPL_UNTRUSTED_ENV_ALLOWLIST='';
     return {...launch,command:env.CUA_REPL_NODE_REPL_PATH,args:[],env};
   }
+  // The own host (src/repl-host/supervisor.mjs) under its owned names: the same no-op banner, no services or rpc and no
+  // cell environment, so both hosts run the identical lane.
   env.CUA_REPL_TRUSTED_SERVICES='{}';env.CUA_REPL_TRUSTED_RPC_ENABLED='0';env.CUA_REPL_JS_BANNER=banner;
+  env.CUA_REPL_UNTRUSTED_ENV_ALLOWLIST='';
   return {...launch,env};
 }
 export async function serveCells({source,host='vendor',sandbox='scoped',witness=false,brokenSandbox=false,controlDir,input=process.stdin,output=process.stdout}={}) {
@@ -28,7 +31,7 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   let connection;
   try {
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
-      chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox});}});
+      chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{if(host==='cua'&&l.command!==facts.ownNode?.path)throw new Error('The own host launch does not run the Node its provenance names');if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox});}});
     const terminate=()=>connection.close('signal');process.once('SIGTERM',terminate);process.once('SIGINT',terminate);
     try {const result=await connection.closed;if(controlDir)writeFileSync(join(controlDir,'closed.json'),JSON.stringify(result));process.exitCode=result.code;}finally{process.off('SIGTERM',terminate);process.off('SIGINT',terminate);}
   } finally {scratch.cleanup();}

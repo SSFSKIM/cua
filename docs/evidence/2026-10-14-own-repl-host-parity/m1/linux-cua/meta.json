@@ -1,0 +1,1098 @@
+{
+  "schema": 1,
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+  "harnessCommit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+  "node": "v22.23.3",
+  "runtimeRelease": "26.928.40906-linux-arm64",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+    "version": "v24.18.0"
+  },
+  "hostVersion": "0.2.0",
+  "apiVersion": "0.2.0",
+  "device": "cua-linux",
+  "platform": "linux",
+  "surfaces": [
+    "browser"
+  ],
+  "sandbox": "scoped",
+  "service": "cua",
+  "backend": "no-services",
+  "profile": "me",
+  "suite": "cells",
+  "through": "M1",
+  "caseIds": [
+    "cells/bindings/persistent",
+    "cells/bindings/redeclare",
+    "cells/bindings/ordinary-error-partial-bindings",
+    "cells/await/top-level",
+    "cells/imports/dynamic",
+    "cells/imports/builtins",
+    "cells/imports/static-refused",
+    "cells/imports/process-global-refused",
+    "cells/imports/process-module-refused",
+    "cells/globals/string-codegen-refused",
+    "cells/globals/wasm-codegen-refused",
+    "cells/errors/vendor-sentences-is-error",
+    "cells/errors/thrown-cell-recovery",
+    "cells/globals/node-repl-immutable",
+    "cells/globals/tmp-dir-immutable",
+    "cells/globals/context",
+    "cells/globals/env-frozen-allowlist",
+    "cells/globals/request-meta",
+    "cells/globals/rpc-configured-only",
+    "cells/reset/clears-bindings",
+    "cells/reset/preserves-task-id",
+    "cells/timeouts/default-30000",
+    "cells/timeouts/explicit-short",
+    "cells/timeouts/fresh-heap",
+    "cells/output/write-values",
+    "cells/output/write-ids",
+    "cells/output/console-grouping-newlines",
+    "cells/output/ordered-content",
+    "cells/lifecycle/running-cancellation-eventual-result",
+    "cells/lifecycle/control-traffic-while-running",
+    "cells/emit-image/png/data-url",
+    "cells/emit-image/png/data-url-promised",
+    "cells/emit-image/png/file-url",
+    "cells/emit-image/png/file-url-promised",
+    "cells/emit-image/png/buffer",
+    "cells/emit-image/png/buffer-promised",
+    "cells/emit-image/png/uint8array",
+    "cells/emit-image/png/uint8array-promised",
+    "cells/emit-image/png/arraybuffer",
+    "cells/emit-image/png/arraybuffer-promised",
+    "cells/emit-image/png/arraybuffer-view",
+    "cells/emit-image/png/arraybuffer-view-promised",
+    "cells/emit-image/png/object-buffer",
+    "cells/emit-image/png/object-buffer-promised",
+    "cells/emit-image/png/object-uint8array",
+    "cells/emit-image/png/object-uint8array-promised",
+    "cells/emit-image/png/object-arraybuffer",
+    "cells/emit-image/png/object-arraybuffer-promised",
+    "cells/emit-image/png/object-arraybuffer-view",
+    "cells/emit-image/png/object-arraybuffer-view-promised",
+    "cells/emit-image/jpeg/data-url",
+    "cells/emit-image/jpeg/data-url-promised",
+    "cells/emit-image/jpeg/file-url",
+    "cells/emit-image/jpeg/file-url-promised",
+    "cells/emit-image/jpeg/buffer",
+    "cells/emit-image/jpeg/buffer-promised",
+    "cells/emit-image/jpeg/uint8array",
+    "cells/emit-image/jpeg/uint8array-promised",
+    "cells/emit-image/jpeg/arraybuffer",
+    "cells/emit-image/jpeg/arraybuffer-promised",
+    "cells/emit-image/jpeg/arraybuffer-view",
+    "cells/emit-image/jpeg/arraybuffer-view-promised",
+    "cells/emit-image/jpeg/object-buffer",
+    "cells/emit-image/jpeg/object-buffer-promised",
+    "cells/emit-image/jpeg/object-uint8array",
+    "cells/emit-image/jpeg/object-uint8array-promised",
+    "cells/emit-image/jpeg/object-arraybuffer",
+    "cells/emit-image/jpeg/object-arraybuffer-promised",
+    "cells/emit-image/jpeg/object-arraybuffer-view",
+    "cells/emit-image/jpeg/object-arraybuffer-view-promised",
+    "cells/emit-image/webp/data-url",
+    "cells/emit-image/webp/data-url-promised",
+    "cells/emit-image/webp/file-url",
+    "cells/emit-image/webp/file-url-promised",
+    "cells/emit-image/webp/buffer",
+    "cells/emit-image/webp/buffer-promised",
+    "cells/emit-image/webp/uint8array",
+    "cells/emit-image/webp/uint8array-promised",
+    "cells/emit-image/webp/arraybuffer",
+    "cells/emit-image/webp/arraybuffer-promised",
+    "cells/emit-image/webp/arraybuffer-view",
+    "cells/emit-image/webp/arraybuffer-view-promised",
+    "cells/emit-image/webp/object-buffer",
+    "cells/emit-image/webp/object-buffer-promised",
+    "cells/emit-image/webp/object-uint8array",
+    "cells/emit-image/webp/object-uint8array-promised",
+    "cells/emit-image/webp/object-arraybuffer",
+    "cells/emit-image/webp/object-arraybuffer-promised",
+    "cells/emit-image/webp/object-arraybuffer-view",
+    "cells/emit-image/webp/object-arraybuffer-view-promised",
+    "cells/output/image-acknowledgement",
+    "cells/output/ordered-images",
+    "cells/output/unawaited-emissions",
+    "cells/images/invalid-url",
+    "cells/images/empty-url",
+    "cells/images/unknown-bytes",
+    "cells/images/empty-bytes",
+    "cells/images/invalid-object",
+    "cells/images/invalid-mime",
+    "cells/images/rejected-promise",
+    "cells/timeouts/late-reply-generation-fence",
+    "cells/reset/generation-fence",
+    "cells/reset/fresh-banner",
+    "cells/lifecycle/eof-settles-no-replay",
+    "cells/lifecycle/child-exit-settles",
+    "cells/lifecycle/owned-group-teardown",
+    "cells/confinement/default",
+    "cells/confinement/scoped",
+    "cells/confinement/disabled",
+    "cells/confinement/trusted-write-root-overlap",
+    "cells/confinement/linux-fail-closed",
+    "cells/confinement/no-unsandboxed-fallback"
+  ],
+  "caseCells": {
+    "cells/bindings/persistent": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/bindings/redeclare": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/bindings/ordinary-error-partial-bindings": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/await/top-level": [
+      "cell-1"
+    ],
+    "cells/imports/dynamic": [
+      "cell-1"
+    ],
+    "cells/imports/builtins": [
+      "cell-1"
+    ],
+    "cells/imports/static-refused": [
+      "cell-1"
+    ],
+    "cells/imports/process-global-refused": [
+      "cell-1"
+    ],
+    "cells/imports/process-module-refused": [
+      "cell-1"
+    ],
+    "cells/globals/string-codegen-refused": [
+      "cell-1"
+    ],
+    "cells/globals/wasm-codegen-refused": [
+      "cell-1"
+    ],
+    "cells/errors/vendor-sentences-is-error": [
+      "cell-1"
+    ],
+    "cells/errors/thrown-cell-recovery": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/globals/node-repl-immutable": [
+      "cell-1"
+    ],
+    "cells/globals/tmp-dir-immutable": [
+      "cell-1"
+    ],
+    "cells/globals/context": [
+      "cell-1"
+    ],
+    "cells/globals/env-frozen-allowlist": [
+      "cell-1"
+    ],
+    "cells/globals/request-meta": [
+      "cell-1"
+    ],
+    "cells/globals/rpc-configured-only": [
+      "cell-1"
+    ],
+    "cells/reset/clears-bindings": [
+      "cell-1",
+      "reset",
+      "cell-3"
+    ],
+    "cells/reset/preserves-task-id": [
+      "cell-1",
+      "reset",
+      "cell-3"
+    ],
+    "cells/timeouts/default-30000": [
+      "timeout",
+      "cell-2"
+    ],
+    "cells/timeouts/explicit-short": [
+      "timeout",
+      "cell-2"
+    ],
+    "cells/timeouts/fresh-heap": [
+      "timeout",
+      "cell-2"
+    ],
+    "cells/output/write-values": [
+      "cell-1"
+    ],
+    "cells/output/write-ids": [
+      "cell-1"
+    ],
+    "cells/output/console-grouping-newlines": [
+      "cell-1"
+    ],
+    "cells/output/ordered-content": [
+      "cell-1"
+    ],
+    "cells/lifecycle/running-cancellation-eventual-result": [
+      "running"
+    ],
+    "cells/lifecycle/control-traffic-while-running": [
+      "running"
+    ],
+    "cells/emit-image/png/data-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/data-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/file-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/file-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/png/object-arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/data-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/data-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/file-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/file-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/jpeg/object-arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/data-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/data-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/file-url": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/file-url-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-buffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-buffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-uint8array": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-uint8array-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer-promised": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer-view": [
+      "cell-1"
+    ],
+    "cells/emit-image/webp/object-arraybuffer-view-promised": [
+      "cell-1"
+    ],
+    "cells/output/image-acknowledgement": [
+      "cell-1"
+    ],
+    "cells/output/ordered-images": [
+      "cell-1"
+    ],
+    "cells/output/unawaited-emissions": [
+      "cell-1"
+    ],
+    "cells/images/invalid-url": [
+      "cell-1"
+    ],
+    "cells/images/empty-url": [
+      "cell-1"
+    ],
+    "cells/images/unknown-bytes": [
+      "cell-1"
+    ],
+    "cells/images/empty-bytes": [
+      "cell-1"
+    ],
+    "cells/images/invalid-object": [
+      "cell-1"
+    ],
+    "cells/images/invalid-mime": [
+      "cell-1"
+    ],
+    "cells/images/rejected-promise": [
+      "cell-1"
+    ],
+    "cells/timeouts/late-reply-generation-fence": [
+      "timeout",
+      "fresh",
+      "boundary"
+    ],
+    "cells/reset/generation-fence": [
+      "schedule",
+      "reset",
+      "fresh",
+      "boundary"
+    ],
+    "cells/reset/fresh-banner": [
+      "first",
+      "again",
+      "reset",
+      "fresh",
+      "timeout",
+      "after-timeout",
+      "boundary"
+    ],
+    "cells/lifecycle/eof-settles-no-replay": [
+      "warm",
+      "interrupted",
+      "reconnect",
+      "boundary"
+    ],
+    "cells/lifecycle/child-exit-settles": [
+      "warm",
+      "interrupted",
+      "boundary"
+    ],
+    "cells/lifecycle/owned-group-teardown": [
+      "warm",
+      "background",
+      "boundary"
+    ],
+    "cells/confinement/default": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/scoped": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/disabled": [
+      "filesystem-network",
+      "boundary"
+    ],
+    "cells/confinement/trusted-write-root-overlap": [
+      "boundary"
+    ],
+    "cells/confinement/linux-fail-closed": [
+      "boundary"
+    ],
+    "cells/confinement/no-unsandboxed-fallback": [
+      "reset",
+      "refused",
+      "boundary"
+    ]
+  },
+  "pending": [
+    {
+      "id": "cells/output/structured-content-and-meta",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/accept",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/decline",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/cancel",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/content-and-meta",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/unsupported-form",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/malformed-reply",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/elicitation/accepted-response-persistence",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/suspend-resume",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/nested-suspension",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/remaining-budget",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/budget/approval-and-startup-waits",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/after-success",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/after-ordinary-error",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/sequential-after-code",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/background-drain",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/submitted-code-phase",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/separate-positive-timeouts",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/unregister",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/concurrent-best-effort-turn-end",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/turn-end-deadlines",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/end-task-after-hooks",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/hooks/deduplicated-turn-end",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/realpath-roots",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/symlink-escape-refused",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/no-privileges-through-cell-import",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/lazy-service-cache",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/execution-request-correlation",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/message-only-error-boundary",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/response-meta",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/emit-content-item-order",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/privileged-env-allowlist",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/trusted/no-account-telemetry-app-server",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/absolute-path",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/connect-timeout",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/base64-correlation",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/frozen-interface",
+      "milestone": "M2"
+    },
+    {
+      "id": "cells/native-pipe/data-close-error",
+      "milestone": "M2"
+    }
+  ],
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "cells/timeouts/late-reply-generation-fence/connection-1",
+    "cells/reset/generation-fence/connection-1",
+    "cells/reset/fresh-banner/connection-1",
+    "cells/lifecycle/eof-settles-no-replay/connection-1",
+    "cells/lifecycle/eof-settles-no-replay/connection-2",
+    "cells/lifecycle/child-exit-settles/connection-1",
+    "cells/lifecycle/owned-group-teardown/connection-1",
+    "cells/confinement/default/connection-1",
+    "cells/confinement/scoped/connection-1",
+    "cells/confinement/disabled/connection-1",
+    "cells/confinement/no-unsandboxed-fallback/connection-1"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "878686a3-ba3c-4388-a321-dd2cb2ad7c18"
+      }
+    },
+    {
+      "connection": "cells/timeouts/late-reply-generation-fence/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "b1746da6-a36e-4c83-9ebd-3008ac791ee9"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/reset/generation-fence/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "b0aee525-6da9-4f34-b33f-cba8d2874e57"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/reset/fresh-banner/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "0b4e954b-24bd-4e62-9e4f-da4d1f435a74"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": true,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/eof-settles-no-replay/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "64b8c37b-09dc-4bbf-9729-56eb46cf74ff"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/eof-settles-no-replay/connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "1778c63c-6cfd-45a7-84ec-81aa54a837e2"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/child-exit-settles/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "f3cb0517-8092-478d-8660-a5bb3fbad5e8"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/lifecycle/owned-group-teardown/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 0,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "c933bca4-fed9-41a7-b480-c8091e9f3391"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/default/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "1824f902-b2be-4787-a369-d35d198650e0"
+      },
+      "fixture": {
+        "sandbox": "default",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/scoped/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 2,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "2f1dd374-ca03-4304-90ca-80387cc0e126"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/disabled/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 3,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "baf94d26-2c8c-4d91-aba4-7b1ef1213433"
+      },
+      "fixture": {
+        "sandbox": "disabled",
+        "bannerWitness": false,
+        "brokenSandbox": false
+      }
+    },
+    {
+      "connection": "cells/confinement/no-unsandboxed-fallback/connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.2.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua",
+        "commit": "8f56fb5233a2d7d1cd93f74af8f25a4469e9fbf2",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.2.0"
+        },
+        "cua/taskId": "534601a2-2e02-4131-a2bb-c4c5bc1346bc"
+      },
+      "fixture": {
+        "sandbox": "scoped",
+        "bannerWitness": false,
+        "brokenSandbox": true
+      }
+    }
+  ],
+  "vendorDefects": [],
+  "coveredCases": 112,
+  "recordedCases": 112
+}

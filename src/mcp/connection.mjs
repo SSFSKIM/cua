@@ -42,7 +42,7 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {browserSelectionFor, buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {browserSelectionFor, buildLaunch, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
@@ -98,8 +98,10 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // A new connection resolves again.
     const browserSelection = serverSettings.surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
     const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, browserSelection});
+    // The own host's Node is resolved once too: its probe runs `--version` on up to three candidates.
+    const ownNode = replHost.host === 'cua' ? ownHostNode({ambient: env}) : undefined;
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, browserSelection, replHost, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient: env, browserSelection, replHost, ownNode, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},

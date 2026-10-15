@@ -32,7 +32,7 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
   // cell environment, so both hosts run the identical lane; and the base tool text, as the vendor's node_repl serves
   // without its launcher's overrides.
   env.CUA_REPL_TRUSTED_SERVICES='{}';env.CUA_REPL_TRUSTED_RPC_ENABLED='0';env.CUA_REPL_JS_BANNER=banner;
-  env.CUA_REPL_UNTRUSTED_ENV_ALLOWLIST='';delete env.CUA_REPL_TOOL_OVERRIDES;
+  env.CUA_REPL_UNTRUSTED_ENV_ALLOWLIST='';
   return {...launch,env};
 }
 export async function serveCells({source,host='vendor',sandbox='scoped',witness=false,brokenSandbox=false,controlDir,services=false,input=process.stdin,output=process.stdout}={}) {

@@ -539,6 +539,23 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M3 runs as four tasks in one PR.
+  - **Task 1 (astra, sibling worktree, in parallel): the M3 oracle.**
+    - Executable cases for every Table 1 member and type due M3. Browser members run live. macOS binder members use source-grounded doubles, with native Linux rows staying M4. Capability-gated members get both hidden-member assertions and advertised cases through the remote capability-host lane.
+    - The `docs-profiles` suite. Its expected first-call bytes are derived independently: Table 3 applied to the pinned vendor document, never copied from the port. It also covers named output order, `rewriteDocumentation` same-requestMeta suppression, and `profiles_list` with no titles or URLs.
+    - Trace-count tolerance derived from a recorded vendor-against-vendor pair. The comparator tolerates, per case, cell and method, the delta the vendor shows against itself. This replaces the four hand-written M2 allowances, which become its first fixture.
+    - Vendor controls recorded on the mini, browser-only.
+  - **Task 2 (opus): the bounded EOF drain, then the browser client.**
+    - First, the bounded EOF drain for a suspended request: at drain start, cancel pending client requests and resume the budget, under a drain deadline.
+    - Then the browser-client port producing **BrowserClientRuntime** in `src/cua-api/browser-client.mjs`, with its Zod-site decision.
+  - **Task 3 (opus, after task 2 is reviewed): the facade, CuaBootstrap and CoreDocumentation.**
+    - The facade, bootstrap, platform binders, Sky facade, `docs/cua-api/core.md` with the confirmations policy and the auxiliary document, package files, `profiles/inventory.mjs` on HostSelection, and switching the banner to `src/cua-api/bootstrap.mjs`.
+  - **Task 4 (task 3 resumed): the live runs.**
+    - `api` and `docs-profiles` suites, own against vendor; the browser corpus repeated with the owned bootstrap; MAWS repeated.
+  - All macOS live sessions stay browser-only.
+  - Documents follow the owner's ruling: vendor wording verbatim, with the product name changed to cua in prose only, and only the exclusions Tables 2–3 list.
+  Rationale: Same oracle/subject separation as M0–M2. BrowserClientRuntime is the spec's named review frontier. Both binding M3 inputs from M2 are scheduled first in their tasks.
+  Date/Author: 2026-10-15, plan-executor M3 pre-flight, with the session's post-merge instruction.
 - Decision: Two more host-comparison trace allowances are approved on the same basis as `actions/wait-for` and `actions/slow-budget`: `input/coordinates` (drag, maxDelta 1) and `waits/networkidle` (`Page.lifecycleEvent`, maxDelta 4). Each is scoped to its case, cell and methods; maxDelta equals the vendor's own spread; each cites committed, attested vendor-against-vendor runs. The final M2 corpus pair at e4ea7eb runs 59/59 on each host with 0 unexpected differences and 7 expected trace counts.
   Rationale: Variance the vendor shows against itself is not a host difference.
   Date/Author: 2026-10-14, session ruling, recorded by the plan-executor.

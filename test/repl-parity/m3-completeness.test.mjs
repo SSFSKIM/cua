@@ -28,3 +28,26 @@ test('Table 3 transforms only explicit document-producing slots and leaves arbit
  assert.deepEqual(run([{...row,case:'api/cua/getstate'}]),[{...row,case:'api/cua/getstate'}]);
  assert.equal(run([{...row,content:[{type:'text',text:text.replace('Computer Use','CHANGED')}]}])[0].content[0].text.includes('CHANGED'),true);
 });
+test('native-paired API doubles are macOS-only; Linux native coverage remains mandatory at M4',()=>{
+ const plan=new Map(caseSchedule().map(c=>[c.id,c]));
+ assert.deepEqual(plan.get('api/cua/getapp').platforms,['darwin']);
+ assert.deepEqual(plan.get('native/cua/getapp').platforms,['linux']);
+ const row=inventory.find(r=>r.id==='member/cua/getapp');
+ const stub=id=>({...plan.get(id),backend:id.startsWith('native/')?'native':'binder-double',cells:[{label:'call',code:'void 0;'}],assert:()=>({ok:true})});
+ assert.equal(selectScenarios([stub('api/cua/getapp')],[row],{suite:'all',through:'M3',platform:'linux'}).scenarios.length,0);
+ assert.throws(()=>selectScenarios([stub('api/cua/getapp')],[row],{suite:'all',through:'M4',platform:'linux'}),/native\/cua\/getapp/);
+ assert.equal(selectScenarios([stub('native/cua/getapp')],[row],{suite:'all',through:'M4',platform:'linux'}).scenarios.length,1);
+ assert.throws(()=>selectScenarios([stub('native/cua/getapp')],[row],{suite:'all',through:'M3',platform:'darwin'}),/api\/cua\/getapp/);
+});
+test('Linux M3 includes shared live-browser behavior and never requires a macOS native binder',()=>{
+ const selected=selectScenarios(scenarios,inventory,{suite:'all',through:'M3',platform:'linux'}).scenarios;
+ assert.ok(!selected.some(s=>s.id==='api/cua/getapp'));
+ for(const id of ['api/decorated-tab/paste','api/decorated-tab/presskey','api/decorated-tab/typetext','cells/facade/emit-false-screenshot'])assert.equal(selected.find(s=>s.id===id)?.backend,'chrome');
+ assert.throws(()=>selectScenarios(scenarios,inventory,{suite:'all',through:'M4',platform:'linux'}),/native\/cua\/getapp/);
+});
+test('live api suite cannot pad its coverage with fake secret-store unit cases',()=>{
+ const api=selectScenarios(scenarios,inventory,{suite:'api',through:'M3',platform:'darwin'}).scenarios;
+ assert.ok(api.every(s=>/^(api|hidden|capability-host)\//.test(s.id)||s.id.startsWith('cells/facade/')));
+ const secrets=selectScenarios(scenarios,inventory,{suite:'secrets',through:'M3',platform:'darwin'}).scenarios;
+ assert.ok(secrets.some(s=>s.backend==='secret-double'));assert.ok(secrets.every(s=>s.id.startsWith('secrets/')));
+});

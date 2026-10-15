@@ -51,6 +51,8 @@ export function createCapabilityOracleService(delegate){
    case 'playwright_element_info':return [{tagName:'BUTTON',role:'button',visibleText:'Buy',ariaName:'Buy',testId:'buy',nodeId:3,boundingBox:{x:4,y:5,width:20,height:10},preview:'<button>Buy</button>',selector:{primary:'#buy',candidates:['#buy'],frameSelectors:[]}}];
    case 'playwright_element_screenshot':return {data:'AQID'};
    case 'cua_download_media':case 'dom_cua_download_media':
+   // BC:5268-5286: dialog handling returns an empty object, interpreted as void by the client.
+   case 'tab_handle_js_dialog':
    case 'tab_ax_action':case 'tab_manual_handoff_request':return {};
    case 'tab_content_export':return {path:'/fixture/export.pdf'};
    case 'tab_bot_detection_report':return {status:'reported',hostname:'cua-capability.example'};

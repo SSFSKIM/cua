@@ -169,7 +169,8 @@ export function validateInventory(rows, contracts) {
   assert.deepEqual(sorted(rows.map(row => row.id)), sorted(expected.keys()), 'exact Table 1 and cell/secret membership');
   const consumers = typeConsumers(contracts);
   for (const row of rows) {
-    assert.deepEqual(sorted(Object.keys(row)), ['cases', 'id', 'kind', 'milestone', 'platforms', 'source'], row.id);
+    assert.deepEqual(sorted(Object.keys(row)), ['cases', 'id', 'kind', 'milestone', 'platforms', ...(row.proofs?['proofs']:[]), 'source'], row.id);
+
     assert.match(row.id, /^(member|type|cell|secret)\/[a-z0-9.-]+(?:\/[a-z0-9.-]+)+$/);
     const contract = expected.get(row.id);
     assert.equal(row.kind, contract.kind, `${row.id}: kind`);
@@ -193,6 +194,8 @@ export function validateInventory(rows, contracts) {
       assert.equal(row.milestone, contract.milestone, `${row.id}: due milestone`);
       assert.deepEqual(row.cases, contract.cases, `${row.id}: required behavior case`);
     }
+    const proofs=Object.fromEntries(row.cases.flatMap(id=>{const scenario=scenarios.find(s=>s.id===id);const proof=scenario?.boundaryProof??(scenario?.backend==='binder-double'?'binder-double':undefined);return proof?[[id,proof]]:[];}));
+    assert.deepEqual(row.proofs??{},proofs,`${row.id}: evidence proof kind must match its executable lane`);
   }
 }
 
@@ -253,6 +256,8 @@ test('inventory rejects removed/extra rows, duplicate IDs, changed sources, inva
   reject(rows => rows.push(rows[0]));
   reject(rows => { rows[0].source = 'wrong:1'; });
   reject(rows => { rows[0].milestone = 'M6'; });
+  reject(rows => { delete rows.find(r=>r.proofs).proofs; });
+  reject(rows => { const row=rows.find(r=>r.proofs);row.proofs[Object.keys(row.proofs)[0]]='live'; });
   reject(rows => { rows[0].milestone = 'M5'; });
   reject(rows => { rows[0].cases = []; });
   reject(rows => { rows[0].platforms = ['win32']; });

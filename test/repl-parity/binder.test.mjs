@@ -98,3 +98,17 @@ export const collect=async input=>({target:input.computer.target,browsers:await 
   rmSync(dir,{recursive:true,force:true});
  }
 });
+test('listApps oracle accepts recorded vendor serde ordering without relaxing semantics or automatic text',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {result}=JSON.parse(readFileSync(new URL('./fixtures/binder-vendor-listapps.json',import.meta.url),'utf8'));
+ const s=scenarios.find(s=>s.id==='api/cua/listapps');
+ const check=r=>s.assert({results:[{isError:false,content:[]},r]});
+ assert.deepEqual(check(result),{ok:true});
+ const wrongValue=structuredClone(result),report=JSON.parse(wrongValue.content[1].text.slice('BINDER_REPORT:'.length));
+ report.values[0][0].useCount=8;
+ wrongValue.content[1].text='BINDER_REPORT:'+JSON.stringify(report);
+ assert.throws(()=>check(wrongValue));
+ const wrongOrder=structuredClone(result);
+ wrongOrder.content[0].text=JSON.stringify(JSON.parse(wrongOrder.content[0].text).map(({id,...fields})=>({id,...fields})));
+ assert.throws(()=>check(wrongOrder));
+});

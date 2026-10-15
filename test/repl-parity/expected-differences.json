@@ -1,155 +1,4374 @@
 [
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/bindings/persistent"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/bindings/redeclare"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/bindings/ordinary-error-partial-bindings"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/await/top-level"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/imports/dynamic"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/imports/builtins"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/imports/static-refused"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/imports/process-global-refused"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/imports/process-module-refused"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/string-codegen-refused"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/wasm-codegen-refused"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/errors/vendor-sentences-is-error"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/errors/thrown-cell-recovery"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/node-repl-immutable"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/tmp-dir-immutable"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/context"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/env-frozen-allowlist"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/request-meta"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/globals/rpc-configured-only"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/reset/clears-bindings"],"cells":["cell-1","reset","cell-3"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/reset/preserves-task-id"],"cells":["cell-1","reset","cell-3"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/timeouts/default-30000"],"cells":["timeout","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/timeouts/explicit-short"],"cells":["timeout","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/timeouts/fresh-heap"],"cells":["timeout","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/write-values"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/write-ids"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/console-grouping-newlines"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/ordered-content"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/lifecycle/running-cancellation-eventual-result"],"cells":["running"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/lifecycle/control-traffic-while-running"],"cells":["running"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/data-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/data-url-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/file-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/file-url-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/buffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/buffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/uint8array"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/uint8array-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/arraybuffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/arraybuffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/arraybuffer-view"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/arraybuffer-view-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-buffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-buffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-uint8array"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-uint8array-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-arraybuffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-arraybuffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-arraybuffer-view"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/png/object-arraybuffer-view-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/data-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/data-url-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/file-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/file-url-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/buffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/buffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/uint8array"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/uint8array-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/arraybuffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/arraybuffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/arraybuffer-view"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/arraybuffer-view-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-buffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-buffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-uint8array"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-uint8array-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-arraybuffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-arraybuffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-arraybuffer-view"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/jpeg/object-arraybuffer-view-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/data-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/data-url-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/file-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/file-url-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/buffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/buffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/uint8array"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/uint8array-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/arraybuffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/arraybuffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/arraybuffer-view"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/arraybuffer-view-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-buffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-buffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-uint8array"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-uint8array-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-arraybuffer"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-arraybuffer-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-arraybuffer-view"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/emit-image/webp/object-arraybuffer-view-promised"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/image-acknowledgement"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/ordered-images"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/output/unawaited-emissions"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/invalid-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/empty-url"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/unknown-bytes"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/empty-bytes"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/invalid-object"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/invalid-mime"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/images/rejected-promise"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/timeouts/late-reply-generation-fence"],"cells":["timeout","fresh"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/reset/generation-fence"],"cells":["schedule","reset","fresh"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/reset/fresh-banner"],"cells":["first","again","reset","fresh","timeout","after-timeout"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/lifecycle/eof-settles-no-replay"],"cells":["warm","interrupted","reconnect"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/lifecycle/child-exit-settles"],"cells":["warm","interrupted"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/lifecycle/owned-group-teardown"],"cells":["warm","background"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/confinement/default"],"cells":["filesystem-network"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/confinement/scoped"],"cells":["filesystem-network"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/confinement/disabled"],"cells":["filesystem-network"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends","cases":["cells/confinement/no-unsandboxed-fallback"],"cells":["reset","refused"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"kind":"security-departure","id":"linux-own-host-sandbox-launcher-fail-closed","issue":"#135","reason":"Security departure in cua's favour: when the sandbox launcher fails, the pinned vendor Linux host runs the cell unconfined (declared vendor defect linux-vendor-sandbox-launcher-fail-open, hardening tracked in #135); cua's own host refuses it exactly as the vendor refuses on macOS, so the case's safety assertion passes on the own host only","case":"cells/confinement/no-unsandboxed-fallback","platform":"linux","field":"assertion","cells":["refused","boundary"],"vendorDefect":"linux-vendor-sandbox-launcher-fail-open","cua":{"assertion":{"ok":true},"observation":{"kind":"sandbox-launch-failure","codeExecuted":false,"toolError":true,"outsideWrite":false,"launcherInvoked":true},"result":{"cell":"refused","isError":true,"content":[{"type":"text","text":"node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: {\"kernel_pid\":\"<process:1>\",\"kernel_status\":\"exited(code=73)\",\"kernel_stderr_tail\":\"fixture sandbox launcher refused\",\"reason\":\"stdout_eof\",\"stream_error\":null}"}]}}},
- {"kind":"tools-description","scope":"production","field":"tools.0.description","transform":"table-2-browser-exclusions","reason":"Approved surface-inventory Table 2 browser.md exclusions: IAB clause and paragraph/code, mcpapps and iab bullets; every surviving byte remains exact."},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/accept"],"cells":["reply"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/decline"],"cells":["reply"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/cancel"],"cells":["reply"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/content-and-meta"],"cells":["reply"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/accepted-response-persistence"],"cells":["reply"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/unsupported-form"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/elicitation/malformed-reply"],"cells":["reply"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/budget/suspend-resume"],"cells":["warm","suspended"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/budget/nested-suspension"],"cells":["warm","suspended"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/budget/remaining-budget"],"cells":["warm","remaining","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/budget/approval-and-startup-waits"],"cells":["warm","approval","bare-elicitation"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/after-success"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/after-ordinary-error"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/sequential-after-code"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/background-drain"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/submitted-code-phase"],"cells":["warm","hook-budget"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/separate-positive-timeouts"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/unregister"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/concurrent-best-effort-turn-end"],"cells":["cell-1","turn","cell-3"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/turn-end-deadlines"],"cells":["cell-1","turn","cell-3"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/end-task-after-hooks"],"cells":["cell-1","cell-3"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/hooks/deduplicated-turn-end"],"cells":["cell-1","duplicates-1","duplicates-2","duplicates-3","cell-3","again","cell-5","other-session","cell-7","other-turn","cell-9"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/realpath-roots"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/symlink-escape-refused"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/no-privileges-through-cell-import"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/lazy-service-cache"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/execution-request-correlation"],"cells":["correlated"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/message-only-error-boundary"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/response-meta"],"cells":["cell-1","cell-2","across-rpcs-and-hook"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/output/structured-content-and-meta"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/emit-content-item-order"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/privileged-env-allowlist"],"cells":["cell-1","cell-2"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/trusted/no-account-telemetry-app-server"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/native-pipe/absolute-path"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/native-pipe/connect-timeout"],"cells":["warm","cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/native-pipe/frozen-interface"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/native-pipe/base64-correlation"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/native-pipe/data-close-error"],"cells":["live-abort","wire-error"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["cells/launch-services/open-application-macos-boundary"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["secrets/browser/errors/worker-rejection-message-only"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}},
- {"reason":"Own-host result attestation, matched to the answering host version at its recorded source commit","cases":["secrets/native/errors/worker-rejection-message-only"],"cells":["cell-1"],"field":"meta.cua/replHost","vendor":{"present":false},"cua":{"present":true,"value":{"host":"cua","versionFrom":"attested-source"}}}
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/bindings/persistent"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/bindings/redeclare"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/bindings/ordinary-error-partial-bindings"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/await/top-level"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/imports/dynamic"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/imports/builtins"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/imports/static-refused"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/imports/process-global-refused"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/imports/process-module-refused"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/string-codegen-refused"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/wasm-codegen-refused"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/errors/vendor-sentences-is-error"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/errors/thrown-cell-recovery"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/node-repl-immutable"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/tmp-dir-immutable"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/context"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/env-frozen-allowlist"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/request-meta"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/globals/rpc-configured-only"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/reset/clears-bindings"
+    ],
+    "cells": [
+      "cell-1",
+      "reset",
+      "cell-3"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/reset/preserves-task-id"
+    ],
+    "cells": [
+      "cell-1",
+      "reset",
+      "cell-3"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/timeouts/default-30000"
+    ],
+    "cells": [
+      "timeout",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/timeouts/explicit-short"
+    ],
+    "cells": [
+      "timeout",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/timeouts/fresh-heap"
+    ],
+    "cells": [
+      "timeout",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/write-values"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/write-ids"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/console-grouping-newlines"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/ordered-content"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/lifecycle/running-cancellation-eventual-result"
+    ],
+    "cells": [
+      "running"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/lifecycle/control-traffic-while-running"
+    ],
+    "cells": [
+      "running"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/data-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/data-url-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/file-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/file-url-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/buffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/buffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/uint8array"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/uint8array-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/arraybuffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/arraybuffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/arraybuffer-view"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/arraybuffer-view-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-buffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-buffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-uint8array"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-uint8array-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-arraybuffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-arraybuffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-arraybuffer-view"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/png/object-arraybuffer-view-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/data-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/data-url-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/file-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/file-url-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/buffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/buffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/uint8array"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/uint8array-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/arraybuffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/arraybuffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/arraybuffer-view"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/arraybuffer-view-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-buffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-buffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-uint8array"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-uint8array-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-arraybuffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-arraybuffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-arraybuffer-view"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/jpeg/object-arraybuffer-view-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/data-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/data-url-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/file-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/file-url-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/buffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/buffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/uint8array"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/uint8array-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/arraybuffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/arraybuffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/arraybuffer-view"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/arraybuffer-view-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-buffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-buffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-uint8array"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-uint8array-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-arraybuffer"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-arraybuffer-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-arraybuffer-view"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/emit-image/webp/object-arraybuffer-view-promised"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/image-acknowledgement"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/ordered-images"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/output/unawaited-emissions"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/invalid-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/empty-url"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/unknown-bytes"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/empty-bytes"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/invalid-object"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/invalid-mime"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/images/rejected-promise"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/timeouts/late-reply-generation-fence"
+    ],
+    "cells": [
+      "timeout",
+      "fresh"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/reset/generation-fence"
+    ],
+    "cells": [
+      "schedule",
+      "reset",
+      "fresh"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/reset/fresh-banner"
+    ],
+    "cells": [
+      "first",
+      "again",
+      "reset",
+      "fresh",
+      "timeout",
+      "after-timeout"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/lifecycle/eof-settles-no-replay"
+    ],
+    "cells": [
+      "warm",
+      "interrupted",
+      "reconnect"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/lifecycle/child-exit-settles"
+    ],
+    "cells": [
+      "warm",
+      "interrupted"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/lifecycle/owned-group-teardown"
+    ],
+    "cells": [
+      "warm",
+      "background"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/confinement/default"
+    ],
+    "cells": [
+      "filesystem-network"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/confinement/scoped"
+    ],
+    "cells": [
+      "filesystem-network"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/confinement/disabled"
+    ],
+    "cells": [
+      "filesystem-network"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation (HostIdentity): every tool result of cua's own host carries _meta[\"cua/replHost\"], which the vendor host never sends",
+    "cases": [
+      "cells/confinement/no-unsandboxed-fallback"
+    ],
+    "cells": [
+      "reset",
+      "refused"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "kind": "security-departure",
+    "id": "linux-own-host-sandbox-launcher-fail-closed",
+    "issue": "#135",
+    "reason": "Security departure in cua's favour: when the sandbox launcher fails, the pinned vendor Linux host runs the cell unconfined (declared vendor defect linux-vendor-sandbox-launcher-fail-open, hardening tracked in #135); cua's own host refuses it exactly as the vendor refuses on macOS, so the case's safety assertion passes on the own host only",
+    "case": "cells/confinement/no-unsandboxed-fallback",
+    "platform": "linux",
+    "field": "assertion",
+    "cells": [
+      "refused",
+      "boundary"
+    ],
+    "vendorDefect": "linux-vendor-sandbox-launcher-fail-open",
+    "cua": {
+      "assertion": {
+        "ok": true
+      },
+      "observation": {
+        "kind": "sandbox-launch-failure",
+        "codeExecuted": false,
+        "toolError": true,
+        "outsideWrite": false,
+        "launcherInvoked": true
+      },
+      "result": {
+        "cell": "refused",
+        "isError": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "node_repl kernel exited unexpectedly\n\nnode_repl diagnostics: {\"kernel_pid\":\"<process:1>\",\"kernel_status\":\"exited(code=73)\",\"kernel_stderr_tail\":\"fixture sandbox launcher refused\",\"reason\":\"stdout_eof\",\"stream_error\":null}"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "kind": "tools-description",
+    "scope": "production",
+    "field": "tools.0.description",
+    "transform": "table-2-browser-exclusions",
+    "reason": "Approved surface-inventory Table 2 browser.md exclusions: IAB clause and paragraph/code, mcpapps and iab bullets; every surviving byte remains exact."
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/accept"
+    ],
+    "cells": [
+      "reply"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/decline"
+    ],
+    "cells": [
+      "reply"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/cancel"
+    ],
+    "cells": [
+      "reply"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/content-and-meta"
+    ],
+    "cells": [
+      "reply"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/accepted-response-persistence"
+    ],
+    "cells": [
+      "reply"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/unsupported-form"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/elicitation/malformed-reply"
+    ],
+    "cells": [
+      "reply"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/budget/suspend-resume"
+    ],
+    "cells": [
+      "warm",
+      "suspended"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/budget/nested-suspension"
+    ],
+    "cells": [
+      "warm",
+      "suspended"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/budget/remaining-budget"
+    ],
+    "cells": [
+      "warm",
+      "remaining",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/budget/approval-and-startup-waits"
+    ],
+    "cells": [
+      "warm",
+      "approval",
+      "bare-elicitation"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/after-success"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/after-ordinary-error"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/sequential-after-code"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/background-drain"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/submitted-code-phase"
+    ],
+    "cells": [
+      "warm",
+      "hook-budget"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/separate-positive-timeouts"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/unregister"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/concurrent-best-effort-turn-end"
+    ],
+    "cells": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/turn-end-deadlines"
+    ],
+    "cells": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/end-task-after-hooks"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-3"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/hooks/deduplicated-turn-end"
+    ],
+    "cells": [
+      "cell-1",
+      "duplicates-1",
+      "duplicates-2",
+      "duplicates-3",
+      "cell-3",
+      "again",
+      "cell-5",
+      "other-session",
+      "cell-7",
+      "other-turn",
+      "cell-9"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/realpath-roots"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/symlink-escape-refused"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/no-privileges-through-cell-import"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/lazy-service-cache"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/execution-request-correlation"
+    ],
+    "cells": [
+      "correlated"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/message-only-error-boundary"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/response-meta"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2",
+      "across-rpcs-and-hook"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/output/structured-content-and-meta"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/emit-content-item-order"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/privileged-env-allowlist"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/trusted/no-account-telemetry-app-server"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/native-pipe/absolute-path"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/native-pipe/connect-timeout"
+    ],
+    "cells": [
+      "warm",
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/native-pipe/frozen-interface"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/native-pipe/base64-correlation"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/native-pipe/data-close-error"
+    ],
+    "cells": [
+      "live-abort",
+      "wire-error"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "cells/launch-services/open-application-macos-boundary"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "reason": "Own-host result attestation, matched to the answering host version at its recorded source commit",
+    "cases": [
+      "secrets/native/errors/worker-rejection-message-only"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "field": "meta.cua/replHost",
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    }
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "cells/documentation/browser-docs-before-state",
+      "cells/documentation/emit-false-keeps-first-use-docs",
+      "cells/documentation/first-call-core-policy-bytes",
+      "cells/documentation/rewrite-same-request-meta-suppressed",
+      "secrets/browser/errors/worker-rejection-message-only"
+    ],
+    "cells": [
+      "cell-1"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-agent/browsers",
+      "api/browser-agent/documentation",
+      "api/browser-browser/browserid",
+      "api/browser-browser/capabilities",
+      "api/browser-browser/documentation",
+      "api/browser-browser/namesession",
+      "api/browser-browser/tabs",
+      "api/browser-browsers/get",
+      "api/browser-browsers/getdefault",
+      "api/browser-browsers/getforurl",
+      "api/browser-browsers/list",
+      "api/cua/browsers",
+      "api/cua/createbrowsertab",
+      "api/cua/getbrowser",
+      "api/cua/getstate",
+      "api/cua/gettab",
+      "api/cua/initialize",
+      "api/cua/listbrowsers",
+      "api/cua/listtabs",
+      "api/cua/rewritedocumentation",
+      "cells/facade/initial-tab-snapshot"
+    ],
+    "cells": [
+      "contract"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/back",
+      "api/browser-tab/forward",
+      "api/browser-tab/goto",
+      "api/browser-tab/reload",
+      "api/browser-tab/title",
+      "api/browser-tab/url"
+    ],
+    "cells": [
+      "back",
+      "forward",
+      "goto",
+      "reload"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/locator",
+      "api/browser-playwrightlocator/all",
+      "api/browser-playwrightlocator/alltextcontents",
+      "api/browser-playwrightlocator/count",
+      "api/browser-playwrightlocator/first",
+      "api/browser-playwrightlocator/getattribute",
+      "api/browser-playwrightlocator/innertext",
+      "api/browser-playwrightlocator/isenabled",
+      "api/browser-playwrightlocator/isvisible",
+      "api/browser-playwrightlocator/nth",
+      "api/browser-playwrightlocator/textcontent"
+    ],
+    "cells": [
+      "all-text",
+      "attribute",
+      "count",
+      "enabled",
+      "inner",
+      "read-all",
+      "text",
+      "visible"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/evaluate",
+      "api/browser-playwrightlocator/evaluate",
+      "api/browser-playwrightlocator/evaluateall",
+      "api/browser-tab/playwright"
+    ],
+    "cells": [
+      "all",
+      "node",
+      "page"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/click",
+      "api/browser-playwrightlocator/fill",
+      "api/browser-playwrightlocator/press",
+      "api/browser-playwrightlocator/presssequentially",
+      "api/browser-playwrightlocator/selectoption",
+      "api/browser-playwrightlocator/setchecked"
+    ],
+    "cells": [
+      "check",
+      "click",
+      "fill",
+      "press",
+      "select"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/dblclick"
+    ],
+    "cells": [
+      "double"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/waitfor"
+    ],
+    "cells": [
+      "visible"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-cuaapi/click",
+      "api/browser-cuaapi/double-click",
+      "api/browser-cuaapi/drag",
+      "api/browser-cuaapi/keypress",
+      "api/browser-cuaapi/scroll",
+      "api/browser-cuaapi/type",
+      "api/browser-tab/cua"
+    ],
+    "cells": [
+      "double",
+      "drag",
+      "end-key",
+      "scroll",
+      "type"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-domcuaapi/click",
+      "api/browser-domcuaapi/double-click",
+      "api/browser-domcuaapi/get-visible-dom",
+      "api/browser-domcuaapi/keypress",
+      "api/browser-domcuaapi/scroll",
+      "api/browser-domcuaapi/type",
+      "api/browser-tab/dom-cua"
+    ],
+    "cells": [
+      "double",
+      "end-key",
+      "nodes",
+      "scroll",
+      "type"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-cuaapi/move"
+    ],
+    "cells": [
+      "move"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/clipboard",
+      "api/browser-tabclipboardapi/read",
+      "api/browser-tabclipboardapi/readtext",
+      "api/browser-tabclipboardapi/write",
+      "api/browser-tabclipboardapi/writetext"
+    ],
+    "cells": [
+      "rich",
+      "text"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/dev",
+      "api/browser-tabdevapi/logs"
+    ],
+    "cells": [
+      "logs",
+      "start",
+      "trigger"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-contentapi/exportgsuite",
+      "api/browser-contentapi/exportyoutubetranscript",
+      "api/browser-tab/content"
+    ],
+    "cells": [
+      "format",
+      "gsuite",
+      "youtube"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/waitforevent",
+      "api/browser-playwrightdownload/path",
+      "api/browser-playwrightfilechooser/ismultiple",
+      "api/browser-playwrightfilechooser/setfiles"
+    ],
+    "cells": [
+      "chooser",
+      "chooser-page",
+      "download",
+      "path",
+      "set-files"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/downloadmedia"
+    ],
+    "cells": [
+      "media"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/waitforloadstate",
+      "api/browser-playwrightapi/waitfortimeout",
+      "api/browser-playwrightapi/waitforurl"
+    ],
+    "cells": [
+      "delay",
+      "load",
+      "url"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-promptdialog/accept"
+    ],
+    "cells": [
+      "accept",
+      "open"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/screenshot"
+    ],
+    "cells": [
+      "clip"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/close",
+      "api/browser-tab/id",
+      "api/browser-tabs/get",
+      "api/browser-tabs/list",
+      "api/browser-tabs/new",
+      "api/browser-tabs/selected"
+    ],
+    "cells": [
+      "close",
+      "get",
+      "list",
+      "new",
+      "selected"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/capabilities"
+    ],
+    "cells": [
+      "capabilities"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/domsnapshot"
+    ],
+    "cells": [
+      "snapshot"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/and",
+      "api/browser-playwrightlocator/filter",
+      "api/browser-playwrightlocator/last",
+      "api/browser-playwrightlocator/or"
+    ],
+    "cells": [
+      "and",
+      "filter",
+      "last",
+      "or"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/framelocator",
+      "api/browser-playwrightapi/getbylabel",
+      "api/browser-playwrightapi/getbyplaceholder",
+      "api/browser-playwrightapi/getbyrole",
+      "api/browser-playwrightapi/getbytestid",
+      "api/browser-playwrightapi/getbytext",
+      "api/browser-playwrightframelocator/framelocator",
+      "api/browser-playwrightframelocator/getbylabel",
+      "api/browser-playwrightframelocator/getbyplaceholder",
+      "api/browser-playwrightframelocator/getbyrole",
+      "api/browser-playwrightframelocator/getbytestid",
+      "api/browser-playwrightframelocator/getbytext",
+      "api/browser-playwrightframelocator/locator",
+      "api/browser-playwrightlocator/getbylabel",
+      "api/browser-playwrightlocator/getbyplaceholder",
+      "api/browser-playwrightlocator/getbyrole",
+      "api/browser-playwrightlocator/getbytestid",
+      "api/browser-playwrightlocator/getbytext",
+      "api/browser-playwrightlocator/locator"
+    ],
+    "cells": [
+      "f-label",
+      "f-locator",
+      "f-nested",
+      "f-placeholder",
+      "f-role",
+      "f-testid",
+      "f-text",
+      "l-label",
+      "l-locator",
+      "l-placeholder",
+      "l-role",
+      "l-testid",
+      "l-text",
+      "p-label",
+      "p-placeholder",
+      "p-role",
+      "p-testid",
+      "p-text"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/check",
+      "api/browser-playwrightlocator/uncheck"
+    ],
+    "cells": [
+      "check",
+      "uncheck"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/type"
+    ],
+    "cells": [
+      "type"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/expectnavigation"
+    ],
+    "cells": [
+      "navigation"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-alertdialog/dismiss",
+      "api/browser-alertdialog/type",
+      "api/browser-confirmdialog/accept",
+      "api/browser-confirmdialog/dismiss",
+      "api/browser-confirmdialog/type",
+      "api/browser-promptdialog/dismiss",
+      "api/browser-promptdialog/type"
+    ],
+    "cells": [
+      "dialog",
+      "open"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-tab/getjsdialog"
+    ],
+    "cells": [
+      "arm",
+      "autoaccepted",
+      "beforeunload-page",
+      "dialog",
+      "navigation",
+      "open"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-documentation/get"
+    ],
+    "cells": [
+      "documentation"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/app/scroll",
+      "api/cua/computer",
+      "api/cua/computer.launch-app",
+      "api/cua/computer.target",
+      "api/cua/listapps",
+      "api/cua/listwindows",
+      "api/target-app-decorated-tab/drag",
+      "api/target-app-decorated-tab/getaxstate",
+      "api/target-app-decorated-tab/performsecondaryaction",
+      "api/target-app-decorated-tab/scroll",
+      "api/target-app-decorated-tab/selecttext",
+      "api/target-app-decorated-tab/setvalue",
+      "cells/facade/all-settled-inventory"
+    ],
+    "cells": [
+      "bind-fixture-app",
+      "exercise"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/app/paste",
+      "api/app/presskey",
+      "api/app/typetext",
+      "api/cua/getapp",
+      "api/target-app-decorated-tab/click",
+      "api/target-app-decorated-tab/getaxstateandscreenshot",
+      "api/target-app-decorated-tab/getscreenshot"
+    ],
+    "cells": [
+      "bind-fixture-app",
+      "decorated-bind-fixture-app",
+      "decorated-exercise",
+      "exercise"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/decorated-tab/paste",
+      "api/decorated-tab/presskey",
+      "api/decorated-tab/typetext",
+      "cells/facade/dom-only-input-refusal",
+      "cells/facade/emit-false-combined",
+      "cells/facade/emit-false-screenshot",
+      "cells/facade/emit-false-state"
+    ],
+    "cells": [
+      "exercise"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "cells/documentation/auxiliary-other-browser-apis",
+      "cells/documentation/browser-once",
+      "cells/documentation/core-once",
+      "cells/documentation/rewrite-cached-order"
+    ],
+    "cells": [
+      "cell-1",
+      "cell-2"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "cells/documentation/rewrite-later-request-meta"
+    ],
+    "cells": [
+      "first",
+      "later",
+      "later-again"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "cells/documentation/reset-timeout-fresh-bootstrap"
+    ],
+    "cells": [
+      "after-reset",
+      "after-timeout",
+      "first",
+      "reset",
+      "timeout"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "cells/documentation/confirmations-policy-override"
+    ],
+    "cells": [
+      "array",
+      "blank",
+      "cached",
+      "later-policy-cannot-replace-cache",
+      "non-string",
+      "null",
+      "reset-array",
+      "reset-blank",
+      "reset-cached",
+      "reset-non-string",
+      "reset-null",
+      "reset-utf8-at-limit",
+      "reset-utf8-over-limit",
+      "utf8-at-limit",
+      "utf8-over-limit",
+      "valid-whitespace"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-beforeunloaddialog/dismiss",
+      "api/browser-beforeunloaddialog/type",
+      "capability-host/botdetectiontabcapability/documentation",
+      "capability-host/botdetectiontabcapability/id",
+      "capability-host/browser-axapi/click",
+      "capability-host/browser-axapi/drag",
+      "capability-host/browser-axapi/paste",
+      "capability-host/browser-axapi/performsecondaryaction",
+      "capability-host/browser-axapi/presskey",
+      "capability-host/browser-axapi/scroll",
+      "capability-host/browser-axapi/selecttext",
+      "capability-host/browser-axapi/setvalue",
+      "capability-host/browser-axapi/typetext",
+      "capability-host/browser-axapi/write",
+      "capability-host/browser-browser/user",
+      "capability-host/browser-browseruser/opentabs",
+      "capability-host/browser-contentapi/export",
+      "capability-host/browser-tab/markdeliverable",
+      "capability-host/browser-tab/markhandoff",
+      "capability-host/browser-tab/requestmanualhandoff",
+      "capability-host/browserauthtabcapability/documentation",
+      "capability-host/browserauthtabcapability/id",
+      "capability-host/cdptabcapability/documentation",
+      "capability-host/cdptabcapability/id",
+      "capability-host/managementbrowsercapability/documentation",
+      "capability-host/managementbrowsercapability/id",
+      "capability-host/pageassetstabcapability/documentation",
+      "capability-host/pageassetstabcapability/id",
+      "capability-host/tabwebmcpcapability/documentation",
+      "capability-host/tabwebmcpcapability/id",
+      "capability-host/viewportbrowsercapability/documentation",
+      "capability-host/viewportbrowsercapability/id",
+      "capability-host/viewportbrowsercapability/reset",
+      "capability-host/viewportbrowsercapability/set",
+      "capability-host/visibilitybrowsercapability/documentation",
+      "capability-host/visibilitybrowsercapability/id",
+      "capability-host/webmcptools/description"
+    ],
+    "cells": [
+      "exercise",
+      "setup"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-cuaapi/downloadmedia",
+      "api/browser-domcuaapi/downloadmedia",
+      "api/browser-playwrightapi/elementinfo",
+      "api/browser-playwrightapi/elementscreenshot",
+      "capability-host/browser-browseruser/claimtab",
+      "capability-host/browsercapabilitycollection/get",
+      "capability-host/browsercapabilitycollection/list",
+      "capability-host/managementbrowsercapability.bookmarks/method-string",
+      "capability-host/managementbrowsercapability.tabgroups/method-string",
+      "capability-host/managementbrowsercapability.tabs/method-string",
+      "capability-host/managementbrowsercapability.windows/method-string",
+      "capability-host/managementbrowsercapability/bookmarks",
+      "capability-host/managementbrowsercapability/getaudittrail",
+      "capability-host/managementbrowsercapability/tabgroups",
+      "capability-host/managementbrowsercapability/tabs",
+      "capability-host/managementbrowsercapability/windows",
+      "capability-host/pageassetstabcapability/bundle",
+      "capability-host/pageassetstabcapability/list",
+      "capability-host/tabcapabilitycollection/get",
+      "capability-host/tabcapabilitycollection/list",
+      "capability-host/visibilitybrowsercapability/get",
+      "capability-host/visibilitybrowsercapability/set",
+      "capability-host/webmcptools/call"
+    ],
+    "cells": [
+      "exercise",
+      "setup",
+      "validation-1"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "capability-host/botdetectiontabcapability/report",
+      "capability-host/browser-axapi/get",
+      "capability-host/browser-browser/history",
+      "capability-host/browser-tab/ax",
+      "capability-host/browser-tabs/content"
+    ],
+    "cells": [
+      "exercise",
+      "setup",
+      "validation-1",
+      "validation-2"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "capability-host/browser-browseruser/gettabcontext"
+    ],
+    "cells": [
+      "exercise",
+      "setup",
+      "type-validation-1",
+      "type-validation-2",
+      "validation-1",
+      "validation-2"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "capability-host/browserauthtabcapability/request"
+    ],
+    "cells": [
+      "exercise",
+      "setup",
+      "type-validation-1",
+      "type-validation-2",
+      "type-validation-3",
+      "validation-1",
+      "validation-2",
+      "validation-3"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "capability-host/cdptabcapability/send"
+    ],
+    "cells": [
+      "exercise",
+      "setup",
+      "type-validation-1"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "capability-host/cdptabcapability/readevents",
+      "capability-host/tabwebmcpcapability/fetchtools"
+    ],
+    "cells": [
+      "exercise",
+      "setup",
+      "type-validation-1",
+      "type-validation-2"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "hidden/botdetectiontabcapability/documentation",
+      "hidden/botdetectiontabcapability/id",
+      "hidden/botdetectiontabcapability/report",
+      "hidden/browser-axapi/click",
+      "hidden/browser-axapi/drag",
+      "hidden/browser-axapi/get",
+      "hidden/browser-axapi/paste",
+      "hidden/browser-axapi/performsecondaryaction",
+      "hidden/browser-axapi/presskey",
+      "hidden/browser-axapi/scroll",
+      "hidden/browser-axapi/selecttext",
+      "hidden/browser-axapi/setvalue",
+      "hidden/browser-axapi/typetext",
+      "hidden/browser-axapi/write",
+      "hidden/browser-browser/history",
+      "hidden/browser-browser/user",
+      "hidden/browser-browseruser/claimtab",
+      "hidden/browser-browseruser/gettabcontext",
+      "hidden/browser-browseruser/opentabs",
+      "hidden/browser-contentapi/export",
+      "hidden/browser-tab/ax",
+      "hidden/browser-tab/markdeliverable",
+      "hidden/browser-tab/markhandoff",
+      "hidden/browser-tab/requestmanualhandoff",
+      "hidden/browser-tabs/content",
+      "hidden/browserauthtabcapability/documentation",
+      "hidden/browserauthtabcapability/id",
+      "hidden/browserauthtabcapability/request",
+      "hidden/browsercapabilitycollection/get",
+      "hidden/browsercapabilitycollection/list",
+      "hidden/cdptabcapability/documentation",
+      "hidden/cdptabcapability/id",
+      "hidden/cdptabcapability/readevents",
+      "hidden/cdptabcapability/send",
+      "hidden/managementbrowsercapability.bookmarks/method-string",
+      "hidden/managementbrowsercapability.tabgroups/method-string",
+      "hidden/managementbrowsercapability.tabs/method-string",
+      "hidden/managementbrowsercapability.windows/method-string",
+      "hidden/managementbrowsercapability/bookmarks",
+      "hidden/managementbrowsercapability/documentation",
+      "hidden/managementbrowsercapability/getaudittrail",
+      "hidden/managementbrowsercapability/id",
+      "hidden/managementbrowsercapability/tabgroups",
+      "hidden/managementbrowsercapability/tabs",
+      "hidden/managementbrowsercapability/windows",
+      "hidden/pageassetstabcapability/bundle",
+      "hidden/pageassetstabcapability/documentation",
+      "hidden/pageassetstabcapability/id",
+      "hidden/pageassetstabcapability/list",
+      "hidden/tabcapabilitycollection/get",
+      "hidden/tabcapabilitycollection/list",
+      "hidden/tabwebmcpcapability/documentation",
+      "hidden/tabwebmcpcapability/fetchtools",
+      "hidden/tabwebmcpcapability/id",
+      "hidden/viewportbrowsercapability/documentation",
+      "hidden/viewportbrowsercapability/id",
+      "hidden/viewportbrowsercapability/reset",
+      "hidden/viewportbrowsercapability/set",
+      "hidden/visibilitybrowsercapability/documentation",
+      "hidden/visibilitybrowsercapability/get",
+      "hidden/visibilitybrowsercapability/id",
+      "hidden/visibilitybrowsercapability/set",
+      "hidden/webmcptools/call",
+      "hidden/webmcptools/description"
+    ],
+    "cells": [
+      "hidden-reflection"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  }
 ]

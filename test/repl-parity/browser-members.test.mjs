@@ -8,7 +8,7 @@ import {caseSchedule,validateRegistry} from '../../scripts/repl-parity/registry.
 import {parseCell,RESULT_MARKER} from '../../scripts/browser-parity/runner.mjs';
 import {startFixture} from '../browser-parity/fixture/serve.mjs';
 
-const boundaryMembers=new Set(['api/browser-playwrightapi/elementinfo','api/browser-playwrightapi/elementscreenshot','api/browser-cuaapi/downloadmedia','api/browser-domcuaapi/downloadmedia']);
+const boundaryMembers=new Set(['api/browser-playwrightapi/elementinfo','api/browser-playwrightapi/elementscreenshot','api/browser-cuaapi/downloadmedia','api/browser-domcuaapi/downloadmedia','api/browser-beforeunloaddialog/type','api/browser-beforeunloaddialog/dismiss']);
 const raw=(value,{ok=true,error,images=[]}={})=>({content:[...images,{type:'text',text:RESULT_MARKER+JSON.stringify(ok?{ok,value,$imageCount:images.length}:{ok,error})}]});
 const find=tail=>{const value=scenarios.find(s=>s.id===`api/browser-${tail}`);assert.ok(value,tail);return value;};
 const invoke=(tail,results,fixtureState={counter:0,events:[]})=>find(tail).assert({results,fixtureState,service:'cua'});
@@ -120,10 +120,28 @@ test('new selector outcomes reject every wrong scoped result and require all fra
  assert.equal((await invoke('playwrightframelocator/framelocator',results.slice(0,-1))).ok,false);
 });
 
-test('beforeunload cases disarm their fixture after cancellation so task cleanup cannot reopen a modal',async()=>{
- const results=[raw(true),raw(true),raw({type:'beforeunload',cleared:true,path:'/repl-beforeunload.html',armed:'armed'}),raw(true)];
- const state={events:[{armed:true},{disarmed:true}]};
- assert.equal((await invoke('beforeunloaddialog/dismiss',results,state)).ok,true);
- assert.equal((await invoke('beforeunloaddialog/dismiss',results,{events:[{armed:true}]})).ok,false);
- assert.equal((await invoke('beforeunloaddialog/dismiss',results.slice(0,-1),state)).ok,false);
+test('getJsDialog verifies real beforeunload autoaccepted navigation rather than cancellation of the old page',async()=>{
+ const results=[raw(true),raw({type:'alert',result:'closed',cleared:true}),raw(true),raw(true),raw({path:'/counter.html',query:'?left=1'}),raw({cleared:true,fixture:'Counter fixture'})];
+ const state={events:[{dialog:'alert',result:'closed'},{armed:true}]};
+ assert.equal((await invoke('tab/getjsdialog',results,state)).ok,true);
+ const wrong=results.slice();wrong[4]=raw({path:'/repl-beforeunload.html',query:''});
+ assert.equal((await invoke('tab/getjsdialog',wrong,state)).ok,false);
+ const stillOpen=results.slice();stillOpen[5]=raw({cleared:false,fixture:'Counter fixture'});
+ assert.equal((await invoke('tab/getjsdialog',stillOpen,state)).ok,false);
+ assert.equal((await invoke('tab/getjsdialog',results,{events:[{dialog:'alert',result:'closed'}]})).ok,false);
+});
+
+test('autoaccept supplement arms navigation before triggering unload and reads only the destination fixture',async()=>{
+ const s=find('tab/getjsdialog'),calls=[];let url='http://fixture/repl-beforeunload.html',arrived;
+ const tab={
+  playwright:{waitForURL:(target,options)=>{calls.push(['wait',target,options.waitUntil]);return new Promise(resolve=>{arrived=resolve;});},locator:selector=>({
+   click:async()=>{calls.push(['click',selector]);if(selector!=='#leave')throw new Error('unexpected trigger');url='http://fixture/counter.html?left=1';arrived();},
+   textContent:async()=>{calls.push(['read',selector]);if(selector!=='#value')throw new Error('old document no longer exists');return 'Counter fixture';},
+  })},url:async()=>url,getJsDialog:async()=>undefined,
+ };
+ const navigation=await runCell(s.cells.find(c=>c.label==='navigation'),{tab,fixtureURL:'http://fixture'});
+ const outcome=await runCell(s.cells.find(c=>c.label==='autoaccepted'),{tab});
+ assert.deepEqual(navigation.parsed,{ok:true,value:{path:'/counter.html',query:'?left=1'}});
+ assert.deepEqual(outcome.parsed,{ok:true,value:{cleared:true,fixture:'Counter fixture'}});
+ assert.deepEqual(calls,[['wait','http://fixture/counter.html?left=1','load'],['click','#leave'],['read','#value']]);
 });

@@ -48,7 +48,7 @@ test('launch seam selects the actual client and preserves existing services and 
 });
 test('every gated inventory case is executable and its independent assertion rejects empty and failed output',()=>{
  const ids=caseSchedule().filter(c=>/^(hidden|capability-host)\//.test(c.id)).map(c=>c.id).sort();
- assert.deepEqual(scenarios.filter(s=>!s.id.startsWith('api/')).map(s=>s.id).sort(),ids);assert.equal(scenarios.filter(s=>s.id.startsWith('api/')).length,4);validateRegistry(scenarios);
+ assert.deepEqual(scenarios.filter(s=>!s.id.startsWith('api/')).map(s=>s.id).sort(),ids);assert.equal(scenarios.filter(s=>s.id.startsWith('api/')).length,6);validateRegistry(scenarios);
  for(const s of scenarios){
   assert.equal(s.backend,'capability-host');
   assert.throws(()=>s.assert({results:[]}),undefined,s.id);
@@ -94,4 +94,46 @@ test('real-service mode cannot inject a fake successful reply; configuring hidde
  assert.deepEqual(await rpc(fixture,'execute',{type:'tab_bot_detection_report'}),{malformed:true});
  await rpc(fixture,'oracle.configure',{mode:'hidden'});
  assert.deepEqual(await rpc(fixture,'execute',{type:'tab_bot_detection_report'}),{status:'reported',hostname:'cua-capability.example'});
+});
+
+// BC:8535-8568: capability factory replaces backend info with its local definition; BC:8579 returns that info.
+// Confirmed by the first remote vendor control, tabcapabilitycollection/list, despite id-only backend announcements.
+test('capability collection oracle requires local-definition descriptions, not id-only backend metadata',()=>{
+ const s=scenario('capability-host/tabcapabilitycollection/list');
+ const values=[{id:'cdp',descriptionType:'string'},{id:'webmcp',descriptionType:'string'},{id:'browserAuth',descriptionType:'string'}];
+ const observations=[result({ready:true,proof:'real-service'}),result({value:values,commands:[]}),result({rejected:true,noCommand:true})];
+ assert.equal(s.assert({results:observations}).ok,true);
+ for(let i=0;i<values.length;i++){
+  const mutation=structuredClone(values);mutation[i].descriptionType='undefined';
+  assert.throws(()=>s.assert({results:[observations[0],result({value:mutation,commands:[]}),observations[2]]}));
+ }
+});
+
+// BC:5243-5286,9244-9277,9514-9563. beforeunload has the inherited dismiss method, never confirm's accept method.
+test('beforeunload boundary cases assert subtype and exact dismissal identity without claiming service exposure',()=>{
+ const setup=result({ready:true,proof:'boundary-double'});
+ for(const [member,value,commands]of [
+  ['type',{type:'beforeunload',accept:'undefined'},[{type:'tab_get_js_dialog',browser_id:'$browser',tab_id:'$tab'}]],
+  ['dismiss',{kind:'undefined'},[{type:'tab_get_js_dialog',browser_id:'$browser',tab_id:'$tab'},{type:'tab_handle_js_dialog',browser_id:'$browser',tab_id:'$tab',dialog_id:'dialog-beforeunload',action:'dismiss'}]],
+ ]){
+  const s=scenario(`api/browser-beforeunloaddialog/${member}`);assert.ok(s,'missing beforeunload boundary case');
+  assert.equal(s.boundaryProof,'boundary-double');
+  assert.equal(s.assert({results:[setup,result({value,commands})]}).ok,true);
+  const changed=structuredClone({value,commands});
+  if(member==='type')changed.value.type='confirm';else changed.commands[1].action='accept';
+  assert.throws(()=>s.assert({results:[setup,result(changed)]}));
+  if(member==='dismiss'){
+   const wrongDialog=structuredClone({value,commands});wrongDialog.commands[1].dialog_id='wrong-dialog';
+   assert.throws(()=>s.assert({results:[setup,result(wrongDialog)]}));
+  }
+ }
+});
+test('dialog reply fixtures pass through exactly and record the dismiss command at the client boundary',async()=>{
+ const fixture=createCapabilityOracleService({handleRpc:async()=>{throw Error('unexpected real service');}});
+ await rpc(fixture,'oracle.configure',{mode:'boundary-double'});
+ await rpc(fixture,'oracle.reply',{type:'tab_get_js_dialog',value:{dialog:{id:'dialog-beforeunload',type:'beforeunload'}}});
+ assert.deepEqual(await rpc(fixture,'execute',{type:'tab_get_js_dialog',browser_id:'fixture',tab_id:'7'}),{dialog:{id:'dialog-beforeunload',type:'beforeunload'}});
+ const command={type:'tab_handle_js_dialog',browser_id:'fixture',tab_id:'7',dialog_id:'dialog-beforeunload',action:'dismiss'};
+ assert.deepEqual(await rpc(fixture,'execute',command),{});
+ assert.deepEqual((await rpc(fixture,'oracle.trace')).at(-1),command);
 });

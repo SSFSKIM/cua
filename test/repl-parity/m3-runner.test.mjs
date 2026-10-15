@@ -16,3 +16,9 @@ test('profile proof rejects tab enumeration and any leaked owner title or URL',(
  p.request({id:2,method:'tools/call',params:{name:'js',arguments:{code:'CUABACKENDS'}}});
  assert.throws(()=>p.response({id:2,result:{content:[{type:'text',text:'CUABACKENDS {"backends":[{"family":"chrome","title":"private"}]}'}]}}),/unexpected/);
 });
+import {compareRuns} from '../../scripts/browser-parity/compare.mjs';
+test('boundary proof labels cannot be removed or relabelled as live during comparison',()=>{
+ const rows=[{case:'fixture',cell:'call',ok:true,value:true,proof:'boundary-double'},{case:'fixture',assertion:{ok:true},proof:'boundary-double'}];
+ assert.equal(compareRuns(rows,structuredClone(rows),{raw:true}).ok,true);
+ for(const proof of [undefined,'real-service']){const changed=structuredClone(rows);if(proof)changed[0].proof=proof;else delete changed[0].proof;assert.equal(compareRuns(rows,changed,{raw:true}).ok,false);}
+});

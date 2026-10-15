@@ -24,7 +24,7 @@ const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
 export async function main(argv=process.argv.slice(2)){
  const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'}}});
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
- if(!['local','mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
+ if(!['local','mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
  if(action==='prepare'){
   const prepared=JSON.parse(execute(prepareCommand(v)).trim().split('\n').at(-1));mkdirSync(dirname(state(v.device)),{recursive:true});save(state(v.device),prepared);
   if(v.out){mkdirSync(resolve(v.out),{recursive:true});save(join(resolve(v.out),'prepare.json'),prepared);}console.log(JSON.stringify(prepared,null,2));return;
@@ -43,7 +43,7 @@ export async function main(argv=process.argv.slice(2)){
  if(v.device==='local'){
   const {scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:process.platform});
   const doubles=selected.filter(s=>s.backend==='secret-double');
-  if(!doubles.length)throw new Error('No local double cases selected; use --suite api (raw cells require a remote real host)');
+  if(!doubles.length)throw new Error('No local double cases selected; use --suite secrets (raw cells require a remote real host)');
   const out=resolve(v.out);mkdirSync(out,{recursive:false});const rows=[];
   for(const scenario of doubles){const result=await runSecretCase(scenario.id);rows.push({case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true});}
   save(join(out,'meta.json'),{schema:1,device:'local',fake:true,complete:true,host:null,suite:v.suite,caseIds:doubles.map(s=>s.id),pending:[...pending,...selected.filter(s=>s.backend!=='secret-double')].map(c=>c.id),note:'Service/store doubles only; not live host parity'});
@@ -52,7 +52,7 @@ export async function main(argv=process.argv.slice(2)){
  const prepared=json(state(v.device)),{scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:prepared.platform});
  if(!selected.length)throw new Error('No executable cases selected');
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:[...new Set(selected.map(s=>s.backend))].sort().join('+'),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:['browser'],sandbox:'scoped',service:'cua',backend:[...new Set(selected.map(s=>s.backend))].sort().join('+'),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),complete:false,connections:[],hostAttestations:[]};
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
  const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
  const clients=new Map();let browserFixture,profileClient;const profileObservations=[];
@@ -66,7 +66,7 @@ export async function main(argv=process.argv.slice(2)){
   pool.addObservations({connections:[connection],hostAttestations:[{connection,host:v.host,serverInfo:observation.serverInfo,_meta:observation._meta,executionFacts:observation.executionFacts}]},'profiles');
   return {result,observation};
  };
- const emit=row=>{const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
+ const emit=row=>{const scenario=selected.find(s=>s.id===row.case);if(scenario?.boundaryProof||scenario?.backend==='binder-double')row={...row,proof:scenario.boundaryProof??'binder-double'};const defect=declaredVendorDefect(meta,row,[...runRows,row]);if(defect)row={...row,vendorDefect:defect.id};runRows.push(row);appendFileSync(join(out,'results.jsonl'),JSON.stringify(row)+'\n');};
  try{
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));

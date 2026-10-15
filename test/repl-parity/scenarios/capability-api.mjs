@@ -69,7 +69,8 @@ for(const [id,call,action]of actions)add(`browser-axapi/${id}`,'boundary-double'
 for(const id of ['browser-tab/ax','browser-axapi/get'])add(id,'boundary-double',`return [await tab.ax.get(),await tab.ax.get('screenshot'),await tab.ax.get('both',{disableDiffing:true})];`,['AX fixture state',{kind:'Uint8Array',bytes:[1,2,3]},{state:'AX fixture state',screenshot:{kind:'Uint8Array',bytes:[1,2,3]}}],{commands:[tabCommand('tab_ax_get_state',{content:'axState'}),tabCommand('tab_ax_get_state',{content:'screenshot'}),tabCommand('tab_ax_get_state',{content:'axStateAndScreenshot',disable_diffing:true})],extra:[invalidResult('tab_ax_get_state','tab.ax.get()',{}),validation(`await nodeRepl.rpc('browser',{method:'oracle.reply',params:{type:'tab_ax_get_state',value:{state:'AX fixture state',screenshot_unavailable:'disabled'}}});return await tab.ax.get('both');`,{state:'AX fixture state'})]});
 add('browser-axapi/write','boundary-double',`return await tab.ax.write('state',{disableDiffing:false});`,VOID,{commands:[tabCommand('tab_ax_get_state',{content:'axState',disable_diffing:false})]});
 
-// BC:8510-8579,9865-9938. Collection IDs/infos belong to the advertised backend; unknown IDs reject.
+// BC:8510-8579,9865-9938. Backend IDs select capabilities, but each factory overwrites incoming info with its
+// local definition (8535-8568), so list() retains local descriptions even for id-only announcements. Unknown IDs reject.
 for(const scope of ['browser','tab'])for(const method of ['get','list']){
  const cap=scope==='browser'?'viewport':'cdp';
  add(`${scope}capabilitycollection/${method}`,'real-service',method==='get'?`var c=await ${scope}.capabilities.get('${cap}');return {id:c.id,cached:c===await ${scope}.capabilities.get('${cap}')};`:`return (await ${scope}.capabilities.list()).map(c=>({id:c.id,descriptionType:typeof c.description}));`,method==='get'?{id:cap,cached:true}:(scope==='browser'?['viewport']:['cdp','webmcp','browserAuth']).map(id=>({id,descriptionType:'string'})),{commands:[],extra:[invalidRequest(`${scope}.capabilities.get('missing-capability')`)]});
@@ -132,7 +133,7 @@ for(const p of plan.values())if(p.id.startsWith('hidden/')){
   code+=`await __boot('hidden',[${JSON.stringify(disabled)}]);__say({ancestor:__probe(${scope},'capabilities')${cap?',rejected,listed:list.length':''}});`;
   expected={ancestor:ABSENT,...(cap?{rejected:true,listed:0}:{})};
  }
- scenarios.push({...p,backend:'capability-host',boundaryProof:'hidden',limitations:['Manifest-disabled / unadvertised client-boundary fixture; no backend support claim.'],cells:[{label:'hidden-reflection',code:support+code}],assert:({results})=>{assert.equal(results.length,1);assert.deepEqual(observation(results[0]),expected);return {ok:true};}});
+ scenarios.push({...p,backend:'capability-host',boundaryProof:'boundary-double:hidden',limitations:['Manifest-disabled / unadvertised client-boundary fixture; no backend support claim.'],cells:[{label:'hidden-reflection',code:support+code}],assert:({results})=>{assert.equal(results.length,1);assert.deepEqual(observation(results[0]),expected);return {ok:true};}});
 }
 // Optional methods are advertised but the retained service has no handlers. Preserve the real-service refusal
 // as well as successful selected-client translation through the explicitly labelled boundary double.
@@ -188,4 +189,10 @@ extend('capability-host/tabwebmcpcapability/fetchtools',[
  const scenario=scenarios.find(s=>s.id==='capability-host/browser-axapi/write'),original=scenario.assert;
  scenario.assert=args=>{const result=original(args);assert.match(args.results[1].content.filter(c=>c.type==='text').map(c=>c.text).join('\n'),/AX fixture state/);return result;};
 }
+// BC:5243-5286,9241-9278,9514-9563. The retained service autoaccepts beforeunload (vendor BS:48659-48733),
+// so this success proof is client-boundary-only. api/browser-tab/getjsdialog separately observes real automatic
+// navigation and absence of a pending dialog; this fixture does not assert that dismiss can cancel navigation.
+const beforeUnloadSetup=reply('tab_get_js_dialog',{dialog:{id:'dialog-beforeunload',type:'beforeunload'}});
+add('api/browser-beforeunloaddialog/type','boundary-double',`var dialog=await tab.getJsDialog();return {type:dialog.type,accept:typeof dialog.accept};`,{type:'beforeunload',accept:'undefined'},{setup:beforeUnloadSetup,commands:[tabCommand('tab_get_js_dialog')]});
+add('api/browser-beforeunloaddialog/dismiss','boundary-double',`var dialog=await tab.getJsDialog();return await dialog.dismiss();`,VOID,{setup:beforeUnloadSetup,commands:[tabCommand('tab_get_js_dialog'),tabCommand('tab_handle_js_dialog',{dialog_id:'dialog-beforeunload',action:'dismiss'})]});
 export default scenarios;

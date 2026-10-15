@@ -1,3 +1,5 @@
+import sharedFacade from './browser-facade-behaviors.mjs';
+import {bindMacSupplements} from '../../../scripts/repl-parity/binder-coverage.mjs';
 import capabilityApi from './capability-api.mjs';
 import docsProfiles from './docs-profiles.mjs';
 import binder from './binder.mjs';
@@ -8,4 +10,4 @@ import cells from './cells.mjs';
 import boundaries from './boundaries.mjs';
 import secrets from './secrets.mjs';
 import {validateRegistry} from '../../../scripts/repl-parity/registry.mjs';
-export default validateRegistry([...cells,...boundaries,...secrets,...services,...facadeApi,...browserMembers,...binder,...docsProfiles,...capabilityApi]);
+export default validateRegistry([...cells,...boundaries,...secrets,...services,...facadeApi,...browserMembers,...bindMacSupplements(binder,sharedFacade),...sharedFacade,...docsProfiles,...capabilityApi]);

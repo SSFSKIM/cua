@@ -23,7 +23,7 @@ export function prepareBinderLaunch(launch,{host}={}){
  return fixture;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- if(process.env.CUA_PARITY_REMOTE!=='1'||process.platform!=='darwin')throw new Error('Binder fixture is remote macOS only');
+ if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Binder fixture is remote only; all native service calls are source-grounded doubles');
  const source=process.env.CUA_HOME,host=process.env.CUA_REPL_HOST,facts=executionFacts({source});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
  const scratch=prepareCapabilityHome({source});
  try{

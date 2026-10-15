@@ -174,19 +174,23 @@ function dialogCase(kind,action,result) {
  ],{open:true,dialog:{type:kind,result:result==null?'':String(result),cleared:true}},s=>s.events.some(e=>e.dialog===kind&&e.result===result));
 }
 const alert=dialogCase('alert','dismiss','closed');
-for(const member of ['tab/getjsdialog','alertdialog/type','alertdialog/dismiss'])add(member,alert,['dialog']);
+for(const member of ['alertdialog/type','alertdialog/dismiss'])add(member,alert,['dialog']);
 const confirmAccept=dialogCase('confirm','accept',true),confirmDismiss=dialogCase('confirm','dismiss',false);
 for(const member of ['confirmdialog/type','confirmdialog/accept'])add(member,confirmAccept,['dialog']);
 add('confirmdialog/dismiss',confirmDismiss,['dialog']);
 const promptDismiss=dialogCase('prompt','dismiss',null);
 for(const member of ['promptdialog/type','promptdialog/dismiss'])add(member,promptDismiss,['dialog']);
-const beforeUnload=fixture('members/beforeunload','/repl-beforeunload.html',[
+// The retained service automatically accepts beforeunload (BS:48659-48733; cua cdp.mjs:978-1002).
+// Do not race its handler or expect dismiss() to keep the old document. The ephemeral subtype's client proof is
+// owned by capability-api.mjs; this real Chrome supplement verifies navigation, fixture DOM and cleared dialog.
+const getJsDialog=fixture('members/get-js-dialog','/repl-dialogs.html',[
+ ...alert.cells,
+ cell('beforeunload-page',"await tab.goto(fixtureURL+'/repl-beforeunload.html');return true;"),
  cell('arm',"await tab.playwright.locator('#arm').click();await tab.playwright.getByText('armed',{exact:true}).waitFor({state:'visible',timeoutMs:3000});return true;"),
- cell('open',"await tab.playwright.locator('#leave').click();return true;"),
- cell('dialog',pollDialog+"if(dialog?.type!=='beforeunload')throw new Error('expected beforeunload');const type=dialog.type;await dialog.dismiss();return {type,cleared:(await tab.getJsDialog())===undefined,path:new URL(await tab.url()).pathname,armed:await tab.playwright.locator('#status').textContent()};"),
- cell('disarm',"await tab.playwright.locator('#disarm').click();await tab.playwright.getByText('disarmed',{exact:true}).waitFor({state:'visible',timeoutMs:3000});return true;"),
-],{arm:true,open:true,dialog:{type:'beforeunload',cleared:true,path:'/repl-beforeunload.html',armed:'armed'},disarm:true},s=>s.events.some(e=>e.armed===true)&&s.events.some(e=>e.disarmed===true));
-for(const member of ['beforeunloaddialog/type','beforeunloaddialog/dismiss'])add(member,beforeUnload,['dialog']);
+ cell('navigation',"const waiting=tab.playwright.waitForURL(fixtureURL+'/counter.html?left=1',{waitUntil:'load',timeoutMs:5000});await tab.playwright.locator('#leave').click();await waiting;const url=new URL(await tab.url());return {path:url.pathname,query:url.search};"),
+ cell('autoaccepted',"return {cleared:(await tab.getJsDialog())===undefined,fixture:await tab.playwright.locator('#value').textContent()};"),
+],{open:true,dialog:{type:'alert',result:'closed',cleared:true},'beforeunload-page':true,arm:true,navigation:{path:'/counter.html',query:'?left=1'},autoaccepted:{cleared:true,fixture:'Counter fixture'}},s=>s.events.some(e=>e.dialog==='alert'&&e.result==='closed')&&s.events.some(e=>e.armed===true));
+add('tab/getjsdialog',getJsDialog,['dialog','autoaccepted']);
 
 // Whole retained documentation text, pinned to browser-desktop/environment-docs/codex-app/screenshots.md.
 const screenshotsDoc='# Screenshots\n* Browser screenshots are JPEG: use `.jpg` and `image/jpeg`.\n* If you take a screenshot that the user should see, include the image inline in your Markdown response using Markdown image syntax so the image renders, rather than as a bare link:\n  ```md\n  ![screenshot](IMAGE_LINK)\n  ```\n* IMPORTANT: If the user has asked you to take screenshots, you MUST include them as part of your final markdown response.\n* If the user has asked you to test a website as part of development, you should take screenshots at key moments and include them in your final response.\n';

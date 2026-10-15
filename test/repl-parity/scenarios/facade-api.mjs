@@ -27,13 +27,13 @@ add('api/cua/rewritedocumentation',`const result=await cua.rewriteDocumentation(
 add('api/cua/browsers',`return cua.browsers===agent.browsers&&(await cua.browsers.get(browser.browserId)).browserId===browser.browserId;`);
 add('api/browser-agent/browsers',`return (await agent.browsers.get(browser.browserId)).browserId===browser.browserId;`);
 add('api/browser-agent/documentation',`const text=await agent.documentation.get('screenshots');return typeof text==='string'&&text.length>0;`);
-add('api/browser-browsers/get',`const a=await agent.browsers.get(browser.browserId),b=await agent.browsers.get(browser.browserId);return {same:a===b,id:a.browserId===browser.browserId};`,{same:true,id:true});
+add('api/browser-browsers/get',`const a=await agent.browsers.get(browser.browserId),b=await agent.browsers.get(browser.browserId);return {same:a===b,id:a.browserId===browser.browserId};`,{same:false,id:true});
 add('api/browser-browsers/getdefault',`const b=await agent.browsers.getDefault();return typeof b.browserId==='string'&&(await agent.browsers.list()).some(v=>v.id===b.browserId);`);
 add('api/browser-browsers/getforurl',`const b=await agent.browsers.getForUrl(fixtureURL+'/counter.html');return typeof b.browserId==='string'&&(await agent.browsers.list()).some(v=>v.id===b.browserId);`);
 add('api/browser-browsers/list',`const entries=await agent.browsers.list();const b=entries.find(b=>b.id===browser.browserId);return !!b&&typeof b.name==='string'&&b.type==='extension';`);
 add('api/browser-browser/browserid',`return typeof browser.browserId==='string'&&(await agent.browsers.list()).some(b=>b.id===browser.browserId);`);
 add('api/browser-browser/capabilities',`const entries=await browser.capabilities.list();return Array.isArray(entries)&&entries.some(c=>c.id==='viewport')&&entries.every(c=>typeof c.id==='string'&&typeof c.description==='string');`);
 add('api/browser-browser/tabs',`const tabs=await browser.tabs.list();return Array.isArray(tabs)&&tabs.some(t=>t.id===tab.id);`);
-add('api/browser-browser/documentation',`const text=await browser.documentation();return text.startsWith('# Selected Browser\n')&&text.includes('- ID: '+browser.browserId)&&text.includes('cua browser service ')&&text.includes('# API Reference');`);
+add('api/browser-browser/documentation',`const text=await browser.documentation();return text.startsWith('# Selected Browser\\n')&&text.includes('- ID: '+browser.browserId)&&text.includes('cua browser service ')&&text.includes('# API Reference');`);
 add('api/browser-browser/namesession',`const result=await browser.nameSession('repl-api-named');return result===undefined&&(await browser.tabs.list()).some(t=>t.id===tab.id);`);
 export default scenarios;

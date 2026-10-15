@@ -9,7 +9,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
 | M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | merged (5722341) |
-| M3 | feat/own-repl-host-m3 | (PR pending) | whole-branch reviewer-high correct |
+| M3 | feat/own-repl-host-m3 | https://github.com/SSFSKIM/cua/pull/140 | whole-branch reviewer-high correct |
 
 ## Log
 

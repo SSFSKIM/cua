@@ -539,6 +539,15 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M3 task 2 as built.
+  - **EOF drain.** At EOF the host withdraws unanswered elicitations with `notifications/cancelled`. The worker gets an honest error sentence rather than a fabricated `cancel` action, and nothing is granted. Budget suspensions end, so a silent worker's cell times out on its remaining budget. Each admitted execution gets a drain deadline (remaining budget + after-code hook bound + turn margin + 2 s) and then takes the forced-shutdown path.
+  - **Browser client.** Ported mechanically into one file, `src/cua-api/browser-client.mjs`, keeping the bundle's local names until #120.
+    - Zod is vendored at 3.25.76 (v3 API) under the exact-pin rule (`scripts/extract-zod.mjs`); the bundled copy's literal strings match that release exactly.
+    - Dropped per Table 2: `iab`, `mcpapps`, `codexSessionId` and the Orbit rewrite.
+    - What stays in the vendor's facade files for task 3: initial snapshot, allSettled inventory, Linux window binding, platform input guards, DOM-only Tab input wrappers, emit:false.
+  - **Task 3 inherits:** adding `src/cua-api` to the kernel's sandbox read paths for restricted profiles.
+  Rationale: Vendor parse sites rely on Zod's stripping, refinements and error text, so a hand-written validator would change refusals. The facade concerns follow the vendor's own file split.
+  Date/Author: 2026-10-15, M3 task 2 executor, folded by the plan-executor.
 - Decision: Case scheduling splits by platform for native-paired members.
   - Their `api/` binder-double cases are darwin-only and due M3, because the doubles are grounded in macOS source.
   - On Linux the same members are proven by their `native/` live cases, due M4.

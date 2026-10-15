@@ -539,6 +539,11 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Two rules to keep machine load down, at the owner's request.
+  - (1) The session stops the cua-linux VM as soon as M4 task 3's live runs end, and restarts it when M5 reaches its Linux steps. The controller tells the session the moment task 3 is done with the VM, before review and PR work. M5 orders its code tasks and its mini-side runs before anything that needs cua-linux.
+  - (2) Local full `npm test` suites run one at a time and are never concurrent across executors. Focused test files may run in parallel.
+  Rationale: The load-sensitive flakes seen at load average 37–180 came from concurrent full suites, and the VM is idle between milestones.
+  Date/Author: 2026-10-15, session relaying the owner's request, recorded by the plan-executor.
 - Decision (amends the #141 entry): the pending-environment declaration works per cell. On Linux, the two logical scroll operations (coordinate and DOM) are declared once, citing #141. That declaration applies to all 14 api cases that execute those cells: every CuaAPI and DomCuaAPI member, plus `tab.cua`/`tab.dom_cua`. Every other cell in those cases still runs and is compared.
   - Both runs must declare the same pending set, and the diff lists pending cells visibly. A pending cell that passes is reported.
   - The two scroll-member obligations are pending on Linux and never counted as covered. The completeness gate accepts that only because a live proof on another platform exists, the mini's M3 api suite.

@@ -38,13 +38,14 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   output=attestedOutput(output,facts);
   const scratch=prepareCapabilityHome({source});
   const env=cellsServeEnv(process.env,{scratch,sandbox,host});
-  let connection;const fixtureServices=services?await createFixtureServices({timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout'}):null;
+  let connection,fixtureServices;
   try {
+    fixtureServices=services?await createFixtureServices({timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout'}):null;
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
       chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{if(host==='cua'&&l.command!==facts.ownNode?.path)throw new Error('The own host launch does not run the Node its provenance names');if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});
     const terminate=()=>connection.close('signal');process.once('SIGTERM',terminate);process.once('SIGINT',terminate);
     try {const result=await connection.closed;if(controlDir)writeFileSync(join(controlDir,'closed.json'),JSON.stringify(result));process.exitCode=result.code;}finally{process.off('SIGTERM',terminate);process.off('SIGINT',terminate);}
-  } finally {await fixtureServices?.close();scratch.cleanup();}
+  } finally {try{await fixtureServices?.close();}finally{scratch.cleanup();}}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href) {
   if(process.env.CUA_PARITY_REMOTE!=='1')throw new Error('Live cells fixture is remote-only; local parity uses doubles');

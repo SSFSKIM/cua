@@ -125,6 +125,7 @@ export async function main(argv=process.argv.slice(2)) {
     for(const scenario of scenarios) {
       const connectClient=async()=>{
         const command=capability?localCuaServeCommand({service:values.service,replHost:values['repl-host'],home:prepared.home,userHome:capabilityHome.userHome}):serveCommand({...prepared,service:values.service,replHost:values['repl-host']});
+        if(!local)command.expectedFacts=prepared;
         const connected=await pool.open({...command,onElicitation:row=>meta.elicitations.push({...row,case:scenario.id})});
         ownedClients.add(connected);
         let instanceId=capabilityHost?.instanceId;

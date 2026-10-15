@@ -23,7 +23,7 @@ export async function handleRpc(r){
  case 'elicit':return nodeRepl.createElicitation(request);
  case 'suspend':return nodeRepl.withSuspendedTimeout(async()=>{await delay(r.wait??200);if(r.nested)await nodeRepl.withSuspendedTimeout(async()=>{await delay(150);});await delay(r.after??0);return 'resumed';});
  case 'approval-wait':return nodeRepl.withSuspendedTimeout(async()=>{await delay(150);return nodeRepl.createElicitation(request);});
- case 'meta':nodeRepl.setResponseMeta({fixture:{one:1},replace:'old'});nodeRepl.setResponseMeta({replace:'new',second:true});return 'meta-set';
+ case 'meta':{const first={fixture:{one:1},replace:'old'};nodeRepl.setResponseMeta(first);first.fixture.one=999;nodeRepl.setResponseMeta({replace:'new',second:true});return 'meta-set';}
  case 'content':nodeRepl.emitContentItem('item-one');nodeRepl.write('worker-write|');nodeRepl.emitContentItem('item-two');return 'content-set';
  case 'env':return {frozen:Object.isFrozen(nodeRepl.env),worker:nodeRepl.env.PARITY_WORKER_ONLY,cellMarker:nodeRepl.env.PARITY_CELL_VISIBLE};
  case 'privileges':return {elicitation:typeof nodeRepl.createElicitation,hooks:typeof nodeRepl.addAfterSubmittedCodeHook,native:typeof nodeRepl.nativePipe};
@@ -39,7 +39,7 @@ export async function handleRpc(r){
  }
  case 'pipe':{
   if(r.mode==='relative')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_RELATIVE);
-  if(r.mode==='timeout')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);
+  if(r.mode==='timeout'){try{await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);return {refused:false};}catch(e){return {refused:true,budget:Number(nodeRepl.env.NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS??nodeRepl.env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS),observation:/timed out|timeout/i.test(e.message)?'timer-expired':/refused|temporarily unavailable/i.test(e.message)?'saturated-peer-refused':'unexpected-error',platform:process.platform};}}
   if(r.mode==='missing')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_MISSING);
   const socket=await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE);
   if(r.mode==='interface'){

@@ -43,3 +43,9 @@ test('native snapshot assertions reject flat, ID-less, truncated and non-window 
   assert.throws(()=>scenario.assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(value)}]},{isError:false,structuredContent:{status:'ended'}}]}),body);
  }
 });
+
+test('the vendor formatter permits an enabled unnamed menu item with an empty text tail',async()=>{
+ const {isFullNativeTree}=await import('./fixtures/native-state-oracle.mjs');
+ const state='Accessibility source: at_spi\n0 frame owned-fixture.txt\n\t1 text (settable)\n\t2 ';
+ assert.equal(isFullNativeTree(state,'owned-fixture.txt'),true);
+});

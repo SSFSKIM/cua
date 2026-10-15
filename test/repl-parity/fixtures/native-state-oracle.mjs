@@ -8,7 +8,7 @@ export function isFullNativeTree(state,filename){
  if(lines.length<2||!/^\d+ frame(?: |$)/.test(lines[0])||!lines[0].includes(filename))return false;
  let previousDepth=0,editable=false;
  for(const [index,line] of lines.entries()){
-  const match=/^(\t*)(\d+) (.+)$/.exec(line);if(!match)return false;
+  const match=/^(\t*)(\d+) (.*)$/.exec(line);if(!match)return false;
   const depth=match[1].length;
   if(index>0&&(depth===0||depth>previousDepth+1))return false;
   if(depth>0&&/^text \([^)]*\bsettable\b/.test(match[3]))editable=true;

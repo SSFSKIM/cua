@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The remaining EOF-drain gap moves to M3. A ready worker that suspends the execution budget during an ordinary service request (or an unanswered elicitation) and then stops responding can keep the EOF drain open indefinitely. The fix is a bounded EOF escape that settles unresolved work honestly and stops the children, while normal approval suspension still works on a live connection. M3 implements it first, test-first; M2's PR carries it under Unresolved Review Findings. M2 bounded only unanswered hooks and `turn_ended`.
+  Rationale: The gap predates M2 task 3 and nothing observed hits it. Fixing it in M2 would force the services, MAWS and corpus evidence to be re-recorded again; the session ruled that a non-small bound goes to M3 rather than holding the PR.
+  Date/Author: 2026-10-14, plan-executor, applying the session's ruling to the task review's finding.
 - Decision: M2's host comparison of the browser corpus allows two exactly scoped differences, both in the new host-only file `test/browser-parity/repl-host-expected-differences.json`.
   - The allowances cover polling-count variance in `actions/wait-for` and `actions/slow-budget`. Each is limited to the `Runtime.evaluate`/`Runtime.releaseObject` trace methods with a stated maximum delta, which the comparator enforces, and each cites committed vendor-against-vendor reruns that show the variance.
   - `dialogs/paused-response`'s start cell is lengthened so that it outlasts the response pause it traces. Without that, `Fetch.requestPaused` could land between cells on either host. This changes one case's timing, not its assertions, and so departs narrowly from "without changing its corpus". It was justified by host traces showing the event at the same offset on both hosts.

@@ -1,0 +1,395 @@
+{
+  "schema": 1,
+  "host": "vendor",
+  "observedHost": "vendor",
+  "commit": "d75a10541aa427659a51566c2f7563fbd98e3f95",
+  "harnessCommit": "d75a10541aa427659a51566c2f7563fbd98e3f95",
+  "node": "v24.18.0",
+  "runtimeRelease": "26.928.40906-darwin-arm64",
+  "ownNode": {
+    "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+    "version": "v24.18.0"
+  },
+  "hostVersion": "26.928.40906-darwin-arm64",
+  "apiVersion": "26.928.40906-darwin-arm64",
+  "device": "mini",
+  "platform": "darwin",
+  "surfaces": [
+    "browser"
+  ],
+  "sandbox": "scoped",
+  "service": "cua",
+  "backend": "capability-host",
+  "profile": "ssfs",
+  "suite": "secrets-live",
+  "through": "M3",
+  "caseIds": [
+    "secrets/browser-live/execute/fill",
+    "secrets/browser-live/execute/ax-paste",
+    "secrets/browser-live/execute/ax-type-text",
+    "secrets/browser-live/execute/ax-set-value",
+    "secrets/browser-live/execute-with-recovery/fill",
+    "secrets/browser-live/execute-with-recovery/ax-paste",
+    "secrets/browser-live/execute-with-recovery/ax-type-text",
+    "secrets/browser-live/execute-with-recovery/ax-set-value",
+    "secrets/browser-live/refuse/invalid-label",
+    "secrets/browser-live/refuse/reserved-label",
+    "secrets/browser-live/refuse/unsupported-shape",
+    "secrets/browser-live/refuse/disabled",
+    "secrets/browser-live/refuse/unavailable",
+    "secrets/browser-live/refuse/unknown-label",
+    "secrets/browser-live/refuse/unsafe-store",
+    "secrets/browser-live/refuse/unreadable-store",
+    "secrets/browser-live/refuse/service-version",
+    "secrets/browser-live/errors/rejection-sanitized",
+    "secrets/browser-live/errors/recovery-envelope-sanitized",
+    "secrets/browser-live/reports/labels-not-values",
+    "secrets/browser-live/no-substitution/embedded-marker",
+    "secrets/browser-live/no-substitution/unsupported-fields",
+    "secrets/browser-live/no-substitution/evaluate-strings",
+    "secrets/browser-live/no-substitution/cdp-strings",
+    "secrets/browser-live/optional-fields/timeouts-and-text-format"
+  ],
+  "caseCells": {
+    "secrets/browser-live/execute/fill": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute/ax-paste": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute/ax-type-text": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute/ax-set-value": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute-with-recovery/fill": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute-with-recovery/ax-paste": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute-with-recovery/ax-type-text": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/execute-with-recovery/ax-set-value": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/invalid-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/reserved-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/unsupported-shape": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/disabled": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/unavailable": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/unknown-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/unsafe-store": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/unreadable-store": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/refuse/service-version": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/errors/rejection-sanitized": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/errors/recovery-envelope-sanitized": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/reports/labels-not-values": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/no-substitution/embedded-marker": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/no-substitution/unsupported-fields": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/no-substitution/evaluate-strings": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/no-substitution/cdp-strings": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/browser-live/optional-fields/timeouts-and-text-format": [
+      "setup",
+      "exercise"
+    ]
+  },
+  "pending": [],
+  "limitations": [
+    {
+      "case": "secrets/browser-live/execute/fill",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-paste",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-type-text",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute/ax-set-value",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/fill",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-paste",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-type-text",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/execute-with-recovery/ax-set-value",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/invalid-label",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/reserved-label",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/unsupported-shape",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/disabled",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/unavailable",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/unknown-label",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/unsafe-store",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/unreadable-store",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/refuse/service-version",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/errors/rejection-sanitized",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/errors/recovery-envelope-sanitized",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/reports/labels-not-values",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/embedded-marker",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/unsupported-fields",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/evaluate-strings",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/no-substitution/cdp-strings",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    },
+    {
+      "case": "secrets/browser-live/optional-fields/timeouts-and-text-format",
+      "notes": [
+        "Real selected host/client and retained secret wrapper; downstream browser service is a source-grounded recorder double. Native text input remains M4."
+      ]
+    }
+  ],
+  "caseProofs": {
+    "secrets/browser-live/execute/fill": "service-boundary-double",
+    "secrets/browser-live/execute/ax-paste": "service-boundary-double",
+    "secrets/browser-live/execute/ax-type-text": "service-boundary-double",
+    "secrets/browser-live/execute/ax-set-value": "service-boundary-double",
+    "secrets/browser-live/execute-with-recovery/fill": "service-boundary-double",
+    "secrets/browser-live/execute-with-recovery/ax-paste": "service-boundary-double",
+    "secrets/browser-live/execute-with-recovery/ax-type-text": "service-boundary-double",
+    "secrets/browser-live/execute-with-recovery/ax-set-value": "service-boundary-double",
+    "secrets/browser-live/refuse/invalid-label": "service-boundary-double",
+    "secrets/browser-live/refuse/reserved-label": "service-boundary-double",
+    "secrets/browser-live/refuse/unsupported-shape": "service-boundary-double",
+    "secrets/browser-live/refuse/disabled": "service-boundary-double",
+    "secrets/browser-live/refuse/unavailable": "service-boundary-double",
+    "secrets/browser-live/refuse/unknown-label": "service-boundary-double",
+    "secrets/browser-live/refuse/unsafe-store": "service-boundary-double",
+    "secrets/browser-live/refuse/unreadable-store": "service-boundary-double",
+    "secrets/browser-live/refuse/service-version": "service-boundary-double",
+    "secrets/browser-live/errors/rejection-sanitized": "service-boundary-double",
+    "secrets/browser-live/errors/recovery-envelope-sanitized": "service-boundary-double",
+    "secrets/browser-live/reports/labels-not-values": "service-boundary-double",
+    "secrets/browser-live/no-substitution/embedded-marker": "service-boundary-double",
+    "secrets/browser-live/no-substitution/unsupported-fields": "service-boundary-double",
+    "secrets/browser-live/no-substitution/evaluate-strings": "service-boundary-double",
+    "secrets/browser-live/no-substitution/cdp-strings": "service-boundary-double",
+    "secrets/browser-live/optional-fields/timeouts-and-text-format": "service-boundary-double"
+  },
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "connection-2"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "d75a10541aa427659a51566c2f7563fbd98e3f95",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "cua/taskId": "70e281a8-f20a-48e3-a848-d6e14686f8a0"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/Library/Application Support/cua",
+        "commit": "d75a10541aa427659a51566c2f7563fbd98e3f95",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.nvm/versions/node/v24.18.0/bin/node",
+          "version": "v24.18.0"
+        }
+      },
+      "_meta": {
+        "cua/taskId": "cc0e6553-f70c-4f79-8b63-f6eebc7a74e9"
+      }
+    }
+  ],
+  "vendorDefects": [],
+  "coveredCases": 25,
+  "recordedCases": 25
+}

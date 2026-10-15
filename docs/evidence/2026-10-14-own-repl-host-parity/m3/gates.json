@@ -1,0 +1,55 @@
+{
+  "sourceCommit": "d75a10541aa427659a51566c2f7563fbd98e3f95",
+  "checks": [
+    {
+      "name": "default",
+      "command": "HOME=/tmp/cua-scratch-home-m3t1 npm test",
+      "tests": 2236,
+      "pass": 2166,
+      "fail": 0,
+      "skipped": 70
+    },
+    {
+      "name": "explicit-node",
+      "command": "CUA_NODE=/opt/homebrew/bin/node HOME=/tmp/cua-scratch-home-m3t1 npm test",
+      "tests": 2236,
+      "pass": 2228,
+      "fail": 0,
+      "skipped": 8
+    },
+    {
+      "name": "inventory",
+      "command": "CUA_REPL_PARITY_THROUGH=M3 node --test test/repl-parity/inventory.test.mjs",
+      "tests": 8,
+      "pass": 8,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "name": "document-source",
+      "command": "CUA_PARITY_READABLE_SOURCE=/Users/new/codex-app-src/readable/chatgpt-26.928.40906 node --test test/repl-parity/docs-*.test.mjs",
+      "tests": 19,
+      "pass": 19,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "name": "mods",
+      "command": "npm run test:mods",
+      "pass": 32,
+      "fail": 0
+    },
+    {
+      "name": "plugin",
+      "command": "claude plugin validate .",
+      "pass": true,
+      "warning": "root: CLAUDE.md at the plugin root is not loaded as project context. To ship context with your plugin, use a skill (skills/<name>/SKILL.md) instead."
+    }
+  ],
+  "m2Replay": {
+    "unexpected": 0,
+    "cases": 59,
+    "cells": 151,
+    "derivedExpected": 7
+  }
+}

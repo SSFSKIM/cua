@@ -1,0 +1,8 @@
+[
+  {
+    "cases": ["actions/wait-for"],
+    "cells": ["visible"],
+    "kind": "trace",
+    "reason": "Volatile polling count, not a host difference: locator.waitFor polls with Runtime.evaluate (and releases each result) until the element appears, so the count moves by one with timing. The vendor host varies against itself on the mini with the same service (11/7 in docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/hist-vendor, 12/8 in m2/browser-vendor-host and three reruns), and the own host shows both. Scoped to this case and cell, for REPL-host comparisons only (vendor host against own host, both with --service cua); the service departures of expected-differences.json do not apply to such a comparison. M2 task 3, ruled by the controller 2026-10-15."
+  }
+]

@@ -42,6 +42,19 @@ function scenarioMatcher(globs,dir=SCENARIOS_DIR) {
 // capability-host`), and that backend runs nothing else: the group needs the optional capabilities only that test
 // backend announces, and the ordinary corpus needs a page engine its scripted pages do not have. Otherwise a remote
 // run takes the corpus and a local one the examples, unless `scenarios` (globs) narrows either.
+// Cases a run declares pending (--pending <ids> --pending-reason <why>): the device cannot run them now (an owner's
+// consent outstanding, say). Each is recorded as a reasoned skip row naming the reason, never run and never silently
+// left out, and the diff lists them as pending. A case pending on one side only is a difference like any other.
+export const PENDING_PREFIX='pending-environment: ';
+export function declarePending(scenarios,{pending,reason}={}) {
+  if(pending===undefined)return {scenarios,pending:null};
+  const ids=pending.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!ids.length||typeof reason!=='string'||!reason.trim())throw new Error('--pending needs case ids and a --pending-reason');
+  const known=new Set(scenarios.map(s=>s.id));
+  for(const id of ids)if(!known.has(id))throw new Error(`--pending names a case this run does not select: ${id}`);
+  return {scenarios:scenarios.map(s=>ids.includes(s.id)?{...s,skip:PENDING_PREFIX+reason.trim()}:s),pending:{cases:ids,reason:reason.trim()}};
+}
+export const pendingCases=rows=>rows.filter(r=>typeof r.skip==='string'&&r.skip.startsWith(PENDING_PREFIX)).map(r=>({case:r.case,reason:r.skip.slice(PENDING_PREFIX.length)}));
 export const CAPABILITY_GROUP='capability-host/';
 export function selectScenarioPaths(relativePaths,{local,backend,scenarios,corpus='parity'}={}) {
   if(corpus==='bench') {
@@ -56,7 +69,7 @@ export function selectScenarioPaths(relativePaths,{local,backend,scenarios,corpu
   return paths;
 }
 export async function main(argv=process.argv.slice(2)) {
-  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},'repl-host':{type:'string',default:'vendor'},corpus:{type:'string',default:'parity'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'},backend:{type:'string'}}});
+  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},'repl-host':{type:'string',default:'vendor'},corpus:{type:'string',default:'parity'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'},backend:{type:'string'},pending:{type:'string'},'pending-reason':{type:'string'}}});
   const [action,a,b]=positionals;
   if(!['vendor','cua'].includes(values['repl-host']))throw new Error('Invalid REPL host');
   if(action==='diff') {
@@ -73,7 +86,9 @@ export async function main(argv=process.argv.slice(2)) {
     const rows=dir=>inSubset?jsonl(dir).filter(r=>typeof r.case==='string'&&inSubset(`${r.case}.mjs`)):jsonl(dir);
     const result=compareRuns(rows(a),rows(b),{expected});
     for(const d of result.differences)console.log(JSON.stringify(d));
-    console.log(`${result.differences.length} ${values.expected?'unexpected differences':'differences'} (${result.cases} cases, ${result.cells} cells${values.expected?`, ${result.expected.length} expected`:''}${values.scenarios?`; scenarios ${values.scenarios}`:''})`);
+    const pending=[...new Map([...pendingCases(rows(a)),...pendingCases(rows(b))].map(p=>[p.case,p])).values()];
+    for(const p of pending)console.log(JSON.stringify({kind:'pending',...p}));
+    console.log(`${result.differences.length} ${values.expected?'unexpected differences':'differences'} (${result.cases} cases, ${result.cells} cells${values.expected?`, ${result.expected.length} expected`:''}${pending.length?`; ${pending.length} pending, not run: ${pending.map(p=>p.case).join(', ')}`:''}${values.scenarios?`; scenarios ${values.scenarios}`:''})`);
     return result.ok?0:1;
   }
   if(!['prepare','run'].includes(action))throw new Error('Usage: browser-parity.mjs prepare|run|diff [options]');
@@ -118,7 +133,8 @@ export async function main(argv=process.argv.slice(2)) {
     const scenarioRoot=join(root,corpusDir);
     const paths=selectScenarioPaths(scenariosAt(scenarioRoot).map(p=>relative(scenarioRoot,p)),{local,backend:values.backend,scenarios:values.scenarios,corpus:values.corpus}).map(p=>join(scenarioRoot,p));
     if(!paths.length)throw new Error('No scenarios matched');
-    const scenarios=await Promise.all(paths.map(async p=>(await import(pathToFileURL(p))).default));
+    const declared=declarePending(await Promise.all(paths.map(async p=>(await import(pathToFileURL(p))).default)),{pending:values.pending,reason:values['pending-reason']});
+    const scenarios=declared.scenarios;if(declared.pending)meta.pending=declared.pending;
     if(new Set(scenarios.map(s=>s.id)).size!==scenarios.length)throw new Error('Duplicate scenario ids');
     meta.cases=scenarios.map(s=>s.id);
     writeFileSync(join(out,'results.jsonl'),'');

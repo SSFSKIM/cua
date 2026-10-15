@@ -21,10 +21,12 @@
 // - running + trusted_service_request / trusted_service_hooks: become the worker's `service` / `run_hooks` with the
 //   execution's request meta and form-elicitation support; the worker's `trusted_service_response` goes back to the
 //   kernel that asked, by request id, and never to a later kernel generation.
-// - running + suspend_timeout / resume_timeout from the worker: the budget pauses and resumes (nested).
+// - running + suspend_timeout / resume_timeout from the worker, or an elicitation awaiting the client: the budget pauses
+//   and resumes (nested).
 // - running + submitted_code_complete: the submitted code and its tracked background work have drained; the budget
 //   ends there, and the after-code hooks run under their own per-hook deadlines (the worker's), on success and error.
-// - running + exec_result: the result is assembled once, with the response meta trusted code set.
+// - running + exec_result: the result is assembled once, with the response meta trusted code set, merged across the
+//   execution's service requests and hooks.
 // - running + cancellation: nothing is stopped; the eventual result still settles (the vendor's behaviour).
 // - running + timeout: the kernel's generation ends first (its later messages are dropped), then it is killed; the
 //   timeout sentence answers the call once and the next execution starts a fresh kernel, bindings gone.
@@ -282,7 +284,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.pending.clear();
     for (const resolve of self.turns.values()) resolve();
     self.turns.clear();
-    for (const [id, request] of clientRequests) if (request.worker === self) clientRequests.delete(id);
+    for (const [id, request] of clientRequests) if (request.worker === self) { clientRequests.delete(id); request.execution.budget.resume(); }
     if (!expected) log(diagnostic);
   }
 
@@ -321,8 +323,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       case 'resume_timeout':
         return current?.budget.resume();
       case 'response_meta':
+        // Each service request and hook run has its own worker-side state, so the host merges what they set across the
+        // execution (the vendor host keeps every RPC's and hook's keys; a later value for a key wins).
         if (execution && message.id === execution.id && message.response_meta && typeof message.response_meta === 'object' && !Array.isArray(message.response_meta))
-          execution.responseMeta = sortedJson(message.response_meta);
+          execution.responseMeta = sortedJson({...execution.responseMeta, ...message.response_meta});
         return;
       case 'launch_services_action':
         if (!current) return reply({type: 'privileged_result', id: message.id, ok: false, error: EXEC_CONTEXT_NOT_FOUND});
@@ -346,7 +350,10 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const {params, error} = elicitationParams(message, {formSupported});
     if (error) return answer({ok: false, error});
     const id = clientRequestCounter++;
-    clientRequests.set(id, {worker: self, id: message.id});
+    // The vendor host pauses the cell's budget while the client decides, as withSuspendedTimeout would (observed on the
+    // pinned node_repl: a 650 ms answer succeeds under timeout_ms 300); it resumes when the answer arrives.
+    current.budget.suspend();
+    clientRequests.set(id, {worker: self, id: message.id, execution: current});
     write({jsonrpc: '2.0', id, method: 'elicitation/create', params: sortedJson(params)});
   }
 
@@ -354,6 +361,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const request = clientRequests.get(msg.id);
     if (!request) return;
     clientRequests.delete(msg.id);
+    request.execution.budget.resume();
     if (worker !== request.worker) return;
     request.worker.child.send(sortedJson({type: 'elicitation_result', id: request.id, ...elicitationOutcome(msg)}));
   }

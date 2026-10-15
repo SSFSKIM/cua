@@ -7,9 +7,9 @@
 //
 // Replies: `native_pipe_response {id, ok, result | error}` per request (connect's result is {connection_id}); then,
 // unasked, `native_pipe_data {connection_id, data_base64}` for every chunk read and one `native_pipe_closed
-// {connection_id, error}` when the socket is gone, whoever closed it (`error` its last error's sentence, or null). A
-// connection is refused unless its path is absolute and names a socket, and its connect is bounded by the launch's
-// CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS (cua sets 1,000 ms). The sentences the vendor's supervisor uses (recovered,
+// {connection_id, error}` when the socket is gone, whoever closed it (`error` null when the peer left, else the
+// transport error's sentence). A connection is refused unless its path is absolute and names a socket, and its connect
+// is bounded by the launch's CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS (cua sets 1,000 ms). The sentences the vendor's supervisor uses (recovered,
 // docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Gaps" 4) are kept; the rest are cua's.
 import {statSync} from 'node:fs';
 import {createConnection} from 'node:net';
@@ -22,11 +22,15 @@ export const NOT_SOCKET_SENTENCE = 'native pipe path is not a socket';
 export const WRITE_FAILED_PREFIX = 'native pipe write failed: ';
 export const CONNECT_FAILED_PREFIX = 'native pipe connect failed: ';
 export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
+// The peer leaving (its EOF, a reset, a write into a closed pipe) is a close, not an error: the vendor host reports
+// such a connection closed without an error, its reader's EOF winning the race with any write's failure (observed on
+// the pinned node_repl, 2026-10-14, for an abort mid-write, an SO_LINGER=0 abort and SHUT_RD).
+const PEER_GONE = new Set(['EPIPE', 'ECONNRESET', 'ECONNABORTED']);
 
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
 // every connection, connected or still connecting, without telling the worker (it is gone).
 export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, stat = statSync}) {
-  const connections = new Map();     // connection_id -> socket
+  const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
   let counter = 0;
   let closedAll = false;
@@ -44,7 +48,15 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     const socket = connect({path});
     let connected = false;
     let settled = false;      // the connect request was answered: a later connect or error changes nothing
+    let reported = false;     // native_pipe_closed was sent
     let lastError = null;
+    // Once per connection: the connection leaves the relay and the worker hears it closed.
+    const reportClosed = error => {
+      if (reported) return;
+      reported = true;
+      connections.delete(connectionId);
+      if (!closedAll) send({type: 'native_pipe_closed', connection_id: connectionId, error});
+    };
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -59,12 +71,18 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       if (settled || closedAll) return socket.destroy();
       settled = true;
       connected = true;
-      connections.set(connectionId, socket);
+      connections.set(connectionId, {socket, reportClosed});
       reply(id, {ok: true, result: {connection_id: connectionId}});
     });
     socket.on('data', chunk => { if (connected && !closedAll) send({type: 'native_pipe_data', connection_id: connectionId, data_base64: chunk.toString('base64')}); });
+    socket.on('end', () => {
+      if (!connected) return;
+      reportClosed(null);
+      socket.destroy();
+    });
     socket.on('error', error => {
       lastError = error;
+      if (connected && PEER_GONE.has(error.code)) return reportClosed(null);
       if (!settled) {
         settled = true;
         clearTimeout(timeout);
@@ -76,21 +94,29 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       clearTimeout(timeout);
       connecting.delete(socket);
       if (!connected) return;
-      connections.delete(connectionId);
-      if (!closedAll) send({type: 'native_pipe_closed', connection_id: connectionId, error: lastError ? lastError.message : null});
+      reportClosed(lastError && !PEER_GONE.has(lastError.code) ? lastError.message : null);
     });
   }
 
   function write(id, connectionId, data) {
-    const socket = connections.get(connectionId);
+    const connection = connections.get(connectionId);
+    const socket = connection?.socket;
     if (!socket || socket.destroyed || !socket.writable) return fail(id, NOT_CONNECTED_SENTENCE);
     if (typeof data !== 'string') return fail(id, `${WRITE_FAILED_PREFIX}expected base64 data`);
-    socket.write(Buffer.from(data, 'base64'), error => (error ? fail(id, `${WRITE_FAILED_PREFIX}${error.message}`) : reply(id, {ok: true, result: null})));
+    socket.write(Buffer.from(data, 'base64'), error => {
+      if (!error) return reply(id, {ok: true, result: null});
+      // A write into a pipe the peer left: the close goes first, so the worker's bridge sees close only.
+      if (PEER_GONE.has(error.code)) {
+        connection.reportClosed(null);
+        socket.destroy();
+      }
+      return fail(id, `${WRITE_FAILED_PREFIX}${error.message}`);
+    });
   }
 
   // The close is answered at once; the socket's own close then reports native_pipe_closed.
   function close(id, connectionId) {
-    const socket = connections.get(connectionId);
+    const socket = connections.get(connectionId)?.socket;
     if (socket && !socket.destroyed) socket.end(() => socket.destroy());
     reply(id, {ok: true, result: null});
   }
@@ -110,7 +136,7 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       closedAll = true;
       for (const [socket, timeout] of connecting) { clearTimeout(timeout); socket.destroy(); }
       connecting.clear();
-      for (const socket of connections.values()) socket.destroy();
+      for (const {socket} of connections.values()) socket.destroy();
       connections.clear();
     },
   };

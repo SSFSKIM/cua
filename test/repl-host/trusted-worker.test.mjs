@@ -414,3 +414,28 @@ test('launchServices.openApplication reaches the host\'s LaunchServices boundary
     {type: 'launch_services_action', action: 'open_application', application_path: undefined, bundle_identifier: 'com.example.missing'},
   ], 'normalized by the worker; refused targets never reach the boundary');
 });
+
+test('a bare createElicitation suspends the cell\'s budget until the client answers, as the vendor host does', own, async t => {
+  const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {elicit: ELICIT_SERVICE},
+    onServerRequest: () => delay(650).then(() => ({result: {action: 'accept', content: {name: 'late'}}}))});
+  assert.equal(texts(await host.js('nodeRepl.write("warm")'))[0], 'warm');
+  assert.equal((await host.js(rpcError('elicit', {message: 'warm', schema: SCHEMA}))).isError, false, 'the worker is warm');
+  const started = performance.now();
+  const answered = await host.js(rpc('elicit', {message: 'slow', schema: SCHEMA}), {timeoutMs: 300});
+  assert.deepEqual(parsed(answered), {action: 'accept', content: {name: 'late'}, _meta: null}, `a 650 ms answer inside a 300 ms budget (${Math.round(performance.now() - started)} ms)`);
+  const after = await host.js(`${rpc('elicit', {message: 'slow', schema: SCHEMA})}; await new Promise(() => {});`, {timeoutMs: 300});
+  assert.deepEqual(texts(after), ['js execution timed out; kernel reset, rerun your request'], 'the budget resumes once answered');
+});
+
+test('response meta merges across a cell\'s rpcs and its after-code hooks, as the vendor host does', own, async t => {
+  const host = await startHost(t, {node, services: {meta: `let hooked = false;
+    export async function handleRpc(request) {
+      if (request.hook && !hooked) { hooked = true; nodeRepl.addAfterSubmittedCodeHook({timeoutMs: 1000, run: () => nodeRepl.setResponseMeta({third: 3, replaced: 'by-hook'})}); }
+      nodeRepl.setResponseMeta(request.meta);
+      return 'set';
+    }`}});
+  const result = await host.js(`await nodeRepl.rpc('meta', {meta: {first: 1, replaced: 'first'}}); await nodeRepl.rpc('meta', {meta: {second: 2}, hook: true}); nodeRepl.write('ok');`);
+  const {'codex/nodeReplExecutionDurationMs': _d, [REPL_HOST_META_KEY]: _m, ...meta} = result._meta;
+  assert.deepEqual(meta, {first: 1, replaced: 'by-hook', second: 2, third: 3});
+  assert.deepEqual(Object.keys(meta), ['first', 'replaced', 'second', 'third']);
+});

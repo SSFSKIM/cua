@@ -74,7 +74,7 @@ test('paths are checked before anything connects', () => {
   assert.equal(sockets.length, 0);
 });
 
-test('a connected socket relays data, a write failure and its terminal close with the error; writes after close are refused', async () => {
+test('a connected socket relays data and a write; a transport error that is not the peer leaving closes with its sentence; writes after close are refused', async () => {
   const {relay, sent, sockets} = relayWith();
   relay.handle({id: 'c', op: 'connect', path: '/tmp/s.sock'});
   sockets[0].emit('connect');
@@ -84,20 +84,39 @@ test('a connected socket relays data, a write failure and its terminal close wit
   relay.handle({id: 'w1', op: 'write', connection_id: id, data_base64: Buffer.from('ping').toString('base64')});
   await delay(5);
   assert.equal(sockets[0].written[0].toString(), 'ping');
-  sockets[0].writeError = new Error('EPIPE');
-  relay.handle({id: 'w2', op: 'write', connection_id: id, data_base64: 'AA=='});
-  await delay(5);
-  sockets[0].emit('error', new Error('read ECONNRESET'));
+  sockets[0].emit('error', Object.assign(new Error('read EIO'), {code: 'EIO'}));
   sockets[0].destroy();
   await delay(5);
-  relay.handle({id: 'w3', op: 'write', connection_id: id, data_base64: 'AA=='});
+  relay.handle({id: 'w2', op: 'write', connection_id: id, data_base64: 'AA=='});
   assert.deepEqual(sent.slice(1), [
     {type: 'native_pipe_data', connection_id: id, data_base64: Buffer.from('hello').toString('base64')},
     {type: 'native_pipe_response', id: 'w1', ok: true, result: null},
-    {type: 'native_pipe_response', id: 'w2', ok: false, error: 'native pipe write failed: EPIPE'},
-    {type: 'native_pipe_closed', connection_id: id, error: 'read ECONNRESET'},
-    {type: 'native_pipe_response', id: 'w3', ok: false, error: NOT_CONNECTED_SENTENCE},
+    {type: 'native_pipe_closed', connection_id: id, error: 'read EIO'},
+    {type: 'native_pipe_response', id: 'w2', ok: false, error: NOT_CONNECTED_SENTENCE},
   ]);
+});
+
+test('the peer leaving is close-only, as the vendor host reports it: its EOF or reset closes once without an error, and a write failing on it afterwards surfaces after the close', async () => {
+  for (const leave of ['eof', 'reset', 'write']) {
+    const {relay, sent, sockets} = relayWith();
+    relay.handle({id: 'c', op: 'connect', path: '/tmp/s.sock'});
+    sockets[0].emit('connect');
+    const id = sent[0].result.connection_id;
+    if (leave === 'eof') sockets[0].emit('end');
+    if (leave === 'reset') sockets[0].emit('error', Object.assign(new Error('read ECONNRESET'), {code: 'ECONNRESET'}));
+    sockets[0].writeError = Object.assign(new Error('write EPIPE'), {code: 'EPIPE'});
+    relay.handle({id: 'w', op: 'write', connection_id: id, data_base64: 'AA=='});
+    await delay(5);
+    sockets[0].emit('error', Object.assign(new Error('write EPIPE'), {code: 'EPIPE'}));
+    sockets[0].destroy();
+    await delay(5);
+    const after = sent.slice(1);
+    assert.deepEqual(after.filter(m => m.type === 'native_pipe_closed'), [{type: 'native_pipe_closed', connection_id: id, error: null}], `${leave}: one close, no error`);
+    const closedAt = after.findIndex(m => m.type === 'native_pipe_closed');
+    const writeAt = after.findIndex(m => m.id === 'w');
+    assert.ok(closedAt < writeAt, `${leave}: the close reaches the worker before the write's failure, which the bridge then ignores`);
+    assert.equal(after[writeAt].ok, false);
+  }
 });
 
 test('a refused connect is answered with the error, and closeAll ends live sockets without telling a gone worker', async () => {

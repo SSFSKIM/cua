@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {downloadDiagnosticCode} from './download-diagnostic.mjs';
+import {cleanupDownload} from './cleanup-download.mjs';
 
 async function run(path){
  const calls=[];
@@ -14,14 +15,14 @@ async function run(path){
 }
 async function scratch(t){const dir=await mkdtemp(join(tmpdir(),'download-diagnostic-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;}
 
-test('diagnostic arms exactly one bounded fixture download before clicking and cleans only its attested file',async t=>{
+test('diagnostic arms exactly one bounded fixture download and attests without kernel deletion',async t=>{
  const dir=await scratch(t),path=join(dir,'parity (12).txt'),neighbor=join(dir,'parity.txt');
  await writeFile(path,'parity download\n');await writeFile(neighbor,'parity download\n');
  const {value,calls}=await run(path);
  assert.deepEqual(calls,[['goto','http://fixture/downloads.html'],['wait','download',10000],['click','#download']]);
  assert.equal(value.kind,'string');assert.equal(value.absolute,true);assert.equal(value.basenameClass,'fixture-parity-txt');assert.equal(value.basename,'parity (12).txt');
- assert.equal(value.contentMatches,true);assert.equal(value.cleaned,true);
- await assert.rejects(readFile(path),{code:'ENOENT'});assert.equal(await readFile(neighbor,'utf8'),'parity download\n');
+ assert.equal(value.contentMatches,true);assert.equal(value.attested,true);assert.equal(value.cleaned,false);
+ assert.equal(await readFile(path,'utf8'),'parity download\n');assert.equal(await readFile(neighbor,'utf8'),'parity download\n');
  assert.ok(!JSON.stringify(value).includes(dir));
 });
 
@@ -62,12 +63,14 @@ async function cleanup(path,{selectedName=path.split('/').at(-1),uploadPath}={})
  const {default:scenarios}=await import('./scenarios/browser-members.mjs');
  const {parseCell}=await import('../../scripts/browser-parity/runner.mjs');
  const cell=scenarios.find(s=>s.id==='api/browser-playwrightdownload/path').cells.find(c=>c.label==='cleanup');
- const content=[],AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
- await new AsyncFunction('download','uploadPath','uploadName','tab','nodeRepl',cell.code)({path:async()=>path},uploadPath,path.split('/').at(-1),{playwright:{locator:()=>({textContent:async()=>selectedName})}},{write:text=>content.push({type:'text',text})});
- return parseCell({content});
+ const content=[],globals={},AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ await new AsyncFunction('globalThis','download','uploadPath','uploadName','tab','nodeRepl',cell.code)(globals,{path:async()=>path},uploadPath,path.split('/').at(-1),{playwright:{locator:()=>({textContent:async()=>selectedName})}},{write:text=>content.push({type:'text',text})});
+ const result=parseCell({content});
+ if(result.ok&&result.value===true&&!await cleanupDownload(globals.__replDownloadCleanup))return {ok:false,error:{code:'cleanup',message:'harness cleanup refused'}};
+ return result;
 }
 
-test('chooser cleanup raw cell deletes only the selected, descriptor-attested returned fixture artifact',async t=>{
+test('chooser private handoff lets the harness delete only the selected descriptor-attested artifact',async t=>{
  const dir=await scratch(t),path=join(dir,'parity.txt'),neighbor=join(dir,'parity (1).txt');
  await writeFile(path,'parity download\n');await writeFile(neighbor,'parity download\n');
  assert.deepEqual(await cleanup(path),{ok:true,value:true});
@@ -83,10 +86,10 @@ test('chooser cleanup never deletes a changed file, unacknowledged selection, sy
  assert.equal(await readFile(known,'utf8'),'not fixture bytes');assert.equal(await readFile(unknown,'utf8'),'parity download\n');assert.equal(await readFile(linked,'utf8'),'parity download\n');
 });
 
-test('observed Chrome timestamp collision name is accepted only for the waited exact-content fixture and cleaned',async t=>{
+test('observed timestamp filename is kernel-attested read-only and cleaned only by harness handoff',async t=>{
  const dir=await scratch(t),basename='parity - 2026-10-15T003412.123.txt',path=join(dir,basename);await writeFile(path,'parity download\n');
  const {value}=await run(path);assert.equal(value.basenameClass,'fixture-parity-txt');assert.equal(value.basename,basename);
- assert.equal(value.contentMatches,true);assert.equal(value.cleaned,true);await assert.rejects(readFile(path),{code:'ENOENT'});
+ assert.equal(value.contentMatches,true);assert.equal(value.attested,true);assert.equal(value.cleaned,false);assert.equal(await readFile(path,'utf8'),'parity download\n');
  await writeFile(path,'parity download\n');assert.deepEqual(await cleanup(path),{ok:true,value:true});await assert.rejects(readFile(path),{code:'ENOENT'});
 });
 

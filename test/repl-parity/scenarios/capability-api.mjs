@@ -199,4 +199,40 @@ extend('capability-host/tabwebmcpcapability/fetchtools',[
 const beforeUnloadSetup=reply('tab_get_js_dialog',{dialog:{id:'dialog-beforeunload',type:'beforeunload'}});
 add('api/browser-beforeunloaddialog/type','boundary-double',`var dialog=await tab.getJsDialog();return {type:dialog.type,accept:typeof dialog.accept};`,{type:'beforeunload',accept:'undefined'},{setup:beforeUnloadSetup,commands:[tabCommand('tab_get_js_dialog')]});
 add('api/browser-beforeunloaddialog/dismiss','boundary-double',`var dialog=await tab.getJsDialog();return await dialog.dismiss();`,VOID,{setup:beforeUnloadSetup,commands:[tabCommand('tab_get_js_dialog'),tabCommand('tab_handle_js_dialog',{dialog_id:'dialog-beforeunload',action:'dismiss'})]});
+// BC:5304-5343,8346-8365. Supplemental success witnesses for ContentAPI.exportGsuite (all retained formats)
+// and exportYouTubeTranscript. Their primary Chrome cases still prove the real-service rejection paths.
+{
+ const id='capability-host/browser-contentapi/export';
+ const formats=['pdf','md','xlsx','csv','docx','pptx'];
+ extend(id,[
+  ...formats.map(format=>validation(`var before=(await __trace()).length;var value=await tab.content.exportGsuite(${JSON.stringify(format)});return {value,commands:(await __trace()).slice(before).map(__command)};`,{value:`/fixture/gsuite.${format}`,commands:[tabCommand('tab_content_export_gsuite',{format})]})),
+  validation(`var before=(await __trace()).length;var value=await tab.content.exportYouTubeTranscript();return {value,commands:(await __trace()).slice(before).map(__command)};`,{value:'/fixture/transcript.txt',commands:[tabCommand('tab_content_export_youtube_transcript')]}),
+ ]);
+ const scenario=scenarios.find(s=>s.id===id);
+ scenario.cells.slice(-7).forEach((cell,index)=>{cell.label=index<formats.length?`export-gsuite-${formats[index]}`:'export-youtube-transcript';});
+ scenario.supplementalWitnesses={
+  'api/browser-contentapi/exportgsuite':formats.map(format=>`export-gsuite-${format}`),
+  'api/browser-contentapi/exportyoutubetranscript':['export-youtube-transcript'],
+ };
+}
+// BC:189-242,10238-10284: recovery validation is an envelope discriminator plus an error decoder, NOT a
+// blanket result schema. In particular ok:true ignores unrelated fields; undefined/null value fails later in the
+// FunctionAgentTransport (10013-10046), and ContentAPI.export returns .path without type validation (8335-8345).
+{
+ const id='capability-host/browser-contentapi/export';
+ const details={schema_version:1,command:'tab_content_export',phase:'before_command',reason:'credential_state_unavailable',next_action:'restart_browser_runtime'};
+ const malformed=[null,{}, {ok:1}, {ok:'true',value:{path:'/fixture/ignored.pdf'}}, {ok:false}, {ok:false,error:null},
+  ...[{schema_version:2},{command:'Bad-Command'},{phase:'outside'},{reason:'unknown'},{next_action:'stop'},{security_reason:'user_declined'},
+   {reason:'browser_security_unavailable',next_action:'retry_after_resolution',security_reason:'unknown'}].map(change=>({ok:false,error:{...details,...change}}))];
+ const invalid={rejected:true,name:'Error',message:'Browser service returned an invalid recovery response'};
+ const setupRecovery=`await nodeRepl.rpc('browser',{method:'oracle.configure',params:{mode:'boundary-double'}});await nodeRepl.rpc('browser',{method:'oracle.recovery',params:{enabled:true}});globalThis.agent=await __capabilitySetup();globalThis.browser=await agent.browsers.get('fixture');globalThis.tab=await browser.tabs.new();globalThis.__recoveryExport=async envelope=>{await nodeRepl.rpc('browser',{method:'oracle.envelope',params:{type:'tab_content_export',value:envelope}});try{return {rejected:false,value:__project(await tab.content.export())};}catch(e){var result={rejected:true,name:e.name,message:e.message};if(e.details!==undefined){result.details=JSON.parse(JSON.stringify(e.details));result.detailsFrozen=Object.isFrozen(e.details);}return result;}};`;
+ const success=[{ok:true,value:{path:'/fixture/recovered.pdf'},error:{ignored:true},extra:'ignored'},{ok:true,value:{path:17}}, {ok:true,value:false}, {ok:true,value:null}, {ok:true}];
+ extend(id,[
+  validation(`${setupRecovery}var values=[];for(var envelope of ${JSON.stringify(malformed)})values.push(await __recoveryExport(envelope));return values;`,malformed.map(()=>invalid)),
+  validation(`return await __recoveryExport(${JSON.stringify({ok:false,error:{...details,ignored:'discarded'},message:'untrusted envelope sentence'})});`,{rejected:true,name:'BrowserCredentialRecoveryError',message:'Browser observation is unavailable because native credential state cannot be safely resumed. Start a new browser runtime to continue. Recovery v1: command=tab_content_export, phase=before_command, reason=credential_state_unavailable, next_action=restart_browser_runtime.',details,detailsFrozen:true}),
+  validation(`var values=[];for(var envelope of ${JSON.stringify(success)})values.push(await __recoveryExport(envelope));return values;`,[{rejected:false,value:'/fixture/recovered.pdf'},{rejected:false,value:17},{rejected:false,value:VOID},{rejected:true,name:'Error',message:'transport send returned empty response'},{rejected:true,name:'Error',message:'transport send returned empty response'}]),
+ ]);
+ const scenario=scenarios.find(s=>s.id===id);
+ scenario.cells.slice(-3).forEach((cell,index)=>{cell.label=['recovery-malformed-envelopes','recovery-valid-error','recovery-permissive-success'][index];});
+}
 export default scenarios;

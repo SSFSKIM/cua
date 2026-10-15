@@ -156,3 +156,79 @@ test('independent result validation requires both rejection location and a nonem
  assert.equal(s.assert({results:[...base,result(observed)]}).ok,true);
  for(const invalid of [{rejected:true,sent:true},{...observed,message:''},{...observed,message:42},{...observed,sent:false},{...observed,rejected:false}])assert.throws(()=>s.assert({results:[...base,result(invalid)]}));
 });
+
+// BC:5304-5343,8346-8365. These paths prove client success marshalling, not actual network export support.
+test('content export supplement covers every retained GSuite format and transcript path with exact wire assertions',()=>{
+ const s=scenario('capability-host/browser-contentapi/export');
+ const base=[result({ready:true,proof:'boundary-double'}),result({value:'/fixture/export.pdf',commands:[{type:'tab_content_export',browser_id:'$browser',tab_id:'$tab'}]})];
+ const exports=[
+  ['pdf','/fixture/gsuite.pdf'],['md','/fixture/gsuite.md'],['xlsx','/fixture/gsuite.xlsx'],
+  ['csv','/fixture/gsuite.csv'],['docx','/fixture/gsuite.docx'],['pptx','/fixture/gsuite.pptx'],
+ ];
+ const observations=exports.map(([format,value])=>({value,commands:[{type:'tab_content_export_gsuite',browser_id:'$browser',tab_id:'$tab',format}]}));
+ observations.push({value:'/fixture/transcript.txt',commands:[{type:'tab_content_export_youtube_transcript',browser_id:'$browser',tab_id:'$tab'}]});
+ assert.equal(s.boundaryProof,'boundary-double');
+ assert.equal(s.assert({results:[...base,...observations.map(result),...recoveryObservations.map(result)]}).ok,true);
+ for(let i=0;i<observations.length;i++){
+  const wrongPath=structuredClone(observations);wrongPath[i].value={path:observations[i].value};
+  assert.throws(()=>s.assert({results:[...base,...wrongPath.map(result),...recoveryObservations.map(result)]}));
+  const wrongPayload=structuredClone(observations);wrongPayload[i].commands[0].format='wrong-format';
+  assert.throws(()=>s.assert({results:[...base,...wrongPayload.map(result),...recoveryObservations.map(result)]}));
+ }
+});
+test('export reply fixture distinguishes retained formats and returns a transcript string path',async()=>{
+ const fixture=createCapabilityOracleService({handleRpc:async()=>{throw Error('unexpected real service');}});
+ await rpc(fixture,'oracle.configure',{mode:'boundary-double'});
+ for(const [format,path]of [['pdf','/fixture/gsuite.pdf'],['md','/fixture/gsuite.md'],['xlsx','/fixture/gsuite.xlsx'],['csv','/fixture/gsuite.csv'],['docx','/fixture/gsuite.docx'],['pptx','/fixture/gsuite.pptx']]){
+  assert.deepEqual(await rpc(fixture,'execute',{type:'tab_content_export_gsuite',browser_id:'fixture',tab_id:'7',format}),{path});
+ }
+ assert.deepEqual(await rpc(fixture,'execute',{type:'tab_content_export_youtube_transcript',browser_id:'fixture',tab_id:'7'}),{path:'/fixture/transcript.txt'});
+});
+
+test('recovery fixture advertises v1 only in boundary mode and injects raw envelopes only into recovery execution',async()=>{
+ const fixture=createCapabilityOracleService({handleRpc:async()=>({production:true})});
+ for(const method of ['oracle.recovery','oracle.envelope'])await assert.rejects(rpc(fixture,method,{enabled:true,type:'tab_content_export',value:{ok:false}}),/boundary-double/);
+ await rpc(fixture,'oracle.configure',{mode:'boundary-double'});
+ assert.equal(Object.hasOwn(await rpc(fixture,'setup',{}),'credentialRecoveryErrorVersion'),false);
+ await rpc(fixture,'oracle.recovery',{enabled:true});
+ assert.equal((await rpc(fixture,'setup',{})).credentialRecoveryErrorVersion,1);
+ const command={type:'tab_content_export',browser_id:'fixture',tab_id:'7'};
+ for(const value of [null,{ok:'true'},{ok:false,error:{schema_version:2}},{ok:true,value:{path:17},extra:'unvalidated'}]){
+  await rpc(fixture,'oracle.envelope',{type:command.type,value});
+  assert.deepEqual(await rpc(fixture,'executeWithRecovery',command),value);
+  assert.deepEqual(await rpc(fixture,'execute',command),{path:'/fixture/export.pdf'});
+ }
+ await rpc(fixture,'oracle.configure',{mode:'boundary-double'});
+ assert.equal(Object.hasOwn(await rpc(fixture,'setup',{}),'credentialRecoveryErrorVersion'),false);
+ assert.deepEqual(await rpc(fixture,'executeWithRecovery',command),{ok:true,value:{path:'/fixture/export.pdf'}});
+ await rpc(fixture,'oracle.configure',{mode:'hidden'});
+ await assert.rejects(rpc(fixture,'oracle.recovery',{enabled:true}),/boundary-double/);
+ await assert.rejects(rpc(fixture,'oracle.envelope',{type:command.type,value:{ok:true}}),/boundary-double/);
+});
+test('content export recovery supplement distinguishes malformed envelopes from permissive successes and decoded errors',()=>{
+ const s=scenario('capability-host/browser-contentapi/export');
+ const before=[
+  result({ready:true,proof:'boundary-double'}),result({value:'/fixture/export.pdf',commands:[{type:'tab_content_export',browser_id:'$browser',tab_id:'$tab'}]}),
+  ...['pdf','md','xlsx','csv','docx','pptx'].map(format=>result({value:`/fixture/gsuite.${format}`,commands:[{type:'tab_content_export_gsuite',browser_id:'$browser',tab_id:'$tab',format}]})),
+  result({value:'/fixture/transcript.txt',commands:[{type:'tab_content_export_youtube_transcript',browser_id:'$browser',tab_id:'$tab'}]}),
+ ];
+ assert.equal(s.assert({results:[...before,...recoveryObservations.map(result)]}).ok,true);
+ for(let index=0;index<13;index++){
+  const wrong=structuredClone(recoveryObservations);wrong[0][index].message='Generic parse error';
+  assert.throws(()=>s.assert({results:[...before,...wrong.map(result)]}));
+ }
+ for(const mutate of [
+  v=>{v[1].message='untrusted envelope sentence';},
+  v=>{v[1].details.ignored='not stripped';},
+  v=>{v[1].detailsFrozen=false;},
+  v=>{v[2][1]={rejected:true,name:'Error',message:'path must be a string'};},
+  v=>{v[2][3].message='Browser service returned an invalid recovery response';},
+ ]){const wrong=structuredClone(recoveryObservations);mutate(wrong);assert.throws(()=>s.assert({results:[...before,...wrong.map(result)]}));}
+});
+
+// Independent expected observations from BC:134-242,10013-10046,10272-10284; not derived from the client or fixture.
+const recoveryObservations=[
+ Array.from({length:13},()=>({rejected:true,name:'Error',message:'Browser service returned an invalid recovery response'})),
+ {rejected:true,name:'BrowserCredentialRecoveryError',message:'Browser observation is unavailable because native credential state cannot be safely resumed. Start a new browser runtime to continue. Recovery v1: command=tab_content_export, phase=before_command, reason=credential_state_unavailable, next_action=restart_browser_runtime.',details:{schema_version:1,command:'tab_content_export',phase:'before_command',reason:'credential_state_unavailable',next_action:'restart_browser_runtime'},detailsFrozen:true},
+ [{rejected:false,value:'/fixture/recovered.pdf'},{rejected:false,value:17},{rejected:false,value:{kind:'undefined'}},{rejected:true,name:'Error',message:'transport send returned empty response'},{rejected:true,name:'Error',message:'transport send returned empty response'}],
+];

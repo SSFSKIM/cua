@@ -28,6 +28,9 @@ export function transformCoreDocument(source){
   ['`selectText` is unavailable on Linux and Windows.','`selectText` is unavailable on Linux.'],
  ];
  for(const [before,after] of edits)source=replaceOnce(source,before,after);
+ // Table 3 amendment (2026-10-15): only these two grammar repairs follow the literal Windows deletions.
+ source=replaceOnce(source,'Linux always return full accessibility state.','Linux always returns full accessibility state.');
+ source=replaceOnce(source,"Linux app `paste` support only `text` and use the platform's native text input.","Linux app `paste` supports only `text` and uses the platform's native text input.");
  // No surviving ChatGPT/Codex/Orbit product prose in this pinned core: do not rename identifiers, URLs or Sky.
  return source;
 }

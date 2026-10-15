@@ -27,13 +27,14 @@ function imageEqual(a,b,tolerance,{raw=false,path='',mcpImage=false}={}) {
   }
   return isDeepStrictEqual(a,b);
 }
-export function compareRuns(a, b, {expected = [], raw = false, recordedAssertionFailures = {a:new Set(),b:new Set()}} = {}) {
+export function compareRuns(a, b, {expected = [], raw = false, requireTraceParity = false, recordedAssertionFailures = {a:new Set(),b:new Set()}} = {}) {
   const differences = [], accepted = [];
   // A trace allowance may name the CDP `methods` it covers and the largest count change (`maxDelta`) it accepts; when
   // given, a difference outside them is still a difference.
   const traceScope = e => (e.methods === undefined || (Array.isArray(e.methods) && e.methods.length > 0 && e.methods.every(m => typeof m === 'string')))
     && (e.maxDelta === undefined || (Number.isSafeInteger(e.maxDelta) && e.maxDelta >= 0));
   if (!Array.isArray(expected) || expected.some(e => !e.reason || !Array.isArray(e.cases) || !Array.isArray(e.cells) || !['semantic','trace'].includes(e.kind) || !traceScope(e))) throw new Error('Invalid expected-differences entry');
+  const strictTrace = requireTraceParity || expected.some(e => e.axis === 'repl-host');
   const covers = (e, d) => e.cases.includes(d.case) && e.cells.includes(d.cell) && e.kind === d.kind
     && (d.kind !== 'trace' || ((e.methods === undefined || e.methods.includes(d.method)) && (e.maxDelta === undefined || Math.abs(d.a - d.b) <= e.maxDelta)));
   const add = d => {
@@ -63,8 +64,15 @@ export function compareRuns(a, b, {expected = [], raw = false, recordedAssertion
     if (!x || !y) { add({...context,kind:'cardinality',message:'missing case/cell'}); continue; }
     if (!isDeepStrictEqual(x.pollingAllowance ?? {}, y.pollingAllowance ?? {}) || (x.screenshotTolerance ?? 0) !== (y.screenshotTolerance ?? 0)) add({...context,kind:'configuration',message:'comparison allowances changed'});
     if (!imageEqual(semantic(x),semantic(y),x.screenshotTolerance ?? 0,{raw})) add({...context,kind:row.assertion ? 'assertion' : 'semantic',a:semantic(x),b:semantic(y)});
-    // Older resident hosts emit no trace. Missing/empty means unavailable, not zero CDP calls.
-    if (!x.trace?.length || !y.trace?.length) continue;
+    // Calibrated cells have nonempty vendor control traces, so both target traces are required even if both vanish.
+    // Outside those scopes, host comparisons still reject asymmetric trace availability; legacy services can lack tracing.
+    if (!x.trace?.length || !y.trace?.length) {
+      const calibrated = expected.some(e => e.axis === 'repl-host' && e.kind === 'trace' && e.cases.includes(row.case) && e.cells.includes(row.cell));
+      if (calibrated || (strictTrace && Boolean(x.trace?.length) !== Boolean(y.trace?.length))) {
+        for (const [side, r] of [['a', x], ['b', y]]) if (!r.trace?.length) add({...context,kind:'trace-availability',side,message:'required cell trace unavailable'});
+      }
+      continue;
+    }
     const xc = counts(x.trace), yc = counts(y.trace);
     for (const name of new Set([...Object.keys(xc), ...Object.keys(yc)])) {
       const limit = polling(name) ? (x.pollingAllowance?.[name] ?? (name.startsWith('DOM.') ? x.pollingAllowance?.['DOM.*'] : 0) ?? 0) : 0;

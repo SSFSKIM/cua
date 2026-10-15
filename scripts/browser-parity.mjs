@@ -100,7 +100,7 @@ export async function main(argv=process.argv.slice(2)) {
     // subset a case or cell missing from either run is still a cardinality difference.
     const inSubset=values.scenarios?scenarioMatcher(values.scenarios):null;
     const rows=dir=>inSubset?jsonl(dir).filter(r=>typeof r.case==='string'&&inSubset(`${r.case}.mjs`)):jsonl(dir);
-    const result=compareRuns(rows(a),rows(b),{expected});
+    const result=compareRuns(rows(a),rows(b),{expected,requireTraceParity:ma.host!==mb.host});
     for(const d of result.differences)console.log(JSON.stringify(d));
     const pending=[...new Map([...pendingCases(rows(a)),...pendingCases(rows(b))].map(p=>[p.case,p])).values()];
     for(const p of pending)console.log(JSON.stringify({kind:'pending',...p}));

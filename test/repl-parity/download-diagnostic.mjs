@@ -1,7 +1,7 @@
 import {fixtureDownloadNamePattern} from './fixture-downloads.mjs';
 // One bounded probe body, for cellCode({code:downloadDiagnosticCode}) after ordinary discarded Chrome setup.
 // Unknown paths are evidence only: no raw path, basename, file access or deletion. Do not relax the corpus guard
-// from this classifier. A successful fixture wait, existing exact basename guard and exact content attest cleanup.
+// from this classifier. Known fixture files are read-only attested; the kernel never removes Downloads artifacts.
 export const downloadDiagnosticCode=String.raw`
 let phase='navigate';const result={cleaned:false};
 try{
@@ -36,10 +36,10 @@ try{
  let original;
  try{original=await file.stat();result.contentMatches=(await file.readFile()).equals(expected);}finally{await file.close();}
  if(!result.contentMatches)return result;
- phase='cleanup';
+ phase='identity';
  const current=await fs.lstat(path);
  if(!current.isFile()||current.isSymbolicLink()||current.dev!==original.dev||current.ino!==original.ino){result.sameFile=false;return result;}
- await fs.unlink(path);result.cleaned=true;
+ result.attested=true;
  return result;
 }catch(error){
  const codes=['ENOENT','EACCES','EPERM','ELOOP','EISDIR','ENOTDIR'];

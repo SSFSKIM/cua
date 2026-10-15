@@ -19,22 +19,30 @@ export const ASSET_INVENTORY={assets:[{id:'asset-1',kind:'image',name:'lamp.png'
 export const ASSET_BUNDLE={assets:[{contentType:'image/png',id:'asset-1',kind:'image',name:'lamp.png',path:'/fixture/assets/lamp.png',url:'https://cua-capability.example/lamp.png'}],directoryPath:'/fixture/assets',failures:[{contentType:null,id:'asset-2',name:'missing.png',reason:'not available',url:'https://cua-capability.example/missing.png'}],manifestPath:'/fixture/assets/manifest.json',summary:{downloadedCount:1,elapsedMs:1,failedCount:1,requestedCount:2}};
 export const AUDIT={changes:[{args:[{title:'Fixture'}],method:'create',namespace:'bookmarks',createdAt:1,before:{bookmarks:[{id:'b0',index:0,parentId:'root',title:'Before',url}],tabLayout:{groups:[{collapsed:false,color:'blue',id:1,title:'Group',windowId:1}],tabs:[{autoDiscardable:true,groupId:1,id:7,index:0,pinned:false,url,windowId:1}]},windows:[{focused:true,height:600,id:1,left:0,state:'normal',top:0,width:800}]},result:{id:'b1'}}]};
 export function createCapabilityOracleService(delegate){
- let mode='real-service',disabled=[],trace=[],overrides=new Map();
+ let mode='real-service',disabled=[],trace=[],overrides=new Map(),recovery=false,envelopes=new Map();
  return {async handleRpc(request){
   const {method,params}=request;
   if(method==='oracle.configure'){
    if(!['real-service','boundary-double','hidden'].includes(params?.mode))throw Error('Invalid oracle mode');
-   mode=params.mode;disabled=params.disabledMemberIds??[];trace=[];overrides=new Map();return {mode};
+   mode=params.mode;disabled=params.disabledMemberIds??[];trace=[];overrides=new Map();recovery=false;envelopes=new Map();return {mode};
   }
   if(method==='oracle.trace')return structuredClone(trace);
+  // BC:10238-10284: select recovery v1 at setup; inject raw transport envelopes, not wrapped command values.
+  if(method==='oracle.recovery'||method==='oracle.envelope'){
+   if(mode!=='boundary-double')throw Error('Recovery injection requires boundary-double mode');
+   if(method==='oracle.recovery')recovery=params.enabled===true;
+   else envelopes.set(params.type,params.value);
+   return {};
+  }
   if(method==='oracle.reply'){
    if(mode==='real-service')throw Error('Cannot replace a real-service reply');
    overrides.set(params.type,params.value);return {};
   }
   if(mode==='real-service'){if(['execute','executeWithRecovery'].includes(method))trace.push(JSON.parse(JSON.stringify(params)));return delegate.handleRpc(request);}
-  if(method==='setup')return {apiManifest:structuredClone(apiManifest),disabledMemberIds:[...disabled]};
+  if(method==='setup')return {apiManifest:structuredClone(apiManifest),disabledMemberIds:[...disabled],...(recovery?{credentialRecoveryErrorVersion:1}:{})};
   if(!['execute','executeWithRecovery'].includes(method))throw Error(`Unscripted fixture method ${method}`);
   trace.push(JSON.parse(JSON.stringify(params)));
+  if(method==='executeWithRecovery'&&envelopes.has(params.type))return structuredClone(envelopes.get(params.type));
   const result=overrides.has(params.type)?structuredClone(overrides.get(params.type)):answer(params);
   return method==='executeWithRecovery'?{ok:true,value:result}:result;
  }
@@ -55,6 +63,9 @@ export function createCapabilityOracleService(delegate){
    case 'tab_handle_js_dialog':
    case 'tab_ax_action':case 'tab_manual_handoff_request':return {};
    case 'tab_content_export':return {path:'/fixture/export.pdf'};
+   // BC:5304-5343: all retained GSuite formats and transcript return {path:string}; no actual file is produced.
+   case 'tab_content_export_gsuite':return {path:`/fixture/gsuite.${p.format}`};
+   case 'tab_content_export_youtube_transcript':return {path:'/fixture/transcript.txt'};
    case 'tab_bot_detection_report':return {status:'reported',hostname:'cua-capability.example'};
    case 'browser_management_call':return {value:{namespace:p.namespace,method:p.method,args:p.args}};
    case 'browser_management_get_audit_trail':return structuredClone(AUDIT);

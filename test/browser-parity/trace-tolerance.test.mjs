@@ -1,12 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, readFileSync, writeFileSync, rmSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main} from '../../scripts/browser-parity.mjs';
 import {deriveTraceAllowances, loadTraceAllowances} from '../../scripts/browser-parity/trace-tolerance.mjs';
 import {compareRuns} from '../../scripts/browser-parity/compare.mjs';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawnSync} from 'node:child_process';
 
 const base = 'docs/evidence/2026-10-14-own-repl-host-parity/m2/';
 const root = new URL('../../', import.meta.url).pathname;
@@ -176,4 +176,69 @@ test('every derived limit accepts its boundary and rejects out-of-bound, scope, 
 test('an evidence revision must name a commit rather than an arbitrary tree object', () => {
   const tree = execFileSync('git', ['rev-parse', `${fixture.revision}^{tree}`], {cwd: root, encoding: 'utf8'}).trim();
   assert.throws(() => loadTraceAllowances({...fixture, revision: tree}), /commit/i);
+});
+
+test('derived tolerances cannot erase an out-of-bound difference by losing either or both cell traces', async t => {
+  const expected = loadTraceAllowances(fixture);
+  for (const side of ['a', 'b', 'both']) for (const mutation of ['empty', 'delete']) {
+    await t.test(`${side} trace ${mutation}`, () => {
+      for (const e of expected) {
+        const row = sourceB.rows.find(r => r.case === e.cases[0] && r.cell === e.cells[0]);
+        const a = [structuredClone(row), {case: row.case, assertion: {ok: true}}], b = structuredClone(a);
+        b[0].trace.push(...Array.from({length: e.maxDelta + 1}, () => ({cdp: e.methods[0]})));
+        assert.equal(compareRuns(a, b, {expected}).ok, false, 'the intact out-of-bound trace fails first');
+        const missingSides = side === 'both' ? ['a', 'b'] : [side];
+        for (const missing of missingSides) {
+          const changed = missing === 'a' ? a : b;
+          if (mutation === 'empty') changed[0].trace = [];
+          else delete changed[0].trace;
+        }
+        const result = compareRuns(a, b, {expected});
+        assert.equal(result.ok, false);
+        assert.deepEqual(result.differences.map(d => [d.kind, d.side, d.case, d.cell]), missingSides.map(missing => ['trace-availability', missing, row.case, row.cell]));
+        assert.deepEqual(result.expected, [], 'count tolerances cannot waive missing trace evidence');
+      }
+    });
+  }
+});
+
+test('CLI host comparisons reject missing or empty cell traces with and without derived tolerances', async t => {
+  const own = readRun(base + 'browser-cua-host');
+  for (const host of ['vendor', 'cua', 'both']) for (const mutation of ['empty', 'delete']) for (const withExpected of host === 'both' ? [true] : [true, false]) {
+    await t.test(`${host} trace ${mutation}, expected=${withExpected}`, () => {
+      const dir = mkdtempSync(join(tmpdir(), 'cua-trace-target-'));
+      try {
+        for (const [name, original] of [['vendor', sourceB], ['cua', own]]) {
+          const run = structuredClone(original);
+          if (name === host || host === 'both') {
+            const row = run.rows.find(r => r.case === 'actions/wait-for' && r.cell === 'visible');
+            if (mutation === 'empty') row.trace = [];
+            else delete row.trace;
+          }
+          mkdirSync(join(dir, name));
+          writeFileSync(join(dir, name, 'meta.json'), JSON.stringify(run.meta));
+          writeFileSync(join(dir, name, 'results.jsonl'), run.rows.map(JSON.stringify).join('\n') + '\n');
+        }
+        const args = [root + 'scripts/browser-parity.mjs', 'diff', join(dir, 'vendor'), join(dir, 'cua'), '--scenarios', 'actions/wait-for.mjs'];
+        if (withExpected) args.push('--expected', new URL('./repl-host-expected-differences.json', import.meta.url).pathname);
+        const result = spawnSync(process.execPath, args, {encoding: 'utf8'});
+        assert.equal(result.status, 1, result.stdout + result.stderr);
+        const differences = result.stdout.trim().split('\n').slice(0, -1).map(JSON.parse);
+        assert.deepEqual(differences.map(d => [d.kind, d.side, d.case, d.cell]), (host === 'both' ? ['a', 'b'] : [host === 'vendor' ? 'a' : 'b']).map(side => ['trace-availability', side, 'actions/wait-for', 'visible']));
+      } finally { rmSync(dir, {recursive: true, force: true}); }
+    });
+  }
+});
+
+
+test('uncalibrated getter cells may have two unavailable traces, and legacy service comparisons retain optional tracing', () => {
+  const expected = loadTraceAllowances(fixture);
+  const getter = sourceB.rows.find(r => r.case === 'tabs/discovery' && r.cell === 'list');
+  assert.deepEqual(getter.trace, []);
+  const a = [structuredClone(getter), {case: getter.case, assertion: {ok: true}}], b = structuredClone(a);
+  assert.equal(compareRuns(a, b, {expected, requireTraceParity: true}).ok, true);
+  delete b[0].trace;
+  assert.equal(compareRuns(a, b, {expected, requireTraceParity: true}).ok, true);
+  const legacy = structuredClone(a); legacy[0].trace = [{cdp: 'Runtime.evaluate'}];
+  assert.equal(compareRuns(legacy, b).ok, true);
 });

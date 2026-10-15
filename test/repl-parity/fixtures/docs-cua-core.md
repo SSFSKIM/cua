@@ -165,7 +165,7 @@ Linux input stays bound to the selected window. Sky sends it without activating 
 
 After performing one or more UI actions, call `getAXState()` before deciding what to do next. This keeps you in the current UI state and forces you to re-derive fresh element indices from the latest accessibility text instead of reusing stale ones.
 For token efficiency, when appropriate, the accessibility tree will be returned as a diff from the most previous accessibility tree, listing only the elements that were removed, added, or changed. Prefer this default diff output; pass `{ disableDiffing: true }` only when you need a fresh full accessibility tree. After a screenshot-only observation, request a full tree before relying on accessibility indexes again.
-Linux always return full accessibility state. Linux reports the tree source. `at_spi` elements support the actions listed in the tree; `x11` fallback elements are observation-only, so use a screenshot and window-relative coordinates for input.
+Linux always returns full accessibility state. Linux reports the tree source. `at_spi` elements support the actions listed in the tree; `x11` fallback elements are observation-only, so use a screenshot and window-relative coordinates for input.
 Minimize model and tool round trips while retaining fresh UI state:
 
 - Batch deterministic actions and the resulting `getAXState()` into one call. You may interact with the UI and return the updated state in that same call, so this does not require a separate tool call.
@@ -199,7 +199,7 @@ await target.getAXState();
 
 - For browser tabs, `typeText`, `paste`, and `pressKey` take an optional element index as their first argument and focus that element before sending input. Pass `null` to use the currently focused element.
 - For efficiency, prefer element index based actions over coordinate actions whenever an accessibility element is available. For native apps and tabs that support coordinate input, use screenshots and coordinates when AX actions fail. For DOM-only tabs, use Playwright locators. You can also get a screenshot if you need visual context.
-- macOS app `paste` uses the system pasteboard then restores the user's previous clipboard contents. Linux app `paste` support only `text` and use the platform's native text input. Browser `paste` does not restore clipboard contents, and its `md` format inserts Markdown source as plain text. Specify `text`, `md`, or `html` explicitly where supported. Prefer `paste` for formatted content and multiline text.
+- macOS app `paste` uses the system pasteboard then restores the user's previous clipboard contents. Linux app `paste` supports only `text` and uses the platform's native text input. Browser `paste` does not restore clipboard contents, and its `md` format inserts Markdown source as plain text. Specify `text`, `md`, or `html` explicitly where supported. Prefer `paste` for formatted content and multiline text.
 - Native app `scroll` accepts a page count on macOS. On Linux, omit the distance for the native default or pass `{ pixels: 500 }`. Linux element clicks support one left or right click. Use coordinates for other click options.
 - `selectText` is unavailable on Linux. `setValue` is unavailable on Linux. These methods throw before sending input. Use the supported bound actions to edit the UI and verify the result.
 - If the UI is not behaving as expected, try fetching the latest `getAXState()` to make sure you have the latest context.

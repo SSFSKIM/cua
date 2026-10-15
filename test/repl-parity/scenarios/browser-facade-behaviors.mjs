@@ -48,21 +48,20 @@ add('cells/facade/dom-only-input-refusal','/controls.html',focus+take(refused),
 
 // The pinned screenshot contract is JPEG. Validate returned Uint8Array data against a direct capture, but emit
 // only safe booleans: screenshot bytes and raw DOM snapshots never enter the MCP observation.
-const imageCheck=`function imageSize(bytes){
+const imageCheck=`const {imageHash}=await import('@@CHECKOUT@@/scripts/browser-parity/image-hash.mjs');
+function imageInfo(bytes){
  if(!(bytes instanceof Uint8Array)||bytes.length<=100||bytes[0]!==255||bytes[1]!==216)return null;
  if(bytes[bytes.length-2]!==255||bytes[bytes.length-1]!==217)return null;
- for(let offset=2;offset+9<bytes.length;){
-  if(bytes[offset]!==255){offset++;continue;}
-  const marker=bytes[offset+1];
-  if(marker>=192&&marker<=207&&![196,200,204].includes(marker)){
-   const height=bytes[offset+5]*256+bytes[offset+6],width=bytes[offset+7]*256+bytes[offset+8];
-   return width>0&&height>0&&width*height<=40000000?{width,height}:null;
-  }
-  const length=bytes[offset+2]*256+bytes[offset+3];if(length<2)return null;offset+=2+length;
- }
- return null;
+ // JPEG signature establishes MIME; the shared decoder validates the compressed content and hashes luminance.
+ try{return {...imageHash(bytes),mimeType:'image/jpeg'};}catch{return null;}
 }
-const baseline=imageSize(await tab.screenshot());`;
+function imagesMatch(first,second){
+ if(first===null||second===null||first.mimeType!==second.mimeType||first.width!==second.width||first.height!==second.height)return false;
+ let bits=BigInt('0x'+first.hash)^BigInt('0x'+second.hash),distance=0;
+ for(;bits;bits>>=1n)distance+=Number(bits&1n);
+ return distance<=4;
+}
+const baseline=imageInfo(await tab.screenshot());`;
 const stateCheck=`typeof state==='string'&&['Read fixture','Alpha','Beta','Enabled'].every(text=>state.includes(text))`;
 add('cells/facade/emit-false-state','/read.html',`
 const axAbsent=tab.ax===undefined;
@@ -75,17 +74,17 @@ return {axAbsent,string:typeof state==='string',fixture:${stateCheck},snapshotMa
 add('cells/facade/emit-false-screenshot','/screenshot.html',imageCheck+`
 const axAbsent=tab.ax===undefined;
 const returned=await tab.getScreenshot({emit:false});
-const size=imageSize(returned);
+const size=imageInfo(returned);
 const caption=await tab.playwright.locator('p').textContent();
-return {axAbsent,bytes:returned instanceof Uint8Array,nonempty:returned.byteLength>100,image:size!==null,baselineMatches:baseline!==null&&size!==null&&size.width===baseline.width&&size.height===baseline.height,caption};`,
+return {axAbsent,bytes:returned instanceof Uint8Array,nonempty:returned.byteLength>100,image:size!==null,baselineMatches:imagesMatch(baseline,size),caption};`,
  {axAbsent:true,bytes:true,nonempty:true,image:true,baselineMatches:true,caption:'Parity screenshot'},{image:true});
 add('cells/facade/emit-false-combined','/read.html',imageCheck+`
 const axAbsent=tab.ax===undefined;
 const baselineState=await tab.playwright.domSnapshot();
 const returned=await tab.getAXStateAndScreenshot({emit:false,disableDiffing:true});
-const state=returned?.state,bytes=returned?.screenshot,size=imageSize(bytes);
+const state=returned?.state,bytes=returned?.screenshot,size=imageInfo(bytes);
 const heading=await tab.playwright.locator('h1').textContent();
-return {axAbsent,state:typeof state==='string',fixture:${stateCheck},snapshotMatches:state===baselineState,bytes:bytes instanceof Uint8Array,nonempty:bytes?.byteLength>100,image:size!==null,baselineMatches:baseline!==null&&size!==null&&size.width===baseline.width&&size.height===baseline.height,heading};`,
+return {axAbsent,state:typeof state==='string',fixture:${stateCheck},snapshotMatches:state===baselineState,bytes:bytes instanceof Uint8Array,nonempty:bytes?.byteLength>100,image:size!==null,baselineMatches:imagesMatch(baseline,size),heading};`,
  {axAbsent:true,state:true,fixture:true,snapshotMatches:true,bytes:true,nonempty:true,image:true,baselineMatches:true,heading:'Read fixture'},{image:true});
 
 export default validateRegistry(scenarios);

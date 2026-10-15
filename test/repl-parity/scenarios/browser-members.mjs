@@ -32,6 +32,7 @@ function add(member,source,witnessCells,options={}) {
  if(!witnessCells.every(label=>source.cells.some(c=>c.label===label)))throw new Error(`${id}: invalid witness`);
  scenarios.push({...due,backend:'chrome',browserCase:true,corpusCase:source.id,witnessCells,
   setup:{...source.setup,open:'goto',...options.setup},
+  ...(source.cleanupDownload?{cleanupDownload:true}:{}),
   ...(options.imageMode?{imageMode:options.imageMode,screenshotTolerance:source.screenshotTolerance??4}:{}),
   cells:source.cells.map(cell=>({...cell,raw:true,code:cellCode(cell)})),
   async assert(input) {
@@ -80,8 +81,8 @@ for(const member of ['tab/dev','tabdevapi/logs'])add(member,logs,['logs']);
 for(const [member,label] of [
  ['contentapi/exportgsuite','gsuite'],['contentapi/exportyoutubetranscript','youtube'],['tab/content','gsuite'],
 ])add(member,exports,[label]);
-// Reuse the corpus's download/chooser outcomes, then remove only this handle's attested fixture artifact.
-// Repeated API cases must not accumulate files and exhaust Chrome's ordinary collision-name variants.
+// Reuse the corpus's download/chooser outcomes, then attest this handle's artifact for private harness cleanup.
+// The kernel has no write permission to Downloads; the harness removes only the same descriptor-attested file.
 const ownedPath=cell('path',String.raw`
 const path=await download.path({timeoutMs:10000}),expected=${fixtureDownloadNamePattern};
 if(typeof path!=='string'||!path.startsWith('/')||!expected.test(path.split('/').at(-1)))throw new Error('Unexpected fixture download path');
@@ -96,7 +97,7 @@ try{
  const codes=['ENOENT','EACCES','EPERM','ELOOP','EISDIR','ENOTDIR'];
  throw new Error('Fixture download attestation refused ('+(codes.includes(error?.code)?error.code:'validation')+')');
 }`);
-const ownedChooser={...chooser,id:'downloads/chooser-owned-cleanup',cells:[...chooser.cells.map(c=>c.label==='path'?ownedPath:c),cell('cleanup',String.raw`
+const ownedChooser={...chooser,cleanupDownload:true,id:'downloads/chooser-owned-cleanup',cells:[...chooser.cells.map(c=>c.label==='path'?ownedPath:c),cell('cleanup',String.raw`
 try{
  if(typeof uploadPath!=='string'||typeof uploadName!=='string')throw new Error('fixture not attested');
  if((await tab.playwright.locator('#filename[data-recorded=yes]').textContent())!==uploadName)throw new Error('fixture selection not acknowledged');
@@ -104,12 +105,13 @@ try{
  if(typeof path!=='string'||!path.startsWith('/')||!expected.test(path.split('/').at(-1)))throw new Error('fixture path refused');
  const fs=await import('node:fs/promises'),constants=(await import('node:fs')).constants;
  if(await fs.realpath(path)!==uploadPath)throw new Error('fixture path changed');
- const entry=await fs.lstat(path);if(!entry.isFile()||entry.isSymbolicLink()||entry.size!==16)throw new Error('fixture file refused');
+ const entry=await fs.lstat(path,{bigint:true});if(!entry.isFile()||entry.isSymbolicLink()||entry.size!==16n)throw new Error('fixture file refused');
  const file=await fs.open(path,constants.O_RDONLY|constants.O_NOFOLLOW);let original;
- try{original=await file.stat();if((await file.readFile('utf8'))!=='parity download\n')throw new Error('fixture content differs');}finally{await file.close();}
- const current=await fs.lstat(path);
- if(!current.isFile()||current.isSymbolicLink()||current.dev!==original.dev||current.ino!==original.ino)throw new Error('fixture file changed');
- await fs.unlink(path);return true;
+ try{original=await file.stat({bigint:true});if(original.size!==16n||(await file.readFile('utf8'))!=='parity download\n')throw new Error('fixture content differs');}finally{await file.close();}
+ const current=await fs.lstat(path,{bigint:true});
+ if(!current.isFile()||current.isSymbolicLink()||current.size!==16n||current.dev!==original.dev||current.ino!==original.ino)throw new Error('fixture file changed');
+ globalThis.__replDownloadCleanup={kind:'repl-parity-fixture-download',newHandle:true,uploadAcknowledged:true,path,realPath:uploadPath,basename:uploadName,dev:original.dev.toString(),ino:original.ino.toString(),size:16};
+ return true;
 }catch(error){
  const codes=['ENOENT','EACCES','EPERM','ELOOP','EISDIR','ENOTDIR'];
  throw new Error('Fixture download cleanup refused ('+(codes.includes(error?.code)?error.code:'validation')+')');

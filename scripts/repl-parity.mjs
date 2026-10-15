@@ -84,7 +84,7 @@ export async function main(argv=process.argv.slice(2)){
     if(scenario.backend==='chrome'){
       if(!clients.has('chrome'))clients.set('chrome',await pool.open(apiCommand({...prepared,host:v.host})));
       if(scenario.browserCase&&!browserFixture){browserFixture=await fixtureProcess({device:prepared.device,checkout:prepared.checkout,port:48733});resources.push(browserFixture);}
-      const assertion=await runBrowserApiScenario(scenario,{client:clients.get('chrome'),fixture:browserFixture,instanceId:prepared.extensionInstanceId,host:v.host,checkout:prepared.checkout,emit,profiles});if(!assertion.ok)failed=true;continue;
+      const assertion=await runBrowserApiScenario(scenario,{client:clients.get('chrome'),fixture:browserFixture,instanceId:prepared.extensionInstanceId,host:v.host,checkout:prepared.checkout,emit,profiles,prepared});if(!assertion.ok)failed=true;continue;
     }
     if(scenario.backend==='binder-double'){
       if(!clients.has('binder-double'))clients.set('binder-double',await pool.open(apiCommand({...prepared,host:v.host},{lane:'binder-double'})));

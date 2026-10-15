@@ -3193,8 +3193,35 @@
   {
     "field": "meta.cua/replHost",
     "cases": [
+      "api/browser-playwrightlocator/all"
+    ],
+    "cells": [
+      "all-text",
+      "attribute",
+      "count",
+      "enabled",
+      "inner",
+      "locator-contract-collection-cache",
+      "read-all",
+      "text",
+      "visible"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
       "api/browser-playwrightapi/locator",
-      "api/browser-playwrightlocator/all",
       "api/browser-playwrightlocator/alltextcontents",
       "api/browser-playwrightlocator/count",
       "api/browser-playwrightlocator/first",
@@ -3255,7 +3282,31 @@
   {
     "field": "meta.cua/replHost",
     "cases": [
-      "api/browser-playwrightlocator/click",
+      "api/browser-playwrightlocator/click"
+    ],
+    "cells": [
+      "check",
+      "click",
+      "fill",
+      "locator-contract-diagnostics-sampling",
+      "press",
+      "select"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
       "api/browser-playwrightlocator/fill",
       "api/browser-playwrightlocator/press",
       "api/browser-playwrightlocator/presssequentially",
@@ -3307,6 +3358,7 @@
       "api/browser-playwrightlocator/waitfor"
     ],
     "cells": [
+      "locator-contract-diagnostics-no-matches",
       "visible"
     ],
     "vendor": {
@@ -3659,9 +3711,61 @@
     "field": "meta.cua/replHost",
     "cases": [
       "api/browser-playwrightlocator/and",
-      "api/browser-playwrightlocator/filter",
-      "api/browser-playwrightlocator/last",
       "api/browser-playwrightlocator/or"
+    ],
+    "cells": [
+      "and",
+      "filter",
+      "last",
+      "locator-contract-cross-tab",
+      "locator-contract-invalid-operand",
+      "or"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/filter"
+    ],
+    "cells": [
+      "and",
+      "filter",
+      "last",
+      "locator-contract-cross-tab-has",
+      "locator-contract-cross-tab-hasnot",
+      "locator-contract-invalid-has",
+      "locator-contract-invalid-hasnot",
+      "locator-contract-invalid-visible",
+      "locator-contract-same-tab",
+      "or"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightlocator/last"
     ],
     "cells": [
       "and",
@@ -3701,7 +3805,43 @@
       "api/browser-playwrightlocator/getbyplaceholder",
       "api/browser-playwrightlocator/getbyrole",
       "api/browser-playwrightlocator/getbytestid",
-      "api/browser-playwrightlocator/getbytext",
+      "api/browser-playwrightlocator/getbytext"
+    ],
+    "cells": [
+      "f-label",
+      "f-locator",
+      "f-nested",
+      "f-placeholder",
+      "f-role",
+      "f-testid",
+      "f-text",
+      "l-label",
+      "l-locator",
+      "l-placeholder",
+      "l-role",
+      "l-testid",
+      "l-text",
+      "p-label",
+      "p-placeholder",
+      "p-role",
+      "p-testid",
+      "p-text"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
       "api/browser-playwrightlocator/locator"
     ],
     "cells": [
@@ -3718,6 +3858,12 @@
       "l-role",
       "l-testid",
       "l-text",
+      "locator-contract-cross-tab-has",
+      "locator-contract-cross-tab-hasnot",
+      "locator-contract-empty-selector",
+      "locator-contract-invalid-has",
+      "locator-contract-invalid-hasnot",
+      "locator-contract-same-tab",
       "p-label",
       "p-placeholder",
       "p-role",
@@ -4082,7 +4228,6 @@
       "capability-host/browser-axapi/write",
       "capability-host/browser-browser/user",
       "capability-host/browser-browseruser/opentabs",
-      "capability-host/browser-contentapi/export",
       "capability-host/browser-tab/markdeliverable",
       "capability-host/browser-tab/markhandoff",
       "capability-host/browser-tab/requestmanualhandoff",
@@ -4150,7 +4295,6 @@
     "cases": [
       "api/browser-cuaapi/downloadmedia",
       "api/browser-domcuaapi/downloadmedia",
-      "api/browser-playwrightapi/elementinfo",
       "api/browser-playwrightapi/elementscreenshot",
       "capability-host/browser-browseruser/claimtab",
       "capability-host/browsercapabilitycollection/get",
@@ -4228,6 +4372,37 @@
       "type-validation-2",
       "validation-1",
       "validation-2"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "capability-host/browser-contentapi/export"
+    ],
+    "cells": [
+      "exercise",
+      "export-gsuite-csv",
+      "export-gsuite-docx",
+      "export-gsuite-md",
+      "export-gsuite-pdf",
+      "export-gsuite-pptx",
+      "export-gsuite-xlsx",
+      "export-youtube-transcript",
+      "recovery-malformed-envelopes",
+      "recovery-permissive-success",
+      "recovery-valid-error",
+      "setup"
     ],
     "vendor": {
       "present": false
@@ -4384,6 +4559,31 @@
     ],
     "cells": [
       "hidden-reflection"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "api/browser-playwrightapi/elementinfo"
+    ],
+    "cells": [
+      "exercise",
+      "locator-boundary-action-diagnostics",
+      "locator-boundary-cache-lifecycle",
+      "locator-boundary-cross-tab",
+      "setup",
+      "validation-1"
     ],
     "vendor": {
       "present": false

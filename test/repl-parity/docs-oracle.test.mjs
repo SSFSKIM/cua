@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import docsScenarios from './scenarios/docs-profiles.mjs';
 import {docsSource, transformCoreDocument, coreDocument, normalizeSelectedBrowserDocument, projectDocumentationRow, transformDocumentContent, assertProfileObservation} from '../../scripts/repl-parity/docs-oracle.mjs';
 const fixture=name=>readFileSync(new URL(`./fixtures/docs-${name}`,import.meta.url),'utf8');
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -76,4 +77,23 @@ test('explicit content projection handles consecutive complete bootstrap documen
  const corruptPolicy=vendor.replace('Computer Use Confirmations Policy','Changed Confirmations Policy');
  assert.equal(project(vendor+corruptPolicy),own+corruptPolicy,'second policy corruption must remain visible');
  assert.notEqual(project(vendor+vendor+'changed tail'),own+own+'tail');
+});
+
+test('Table 3 amendment permits only the two approved grammar repairs and rejects the old literal',()=>{
+ const approved=fixture('cua-core.md'),policy=fixture('vendor-confirmations.md');
+ const repairs=[
+  ['Linux always return full accessibility state.','Linux always returns full accessibility state.'],
+  ["Linux app `paste` support only `text` and use the platform's native text input.","Linux app `paste` supports only `text` and uses the platform's native text input."],
+ ];
+ for(const [old,repaired] of repairs){assert.ok(approved.includes(repaired),'golden must carry the exact approved repair');assert.ok(!approved.includes(old));}
+ assert.equal(transformCoreDocument(fixture('vendor-core.md')),approved);
+ const scenario=docsScenarios.find(s=>s.id==='cells/documentation/first-call-core-policy-bytes');
+ const check=(document,host='cua')=>scenario.assert({host,results:[{isError:false,content:[{type:'text',text:document+'\n'+policy},{type:'text',text:'DOCS_DONE'}]}]});
+ assert.deepEqual(check(approved),{ok:true});
+ const legacy=repairs.reduce((text,[old,repaired])=>text.replace(repaired,old),approved);
+ assert.throws(()=>check(legacy),'old literal must no longer satisfy the own-host oracle');
+ for(const [old,repaired] of repairs)assert.throws(()=>check(approved.replace(repaired,old)),'both repairs are required');
+ assert.throws(()=>check(approved.replace('Linux reports the tree source.','Linux reports its tree source.')),'unrelated prose repair remains forbidden');
+ assert.throws(()=>check(approved.replace("platform's native text input.",'platform’s native text input.')),'the amendment preserves the ASCII apostrophe');
+ assert.deepEqual(check(fixture('vendor-core.md'),'vendor'),{ok:true},'pinned vendor observations stay unamended');
 });

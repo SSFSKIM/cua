@@ -539,6 +539,14 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Some included APIs (certain AX, management and content members) are proven at the facade only, because the retained cua browser service cannot advertise them.
+  - Those members run in M0's remote capability-host lane against the real selected host and the real vendor or owned client. A source-grounded command-transport fixture replies, and each reply cites its vendor source lines.
+  - The inventory rows and cases are labelled boundary-double, and the evidence states that they prove the facade only and add no new service capability.
+  - Members the real service does advertise must run against that real service.
+  - Hidden-member cases use an absent or disabled manifest.
+  - The macOS binder-double seam is unchanged.
+  Rationale: Table 1 requires every member's executable proof, including members the service never advertises. A facade-level proof at the transport seam is the most that is honest, and it must not read as service coverage.
+  Date/Author: 2026-10-15, session ruling relayed by M3 task 1's executor, recorded by the plan-executor.
 - Decision: M3 runs as four tasks in one PR.
   - **Task 1 (astra, sibling worktree, in parallel): the M3 oracle.**
     - Executable cases for every Table 1 member and type due M3. Browser members run live. macOS binder members use source-grounded doubles, with native Linux rows staying M4. Capability-gated members get both hidden-member assertions and advertised cases through the remote capability-host lane.

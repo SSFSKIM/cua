@@ -539,6 +539,12 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Acceptance 6's M3 slice (browser substitution) is proven through the real client in the remote capability-host lane.
+  - The rows are browser fill/AX actions at their supported shapes, refusal before read, and sanitized post-read errors. They run with the real selected host and client, a synthetic sentinel store in the lane's scratch HOME, and a fake backend that records only booleans, labels and hashes.
+  - M0's 27 source/service-double secret rows move to `--suite secrets` and stay labelled fake. They are never counted as live proof.
+  - Native text-method substitution is M4.
+  Rationale: The comparator rightly refuses fake rows as live evidence. The capability lane is the only place where real-client substitution can run without touching the owner's secret store.
+  Date/Author: 2026-10-15, plan-executor assignment to M3 task 1.
 - Decision: M3 task 2 as built.
   - **EOF drain.** At EOF the host withdraws unanswered elicitations with `notifications/cancelled`. The worker gets an honest error sentence rather than a fabricated `cancel` action, and nothing is granted. Budget suspensions end, so a silent worker's cell times out on its remaining budget. Each admitted execution gets a drain deadline (remaining budget + after-code hook bound + turn margin + 2 s) and then takes the forced-shutdown path.
   - **Browser client.** Ported mechanically into one file, `src/cua-api/browser-client.mjs`, keeping the bundle's local names until #120.

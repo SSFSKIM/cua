@@ -9,7 +9,8 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
 | M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | merged (5722341) |
-| M3 | feat/own-repl-host-m3 | https://github.com/SSFSKIM/cua/pull/140 | whole-branch reviewer-high correct |
+| M3 | feat/own-repl-host-m3 | https://github.com/SSFSKIM/cua/pull/140 | merged (73598f8) |
+| M4 | feat/own-repl-host-m4 | (PR pending) | whole-branch fix wave |
 
 ## Log
 
@@ -79,6 +80,33 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
     - Corpus download guards accept Chrome's timestamp collision name.
     - Rulings: `REPL_HOST_VERSION` is bumped at M4; browser-id mapping and locator calibration become oracle inputs for M4/M5.
 - 2026-10-15 M3 whole-branch reviewer-high (5722341..3cf0469): "correct", no material findings. Task 4 review fix (MAWS per-session source records) re-reviewed clean. Gates at the head: plain `npm test` 2252/0/150; with `CUA_NODE` 2326/0/76 on re-run (first run had one load-sensitive failure at load average ~37, tracked in tech-debt-tracker.md); test:mods 32; validate ok with the known warning.
+
+- 2026-10-15 M4 in three tasks.
+  - **Task 1, the Linux oracle** (astra executor in a sibling worktree; sol task reviews; six waves).
+    - Built: native/ cases with reversible action witnesses; native secret cases; browser-id identity mapping (carried from M3); the H4-home provenance; cell-level pending for #141; case configurations scoped per case; Chrome launch facts.
+    - nativePipe expiry: unreachable live on both platforms (the vendor's connect is non-blocking and gets EAGAIN at once), so it is proven by a unit test.
+    - Review fixes:
+      - no-op drag, scroll and click passed;
+      - the config comparison broke against legacy controls;
+      - the pending projection dropped item siblings;
+      - the AX tree grammar was too weak, then too strict;
+      - the argv provenance leaked.
+    - Vendor controls at a5bb1cf: 493 cases (490 covered), 0 differences, 0 allowances.
+  - **Task 2, the port** (opus; clean): ApprovalStorage no-callers verdict; Linux native route through the owned worker; native secrets; host 0.4.0.
+  - **Task 3, live runs** (opus; four waves).
+    - Own `--suite all` on Linux: 0 unexpected against the vendor (a5ccc1b). Acceptance runners PASS.
+    - nativePipe: vendor-faithful errors via per-platform strerror; a reader reset closes with its error. A mini re-check showed 0 differences.
+    - Native baseline: diagnostic only, recorded under load average 80–250 (session ruling).
+    - Orphaned own-host tree, found by the session: fixed with a fail-closed lifeline FIFO. Verified under the real macOS scoped sandbox: children gone 209 ms after a supervisor SIGKILL; confinement 0 differences.
+    - Test teardown now captures ownership before any disruption.
+  - **Environment:**
+    - The VM's default home is vendor-routed, so runs use the H4 home.
+    - `me` went host_not_live and needed "Allow access to file URLs".
+    - VM Chrome scroll gestures stall (#141).
+    - The session stopped the VM after task 3.
+- 2026-10-15 M4 whole-branch reviewer-high (73598f8..5359ace): two P2, sent to the task 3 executor.
+  - The lifeline check could pass on an empty child set.
+  - Shell injection in a test fixture.
 
 ## Environmental friction
 

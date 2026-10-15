@@ -319,3 +319,22 @@ test('a forced shutdown that arrives while a policy change stops the old kernel 
   await supervisor.closed;
   assert.deepEqual(launched, ['disabled'], 'no kernel was launched after the shutdown began');
 });
+
+test('both children get the host\'s time zone as TZ, so a sandboxed first local-time use never asks the OS (a blocking XPC lookup under the sandbox)', async () => {
+  const {hostSettings} = await import('../../src/repl-host/supervisor.mjs');
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const settings = hostSettings({CUA_REPL_NODE_PATH: '/usr/bin/node', HOME: '/h'}, {cwd: '/w'});
+  assert.equal(settings.kernelEnv.TZ, zone);
+  assert.equal(settings.workerEnv.TZ, zone);
+  const given = hostSettings({CUA_REPL_NODE_PATH: '/usr/bin/node', TZ: 'Asia/Seoul'}, {cwd: '/w'});
+  assert.deepEqual([given.kernelEnv.TZ, given.workerEnv.TZ], ['Asia/Seoul', 'Asia/Seoul'], 'a TZ already in the host\'s environment is kept');
+  const unknown = hostSettings({CUA_REPL_NODE_PATH: '/usr/bin/node'}, {cwd: '/w', timeZone: () => 'Etc/Unknown'});
+  assert.equal(Object.hasOwn(unknown.kernelEnv, 'TZ'), false, 'an undetermined zone is left to the child');
+});
+
+test('a cell\'s local time is the host\'s', own, async t => {
+  const host = await startHost(t, {node});
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const seen = JSON.parse(texts(await host.js('nodeRepl.write(JSON.stringify({zone: Intl.DateTimeFormat().resolvedOptions().timeZone, offset: new Date(Date.UTC(2026, 0, 15)).getTimezoneOffset(), iso: new Date(0).toISOString()}))'))[0]);
+  assert.deepEqual(seen, {zone, offset: new Date(Date.UTC(2026, 0, 15)).getTimezoneOffset(), iso: '1970-01-01T00:00:00.000Z'});
+});

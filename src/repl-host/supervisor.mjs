@@ -48,8 +48,9 @@
 // (the launcher's), CUA_REPL_TRUSTED_SERVICES and CUA_REPL_TRUSTED_RPC_ENABLED (the worker and cells' rpc),
 // CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS, CUA_REPL_TOOL_OVERRIDES (the tool text, ./tools.mjs), and for the kernel
 // CUA_REPL_JS_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST (and the names it lists), CUA_REPL_NODE_MODULE_DIRS. The
-// kernel's environment is only these and HOME, PATH, TMPDIR, TMP and LC_ALL, never the host's own; the worker, trusted
-// code, gets the host's whole (already allowlisted) environment, as the vendor's does.
+// kernel's environment is only these and HOME, PATH, TMPDIR, TMP, LC_ALL and TZ (the host's zone, hostSettings), never
+// the host's own; the worker, trusted code, gets the host's whole (already allowlisted) environment and TZ, as the
+// vendor's does.
 import {randomUUID} from 'node:crypto';
 import {delimiter, dirname, isAbsolute} from 'node:path';
 import {createInterface} from 'node:readline';
@@ -83,8 +84,16 @@ const hostMarker = {host: 'cua', version: REPL_HOST_VERSION};
 export const sortedJson = value => (Array.isArray(value) ? value.map(sortedJson)
   : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, sortedJson(value[key])])) : value);
 
-// The host's settings from its environment.
-export function hostSettings(env, {cwd}) {
+// The host's time zone as an IANA name, or null when the OS gives none. Resolved here, outside the sandbox.
+const hostTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// The host's settings from its environment. Both children get TZ: a Node process with no TZ asks the OS for its zone
+// on its first local-time use (ICU's detectHostTimeZone -> tzsetwall -> notify_register_tz -> an XPC bootstrap
+// lookup), and under the macOS sandbox that lookup can block for good: observed on the mini, 2026-10-15, as a kernel
+// stuck in Date.prototype.toISOString while the browser facade converted a history query's dates, about one run in
+// fifteen. With TZ the zone comes from the environment; it is the host's own zone, so local time is unchanged, and
+// cells never see the kernel's process environment.
+export function hostSettings(env, {cwd, timeZone = hostTimeZone}) {
   const node = env.CUA_REPL_NODE_PATH;
   if (typeof node !== 'string' || !isAbsolute(node)) throw new Error('CUA_REPL_NODE_PATH must be the absolute path of the kernel\'s Node');
   const codexCli = env.CODEX_CLI_PATH && isAbsolute(env.CODEX_CLI_PATH) ? env.CODEX_CLI_PATH : null;
@@ -103,6 +112,8 @@ export function hostSettings(env, {cwd}) {
   }
   const pipeTimeout = Number(env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS);
   const workerEnv = Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string'));
+  const zone = typeof env.TZ === 'string' && env.TZ ? env.TZ : timeZone();
+  if (typeof zone === 'string' && zone && zone !== 'Etc/Unknown') kernelEnv.TZ = workerEnv.TZ = zone;
   return {node, codexCli, codexHome: env.CODEX_HOME ?? null, workingDir: cwd, kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,

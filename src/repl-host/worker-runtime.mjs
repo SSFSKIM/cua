@@ -13,6 +13,7 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
+import { lifelineWatched } from "./lifeline.mjs";
 
 // cua: the process's time zone is settled now, while it starts. A sandboxed process's first local-time use asks
 // launchd for the notification service (ICU's host time-zone detection -> tzset -> notify_register_tz ->
@@ -398,8 +399,15 @@ export function createWorkerRuntime({ cwd, env, homeDir, tmpDir }) {
 
   function listen(handleMessage) {
     // cua: the process has loaded (its time zone settled above) and now reads work; the supervisor holds work for it
-    // until this arrives and replaces a child that never sends it (src/repl-host/supervisor.mjs).
-    send({ type: "runtime_ready" });
+    // until this arrives and replaces a child that never sends it (src/repl-host/supervisor.mjs). A lifeline the
+    // supervisor names must be watched first (./lifeline.mjs): a child that cannot watch it says why on stderr, which
+    // the supervisor's exit diagnostic carries, and ends instead of running unprotected.
+    lifelineWatched().then(
+      () => send({ type: "runtime_ready" }),
+      (error) => {
+        process.stderr.write(`${error.message}\n`, () => process.exit(1));
+      },
+    );
     let pendingInputSegments = [];
 
     function handleInputFrame(frame) {

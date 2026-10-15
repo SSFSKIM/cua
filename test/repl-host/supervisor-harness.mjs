@@ -13,12 +13,14 @@ export const SUPERVISOR = fileURLToPath(new URL('../../src/repl-host/supervisor.
 const DEADLINE_MS = 20_000;
 
 // The launcher double. `refuse`: it prints to stderr and exits 73 without running anything, like a sandbox that cannot
-// start.
-export function sandboxDouble(dir, {refuse = false} = {}) {
+// start. `denyLifeline` ('kernel' | 'worker'): for that child it takes read access to the child's lifeline FIFO away
+// before running it, as a sandbox policy that denied the path would.
+export function sandboxDouble(dir, {refuse = false, denyLifeline = null} = {}) {
   const path = join(dir, refuse ? 'refusing-sandbox' : 'sandbox');
+  const deny = denyLifeline ? `case "$*" in *${denyLifeline === 'worker' ? 'trusted-worker' : 'kernel'}.mjs*) chmod 000 "\${CUA_REPL_LIFELINE#*:*:}";; esac\n` : '';
   writeFileSync(path, refuse
     ? '#!/bin/sh\nmkdir -p "$CODEX_HOME/launches" && printf refused > "$CODEX_HOME/launches/$$"\nprintf \'fixture sandbox launcher refused\\n\' >&2\nexit 73\n'
-    : '#!/bin/sh\nmkdir -p "$CODEX_HOME/launches"\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$CODEX_HOME/launches/$$"\n'
+    : '#!/bin/sh\nmkdir -p "$CODEX_HOME/launches"\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$CODEX_HOME/launches/$$"\n' + deny
       + 'while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\nshift\n"$@"\nexit $?\n');
   chmodSync(path, 0o755);
   return path;
@@ -29,6 +31,12 @@ export function launches(codexHome) {
   const dir = join(codexHome, 'launches');
   if (!existsSync(dir)) return [];
   return readdirSync(dir).map(Number).sort((a, b) => a - b).map(pid => ({pid, argv: readFileSync(join(dir, String(pid)), 'utf8').split('\n').slice(0, -1)}));
+}
+
+// Whether `p` (from descendants()) is still that process: the same pid running the same command line, so a reused
+// pid is never signalled.
+function sameProcess(p) {
+  try { return execFileSync('ps', ['-o', 'command=', '-p', String(p.pid)], {encoding: 'utf8'}).trim() === p.command; } catch { return false; }
 }
 
 export function alive(pid) {
@@ -58,7 +66,7 @@ export const SCOPED = cwd => ({type: 'managed', file_system: {type: 'restricted'
 // services, written as <root>/trusted/<name>.mjs (the one trusted code path) and registered with rpc enabled.
 // `capabilities` are the client's in initialize; `onServerRequest(msg)` answers the requests the host sends the client
 // (elicitations), returning the reply's {result} or {error}, or nothing to leave it unanswered.
-export async function startHost(t, {node, env = {}, sandbox = 'double', initialize = true, services = null, capabilities = {}, onServerRequest = () => undefined} = {}) {
+export async function startHost(t, {node, env = {}, sandbox = 'double', denyLifeline = null, initialize = true, services = null, capabilities = {}, onServerRequest = () => undefined} = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-host-')));
   const cwd = join(root, 'run');
   const codexHome = join(root, 'codex');
@@ -72,7 +80,7 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', initiali
       CUA_REPL_TRUSTED_CODE_PATHS: trusted, CUA_REPL_TRUSTED_RPC_ENABLED: '1'});
   }
   const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CODEX_HOME: codexHome, CUA_REPL_NODE_PATH: node, ...serviceEnv,
-    ...(sandbox ? {CODEX_CLI_PATH: sandboxDouble(root, {refuse: sandbox === 'refusing'})} : {})};
+    ...(sandbox ? {CODEX_CLI_PATH: sandboxDouble(root, {refuse: sandbox === 'refusing', denyLifeline})} : {})};
   const childEnv = Object.fromEntries(Object.entries({...base, ...env}).filter(([, v]) => v !== undefined));
   const child = spawn(node, ['--disable-sigusr1', SUPERVISOR], {cwd, env: childEnv, stdio: ['pipe', 'pipe', 'pipe']});
   let stderr = '';
@@ -93,11 +101,14 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', initiali
     pending.get(msg.id)?.(msg);
     pending.delete(msg.id);
   });
+  // Processes the test saw below the host (track()): ended at teardown even when the host is gone by then and they
+  // were reparented, so a test that kills the host itself still leaves nothing running.
+  const tracked = new Map();
   t.after(async () => {
-    const owned = descendants(child.pid);
+    const owned = [...descendants(child.pid), ...tracked.values()];
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await exited;
-    for (const p of owned) { try { process.kill(p.pid, 'SIGKILL'); } catch { /* gone */ } }
+    for (const p of owned) { try { if (sameProcess(p)) process.kill(p.pid, 'SIGKILL'); } catch { /* gone */ } }
     rmSync(root, {recursive: true, force: true});
   });
   let nextId = 0;
@@ -117,7 +128,9 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', initiali
     ? {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(cwd).href} : {permissionProfile: SCOPED(cwd), sandboxCwd: pathToFileURL(cwd).href}})});
   const call = (name, args, {mode = 'scoped', extra} = {}) => request('tools/call', {name, arguments: args, _meta: meta(mode, extra)}).then(r => r.result ?? r);
   const js = (code, {timeoutMs, ...rest} = {}) => call('js', {code, ...(timeoutMs ? {timeout_ms: timeoutMs} : {})}, rest);
-  const host = {child, cwd, root, codexHome, tmp, trusted, send, request, call, js, exited, frames, serverRequests, stderr: () => stderr};
+  // Records what runs below the host now -> those processes.
+  const track = () => { const now = descendants(child.pid); for (const p of now) tracked.set(p.pid, p); return now; };
+  const host = {child, cwd, root, codexHome, tmp, trusted, send, request, call, js, exited, frames, serverRequests, track, stderr: () => stderr};
   if (initialize) {
     host.initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities, clientInfo: {name: 'test', version: '0'}});
     send({jsonrpc: '2.0', method: 'notifications/initialized'});

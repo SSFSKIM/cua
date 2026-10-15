@@ -7,7 +7,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {kernelNode} from './kernel-harness.mjs';
-import {alive, descendants, startHost} from './supervisor-harness.mjs';
+import {alive, startHost, texts} from './supervisor-harness.mjs';
 
 const {node, skip} = kernelNode();
 const own = {skip, timeout: 30_000};
@@ -31,7 +31,8 @@ async function hostWith(t, busy) {
   if (busy === 'worker') assert.notEqual((await host.js(rpc("spin-soon"))).isError, true);
   if (busy === 'kernel') assert.notEqual((await host.js(`setTimeout(() => { for (;;) {} }, 100); nodeRepl.write("x")`)).isError, true);
   await delay(400);
-  const children = descendants(host.child.pid);
+  // Registered for teardown before anything disrupts the host, so a failing test leaves nothing reparented.
+  const children = host.track();
   assert.ok(children.some(p => p.command.includes('trusted-worker.mjs')) && children.some(p => p.command.includes('kernel.mjs')), JSON.stringify(children));
   return {host, children};
 }
@@ -65,3 +66,18 @@ test('the lifeline setting reaches neither a trusted service\'s environment nor 
   const result = await host.js(`${rpc('env')} nodeRepl.write(JSON.stringify(Object.keys(nodeRepl.env)));`);
   assert.deepEqual(result.content.map(c => c.text).join(''), '[][]');
 });
+
+for (const denied of ['kernel', 'worker']) {
+  test(`a ${denied} that cannot read its lifeline under its sandbox fails its start visibly; nothing runs unprotected`, own, async t => {
+    const host = await startHost(t, {node, services: SERVICE, denyLifeline: denied});
+    const result = await host.js(rpc('warm'));
+    assert.equal(result.isError, true, JSON.stringify(result));
+    // A kernel's exit diagnostic is the cell's result; a worker's failure reaches the cell as the vendor's sentence
+    // only, and its diagnostic goes to the host's stderr.
+    const LIFELINE = /cua-repl-host lifeline unavailable: .*EACCES/;
+    if (denied === 'kernel') assert.match(texts(result).join('\n'), LIFELINE);
+    else { assert.match(texts(result).join('\n'), /trusted Node process exited unexpectedly/); for (let i = 0; i < 100 && !LIFELINE.test(host.stderr()); i++) await delay(20); assert.match(host.stderr(), LIFELINE); }
+    const left = host.track().filter(p => p.command.includes(denied === 'worker' ? 'trusted-worker.mjs' : 'kernel.mjs') && !/sandbox/.test(p.command));
+    assert.deepEqual(left.map(p => p.command), [], `no ${denied} is left running`);
+  });
+}

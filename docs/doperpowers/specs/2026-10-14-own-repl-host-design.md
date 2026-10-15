@@ -656,6 +656,8 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (2026-10-14): when a trusted-service RPC response crosses the vendor's Rust host (a serde map), its object keys reach the cell sorted: a service returning `{value,meta}` prints `{meta,value}`. Proxy-side elicitation persistence is conditional. An accept without content becomes `{}`. `_meta.persist:'session'` is added only when the client supplied no `_meta` at all; an existing client `_meta` survives without it. Sub-second budget cases need a warm call first, because vendor child startup consumes the first cell's budget.
+  Evidence: M2 task 1's vendor probes on the mini; the own route must reproduce the sorted-key boundary (relayed to M2 task 2).
 - Observation (M2 input, 2026-10-14): `buildLaunch` sets `CUA_REPL_OWNED_GROUP=1`. When the supervisor really is in the anchor's process group, every kernel end, expected or not, freezes and kills the group's other members, sparing the supervisor, the anchor and the supervisor's direct children. This kills reparented descendants of a dead or reset kernel. M2 must exclude the trusted worker's tree from this reaper.
   Evidence: M1 task 2 review fix c6cd0d9, with a real-process regression through `spawnUpstream`.
 - Observation (M5 input, 2026-10-14): the cua-linux VM's system Node is 22.23.3, and its sshd accepts no user environment. Once Linux defaults to the own host at M5, how the resident agent resolves Node becomes a product question: an install-time check plus a `CUA_NODE` setting in the agent's own launcher or job environment, never a shell profile.

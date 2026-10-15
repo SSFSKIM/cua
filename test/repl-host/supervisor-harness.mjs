@@ -54,14 +54,24 @@ export const SCOPED = cwd => ({type: 'managed', file_system: {type: 'restricted'
 ]}, network: 'restricted'});
 
 // Starts a supervisor -> the driver. `env` adds to (or, as undefined, removes from) the host's environment; `sandbox`
-// is 'double' (default), 'refusing' or null (no CODEX_CLI_PATH).
-export async function startHost(t, {node, env = {}, sandbox = 'double', initialize = true} = {}) {
+// is 'double' (default), 'refusing' or null (no CODEX_CLI_PATH). `services` ({name: module source}) are fixture trusted
+// services, written as <root>/trusted/<name>.mjs (the one trusted code path) and registered with rpc enabled.
+// `capabilities` are the client's in initialize; `onServerRequest(msg)` answers the requests the host sends the client
+// (elicitations), returning the reply's {result} or {error}, or nothing to leave it unanswered.
+export async function startHost(t, {node, env = {}, sandbox = 'double', initialize = true, services = null, capabilities = {}, onServerRequest = () => undefined} = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-host-')));
   const cwd = join(root, 'run');
   const codexHome = join(root, 'codex');
   const tmp = join(root, 'tmp');
-  for (const dir of [cwd, codexHome, tmp]) mkdirSync(dir, {mode: 0o700});
-  const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CODEX_HOME: codexHome, CUA_REPL_NODE_PATH: node,
+  const trusted = join(root, 'trusted');
+  for (const dir of [cwd, codexHome, tmp, trusted]) mkdirSync(dir, {mode: 0o700});
+  const serviceEnv = {};
+  if (services) {
+    for (const [name, source] of Object.entries(services)) writeFileSync(join(trusted, `${name}.mjs`), source);
+    Object.assign(serviceEnv, {CUA_REPL_TRUSTED_SERVICES: JSON.stringify(Object.fromEntries(Object.keys(services).map(name => [name, join(trusted, `${name}.mjs`)]))),
+      CUA_REPL_TRUSTED_CODE_PATHS: trusted, CUA_REPL_TRUSTED_RPC_ENABLED: '1'});
+  }
+  const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CODEX_HOME: codexHome, CUA_REPL_NODE_PATH: node, ...serviceEnv,
     ...(sandbox ? {CODEX_CLI_PATH: sandboxDouble(root, {refuse: sandbox === 'refusing'})} : {})};
   const childEnv = Object.fromEntries(Object.entries({...base, ...env}).filter(([, v]) => v !== undefined));
   const child = spawn(node, ['--disable-sigusr1', SUPERVISOR], {cwd, env: childEnv, stdio: ['pipe', 'pipe', 'pipe']});
@@ -70,9 +80,16 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', initiali
   const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({code, signal})));
   const pending = new Map();
   const frames = [];
+  const serverRequests = [];
   createInterface({input: child.stdout}).on('line', line => {
     const msg = JSON.parse(line);
     frames.push(msg);
+    if (msg.method !== undefined) {
+      serverRequests.push(msg);
+      if (msg.id === undefined) return;
+      Promise.resolve(onServerRequest(msg)).then(reply => { if (reply) send({jsonrpc: '2.0', id: msg.id, ...reply}); });
+      return;
+    }
     pending.get(msg.id)?.(msg);
     pending.delete(msg.id);
   });
@@ -100,9 +117,9 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', initiali
     ? {permissionProfile: {type: 'disabled'}, sandboxCwd: pathToFileURL(cwd).href} : {permissionProfile: SCOPED(cwd), sandboxCwd: pathToFileURL(cwd).href}})});
   const call = (name, args, {mode = 'scoped', extra} = {}) => request('tools/call', {name, arguments: args, _meta: meta(mode, extra)}).then(r => r.result ?? r);
   const js = (code, {timeoutMs, ...rest} = {}) => call('js', {code, ...(timeoutMs ? {timeout_ms: timeoutMs} : {})}, rest);
-  const host = {child, cwd, root, codexHome, tmp, send, request, call, js, exited, frames, stderr: () => stderr};
+  const host = {child, cwd, root, codexHome, tmp, trusted, send, request, call, js, exited, frames, serverRequests, stderr: () => stderr};
   if (initialize) {
-    host.initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'test', version: '0'}});
+    host.initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities, clientInfo: {name: 'test', version: '0'}});
     send({jsonrpc: '2.0', method: 'notifications/initialized'});
   }
   return host;

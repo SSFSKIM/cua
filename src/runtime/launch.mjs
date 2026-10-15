@@ -82,12 +82,21 @@
 //   CUA_REPL_TRUSTED_CODE_PATHS              src/repl-host (the host's own code), then what NODE_REPL_TRUSTED_CODE_PATHS
 //                                            lists for the vendor; the scoped preflight protects these
 //                                            (src/runtime/sandbox.mjs trustedCodePathsOf)
-//   CUA_REPL_TRUSTED_SERVICES                with services registered, as NODE_REPL_TRUSTED_SERVICES (#116 M2's worker)
+//   CUA_REPL_TRUSTED_SERVICES                with services registered, as NODE_REPL_TRUSTED_SERVICES: what the trusted
+//                                            worker (src/repl-host/trusted-worker.mjs) loads; every service must lie
+//                                            inside a trusted code path by real path (sandbox.mjs
+//                                            assertTrustedServicesContained refuses the launch otherwise)
+//   CUA_REPL_TRUSTED_RPC_ENABLED=1           with services registered: cells get nodeRepl.rpc
 //   CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS=1000
 //   CUA_REPL_OWNED_GROUP=1                   the supervisor runs in the process group the proxy's anchor owns
 //                                            (src/mcp/upstream.mjs), so it may reap what a finished kernel left there
+//   CUA_REPL_NODE_MODULE_DIRS                the vendor module tree, where the banner's facade import resolves
+//   CUA_REPL_JS_BANNER                       the vendor launcher's banner, importing the unmodified vendor facade
+//                                            (@oai/cua/tinyskyAlt) until #116 M3 owns it
+//   CUA_REPL_UNTRUSTED_ENV_ALLOWLIST         CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV, as the vendor launcher adds
+//   CUA_REPL_TOOL_OVERRIDES                  the vendor launcher's tool text for this platform and these surfaces
+//                                            (src/repl-host/instructions.mjs), as NODE_REPL_TOOL_OVERRIDES
 //   NODE_REPL_DISABLE_ANALYTICS=1            kept: the retained vendor sky service reads it
-// M1's host has no first-cell banner, module directories or cell environment allowlist: it runs raw cells.
 //
 // The working directory is <home>/run/<sessionId>; model cells can see it, so it is never the caller's directory or
 // the repository. The caller creates it (mode 0700) before spawning and removes it when the connection ends.
@@ -100,6 +109,8 @@ import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
+import {assertTrustedServicesContained} from './sandbox.mjs';
+import {VENDOR_FACADE_BANNER, toolOverrides} from '../repl-host/instructions.mjs';
 import {chromeRoute, registrationTimes} from '../chrome/route.mjs';
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
@@ -125,6 +136,9 @@ export const REPL_HOST_DIR = ownedPath('../repl-host');
 export const REPL_HOST_SUPERVISOR = ownedPath('../repl-host/supervisor.mjs');
 const BROWSER_SERVICES = ['cua', 'vendor'];
 const REPL_HOSTS = ['cua', 'vendor'];
+// The environment names a cell may read through nodeRepl.env on the own host: the vendor launcher's own additions to
+// its node_repl's allowlist (cua-repl launch.js), which the vendor facade reads.
+const CELL_ENV_ALLOWLIST = 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV';
 // The oldest Node major cua's own REPL host runs on (its kernel's vm modules); the vendor host keeps its pinned Node.
 export const NODE_FLOOR = 24;
 
@@ -154,7 +168,9 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   const trustedCodePaths = own ? [REPL_HOST_DIR, p.moduleDir] : [p.moduleDir];
   Object.assign(env, {PATH: FIXED_PATH, CODEX_HOME: owned.codexHome});
   Object.assign(env, own
-    ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1'}
+    ? {CUA_REPL_ENABLED_SURFACES: enabled.join(','), CUA_REPL_NODE_PATH: ownNode, CUA_REPL_OWNED_GROUP: '1', CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
+      CUA_REPL_JS_BANNER: VENDOR_FACADE_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: CELL_ENV_ALLOWLIST,
+      CUA_REPL_TOOL_OVERRIDES: JSON.stringify(toolOverrides({platform: runtime.manifest.platform, surfaces: enabled}))}
     : {CUA_REPL_NODE_REPL_PATH: p.nodeRepl, CUA_REPL_ENABLED_SURFACES: enabled.join(','), NODE_REPL_NODE_PATH: p.node, NODE_REPL_NODE_MODULE_DIRS: p.moduleDir});
   const names = own
     ? {services: 'CUA_REPL_TRUSTED_SERVICES', codePaths: 'CUA_REPL_TRUSTED_CODE_PATHS', pipeTimeout: 'CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS'}
@@ -162,6 +178,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (services && Object.keys(services).length) {
     const registered = trustedServices(services, enabled);
     env[names.services] = JSON.stringify(registered);
+    if (own) env.CUA_REPL_TRUSTED_RPC_ENABLED = '1';
     for (const dir of [...Object.values(registered).map(module => dirname(module)), ...SERVICE_SUPPORT_DIRS]) if (!trustedCodePaths.includes(dir)) trustedCodePaths.push(dir);
   }
   if (browserService === 'cua' && !trustedCodePaths.includes(BROWSER_SERVICE_IMPL_DIR)) trustedCodePaths.push(BROWSER_SERVICE_IMPL_DIR);
@@ -186,7 +203,9 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[STORE_ENV.dir] = secretsDir;
     if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
-  return {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason}};
+  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason}};
+  if (own) assertTrustedServicesContained(launch);
+  return launch;
 }
 
 // The browser service a launch from `home` gets, and why -> {service: 'cua' | 'vendor', reason}. A CUA_BROWSER_SERVICE

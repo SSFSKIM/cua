@@ -143,6 +143,36 @@ export function trustedCodePathsOf(launch) {
   return (launch.env[key] ?? '').split(':').filter(Boolean);
 }
 
+// The trusted services of an own-host `launch` ({name: absolute path}, CUA_REPL_TRUSTED_SERVICES), or {} for none.
+export function trustedServicesOf(launch) {
+  const value = launch.env.CUA_REPL_TRUSTED_SERVICES;
+  if (value === undefined || value === '') return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch { /* refused below */ }
+  fail('trusted_service_untrusted', 'CUA_REPL_TRUSTED_SERVICES must be a JSON object of service names and module paths');
+}
+
+// Throws `trusted_service_untrusted` unless every trusted root of an own-host `launch` (trustedCodePathsOf) is absolute
+// and every trusted service (trustedServicesOf) is an absolute module whose real path lies inside the real path of a
+// root that exists (a root that does not, the worker ignores too). The trusted worker
+// (src/repl-host/trusted-worker.mjs) enforces the same containment on every import it makes, through a symlink or not;
+// this refuses a launch that could never load its services, naming the service and the roots, before anything starts.
+export function assertTrustedServicesContained(launch) {
+  const roots = trustedCodePathsOf(launch).flatMap(root => {
+    if (!isAbsolute(root)) fail('trusted_service_untrusted', `the trusted code path ${root} is not absolute`);
+    try { return [realpathSync.native(root)]; } catch { return []; }
+  });
+  for (const [name, path] of Object.entries(trustedServicesOf(launch))) {
+    if (typeof path !== 'string' || !isAbsolute(path)) fail('trusted_service_untrusted', `trusted service ${name} must be an absolute module path`);
+    let real;
+    try { real = realpathSync.native(path); } catch { fail('trusted_service_untrusted', `trusted service ${name} module ${path} does not exist`); }
+    if (!roots.some(root => within(real, root)))
+      fail('trusted_service_untrusted', `trusted service ${name} resolves to ${real}, outside every trusted code path (${roots.join(', ') || 'none'})`);
+  }
+}
+
 // Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
 // its trusted code paths (trustedCodePathsOf) or its CODEX_HOME.
 export function assertSandboxFits(mode, launch) {

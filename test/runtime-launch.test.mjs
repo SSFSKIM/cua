@@ -6,7 +6,7 @@ import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
 import {buildLaunch, browserServiceFor, browserSelectionFor, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
-import {assertSandboxFits} from '../src/runtime/sandbox.mjs';
+import {assertSandboxFits, assertTrustedServicesContained} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
@@ -16,6 +16,7 @@ import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends} from '../src/profiles/inventory.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {hostIdentity, REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
+import {toolOverrides} from '../src/repl-host/instructions.mjs';
 
 const SESSION = '6f1c2d3e-0000-4000-8000-000000000001';
 const AMBIENT = {
@@ -486,7 +487,12 @@ test('the own host\'s environment: the same allowlist and surface, service and s
     CUA_REPL_ENABLED_SURFACES: 'browser',
     CUA_REPL_NODE_PATH: node,
     CUA_REPL_OWNED_GROUP: '1',
+    CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
+    CUA_REPL_JS_BANNER: 'await import("@oai/cua/tinyskyAlt");\n',
+    CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV',
+    CUA_REPL_TOOL_OVERRIDES: JSON.stringify(toolOverrides({platform: 'darwin', surfaces: ['browser']})),
     CUA_REPL_TRUSTED_SERVICES: JSON.stringify({browser: BROWSER_SERVICE}),
+    CUA_REPL_TRUSTED_RPC_ENABLED: '1',
     CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, p.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
     CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
@@ -511,6 +517,32 @@ test('the scoped preflight protects the own host\'s trusted roots, its own code 
   assert.equal(overlap.code, 'sandbox_conflict');
   assert.match(overlap.message, new RegExp(`the trusted code path ${REPL_HOST_DIR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   assertSandboxFits('scoped', {...launch, replHost: {host: 'vendor', reason: 'explicit'}, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR), CUA_REPL_TRUSTED_CODE_PATHS: undefined}});
+});
+
+test('an own-host launch refuses a trusted service outside every trusted root, through a symlink too, before anything starts', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  writeCuaRecord(home);
+  const node = realpathSync(fakeNode(dir, 'n/node', '24.1.0'));
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+  assertTrustedServicesContained(launch);
+  const root = join(dir, 'root'), outside = join(dir, 'outside');
+  mkdirSync(root);
+  mkdirSync(outside);
+  writeFileSync(join(root, 'good.mjs'), 'export function handleRpc() {}\n');
+  writeFileSync(join(outside, 'evil.mjs'), 'export function handleRpc() {}\n');
+  symlinkSync(join(outside, 'evil.mjs'), join(root, 'linked.mjs'));
+  symlinkSync(root, join(dir, 'root-link'));
+  const check = (services, roots = root) => outcome(() => assertTrustedServicesContained({...launch, env: {...launch.env, CUA_REPL_TRUSTED_SERVICES: JSON.stringify(services), CUA_REPL_TRUSTED_CODE_PATHS: roots}}));
+  assert.equal(check({browser: join(root, 'good.mjs')}), undefined);
+  assert.equal(check({browser: join(dir, 'root-link', 'good.mjs')}, join(dir, 'root-link')), undefined, 'a root named through a link is its real path');
+  assert.equal(check({browser: join(outside, 'evil.mjs')}).code, 'trusted_service_untrusted', 'a module outside the roots');
+  const viaLink = check({browser: join(root, 'linked.mjs')});
+  assert.equal(viaLink.code, 'trusted_service_untrusted', 'a link inside a root to a module outside it');
+  assert.match(viaLink.message, /resolves to .*outside\/evil\.mjs, outside every trusted code path/);
+  assert.equal(check({browser: join(root, '..', 'outside', 'evil.mjs')}).code, 'trusted_service_untrusted', 'a .. escape');
+  assert.equal(check({browser: 'root/good.mjs'}).code, 'trusted_service_untrusted', 'a relative service');
+  assert.equal(check({browser: join(root, 'good.mjs')}, `relative/root:${root}`).code, 'trusted_service_untrusted', 'a relative root');
+  assert.equal(check({browser: join(root, 'good.mjs')}, `${join(dir, 'absent')}:${root}`), undefined, 'a root that does not exist is ignored, as the worker ignores it');
 });
 
 test('a launch given the connection\'s selections uses them, not a fresh resolution: the route may move under an open connection', t => {

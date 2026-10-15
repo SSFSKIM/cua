@@ -6,23 +6,29 @@
 //            the unnamed output (console lines and unnamed writes) when it is non-empty or nothing else was produced,
 //            then the images in emission order, then the execution's content items;
 //   error:   the error sentence, then the named outputs and the non-empty unnamed output; images are dropped.
-// `_meta['codex/nodeReplExecutionDurationMs']` is the submitted code's duration when the kernel reported one.
+// `_meta['codex/nodeReplExecutionDurationMs']` is the submitted code's duration when the kernel reported one; the
+// response meta trusted code set (`nodeRepl.setResponseMeta`, already merged across calls by the worker) is the rest of
+// `_meta`, on success and error alike, the host's own duration key taking precedence.
 export const DURATION_META_KEY = 'codex/nodeReplExecutionDurationMs';
 export const IMAGE_DETAIL_META = {'codex/imageDetail': 'original'};
 
 const text = value => ({type: 'text', text: value});
+// A content item trusted code added (`nodeRepl.emitContentItem(text)`, NR:privileged-node-repl.js:574-584, a string)
+// is a text item of its own.
+const contentItem = item => (typeof item === 'string' ? text(item) : item);
 
-// `execution`: {ok, error, output, namedOutputs, images, contentItems, durationMs}.
-export function assembleResult({ok, error, output = '', namedOutputs = [], images = [], contentItems = [], durationMs = null}) {
+// `execution`: {ok, error, output, namedOutputs, images, contentItems, durationMs, responseMeta}.
+export function assembleResult({ok, error, output = '', namedOutputs = [], images = [], contentItems = [], durationMs = null, responseMeta = null}) {
   const named = namedOutputs.map(text);
   let content;
   if (ok) {
     const others = named.length + images.length + contentItems.length;
-    content = [...named, ...(output !== '' || others === 0 ? [text(output)] : []), ...images, ...contentItems];
+    content = [...named, ...(output !== '' || others === 0 ? [text(output)] : []), ...images, ...contentItems.map(contentItem)];
   } else {
     content = [text(error), ...named, ...(output !== '' ? [text(output)] : [])];
   }
-  return {content, isError: !ok, ...(typeof durationMs === 'number' ? {_meta: {[DURATION_META_KEY]: durationMs}} : {})};
+  const meta = {...(responseMeta ?? {}), ...(typeof durationMs === 'number' ? {[DURATION_META_KEY]: durationMs} : {})};
+  return {content, isError: !ok, ...(Object.keys(meta).length ? {_meta: meta} : {})};
 }
 
 // A result that is only a sentence.

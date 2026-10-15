@@ -60,8 +60,8 @@ export function stderrTail() {
   };
 }
 
-export const exitDiagnostic = ({pid, status, tail, reason = 'stdout_eof', streamError = null}) =>
-  `${KERNEL_EXIT_SENTENCE}\n\nnode_repl diagnostics: ${JSON.stringify({kernel_pid: pid ?? null, kernel_status: status, kernel_stderr_tail: tail, reason, stream_error: streamError})}`;
+export const exitDiagnostic = ({pid, status, tail, reason = 'stdout_eof', streamError = null, sentence = KERNEL_EXIT_SENTENCE}) =>
+  `${sentence}\n\nnode_repl diagnostics: ${JSON.stringify({kernel_pid: pid ?? null, kernel_status: status, kernel_stderr_tail: tail, reason, stream_error: streamError})}`;
 
 // SIGKILLs `root` and every process descending from it. The tree is frozen first (SIGSTOP, root first, then each
 // newly listed descendant until a listing finds no new one), so nothing in it can fork or exit, and so leave the tree,
@@ -96,23 +96,40 @@ function subtrees(rows, roots) {
   return owned;
 }
 
-// The owned-group reaper for a supervisor whose process group is its parent's (the proxy's anchor leads it), or null
-// when this process does not run in such a group (then only a kernel's tree is ever killed) -> {reap, own}.
-// reap() freezes then SIGKILLs every member of the group except the supervisor, the anchor, the `ps` listing the
-// reaper itself ran, and every process in a protected subtree. own(pid) protects the live child `pid` and everything
-// descending from it until the release it returns is called: the supervisor registers each long-lived child it owns
-// besides its kernels (#116 M2's trusted worker and the helpers it starts). reap() is called only when a kernel
-// generation has ended and before the next starts, so every unprotected member is what that generation left behind:
-// processes a cell started, reparented when their kernel died. (A process that leaves the group, as bwrap's
-// --new-session sandbox does, is not found; that sandbox dies with its parent.)
-export function ownedGroupReaper({self = process.pid, parent = process.ppid, table = processTable, signal = sendSignal} = {}) {
-  const row = table().find(([pid]) => pid === self);
-  if (!row || row[2] !== parent || parent <= 1) return null;
+// The ancestors of `self` in `rows` ([pid, ppid, ...]) from its parent up to and including `leader`, or null when
+// `leader` is not one of them.
+function ancestorsUpTo(rows, self, leader) {
+  const parentOf = new Map(rows.map(([pid, ppid]) => [pid, ppid]));
+  const chain = [];
+  for (let pid = parentOf.get(self); pid !== undefined && pid > 1 && chain.length < 64; pid = parentOf.get(pid)) {
+    chain.push(pid);
+    if (pid === leader) return chain;
+  }
+  return null;
+}
+
+// The owned-group reaper for a supervisor whose process group is led by one of its ancestors (the proxy's anchor,
+// src/mcp/anchor.mjs, which starts it directly or through a wrapper of its own), or null when this process does not run
+// in such a group (then only a kernel's tree is ever killed) -> {reap, own}.
+// reap() freezes then SIGKILLs every member of the group except the supervisor, its ancestors up to the anchor (an
+// ancestor inside the owned group is never a stray), the `ps` listing the reaper itself ran, and every process in a
+// protected subtree. own(pid) protects the live child `pid` and everything descending from it until the release it
+// returns is called: the supervisor registers each long-lived child it owns besides its kernels (#116 M2's trusted
+// worker and the helpers it starts). reap() is called only when a kernel generation (or the trusted worker) has ended
+// and before the next starts, so every unprotected member is what that child left behind: processes it started,
+// reparented when it died. (A process that leaves the group, as bwrap's --new-session sandbox does, is not found; that
+// sandbox dies with its parent.)
+export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal} = {}) {
+  const rows = table();
+  const row = rows.find(([pid]) => pid === self);
+  const leader = row?.[2];
+  if (!row || leader === self || leader <= 1 || !ancestorsUpTo(rows, self, leader)) return null;
   const protectedRoots = new Set();
   const strays = () => {
-    const rows = table();
-    const spared = subtrees(rows, protectedRoots);
-    return rows.filter(([pid, ppid, pgid, comm]) => pgid === parent && pid !== self && pid !== parent && !spared.has(pid)
+    const current = table();
+    const ancestors = new Set(ancestorsUpTo(current, self, leader) ?? [leader]);
+    const spared = subtrees(current, protectedRoots);
+    return current.filter(([pid, ppid, pgid, comm]) => pgid === leader && pid !== self && !ancestors.has(pid) && !spared.has(pid)
       && !(ppid === self && /(^|\/)ps$/.test(comm ?? ''))).map(([pid]) => pid);
   };
   const reap = () => {
@@ -157,10 +174,12 @@ export function kernelPipes() {
   }
 }
 
-// Starts a kernel child. `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print
-// plain text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when
-// `stop()` ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
-export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null, reap = () => {}}) {
+// Starts a kernel child (or the trusted worker, which the same wire and lifecycle serve; `exitSentence` opens its exit
+// diagnostic). `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print plain
+// text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when `stop()`
+// ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
+export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null, reap = () => {},
+  exitSentence = KERNEL_EXIT_SENTENCE}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
@@ -212,7 +231,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     await within(stderrClosed, EXIT_GRACE_MS);
     for (const stream of [stdin, stdout, stderr]) stream?.destroy();
     if (spawnError) return onEnd({expected: stopping, diagnostic: `failed to start Node runtime: ${spawnError.message}`});
-    onEnd({expected: stopping, diagnostic: exitDiagnostic({pid: child.pid, status: exitInfo ? exitStatus(exitInfo) : 'unknown', tail: tail.text()})});
+    onEnd({expected: stopping, diagnostic: exitDiagnostic({pid: child.pid, status: exitInfo ? exitStatus(exitInfo) : 'unknown', tail: tail.text(), sentence: exitSentence})});
   }
   // The end is the kernel's stdout closing, or its exit when something it started still holds the pipe.
   stdoutClosed.then(end);

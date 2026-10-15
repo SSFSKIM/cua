@@ -73,3 +73,68 @@ test('js_reset takes no arguments, and turn_ended takes three non-empty ids', ()
   assert.equal(refusal(() => turnEndedArguments({hook_event_name: 'Stop', session_id: 's'})), 'turn_ended: missing field `turn_id`');
   assert.equal(refusal(() => turnEndedArguments({hook_event_name: '', session_id: 's', turn_id: 't'})), 'turn_ended requires non-empty event, session, and turn IDs');
 });
+
+test('the launch\'s overrides replace the base text the way the vendor\'s launcher overrides do, and nothing else', async () => {
+  const {parseToolOverrides} = await import('../../src/repl-host/tools.mjs');
+  const {toolOverrides} = await import('../../src/repl-host/instructions.mjs');
+  const overrides = toolOverrides({platform: 'linux', surfaces: ['computer', 'browser']});
+  const base = toolsFor({sandboxed: true});
+  const effective = toolsFor({sandboxed: true, overrides: parseToolOverrides(JSON.stringify(overrides))});
+  assert.equal(effective[0].description, overrides.tools.js.description);
+  assert.equal(effective[0].inputSchema.properties.code.description, overrides.tools.js.field_descriptions.code);
+  assert.equal(effective[1].description, overrides.tools.js_reset.description);
+  const strip = tools => tools.map(({description, inputSchema, ...rest}) => ({...rest, inputSchema: {...inputSchema, properties: Object.fromEntries(Object.entries(inputSchema.properties).map(([k, {description: _d, ...v}]) => [k, v]))}}));
+  assert.deepEqual(strip(effective), strip(base), 'schemas, annotations and meta are the base ones');
+  assert.deepEqual(effective[2], base[2], 'turn_ended is never overridden');
+  assert.equal(initializeResult({protocolVersion: '2025-06-18', sandboxed: true, overrides}).instructions, 'UI automation through cua_repl using the initialized cua API.');
+  assert.equal(parseToolOverrides(undefined), null);
+  assert.equal(parseToolOverrides(''), null);
+  for (const bad of ['{', '[]', '{"tools":{"js":{"description":1}}}', '{"server_instructions":2}', '{"tools":{"js":{"field_descriptions":{"code":null}}}}'])
+    assert.throws(() => parseToolOverrides(bad), /CUA_REPL_TOOL_OVERRIDES must be/, bad);
+});
+
+test('the effective text is the vendor launcher\'s assembly for each platform and surface set, with only the approved browser edits', async () => {
+  const {BROWSER_EDITS, applyEdits, toolOverrides} = await import('../../src/repl-host/instructions.mjs');
+  const {readFileSync} = await import('node:fs');
+  const read = name => readFileSync(new URL(`../../src/repl-host/instructions/${name}`, import.meta.url), 'utf8');
+  for (const platform of ['darwin', 'linux']) {
+    const dir = platform === 'darwin' ? 'macos' : 'linux';
+    const part = name => read(`${dir}/${name}.md`).trimEnd();
+    const browser = applyEdits(read(`${dir}/browser.md`), BROWSER_EDITS).trimEnd();
+    assert.deepEqual(toolOverrides({platform, surfaces: ['browser']}).tools.js.description, [part('description'), browser, read('computer-disabled.md').trimEnd(), part('output')].join('\n\n'));
+    assert.deepEqual(toolOverrides({platform, surfaces: ['computer']}).tools.js.description, [part('description'), read('browser-disabled.md').trimEnd(), part('computer'), part('output')].join('\n\n'));
+    assert.deepEqual(toolOverrides({platform, surfaces: ['computer', 'browser']}).tools.js.description, [part('description'), browser, part('computer'), part('output')].join('\n\n'));
+    // The edits remove exactly the excluded in-app browser and MCP Apps lines; every other line is the vendor's.
+    const vendorLines = read(`${dir}/browser.md`).split('\n');
+    const kept = browser.split('\n');
+    assert.deepEqual(vendorLines.filter(line => !kept.includes(line)), [
+      'For an existing tab identified by URL in browser context (including the current IAB tab):',
+      'To open a URL in the in-app browser (`@Browser`):',
+      'let tab = await cua.createBrowserTab("iab", url, { visible: boolean });',
+      '- `"mcpapps"`: use `cua.getBrowser({ id: "mcpapps" })` for existing full-screen MCP Apps in the task’s side panel.',
+      '- `"iab"` (in-app browser): in `createBrowserTab`, use `visible: true` to show the browser; `false` to keep it hidden.',
+    ]);
+    assert.doesNotMatch(browser, /iab|IAB|mcpapps|in-app/);
+  }
+  assert.throws(() => applyEdits('nothing to edit', BROWSER_EDITS), /does not match exactly once/);
+  assert.throws(() => toolOverrides({platform: 'win32', surfaces: ['browser']}), /unsupported cua_repl platform=win32/);
+});
+
+test('the copies are the pinned vendor bytes (26.928.40906 @oai/cua-repl/instructions) and the banner imports the unmodified facade', async () => {
+  const {createHash} = await import('node:crypto');
+  const {readFileSync} = await import('node:fs');
+  const {VENDOR_FACADE_BANNER} = await import('../../src/repl-host/instructions.mjs');
+  const sha = name => createHash('sha256').update(readFileSync(new URL(`../../src/repl-host/instructions/${name}`, import.meta.url))).digest('hex');
+  const PINNED = {
+    'banner.js': 'db4a56c4a1cb6f9ec2ca663694fbe8941846aaa83d0bf12d3a5699f92126105a', 'browser-disabled.md': '6d1be6d881b8b340dabb04d277bfc5c0690fb855031f023bc882284904dd6d9a',
+    'code.md': 'c0cc551f6c6116c5276baecc68c1139d25c205570281e02b6ad483526e4bede9', 'computer-disabled.md': 'c34c37e1549a55281eaecf6e29b4878313cfecf5983559a98a6fca1f6d1cf53c',
+    'reset.md': '8293a9ec45999391940bdfce1637fb5c4d708f89b5d726b4d03800df9cb795af', 'server.md': '6001fb94250c49c234d96cbe08913ad9340e71e48b1709d8c0d598b46a25ea9e',
+    'browser.md': '063027bad00dd242148c8f798a55f420ce5c893547b4d5b352747c8d04e79ed5', 'computer.md': 'e8318bd16b9792b517d300802583961317d7e0cb3a3a4ed776a681ed20f16f7d',
+    'description.md': '096e5cea5931c9c23adc839211bfe3764039a2e68dd47b627ae0d8bc22fdaed6', 'output.md': 'e239db8a09d3fb3b2a626e19a64be96da0130374675acf709649bef99430d486',
+  };
+  for (const [name, hash] of Object.entries(PINNED)) {
+    if (['browser.md', 'computer.md', 'description.md', 'output.md'].includes(name)) for (const dir of ['macos', 'linux']) assert.equal(sha(`${dir}/${name}`), hash, `${dir}/${name}`);
+    else assert.equal(sha(name), hash, name);
+  }
+  assert.equal(VENDOR_FACADE_BANNER, 'await import("@oai/cua/tinyskyAlt");\n');
+});

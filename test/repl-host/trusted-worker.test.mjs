@@ -11,7 +11,7 @@ import {join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {kernelNode} from './kernel-harness.mjs';
 import {alive, descendants, launches, startHost, texts} from './supervisor-harness.mjs';
-import {TRUSTED_WORKER, TRUSTED_EXIT_SENTENCE} from '../../src/repl-host/supervisor.mjs';
+import {TRUSTED_WORKER, TRUSTED_EXIT_SENTENCE, TURN_MARGIN_MS} from '../../src/repl-host/supervisor.mjs';
 import {FORM_UNSUPPORTED_SENTENCE, INVALID_SCHEMA_PREFIX, UNEXPECTED_RESPONSE_SENTENCE} from '../../src/repl-host/elicitation.mjs';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from '../../src/repl-host/identity.mjs';
 
@@ -438,4 +438,59 @@ test('response meta merges across a cell\'s rpcs and its after-code hooks, as th
   const {'codex/nodeReplExecutionDurationMs': _d, [REPL_HOST_META_KEY]: _m, ...meta} = result._meta;
   assert.deepEqual(meta, {first: 1, replaced: 'by-hook', second: 2, third: 3});
   assert.deepEqual(Object.keys(meta), ['first', 'replaced', 'second', 'third']);
+});
+
+// A ready worker whose trusted code blocks its event loop: the host bounds what it waits for from it by the deadlines
+// the worker reported for its handlers plus a margin, then stops it, so turn ends, cells and the EOF drain all finish.
+const BLOCKING_SERVICE = {svc: `let n = 0;
+  export async function handleRpc(request) {
+    n++;
+    if (request.op === 'turn-handler') nodeRepl.addTurnEndedHandler({timeoutMs: 200, run: () => {}});
+    if (request.op === 'hook-blocks') nodeRepl.addAfterSubmittedCodeHook({timeoutMs: 200, run: () => { for (;;) {} }});
+    if (request.op === 'block-soon') setTimeout(() => { for (;;) {} }, 50);
+    return {worker: process.pid, n};
+  }`};
+
+test('a turn end whose worker never answers is acknowledged within its handlers\' deadline plus the margin, once for its duplicates, and the worker is stopped', own, async t => {
+  const host = await startHost(t, {node, services: BLOCKING_SERVICE});
+  const first = parsed(await host.js(rpc('svc', {op: 'turn-handler'})));
+  await host.js(rpc('svc', {op: 'block-soon'}));
+  await delay(200);
+  const started = performance.now();
+  const [a, b] = await Promise.all([1, 2].map(() => host.call('turn_ended', {hook_event_name: 'Stop', session_id: 's', turn_id: 't'})));
+  const elapsed = performance.now() - started;
+  assert.deepEqual([texts(a), texts(b)], [['{}'], ['{}']]);
+  assert.ok(elapsed >= 200 + TURN_MARGIN_MS - 300 && elapsed < 200 + TURN_MARGIN_MS + 2500, `bounded by 200 ms + the margin (${Math.round(elapsed)} ms)`);
+  for (let i = 0; i < 100 && alive(first.worker); i++) await delay(20);
+  assert.equal(alive(first.worker), false, 'the non-answering worker was stopped');
+  assert.match(host.stderr(), /trusted Node process did not answer turn_ended within \d+ ms; stopping it/);
+  assert.equal(parsed(await host.js(rpc('svc', {op: 'count'}))).n, 1, 'the next request starts a fresh worker');
+});
+
+test('an after-code hook that blocks its worker no longer holds the cell: the result comes within the hooks\' deadline plus the margin, and the worker is stopped', own, async t => {
+  const host = await startHost(t, {node, services: BLOCKING_SERVICE});
+  const first = parsed(await host.js(rpc('svc', {op: 'hook-blocks'})));
+  const started = performance.now();
+  const result = await host.js('nodeRepl.write("cell done")');
+  const elapsed = performance.now() - started;
+  assert.deepEqual({text: texts(result), isError: result.isError}, {text: ['cell done'], isError: false});
+  assert.ok(elapsed < 200 + TURN_MARGIN_MS + 2500, `bounded (${Math.round(elapsed)} ms)`);
+  for (let i = 0; i < 100 && alive(first.worker); i++) await delay(20);
+  assert.equal(alive(first.worker), false);
+  assert.match(host.stderr(), /trusted Node process did not answer run_hooks within \d+ ms; stopping it/);
+});
+
+test('EOF while a cell waits on a blocked worker\'s hooks and a turn end waits on it: the host still exits within the bound', own, async t => {
+  const host = await startHost(t, {node, services: BLOCKING_SERVICE});
+  await host.js(rpc('svc', {op: 'turn-handler'}));
+  await host.js(rpc('svc', {op: 'hook-blocks'}));
+  const cell = host.js('nodeRepl.write("x")');
+  await delay(300);
+  const turn = host.call('turn_ended', {hook_event_name: 'Stop', session_id: 's', turn_id: 'eof'});
+  const started = performance.now();
+  host.child.stdin.end();
+  assert.deepEqual(await host.exited, {code: 0, signal: null});
+  assert.ok(performance.now() - started < 200 + TURN_MARGIN_MS + 4000, `exited within the bound (${Math.round(performance.now() - started)} ms)`);
+  assert.deepEqual(texts(await cell), ['x'], 'the admitted cell was still answered');
+  assert.deepEqual(texts(await turn), ['{}']);
 });

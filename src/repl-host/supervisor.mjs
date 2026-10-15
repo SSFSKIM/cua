@@ -41,6 +41,10 @@
 //   lookup; docs/evidence/2026-10-14-own-repl-host-parity/m2/history-hang/), so a child still not ready after
 //   READY_TIMEOUT_MS is stopped and another started, START_ATTEMPTS in all; then the waiting work fails with a sentence.
 //   A child that exits while starting is not retried: its exit answers the work, as before.
+// - a ready worker does not answer run_hooks or turn_ended: each is bounded by the hooks' deadlines the worker reported
+//   (`hook_deadlines`: after-code hooks in sequence, turn-ended handlers concurrently) plus TURN_MARGIN_MS; past it the
+//   worker is taken for hung and stopped, so the cell gets its result, the turn's one acknowledgement is sent and the EOF
+//   drain finishes.
 // - EOF on stdin: nothing new is admitted; what was admitted settles and is answered, then the children are stopped
 //   and the host exits 0. A signal stops them at once.
 //
@@ -85,6 +89,10 @@ export const EXEC_CONTEXT_NOT_FOUND = 'node_repl exec context not found';
 // the work fails (see the header's "a child does not finish starting").
 export const READY_TIMEOUT_MS = 10_000;
 export const START_ATTEMPTS = 3;
+// What a ready worker is allowed beyond the deadlines it reported for its hooks (`hook_deadlines`) before the host takes
+// it for hung and stops it: a run_hooks or turn_ended it never answers then fails or is acknowledged, and the EOF drain
+// can finish.
+export const TURN_MARGIN_MS = 2_000;
 const hostMarker = {host: 'cua', version: REPL_HOST_VERSION};
 
 // serde_json's maps are sorted, so a JSON value crossing the vendor's host has its keys in byte order, at every depth;
@@ -272,12 +280,13 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!sent) {
       self.pending.delete(message.id);
       answer({ok: false, error: TRUSTED_EXIT_SENTENCE});
-    }
+    } else if (hooks) boundAnswer(self, message.id, 'run_hooks', self.deadlines.afterCode + TURN_MARGIN_MS);
   }
 
   function launchWorker(policy) {
     if (terminated) return null;
-    const self = {key: null, launch: workerLaunch(settings, policy), pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false};
+    const self = {key: null, launch: workerLaunch(settings, policy), pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false,
+      deadlines: {afterCode: 0, turnEnded: 0}, bounds: new Map()};
     self.key = self.launch.key;
     // Work for the worker waits in `queue` until it announced it is ready (the header).
     self.post = message => {
@@ -332,9 +341,25 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     stopping(child);
   }
 
+  // Bounds the worker's answer to request `id` (run_hooks or turn_ended): past `ms` it is taken for hung and stopped.
+  function boundAnswer(self, id, kind, ms) {
+    const limit = ms + (self.ready ? 0 : readyTimeoutMs * START_ATTEMPTS);
+    self.bounds.set(id, timer(limit, () => {
+      self.bounds.delete(id);
+      if (self.failed || (!self.pending.has(id) && !self.turns.has(id))) return;
+      log(`trusted Node process did not answer ${kind} within ${limit} ms; stopping it`);
+      self.failed = true;
+      workerEnded(self, {expected: true, diagnostic: ''});
+      stopping(self.child);
+    }));
+  }
+  const answered = (self, id) => { self.bounds.get(id)?.(); self.bounds.delete(id); };
+
   function workerEnded(self, {expected, diagnostic, sentence = TRUSTED_EXIT_SENTENCE}) {
     if (worker === self) worker = null;
     self.cancelReady?.();
+    for (const cancel of self.bounds.values()) cancel();
+    self.bounds.clear();
     self.queue.length = 0;
     self.relay.closeAll();
     // The service requests it held fail for whichever kernel still waits on them; its turn handlers are over.
@@ -360,10 +385,14 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     const reply = payload => self.child.send(payload);
     const current = executionOf(message);
     switch (message.type) {
+      case 'hook_deadlines':
+        self.deadlines = {afterCode: Number(message.after_code_ms) || 0, turnEnded: Number(message.turn_ended_ms) || 0};
+        return;
       case 'trusted_service_response': {
         const kernelSelf = self.pending.get(message.id);
         if (!kernelSelf) return;
         self.pending.delete(message.id);
+        answered(self, message.id);
         // Only to the kernel that asked, and only while it lives: a later generation never sees an earlier one's reply.
         if (kernel === kernelSelf) kernelSelf.child.send(sortedJson(message));
         return;
@@ -371,6 +400,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       case 'turn_ended_result': {
         const resolve = self.turns.get(message.id);
         self.turns.delete(message.id);
+        answered(self, message.id);
         return resolve?.();
       }
       case 'emit_image':
@@ -489,6 +519,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       self.turns.set(id, resolve);
       const sent = self.post(sortedJson({type: 'turn_ended', id, event: {hook_event_name: hookEventName, session_id: sessionId, turn_id: turnId}, request_meta: requestMeta}));
       if (!sent) { self.turns.delete(id); resolve(); }
+      else boundAnswer(self, id, 'turn_ended', self.deadlines.turnEnded + TURN_MARGIN_MS);
     });
   }
 

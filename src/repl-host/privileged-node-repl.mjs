@@ -4,7 +4,8 @@
 // "Trusted services and privileged APIs"). Changes from the source: an ES module; the privileged API is the one the
 // spec retains, so `config` (NR:privileged-node-repl-config.js, M4 audits its callers), `fetch` (authenticated fetch),
 // `otel`, `telemetry` and `gaasBrowserConfig` are not ported: they reach the vendor's app-server, account and
-// telemetry bridges, which the own route excludes. Every sentence trusted code can observe is the vendor's. #120's
+// telemetry bridges, which the own route excludes; and the hooks' deadlines are reported to the supervisor
+// (`hook_deadlines`, cua's) whenever a hook is added or removed. Every sentence trusted code can observe is the vendor's. #120's
 // clean-room rewrite replaces this port before distribution.
 
 import { Buffer } from "node:buffer";
@@ -15,9 +16,16 @@ import {
   trackExecBackgroundOperation,
 } from "./worker-runtime.mjs";
 
-function createLifecycleHandlers(name, concurrent = false) {
+function createLifecycleHandlers(name, concurrent = false, onChange = () => {}) {
   const hooks = new Set();
   return {
+    // cua: the longest these hooks can take, their deadlines run concurrently (the longest) or in sequence (the sum).
+    deadlineMs() {
+      const deadlines = [...hooks].map((hook) => hook.timeoutMs);
+      return concurrent
+        ? Math.max(0, ...deadlines)
+        : deadlines.reduce((total, ms) => total + ms, 0);
+    },
     add(options) {
       if (
         !isPlainObject(options) ||
@@ -31,7 +39,12 @@ function createLifecycleHandlers(name, concurrent = false) {
       }
       const hook = { run: options.run, timeoutMs: options.timeoutMs };
       hooks.add(hook);
-      return () => hooks.delete(hook);
+      onChange();
+      return () => {
+        const removed = hooks.delete(hook);
+        if (removed) onChange();
+        return removed;
+      };
     },
     async run(event) {
       const runHandler = async ({ run, timeoutMs }) => {
@@ -517,12 +530,23 @@ function nonEmptyString(value) {
 
 export function createPrivilegedWorkerRuntime({ env, runtime }) {
   const { execContext, pendingRequests, send } = runtime;
+  // cua: the supervisor bounds what it waits for from this process by these deadlines (src/repl-host/supervisor.mjs),
+  // so it hears them whenever a hook is added or removed.
+  const reportDeadlines = () =>
+    send({
+      type: "hook_deadlines",
+      after_code_ms: afterSubmittedCodeHooks.deadlineMs(),
+      turn_ended_ms: turnEndedHandlers.deadlineMs(),
+    });
   const afterSubmittedCodeHooks = createLifecycleHandlers(
     "addAfterSubmittedCodeHook",
+    false,
+    reportDeadlines,
   );
   const turnEndedHandlers = createLifecycleHandlers(
     "addTurnEndedHandler",
     true,
+    reportDeadlines,
   );
   const nativePipeBridge = createNativePipeBridge({
     execContext,

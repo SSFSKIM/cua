@@ -539,6 +539,9 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: the own host warms the time zone at load. `worker-runtime.mjs`, loaded first by both the kernel and the trusted worker, makes one `getTimezoneOffset()` as it loads. This is a deliberate departure in cua's favour from a vendor hang. The browser-corpus oracle stays strict: a vendor-side hang is answered by re-running the vendor control until it answers, never by an allowance, and the hung runs are committed as labelled evidence.
+  Rationale: the hang is a macOS sandbox/launchd interaction that can strike any first local-time use (see Surprises). Warming at startup removes it without touching the vendor. An intermittent allowance would weaken the oracle for every other cause of the same symptom.
+  Date/Author: 2026-10-14, plan-executor ruling on M2 task 3's diagnosis.
 - Decision: M2 tasks 1 and 2 as built.
   - The oracle adds `--suite services`, which covers 41 cases, the two staged worker-secret cases among them, through isolated fixture trusted services. A fixture-only host-tap reaches the host's private `turn_ended`. Turn acknowledgements are timed on the device clock against hook-completion witnesses; controller wall time across ssh varies by seconds and is never asserted.
   - Identity allowances use `versionFrom:'attested-source'`, the host version read from the evidence's recorded commit. The effective-tools comparison applies the four exact Table 2 `browser.md` removals to a hash-pinned vendor fixture.
@@ -675,6 +678,11 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Surprises & Discoveries
 
+- Observation (2026-10-14): under the `codex sandbox` policy on macOS, a first local-time use made a few seconds into a Node process can block indefinitely.
+  - Where it blocks: in ICU `detectHostTimeZone` → `tzset` → `notify_register_tz` → `bootstrap_look_up2`, waiting in `mach_msg` for launchd.
+  - Rates: the vendor host hangs `capabilities/history` (the facade's from/to `toISOString`) in 4 of 30 runs at its 60 s timeout. The own host hung at about 11% before the fix. A sandboxed probe hung 15 of 80 times on a late first use and 0 of 280 times when the zone was warmed at startup. Setting `TZ` does not help.
+  - Consequences: the vendor route has this latent hang today. The clean-room rewrite (#120) must keep the startup warm.
+  Evidence: M2 task 3's `sample` of a hung kernel and its repro, recorded in its report and in the evidence README under `docs/evidence/2026-10-14-own-repl-host-parity/m2/`.
 - Observation (2026-10-14): the vendor's Rust host itself does two things the recovered JS doesn't show.
   - It suspends the cell budget during a bare `createElicitation`: a 650 ms delayed answer succeeds under `timeout_ms=300`.
   - It merges response meta across RPCs and after-code hooks; keys from the first and second RPC and from the hook all survive.

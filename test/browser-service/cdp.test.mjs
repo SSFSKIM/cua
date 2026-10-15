@@ -13,6 +13,7 @@ import {
   dialogOpening, dialogClosed, evaluated, thrown, HOST_TIMEOUT, UNATTACHED, TAB_NOT_ATTACHED,
 } from './fixtures/cdp.mjs';
 import {nativePipe, startRealHost, waitFor} from './support/real-host.mjs';
+import {onControlledClock} from './support/controlled-clock.mjs';
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -206,25 +207,35 @@ test('the Deadline reaches the backend as the call\'s timeoutMs; a spent one dis
   assert.deepEqual(order.slice(-3), ['prepare', 'dispatch', 'send:Runtime.callFunctionOn']);
 });
 
-test('a first attachment gives each setup command what the command has left, not the allowance it started with', async () => {
-  const api = scriptedApi({}, {attach: 20, 'Emulation.setFocusEmulationEnabled': 20, 'Page.enable': 20, 'Target.setAutoAttach': 20});
+test('a first attachment gives each setup command what the command has left, not the allowance it started with', async t => {
+  // A controlled clock: time passes only while the backend answers, 20 ms per answer, so what each command is given
+  // is checked exactly, whatever the machine's load.
+  t.mock.timers.enable({apis: ['Date'], now: 1_000_000});
+  const api = scriptedApi();
+  for (const op of ['attach', 'executeCdp']) {
+    const answer = api[op];
+    api[op] = async params => { const result = await answer(params); t.mock.timers.tick(20); return result; };
+  }
   const cdp = new CdpController(api);
   const deadline = new Deadline(400);
   await cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}, {deadline});
   const sent = api.calls.filter(c => c.op === 'executeCdp');
   assert.deepEqual(sent.map(c => c.params.method), ['Emulation.setFocusEmulationEnabled', 'Page.enable', 'Target.setAutoAttach', 'Runtime.evaluate']);
-  for (const c of sent) assert.ok(c.params.timeoutMs <= deadline.at - c.at + 2, `${c.params.method}: timeoutMs ${c.params.timeoutMs} with ${deadline.at - c.at} ms left`);
-  const allowances = sent.map(c => c.params.timeoutMs);
-  assert.ok(allowances.every((ms, i) => i === 0 || ms < allowances[i - 1]), `each later command has less: ${allowances}`);
+  for (const c of sent) assert.equal(c.params.timeoutMs, deadline.at - c.at, `${c.params.method}: what the command had left at its dispatch`);
+  assert.deepEqual(sent.map(c => c.params.timeoutMs), [380, 360, 340, 320], 'each later command has less, by the time the one before it took');
 });
 
-test('a deadline that runs out during the first attachment stops it: the caller gets timeout and nothing more is dispatched', async () => {
+test('a deadline that runs out during the first attachment stops it: the caller gets timeout and nothing more is dispatched', async t => {
   const api = scriptedApi({}, {attach: 10, 'Emulation.setFocusEmulationEnabled': 10, 'Page.enable': 60});
   const cdp = new CdpController(api);
-  const deadline = new Deadline(50);
-  const error = await rejection(cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}, {deadline}));
+  let deadline;
+  const error = await onControlledClock(t, async () => {
+    deadline = new Deadline(50);
+    const failed = await rejection(cdp.call(TAB, 'Runtime.evaluate', {expression: '1'}, {deadline}));
+    await sleep(150);
+    return failed;
+  });
   assert.equal(error.code, 'timeout');
-  await sleep(150);
   const sent = api.calls.filter(c => c.op === 'executeCdp').map(c => c.params.method);
   assert.deepEqual(sent, ['Emulation.setFocusEmulationEnabled', 'Page.enable'].slice(0, sent.length), 'no auto-attach and no command after the budget ran out');
   assert.ok(api.calls.every(c => c.at < deadline.at), 'every dispatch happened within the budget');
@@ -246,17 +257,16 @@ test('a caller sharing an attachment whose starter ran out of budget attaches ag
   assert.deepEqual(api.calls.filter(c => c.params?.method === 'Runtime.evaluate').map(c => c.params.commandParams.expression), ['patient']);
 });
 
-test('host double: a joined caller re-attaches after the host timed out a setup command the starter\'s deadline bounded', async () => {
+test('host double: a joined caller re-attaches after the host timed out a setup command the starter\'s deadline bounded', async t => {
   const api = scriptedApi({}, {'Emulation.setFocusEmulationEnabled': 60}, {host: true});
   const cdp = new CdpController(api);
-  const [short, patient] = await Promise.allSettled([
+  const [short, patient] = await onControlledClock(t, () => Promise.allSettled([
     cdp.call(TAB, 'Runtime.evaluate', {expression: 'short'}, {deadline: new Deadline(40)}),
     cdp.call(TAB, 'Runtime.evaluate', {expression: 'patient'}, {deadline: new Deadline(2000)}),
-  ]);
+  ]));
   const focus = api.calls.filter(c => c.params?.method === 'Emulation.setFocusEmulationEnabled');
   assert.ok(focus[0].params.timeoutMs <= 40, 'the starter\'s budget bounded the first focus emulation');
   assert.equal(short.reason?.code, 'timeout');
-  await waitFor(() => api.calls.length > 0 && focus.length > 0, 'the focus emulation');
   assert.equal(patient.status, 'fulfilled', patient.reason?.message);
   assert.equal(api.calls.filter(c => c.op === 'attach').length, 2);
   assert.ok(focus[1].at - focus[0].at >= focus[0].params.timeoutMs, 'the retry followed the host\'s timeout of the first, not the service\'s own check');

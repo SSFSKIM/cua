@@ -11,6 +11,9 @@ import {join} from 'node:path';
 import {CONNECT_TIMEOUT_SENTENCE, NOT_ABSOLUTE_SENTENCE, NOT_CONNECTED_SENTENCE, NOT_SOCKET_SENTENCE, nativePipeRelay} from '../../src/repl-host/native-pipe.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+// A system error as Node raises it: libuv's message, the code, the negative errno and the failing syscall.
+const ERRNO = {EAGAIN: 11, ECONNRESET: 104, ECONNREFUSED: 111, ENOENT: 2, EPIPE: 32, EIO: 5, ECANCELED: 125};
+const systemError = (syscall, code, detail = '') => Object.assign(new Error(`${syscall} ${code}${detail}`), {code, errno: -ERRNO[code], syscall});
 const socketStat = {isSocket: () => true};
 
 // A socket whose connect completes only when the test says so.
@@ -58,7 +61,7 @@ test('the budget is the launch\'s setting', async () => {
 });
 
 test('paths are checked before anything connects', () => {
-  const {relay, sent, sockets} = relayWith({stat: path => (path === '/tmp/file' ? {isSocket: () => false} : (() => { throw Object.assign(new Error(`ENOENT: no such file or directory, stat '${path}'`), {code: 'ENOENT'}); })())});
+  const {relay, sent, sockets} = relayWith({stat: path => (path === '/tmp/file' ? {isSocket: () => false} : (() => { throw Object.assign(new Error(`ENOENT: no such file or directory, stat '${path}'`), {code: 'ENOENT', errno: -2, syscall: 'stat'}); })())});
   relay.handle({id: '1', op: 'connect', path: 'relative.sock'});
   relay.handle({id: '2', op: 'connect', path: 42});
   relay.handle({id: '3', op: 'connect', path: '/tmp/file'});
@@ -68,7 +71,7 @@ test('paths are checked before anything connects', () => {
     {type: 'native_pipe_response', id: '1', ok: false, error: NOT_ABSOLUTE_SENTENCE},
     {type: 'native_pipe_response', id: '2', ok: false, error: NOT_ABSOLUTE_SENTENCE},
     {type: 'native_pipe_response', id: '3', ok: false, error: NOT_SOCKET_SENTENCE},
-    {type: 'native_pipe_response', id: '4', ok: false, error: 'native pipe connect failed: ENOENT: no such file or directory, stat \'/tmp/absent\''},
+    {type: 'native_pipe_response', id: '4', ok: false, error: 'failed to connect native pipe: No such file or directory (os error 2)'},
     {type: 'native_pipe_response', id: '5', ok: false, error: 'unsupported native pipe operation: listen'},
   ]);
   assert.equal(sockets.length, 0);
@@ -84,30 +87,29 @@ test('a connected socket relays data and a write; a transport error that is not 
   relay.handle({id: 'w1', op: 'write', connection_id: id, data_base64: Buffer.from('ping').toString('base64')});
   await delay(5);
   assert.equal(sockets[0].written[0].toString(), 'ping');
-  sockets[0].emit('error', Object.assign(new Error('read EIO'), {code: 'EIO'}));
+  sockets[0].emit('error', systemError('read', 'EIO'));
   sockets[0].destroy();
   await delay(5);
   relay.handle({id: 'w2', op: 'write', connection_id: id, data_base64: 'AA=='});
   assert.deepEqual(sent.slice(1), [
     {type: 'native_pipe_data', connection_id: id, data_base64: Buffer.from('hello').toString('base64')},
     {type: 'native_pipe_response', id: 'w1', ok: true, result: null},
-    {type: 'native_pipe_closed', connection_id: id, error: 'read EIO'},
+    {type: 'native_pipe_closed', connection_id: id, error: 'Input/output error (os error 5)'},
     {type: 'native_pipe_response', id: 'w2', ok: false, error: NOT_CONNECTED_SENTENCE},
   ]);
 });
 
-test('the peer leaving is close-only, as the vendor host reports it: its EOF or reset closes once without an error, and a write failing on it afterwards surfaces after the close', async () => {
-  for (const leave of ['eof', 'reset', 'write']) {
+test('the peer leaving by EOF, or a write into the pipe it left, is close-only as the vendor host reports it, and the write\'s failure surfaces after the close', async () => {
+  for (const leave of ['eof', 'write']) {
     const {relay, sent, sockets} = relayWith();
     relay.handle({id: 'c', op: 'connect', path: '/tmp/s.sock'});
     sockets[0].emit('connect');
     const id = sent[0].result.connection_id;
     if (leave === 'eof') sockets[0].emit('end');
-    if (leave === 'reset') sockets[0].emit('error', Object.assign(new Error('read ECONNRESET'), {code: 'ECONNRESET'}));
-    sockets[0].writeError = Object.assign(new Error('write EPIPE'), {code: 'EPIPE'});
+    sockets[0].writeError = systemError('write', 'EPIPE');
     relay.handle({id: 'w', op: 'write', connection_id: id, data_base64: 'AA=='});
     await delay(5);
-    sockets[0].emit('error', Object.assign(new Error('write EPIPE'), {code: 'EPIPE'}));
+    sockets[0].emit('error', systemError('write', 'EPIPE'));
     sockets[0].destroy();
     await delay(5);
     const after = sent.slice(1);
@@ -119,18 +121,39 @@ test('the peer leaving is close-only, as the vendor host reports it: its EOF or 
   }
 });
 
+test('a reset the reader sees (Linux: the peer closed with unread data) closes with its OS error first, as the vendor\'s reader reports it; the cancelled write fails after', async () => {
+  const {relay, sent, sockets} = relayWith();
+  relay.handle({id: 'c', op: 'connect', path: '/tmp/s.sock'});
+  sockets[0].emit('connect');
+  const id = sent[0].result.connection_id;
+  sockets[0].writeError = systemError('write', 'ECANCELED');
+  relay.handle({id: 'w', op: 'write', connection_id: id, data_base64: 'AA=='});
+  sockets[0].emit('error', systemError('read', 'ECONNRESET'));
+  sockets[0].destroy();
+  await delay(5);
+  assert.deepEqual(sent.slice(1), [
+    {type: 'native_pipe_closed', connection_id: id, error: 'Connection reset by peer (os error 104)'},
+    {type: 'native_pipe_response', id: 'w', ok: false, error: 'native pipe write failed: Operation canceled (os error 125)'},
+  ]);
+});
+
 test('a refused connect is answered with the error, and closeAll ends live sockets without telling a gone worker', async () => {
   const {relay, sent, sockets} = relayWith();
   relay.handle({id: 'r', op: 'connect', path: '/tmp/refused.sock'});
-  sockets[0].emit('error', new Error('connect ECONNREFUSED /tmp/refused.sock'));
+  sockets[0].emit('error', systemError('connect', 'ECONNREFUSED', ' /tmp/refused.sock'));
   sockets[0].destroy();
+  relay.handle({id: 'again', op: 'connect', path: '/tmp/saturated.sock'});
+  sockets[1].emit('error', systemError('connect', 'EAGAIN', ' /tmp/saturated.sock'));
+  sockets[1].destroy();
   relay.handle({id: 'ok', op: 'connect', path: '/tmp/live.sock'});
-  sockets[1].emit('connect');
+  sockets[2].emit('connect');
   await delay(5);
   relay.closeAll();
   await delay(5);
-  assert.deepEqual(sent.map(m => [m.id, m.ok, m.error]), [['r', false, 'native pipe connect failed: connect ECONNREFUSED /tmp/refused.sock'], ['ok', true, undefined]]);
-  assert.equal(sockets[1].destroyed, true);
+  // The vendor's sentence, observed on cua-linux for a saturated listener (Rust's io::Error display of the OS error).
+  assert.deepEqual(sent.map(m => [m.id, m.ok, m.error]), [['r', false, 'failed to connect native pipe: Connection refused (os error 111)'],
+    ['again', false, 'failed to connect native pipe: Resource temporarily unavailable (os error 11)'], ['ok', true, undefined]]);
+  assert.equal(sockets[2].destroyed, true);
 });
 
 test('a real Unix socket: bytes both ways, close on request, and the peer\'s close reported once', async t => {

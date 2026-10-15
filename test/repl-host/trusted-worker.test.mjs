@@ -322,7 +322,7 @@ test('nativePipe through the host: absolute socket paths only, bytes both ways, 
   writeFileSync(file, '');
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: 'relative.sock'}))), 'native pipe path must be absolute');
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: file}))), 'native pipe path is not a socket');
-  assert.match(parsed(await host.js(rpc('pipe', {op: 'bad', path: join(host.root, 'absent.sock')}))), /^native pipe connect failed: ENOENT/);
+  assert.match(parsed(await host.js(rpc('pipe', {op: 'bad', path: join(host.root, 'absent.sock')}))), /^failed to connect native pipe: No such file or directory \(os error 2\)$/);
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: ''}))), 'native pipe path must be a non-empty string');
 });
 

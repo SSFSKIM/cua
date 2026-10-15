@@ -5,7 +5,8 @@ import {join, dirname} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
-import {buildLaunch, browserServiceFor, browserSelectionFor, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
+import {pathToFileURL} from 'node:url';
+import {buildLaunch, browserServiceFor, browserSelectionFor, replHostFor, ownHostNode, NODE_FLOOR, SKY_SERVICE, BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, REPL_HOST_SUPERVISOR, SERVICE_SUPPORT_DIRS} from '../src/runtime/launch.mjs';
 import {assertSandboxFits, assertTrustedServicesContained} from '../src/runtime/sandbox.mjs';
 import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
@@ -488,12 +489,12 @@ test('the own host\'s environment: the same allowlist and surface, service and s
     CUA_REPL_NODE_PATH: node,
     CUA_REPL_OWNED_GROUP: '1',
     CUA_REPL_NODE_MODULE_DIRS: p.moduleDir,
-    CUA_REPL_JS_BANNER: 'await import("@oai/cua/tinyskyAlt");\n',
+    CUA_REPL_JS_BANNER: `await import(${JSON.stringify(pathToFileURL(join(CUA_API_DIR, 'bootstrap.mjs')).href)});\n`,
     CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV',
     CUA_REPL_TOOL_OVERRIDES: JSON.stringify(toolOverrides({platform: 'darwin', surfaces: ['browser']})),
     CUA_REPL_TRUSTED_SERVICES: JSON.stringify({browser: BROWSER_SERVICE}),
     CUA_REPL_TRUSTED_RPC_ENABLED: '1',
-    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, p.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
+    CUA_REPL_TRUSTED_CODE_PATHS: [REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, p.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR].join(':'),
     CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS: '1000',
     NODE_REPL_DISABLE_ANALYTICS: '1',
     CODEX_CLI_PATH: p.codexCli,

@@ -18,6 +18,7 @@
   "files": [
     "bin/",
     "src/",
+    "docs/cua-api/",
     "extension/",
     "native/",
     "runtime/releases/",

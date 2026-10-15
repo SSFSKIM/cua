@@ -82,6 +82,9 @@ import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError, sandboxArgs, sandboxPolicy} from '../runtime/sandbox.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
+// What a kernel reads beyond its own code under a restricted profile: cua's facade (src/cua-api), which the banner
+// imports, and the first-call documents it reads (docs/cua-api).
+export const CUA_API_READ_PATHS = [fileURLToPath(new URL('../cua-api', import.meta.url)), fileURLToPath(new URL('../../docs/cua-api', import.meta.url))];
 export const TRUSTED_WORKER = fileURLToPath(new URL('./trusted-worker.mjs', import.meta.url));
 const KERNEL_ENV = ['HOME', 'PATH', 'TMPDIR', 'TMP', 'LC_ALL'];
 const KERNEL_SETTINGS = ['CUA_REPL_JS_BANNER', 'CUA_REPL_UNTRUSTED_ENV_ALLOWLIST', 'CUA_REPL_NODE_MODULE_DIRS'];
@@ -134,7 +137,7 @@ export function hostSettings(env, {cwd}) {
   return {node, codexCli, codexHome: env.CODEX_HOME ?? null, workingDir: cwd, kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
-    readPaths: [dirname(node), dirname(KERNEL), ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
+    readPaths: [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS, ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
 }
 
 // A child launch of `command` ([node, ...args]) with `env` for `policy` (sandboxPolicy) -> {command, args, env, cwd,

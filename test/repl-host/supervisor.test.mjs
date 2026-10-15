@@ -7,7 +7,7 @@ import {existsSync, readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {kernelNode} from './kernel-harness.mjs';
 import {alive, descendants, launches, startHost, texts} from './supervisor-harness.mjs';
-import {KERNEL, NO_SANDBOX_SENTENCE} from '../../src/repl-host/supervisor.mjs';
+import {CUA_API_READ_PATHS, KERNEL, NO_SANDBOX_SENTENCE} from '../../src/repl-host/supervisor.mjs';
 import {toolsFor} from '../../src/repl-host/tools.mjs';
 import {REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION} from '../../src/repl-host/identity.mjs';
 
@@ -36,6 +36,8 @@ test('the handshake names cua-repl-host; every tool result carries the host mark
 });
 
 test('cells persist in one kernel launched lazily under the recovered sandbox argv, with the kernel\'s own argv and the vendor\'s result shape', own, async t => {
+  assert.deepEqual(CUA_API_READ_PATHS, [join(dirname(KERNEL), '..', 'cua-api'), join(dirname(KERNEL), '..', '..', 'docs', 'cua-api')].map(path => join(path)),
+    'the facade the banner imports and the documents it reads are readable under a restricted profile');
   const host = await startHost(t, {node});
   assert.deepEqual(launches(host.codexHome), [], 'nothing is launched before a cell');
   const first = await host.js('let parityValue=41;');
@@ -47,7 +49,7 @@ test('cells persist in one kernel launched lazily under the recovered sandbox ar
   const sessionId = launch.argv[launch.argv.indexOf('--session-id') + 1];
   assert.match(sessionId, /^[0-9a-f]{32}$/);
   assert.deepEqual(launch.argv, ['sandbox', '-c', 'shell_environment_policy.inherit="all"', '-c', 'default_permissions="node_repl"', '-c',
-    `permissions.node_repl={filesystem = {${[dirname(node), dirname(KERNEL)].sort().map(p => `"${p}" = "read"`).join(', ')}, ":root" = "read", ":tmpdir" = "write", ":workspace_roots" = {"." = "write"}}, network = {enabled = false}}`,
+    `permissions.node_repl={filesystem = {${[dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS].sort().map(p => `"${p}" = "read"`).join(', ')}, ":root" = "read", ":tmpdir" = "write", ":workspace_roots" = {"." = "write"}}, network = {enabled = false}}`,
     '--', node, '--experimental-vm-modules', KERNEL, '--session-id', sessionId, '--working-dir', host.cwd]);
 });
 

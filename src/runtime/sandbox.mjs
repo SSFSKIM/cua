@@ -207,10 +207,11 @@ export async function assertSandboxConfines(mode, {platform, probe = bwrapUserns
 //   codex sandbox -c shell_environment_policy.inherit="all" -c default_permissions="node_repl"
 //     -c permissions.node_repl={filesystem = {"<read path>" = "read", ..., ":root" = "read", ...}, network = {enabled = false}}
 //     -- <node> --experimental-vm-modules <script> <args>...
-// Filesystem entries are the host's own read paths (its Node's directory, its code, its module directories) and the
-// profile's, keyed and sorted as a TOML table (byte order); the network is always off. A state that is absent (the
-// default mode) reads everything and writes nothing; a disabled profile runs the child with no sandbox at all (the
-// `disabled` mode, an explicit choice); a state this host cannot render is refused, never run unconfined.
+// Filesystem entries are the host's own read paths (its Node's directory, its code, cua's facade and its documents, its
+// module directories) and the profile's, keyed and sorted as a TOML table (byte order); the network is always off. A
+// state that is absent (the default mode) reads everything and writes nothing; a disabled profile runs the child with
+// no sandbox at all (the `disabled` mode, an explicit choice); a state this host cannot render is refused, never run
+// unconfined.
 const SPECIAL_KEYS = {root: ':root', minimal: ':minimal', tmpdir: ':tmpdir', slash_tmp: ':slash_tmp'};
 const ACCESS = ['read', 'write', 'none'];
 

@@ -539,6 +539,12 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Two more host-comparison trace allowances are approved on the same basis as `actions/wait-for` and `actions/slow-budget`: `input/coordinates` (drag, maxDelta 1) and `waits/networkidle` (`Page.lifecycleEvent`, maxDelta 4). Each is scoped to its case, cell and methods; maxDelta equals the vendor's own spread; each cites committed, attested vendor-against-vendor runs. The final M2 corpus pair at e4ea7eb runs 59/59 on each host with 0 unexpected differences and 7 expected trace counts.
+  Rationale: Variance the vendor shows against itself is not a host difference.
+  Date/Author: 2026-10-14, session ruling, recorded by the plan-executor.
+- Decision (M3 input): Trace-count allowances for host comparison are derived from a recorded vendor-against-vendor pair. The comparator tolerates, per case, cell and method, the delta the vendor shows against itself, instead of allowances being added one pair at a time. The four hand-written M2 allowances become the first fixture of that rule; no new hand-written trace allowances after M3. M3 also implements the deferred EOF/suspended-request drain bound (fd45380), following the M2 task 3 sketch: at drain start, cancel pending client requests and resume the budget, under a drain deadline.
+  Rationale: A per-pair allowance list grows with every flaky count and invites hand-tuned tolerances; deriving the tolerance from recorded vendor variance keeps the oracle mechanical.
+  Date/Author: 2026-10-14, session ruling, recorded by the plan-executor.
 - Decision: The remaining EOF-drain gap moves to M3. A ready worker that suspends the execution budget during an ordinary service request (or an unanswered elicitation) and then stops responding can keep the EOF drain open indefinitely. The fix is a bounded EOF escape that settles unresolved work honestly and stops the children, while normal approval suspension still works on a live connection. M3 implements it first, test-first; M2's PR carries it under Unresolved Review Findings. M2 bounded only unanswered hooks and `turn_ended`.
   Rationale: The gap predates M2 task 3 and nothing observed hits it. Fixing it in M2 would force the services, MAWS and corpus evidence to be re-recorded again; the session ruled that a non-small bound goes to M3 rather than holding the PR.
   Date/Author: 2026-10-14, plan-executor, applying the session's ruling to the task review's finding.

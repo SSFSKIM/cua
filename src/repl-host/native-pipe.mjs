@@ -24,9 +24,10 @@ export const CONNECT_FAILED_PREFIX = 'native pipe connect failed: ';
 export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
-// every connection without telling the worker (it is gone).
+// every connection, connected or still connecting, without telling the worker (it is gone).
 export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, stat = statSync}) {
   const connections = new Map();     // connection_id -> socket
+  const connecting = new Map();      // socket -> its connect timer, until the connect is answered
   let counter = 0;
   let closedAll = false;
   const reply = (id, outcome) => { if (!closedAll) send({type: 'native_pipe_response', id, ...outcome}); };
@@ -47,11 +48,14 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
+      connecting.delete(socket);
       socket.destroy();
       fail(id, CONNECT_TIMEOUT_SENTENCE);
     }, connectTimeoutMs);
+    connecting.set(socket, timeout);
     socket.once('connect', () => {
       clearTimeout(timeout);
+      connecting.delete(socket);
       if (settled || closedAll) return socket.destroy();
       settled = true;
       connected = true;
@@ -64,11 +68,13 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       if (!settled) {
         settled = true;
         clearTimeout(timeout);
+        connecting.delete(socket);
         fail(id, `${CONNECT_FAILED_PREFIX}${error.message}`);
       }
     });
     socket.once('close', () => {
       clearTimeout(timeout);
+      connecting.delete(socket);
       if (!connected) return;
       connections.delete(connectionId);
       if (!closedAll) send({type: 'native_pipe_closed', connection_id: connectionId, error: lastError ? lastError.message : null});
@@ -99,8 +105,11 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       }
     },
     get size() { return connections.size; },
+    // Live and still-connecting sockets alike are destroyed at once, their connect timers cleared.
     closeAll() {
       closedAll = true;
+      for (const [socket, timeout] of connecting) { clearTimeout(timeout); socket.destroy(); }
+      connecting.clear();
       for (const socket of connections.values()) socket.destroy();
       connections.clear();
     },

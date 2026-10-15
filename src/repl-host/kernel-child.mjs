@@ -114,10 +114,9 @@ function ancestorsUpTo(rows, self, leader) {
 // reap() freezes then SIGKILLs every member of the group except the supervisor, its ancestors up to the anchor (an
 // ancestor inside the owned group is never a stray), the `ps` listing the reaper itself ran, and every process in a
 // protected subtree. own(pid) protects the live child `pid` and everything descending from it until the release it
-// returns is called: the supervisor registers each long-lived child it owns besides its kernels (#116 M2's trusted
-// worker and the helpers it starts). reap() is called only when a kernel generation (or the trusted worker) has ended
-// and before the next starts, so every unprotected member is what that child left behind: processes it started,
-// reparented when it died. (A process that leaves the group, as bwrap's --new-session sandbox does, is not found; that
+// returns is called: the supervisor registers every live child (the kernel and #116 M2's trusted worker, with the
+// processes they start) and releases a child only in that child's own cleanup. reap() is called only when a child has
+// ended, so every unprotected member is what it left behind: processes it started, reparented when it died. (A process that leaves the group, as bwrap's --new-session sandbox does, is not found; that
 // sandbox dies with its parent.)
 export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal} = {}) {
   const rows = table();

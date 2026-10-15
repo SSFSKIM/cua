@@ -142,3 +142,13 @@ test('a real Unix socket: bytes both ways, close on request, and the peer\'s clo
   relay.handle({id: 'f', op: 'connect', path: file});
   assert.deepEqual(sent.at(-1), {type: 'native_pipe_response', id: 'f', ok: false, error: NOT_SOCKET_SENTENCE});
 });
+
+test('closeAll also ends a connect still pending: its socket is destroyed at once, its timer cleared, and nothing reaches the gone worker', async () => {
+  const {relay, sent, sockets} = relayWith({connectTimeoutMs: 1000});
+  relay.handle({id: 'pending', op: 'connect', path: '/tmp/never.sock'});
+  relay.closeAll();
+  assert.equal(sockets[0].destroyed, true, 'destroyed at once, not at the 1 s timeout');
+  sockets[0].emit('connect');
+  await delay(1100);
+  assert.deepEqual(sent, [], 'no timeout answer and no late connect');
+});

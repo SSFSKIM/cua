@@ -130,8 +130,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction}) {
   const settings = hostSettings(env, {cwd});
   // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
-  // whatever a finished child left in the group is removed with it. The trusted worker, long-lived, is registered with
-  // `own` while it runs, so a kernel's end never takes it or the helpers it started.
+  // whatever a finished child left in the group is removed with it. Every live child, kernel and trusted worker alike, is
+  // registered with `own` while it runs, so another child's end never takes it or what it started.
   const groupReaper = reaper();
   const reap = groupReaper?.reap ?? (() => {});
   const sandboxed = settings.codexCli !== null;
@@ -159,9 +159,11 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   const executionOf = message => (execution && message.exec_id === execution.id ? execution : null);
 
   // ---- the kernel ----
+  // Each child's tree is protected from the reaper while it lives (`own`), so a reap after another child's end never
+  // takes it; a child releases its own protection only in its own cleanup, then reaps what it left.
   function launchKernel(launch) {
-    const self = {key: launch.key};
-    self.child = startKernel(launch, {reap,
+    const self = {key: launch.key, release: () => {}};
+    self.child = startKernel(launch, {reap: () => { self.release(); reap(); },
       onMessage: message => { if (kernel === self) fromKernel(self, message); },
       onEnd: ({expected, diagnostic}) => {
         if (kernel === self) kernel = null;
@@ -170,6 +172,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
         else log(diagnostic);
       },
     });
+    // Registered before anything else can run: no other child's end may take the kernel or what its cells started.
+    if (self.child.pid && groupReaper) self.release = groupReaper.own(self.child.pid);
     return self;
   }
 

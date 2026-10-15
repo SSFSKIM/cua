@@ -250,12 +250,14 @@ test('the worker outlives kernel timeouts and resets; a timed-out call\'s late a
       if (request.op === 'die') return new Promise(() => {});
       return calls;
     }`}});
+  // Warm first: the worker's cold start counts against a cell's budget, and the short budget below must reach it.
+  assert.equal(parsed(await host.js(rpc('svc', {op: 'count'}))), 1);
   assert.deepEqual(texts(await host.js(rpc('svc', {op: 'slow'}), {timeoutMs: 300})), ['js execution timed out; kernel reset, rerun your request']);
-  assert.equal(parsed(await host.js(rpc('svc', {op: 'count'}))), 2, 'the same worker served the next kernel');
+  assert.equal(parsed(await host.js(rpc('svc', {op: 'count'}))), 3, 'the same worker served the next kernel');
   await delay(700);
   assert.deepEqual(texts(await host.js('nodeRepl.write("after the late answer")')), ['after the late answer']);
   assert.deepEqual(texts(await host.call('js_reset', {})), ['js kernel reset']);
-  assert.equal(parsed(await host.js(rpc('svc', {op: 'count'}))), 3, 'and survived a reset');
+  assert.equal(parsed(await host.js(rpc('svc', {op: 'count'}))), 4, 'and survived a reset');
   const [worker] = workers(host);
   assert.ok(worker, 'one worker process');
   assert.equal(parsed(await host.js(rpcError('svc', {op: 'die'}))), TRUSTED_EXIT_SENTENCE);
@@ -346,12 +348,12 @@ const HELPER_SERVICE = {helper: `import {spawn} from 'node:child_process';
   let helper = null;
   export async function handleRpc(request) {
     if (request.op === 'start') { helper = spawn('/bin/sleep', ['30'], {stdio: 'ignore'}); return helper.pid; }
-    if (request.op === 'die') { setTimeout(() => process.exit(3), 20); return 'dying'; }
+    if (request.op === 'die') { setTimeout(() => process.exit(3), 20); return new Promise(() => {}); }
     return process.pid;
   }`};
 
 for (const wrapper of [false, true]) {
-  test(`in the owned group${wrapper ? ', under a wrapper between the anchor and the host,' : ''} a kernel's end never reaps the trusted worker or its helper; the worker's own end does`, own, async t => {
+  test(`in the owned group${wrapper ? ', under a wrapper between the anchor and the host,' : ''} a kernel's end never reaps the trusted worker or its helper; the worker's own end reaps its helper but never the live kernel`, own, async t => {
     const host = await anchoredHost(t, {services: HELPER_SERVICE, wrapper});
     const helper = JSON.parse(texts(await host.call('js', {code: rpc('helper', {op: 'start'})}))[0]);
     const worker = JSON.parse(texts(await host.call('js', {code: rpc('helper', {op: 'pid'})}))[0]);
@@ -363,9 +365,13 @@ for (const wrapper of [false, true]) {
     assert.equal(alive(worker), true, 'the worker survived the kernel\'s crash and reset');
     assert.equal(alive(helper), true, 'and so did its helper');
     assert.equal(JSON.parse(texts(await host.call('js', {code: rpc('helper', {op: 'pid'})}))[0]), worker, 'the same worker still answers');
-    await host.call('js', {code: rpc('helper', {op: 'die'})});
+    assert.deepEqual(texts(await host.call('js', {code: 'let kept = 41; nodeRepl.write("set")'})), ['set']);
+    const died = await host.call('js', {code: rpcError('helper', {op: 'die'})});
+    assert.deepEqual({text: texts(died), isError: died.isError}, {text: [JSON.stringify(TRUSTED_EXIT_SENTENCE)], isError: false},
+      'the worker\'s exit during an awaited call is a catchable rejection in the cell, not the kernel\'s death');
     for (let i = 0; i < 150 && alive(helper); i++) await delay(20);
     assert.equal(alive(helper), false, 'the dead worker\'s helper was reaped with it');
+    assert.deepEqual(texts(await host.call('js', {code: 'nodeRepl.write(kept + 1)'})), ['42'], 'the live kernel and its bindings survived the worker\'s cleanup');
     assert.equal((await host.terminate()).confirmed, true);
   });
 }

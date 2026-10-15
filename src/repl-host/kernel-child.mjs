@@ -23,7 +23,7 @@ import {spawn, execFileSync} from 'node:child_process';
 import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, rmSync} from 'node:fs';
 import {Socket} from 'node:net';
 import {constants, tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {isAbsolute, join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {LIFELINE_ENV} from './lifeline.mjs';
 
@@ -176,12 +176,15 @@ export function kernelPipes() {
 
 // The child's lifeline (./lifeline.mjs): a FIFO of this process's own, in a private directory, whose only write end this
 // process keeps (opened close-on-exec, so no child inherits it) until the child is gone -> {setting, unlink(), release()}.
+// It lives under the child's TMPDIR: the scoped sandbox's temporary root, which the child may read (and write) under the
+// existing policy, so no policy is widened for it.
 // The child opens the read end itself, by the path in its setting (CUA_REPL_LIFELINE, `<dev>:<ino>:<path>`, so it reads
 // only that pipe), without blocking: a descriptor inherited at spawn would be put in blocking mode for the child, and a
 // thread blocked in a read keeps its process from exiting. unlink() removes the path once the child is ready (it has
 // opened it by then); release() closes the write end, from when on the child's read finds the pipe's end.
-export function lifelinePipe() {
-  const dir = mkdtempSync(join(tmpdir(), 'cua-lifeline-'));
+// `root`: where the private directory goes, the child's own TMPDIR (see startKernelChild).
+export function lifelinePipe(root = tmpdir()) {
+  const dir = mkdtempSync(join(root, 'cua-lifeline-'));
   let reader = null;
   let writer = null;
   try {
@@ -219,7 +222,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
   let lifeline = null;
   try {
     fifos = pipes?.() ?? null;
-    lifeline = lifelines?.() ?? null;
+    lifeline = lifelines?.(isAbsolute(env?.TMPDIR ?? '') ? env.TMPDIR : tmpdir()) ?? null;
     child = spawnProcess(command, args, {env: lifeline ? {...env, [LIFELINE_ENV]: lifeline.setting} : env, cwd, stdio: fifos?.child ?? ['pipe', 'pipe', 'pipe']});
   } catch (error) {
     spawnError = error;

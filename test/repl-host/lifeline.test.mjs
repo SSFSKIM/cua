@@ -80,3 +80,23 @@ test('every child the host starts is given its lifeline, which is unlinked once 
   await done;
   assert.equal(given.held, false, 'the write end is closed once the child is gone');
 });
+
+test('the lifeline lives under the child\'s own TMPDIR, the scoped sandbox\'s temporary root, never elsewhere', async t => {
+  const {mkdtempSync, realpathSync, rmSync} = await import('node:fs');
+  const {tmpdir} = await import('node:os');
+  const {join} = await import('node:path');
+  const runTmp = realpathSync(mkdtempSync(join(tmpdir(), 'cua-run-tmp-')));
+  t.after(() => rmSync(runTmp, {recursive: true, force: true}));
+  const script = 'process.stdout.write(JSON.stringify({setting:process.env.CUA_REPL_LIFELINE})+"\\n");process.stdin.once("data",()=>process.exit(0));';
+  const messages = [];
+  let ended;
+  const done = new Promise(resolve => { ended = resolve; });
+  const kernel = startKernelChild({command: process.execPath, args: ['-e', script], env: {PATH: '/usr/bin:/bin', TMPDIR: runTmp}, cwd: process.cwd()},
+    {onMessage: m => messages.push(m), onEnd: ended});
+  t.after(() => kernel.stop());
+  while (!messages.length) await delay(20);
+  const path = messages[0].setting.split(':').slice(2).join(':');
+  assert.ok(path.startsWith(runTmp + '/cua-lifeline-'), path);
+  kernel.send({go: 1});
+  await done;
+});

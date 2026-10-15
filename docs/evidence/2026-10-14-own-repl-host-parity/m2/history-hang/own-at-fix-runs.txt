@@ -1,0 +1,49 @@
+cua-1 case capabilities/history ok
+cua-2 case capabilities/history ok
+cua-3 case capabilities/history ok
+cua-4 case capabilities/history ok
+cua-5 case capabilities/history ok
+cua-6 case capabilities/history ok
+cua-7 case capabilities/history ok
+cua-8 case capabilities/history ok
+cua-9 case capabilities/history ok
+cua-10 case capabilities/history ok
+cua-11 case capabilities/history ok
+cua-12 case capabilities/history ok
+cua-13 case capabilities/history ok
+cua-14 case capabilities/history ok
+cua-15 case capabilities/history ok
+cua-16 case capabilities/history ok
+cua-17 case capabilities/history ok
+cua-18 case capabilities/history ok
+cua-19 case capabilities/history ok
+cua-20 case capabilities/history ok
+cua-21 case capabilities/history ok
+cua-22 case capabilities/history ok
+cua-23 case capabilities/history ok
+cua-24 case capabilities/history ok
+cua-25 case capabilities/history ok
+cua-26 case capabilities/history ok
+cua-27 case capabilities/history ok
+cua-28 case capabilities/history ok
+cua-29 case capabilities/history ok
+cua-30 case capabilities/history ok
+cua-31 case capabilities/history ok
+cua-32 
+wv-vendor-1 case actions/wait-for ok case capabilities/viewport ok 
+wv-vendor-2 case actions/wait-for ok case capabilities/viewport ok 
+wv-vendor-3 case actions/wait-for ok case capabilities/viewport ok 
+wv-cua-1 case actions/wait-for ok case capabilities/viewport ok 
+wv-cua-2 case actions/wait-for ok case capabilities/viewport ok 
+wv-cua-3 case actions/wait-for ok case capabilities/viewport ok 
+LOOP-DONE
+cua-41 case capabilities/history ok
+cua-42 case capabilities/history ok
+cua-43 case capabilities/history ok
+cua-44 
+cua-45 case capabilities/history ok
+cua-46 case capabilities/history ok
+cua-47 case capabilities/history ok
+cua-48 case capabilities/history ok
+cua-49 case capabilities/history ok
+cua-50 case capabilities/history ok

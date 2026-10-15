@@ -1,5 +1,23 @@
 # M2 task 3: the own host's live runs (2026-10-15)
 
+## Final state, at code head `d29907a`
+
+`d29907a` is `aff75b4` plus the following:
+- a time-zone settle at runtime load (`8e3d148`);
+- replacement of a child that does not finish starting (`d29907a`), from the `capabilities/history` hang investigation in `history-hang/README.md`;
+- the browser-parity pending flag and a host-comparison allowance file (`9bad10c`, harness only).
+
+| Run | Command | Result |
+|---|---|---|
+| Services suite, `cua/`, `cua-diff.json` | `repl-parity.mjs run --host cua --device mini --suite services`, diff against `vendor-1` with `--expected` | 41 cases, 74 cells, complete, every assertion passing, **0 differences**. 73 expected entries used, all the `meta.cua/replHost` identity slot. All 42 connections attest `cua-repl-host 0.3.0` with the marker `{host: cua, version: 0.3.0}`. |
+| Tools, `tools-cua/`, `tools-diff.json` | `tools.mjs record --host cua`, diff against `tools-vendor` | **0 differences**. The only allowance is `tools.0.description` through the `table-2-browser-exclusions` transform. |
+| MAWS, `maws/` | the probe below | Verdict PASS. Served by `cua browser service 0.1.0`. All 3 serve sessions answered initialize as `cua-repl-host 0.3.0`, and every js result carried the own-host marker (`maws/attest-cua-summary.json`). |
+| Browser corpus pair | `browser-parity.mjs prepare` and `run --repl-host vendor\|cua --service cua` | **Not recorded.** At `d29907a`, `prepare` refused: profile ssfs `host_not_live` (`cua profiles list`). Held for the controller. The pair recorded at `aff75b4` is superseded and removed; its findings are below and in `browser-diagnostics/`. |
+
+`maws/e2e-browser-cua.txt` (7 passed) is MAWS's unchanged fake-host regression. It never starts cua, so it is not re-run per code head.
+
+## Earlier record, at `aff75b4` (superseded)
+
 Source: `feat/own-repl-host-m2` at `aff75b4`. That commit matches the vendor where task 1's evidence contradicted the port:
 - a bare elicitation suspends the cell's budget;
 - response meta merges across a cell's rpcs and hooks;

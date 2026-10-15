@@ -1,0 +1,31 @@
+vendor-1 case capabilities/history ok
+vendor-2 case capabilities/history FAIL assertion
+vendor-3 case capabilities/history ok
+vendor-4 case capabilities/history FAIL assertion
+vendor-5 case capabilities/history FAIL assertion
+vendor-6 case capabilities/history ok
+vendor-7 case capabilities/history FAIL assertion
+vendor-8 case capabilities/history ok
+vendor-9 case capabilities/history ok
+vendor-10 case capabilities/history ok
+vendor-11 case capabilities/history ok
+vendor-12 case capabilities/history ok
+vendor-13 case capabilities/history ok
+vendor-14 case capabilities/history ok
+vendor-15 case capabilities/history ok
+vendor-16 case capabilities/history ok
+vendor-17 case capabilities/history ok
+vendor-18 case capabilities/history ok
+vendor-19 case capabilities/history ok
+vendor-20 case capabilities/history ok
+vendor-21 case capabilities/history ok
+vendor-22 case capabilities/history ok
+vendor-23 case capabilities/history ok
+vendor-24 case capabilities/history ok
+vendor-25 case capabilities/history ok
+vendor-26 case capabilities/history ok
+vendor-27 case capabilities/history ok
+vendor-28 case capabilities/history ok
+vendor-29 case capabilities/history ok
+vendor-30 case capabilities/history ok
+DONE

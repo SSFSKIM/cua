@@ -539,6 +539,16 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M3 task 3 as built.
+  - **Documents.** They are committed already edited. Their provenance lives in `docs/cua-api/PROVENANCE.md`, because the files are emitted byte for byte. A test applies the 14 Table 3 edits to SHA-pinned vendor copies and requires byte equality.
+  - **Module layout.** One module per vendor concern. That includes `linux-accessibility-tree.mjs`, which Linux `getAXState` text depends on.
+  - **Sky.** The facade's no-nodeRepl branch, Sky's native client, is native-engine code and is not ported. Its refusal sentence is kept verbatim.
+  - **Dropped vendor switches.** `CUA_REPL_BROWSER_ENV` modes and `TINYSKY_ALT_INITIALIZE_DOCS` are gone (Table 2). The core confirmations policy, its valid requestMeta override and the bundled fallback stay. Only the duplicate browser emission of that policy is excluded (Table 3).
+  - **Paths.** `src/cua-api` and `docs/cua-api` join the kernel's read paths, the own host's trusted code paths and doctor's protected paths. That gives read access and write-overlap protection, and no new cell-accessible service.
+  - **Banner.** The banner now imports `src/cua-api/bootstrap.mjs`; the M2 vendor-facade banner is removed.
+  - **Profiles listing.** It also returns `hostAttestation` and is otherwise unchanged.
+  Rationale: Follows Design "Owned facade and first-call documentation" and the owner's document ruling.
+  Date/Author: 2026-10-15, M3 task 3 executor and its review, folded by the plan-executor.
 - Decision: `exportGsuite` and `exportYouTubeTranscript` are covered at two levels.
   - Real-service cases on a scratch page assert the source-defined rejection and error contracts.
   - Source-boundary success-marshalling cases under the capability case are labelled boundary-double and cite vendor source lines.

@@ -1,0 +1,6 @@
+# node scripts/browser-parity.mjs diff m2/browser-vendor-host m2/browser-cua-host --expected test/browser-parity/repl-host-expected-differences.json   (at c49777c; comparator at 7342d69)
+{"case":"actions/slow-budget","cell":"late","kind":"trace","method":"Runtime.evaluate","a":78,"b":80}
+{"case":"actions/slow-budget","cell":"late","kind":"trace","method":"Runtime.releaseObject","a":74,"b":76}
+{"case":"dialogs/paused-response","cell":"start","kind":"trace","method":"Fetch.requestPaused","a":1,"b":0}
+3 unexpected differences (59 cases, 151 cells, 2 expected)
+exit 1

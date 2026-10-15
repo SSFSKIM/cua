@@ -9,9 +9,11 @@ export default {
   id:'dialogs/paused-response',milestone:'M2',commands:['tab_get_js_dialog','tab_handle_js_dialog'],
   setup:{page:`/paused-navigation.html?token=${token}`,state:{}},
   cells:[
-    {label:'start',code:"await tab.playwright.locator('#go').click();return true;"},
-    // The alert opens about 500 ms after the click and the response arrives about 1,200 ms after it: the dialog is
-    // held open past the response.
+    // The alert opens about 500 ms after the click and the response arrives about 1,300 ms after it: the dialog is
+    // held open past the response. The cell outlasts the response's pause, so its Fetch.requestPaused event is traced
+    // inside this cell on every run; returning at once left it racing the runner's trace read at the cell's end, and a
+    // late read dropped it between cells (M2 task 3, the host corpus pair).
+    {label:'start',code:"await tab.playwright.locator('#go').click();await new Promise(r=>setTimeout(r,2500));return true;"},
     {label:'dialog',code:"const started=Date.now();globalThis.dialog=undefined;while(!dialog&&Date.now()-started<5000){dialog=await tab.getJsDialog();if(!dialog)await new Promise(r=>setTimeout(r,25));}await new Promise(r=>setTimeout(r,2500));return dialog?.type;"},
     {label:'dismiss',code:"await dialog.dismiss();return (await tab.getJsDialog())==null;"},
     // Still the first document, 2.5 s after the response was sent (the tab's title and committed URL, which the host

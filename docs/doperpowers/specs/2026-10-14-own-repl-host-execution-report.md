@@ -8,7 +8,8 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 |---|---|---|---|
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
-| M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | whole-branch reviewer-high correct at bb3d59a |
+| M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | merged (5722341) |
+| M3 | feat/own-repl-host-m3 | (PR pending) | whole-branch reviewer-high correct |
 
 ## Log
 
@@ -50,6 +51,34 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
   - Host-only trace allowances could be applied to a vendor-against-vendor diff.
 
 - 2026-10-15 M2 whole-branch fixes in bb3d59a: a dying worker's open timeout suspensions are released, and host allowances apply only to an attested vendor-host vs cua-host pair. Nothing was re-recorded, because no recorded case reaches the worker-death-during-suspension path. The re-review verdict is "correct". Gates at 0bc6f6b: plain `npm test` 1918 pass / 0 fail / 70 skip; with `CUA_NODE`, 1980/0/8; test:mods 32; validate ok with the known warning; corpus diff with `--expected`: 0 unexpected (59 cases, 151 cells, 7 expected). PR #139.
+
+- 2026-10-15 M3 in four tasks.
+  - **Task 1, the oracle** (astra executor in a sibling worktree, sol task reviews; four waves):
+    - Built: api (290 cases), secrets-live (25), docs-profiles (12), and a trace tolerance derived from vendor-against-vendor pairs that replaces M2's hand-written allowances.
+    - Rules added: the completeness gate with unit-proof references; `--suite all` live-only.
+    - Review fixes:
+      - empty, deleted and malformed target traces;
+      - download cleanup moved out of the kernel;
+      - locator guards, diagnostics and caches;
+      - malformed recovery envelopes;
+      - export success;
+      - decoded screenshots;
+      - RPC-sorted diagnostics;
+      - WebMCP id projection.
+    - Vendor controls at d75a105: three pairs, each 0 differences with no allowances.
+  - **Task 2** (opus; one wave):
+    - Built: the bounded EOF drain, then the browser-client port with vendored zod 3.25.76.
+    - Review fixes: hook bounds registered late are now honoured during the drain; the eviction scenario is no longer vacuous.
+  - **Task 3** (opus; clean): the owned facade and CuaBootstrap, and core.md. The owner later approved a two-sentence grammar amendment to Table 3, which the facade and the oracle both apply independently.
+  - **Task 4** (opus; one wave):
+    - Results:
+      - own host against the M3 controls: 0 differences on all three suites (identity slots only);
+      - tools contract 0;
+      - fresh corpus pair 59/59, with 0 unexpected and 0 expected;
+      - MAWS probe PASS, with per-session source records after the review; `e2e:browser-cua` 7/7.
+    - Corpus download guards accept Chrome's timestamp collision name.
+    - Rulings: `REPL_HOST_VERSION` is bumped at M4; browser-id mapping and locator calibration become oracle inputs for M4/M5.
+- 2026-10-15 M3 whole-branch reviewer-high (5722341..3cf0469): "correct", no material findings. Task 4 review fix (MAWS per-session source records) re-reviewed clean. Gates at the head: plain `npm test` 2252/0/150; with `CUA_NODE` 2326/0/76 on re-run (first run had one load-sensitive failure at load average ~37, tracked in tech-debt-tracker.md); test:mods 32; validate ok with the known warning.
 
 ## Environmental friction
 

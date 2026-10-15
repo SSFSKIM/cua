@@ -81,7 +81,7 @@ The earlier 41867b8 API pair passed every assertion but differed in one WebMCP r
 
 The mini runs below execute `feat/own-repl-host-m3` at **`50d1170`**; the MAWS probe, which runs on this Mac, executes **`0d54b41`**, the evidence commit that adds its source-binding recorder (no code change since `50d1170`: `git diff 50d1170 0d54b41 -- src bin scripts test` is empty). The own host's code is unchanged since `9a3b0e1` (task 3 and the Table 3 amendment). Task 4's two commits touch only the #113 browser corpus's download guards (below). The own host's banner is `src/cua-api/bootstrap.mjs` (`CUA_BOOTSTRAP_BANNER`); no vendor facade import is left on the own route.
 
-All macOS sessions were browser-only (`CUA_SHIM_SURFACES=browser`, cua browser service, scoped sandbox), on the mini's `~/Developer/GitHub/cua-parity` clone through batch SSH, with the existing ssfs binding. No native helper, Chrome launch or rebind, resident checkout or agent, or secret store was involved, and no -10005 or `host_not_live` occurred.
+All mini parity sessions were browser-only (`CUA_SHIM_SURFACES=browser`, cua browser service, scoped sandbox), on the mini's `~/Developer/GitHub/cua-parity` clone through batch SSH, with the existing ssfs binding. No native helper, Chrome launch or rebind, resident checkout or agent, or secret store was involved, and no -10005 or `host_not_live` occurred.
 
 | Run | Command (from the worktree) | Result |
 |---|---|---|

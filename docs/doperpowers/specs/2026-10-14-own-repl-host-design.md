@@ -539,6 +539,51 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Table 3 gains a dated amendment, recorded in `surface-inventory.md` under "Table 3 amendment (2026-10-15)". It repairs the two sentences that the literal Windows deletions made ungrammatical: "Linux always returns full accessibility state." and "Linux app `paste` supports only `text` and uses the platform's native text input." The oracle derives these bytes independently, and the facade's `core.md` applies the same repair. The principle stays as before: vendor wording verbatim, the name changed to cua, exclusions explicit. The amendment covers only sentences the exclusion itself broke.
+  Rationale: The owner's ruling, relayed by the session. A deletion that breaks a sentence's grammar is not "verbatim" in any useful sense.
+  Date/Author: 2026-10-15, owner ruling, recorded by the plan-executor.
+- Decision: M3 task 3 as built.
+  - **Documents.** They are committed already edited. Their provenance lives in `docs/cua-api/PROVENANCE.md`, because the files are emitted byte for byte. A test applies the 14 Table 3 edits to SHA-pinned vendor copies and requires byte equality.
+  - **Module layout.** One module per vendor concern. That includes `linux-accessibility-tree.mjs`, which Linux `getAXState` text depends on.
+  - **Sky.** The facade's no-nodeRepl branch, Sky's native client, is native-engine code and is not ported. Its refusal sentence is kept verbatim.
+  - **Dropped vendor switches.** `CUA_REPL_BROWSER_ENV` modes and `TINYSKY_ALT_INITIALIZE_DOCS` are gone (Table 2). The core confirmations policy, its valid requestMeta override and the bundled fallback stay. Only the duplicate browser emission of that policy is excluded (Table 3).
+  - **Paths.** `src/cua-api` and `docs/cua-api` join the kernel's read paths, the own host's trusted code paths and doctor's protected paths. That gives read access and write-overlap protection, and no new cell-accessible service.
+  - **Banner.** The banner now imports `src/cua-api/bootstrap.mjs`; the M2 vendor-facade banner is removed.
+  - **Profiles listing.** It also returns `hostAttestation` and is otherwise unchanged.
+  Rationale: Follows Design "Owned facade and first-call documentation" and the owner's document ruling.
+  Date/Author: 2026-10-15, M3 task 3 executor and its review, folded by the plan-executor.
+- Decision: `exportGsuite` and `exportYouTubeTranscript` are covered at two levels.
+  - Real-service cases on a scratch page assert the source-defined rejection and error contracts.
+  - Source-boundary success-marshalling cases under the capability case are labelled boundary-double and cite vendor source lines.
+  - Authenticated live export success is an explicit external-fixture limitation: no authenticated Workspace or stable captioned-YouTube fixture exists, the same as #113's corpus. It is not claimed.
+  Rationale: Acceptance 3 requires an executable proof of every member's contract. A rejection-only case leaves the success shape untested, and the owner's accounts are never used as fixtures.
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
+- Decision: `--suite all` selects live-lane cases only, and fake rows are never compared live. The inventory completeness gate counts a row as covered when it has live coverage, or when its obligation is a unit/double proof and the row names a unit test, checked to exist and run under `npm test`. A row whose acceptance requires live proof must point at a live-lane case. This is implemented in M3, not deferred to M5.
+  Rationale: Otherwise the final M5 `all` diff could never pass while fake secret rows remain, and silently exempting fake rows in the comparator would weaken the oracle.
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
+- Decision: Acceptance 6's M3 slice (browser substitution) is proven through the real client in the remote capability-host lane.
+  - The rows are browser fill/AX actions at their supported shapes, refusal before read, and sanitized post-read errors. They run with the real selected host and client, a synthetic sentinel store in the lane's scratch HOME, and a fake backend that records only booleans, labels and hashes.
+  - M0's 27 source/service-double secret rows move to `--suite secrets` and stay labelled fake. They are never counted as live proof.
+  - Native text-method substitution is M4.
+  - The live seam runs the real selected host, the real client, the real imported secret wrapper and a real scratch fileStore, with a recorder below the wrapper, labelled boundary-double at the service boundary. Wrapper-malformation rows the client cannot emit (coerced method, extra fields) stay as named unit-only proofs under the completeness-gate rule. Fill into real Chrome is #113's concern (amended 2026-10-15).
+  Rationale: The comparator rightly refuses fake rows as live evidence. The capability lane is the only place where real-client substitution can run without touching the owner's secret store.
+  Date/Author: 2026-10-15, plan-executor assignment to M3 task 1.
+- Decision: M3 task 2 as built.
+  - **EOF drain.** At EOF the host withdraws unanswered elicitations with `notifications/cancelled`. The worker gets an honest error sentence rather than a fabricated `cancel` action, and nothing is granted. Budget suspensions end, so a silent worker's cell times out on its remaining budget. Each admitted execution gets a drain deadline (remaining budget + after-code hook bound + turn margin + 2 s) and then takes the forced-shutdown path.
+  - **Browser client.** Ported mechanically into one file, `src/cua-api/browser-client.mjs`, keeping the bundle's local names until #120.
+    - Zod is vendored at 3.25.76 (v3 API) under the exact-pin rule (`scripts/extract-zod.mjs`); the bundled copy's literal strings match that release exactly.
+    - Dropped per Table 2: `iab`, `mcpapps`, `codexSessionId` and the Orbit rewrite.
+    - What stays in the vendor's facade files for task 3: initial snapshot, allSettled inventory, Linux window binding, platform input guards, DOM-only Tab input wrappers, emit:false.
+  - **Task 3 inherits:** adding `src/cua-api` to the kernel's sandbox read paths for restricted profiles.
+  Rationale: Vendor parse sites rely on Zod's stripping, refinements and error text, so a hand-written validator would change refusals. The facade concerns follow the vendor's own file split.
+  Date/Author: 2026-10-15, M3 task 2 executor, folded by the plan-executor.
+- Decision: Case scheduling splits by platform for native-paired members.
+  - Their `api/` binder-double cases are darwin-only and due M3, because the doubles are grounded in macOS source.
+  - On Linux the same members are proven by their `native/` live cases, due M4.
+  - Platform-independent decorated-tab behaviour is proven by real-browser `api/` cases on both platforms.
+  - A Linux selection never demands darwin doubles, and a native-paired member with no `native/` case still fails the M4 gate.
+  Rationale: Verification "Computer behavior runs live on Linux; macOS-only binder behavior uses source-grounded service doubles".
+  Date/Author: 2026-10-15, plan-executor ruling on M3 task 1's question.
 - Decision: Some included APIs (certain AX, management and content members) are proven at the facade only, because the retained cua browser service cannot advertise them.
   - Those members run in M0's remote capability-host lane against the real selected host and the real vendor or owned client. A source-grounded command-transport fixture replies, and each reply cites its vendor source lines.
   - The inventory rows and cases are labelled boundary-double, and the evidence states that they prove the facade only and add no new service capability.

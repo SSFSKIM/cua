@@ -6,10 +6,10 @@ import {assertPreparedFacts} from './provenance.mjs';
 import {validateAttestations} from './compare.mjs';
 export class AttestedConnections {
   constructor(host){this.host=host;this.clients=[];this.hostAttestations=[];this.externalConnections=[];}
-  async open(command){
+  async open(command,{capabilities}={}){
     const client=new StdioClient(command),connection=`connection-${this.clients.length+1}`;
     this.clients.push({client,connection});
-    const init=await client.initialize();
+    const init=await client.initialize(capabilities);
     const executionFacts=init._meta?.['cua/parityExecution'];if(command.expectedFacts)assertPreparedFacts(command.expectedFacts,executionFacts);
     const call=client.call.bind(client);let observation;
     client.call=(name,args)=>{
@@ -34,10 +34,11 @@ export async function runRawScenario(scenario,{client,emit,checkout}) {
   const results=[],timings=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});
   await client.call('js_reset');
   for(const cell of scenario.cells){
-    if(cell.answer)client.setElicitationAnswer(()=>cell.answer);
+    if(cell.answer)client.setElicitationAnswer(async()=>{if(cell.answerDelayMs)await new Promise(r=>setTimeout(r,cell.answerDelayMs));return cell.answer;});
     const start=performance.now();let result,timer;
     try {
       if(cell.op==='reset')result=await client.call('js_reset');
+      else if(cell.op==='turn'){const replies=await Promise.all(Array.from({length:cell.repeat??1},()=>client.request('parity/turn-ended',cell.args)));result=replies[0];if(replies.some(r=>r.isError))throw new Error('Turn completion refused');}
       else if(cell.op==='endTask')result=await client.call('end_task');
       else {
         const code=cellCode({...cell,raw:true,code:cell.code.replaceAll('@@CHECKOUT@@',checkout)});

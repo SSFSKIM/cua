@@ -51,8 +51,8 @@ export class StdioClient {
   }
   setElicitationAnswer(answer) {if(typeof answer!=='function')throw new Error('answer must be a function');this.answer=answer;}
   cancel(requestId,reason='parity cancellation') {this.write({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId,reason}});}
-  async initialize() {
-    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities:{elicitation:{form:{}}},clientInfo:{name:this.clientName,version:'1'}});
+  async initialize(capabilities={elicitation:{form:{}}}) {
+    const value=await this.request('initialize',{protocolVersion:'2025-06-18',capabilities,clientInfo:{name:this.clientName,version:'1'}});
     this.write({jsonrpc:'2.0',method:'notifications/initialized'});return value;
   }
   call(name,args={}) {return this.request('tools/call',{name,arguments:args});}

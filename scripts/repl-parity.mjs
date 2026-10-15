@@ -20,7 +20,7 @@ const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
 export async function main(argv=process.argv.slice(2)){
  const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'}}});
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
- if(!['local','mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host)||!['cells','api','docs-profiles','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
+ if(!['local','mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
  if(action==='prepare'){
   const prepared=JSON.parse(execute(prepareCommand(v)).trim().split('\n').at(-1));mkdirSync(dirname(state(v.device)),{recursive:true});save(state(v.device),prepared);
   if(v.out){mkdirSync(resolve(v.out),{recursive:true});save(join(resolve(v.out),'prepare.json'),prepared);}console.log(JSON.stringify(prepared,null,2));return;
@@ -56,6 +56,11 @@ export async function main(argv=process.argv.slice(2)){
   let client=await pool.open(cellsCommand({...prepared,host:v.host}));let lane='no-services';
   save(join(out,'tools.json'),await client.request('tools/list'));
   for(const scenario of selected){
+    if(scenario.backend==='fixture-services'){
+      const fixture=await pool.open(cellsCommand({...prepared,host:v.host,fixtureServices:true}),{capabilities:scenario.capabilities});
+      const assertion=await runRawScenario(scenario,{client:fixture,checkout:prepared.checkout,emit});if(!assertion.ok)failed=true;
+      const status=await fixture.close();if(status.code!==0)throw new Error('Fixture service cleanup failed');continue;
+    }
     if(scenario.backend==='host-boundary'){const result=await runBoundaryScenario(scenario,{prepared,host:v.host});pool.addObservations(result.observations,scenario.id);const assertion=scenario.assert({results:result.rows.filter(r=>r.cell==='boundary').map(r=>r.value)});for(const row of result.rows)emit(row.assertion?{...row,assertion}:row);continue;}
     if(scenario.backend==='secret-double'){
       const result=await runSecretCase(scenario.id);for(const row of [{case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true}])emit(row);continue;

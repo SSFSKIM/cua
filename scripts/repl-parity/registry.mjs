@@ -32,6 +32,7 @@ export function validateRegistry(scenarios,rows=inventory) {
 }
 export function inSuite(id,suite) {
   if(suite==='all')return true;
+  if(suite==='services')return caseSchedule().some(c=>c.id===id&&c.milestone==='M2')||/^secrets\/(browser|native)\/errors\/worker-rejection-message-only$/.test(id);
   if(suite==='cells')return id.startsWith('cells/')&&!/^cells\/(facade|documentation|profiles)\//.test(id);
   if(suite==='docs-profiles')return /^cells\/(documentation|profiles)\//.test(id);
   if(suite==='api')return !inSuite(id,'cells')&&!inSuite(id,'docs-profiles');

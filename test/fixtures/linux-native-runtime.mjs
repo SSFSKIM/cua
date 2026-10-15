@@ -17,6 +17,7 @@ import {createHash} from 'node:crypto';
 import {dirname, join} from 'node:path';
 import {parsePin, runtimeFor} from '../../src/runtime/manifest.mjs';
 import {linuxFixturePin, shortScratch} from './runtime-fixture.mjs';
+import {quote} from '../../scripts/browser-parity/topology.mjs';
 
 const VENDOR_SKY = `import {spawn} from 'node:child_process';
 const LINUX_METHODS = ['perform_secondary_action', 'click', 'clipboard_read', 'clipboard_release', 'clipboard_write', 'drag', 'drag_handle',
@@ -115,7 +116,7 @@ export function linuxNativeRuntime(t, {node, arch = 'arm64', secrets = {}}) {
   const p = runtime.paths;
   mkdirSync(p.moduleDir, {recursive: true});
   for (const [path, body, mode] of [[p.skyVendorService, VENDOR_SKY], [`${p.skyLinuxBin}.mjs`, HELPER],
-    [p.skyLinuxBin, `#!/bin/sh\nexec ${JSON.stringify(node)} ${JSON.stringify(`${p.skyLinuxBin}.mjs`)} "$@"\n`, 0o755], [p.codexCli, LAUNCHER, 0o755]]) {
+    [p.skyLinuxBin, `#!/bin/sh\nexec ${quote(node)} ${quote(`${p.skyLinuxBin}.mjs`)} "$@"\n`, 0o755], [p.codexCli, LAUNCHER, 0o755]]) {
     mkdirSync(dirname(path), {recursive: true});
     writeFileSync(path, body);
     if (mode) chmodSync(path, mode);

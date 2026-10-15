@@ -50,3 +50,26 @@ ssh mini 'cd ~/Developer/GitHub/cua-parity && CUA_NODE=<own Node> CUA_PARITY_SCR
 node scripts/repl-parity.mjs run --host cua --device mini --suite cells --through M1 --out m4/lifeline-sandbox-check/cells-cua
 node scripts/repl-parity.mjs diff m0/vendor-1 m4/lifeline-sandbox-check/cells-cua --through M1 --expected test/repl-parity/expected-differences.json
 ```
+
+### Stricter verdict (after the M4 whole-branch review)
+
+`device.mjs` now refuses to disrupt a session unless it has shown each of the following (`readiness`):
+- a kernel and a worker, each identified by pid and holding its lifeline;
+- `initialize` and the kernel's result attesting `cua-repl-host` at this version;
+- the worker's spin and the kernel's busy cell answered.
+
+Sessions recorded from now on also keep each cell's outcome (`cells.outcomes`). All three cells, warm included, must show no error. The earlier verdict's `every()` passed an empty child set.
+
+`verdict()` requires both scenarios. For each, it requires readiness, the expected kills, children ending within the bound, nothing reparented to launchd and nothing recorded left.
+
+The recorded `result.json`, re-judged offline with `node device.mjs verdict result.json`, passes: `result-verdict.json`, `{ok: true, problems: []}`. That recording predates `cells.outcomes`. The warm cell's own outcome is therefore not in it; the worker's later answered spin is the recorded proof that the worker served. `test/repl-parity/lifeline-sandbox-verdict.test.mjs` fails every one of these mutations:
+- no children;
+- children without an identity;
+- a child without its lifeline;
+- failed or unattested cells;
+- a failed warm cell;
+- unended children;
+- a launchd reparent;
+- a missing kill;
+- an undisrupted run;
+- a missing scenario.

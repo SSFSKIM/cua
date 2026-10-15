@@ -17,11 +17,12 @@ import {join} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {randomUUID} from 'node:crypto';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {openConnection} from '../../../../../src/mcp/connection.mjs';
 import {defaultHome} from '../../../../../src/runtime/layout.mjs';
 import {prepareCapabilityHome} from '../../../../../scripts/browser-parity/capability-home.mjs';
 import {cellsServeEnv} from '../../../../../test/repl-parity/fixture-launch.mjs';
+import {REPL_HOST_VERSION} from '../../../../../src/repl-host/identity.mjs';
 
 const BOUND_MS = 5000;
 const LAUNCHER = /(^|\/)codex sandbox |(^|\/)sandbox-exec /;
@@ -71,7 +72,8 @@ async function session() {
   const launchers = pick(LAUNCHER);
   const facts = {
     serverInfo: init.result?.serverInfo, launch,
-    cells: {warm: warm?.content?.[0]?.text, spin: spin?.content?.[0]?.text, kernel: kernelBusy?.content?.[0]?.text, replHost: kernelBusy?._meta?.['cua/replHost']},
+    cells: {warm: warm?.content?.[0]?.text, spin: spin?.content?.[0]?.text, kernel: kernelBusy?.content?.[0]?.text, replHost: kernelBusy?._meta?.['cua/replHost'],
+      outcomes: Object.fromEntries([['warm', warm], ['spin', spin], ['kernel', kernelBusy]].map(([name, r]) => [name, {isError: r?.isError ?? null, text: (r?.content ?? []).filter(c => c.type === 'text').map(c => c.text).join('').slice(-200)}]))},
     processes: tree.map(p => ({pid: p.pid, ppid: p.ppid, role: role(p), cpu: p.cpu, fifos: ['kernel', 'worker'].includes(role(p)) ? fifos(p.pid) : undefined})),
     launcherPolicy: launchers.map(p => ({sandbox: / sandbox /.test(p.command) || /sandbox-exec/.test(p.command), nodeReplPermissions: p.command.includes('default_permissions="node_repl"'), networkOff: /network\s*=\s*\{\s*enabled\s*=\s*false\s*\}/.test(p.command), launches: /kernel\.mjs/.test(p.command) ? 'kernel' : /trusted-worker\.mjs/.test(p.command) ? 'worker' : null})),
     proxy: process.pid, scratch: scratch.dir,
@@ -88,6 +90,18 @@ async function scenario(name) {
   const byRole = r => facts.processes.filter(p => p.role === r).map(p => p.pid);
   const [supervisor] = byRole('supervisor'), [anchor] = byRole('anchor');
   const children = [...byRole('kernel'), ...byRole('worker')];
+  // Nothing is disrupted unless the session proves what the check is about: a busy kernel and worker that answered as
+  // cua's host, with their identities recorded.
+  const unready = readiness(facts);
+  if (unready.length) {
+    child.stdin.end();
+    await Promise.race([exited, sleep(20000)]);
+    for (const p of facts.processes) if (alive(p.pid)) try { process.kill(p.pid, 'SIGKILL'); } catch { /* gone */ }
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await exited;
+    return {scenario: name, facts: {...facts, scratch: undefined}, notDisrupted: unready, killed: [], childrenEndedMs: null, leftAfterwards: [], reparentedToLaunchd: [],
+      cleanup: {recordedAlive: facts.processes.filter(p => alive(p.pid)).length}};
+  }
   const killed = name === 'supervisor' ? [supervisor] : [child.pid, anchor, supervisor].filter(Boolean);
   const started = performance.now();
   for (const pid of killed) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ }
@@ -109,12 +123,60 @@ async function scenario(name) {
   return result;
 }
 
-if (process.argv[2] === 'session') await session();
-else {
-  const results = [];
-  for (const name of ['supervisor', 'everything-above']) results.push(await scenario(name));
-  const ok = results.every(r => r.childrenEndedMs !== null && r.reparentedToLaunchd.length === 0 && r.cleanup.recordedAlive === 0
-    && r.facts.processes.filter(p => ['kernel', 'worker'].includes(p.role)).every(p => p.fifos >= 1));
-  console.log(JSON.stringify({ok, platform: process.platform, boundMs: BOUND_MS, results}, null, 1));
-  process.exitCode = ok ? 0 : 1;
+// What a session must have shown before it is disrupted -> the problems (none: ready). A kernel and a worker each
+// identified by pid and holding its lifeline open; initialize and the kernel's result attesting cua's host at this
+// version; the worker's spin and the kernel's busy cell answered, not failed. A session recorded with each cell's
+// outcome (`cells.outcomes`) must also show all three cells, warm included, without error.
+export function readiness(facts, version = REPL_HOST_VERSION) {
+  const problems = [];
+  for (const role of ['kernel', 'worker']) {
+    const found = (facts?.processes ?? []).filter(p => p.role === role);
+    if (!found.length) problems.push(`no ${role} was recorded`);
+    for (const p of found) {
+      if (!Number.isInteger(p.pid) || p.pid <= 1) problems.push(`the ${role} has no identity`);
+      if (!(p.fifos >= 1)) problems.push(`the ${role} ${p.pid} does not hold its lifeline`);
+    }
+  }
+  if (facts?.serverInfo?.name !== 'cua-repl-host' || facts?.serverInfo?.version !== version) problems.push('initialize did not attest cua\'s host');
+  if (facts?.cells?.replHost?.host !== 'cua' || facts?.cells?.replHost?.version !== version) problems.push('the kernel\'s result did not attest cua\'s host');
+  if (facts?.cells?.spin !== '"spinning soon"') problems.push('the worker did not answer its spin');
+  if (facts?.cells?.kernel !== 'kernel spinning soon') problems.push('the kernel did not answer its busy cell');
+  for (const [name, outcome] of Object.entries(facts?.cells?.outcomes ?? {})) if (outcome?.isError !== false) problems.push(`the ${name} cell failed`);
+  return problems;
+}
+
+// The whole check's verdict -> {ok, problems}: both scenarios, each ready before its disruption, its children ended
+// within the bound, nothing reparented to launchd and nothing recorded left.
+export function verdict(results, version = REPL_HOST_VERSION) {
+  const problems = [];
+  const names = (results ?? []).map(r => r.scenario);
+  for (const expected of ['supervisor', 'everything-above']) if (!names.includes(expected)) problems.push(`no ${expected} scenario`);
+  for (const r of results ?? []) {
+    const at = message => problems.push(`${r.scenario}: ${message}`);
+    for (const problem of readiness(r.facts, version)) at(problem);
+    if (r.notDisrupted?.length) at('not disrupted');
+    const killedRoles = (r.killed ?? []).map(k => k.role);
+    for (const role of r.scenario === 'supervisor' ? ['supervisor'] : ['proxy', 'anchor', 'supervisor']) if (!killedRoles.includes(role)) at(`the ${role} was not killed`);
+    if (typeof r.childrenEndedMs !== 'number') at('the children did not end within the bound');
+    if (r.reparentedToLaunchd?.length !== 0) at('a process was left reparented to launchd');
+    if (r.cleanup?.recordedAlive !== 0) at('a recorded process was left');
+  }
+  return {ok: problems.length === 0, problems};
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv[2] === 'session') await session();
+  else if (process.argv[2] === 'verdict') {
+    // Re-judges a recorded result: node device.mjs verdict <result.json>
+    const {readFileSync} = await import('node:fs');
+    const judged = verdict(JSON.parse(readFileSync(process.argv[3], 'utf8')).results);
+    console.log(JSON.stringify(judged, null, 1));
+    process.exitCode = judged.ok ? 0 : 1;
+  } else {
+    const results = [];
+    for (const name of ['supervisor', 'everything-above']) results.push(await scenario(name));
+    const judged = verdict(results);
+    console.log(JSON.stringify({ok: judged.ok, problems: judged.problems, platform: process.platform, boundMs: BOUND_MS, results}, null, 1));
+    process.exitCode = judged.ok ? 0 : 1;
+  }
 }

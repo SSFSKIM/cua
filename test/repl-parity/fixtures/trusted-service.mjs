@@ -48,9 +48,10 @@ export async function handleRpc(r){
    socket.end();return value;
   }
   return await new Promise((resolve,reject)=>{
-   const got=[];let removedCalled=false;const removed=()=>{removedCalled=true;};socket.on('data',removed);socket.off('data',removed);
+   const got=[];let removedCalled=false,writeError;
+   if(r.mode==='terminal')try{socket.write('not bytes');}catch(e){writeError=e.message;}const removed=()=>{removedCalled=true;};socket.on('data',removed);socket.off('data',removed);
    socket.on('data',data=>{got.push(...data);socket.end();});socket.on('error',reject);
-   socket.on('close',()=>resolve({bytes:got,removedCalled}));socket.write(new Uint8Array([0,255,128,10,13,65]));
+   socket.on('close',()=>{if(r.mode==='terminal')socket.on('close',()=>resolve({bytes:got,removedCalled,writeError,lateClose:true}));else resolve({bytes:got,removedCalled});});socket.write(new Uint8Array([0,255,128,10,13,65]));
   });
  }
  case 'launch-invalid':{

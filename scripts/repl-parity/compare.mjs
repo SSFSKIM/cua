@@ -1,3 +1,5 @@
+import {attestedSourceVersion} from './source-identity.mjs';
+import {validateToolAllowance} from './tool-contract.mjs';
 import {compareRuns} from '../browser-parity/compare.mjs';
 import {assessAssertions,vendorDefects} from './vendor-defects.mjs';
 import {normalizeHostDiagnostic} from './diagnostics.mjs';
@@ -22,12 +24,15 @@ export function validateAttestations(meta) {
     } else if(a.serverInfo.name==='cua-repl-host'||a._meta&&Object.hasOwn(a._meta,'cua/replHost'))throw new Error('Vendor host attestation mismatch');
   }
 }
-export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
+export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}={}) {
   validateAttestations(a.meta);validateAttestations(b.meta);
   if(a.meta.host==='vendor'&&b.meta.host==='vendor'&&expected.length)throw new Error('No expected differences allowed for vendor determinism');
   // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents, and the declared
   // security departures below. M3 document branding/exclusions need the separately pinned Table 3 transformation, not an ignore rule.
   validateExpected(expected);
+  expected=expected.filter(e=>e.kind!=='tools-description');
+  const ownRun=a.meta.host==='cua'?a:b;
+  const sourceVersion=expected.some(e=>e.cua?.value?.versionFrom==='attested-source')&&a.meta.host!==b.meta.host?attestedSourceVersion(ownRun.meta,{repo:sourceRepo}):null;
   const departures=expected.filter(e=>e.kind==='security-departure');expected=expected.filter(e=>e.kind!=='security-departure');
   const accepted=[];
   const ids=caseIds??a.meta.caseIds;const cells=caseCells??a.meta.caseCells;
@@ -55,7 +60,8 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells}={}) {
     const vendor=a.meta.host==='vendor'?x:y,own=a.meta.host==='cua'?x:y;
     if(vendor.meta&&Object.hasOwn(vendor.meta,'cua/replHost'))continue;
     // A named identity slot must hold exactly its declared value on the own side; absent or different is a difference.
-    if(!isDeepStrictEqual(own.meta?.['cua/replHost'],allowance.cua.value)){differences.push({kind:'identity',case:x.case,cell:x.cell,field:allowance.field,message:'declared own-host identity slot missing or different'});continue;}
+    const identity=allowance.cua.value.versionFrom==='attested-source'?{host:'cua',version:sourceVersion}:allowance.cua.value;
+    if(!isDeepStrictEqual(own.meta?.['cua/replHost'],identity)){differences.push({kind:'identity',case:x.case,cell:x.cell,field:allowance.field,message:'declared own-host identity slot missing or different'});continue;}
     delete own.meta['cua/replHost'];accepted.push({case:x.case,cell:x.cell,field:allowance.field,reason:allowance.reason});
   }
   const leftAssertions=assessAssertions(a.meta,left),rightAssertions=assessAssertions(b.meta,right);
@@ -90,6 +96,7 @@ const DEPARTURE_KEYS=['kind','id','issue','reason','case','platform','field','ce
 export function validateExpected(expected){
  if(!Array.isArray(expected))throw new Error('Invalid expected differences');
  for(const e of expected){
+  if(e?.kind==='tools-description'){validateToolAllowance(e);continue;}
   if(e?.kind==='security-departure'){
    const defect=vendorDefects.find(v=>v.id===e.vendorDefect);
    const ok=Object.keys(e).every(k=>DEPARTURE_KEYS.includes(k))&&typeof e.id==='string'&&/^#\d+$/.test(e.issue)&&e.reason&&typeof e.case==='string'&&['darwin','linux'].includes(e.platform)&&e.field==='assertion'
@@ -99,7 +106,7 @@ export function validateExpected(expected){
    if(!ok)throw new Error('Invalid security departure: it must name an issue, one case and platform, the assertion field, the declared vendor defect and the exact passing own-host outcome');
    continue;
   }
-  if(!e?.reason||e.kind!==undefined||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||typeof e.cua.value.version!=='string')throw new Error('Invalid exact identity field allowance');
+  if(!e?.reason||e.kind!==undefined||e.field!=='meta.cua/replHost'||!Array.isArray(e.cases)||!e.cases.length||!Array.isArray(e.cells)||!e.cells.length||e.vendor?.present!==false||e.cua?.present!==true||e.cua.value?.host!=='cua'||!(typeof e.cua.value.version==='string'&&e.cua.value.versionFrom===undefined||e.cua.value.versionFrom==='attested-source'&&e.cua.value.version===undefined))throw new Error('Invalid exact identity field allowance');
  }
 }
 // The rows a departure covers -> [{rows, index, fields}] to project, or null unless both sides hold exactly one refused

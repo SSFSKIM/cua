@@ -7,7 +7,8 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | milestone | branch | PR | state |
 |---|---|---|---|
 | M0 | feat/own-repl-host | https://github.com/SSFSKIM/cua/pull/136 | merged (f87f9cc) |
-| M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | whole-branch reviewer-high correct at dc7a86d |
+| M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
+| M2 | feat/own-repl-host-m2 | pending | whole-branch fix wave |
 
 ## Log
 
@@ -22,6 +23,32 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - 2026-10-14 M1 in two tasks (opus task-executors, sol task reviews). Task 1 (kernel port, vendored Meriyah 7.0.0 byte-identical to the embedded copy, base worker runtime, owned `CUA_REPL_*` names): clean first pass. Task 2 (supervisor, HostMcp, timers/fencing, grouped assembly, lifecycle, buildLaunch/sandbox wiring, launcher-failure refusal, serverInfo `cua-repl-host 0.2.0` and result marker, live cells on both devices): two fix waves (security-departure deleted whole rows; dead-launch descendants escaped cleanup; SIGTERM could not preempt an EOF drain; own Node unrecorded; then shutdown resolved before forced cleanup and the reaper killed live-worker descendants). Session rulings: effective tool text moves to M2; executors must not change device-global configuration (the VM `~/.bashrc` CUA_NODE block was reverted; the harness passes CUA_NODE, recorded by `prepare --node`). Live at 8f56fb5: mini 111/111, 0 unexpected differences (134 identity slots); cua-linux 112/112, 0 unexpected (134 identity slots + the #135 security departure); default 30 s timeout exercised on both.
 - 2026-10-14 M1 whole-branch reviewer-high (f87f9cc..f2215d2): two P2 (termination not rechecked after a policy-change stop; unsafe marker path in a supervisor test), sent to the task 2 executor; fixed in dc7a86d (evidence not re-recorded: neither change is reachable by the cells suite; README names 8f56fb5); re-review "correct". Gates at the head: plain `npm test` 1860/0/48 (own-host tests skip visibly on PATH Node 22), with `CUA_NODE=/opt/homebrew/bin/node` 1900/0/8; test:mods 32; validate ok with the known warning; extract-meriyah clean.
 
+- 2026-10-14 M2 in three tasks.
+  - **Task 1, the vendor oracle** (astra executor in a sibling worktree, sol task reviews; two waves):
+    - Built: services suite of 41 cases; `browser-parity --repl-host`; effective-tools control with an independent Table 2 transform; identity allowances pinned to the attested source.
+    - Review fixes: duplicate turn acknowledgements, and a nativePipe error that the oracle never stimulated.
+    - Vendor pins: bare elicitation suspends the budget; response meta merges; duplicate acks wait for shared completion; a macOS peer abort yields close only.
+    - Rulings: macOS nativePipe timeout expiry and error ordering are proven by a unit test and a labelled worker-stdin injection.
+    - Result: vendor pair 41 cases / 74 cells, 0 differences, no allowances.
+  - **Task 2, the port** (opus):
+    - Built: trusted worker, privileged runtime, relayed nativePipe, elicitation, budgets and hooks, turn deduplication, effective tool text via `CUA_REPL_TOOL_OVERRIDES`, `REPL_HOST_VERSION` 0.3.0.
+    - One review wave: worker reaping killed the live kernel, and pending nativePipe connects survived closeAll.
+  - **Task 3, live runs** (opus, task 2's executor resumed):
+    - Vendor-matching changes: elicitation suspension, meta merge, close-only nativePipe.
+    - Found the macOS sandboxed time-zone lookup hang: vendor 4/30 runs, own about 11% before the fix. Fixed with a time-zone warm at runtime load and `runtime_ready` child replacement; a 600-run stress test showed 0 hangs. The session registered it as #138.
+    - Bounded unanswered hooks and `turn_ended`.
+    - Host-comparison trace allowances, scoped by method and maximum delta from vendor-against-vendor spread: wait-for, slow-budget, coordinates drag, networkidle. M3 must derive these mechanically.
+    - The EOF drain for a suspended service request is deferred to M3.
+    - Environment: Downloads TCC consent was pending and ssfs went `host_not_live` twice; the session and the owner resolved both.
+  - **Final evidence:**
+    - services 41 / 0 differences;
+    - tools 0 differences, with only the Table 2 allowance;
+    - corpus 59/59 per host at e4ea7eb, 0 unexpected, 7 expected trace counts;
+    - MAWS live probe PASS with the own host attested; `e2e:browser-cua` 7/7.
+- 2026-10-14 M2 whole-branch reviewer-high (397d532..2d4378a): two P2s, sent to the task 3 executor.
+  - Worker death left its timeout suspensions in place.
+  - Host-only trace allowances could be applied to a vendor-against-vendor diff.
+
 ## Environmental friction
 
 - The Agent tool has no effort parameter; agents ran at their defaults.
@@ -29,3 +56,4 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - Some executors' messages to `main` reached the dispatching session rather than the controller; VM handoff crossed once (task 5 ran one smoke run at 58d42b6 before its fixes; cleaned up, not evidence).
 - The cua-linux VM's Chrome was not running at first, and the mini's Profile 1 window closed once; the session restored both.
 - Local `node --test test/repl-parity/` fails on Node 22 (directory argument); use a glob.
+- 2026-10-14 (M2): the mini's Downloads privacy consent for the ssh session had to be granted by the owner (as in #113 M3); ssfs went host_not_live twice when the Profile 1 window closed, and the session reopened it each time. The harness forced several interim handbacks while executors ran; the session resumed the controller each time.

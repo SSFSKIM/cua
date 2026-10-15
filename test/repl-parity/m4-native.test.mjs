@@ -16,3 +16,13 @@ test('native lane refuses local or macOS execution and assigns unique owned wind
  assert.throws(()=>nativeCommand({...facts,device:'local'}));assert.throws(()=>nativeCommand({...facts,platform:'darwin'}));
  const a=nativeCommand(facts),b=nativeCommand(facts);assert.notEqual(a.nativeFilename,b.nativeFilename);assert.match(a.nativeFilename,/^cua-m4-[a-f0-9-]{36}\.txt$/);assert.ok(a.args.at(-1).includes(a.nativeFilename));
 });
+
+test('a no-op native drag or scroll cannot pass by returning undefined and leaving the owned window unchanged',()=>{
+ const end={isError:false,structuredContent:{status:'ended'}};
+ const samples={
+  'native/target-app-decorated-tab/drag':['undefined',true],
+  'native/app/scroll':['undefined',{error:'Linux scroll accepts { pixels }, not pages.'},...Array(4).fill({error:'pixels must be a positive finite number.'})],
+  'native/target-app-decorated-tab/scroll':['undefined',{error:'Linux scroll accepts { pixels }, not pages.'},...Array(4).fill({error:'pixels must be a positive finite number.'})],
+ };
+ for(const [id,values] of Object.entries(samples))assert.throws(()=>scenarios.find(s=>s.id===id).assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(values)}]},end]}),id);
+});

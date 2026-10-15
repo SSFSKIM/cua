@@ -154,3 +154,9 @@ test('chooser member cases require cleanup after acknowledged fixture selection,
   const failed=results.slice();failed[5]=raw(false);assert.equal((await invoke(tail,failed,{events:[{file:'parity.txt'}]})).ok,false,tail);
  }
 });
+
+test('tab close observes delayed removal without replaying the action',async()=>{
+ const cell=find('tab/close').cells.find(c=>c.label==='close');let closes=0,lists=0;
+ const result=await runCell(cell,{memberTab:{id:'owned',async close(){closes++;}},browser:{tabs:{async list(){return ++lists<3?[{id:'owned'}]:[];}}}});
+ assert.equal(result.parsed.value,true);assert.equal(closes,1);assert.equal(lists,3);
+});

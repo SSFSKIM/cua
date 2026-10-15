@@ -109,7 +109,7 @@ test('per-case native sandbox configuration is compared, not hidden by the mixed
 });
 
 test('native live cases cannot compare without their declared proof class',()=>{
- const a=run(),b=run(),id='native/cua/computer';for(const r of [a,b]){r.meta.caseIds=[id];for(const row of r.rows)row.case=id;}
+ const a=run(),b=run(),id='native/cua/computer';for(const r of [a,b]){r.meta.caseIds=[id];r.meta.caseConfigurations={[id]:{surfaces:['computer'],sandbox:'disabled'}};for(const row of r.rows)row.case=id;}
  assert.equal(compareParityRuns(a,b).ok,false);
  for(const r of [a,b])r.meta.caseProofs={[id]:'native-live'};
  assert.equal(compareParityRuns(a,b).ok,true);

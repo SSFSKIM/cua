@@ -1,3 +1,4 @@
+import {closeObservedTab} from '../fixtures/close-observed-tab.mjs';
 // All observations come from this task's fixture tabs. Raw MCP content is never rewritten by the adapter.
 // Member semantics: surface-inventory.md Table 1, pinned browser-client.js (chatgpt-26.928.40906)
 // Tabs 6530-6596; Locator 6790-7458; Frame/Playwright 7565-7897; DOM/CUA 7900-8134;
@@ -136,7 +137,7 @@ const tabs=fixture('members/tabs','/counter.html',[
  cell('get',"const found=await browser.tabs.get(memberTab.id);return {same:found.id===memberTab.id,title:await found.title()};"),
  cell('list',"return (await browser.tabs.list()).filter(t=>t.id===memberTab.id).map(t=>({same:true,path:new URL(t.url).pathname,title:t.title}));"),
  cell('selected',"const selected=await browser.tabs.selected();const own=await browser.tabs.list();return selected===undefined?{absent:true,fixturePresent:own.some(t=>t.id===tab.id)}:{absent:false,managed:own.some(t=>t.id===selected.id)};"),
- cell('close',"await memberTab.close();return !(await browser.tabs.list()).some(t=>t.id===memberTab.id);"),
+ cell('close',`return await (${closeObservedTab.toString()})(browser,memberTab);`),
 ],{new:{distinct:true,path:'/read.html'},get:{same:true,title:'Browser parity fixture'},list:[{same:true,path:'/read.html',title:'Browser parity fixture'}],selected:v=>v?.absent===true?v.fixturePresent===true:v?.absent===false&&v.managed===true,close:true});
 for(const [member,label] of [['tabs/new','new'],['tabs/get','get'],['tabs/list','list'],['tabs/selected','selected'],['tab/id','get'],['tab/close','close']])add(member,tabs,[label]);
 

@@ -1,0 +1,223 @@
+{
+  "device": "cua-linux",
+  "platform": "linux",
+  "host": "vendor",
+  "hostAttestations": [
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 319,
+        "cua/taskId": "204df729-73d1-4993-92e4-5701f42b5816"
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 147,
+        "cua/taskId": "e8bebf75-ace9-419f-87a6-7e712f60a6f1"
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 208,
+        "cua/taskId": "0d3f7197-4409-4911-9da2-be7da57d8e75"
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 285,
+        "cua/taskId": "0df75f06-c1b9-4453-acdc-25584eff26ed"
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 211,
+        "cua/taskId": "e79121ee-cf9c-4e42-8a82-6f74d1781684"
+      }
+    },
+    {
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 157,
+        "cua/taskId": "98962663-8c80-4469-8917-376d2de5dfb4"
+      }
+    }
+  ],
+  "connections": 6,
+  "protocolVersion": "2025-06-18",
+  "environment": {
+    "CUA_REPL_HOST": "vendor",
+    "CUA_SHIM_SURFACES": "computer",
+    "CUA_SHIM_PERSIST": "session",
+    "CUA_SHIM_SECRETS": "off",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "~/.Xauthority"
+  },
+  "plan": {
+    "samples": 30,
+    "cold": 5,
+    "tasks": 10,
+    "coldPlan": [
+      "miss",
+      "hit",
+      "miss",
+      "hit",
+      "hit"
+    ]
+  },
+  "started": "2026-10-15T18:32:33.552Z",
+  "spikeWaitMs": 1195,
+  "elicitations": [],
+  "complete": true,
+  "commit": "a5ccc1b40b85fd688cd4f47d52a70ee3a09ec09b",
+  "checkout": "/home/admin/Developer/GitHub/cua-parity",
+  "home": "/home/admin/.local/share/cua",
+  "node": "v22.23.3",
+  "runtime": {
+    "release": "26.928.40906-linux-arm64"
+  },
+  "sandbox": {
+    "mode": "disabled",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "Apple Virtualization Generic Platform",
+    "chip": "arm64, 4 CPUs",
+    "memoryBytes": 8298180608
+  },
+  "os": {
+    "name": "Ubuntu",
+    "version": "24.04.5 LTS",
+    "build": "7.0.0-38-generic"
+  },
+  "display": {
+    "pixels": "1440 x 900",
+    "resolution": "1440 x 900",
+    "scale": 1,
+    "depth": 24
+  },
+  "gedit": {
+    "version": "gedit - Version 46.2",
+    "owned": [
+      {
+        "pid": 407195,
+        "dir": "/tmp/cua-native-baseline-IvpLUu",
+        "file": "/tmp/cua-native-baseline-IvpLUu/scratch-bd5cbd.txt",
+        "role": "scratch"
+      },
+      {
+        "pid": 407346,
+        "dir": "/tmp/cua-native-baseline-ErVZeP",
+        "file": "/tmp/cua-native-baseline-ErVZeP/victim-948367.txt",
+        "role": "victim"
+      },
+      {
+        "pid": 407539,
+        "dir": "/tmp/cua-native-baseline-ZLtMK3",
+        "file": "/tmp/cua-native-baseline-ZLtMK3/victim-0ecf2a.txt",
+        "role": "victim"
+      }
+    ],
+    "targetCleanup": [
+      {
+        "op": "method.typeText",
+        "terminated": [],
+        "notOwned": [],
+        "gone": [
+          407346
+        ],
+        "removed": [
+          "/tmp/cua-native-baseline-ErVZeP"
+        ]
+      },
+      {
+        "op": "method.paste",
+        "terminated": [],
+        "notOwned": [],
+        "gone": [
+          407539
+        ],
+        "removed": [
+          "/tmp/cua-native-baseline-ZLtMK3"
+        ]
+      }
+    ],
+    "crashReportsBefore": {
+      "files": 1,
+      "newest": "2026-10-15T13:40:21.850Z"
+    },
+    "cleanup": {
+      "terminated": [
+        407195
+      ],
+      "notOwned": [],
+      "gone": [
+        407346,
+        407539
+      ],
+      "removed": [
+        "/tmp/cua-native-baseline-IvpLUu"
+      ]
+    },
+    "crashReportsAfter": {
+      "files": 1,
+      "newest": "2026-10-15T13:40:21.850Z"
+    }
+  },
+  "x": {
+    "display": ":0",
+    "xauthority": "~/.Xauthority",
+    "xauthorityPresent": true,
+    "bus": "unix:path=/run/user/1000/bus"
+  },
+  "helperAtStart": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "service": {
+    "surface": "computer",
+    "engine": "sky",
+    "answered": "vendor",
+    "helper": "pinned runtime",
+    "helpers": [
+      {
+        "path": "~/.local/share/cua/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+        "origin": "pinned runtime",
+        "ageSeconds": 5,
+        "startedDuringRun": true
+      }
+    ]
+  },
+  "leftovers": {
+    "serves": 0,
+    "geditRunning": 0
+  },
+  "finished": "2026-10-15T18:38:32.191Z"
+}

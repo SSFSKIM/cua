@@ -86,3 +86,29 @@ The run refuses to start while any gedit runs, so every gedit window it saw was 
 - **Method-window cleanup is not in these metas.** These metas record the scratch window's cleanup (`meta.gedit.cleanup`), but not the per-method window cleanup done at the method step. The harness now records it as `meta.gedit.targetCleanup`, after these recordings. After the runs the VM had no `/tmp/cua-native-baseline-*` directory and no gedit.
 - **Node.** The VM's Node is v22.23.3. cua's own host needs Node 24 or later. M4 should provide it through `CUA_NODE` and keep the proxy on this Node, so the two sides differ only in the host.
 - **Timing and order.** Three runs in one sitting, back to back: 19:31 to 19:44 UTC.
+
+## M4: cua's own host (`cua/`), 2026-10-15
+
+**Result: `compare` judged the two sides comparable and returned FAIL. Most of the slowdown comes from this machine's load, not from the host, so a quiet-machine re-measure is still owed.** The comparison is `comparison.md`; the pooled own-host summary is `cua/summary.md`.
+
+- Three own-host runs at the default plan, `cua/run-{1,2,3}`, recorded 18:13 to 18:32 UTC. All three completed with no failed and no invalidated samples. Every connection (6 per run) attested `cua-repl-host 0.4.0` in `initialize` and `{host: cua, version: 0.4.0}` in its first result. No approval was asked, and nothing was left behind.
+- `compare` found nothing to stop it: device, release, hardware, OS, display (1440 × 900), native service (the pinned `sky_linux`), sandbox (`disabled`, the platform default) and plan all match the M0 vendor baseline. It failed five operations:
+  - `warm.getAXState`: 1,181.5 ms against a 928.3 ms limit.
+  - `warm.getScreenshot`: 1,122.9 ms against a 1,032 ms limit.
+  - `task.verify`, `task.clear` and `task.total`: task.total 24,537 ms against a 21,146 ms limit.
+- Every method case gave the vendor's outcome, sample for sample.
+- **Same-sitting vendor control** (`diagnostics-m4t3/vendor-same-sitting-1`, run straight after the three own runs, on the same clone and commit, `--host vendor`): the vendor host was just as slow as the own host, and both were 2–3× slower than at M0.
+
+  | Median wall (ms) | M0 vendor run-1 | vendor, same sitting | cua run-1 | cua run-2 | cua run-3 |
+  |---|---|---|---|---|---|
+  | ssh.roundtrip | 214 | 602 | 349 | 355 | 210 |
+  | warm.noop | 2.1 | 6.6 | 2.3 | 9.2 | 2.6 |
+  | bind.getApp | 509 | 1,130 | 820 | 2,023 | 954 |
+  | warm.getAXState | 426 | 1,127 | 1,822 | 1,125 | 1,050 |
+  | warm.getScreenshot | 519 | 1,576 | 1,919 | 992 | 925 |
+  | task.verify | 534 | 1,067 | 1,619 | 2,569 | 1,504 |
+  | task.total | 19,271 | 21,740 | 23,047 | 25,719 | 24,537 |
+
+  The VM runs on this MacBook (`tart run cua-linux`). During these runs the Mac's load average was 80–250 from other sessions' jobs (`vm.loadavg` was logged at each run's start and end: 91/160/208 at run-1's start, 56/83/112 at the control's end). In-cell time equals wall time for these operations, so the time is spent inside the VM. One vendor control is not three, and acceptance 8's verdict must come from a quiet re-measure, run as three own runs, or as matched vendor and own triples if the M0 conditions cannot be reproduced. This run neither passes nor waives it.
+- **Environment.** As at M0, the serve ran on the VM's own Node v22.23.3, the default cua home (`~/.local/share/cua`), `DISPLAY=:0` with the account's `~/.Xauthority`, and the session bus. The one deliberate difference: cua's host runs on Node v24.18.0 (`/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node`). The harness passes that path as `CUA_NODE` in the serve's command environment (new `--node`, recorded as `meta.environment.CUA_NODE` and `meta.ownNode`). The vendor host runs on its pinned Node v24.21.0. The clone was at `a5ccc1b`, not M0's `1d34683`; between them, only the host under test and the harness changed.
+- **Reproduce.** Run `node scripts/native-baseline.mjs run --device cua-linux --host cua --node <own Node> --out <dir>/cua/run-<n>` for n = 1..3, then `summary <dir>/cua` and `compare <dir>/vendor <dir>/cua --out <dir>/comparison.md`.

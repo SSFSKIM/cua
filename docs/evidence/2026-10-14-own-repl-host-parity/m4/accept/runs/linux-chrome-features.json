@@ -1,0 +1,193 @@
+{
+ "runner": "scripts/accept/linux-chrome-features.mjs",
+ "args": [],
+ "environment": {
+  "CUA_REPL_HOST": "cua",
+  "CUA_BROWSER_SERVICE": "cua",
+  "CUA_SHIM_SURFACES": "browser",
+  "CUA_HOME": "/home/admin/.local/share/cua-h4",
+  "CUA_NODE": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node"
+ },
+ "device": "cua-linux",
+ "checkout": "/home/admin/Developer/GitHub/cua-parity",
+ "commit": "a5ccc1b40b85fd688cd4f47d52a70ee3a09ec09b",
+ "harnessCommit": "60e5b8672326385b74ff8f34637b07940bf752c6",
+ "started": "2026-10-15T18:39:38.429Z",
+ "finished": "2026-10-15T18:39:59.038Z",
+ "exitCode": 0,
+ "report": {
+  "home": "/home/admin/.local/share/cua-h4",
+  "key": "me",
+  "route": "cua",
+  "steps": [
+   {
+    "name": "the browser uses the cua route",
+    "status": "PASS",
+    "detail": "cua"
+   },
+   {
+    "name": "profiles_list reports me ready",
+    "status": "PASS",
+    "detail": {
+     "status": "ok",
+     "profiles": [
+      {
+       "key": "me",
+       "ready": true,
+       "extensionInstanceId": "ee43424f-bb6d-4f91-9101-226f44c4ad9e"
+      }
+     ]
+    }
+   },
+   {
+    "name": "me's cua host serves at its pre-listed socket",
+    "status": "PASS",
+    "detail": {
+     "socket": "/home/admin/.local/share/cua-h4/chrome/b/97bcc14e4aaa.sock",
+     "pid": 186879,
+     "extensionVersion": "0.3.0",
+     "process": "186879 /usr/local/bin/node /home/admin/cua/src/chrome/host.mjs chrome-extension://jkejaaijdfpohkdhankllbekkhmnippb/"
+    }
+   },
+   {
+    "name": "the selected browser service answers",
+    "status": "PASS",
+    "detail": {
+     "requested": "cua",
+     "served": "cua browser service 0.1.0"
+    }
+   },
+   {
+    "name": "open a tab and verify its document marker",
+    "status": "PASS",
+    "detail": {
+     "markerMatches": true
+    }
+   },
+   {
+    "name": "download completes and its saved bytes match",
+    "status": "PASS",
+    "detail": {
+     "basename": "cua-report.pdf",
+     "directory": "Downloads",
+     "size": 7729,
+     "sha256": "a3030829e7251330d53ac0d0a803039b8f82f6fa53d294b66e76d8fe3d8c6ec5",
+     "sha256Match": true,
+     "createdByFixture": true,
+     "elapsedMs": 299
+    }
+   },
+   {
+    "name": "download raw-CDP alternative (informational)",
+    "status": "SKIP",
+    "detail": {
+     "skipped": true,
+     "reason": "tab does not advertise the cdp capability"
+    },
+    "informational": true
+   },
+   {
+    "name": "alert is accepted and the page resumes",
+    "status": "PASS",
+    "detail": {
+     "type": "alert",
+     "closed": true,
+     "state": "after-alert",
+     "clearedPreviousType": null
+    }
+   },
+   {
+    "name": "confirm is dismissed and returns false",
+    "status": "PASS",
+    "detail": {
+     "type": "confirm",
+     "closed": true,
+     "state": "confirm:false",
+     "clearedPreviousType": null
+    }
+   },
+   {
+    "name": "file chooser selects a local 1234-byte file",
+    "status": "PASS",
+    "detail": {
+     "picked": "cua-upload.txt:1234",
+     "expected": "cua-upload.txt:1234"
+    }
+   },
+   {
+    "name": "close the tab",
+    "status": "PASS",
+    "detail": {
+     "closed": true
+    }
+   },
+   {
+    "name": "end_task",
+    "status": "PASS",
+    "detail": {
+     "status": "ended",
+     "ended": true,
+     "taskId": "2032b697-d92c-4db7-bbc2-9b0c851d0089"
+    }
+   },
+   {
+    "name": "the host owns no tab after end_task",
+    "status": "PASS",
+    "detail": []
+   },
+   {
+    "name": "cua serve exited cleanly",
+    "status": "PASS",
+    "detail": {
+     "code": 0,
+     "signal": null
+    }
+   },
+   {
+    "name": "no run entry left for the connection",
+    "status": "PASS",
+    "detail": {
+     "before": [],
+     "after": []
+    }
+   },
+   {
+    "name": "remove the download only if fixture creation is proven",
+    "status": "PASS",
+    "detail": {
+     "deleted": true
+    }
+   },
+   {
+    "name": "remove the fixture-created temporary input",
+    "status": "PASS",
+    "detail": {
+     "deleted": true,
+     "basename": "cua-upload.txt"
+    }
+   },
+   {
+    "name": "stop the loopback page server",
+    "status": "PASS",
+    "detail": "closed"
+   }
+  ],
+  "elicitations": [],
+  "cleanup": {
+   "download": {
+    "deleted": true
+   },
+   "input": {
+    "deleted": true,
+    "basename": "cua-upload.txt"
+   }
+  },
+  "pageRequests": {
+   "total": 2,
+   "served": 2,
+   "refused": 0
+  },
+  "status": "PASS"
+ },
+ "stderrTail": ""
+}

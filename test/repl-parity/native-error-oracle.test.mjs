@@ -4,14 +4,14 @@ const scenario=services.find(s=>s.id==='cells/native-pipe/data-close-error');
 const live={proof:'live-abort',events:['close'],lateEvents:[{event:'close'}],message:null};
 const wire={entry:'worker-stdin',observedConnection:true,proof:'boundary-double',events:['error','close'],lateEvents:[{event:'error',message:'fixture transport error'},{event:'close'}],message:'fixture transport error'};
 const result=value=>({isError:false,content:[{type:'text',text:JSON.stringify(value)}]});
-const longValue=platform=>({bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform,status:'connected',sunPathBytes:platform==='darwin'?104:108});
-test('over-limit native pipe requires the observed connection, exact returned bytes and no error sentence',()=>{
+const longValue=platform=>platform==='darwin'?{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform,status:'connected',sunPathBytes:104}:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform,status:'refused',sunPathBytes:108};
+test('over-limit native pipe preserves the platform outcome, exact bytes and exact refusal sentence',()=>{
  const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');assert.ok(s.cells.some(c=>c.label==='connect-over-limit'));
  const text=text=>({isError:false,content:[{type:'text',text}]});
  for(const platform of ['darwin','linux']){
   const run=last=>s.assert({results:[text('true'),text('native pipe path unavailable: No such file or directory (os error 2)'),last],timings:[0,0,0],platform});
   const valid=longValue(platform);assert.equal(run(result(valid)).ok,true);
-  for(const patch of [{status:'refused'},{status:'fixture-timeout'},{message:'failed to connect native pipe: Invalid argument (os error 22)'},{message:'invented sentence'},{bytes:[]},{bytes:[0,255,128,10,13,65]},{pathBytes:80},{sunPathBytes:1},{platform:'other'}])assert.throws(()=>run(result({...valid,...patch})));
+  for(const patch of [{status:platform==='darwin'?'refused':'connected'},{status:'fixture-timeout'},{message:'failed to connect native pipe: Invalid argument (os error 22)'},{message:'invented sentence'},{bytes:platform==='darwin'?[]:[65,13,10,128,255,0]},{bytes:[0,255,128,10,13,65]},{pathBytes:80},{sunPathBytes:1},{platform:'other'}])assert.throws(()=>run(result({...valid,...patch})));
   assert.throws(()=>run({...result(valid),isError:true}));assert.throws(()=>run(text('wrong error sentence')));
  }
 });

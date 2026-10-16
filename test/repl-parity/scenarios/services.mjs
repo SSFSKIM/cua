@@ -54,8 +54,9 @@ add('native-pipe/absolute-path',[`try{${rpc({op:'pipe',mode:'relative'})};nodeRe
  const sentences={darwin:'native pipe path unavailable: No such file or directory (os error 2)',linux:'native pipe path unavailable: No such file or directory (os error 2)'};
  assert.ok(Object.hasOwn(sentences,platform));okText(sentences[platform],1)(r);
  // Observed mini vendor at 519146a: a 192-byte absolute path connects, and the owned peer reverses all six bytes.
- // Linux's platform-indexed control is recorded in task 6; neither a transport failure nor a refusal is waived.
- const long={darwin:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'darwin',status:'connected',sunPathBytes:104},linux:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'linux',status:'connected',sunPathBytes:108}};
+ // Linux has no parent-directory connect in the vendor disassembly (session, 2026-10-16). Its source-grounded
+ // refusal below is provisional until task 6 records the Linux vendor control; it is not a live Linux observation.
+ const long={darwin:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'darwin',status:'connected',sunPathBytes:104},linux:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform:'linux',status:'refused',sunPathBytes:108}};
  json(long[platform],2)(r);
 });
 // macOS refuses a full Unix accept queue immediately. This proves the configured bound and refusal, NOT timer expiry.

@@ -3,8 +3,9 @@ import {delimiter,dirname,join,resolve,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {mkdirSync,realpathSync} from 'node:fs';
 import {prepareCapabilityApiLaunch} from './serve-capability-api.mjs';
-export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,userHome,capabilityHome,remote}={}){
+export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,userHome,capabilityHome,expectedCapabilityHome,remote}={}){
  if(remote!==true)throw Error('Live secret launch requires the remote capability lane');
+ if(typeof expectedCapabilityHome!=='string'||capabilityHome!==expectedCapabilityHome||resolve(expectedCapabilityHome)!==expectedCapabilityHome)throw Error('Live secret launch requires the chosen capability scratch HOME');
  if(typeof capabilityHome!=='string'||typeof userHome!=='string'||resolve(userHome)!==join(resolve(capabilityHome),'home')||!/^cua-(?:[a-z0-9]+-)*cap-/.test(basename(capabilityHome)))throw Error('Live secret launch requires the capability scratch HOME');
  // scoped permits writes only under launch.cwd/TMPDIR. Keep its policy unchanged; move only this fixture's HOME.
  if(typeof launch.cwd!=='string'||dirname(resolve(launch.cwd))!==join(resolve(capabilityHome),'run')||!/^[A-Za-z0-9-]{1,128}$/.test(basename(launch.cwd))||realpathSync(capabilityHome)!==resolve(capabilityHome)||realpathSync(userHome)!==resolve(userHome))throw Error('Live secret launch requires a canonical capability scratch run directory');
@@ -17,6 +18,6 @@ export function prepareLiveSecretsLaunch(launch,{host,vendorClient,ownClient,use
  const registered=JSON.parse(next.env[`${prefix}_TRUSTED_SERVICES`]);registered.browser=fixture;
  next.env[`${prefix}_TRUSTED_SERVICES`]=JSON.stringify(registered);
  next.env[`${prefix}_TRUSTED_CODE_PATHS`]=[...new Set([...next.env[`${prefix}_TRUSTED_CODE_PATHS`].split(delimiter),dirname(fixture)])].join(delimiter);
- Object.assign(next.env,{HOME:workerHome,PARITY_LIVE_SECRET_REMOTE:'1',PARITY_LIVE_SECRET_HOME:workerHome,PARITY_LIVE_SECRET_CAPABILITY_HOME:capabilityHome,PARITY_LIVE_SECRET_RUN_DIRECTORY:launch.cwd});
+ Object.assign(next.env,{HOME:workerHome,PARITY_LIVE_SECRET_REMOTE:'1',PARITY_LIVE_SECRET_HOME:workerHome,PARITY_LIVE_SECRET_CAPABILITY_HOME:capabilityHome,PARITY_LIVE_SECRET_CAPABILITY_ROOT:expectedCapabilityHome,PARITY_LIVE_SECRET_RUN_DIRECTORY:launch.cwd});
  return next;
 }

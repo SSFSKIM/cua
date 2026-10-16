@@ -14,6 +14,6 @@ export async function remoteCapabilityLane({device,checkout,home,host,api=false,
  const fixture=await start(capabilityFixtureCommand({...expectedFacts,api}));
  try {
   assertPreparedFacts(expectedFacts,fixture.executionFacts);
-  return {...fixture,command:{expectedFacts,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env -i ${ownNodeEnv(facts)}PATH="$PATH" HOME=${quote(fixture.userHome)} CUA_PARITY_REMOTE=1 CUA_PARITY_API=${api?'1':'0'} CUA_PARITY_LIVE_SECRETS=${liveSecrets?'1':'0'} CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_SOURCE_HOME=${quote(home)} CUA_HOME=${quote(fixture.home)} CUA_REPL_HOST=${quote(host)} CUA_BROWSER_SERVICE=cua CUA_SHIM_SURFACES=browser CUA_SHIM_SECRETS=off node test/repl-parity/serve-capability-client.mjs`)}};
+  return {...fixture,command:{expectedFacts,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env -i ${ownNodeEnv(facts)}PATH="$PATH" HOME=${quote(fixture.userHome)} CUA_PARITY_REMOTE=1 CUA_PARITY_API=${api?'1':'0'} CUA_PARITY_LIVE_SECRETS=${liveSecrets?'1':'0'} CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_SOURCE_HOME=${quote(home)} CUA_HOME=${quote(fixture.home)} CUA_PARITY_CAPABILITY_ROOT=${quote(fixture.home)} CUA_REPL_HOST=${quote(host)} CUA_BROWSER_SERVICE=cua CUA_SHIM_SURFACES=browser CUA_SHIM_SECRETS=off node test/repl-parity/serve-capability-client.mjs`)}};
  }catch(error){await fixture.close();throw error;}
 }

@@ -10,7 +10,7 @@ if(resolveRuntime({home:process.env.CUA_HOME}).release!==facts.release)throw new
 let prepareLaunch;
 if(process.env.CUA_PARITY_LIVE_SECRETS==='1'){
  const {prepareLiveSecretsLaunch}=await import('./serve-live-secrets.mjs');
- prepareLaunch=launch=>prepareLiveSecretsLaunch(launch,{host:process.env.CUA_REPL_HOST,userHome:process.env.HOME,capabilityHome:process.env.CUA_HOME,remote:process.env.CUA_PARITY_REMOTE==='1'});
+ prepareLaunch=launch=>prepareLiveSecretsLaunch(launch,{host:process.env.CUA_REPL_HOST,userHome:process.env.HOME,capabilityHome:process.env.CUA_HOME,expectedCapabilityHome:process.env.CUA_PARITY_CAPABILITY_ROOT,remote:process.env.CUA_PARITY_REMOTE==='1'});
 }else if(process.env.CUA_PARITY_API==='1'){
  const {prepareCapabilityApiLaunch}=await import('./serve-capability-api.mjs');
  prepareLaunch=launch=>prepareCapabilityApiLaunch(launch,{host:process.env.CUA_REPL_HOST});

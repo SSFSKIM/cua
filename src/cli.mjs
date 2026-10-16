@@ -9,6 +9,8 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome, realHome} from './runtime/layout.mjs';
 import {loadPins, selectPin, findPin} from './runtime/manifest.mjs';
 import {installRuntime, useRuntime} from './runtime/install.mjs';
+import {installNode} from './runtime/node-install.mjs';
+import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
 import {resolveRuntime} from './runtime/manifest.mjs';
 import {runLogin, loginStatus, LOGIN_STATES} from './runtime/login.mjs';
@@ -57,7 +59,9 @@ export const usageFor = platform => {
   const {archive, home} = PLATFORM_USAGE[platform] ?? PLATFORM_USAGE.darwin;
   const darwin = (PLATFORM_USAGE[platform] ? platform : 'darwin') === 'darwin';
   return `usage: cua <command>
-  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host
+  install [--archive <${archive}>] [--release <id>] [--json]   install and activate the pinned runtime and its Chrome host,
+          [--node-archive <node tarball> | --no-node]          then the pinned Node 24 cua's own REPL host runs on (a local
+                                                               nodejs.org tarball, or none: the host uses your Node)
   doctor [--json]                                              passive runtime health; exit 1 when a check fails
   runtime use <release> [--json]                               activate another verified installed release
   serve [--http <host:port>]                                   MCP over stdin/stdout until EOF or a signal (--http: as agent run --http)
@@ -124,16 +128,44 @@ function progressReporter() {
   };
 }
 
+// The runtime first, then the own REPL host's Node (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16),
+// each verified and activated on its own. A failed Node step fails the command after the runtime is in place, saying
+// so; --no-node skips it (an offline install without the tarball), and a platform with no Node pin has none to take.
+// Either way the own host then runs on CUA_NODE or the user's Node 24, else sessions keep the vendor host.
 async function install(args) {
-  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}});
+  const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}});
+  if (values['no-node'] && values['node-archive'] !== undefined) throw new UsageError('install takes --node-archive or --no-node, not both');
   const pins = loadPins();
   const manifest = values.release ? findPin(pins, values.release) : selectPin(pins);
+  const nodePin = values['no-node'] ? null : selectNodePin(loadNodePins());
+  const home = defaultHome();
+  const onProgress = values.json ? undefined : progressReporter();
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
-  const result = await installRuntime({home: defaultHome(), manifest, archivePath: values.archive, onProgress: values.json ? undefined : progressReporter()});
-  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, chromeHost: result.chromeHost});
-  else if (!result.chromeHost.changed) print(`${result.release} is already installed and verified, with its Chrome host; active at ${result.root}`);
-  else if (result.releaseChanged) print(`installed and activated ${result.release} at ${result.root}, with its Chrome host at ${result.chromeHost.root}`);
-  else print(`added the Chrome host to the installed release ${result.release} at ${result.chromeHost.root}; nothing that was installed changed`);
+  const result = await installRuntime({home, manifest, archivePath: values.archive, onProgress});
+  if (!values.json) {
+    if (!result.chromeHost.changed) print(`${result.release} is already installed and verified, with its Chrome host; active at ${result.root}`);
+    else if (result.releaseChanged) print(`installed and activated ${result.release} at ${result.root}, with its Chrome host at ${result.chromeHost.root}`);
+    else print(`added the Chrome host to the installed release ${result.release} at ${result.chromeHost.root}; nothing that was installed changed`);
+  }
+
+  let node;
+  const ownNodeFallback = 'cua\'s own REPL host runs on CUA_NODE or your own Node 24 or later, else sessions keep the vendor host';
+  if (!nodePin) {
+    node = {skipped: values['no-node'] ? 'no_node' : 'unpinned'};
+    if (!values.json) print(values['no-node'] ? `skipped the pinned Node (--no-node): ${ownNodeFallback}` : `no Node is pinned for ${process.platform}-${process.arch}: ${ownNodeFallback}`);
+  } else {
+    if (!values.json) process.stderr.write(`installing Node ${nodePin.version} for cua's own REPL host from ${values['node-archive'] ?? nodePin.archive.url}\n`);
+    try {
+      node = await installNode({home, pin: nodePin, archivePath: values['node-archive'], onProgress});
+    } catch (error) {
+      if (!(error instanceof CuaError)) throw error;
+      const remedy = `${result.release} is installed and active; for the Node, run cua install again, pass --node-archive <${nodeDistName(nodePin)}.tar.gz> with the pinned tarball, or pass --no-node (${ownNodeFallback})`;
+      throw new CuaError(error.code, `Node ${nodePin.version} for cua's own REPL host was not installed: ${error.message}`, {hint: error.hint ? `${error.hint}; ${remedy}` : remedy, cause: error});
+    }
+    if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
+      : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
+  }
+  if (values.json) print({ok: true, release: result.release, root: result.root, changed: result.changed, source: result.record.source, chromeHost: result.chromeHost, node});
 }
 
 async function doctor(args) {

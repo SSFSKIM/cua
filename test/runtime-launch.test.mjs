@@ -737,7 +737,7 @@ test('doctor\'s repl.host row names the route and the registration that decided 
   assert.match(invalid.detail, /CUA_REPL_HOST must be cua or vendor/);
 });
 
-test('doctor\'s repl.host row explains the M5 defaults, and warns with both remedies where no Node 24 lets a session default to cua\'s own host', async t => {
+test('doctor\'s repl.host row explains the M5 defaults, and warns with the remedies where no Node 24 lets a session default to cua\'s own host', async t => {
   const s = scratch();
   t.after(s.cleanup);
   writeCuaRecord(s.dir, {at: EARLY});
@@ -753,13 +753,14 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with both reme
   assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default on Linux`), linux.detail);
   assert.ok(linux.detail.includes(`The profile listing (browser only): cua host (linux) on Node ${NODE24}`), linux.detail);
 
-  // No Node 24: both the session and the listing keep the vendor host, and the row is a warning naming both remedies.
+  // No Node 24: both the session and the listing keep the vendor host, and the row is a warning naming the remedies,
+  // `cua install` (which installs the pinned Node for the own host) first.
   const resolve = counted(withoutNode);
   const warned = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser'}, resolve);
   assert.equal(warned.status, 'warn');
   assert.equal(resolve.calls, 1, 'doctor resolves Node once for the session and the listing, as a connection does');
   for (const pattern of [/^vendor host \(own_host_node_unavailable\)/, /cua's own host needs Node 24 or later/, new RegExp(TRIED.map(x => x.replace(/[()]/g, '\\$&')).join(', ')),
-    /install Node 24 or later/, /set CUA_NODE to the absolute path of one/, /The profile listing \(browser only\): vendor host \(own_host_node_unavailable\)/])
+    /run `cua install` \(it installs the pinned Node 24 for it under \$CUA_HOME\/node\)/, /install Node 24 or later yourself/, /set CUA_NODE to the absolute path of one/, /The profile listing \(browser only\): vendor host \(own_host_node_unavailable\)/])
     assert.match(warned.detail, pattern);
   // A session that keeps the vendor host anyway (macOS computer) still warns for its listing, which would default to cua.
   const computer = await row(DARWIN, {CUA_SHIM_SURFACES: 'computer,browser'}, withoutNode);

@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "version": "24.22.0",
+  "platform": "linux",
+  "arch": "arm64",
+  "archive": {
+    "url": "https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.gz",
+    "length": 57997377,
+    "sha256": "b7e7991d5407815adfa74a2a9cd4db683552c8ce32ff4a295c22e972849c3f5d"
+  },
+  "notes": "Provenance of the archive hash, checked once at authoring (2026-10-16, gpg 2.5.21): https://nodejs.org/dist/v24.22.0/SHASUMS256.txt (SHA-256 8912ada1431af8390bb3e30328d30bca701b59c7a6d5396b491293515c092c46) carries the line \"b7e7991d5407815adfa74a2a9cd4db683552c8ce32ff4a295c22e972849c3f5d  node-v24.22.0-linux-arm64.tar.gz\". Its detached signature SHASUMS256.txt.sig verifies (gpg --verify SHASUMS256.txt.sig SHASUMS256.txt in a throwaway GNUPGHOME holding only the 29 keys of nodejs/release-keys keys.list, the release keys the Node.js README publishes): GOODSIG C43CEC45C17AB93C Richard Lau, VALIDSIG C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C, made 2026-10-14; the key is listed among the README's active releasers at tag v24.22.0, and gpgv --keyring <release-keys gpg-only-active-keys/pubring.kbx> agrees. The clearsigned SHASUMS256.txt.asc also verifies and its body equals SHASUMS256.txt. Negative control: the same check over SHASUMS256.txt with one file name altered is BADSIG. The tarball, downloaded from the URL above, has exactly this length and SHA-256. v24.22.0 (2026-10-14) is the newest release of the Krypton LTS line in https://nodejs.org/dist/index.json at authoring."
+}

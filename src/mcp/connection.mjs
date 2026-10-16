@@ -100,7 +100,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
     // so a Node installed meanwhile takes effect on the next connection.
     const browserSelection = serverSettings.surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
-    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, browserSelection, resolveOwnNode});
+    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, browserSelection, resolveOwnNode});
     const launchFor = () => buildLaunch({
       runtime, home, sessionId, ambient: env, browserSelection, replHost, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),

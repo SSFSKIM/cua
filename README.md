@@ -18,10 +18,10 @@ The design and its status are in `docs/doperpowers/specs/2026-10-02-standalone-c
 
 - macOS on Apple silicon, or Linux on x64 or arm64 with an X11 desktop (see Linux; other platforms get
   `unsupported_platform`), and Node matching `^22.14 || >=23.7` as `node` on `PATH` for cua itself (the plugin starts
-  the server with `--disable-sigusr1`, which those versions introduced). cua's own REPL host needs Node 24 or later,
-  resolved through `CUA_NODE`, the node running cua, or `PATH` (see Use); vendor-routed sessions keep the pinned vendor
-  Node. The one npm dependency, `ws`, is needed only for remote control through a relay (`npm ci`); everything else
-  runs without `node_modules`.
+  the server with `--disable-sigusr1`, which those versions introduced). cua's own REPL host needs Node 24 or later:
+  `cua install` places a pinned official Node 24 for it under `$CUA_HOME/node`, and `CUA_NODE`, the node running cua or
+  `PATH` can supply one too (see Use); vendor-routed sessions keep the pinned vendor Node. The one npm dependency,
+  `ws`, is needed only for remote control through a relay (`npm ci`); everything else runs without `node_modules`.
 - The pinned runtime, installed into `CUA_HOME` (default `~/Library/Application Support/cua`) by `cua install`: it
   downloads OpenAI's pinned ChatGPT archive from its official URL (about 690 MB), or takes a local copy with
   `--archive <zip>`, and refuses anything whose length, SHA-256, layout or OpenAI code signatures (team `2DC432GLL2`)
@@ -164,9 +164,17 @@ With `CUA_REPL_HOST` unset or empty, the defaults are:
 | macOS, browser only with resolved service `cua` (MAWS and profile listing included) | `cua`, with Node 24+ | No native-helper peer is needed (`browser_only`) |
 | macOS, computer enabled, browser off or its resolved service `cua` | `vendor` | The native helper accepts only the vendor host's `node_repl` as a peer until #117 (`macos_native_peer_requires_vendor`); MAWS does not override this |
 
-The own host takes the first Node 24 or later it finds through `CUA_NODE` (an absolute path), the node running cua,
-then the first `node` on `PATH`, never the vendor's pinned Node. If none qualifies, a session that would default to cua
-keeps the vendor host with reason `own_host_node_unavailable`: install Node 24 or later, or set `CUA_NODE` to one.
+The own host takes the first Node 24 or later it finds through `CUA_NODE` (an absolute path), the Node `cua install`
+placed under `$CUA_HOME/node`, the node running cua, then the first `node` on `PATH`, never the vendor's pinned Node.
+cua itself keeps running on your Node; only the own host's processes use the installed one. After the runtime,
+`cua install` downloads the official nodejs.org tarball of the pinned Node 24 for this platform (or takes a local copy
+with `--node-archive <tarball>`), refuses it unless its length and SHA-256 match `runtime/releases/node/*.json` (on
+macOS also unless `bin/node` carries the OpenJS Foundation's Developer ID signature, team `HX7739G8FX`) and its
+`--version` is the pinned one, and keeps only `bin/node` and its licence in `$CUA_HOME/node/<version>`. Like the
+runtime, a verified Node makes it a no-op, and a damaged one is reported, never repaired in place. If that step fails,
+the command fails after the runtime is in place and says so; `--no-node` skips it, as for an offline install without
+the tarball. If no candidate qualifies, a session that would default to cua keeps the vendor host with reason
+`own_host_node_unavailable`: run `cua install`, install Node 24 or later yourself, or set `CUA_NODE` to one.
 This is selection before launch, not a retry on another host after a failed launch. `CUA_REPL_HOST=vendor` is the
 rollback. An explicit `CUA_REPL_HOST=cua` instead refuses when no suitable Node is found (`repl_host_node`), when the
 browser service resolves to `vendor`, or when the computer surface is enabled on macOS (`repl_host_refused`); it is never
@@ -176,7 +184,7 @@ silently downgraded. This replaces the host and facade on supported routes, not 
 profile listing. With the browser surface it also names what decided the service: the route and registration (or its
 absence), MAWS, or an explicit setting. It reads `pass` for usable selections, `fail` for a setting or explicit
 selection that refuses, and `warn` when either would use cua's host but cannot find Node 24, naming the candidates
-tried and both remedies above. A `warn` does not make `ok` false or the exit nonzero: the session keeps working on the
+tried and the remedies above. A `warn` does not make `ok` false or the exit nonzero: the session keeps working on the
 vendor host.
 
 **Process footprint.** Claude Code starts the plugin's server in every session, used or not, so `cua serve` holds no
@@ -1064,9 +1072,10 @@ pinned runtime installed, the host registered and a profile `me` bound, the user
 enrolment and the agent unit; it prints doctor's summary and the steps left to you (with a relay, the relay's table;
 nobody signs in to anything). `deploy/cloud-vm/create-hetzner.sh` does it on Hetzner Cloud in about four minutes;
 `deploy/cloud-vm/render.sh` prints the user data for any other provider. See `deploy/cloud-vm/README.md` and
-`docs/evidence/2026-10-07-cloud-vm-provisioning.md`. A Node 22-only install keeps the vendor REPL host with
-`own_host_node_unavailable`; install Node 24 or later, or pass its absolute path as `CUA_NODE` when installing the
-agent, to use cua's host.
+`docs/evidence/2026-10-07-cloud-vm-provisioning.md`. Its `cua install` also places the pinned Node 24 the own host
+runs on, so the machine's Node 22 no longer keeps sessions on the vendor host for want of a Node. A Node 22-only
+machine installed with `--no-node` keeps the vendor REPL host with `own_host_node_unavailable` until `cua install`
+runs again, Node 24 or later is installed, or its absolute path is passed as `CUA_NODE` when installing the agent.
 
 What it needs:
 
@@ -1386,7 +1395,7 @@ tab it created and reports any it could not close, and it scans the MCP traffic,
 | `CUA_SHIM_SURFACES` | `computer` | `computer`, `browser` or `computer,browser`: with `browser` the agent also gets the browser API for your existing Chrome profiles (through cua's own extension and host, no login needed; or, until its removal, the ChatGPT extension route with the server's own Codex login), the `profiles_list` tool and `{{secret:…}}` in Chrome fills; registered with `cua profiles add`/`bind` |
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
 | `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service. Unset or empty, Linux and browser-only macOS use cua's host when any enabled browser surface resolves to cua's service and Node 24+ resolves; vendor-browser routes and macOS computer sessions stay on the vendor host. If only Node is missing the reason is `own_host_node_unavailable`. `vendor` forces the vendor host as the rollback; explicit `cua` refuses an unsupported route/surface (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
-| `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
+| `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
 | `CUA_BROWSER_SERVICE` | `cua` on the cua route or in MAWS, else `vendor` | with the browser surface: the browser service behind the browser API. `cua`, cua's own (`src/browser-service/`, see Chrome): no network call or approval prompt of its own, `timeoutMs` up to 120 s per phase of a call (3 s by default; `timeoutMs: 0` is one attempt bounded by 3 s) on locator actions, waits and `evaluate`, and `evaluate` in the page's own world, never run twice (it fails saying the script may have run when something interrupts it after it was sent). `vendor`, OpenAI's from the pinned runtime, retained as the rollback and for the ChatGPT extension route, requires the vendor REPL host; #116 does not remove it. Unset or empty, each connection resolves it from the home's active Chrome route, the one backend discovery follows (the most recent of `cua chrome register` and `cua chrome register --vendor`): `cua` on the cua route or when MAWS's in-app browser is configured (`CUA_BROWSER_BACKENDS`), else `vendor` (the ChatGPT extension route: its registration is the most recent, or there is none); `cua doctor`'s `browser.service` row names the route, the registration that made it active, and how to get cua's. Any other value refuses the connection (`invalid_setting` at start). Read by `cua serve` and by `cua profiles list` and `bind`, whose listing launch uses the same service; `cua agent install` carries it into the job only when explicitly nonempty. Model code sees a failed call of either service as a plain `Error` carrying the service's sentence; cua's error code stays on the trusted side, where only the wrapper's classification of a failed `{{secret:…}}` input reads it |
 | `CUA_SHIM_PERSIST` | `session` | `session`, `always` or `none`: how an accepted approval is remembered |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them |

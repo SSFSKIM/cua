@@ -33,7 +33,8 @@
 // It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets
 // (a CUA_NODE that is not an absolute path among them, whatever the selection, as `cua serve` refuses it at start),
 // and `warn` where one would default to cua's own host but no Node 24 or later resolves here (own_host_node_unavailable:
-// that session keeps the vendor host), naming the candidates tried and both remedies. Node is resolved once for both, as
+// that session keeps the vendor host), naming the candidates tried (the Node `cua install` places among them) and the
+// remedies: `cua install`, a Node 24 of the user's own, or CUA_NODE. Node is resolved once for both, as
 // a connection resolves it once (`resolveOwnNode`, launch.mjs ownHostNode by default, injectable for tests).
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
@@ -194,7 +195,7 @@ const REPL_HOST_REASONS = {
   macos_native_peer_requires_vendor: () => 'the computer surface on macOS, whose helper accepts only the vendor host\'s node_repl as a peer until #117',
   linux: () => `CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); ${ROLLBACK}`,
   browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; ${ROLLBACK}`,
-  own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, install Node ${NODE_FLOOR} or later, or set CUA_NODE to the absolute path of one`,
+  own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, run \`cua install\` (it installs the pinned Node ${NODE_FLOOR} for it under $CUA_HOME/node), install Node ${NODE_FLOOR} or later yourself, or set CUA_NODE to the absolute path of one`,
 };
 
 // The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?, browser} or, refused,
@@ -203,7 +204,7 @@ function replHostSelection(home, env, platform, surfaces, resolveOwnNode) {
   let browser = null;
   try {
     browser = surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
-    return {...replHostFor({platform, surfaces, ambient: env, browserSelection: browser, resolveOwnNode}), browser};
+    return {...replHostFor({platform, surfaces, ambient: env, home, browserSelection: browser, resolveOwnNode}), browser};
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return {code: error.code, message: error.message, browser};
@@ -229,7 +230,7 @@ function replHostCheck(home, env, platform, resolveOwnNode) {
     if (!(error instanceof CuaError)) throw error;
     return result('repl.host', 'fail', `${error.message}; every connection is refused`);
   }
-  const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env})));
+  const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home})));
   const session = replHostSelection(home, env, platform, surfaces, resolve);
   const listing = replHostSelection(home, env, platform, ['browser'], resolve);
   const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}`);

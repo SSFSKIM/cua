@@ -201,7 +201,7 @@ function occupied(target) {
   return fail('target_occupied', `${target} exists and was not installed by cua; it is left untouched`, {hint: 'move it aside yourself, then run install again'});
 }
 
-function assertTargetFree(target) {
+export function assertTargetFree(target) {
   try { lstatSync(target); } catch (error) { if (error.code === 'ENOENT') return; throw error; }
   occupied(target);
 }
@@ -221,7 +221,7 @@ function activate(home, release) {
 // The target is claimed with an exclusive mkdir, so nothing that appeared there since the earlier check can be
 // overwritten (a plain rename would silently replace an empty directory). The rename then replaces only our own
 // empty claim. On failure the claim is removed only if it is still empty.
-function moveIntoPlace(tree, target) {
+export function moveIntoPlace(tree, target) {
   try {
     mkdirSync(target);
   } catch (error) {
@@ -252,7 +252,7 @@ async function snapshotArchive(path, dest, {length}, {deb}) {
   }
 }
 
-async function download({url, length}, dest, fetchImpl, onProgress) {
+export async function download({url, length}, dest, fetchImpl, onProgress) {
   let response;
   try {
     response = await fetchImpl(url, {redirect: 'follow'});
@@ -278,7 +278,7 @@ async function download({url, length}, dest, fetchImpl, onProgress) {
   }
 }
 
-async function verifyArchive(path, {length, sha256}) {
+export async function verifyArchive(path, {length, sha256}) {
   const size = statSync(path).size;
   if (size !== length) fail('archive_length_mismatch', `archive is ${size} bytes; the pin expects ${length}`);
   const hash = createHash('sha256');

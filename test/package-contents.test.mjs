@@ -36,6 +36,13 @@ test('the npm package carries every tracked file of the own host, its facade and
   assert.match(readFileSync(new URL('../src/repl-host/vendor/meriyah/meriyah.mjs', import.meta.url), 'utf8').slice(0, 2000), /ISC License/);
 });
 
+test('the npm package carries the Node pins `cua install` installs the own host\'s Node from', () => {
+  const files = packed();
+  const pins = execFileSync('git', ['ls-files', '--', 'runtime/releases/node/'], {cwd: ROOT, encoding: 'utf8'}).split('\n').filter(Boolean);
+  assert.equal(pins.length, 4, 'darwin and linux, arm64 and x64');
+  assert.deepEqual(pins.filter(path => !files.has(path)), []);
+});
+
 test('the package floor stays Node 22 while the own host\'s floor is Node 24, resolved per connection', () => {
   const {engines} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(engines.node, '^22.14 || >=23.7', 'cua itself, and the vendor host route, keep running on Node 22');

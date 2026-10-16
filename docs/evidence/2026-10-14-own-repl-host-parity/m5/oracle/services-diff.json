@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "differences": [],
+  "expected": [],
+  "cases": 41,
+  "cells": 75,
+  "recordedCases": 41,
+  "vendorDefects": [],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "allAssertionsPassed": true,
+  "doubleCases": 0
+}

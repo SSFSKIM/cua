@@ -45,7 +45,14 @@ metaAcross.assert=({results,timings})=>{originalMetaAssert({results,timings});co
 add('trusted/emit-content-item-order',[`nodeRepl.write('before|');${rpc({op:'content'})};nodeRepl.write('after|');`],r=>{assert.equal(r[0].isError,false);assert.deepEqual(r[0].content,[{type:'text',text:'before|worker-write|after|'},{type:'text',text:'item-one'},{type:'text',text:'item-two'}]);});
 add('trusted/privileged-env-allowlist',[value({op:'env'}),`nodeRepl.write(JSON.stringify({frozen:Object.isFrozen(nodeRepl.env),keys:Object.keys(nodeRepl.env),value:nodeRepl.env.PARITY_CELL_VISIBLE}));`],r=>{json({frozen:true,worker:'worker-value',cellMarker:'cell-value'},0)(r);json({frozen:true,keys:['PARITY_CELL_VISIBLE'],value:'cell-value'},1)(r);});
 add('trusted/no-account-telemetry-app-server',[`let results=[];for(let name of ['app-server','telemetry','account'])try{await nodeRepl.rpc(name,{});results.push(false);}catch(e){results.push(e.message==='Trusted RPC service is not configured: '+name);}nodeRepl.write(JSON.stringify(results));`],json([true,true,true]));
-add('native-pipe/absolute-path',[`try{${rpc({op:'pipe',mode:'relative'})};nodeRepl.write('CONNECTED');}catch(e){nodeRepl.write(e.message.includes('absolute'));}`],okText('true'));
+// Darwin vendor observation: 2026-10-16 mini; Linux control is recorded at M5's VM sitting.
+// Keep the stat diagnostic byte-exact, independently of the subject's strerror table.
+add('native-pipe/absolute-path',[`try{${rpc({op:'pipe',mode:'relative'})};nodeRepl.write('CONNECTED');}catch(e){nodeRepl.write(e.message.includes('absolute'));}`,
+ {label:'stat-missing',code:`try{${rpc({op:'pipe',mode:'missing'})};nodeRepl.write('CONNECTED');}catch(e){nodeRepl.write(e.message);}`}],(r,t,{platform='darwin'}={})=>{
+ okText('true',0)(r);
+ const sentences={darwin:'native pipe path unavailable: No such file or directory (os error 2)',linux:'native pipe path unavailable: No such file or directory (os error 2)'};
+ assert.ok(Object.hasOwn(sentences,platform));okText(sentences[platform],1)(r);
+});
 // macOS refuses a full Unix accept queue immediately. This proves the configured bound and refusal, NOT timer expiry.
 // Linux also refuses immediately (vendor observation at 352f1e3); timer expiry retains its named socket-double proof.
 add('native-pipe/connect-timeout',[value({op:'pipe',mode:'timeout'})],(r,t)=>{const v=JSON.parse(text(r.at(-1)));assert.equal(r.at(-1).isError,false);assert.equal(v.refused,true);assert.equal(v.budget,1000);assert.equal(v.observation,'saturated-peer-refused');if(v.platform==='linux'){assert.equal(v.message,'failed to connect native pipe: Resource temporarily unavailable (os error 11)');assert.equal(v.boundedRefusal,true);}const duration=r.at(-1)._meta?.['codex/nodeReplExecutionDurationMs'];assert.ok(Number.isFinite(duration)&&duration<3000);},{boundaryProof:'live-unreachable: non-blocking connect',limitations:['A full AF_UNIX backlog refuses immediately on both platforms. Live proof records the 1,000 ms setting and bounded refusal; socket-double unit proof covers timer expiry.']});

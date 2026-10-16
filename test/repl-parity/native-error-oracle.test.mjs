@@ -4,6 +4,16 @@ const scenario=services.find(s=>s.id==='cells/native-pipe/data-close-error');
 const live={proof:'live-abort',events:['close'],lateEvents:[{event:'close'}],message:null};
 const wire={entry:'worker-stdin',observedConnection:true,proof:'boundary-double',events:['error','close'],lateEvents:[{event:'error',message:'fixture transport error'},{event:'close'}],message:'fixture transport error'};
 const result=value=>({isError:false,content:[{type:'text',text:JSON.stringify(value)}]});
+test('missing native pipe oracle rejects a successful connect and changed OS sentence on each platform',()=>{
+ const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');
+ assert.ok(s.cells.some(c=>c.label==='stat-missing'));
+ const text=text=>({isError:false,content:[{type:'text',text}]});
+ for(const platform of ['darwin','linux']){
+  const run=message=>s.assert({results:[text('true'),text(message)],timings:[0,0],platform});
+  assert.equal(run('native pipe path unavailable: No such file or directory (os error 2)').ok,true);
+  for(const bad of ['CONNECTED','native pipe path unavailable: no such file or directory','failed to connect native pipe: No such file or directory (os error 2)'])assert.throws(()=>run(bad));
+ }
+});
 test('the labelled error-wire oracle rejects a dropped or reordered error and missing late replay',()=>{
  assert.equal(scenario.assert({results:[result(live),result(wire)],timings:[0,0]}).ok,true);
  for(const mutate of [v=>v.events.shift(),v=>v.events.reverse(),v=>v.lateEvents.shift(),v=>v.lateEvents[0].message='lost']){

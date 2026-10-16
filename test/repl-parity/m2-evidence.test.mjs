@@ -11,13 +11,15 @@ const json=p=>JSON.parse(readFileSync(new URL(p,base),'utf8'));
 const load=name=>({meta:json(`${name}/meta.json`),tools:json(`${name}/tools.json`),rows:readFileSync(new URL(`${name}/results.jsonl`,base),'utf8').trim().split('\n').map(JSON.parse)});
 test('M2 vendor pair covers every service oracle with no allowances or double-only substitutions',()=>{
  const a=load('vendor-1'),b=load('vendor-2'),selected=services.filter(s=>s.platforms.includes(a.meta.platform));
- const result=compareParityRuns(a,b,{caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)]))});
+ // M5 adds stat-missing to the existing path case; it is not retroactively part of the immutable M2 recording.
+ const result=compareParityRuns(a,b,{caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s).filter(label=>label!=='stat-missing')]))});
  assert.equal(result.ok,true,JSON.stringify(result.differences));assert.equal(result.allAssertionsPassed,true);assert.equal(result.cases,41);assert.deepEqual(result.expected,[]);
 });
-test('each M2 independent assertion accepts the observed vendor result and rejects destroyed outcomes',()=>{
+test('each service assertion accepts observed vendor results and rejects destroyed outcomes (M5 re-recording for the extended path case)',()=>{
  const run=load('vendor-1');
+ const extendedRows=readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/services-vendor-1/results.jsonl',import.meta.url),'utf8').trim().split('\n').map(JSON.parse);
  for(const scenario of services.filter(s=>s.platforms.includes(run.meta.platform))){
-  const rows=run.rows.filter(r=>r.case===scenario.id&&r.cell);
+  const rows=(scenario.id==='cells/native-pipe/absolute-path'?extendedRows:run.rows).filter(r=>r.case===scenario.id&&r.cell);
   const raw=r=>({content:r.content,isError:r.isError,...(Object.hasOwn(r,'meta')?{_meta:r.meta}:{}),...(Object.hasOwn(r,'structuredContent')?{structuredContent:r.structuredContent}:{})});
   const groups=scenario.cells.map(c=>turnCellLabels(c).map(label=>rows.find(r=>r.cell===label)));
   const timings=groups.map(group=>Math.max(...group.map(r=>typeof r.ms==='object'?(r.ms.hostTurn??r.ms.elapsed):r.ms)));

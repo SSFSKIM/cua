@@ -7,6 +7,6 @@ const facts=executionFacts({source:process.env.CUA_HOME});assertPreparedFacts(JS
 const home=prepareCapabilityHome({source:process.env.CUA_HOME});let host;
 try {
  host=await startCapabilityHost({home:home.dir,...(process.env.CUA_PARITY_API==='1'?{userTabs:[{url:'https://cua-capability.example/user',title:'Capability user fixture'}]}:{})});
- console.log(JSON.stringify({ready:true,executionFacts:facts,home:home.dir,userHome:home.userHome,release:home.release,instanceId:host.instanceId,socketPath:host.socketPath,pid:process.pid}));
+ console.log(JSON.stringify({ready:true,executionFacts:facts,home:home.dir,userHome:home.userHome,release:home.release,nodeMode:home.nodeMode,ownNode:home.ownNode,instanceId:host.instanceId,socketPath:host.socketPath,pid:process.pid}));
  await new Promise(resolve=>{process.stdin.resume();process.stdin.once('end',resolve);process.once('SIGTERM',resolve);process.once('SIGINT',resolve);});
 }finally{await host?.close();home.cleanup();}

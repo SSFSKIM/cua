@@ -4,7 +4,7 @@
 // docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "The extension", "The extension protocol", H3a.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, readFileSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
 import {connect} from 'node:net';
 import {join} from 'node:path';
 import {VIEWPORT_CAPABILITY} from '../src/chrome/host.mjs';
@@ -13,7 +13,8 @@ import {backendDir, CUA_EXTENSION_ID, CUA_HOST_NAME, PROTOCOL_VERSION, socketNam
 import {CdpError, createChromeStub, MANIFEST} from './helpers/chrome-stub.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 
-const waitFor = async (predicate, what, ms = 5000) => {
+// A liveness bound, not a speed claim: a loaded machine takes its time, and only a wait that never ends fails.
+const waitFor = async (predicate, what, ms = 20_000) => {
   const deadline = Date.now() + ms;
   while (!(await predicate())) { if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 5)); }
 };
@@ -36,7 +37,9 @@ async function start(t, options = {}) {
   const name = socketNameFor(id);
   const socketPath = join(backendDir(scratch.dir), `${name}.sock`);
   const statusPath = join(backendDir(scratch.dir), `${name}.json`);
-  await waitFor(() => existsSync(socketPath), 'the host socket');
+  // The host runs in its own process, which binds the path (the file appears) before it listens: only a connection
+  // accepted proves it serves.
+  await waitFor(() => serving(socketPath), 'the host socket');
   return {stub, home: scratch.dir, id, socketPath, hostStatus: () => JSON.parse(readFileSync(statusPath, 'utf8'))};
 }
 

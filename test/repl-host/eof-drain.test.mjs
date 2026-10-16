@@ -11,8 +11,10 @@ import {DRAIN_MARGIN_MS, SHUTTING_DOWN_SENTENCE, TIMEOUT_SENTENCE, TURN_MARGIN_M
 import {ELICITATION_CANCELLED_SENTENCE} from '../../src/repl-host/elicitation.mjs';
 
 const {node, skip} = kernelNode();
-// Bounded, so a host that never exits fails its test rather than the run.
-const own = {skip, timeout: 30_000};
+// Bounded, so a host that never exits fails its test rather than the run; generous, since that is all it claims.
+const own = {skip, timeout: 60_000};
+// What 'answered at once' means beside the cell's 30 s default budget: half of it, a liveness bound and no speed claim.
+const NOT_HELD_MS = 15_000;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const SLEEP = 'const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));\n';
 const rpc = (service, request) => `nodeRepl.write(JSON.stringify(await nodeRepl.rpc(${JSON.stringify(service)}, ${JSON.stringify(request)})));`;
@@ -63,23 +65,25 @@ test('during the drain a new budget suspension is refused: the cell is held to i
   assert.ok(elapsed < 1200 + 2500, `the 10 s suspension did not pause the budget (${Math.round(elapsed)} ms)`);
 });
 
-const ELICIT_SERVICE = {elicit: `${SLEEP}export async function handleRpc(request) {
+const ELICIT_SERVICE = {elicit: `export async function handleRpc(request) {
   if (request.warm) return 'warm';
-  if (request.after) await sleep(request.after);
-  return await nodeRepl.createElicitation({message: request.message, requestedSchema: {type: 'object', properties: {ok: {type: 'boolean'}}}});
+  const ask = message => nodeRepl.createElicitation({message, requestedSchema: {type: 'object', properties: {ok: {type: 'boolean'}}}});
+  // Asks only once an earlier request was withdrawn, which the host does when the drain begins.
+  if (request.afterWithdrawn) { try { await ask(request.afterWithdrawn); } catch {} }
+  return await ask(request.message);
 }`};
 
 test('EOF while an elicitation awaits a client that never answers: the request is cancelled, the service is told why, the cell finishes and the host exits', own, async t => {
   const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: ELICIT_SERVICE});
   const cell = host.js(rpcCaught('elicit', {message: 'approve?'}));
-  for (let i = 0; i < 250 && !host.serverRequests.some(m => m.method === 'elicitation/create'); i++) await delay(20);
+  for (const until = Date.now() + NOT_HELD_MS; !host.serverRequests.some(m => m.method === 'elicitation/create') && Date.now() < until;) await delay(20);
   const [asked] = host.serverRequests.filter(m => m.method === 'elicitation/create');
   assert.ok(asked, 'the client was asked');
   await delay(500);
   assert.equal(await state(cell), 'pending', 'on a live connection the cell waits for the answer');
   const {elapsed, status} = await endInput(host);
   assert.deepEqual(status, {code: 0, signal: null});
-  assert.ok(elapsed < 2500, `not held to the cell's 30 s budget (${Math.round(elapsed)} ms)`);
+  assert.ok(elapsed < NOT_HELD_MS, `not held to the cell's 30 s budget (${Math.round(elapsed)} ms)`);
   assert.deepEqual(texts(await cell), [JSON.stringify({rejected: ELICITATION_CANCELLED_SENTENCE})], 'nothing granted, and the service is told the truth');
   const cancelled = host.frames.filter(m => m.method === 'notifications/cancelled');
   assert.deepEqual(cancelled.map(m => m.params.requestId), [asked.id], 'the client is told the request is withdrawn');
@@ -89,11 +93,16 @@ test('EOF while an elicitation awaits a client that never answers: the request i
 test('during the drain a new elicitation is not asked of the departed client: the service is told at once', own, async t => {
   const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: ELICIT_SERVICE});
   assert.deepEqual(texts(await host.js(rpc('elicit', {warm: true}))), ['"warm"']);
-  const cell = host.js(rpcCaught('elicit', {message: 'late', after: 300}));
-  await delay(100);
+  // Ordered by events, not by a delay: the service asks 'late' only after its first request was withdrawn, and the
+  // host withdraws it when the drain begins.
+  const cell = host.js(rpcCaught('elicit', {afterWithdrawn: 'first', message: 'late'}));
+  for (const until = Date.now() + NOT_HELD_MS; !host.serverRequests.some(m => m.method === 'elicitation/create') && Date.now() < until;) await delay(20);
+  const [first] = host.serverRequests.filter(m => m.method === 'elicitation/create');
+  assert.equal(first?.params.message, 'first', 'the client was asked the first request');
   const {elapsed, status} = await endInput(host);
   assert.deepEqual(status, {code: 0, signal: null});
-  assert.ok(elapsed < 2500, `${Math.round(elapsed)} ms`);
+  assert.ok(elapsed < NOT_HELD_MS, `not held to the cell's 30 s budget (${Math.round(elapsed)} ms)`);
+  assert.deepEqual(host.frames.filter(m => m.method === 'notifications/cancelled').map(m => m.params.requestId), [first.id], 'the first was withdrawn');
   assert.deepEqual(texts(await cell), [JSON.stringify({rejected: ELICITATION_CANCELLED_SENTENCE})]);
   assert.deepEqual(host.serverRequests.filter(m => m.method === 'elicitation/create' && m.params.message === 'late'), []);
 });

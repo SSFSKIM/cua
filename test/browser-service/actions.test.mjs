@@ -16,6 +16,7 @@ import {InjectedScripts} from '../../src/browser-service/injected.mjs';
 import {CuaInput} from '../../src/browser-service/input.mjs';
 import {ENTER_FRAME, SelectorEngine} from '../../src/browser-service/selectors.mjs';
 import {FAKE_INJECTED_SOURCE, el, iframe, pageWorld} from './support/page-world.mjs';
+import {onControlledClock} from './support/controlled-clock.mjs';
 
 // The virtual clipboard with its page bridge recorded rather than installed (the bridge has its own tests,
 // clipboard-commands.test.mjs): `bridged` lists each installation asked for, with its options.
@@ -97,28 +98,38 @@ test('a click waits for its element to become enabled, within the caller\'s budg
   assert.equal(mouse().length, 3);
 });
 
-test('a click that never becomes possible times out with the vendor\'s sentence; force skips the states', async () => {
+test('a click that never becomes possible times out with the vendor\'s sentence; force skips the states', async t => {
   const {run, mouse} = setup([el('button', {id: 'off', disabled: true})]);
-  const started = Date.now();
-  const error = await rejection(run('playwright_locator_click', {selector: '#off', timeout_ms: 400}));
+  // Which sentence ends the polling depends on where the budget runs out (the vendor's loop has several); on a
+  // controlled clock it runs out at the same point on any machine.
+  const {error, elapsed} = await onControlledClock(t, async () => {
+    const started = Date.now();
+    return {error: await rejection(run('playwright_locator_click', {selector: '#off', timeout_ms: 400})), elapsed: Date.now() - started};
+  });
   assert.ok(error instanceof BrowserServiceError);
   assert.equal(error.code, 'timeout');
-  // Which sentence ends the polling depends on where the budget runs out (the vendor's loop has the same two).
-  assert.match(error.message, /^(Playwright selector deadline exceeded|Timed out after 400ms waiting for selector #off: Browser Use encountered an error interacting with this webpage: Error: Element is not enabled)$/);
-  assert.ok(Date.now() - started < 1500);
+  assert.equal(error.message, 'Playwright selector deadline exceeded');
+  assert.ok(elapsed >= 400 && elapsed < 500, `polled until its 400 ms budget ran out, and no longer (${elapsed} ms)`);
   assert.equal(mouse().length, 0);
   await run('playwright_locator_click', {selector: '#off', force: true});
   assert.equal(mouse().length, 3);
 });
 
-test('an element without a box is not clicked; a missing one is waited for', async () => {
-  const {run} = setup([el('span', {id: 'flat', rect: {left: 0, top: 0, width: 0, height: 0}})]);
-  const flat = await rejection(run('playwright_locator_click', {selector: '#flat', timeout_ms: 300, }));
-  assert.match(flat.message, /^(Playwright selector deadline exceeded|Timed out after 300ms waiting for selector #flat: .*Element does not have a clickable bounding box)$/);
+test('an element without a box is not clicked; a missing one is waited for', async t => {
+  // Where a polling budget runs out decides the sentence (the vendor's loop has several); on a controlled clock it runs
+  // out at the same point on any machine: at the check before a fourth attempt.
+  const {run, browser, mouse} = setup([el('span', {id: 'flat', rect: {left: 0, top: 0, width: 0, height: 0}})]);
+  const flat = await onControlledClock(t, () => rejection(run('playwright_locator_click', {selector: '#flat', timeout_ms: 300})));
+  assert.equal(flat.code, 'timeout');
+  assert.equal(flat.message, 'Playwright selector deadline exceeded');
   const once = await rejection(run('playwright_locator_click', {selector: '#flat', timeout_ms: 0}));
   assert.equal(once.message, 'Timed out after 0ms waiting for selector #flat: Browser Use encountered an error interacting with this webpage: Error: Element does not have a clickable bounding box',
     'a zero budget makes one attempt and names its failure');
-  assert.match((await rejection(run('playwright_locator_click', {selector: '#none', timeout_ms: 300}))).message, /^(Playwright selector deadline exceeded|Timed out after 300ms waiting for selector #none: .*No element matched selector)$/);
+  browser.dispatchedAt.length = 0;
+  const none = await onControlledClock(t, () => rejection(run('playwright_locator_click', {selector: '#none', timeout_ms: 300})));
+  assert.equal(none.message, 'Playwright selector deadline exceeded');
+  assert.equal(browser.dispatchedAt.filter(d => d.method === 'Runtime.evaluate').length, 3, 'looked for every 100 ms until the budget ran out');
+  assert.deepEqual(mouse(), [], 'nothing was clicked');
 });
 
 test('a strict-mode violation and an open dialog end a click at once', async () => {
@@ -186,34 +197,44 @@ test('an open dialog or a spent budget during the obstruction check ends the cli
   assert.equal(broken.input('Input.dispatchMouseEvent').length, 0);
 });
 
-test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothing', async () => {
+test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothing', async t => {
   const {run, pastes, session} = setup([el('input', {id: 'text', type: 'text', value: 'old'})]);
   let release;
   const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
-  const error = await rejection(run('playwright_locator_fill', {selector: '#text', value: 'alpha', timeout_ms: 300}));
-  assert.equal(error.code, 'timeout');
-  release();
-  await busy;
-  await new Promise(resolve => setTimeout(resolve, 20));
+  // On a controlled clock the caller's timeout and its spent budget are the same instant. On the real one a loaded
+  // event loop can fire the wait's timer before Date.now() reaches the deadline, and a lock released in between lets
+  // the queued paste through (seen once on a hosted runner).
+  await onControlledClock(t, async () => {
+    const error = await rejection(run('playwright_locator_fill', {selector: '#text', value: 'alpha', timeout_ms: 300}));
+    assert.equal(error.code, 'timeout');
+    release();
+    await busy;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
   assert.equal(pastes.length, 0);
 });
 
-test('a clipboard shortcut queued behind another resolves its element within its own deadline: nothing runs after it', async () => {
+test('a clipboard shortcut queued behind another resolves its element within its own deadline: nothing runs after it', async t => {
   const field = el('input', {id: 'text', type: 'text', value: 'abc', disabled: true});
   const {browser, run, pastes, session} = setup([field]);
   session.clipboard.write([{entries: [{mime_type: 'text/plain', text: 'clip'}]}], 'test');
   let release;
   const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
-  setTimeout(() => release(), 200);
-  const started = Date.now();
-  const error = await rejection(run('playwright_locator_press', {selector: '#text', value: 'Control+v', timeout_ms: 300}));
+  // On a controlled clock: the budget, the release at 200 ms and the 400 ms watch after it are exact on any machine.
+  const {error, elapsed, calls, later} = await onControlledClock(t, async () => {
+    setTimeout(() => release(), 200);
+    const started = Date.now();
+    const error = await rejection(run('playwright_locator_press', {selector: '#text', value: 'Control+v', timeout_ms: 300}));
+    const elapsed = Date.now() - started;
+    await busy;
+    const calls = browser.calls.length;
+    field.disabled = false;
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return {error, elapsed, calls, later: browser.calls.length};
+  });
   assert.equal(error.code, 'timeout');
-  assert.ok(Date.now() - started < 500, `rejected with its budget (${Date.now() - started} ms)`);
-  await busy;
-  const calls = browser.calls.length;
-  field.disabled = false;
-  await new Promise(resolve => setTimeout(resolve, 400));
-  assert.equal(browser.calls.length, calls, 'no CDP call after the deadline');
+  assert.ok(elapsed >= 300 && elapsed < 400, `rejected with its 300 ms budget (${elapsed} ms)`);
+  assert.equal(later, calls, 'no CDP call after the deadline');
   assert.notEqual(field.ownerDocument.activeElement, field, 'the field was never focused');
   assert.equal(pastes.length, 0);
 });

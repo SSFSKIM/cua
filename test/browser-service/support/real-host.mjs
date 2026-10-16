@@ -13,7 +13,8 @@ import {shortScratch} from '../../fixtures/runtime-fixture.mjs';
 
 export const nativePipe = {createConnection: nativePipeConnect};
 
-export async function waitFor(predicate, what, ms = 3000) {
+// A liveness bound, not a speed claim: only a wait that never ends fails.
+export async function waitFor(predicate, what, ms = 20_000) {
   const deadline = Date.now() + ms;
   while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);

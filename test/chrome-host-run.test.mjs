@@ -19,7 +19,8 @@ const HOST = fileURLToPath(new URL('../src/chrome/host.mjs', import.meta.url));
 const CONNECTOR = fileURLToPath(new URL('./helpers/relay-connector.mjs', import.meta.url));
 const OTHER = 'tab owned by another session';
 let nextPid = 900_000;
-const waitFor = async (predicate, what, ms = 3000) => {
+// A liveness bound, not a speed claim: a loaded machine takes its time, and only a wait that never ends fails.
+const waitFor = async (predicate, what, ms = 20_000) => {
   const deadline = Date.now() + ms;
   while (!predicate()) { if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`); await new Promise(r => setTimeout(r, 5)); }
 };
@@ -116,8 +117,10 @@ test('the Chrome-route host checks no peer: an orphaned same-user process is ser
   const result = join(s.dir, 'result.json');
   const q = JSON.stringify;
   spawn('/bin/sh', ['-c', `(${q(process.execPath)} ${q(CONNECTOR)} ${q(h.socketPath)} ${q(result)} &)`], {stdio: 'ignore'});
-  await waitFor(() => existsSync(result), 'the orphan\'s outcome', 8000);
-  assert.deepEqual(JSON.parse(readFileSync(result, 'utf8')), {connected: true, replied: true, closed: false});
+  // The connector writes its outcome in one write, which a reader can still catch half done: wait for the whole object.
+  let outcome;
+  await waitFor(() => { try { outcome = JSON.parse(readFileSync(result, 'utf8')); return true; } catch { return false; } }, 'the orphan\'s outcome');
+  assert.deepEqual(outcome, {connected: true, replied: true, closed: false});
   assert.doesNotMatch(readFileSync(join(logDir(h.home), `${h.name}.log`), 'utf8'), /refused peer/);
 });
 

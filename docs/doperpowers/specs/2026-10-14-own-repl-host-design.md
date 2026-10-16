@@ -539,6 +539,22 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: nativePipe path failures use the vendor's sentences (184f4e3, 32d7335). M5's mini sitting found the stat-missing row differing: the own host reported a failed path lookup with the connect prefix.
+  - **Validation order.** Disassembly of `validate_native_pipe_path` in both the darwin-arm64 and the linux-arm64 builds of `node_repl` 26.928.40906 shows the vendor's order:
+    1. Check that the path is absolute.
+    2. `realpath`. Any failure reports `native pipe path unavailable: <strerror> (os error N)`, covering ENOENT, ENOTDIR, EACCES, ELOOP, ENAMETOOLONG, EIO and Rust's NUL-byte sentence.
+    3. `stat` of the canonical path. A failure reports `native pipe stat failed: …`; only a race reaches it.
+    4. A socket check. A non-socket reports `native pipe path is not a socket`.
+    5. `failed to connect native pipe: …`, which only comes after all of the above.
+  - **The port.**
+    - The own host follows the same order.
+    - It stats the canonical path as realpath's raw bytes (`{encoding:'buffer'}`), so a non-UTF-8 directory name is not re-encoded.
+    - It still connects the path as given, because Node cannot connect through a parent directory the way the vendor does.
+    - A Linux-only real-filesystem regression runs in task 6's Linux sitting.
+  - **Not ported.** Three macOS-only vendor path sentences: `has no parent directory`, `has no file name` and `file name is too long`. Also the vendor's parent-directory connect, which reaches socket paths beyond 104 bytes. No oracle case exercises these, so they are recorded as residue, not changed here.
+  - `REPL_HOST_VERSION` stays 0.5.0. No M5 evidence had been accepted at the earlier head.
+  Rationale: The oracle found the difference, as it was built to. The fix reproduces the vendor's observable sentences, grounded in its binary.
+  Date/Author: 2026-10-16, session ruling and the M5 fix executor with its review, folded by the plan-executor.
 - Decision: Four rulings shape M5's remaining live work.
   - **Linux native speed runs on a quiet cloud box.** The comparison (acceptance 8's native half) runs on `cua-bench` (Hetzner cax31, aarch64, Ubuntu 24.04, Xvfb :0 1440x900 with openbox and AT-SPI, gedit 46), not on the cua-linux VM.
     - Both the own triple and a fresh vendor triple run there in one sitting. The M0 VM baseline is history, not the comparator.

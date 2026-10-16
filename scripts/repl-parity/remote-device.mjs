@@ -46,7 +46,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared}){
   // Enrollment stdout goes directly to a private file. Only `remote show` is read; it has no credential.
   cli(home,['remote','enroll','--relay',relay,'--json'],{file:join(home,'enroll.json')});
   const shown=JSON.parse(cli(home,['remote','show','--json']));
-  return {...endpoint,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)}),release:executionFacts({source:home}).release,commit:prepared.commit};
+  return {...endpoint,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)}),profile:prepared.profile,extensionInstanceId:prepared.extensionInstanceId,release:executionFacts({source:home}).release,commit:prepared.commit};
  }catch(error){rmSync(home,{recursive:true,force:true});throw error;}
 }
 export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgentState,assertOwner=ownership,facts=executionFacts,timeoutMs=30000,stopTimeoutMs=10000}={}){
@@ -62,6 +62,8 @@ export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgent
   async start({host}){
    if(child||!['cua','vendor'].includes(host))throw new Error('Invalid endpoint start');
    if(endpoint.device!=='mini'&&host!=='cua')throw new Error('Linux endpoint requires cua host');
+   const currentFacts=facts({source:endpoint.home});
+   if(currentFacts.commit!==endpoint.commit||currentFacts.release!==endpoint.release||currentFacts.dirty!==false)throw new Error('Endpoint checkout/runtime changed after preparation');
    child=spawnAgent(process.execPath,['bin/cua.mjs','agent','run','--relay'],{env:{...process.env,CUA_HOME:endpoint.home,CUA_REPL_HOST:host,CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:endpoint.surfaces.join(','),CUA_SHIM_SECRETS:'off',CUA_AGENT_MAX_SESSIONS:'2'},stdio:['ignore','ignore','ignore']});
    exit=new Promise(resolve=>{child.once('exit',resolve);child.once('error',resolve);});
    try{await until(()=>{if(child.exitCode!==null||!child.pid)throw new Error('Owned endpoint exited before relay readiness');const state=stateOf(endpoint.home);return state?.pid===child.pid&&state.relay?.status==='connected';},{timeoutMs});return {pid:child.pid,ready:true,executionFacts:facts({source:endpoint.home})};}

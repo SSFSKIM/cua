@@ -27,8 +27,11 @@ export class RemoteProof {
  }
  async save(){await this.io.save(this.state);return this.state;}
  async prepare(devices=['cua-linux','mini']){
-  if(this.state.phase!=='new')throw new Error('Experiment already prepared; resume its journal');
-  for(const device of devices){const endpoint=await this.io.prepare(endpointPlan(this.state.experiment,device));this.state.endpoints.push(endpoint);await this.save();}
+  if(!['new','preparing'].includes(this.state.phase))throw new Error('Experiment already prepared; resume its journal');
+  if(!devices.length||new Set(devices).size!==devices.length)throw new Error('Choose distinct proof devices');
+  for(const device of devices)endpointPlan(this.state.experiment,device);
+  this.state.phase='preparing';await this.save();
+  for(const device of devices){if(this.state.endpoints.some(e=>e.device===device))continue;const endpoint=await this.io.prepare(endpointPlan(this.state.experiment,device));this.state.endpoints.push(endpoint);await this.save();}
   this.state.phase='handoff';return this.save();
  }
  async start({operatorReady=false,ownerReady=false}={}){

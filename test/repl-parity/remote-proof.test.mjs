@@ -6,7 +6,7 @@ test('device adapter requires its own PID readiness and bounds stop without touc
  const child=new EventEmitter();Object.assign(child,{pid:123,exitCode:null});const signals=[],launches=[];
  child.kill=signal=>{signals.push(signal);if(signal==='SIGKILL'){child.exitCode=0;queueMicrotask(()=>child.emit('exit',0));}};
  const endpoint={device:'mini',home:'/owned/scratch',surfaces:['browser']};
- const deps={assertOwner(){},spawnAgent:(...args)=>{launches.push(args);return child;},stateOf:()=>({pid:999,relay:{status:'connected'}}),facts:()=>({}),timeoutMs:1,stopTimeoutMs:1};
+ const deps={assertOwner(){},spawnAgent:(...args)=>{launches.push(args);return child;},stateOf:()=>({pid:999,relay:{status:'connected'}}),facts:()=>({dirty:false}),timeoutMs:1,stopTimeoutMs:1};
  const session=await deviceSession(endpoint,deps);
  await assert.rejects(session.start({host:'cua'}),/deadline/);assert.deepEqual(signals,['SIGTERM','SIGKILL']);
  assert.deepEqual(launches[0][1],['bin/cua.mjs','agent','run','--relay']);
@@ -16,6 +16,11 @@ test('device adapter requires its own PID readiness and bounds stop without touc
 import assert from 'node:assert/strict';
 import {safeEnrollment, endpointPlan, disconnectProbe, RemoteProof} from '../../scripts/repl-parity/remote.mjs';
 
+test('endpoint restart refuses changed source/runtime provenance before spawning',async()=>{
+ let spawned=false;
+ const session=await deviceSession({device:'mini',home:'/owned',commit:'reviewed',release:'pinned'}, {assertOwner(){},facts:()=>({commit:'different',release:'pinned',dirty:false}),spawnAgent(){spawned=true;}});
+ await assert.rejects(session.start({host:'vendor'}),/changed after preparation/);assert.equal(spawned,false);
+});
 test('safe enrollment projection never returns the credential or arbitrary fields',()=>{
  const safe={deviceId:'fixture-id',relayEndpoint:'https://relay.test/d/fixture-id/mcp',clientSecretKey:'CUA_DEVICE_fixture',devicesEntry:'"fixture-id": {"deviceCredentialSha256":"hash","clientCredentialSha256":"hash"}'};
  assert.deepEqual(safeEnrollment({...safe,clientCredential:'SECRET',secret:'SECRET',unknown:'SECRET'}),safe);
@@ -37,6 +42,13 @@ test('preparation stops for operator and owner; restart keeps enrolled identity;
  await proof.restart('mini','vendor');assert.equal(proof.state.endpoints[0].deviceId,identity);
  assert.deepEqual(events.slice(0,3),[['start','mini','cua'],['stop',11],['start','mini','vendor']]);
  const cleanup=await proof.cleanup();assert.equal(cleanup.phase,'operator-cleanup');assert.ok(events.some(x=>x[0]==='remove'));assert.ok(saved.length>=4);
+});
+test('resuming partial preparation never enrolls an already journaled device again',async()=>{
+ const prepared=[];let fail=true;
+ const io={save(){},prepare:async plan=>{prepared.push(plan.device);if(plan.device==='mini'&&fail){fail=false;throw new Error('install failed');}return {...plan,home:'/owned/'+plan.device};}};
+ const proof=new RemoteProof({experiment:'m5-a',relay:'wss://relay.test/ws',io});
+ await assert.rejects(proof.prepare(),/install failed/);await proof.prepare();
+ assert.deepEqual(prepared,['cua-linux','mini','mini']);assert.equal(proof.state.endpoints.length,2);
 });
 test('failed attestation tears down the just-started owned process',async()=>{
  let stopped=0;const io={save(){},start:async()=>({pid:13,ready:true}),attest:async()=>({host:'vendor',serverInfo:{name:'rmcp',version:'1'},_meta:null}),stop:async()=>stopped++};

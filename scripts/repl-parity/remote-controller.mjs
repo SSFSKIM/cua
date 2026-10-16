@@ -36,7 +36,11 @@ export async function runRemoteProof(v){
   save:async state=>{writeFileSync(journal+'.tmp',JSON.stringify(state,null,2)+'\n',{mode:0o600});renameSync(journal+'.tmp',journal);},
   prepare:async plan=>{const h=await helper(plan.device);return h.request('prepare',{experiment:v.experiment,relay:v.relay,plan,prepared:prepared(plan.device)});},
   start:async(e,host)=>{const h=await helper(e.device);if(!h.attached){await h.request('attach',e);h.attached=true;}return h.request('start',{host});},
-  attest:async e=>{const {client,observation}=await observedClient(e);try{await client.call('end_task');return observation;}finally{await client.close();}},
+  attest:async e=>{const {client,observation}=await observedClient(e);try{
+   const profiles=await client.call('profiles_list');
+   if(!profiles.structuredContent?.profiles?.some(p=>p.key===e.profile&&p.ready&&p.extensionInstanceId===e.extensionInstanceId))throw new Error('host_not_live: prepared profile is not ready; only the session may restore its Chrome window');
+   await client.call('end_task');return observation;
+  }finally{await client.close();}},
   stop:async e=>{const h=helpers.get(e.device);if(!h?.attached)throw new Error('No live ownership handle; do not signal a journal PID. Close the original foreground controller first.');await h.request('stop');},
   remove:async e=>{
    const registered=readDevices()[e.name];

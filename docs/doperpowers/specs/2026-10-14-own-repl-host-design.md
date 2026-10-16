@@ -539,6 +539,26 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: nativePipe connects to socket paths beyond `sun_path` as the vendor does (30b238e, d935899, a2ae6b2, e24a1cd). The session ruled this into M5's scope, superseding the residue note in the next entry. MAWS client-mode sockets (`<userData>/browser/cua/<id>.sock`) cross 104 bytes on macOS under a longer username or a scratch user-data path, and the own host failed there while the vendor connected.
+  - **The vendor's behaviour** (disassembly, `node_repl` 26.928.40906).
+    - macOS: below 104 bytes the canonical path is connected directly. At 104 bytes or more the vendor opens the parent read-only, sets a per-thread cwd (`pthread_fchdir_np`) and connects the bare file name. A file name over 103 bytes is refused with `native pipe file name is too long`.
+    - Linux: no parent-directory code. At 108 bytes or more the connect fails with `failed to connect native pipe: path must be shorter than SUN_LEN`.
+  - **The port.**
+    - Linux refuses with that sentence. The live Linux vendor control in task 6 confirms it; until then the oracle's Linux expectation is pending.
+    - On macOS, an over-limit path whose canonical form fits is connected at the canonical path. Otherwise a supervisor-owned connector process is spawned:
+      - Its cwd is the checked parent, its environment is empty, its only channel is IPC, and it runs with `--disable-sigusr1`.
+      - It verifies the dev/ino of its cwd against the parent it opened, failing closed on a swap.
+      - It connects the bare name and owns the connection for its whole life, relaying over IPC.
+      - It is registered with the owned-group reaper from spawn until it exits, so kernel resets spare it.
+    - The connect budget runs from before the spawn, and a connect after the deadline is never accepted.
+  - **Rejected alternatives.**
+    - A short `/tmp` alias: a scoped cell can swap it when TMPDIR is `/tmp`, and a crash leaves it behind.
+    - Handing the socket back to the supervisor: the server-observed `LOCAL_PEERPID` flips within about 20 ms, which fails MAWS's and cua's ancestry recheck.
+    - A process-wide `chdir`: excluded by the session.
+  - **The three macOS path sentences.** `has no parent directory` and `has no file name` are unreachable, because a canonical socket path that passed realpath, stat and the socket check is absolute and is not `/`. `file name is too long` is reachable through a renamed socket, and is ported.
+  - **Cost.** Each over-limit macOS connection costs one Node process, 60–100 ms to start under load. The connect budget absorbs that.
+  Rationale: Following the vendor where it is observable, with no mutable shared name and no change to peer identity.
+  Date/Author: 2026-10-16, session ruling, M5 fix executor with four review waves, folded by the plan-executor.
 - Decision: nativePipe path failures use the vendor's sentences (184f4e3, 32d7335). M5's mini sitting found the stat-missing row differing: the own host reported a failed path lookup with the connect prefix.
   - **Validation order.** Disassembly of `validate_native_pipe_path` in both the darwin-arm64 and the linux-arm64 builds of `node_repl` 26.928.40906 shows the vendor's order:
     1. Check that the path is absolute.

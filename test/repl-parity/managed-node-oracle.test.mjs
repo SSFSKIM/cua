@@ -4,7 +4,7 @@ import {REPL_HOST_VERSION} from '../../src/repl-host/identity.mjs';
 const reviewedCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:new URL('../../',import.meta.url),encoding:'utf8'}).trim();
 import assert from 'node:assert/strict';
 import {assertManagedNode, nodeEnvironment, observeLaunchNode,verifyOwnedHostNode} from '../../scripts/repl-parity/node-provenance.mjs';
-import {mkdtempSync,mkdirSync,existsSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,existsSync,rmSync,writeFileSync,realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {installSelectionRuntime,withManagedNodeUnavailable} from '../../scripts/repl-parity/selection-device.mjs';
@@ -18,9 +18,12 @@ import {scratch,fixturePin} from '../fixtures/runtime-fixture.mjs';
 
 function ownHostLaunch(t){
  const fixture=scratch('cua-node-witness-');t.after(fixture.cleanup);
- const ownNode={path:join(fixture.dir,'node/24.x/bin/node'),version:'v24.18.0'};
+ const bin=join(fixture.dir,'node/24.x/bin');mkdirSync(bin,{recursive:true});
+ const node=join(bin,'node');writeFileSync(node,'#!/bin/sh\necho v24.18.0\n',{mode:0o755});
+ const ownNode={path:realpathSync(node),version:'v24.18.0'};
  const runtime=runtimeFor({home:fixture.dir,pin:parsePin(fixturePin({sha256:'a'.repeat(64),length:1})),record:null});
- const launch=buildLaunch({runtime,home:fixture.dir,sessionId:'node-witness',surfaces:['browser'],ambient:{CUA_REPL_HOST:'cua',CUA_BROWSER_SERVICE:'cua'},ownNode:ownNode.path});
+ const launch=buildLaunch({runtime,home:fixture.dir,sessionId:'node-witness',surfaces:['browser'],ambient:{CUA_REPL_HOST:'cua',CUA_BROWSER_SERVICE:'cua',CUA_NODE:node}});
+ assert.equal(launch.command,ownNode.path);
  return {ownNode,entry:REPL_HOST_SUPERVISOR,command:[launch.command,...launch.args].join(' ')};
 }
 test('managed Node enables an implicit own host even when the running and PATH Nodes are 22',()=>{

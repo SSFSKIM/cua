@@ -60,6 +60,14 @@ export function osReleaseFacts(text, kernel) {
   const name = field('NAME') ?? 'Linux', pretty = field('PRETTY_NAME');
   return {name, version: pretty ? pretty.replace(new RegExp(`^${name} `), '') : field('VERSION'), build: kernel};
 }
+// /proc/cpuinfo on ARM often has implementer/part IDs but no model-name line for os.cpus(). lscpu decodes those IDs.
+export function linuxCpuFacts(text, processors) {
+  const fields = text ? JSON.parse(text).lscpu : [];
+  const usable = value => typeof value === 'string' && value.trim() && !['unknown','-'].includes(value.trim().toLowerCase());
+  const decoded = fields?.find(row => row.field === 'Model name:')?.data;
+  const model = usable(decoded) ? decoded.trim() : usable(processors[0]?.model) ? processors[0].model : null;
+  return {model, count: processors.length};
+}
 export function xDisplayFacts(text) {
   const size = /dimensions:\s+(\d+)x(\d+) pixels/.exec(text);
   if (!size) return null;
@@ -108,6 +116,7 @@ if (process.platform === 'linux') {
   const x = recorded ? {...process.env, ...recorded} : {...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: xauthority};
   const bus = process.env.DBUS_SESSION_BUS_ADDRESS ?? (process.env.XDG_RUNTIME_DIR ? 'unix:path=' + process.env.XDG_RUNTIME_DIR + '/bus' : null);
   own = {
+    cpu: (${linuxCpuFacts.toString()})(sh('lscpu', ['--json']), cpus()),
     hardware: {model: read('/sys/devices/virtual/dmi/id/product_name').trim() || null, chip: arch() + ', ' + cpus().length + ' CPUs', memoryBytes: totalmem()},
     os: (${osReleaseFacts.toString()})(read('/etc/os-release'), kernel()),
     display: (${xDisplayFacts.toString()})(sh('xdpyinfo', [], x)),

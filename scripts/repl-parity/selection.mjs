@@ -37,6 +37,12 @@ export function selectionCases(platform){
 function laneSentence(row,detail){
  return row.lane==='profiles'?detail.split('The profile listing (browser only): ')[1]?.split('. CUA_REPL_HOST=')[0]:detail.split('. Browser route:')[0];
 }
+// A doctor selection sentence: `HOST host (REASON)`, then ` on Node PATH` where the own host's Node was resolved, then `: `
+// and the explanation. Only this anchored opening is read; the explanation and the other lane never stand in for it.
+function doctorSelection(sentence){
+ const m=/^(cua|vendor) host \(([a-z0-9_]+)\)(?: on Node (\/.*?))?: /s.exec(sentence??'');
+ return m&&{host:m[1],reason:m[2],node:m[3]??null};
+}
 export function assertSelection(row,{doctor,observation,error,errorMessage},reviewedSource){
  const expected=expectedSelection(row);assert.ok(doctor,'Missing doctor repl.host row');
  const detail=laneSentence(row,doctor.detail);
@@ -50,10 +56,11 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
   return;
  }
  assert.equal(error,undefined);checkHost(expected.host,observation,reviewedSource);
- assert.ok(detail?.startsWith(`${expected.host} host (${expected.reason}):`),'Doctor host/reason differs from independent M5 table');
+ const selected=doctorSelection(detail);
+ assert.ok(selected?.host===expected.host&&selected.reason===expected.reason,`Doctor host/reason differs from independent M5 table: ${JSON.stringify(detail)} where ${expected.host} host (${expected.reason}) is expected`);
  if(row.managedNode&&expected.host==='cua'){
   const actual=assertManagedNode(observation.executionFacts);
-  assert.ok(detail.includes(actual.path),'Doctor must name the managed Node that actually answered');
+  assert.ok(selected.node===actual.path,`Doctor must name the managed Node that actually answered (${actual.path}) in its on-Node clause, not ${selected.node}`);
  }
  const ordinary=expectedSelection({...row,lane:'ordinary'}),listing=expectedSelection({...row,lane:'profiles'});
  const status=ordinary.error||listing.error?'fail':ordinary.status==='warn'||listing.status==='warn'?'warn':'pass';

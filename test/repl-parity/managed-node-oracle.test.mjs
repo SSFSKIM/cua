@@ -12,6 +12,7 @@ import {validateAttestations} from '../../scripts/repl-parity/compare.mjs';
 import {ownNodeEnv,quote} from '../../scripts/repl-parity/topology.mjs';
 import {ownNodeFacts} from '../../scripts/repl-parity/provenance.mjs';
 import {expectedSelection,selectionCases,assertSelection} from '../../scripts/repl-parity/selection.mjs';
+import {doctorReplHost} from './fixtures/doctor-repl-host.mjs';
 import {buildLaunch,REPL_HOST_SUPERVISOR} from '../../src/runtime/launch.mjs';
 import {parsePin,runtimeFor} from '../../src/runtime/manifest.mjs';
 import {scratch,fixturePin} from '../fixtures/runtime-fixture.mjs';
@@ -32,13 +33,14 @@ test('managed Node enables an implicit own host even when the running and PATH N
  assert.equal(expectedSelection({...row,platform:'linux'}).reason,'linux');
  for(const lane of ['ordinary','profiles'])assert.ok(selectionCases('darwin').some(r=>r.lane===lane&&r.managedNode===true&&r.node24===false&&r.override==='unset'));
 });
-test('the managed selection row binds doctor to an observed launch in the actual scratch home',()=>{
+test('the managed selection row binds doctor to an observed launch in the actual scratch home',async t=>{
  const row={platform:'darwin',registration:'cua',surfaces:['browser'],override:'unset',node24:false,managedNode:true};
  const ownNode={path:'/scratch/node/24.x/bin/node',version:'v24.18.0'};
  const observation={host:'cua',serverInfo:{name:'cua-repl-host',version:REPL_HOST_VERSION},_meta:{'cua/replHost':{host:'cua',version:REPL_HOST_VERSION}},executionFacts:{commit:reviewedCommit,dirty:false,home:'/scratch',ownNode}};
- const doctor={status:'pass',detail:'cua host (browser_only): on Node '+ownNode.path+'. Browser route: the cua route, by cua\'s registration.'};
+ const doctor=await doctorReplHost(t,{env:{CUA_SHIM_SURFACES:'browser'},node:ownNode.path});
  assert.doesNotThrow(()=>assertSelection(row,{doctor,observation},{reviewedCommit}));
- assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:doctor.detail.replace(ownNode.path,'/other/node')},observation},{reviewedCommit}));
+ const other=await doctorReplHost(t,{env:{CUA_SHIM_SURFACES:'browser'},node:'/other/node'});
+ assert.throws(()=>assertSelection(row,{doctor:other,observation},{reviewedCommit}),/managed Node/);
  assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,executionFacts:{...observation.executionFacts,home:'/different',ownNode}}},{reviewedCommit}));
 });
 test('release evidence rejects a hand-installed Node or a Node belonging to another scratch home',()=>{

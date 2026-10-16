@@ -769,6 +769,17 @@ test('doctor\'s repl.host row explains the M5 defaults, and warns with both reme
   const explicit = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser', CUA_REPL_HOST: 'cua'}, withoutNode);
   assert.equal(explicit.status, 'fail');
   assert.match(explicit.detail, /^refused \(repl_host_node\)/);
+  // A CUA_NODE that is not an absolute path fails the row whatever the selection, as `cua serve` refuses it at start
+  // (settingsFrom): an explicit vendor host and an implicit vendor route never ask for Node, and still fail.
+  const chatgpt = scratch();
+  t.after(chatgpt.cleanup);
+  for (const [home, env] of [[s.dir, {CUA_REPL_HOST: 'vendor'}], [chatgpt.dir, {}], [s.dir, {CUA_SHIM_SURFACES: 'computer'}]]) {
+    const resolve = counted(withNode);
+    const invalid = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser', ...env, CUA_NODE: 'relative/node'}, resolve);
+    assert.equal(invalid.status, 'fail', JSON.stringify(env));
+    assert.match(invalid.detail, /^CUA_NODE must be the absolute path of a Node executable; every connection is refused/, JSON.stringify(env));
+    assert.equal(resolve.calls, 0, 'refused on its form, before any selection');
+  }
   // The summary names a warning without calling the setup unhealthy.
   const report = await inspectRuntime({home: s.dir, host: DARWIN, env: {CUA_SHIM_SURFACES: 'browser'}, resolveOwnNode: withoutNode, ...stubs});
   assert.match(summarize({...report, ok: true}), /warn: repl\.host/);

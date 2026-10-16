@@ -30,7 +30,8 @@
 // `repl.host` names the REPL host a connection here runs (launch.mjs replHostFor, with the surfaces CUA_SHIM_SURFACES
 // names) and the one the browser-only profile listing runs (profiles_list's live check, cua profiles list and bind),
 // each with its reason, and the browser route and the registration (or absence of one) that decided the browser side.
-// It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets,
+// It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets
+// (a CUA_NODE that is not an absolute path among them, whatever the selection, as `cua serve` refuses it at start),
 // and `warn` where one would default to cua's own host but no Node 24 or later resolves here (own_host_node_unavailable:
 // that session keeps the vendor host), naming the candidates tried and both remedies. Node is resolved once for both, as
 // a connection resolves it once (`resolveOwnNode`, launch.mjs ownHostNode by default, injectable for tests).
@@ -70,7 +71,7 @@ import {chromeChecks, cuaChromeChecks, mawsHostCheck, processTable} from '../pro
 import {chromeRoute, extensionIdFor, registrationTimes} from '../chrome/route.mjs';
 import {inspectChromeHostConfig} from './chrome-component.mjs';
 import {linuxDesktopChecks, xDisplayCheck} from './linux-desktop.mjs';
-import {surfacesFrom} from '../mcp/surface.mjs';
+import {cuaNodeFrom, surfacesFrom} from '../mcp/surface.mjs';
 import {checkRelayUrl, readDevice} from '../remote/device.mjs';
 import {agentChromeRow} from '../remote/chrome-health.mjs';
 import {relayHealthRow} from '../remote/health.mjs';
@@ -222,7 +223,9 @@ function resolvedOnce(resolve) {
 
 function replHostCheck(home, env, platform, resolveOwnNode) {
   let surfaces;
-  try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); } catch (error) {
+  // CUA_NODE's form first, as `cua serve` checks it at start (settingsFrom) whatever the selection: an explicit vendor
+  // host or a vendor route never asks for Node, but the connection is refused all the same.
+  try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); cuaNodeFrom(env); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return result('repl.host', 'fail', `${error.message}; every connection is refused`);
   }

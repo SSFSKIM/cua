@@ -1,0 +1,19 @@
+{
+  "device": "cua-bench",
+  "home": "/home/admin/.local/share/cua-native-baseline/run-HZ4l8w",
+  "userHome": "/home/admin/.local/share/cua-native-baseline/run-HZ4l8w/home",
+  "token": "9836c8b9-6435-40c4-918f-367b7f457bfc",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1001/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1001",
+    "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-native-baseline/run-HZ4l8w/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

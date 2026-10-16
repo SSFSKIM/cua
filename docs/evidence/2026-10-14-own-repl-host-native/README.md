@@ -138,3 +138,9 @@ The run refuses to start while any gedit runs, so every gedit window it saw was 
 - One deliberate difference: cua's host runs on Node v24.18.0 (`/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node`). The new `--node` passes it as `CUA_NODE` in the serve's command environment, recorded in `meta.environment.CUA_NODE` and `meta.ownNode`. The vendor host runs on its pinned v24.21.0.
 - These runs used the clone at `a5ccc1b`. M5 re-measures at its own head, on a quiet machine, with a fresh vendor control in the same sitting.
 - Command: `node scripts/native-baseline.mjs run --device cua-linux --host cua --node <own Node> --out <dir>/cua/run-<n>` for n = 1..3, then `summary <dir>/cua` and `compare <dir>/vendor <dir>/cua`.
+
+## M5: the quiet-box comparison on cua-bench, 2026-10-16
+
+The authoritative native comparison ran on the quiet cloud box `cua-bench`, not on the VM. The spec's Decision Log entry "Four rulings shape M5's remaining live work" moved it there. A fresh vendor triple and the own triple ran in one sitting under experiment `m5t6b-cua-bench-2026-10-16`, each run in a fresh `cua install` home, with the own host on the managed Node v24.22.0. The results, the box facts, every run's load and the commands are in `m5-cua-bench/README.md`.
+
+The verdict was **FAIL**, on one row. Every latency row and five of the six method cases pass. `method.typeText`'s outcomes differ in one vendor sample's error sentence: `os error 11` against `NoReply`, with the gedit window exiting in all six samples. That sample coincided with the box's first gedit crash report. The M0 and M4 evidence above is history, not the comparator.

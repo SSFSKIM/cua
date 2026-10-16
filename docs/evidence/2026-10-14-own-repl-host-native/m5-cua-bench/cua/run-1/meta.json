@@ -1,0 +1,356 @@
+{
+  "measurement": {
+    "schema": 2,
+    "experiment": "m5t6b-cua-bench-2026-10-16",
+    "freshInstall": true
+  },
+  "nodeMode": "managed",
+  "preparation": {
+    "device": "cua-bench",
+    "home": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np",
+    "userHome": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/home",
+    "token": "5ddd8097-3cf6-47e6-90cd-d680f19e5699",
+    "xSession": {
+      "DISPLAY": ":0",
+      "XAUTHORITY": "/home/admin/.Xauthority",
+      "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1001/bus",
+      "XDG_RUNTIME_DIR": "/run/user/1001",
+      "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop"
+    },
+    "nodeMode": "managed",
+    "nodeOverride": null,
+    "ownNode": {
+      "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    }
+  },
+  "controllerIdentity": {
+    "hostname": "SK.local",
+    "platform": "darwin",
+    "arch": "arm64",
+    "os": "25.6.0",
+    "node": "v22.23.2",
+    "cpu": {
+      "model": "Apple M1 Max",
+      "count": 10
+    }
+  },
+  "userHome": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/home",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1001/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1001",
+    "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop"
+  },
+  "deviceIdentity": {
+    "alias": "cua-bench",
+    "arch": "arm64",
+    "hostname": "cua-native-bench.europe-west4-a.c.ytdownload-505811.internal",
+    "os": {
+      "name": "Ubuntu",
+      "version": "24.04.5 LTS",
+      "build": "7.0.0-1014-gcp"
+    },
+    "cpu": {
+      "model": "Neoverse-N1",
+      "count": 4
+    }
+  },
+  "load": {
+    "device": {
+      "before": "18:57:07 up  6:47,  1 user,  load average: 0.50, 0.30, 0.21",
+      "after": "19:02:35 up  6:52,  1 user,  load average: 0.28, 0.27, 0.21"
+    },
+    "controller": {
+      "before": "11:57  up 17 days, 23:58, 29 users, load averages: 141.56 89.30 61.65",
+      "after": "12:02  up 18 days, 4 mins, 29 users, load averages: 58.37 63.41 57.77"
+    }
+  },
+  "device": "cua-bench",
+  "platform": "linux",
+  "host": "cua",
+  "hostAttestations": [
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 206,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "92c76047-b4b0-487f-bd81-18a0e65cd0e5",
+        "cua/nativeExecution": {
+          "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 385,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "6bbeddf2-17da-49f9-afff-498a3882d246",
+        "cua/nativeExecution": {
+          "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 209,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "679e6234-b94f-4578-b5b0-5a42fb1a9cff",
+        "cua/nativeExecution": {
+          "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 206,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2e55361a-291a-4bf8-8711-f166dd45247b",
+        "cua/nativeExecution": {
+          "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 210,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "943eeada-6a5e-4a0a-9808-f9e39667c08d",
+        "cua/nativeExecution": {
+          "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 209,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "02621384-b7ca-4f43-8a39-c94319de7db5",
+        "cua/nativeExecution": {
+          "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        }
+      }
+    }
+  ],
+  "connections": 6,
+  "protocolVersion": "2025-06-18",
+  "environment": {
+    "CUA_REPL_HOST": "cua",
+    "CUA_SHIM_SURFACES": "computer",
+    "CUA_SHIM_PERSIST": "session",
+    "CUA_SHIM_SECRETS": "off",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1001/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1001",
+    "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop"
+  },
+  "plan": {
+    "samples": 30,
+    "cold": 5,
+    "tasks": 10,
+    "coldPlan": [
+      "miss",
+      "hit",
+      "miss",
+      "hit",
+      "hit"
+    ]
+  },
+  "started": "2026-10-16T18:57:08.107Z",
+  "spikeWaitMs": 5234,
+  "elicitations": [],
+  "complete": true,
+  "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+  "checkout": "/home/admin/Developer/GitHub/cua-parity",
+  "home": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np",
+  "node": "v22.23.3",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "runtime": {
+    "release": "26.928.40906-linux-arm64"
+  },
+  "sandbox": {
+    "mode": "disabled",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "Google Compute Engine",
+    "chip": "arm64, 4 CPUs",
+    "memoryBytes": 16722038784
+  },
+  "os": {
+    "name": "Ubuntu",
+    "version": "24.04.5 LTS",
+    "build": "7.0.0-1014-gcp"
+  },
+  "display": {
+    "pixels": "1440 x 900",
+    "resolution": "1440 x 900",
+    "scale": 1,
+    "depth": 24
+  },
+  "gedit": {
+    "version": "gedit - Version 46.2",
+    "locale": {
+      "LANG": "C.UTF-8"
+    },
+    "owned": [
+      {
+        "pid": 12567,
+        "dir": "/tmp/cua-native-baseline-rj1oQL",
+        "file": "/tmp/cua-native-baseline-rj1oQL/scratch-f3270f.txt",
+        "role": "scratch"
+      },
+      {
+        "pid": 12712,
+        "dir": "/tmp/cua-native-baseline-dg5QKw",
+        "file": "/tmp/cua-native-baseline-dg5QKw/victim-54d78a.txt",
+        "role": "victim"
+      },
+      {
+        "pid": 12891,
+        "dir": "/tmp/cua-native-baseline-X26c6E",
+        "file": "/tmp/cua-native-baseline-X26c6E/victim-af609c.txt",
+        "role": "victim"
+      }
+    ],
+    "targetCleanup": [
+      {
+        "op": "method.typeText",
+        "terminated": [],
+        "notOwned": [],
+        "gone": [
+          12712
+        ],
+        "removed": [
+          "/tmp/cua-native-baseline-dg5QKw"
+        ]
+      },
+      {
+        "op": "method.paste",
+        "terminated": [],
+        "notOwned": [],
+        "gone": [
+          12891
+        ],
+        "removed": [
+          "/tmp/cua-native-baseline-X26c6E"
+        ]
+      }
+    ],
+    "crashReportsBefore": {
+      "files": 1,
+      "newest": "2026-10-16T18:43:36.727Z"
+    },
+    "cleanup": {
+      "terminated": [
+        12567
+      ],
+      "notOwned": [],
+      "gone": [
+        12712,
+        12891
+      ],
+      "removed": [
+        "/tmp/cua-native-baseline-rj1oQL"
+      ]
+    },
+    "crashReportsAfter": {
+      "files": 1,
+      "newest": "2026-10-16T18:43:36.727Z"
+    }
+  },
+  "x": {
+    "display": ":0",
+    "xauthority": "/home/admin/.Xauthority",
+    "xauthorityPresent": true,
+    "bus": "unix:path=/run/user/1001/bus"
+  },
+  "helperAtStart": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "answeringNode": {
+    "path": "/home/admin/.local/share/cua-native-baseline/run-Ba34Np/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "service": {
+    "surface": "computer",
+    "engine": "sky",
+    "answered": "vendor",
+    "helper": "pinned runtime",
+    "helpers": [
+      {
+        "path": "~/.local/share/cua-native-baseline/run-Ba34Np/runtimes/26.928.40906-linux-arm64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64",
+        "origin": "pinned runtime",
+        "ageSeconds": 19,
+        "startedDuringRun": true
+      }
+    ]
+  },
+  "leftovers": {
+    "serves": 0,
+    "geditRunning": 0
+  },
+  "finished": "2026-10-16T19:02:35.774Z",
+  "preparationCleanup": {
+    "removed": true
+  }
+}

@@ -48,7 +48,7 @@ export async function runSelection({prepared,node22}){
   for(const row of selectionCases(process.platform)){
    installRoutes(home,row.registration);
    const node=row.node24?ownNode.path:node22;
-   const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{})};
+   const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.browserService?{CUA_BROWSER_SERVICE:row.browserService}:{}),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{})};
    if(!row.node24)env.PATH=nodeBin+':/usr/bin:/bin';else if(process.env.CUA_NODE)env.CUA_NODE=process.env.CUA_NODE;
    const doc=spawnSync(node,['bin/cua.mjs','doctor','--json'],{env,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});
    let doctor;try{doctor=JSON.parse(doc.stdout).checks.find(c=>c.name==='repl.host');}catch{throw new Error('Doctor returned no JSON repl.host row');}

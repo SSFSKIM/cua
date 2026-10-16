@@ -70,5 +70,5 @@ export async function runRemoteProof(v){
   for(const h of helpers.values())await h.close();
   if(proof.state.phase==='running')proof.state.phase='handoff';await proof.save();
  }
- if(v.action==='cleanup')for(const e of proof.state.endpoints)console.log(JSON.stringify({name:e.name,deviceId:e.deviceId,needed:[`Run node bin/cua.mjs devices remove ${e.name}.`,`Relay operator: remove only ${e.deviceId} from the current merged table; apply relay/deploy/update.sh --devices <merged-table>.`,`Owner: remove temporary key ${e.clientSecretKey} through the existing secret UI.`]}));
+ if(v.action==='cleanup')for(const e of proof.state.endpoints)console.log(JSON.stringify({name:e.name,deviceId:e.deviceId,clientRegistration:'removed if present and identity matched',needed:[`Relay operator: remove only ${e.deviceId} from the current merged table; apply relay/deploy/update.sh --devices <merged-table>.`,`Owner: remove temporary key ${e.clientSecretKey} through the existing secret UI.`]}));
 }

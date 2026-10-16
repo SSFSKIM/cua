@@ -11,7 +11,7 @@ export function expectedSelection(row){
  const {platform,registration,override,node24=true,maws=false,lane='ordinary'}=row;
  const surfaces=lane==='profiles'?['browser']:row.surfaces;
  const browser=surfaces.includes('browser');
- const route=maws||['cua','chatgpt-then-cua'].includes(registration)?'cua':'vendor';
+ const route=row.browserService??(maws||['cua','chatgpt-then-cua'].includes(registration)?'cua':'vendor');
  if(!['unset','cua','vendor'].includes(override))return {error:'invalid_repl_host'};
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};
  const refused=browser&&route==='vendor'||platform==='darwin'&&surfaces.includes('computer');
@@ -23,8 +23,9 @@ export function expectedSelection(row){
 }
 export function selectionCases(platform){
  const rows=[];
- for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const maws of [false,true])for(const surfaces of [['browser'],['computer','browser']])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor','invalid'])rows.push({platform,registration,maws,surfaces,lane,override,node24:true});
+ for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const maws of [false,true])for(const surfaces of [['browser'],['computer'],['computer','browser']])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor','invalid'])rows.push({platform,registration,maws,surfaces,lane,override,node24:true});
  for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override,node24:false});
+ for(const browserService of ['cua','vendor'])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:browserService==='cua'?'none':'cua',maws:false,surfaces:['browser'],lane,override,node24:true,browserService});
  return rows;
 }
 export function assertSelection(row,{doctor,observation,error}){
@@ -37,9 +38,14 @@ export function assertSelection(row,{doctor,observation,error}){
  const ordinary=expectedSelection({...row,lane:'ordinary'}),listing=expectedSelection({...row,lane:'profiles'});
  const status=ordinary.error||listing.error?'fail':ordinary.status==='warn'||listing.status==='warn'?'warn':'pass';
  assert.equal(doctor.status,status);
- if(row.maws)assert.match(doctor.detail,/MAWS/);
+ if(!row.surfaces.includes('browser'))assert.match(doctor.detail,/no browser surface/);
+ else if(row.browserService)assert.ok(doctor.detail.includes('CUA_BROWSER_SERVICE='+row.browserService));
+ else if(row.maws)assert.match(doctor.detail,/MAWS/);
  else if(row.registration==='none')assert.match(doctor.detail,/no Chrome registration/);
- else assert.match(doctor.detail,/registration/);
+ else {
+  assert.match(doctor.detail,/registration/);
+  assert.match(doctor.detail,['cua','chatgpt-then-cua'].includes(row.registration)?/cua route|route cua/:/ChatGPT extension route/);
+ }
 }
 export async function main(argv=process.argv.slice(2)){
  const {values:v}=parseArgs({args:argv,options:{device:{type:'string'},out:{type:'string'},node22:{type:'string'}}});

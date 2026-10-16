@@ -23,6 +23,9 @@ test('independent M5 table preserves route precedence, explicit refusals and Nod
  assert.equal(expectedSelection({...base,surfaces:['computer','browser'],maws:true}).host,'vendor');
  assert.equal(expectedSelection({...base,registration:'chatgpt',override:'cua'}).error,'repl_host_refused');
  assert.equal(expectedSelection({...base,override:'invalid'}).error,'invalid_repl_host');
+ assert.equal(expectedSelection({...base,browserService:'vendor',override:'cua'}).error,'repl_host_refused');
+ assert.equal(expectedSelection({...base,registration:'none',browserService:'cua'}).host,'cua');
+ assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none'}).reason,'linux');
 });
 test('selection matrix covers both launch consumers, registration orderings, surfaces and all overrides',()=>{
  const rows=selectionCases('darwin');

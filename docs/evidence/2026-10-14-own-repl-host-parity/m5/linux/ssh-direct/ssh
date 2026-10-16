@@ -1,0 +1,10 @@
+#!/bin/bash
+# M5 task 6: transport workaround for this sitting (see ../README.md, "Transport"). The harness calls `ssh` by name;
+# with this directory first on PATH, a connection to `cua-linux` goes straight to the VM's address instead of through
+# ~/.ssh/config's `ProxyCommand nc "$(tart ip cua-linux)" 22`, under which about one connection in eight hung with the
+# ssh client spinning (3/25 hung through the proxy, 0/75 direct, 2026-10-16). Every other host and option is unchanged.
+# CUA_LINUX_ADDR is `tart ip cua-linux`, read once when the sitting starts.
+for a in "$@"; do
+  if [ "$a" = cua-linux ]; then exec /usr/bin/ssh -o ProxyCommand=none -o HostName="${CUA_LINUX_ADDR:?}" "$@"; fi
+done
+exec /usr/bin/ssh "$@"

@@ -1,0 +1,230 @@
+{
+  "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+  "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+  "ownNodeAtPrepare": {
+    "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "rows": [
+    {
+      "surfaces": "computer",
+      "browserService": "unset",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. Browser route: none, no browser surface. The profile listing (browser only): cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer",
+      "browserService": "unset",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: none, no browser surface. The profile listing (browser only): cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer",
+      "browserService": "unset",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: none, no browser surface. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer",
+      "browserService": "unset",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: none, no browser surface. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "cua",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "cua",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "cua",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "cua",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "unset",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "unset",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "unset",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "browser",
+      "browserService": "unset",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "cua",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "cua",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "cua",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "cua",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "unset",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): cua host (linux) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "unset",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): cua host (explicit) on Node /home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "unset",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "surfaces": "computer,browser",
+      "browserService": "unset",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T18:42:03.302Z. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    }
+  ]
+}

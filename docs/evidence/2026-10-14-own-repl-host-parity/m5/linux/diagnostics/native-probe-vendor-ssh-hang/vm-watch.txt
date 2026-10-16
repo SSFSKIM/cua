@@ -1,0 +1,12 @@
+   2 19:02:44 cp=[] install=0 gedit=0 serve=0
+  22 19:02:50 cp=[cua-m5t6-cap-Mk3cnP ] install=1 gedit=0 serve=1
+  23 19:03:57 cp=[cua-m5t6-cap-BCUwkh cua-m5t6-cap-Mk3cnP ] install=1 gedit=0 serve=2
+  50 19:05:07 cp=[cua-m5t6-cap-Mk3cnP ] install=0 gedit=0 serve=1
+  40 19:07:38 cp=[] install=0 gedit=0 serve=0
+  22 19:09:39 cp=[cua-m5t6-cap-JRLjsr ] install=1 gedit=0 serve=1
+   1 19:10:46 cp=[cua-m5t6-cap-JRLjsr ] install=0 gedit=0 serve=2
+  24 19:10:49 cp=[cua-m5t6-cap-EfJNDJ cua-m5t6-cap-JRLjsr ] install=1 gedit=0 serve=2
+   1 19:12:02 cp=[cua-m5t6-cap-JRLjsr ] install=0 gedit=0 serve=1
+  25 19:12:05 cp=[cua-m5t6-cap-JRLjsr cua-m5t6-cap-To5Cn9 ] install=1 gedit=0 serve=2
+  21 19:13:21 cp=[cua-m5t6-cap-0OAMVP cua-m5t6-cap-JRLjsr ] install=1 gedit=0 serve=2
+  19 19:14:25 cp=[cua-m5t6-cap-JRLjsr cua-m5t6-cap-gf0nR6 ] install=1 gedit=0 serve=2

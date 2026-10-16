@@ -1,0 +1,37 @@
+b3cb6dbfde346a7e1e90bd2bc065052853aec056
+v24.22.0
+✔ over sun_path, the canonical path follows the vendor's rule for the platform before anything connects (5.010131ms)
+✔ real listeners: concurrent connects through padded paths each reach their own socket at its canonical path (32.669978ms)
+﹣ macOS: a 192-byte socket path connects, bytes both ways, and the server sees one live descendant peer throughout (0.142043ms) # the vendor connects long paths only on macOS
+﹣ macOS: a directory swapped after the vendor's check fails closed, and the socket now at that path is never reached (0.047417ms) # the vendor connects long paths only on macOS
+﹣ macOS: concurrent long-path connects each reach their own socket through their own connector (0.046334ms) # the vendor connects long paths only on macOS
+﹣ macOS: the connect budget bounds the connector, which is reaped on expiry (0.037251ms) # the vendor connects long paths only on macOS
+﹣ macOS: a connector that dies closes its connection with a sentence, and one that dies before connecting fails it (0.040208ms) # the vendor connects long paths only on macOS
+﹣ macOS: when the relay's process is killed, its connector exits and the server sees the connection end (0.035667ms) # the vendor connects long paths only on macOS
+﹣ macOS: the connector runs as the supervisor does, is owned from its spawn and released only once it has exited (0.080209ms) # the vendor connects long paths only on macOS
+✔ the connect budget includes the connector's synchronous start (400.573528ms)
+✔ a connect that arrives after the budget has run out is never accepted (130.448869ms)
+﹣ macOS: a socket whose own name is longer than sun_path is refused with the vendor's sentence (0.280003ms) # the vendor connects long paths only on macOS
+✔ Linux: a 192-byte canonical socket path is refused as the vendor's std refuses it, and nothing connects (2.272855ms)
+✔ a connect that never completes expires after the connect budget with the vendor sentence; the pending socket is destroyed and a late connect is never delivered (1128.465136ms)
+✔ the budget is the launch's setting (128.938271ms)
+✔ paths are checked before anything connects (7.868325ms)
+✔ a path that does not resolve is unavailable, with the platform's sentence, before anything connects (1.430555ms)
+✔ the canonical path reaches stat as realpath's bytes, unchanged (0.891758ms)
+✔ a socket under a non-UTF-8 directory, reached through an ASCII alias, connects (18.916347ms)
+✔ a connected socket relays data and a write; a transport error that is not the peer leaving closes with its sentence; writes after close are refused (14.175385ms)
+✔ the peer leaving by EOF, or a write into the pipe it left, is close-only as the vendor host reports it, and the write's failure surfaces after the close (28.283061ms)
+✔ a reset the reader sees (Linux: the peer closed with unread data) closes with its OS error first, as the vendor's reader reports it; the cancelled write fails after (8.182578ms)
+✔ a refused connect is answered with the error, and closeAll ends live sockets without telling a gone worker (12.342618ms)
+✔ a real Unix socket: bytes both ways, close on request, and the peer's close reported once (35.790299ms)
+✔ closeAll also ends a connect still pending: its socket is destroyed at once, its timer cleared, and nothing reaches the gone worker (1109.650657ms)
+✔ an OS error reads as the platform C library's strerror, with the platform's errno (0.668798ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 8
+ℹ todo 0
+ℹ duration_ms 2579.153419
+rc=0

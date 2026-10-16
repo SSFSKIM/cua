@@ -1,0 +1,52 @@
+{
+  "version": "0.5.0",
+  "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+  "sessions": [
+    {
+      "session": 1,
+      "pid": 73333,
+      "source": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "platform": "linux",
+        "home": "/home/admin/.local/share/cua-h4",
+        "cuaNodeSet": true,
+        "requested": {
+          "CUA_REPL_HOST": "cua",
+          "CUA_BROWSER_SERVICE": "cua",
+          "CUA_SHIM_SURFACES": "computer,browser"
+        }
+      },
+      "answeringNode": {
+        "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+        "version": "v24.22.0"
+      },
+      "managedOk": true,
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.5.0"
+        }
+      ],
+      "hostResults": 8,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.5.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task"
+      ],
+      "ok": true
+    }
+  ],
+  "ok": true
+}

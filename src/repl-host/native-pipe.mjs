@@ -17,12 +17,23 @@
 // The path check follows the vendor's validate_native_pipe_path (node_repl 26.928.40906, disassembled on darwin-arm64
 // and linux-arm64): is_absolute; then canonicalize, i.e. realpath(3), whose every failure (ENOENT, ENOTDIR, EACCES,
 // ELOOP, ENAMETOOLONG, EIO, an interior NUL) is `native pipe path unavailable: `; then metadata of the canonical path,
-// whose failure is `native pipe stat failed: `; then the socket type. The connect itself still goes to the path as
-// given: the vendor connects the canonical path through its parent directory on macOS, which Node cannot, and
-// resolving here would only lengthen the sun_path (/tmp is /private/tmp there).
-import {realpathSync, statSync} from 'node:fs';
+// whose failure is `native pipe stat failed: `; then the socket type.
+//
+// The connect then follows the vendor's per-platform rule for a canonical path that does not fit sun_path (its own
+// connect, same build): on Linux, tokio's UnixStream::connect, where std's sockaddr_un refuses 108 bytes or more
+// (`failed to connect native pipe: path must be shorter than SUN_LEN`); on macOS, start_macos_native_pipe_connect,
+// which connects 104 bytes or more through the parent directory (open it, pthread_fchdir_np, connect the file name),
+// so it fails only when the parent cannot be opened or the file name alone does not fit (`native pipe file name is
+// too long`). Its other two sentences, a path with no parent or no file name, cannot be reached from a canonical path
+// that names a socket. Node has no per-thread working directory, so a path that does not fit as given is connected
+// through a symbolic link to the canonical path: made under a fresh random name in /tmp (outside the scoped
+// sandbox's write roots, the run directory and $TMPDIR, unless one of them is /tmp itself), followed by connect(2),
+// which Node issues before createConnection returns, and removed at once. It exists only for that synchronous call, so no close, timeout or death of the supervisor outside that
+// call leaves it behind, and a name already present is never followed.
+import {closeSync, openSync, realpathSync, statSync, symlinkSync, unlinkSync} from 'node:fs';
+import {randomBytes} from 'node:crypto';
 import {createConnection} from 'node:net';
-import {isAbsolute} from 'node:path';
+import {isAbsolute, join} from 'node:path';
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 export const CONNECT_TIMEOUT_SENTENCE = 'native pipe initial connect timed out';
@@ -34,6 +45,14 @@ export const PATH_UNAVAILABLE_PREFIX = 'native pipe path unavailable: ';
 export const STAT_FAILED_PREFIX = 'native pipe stat failed: ';
 // Rust std's refusal of a path holding a NUL byte, raised before any syscall (std::sys small_c_string NUL_ERR).
 const NUL_IN_PATH_SENTENCE = 'file name contained an unexpected NUL byte';
+// Rust std's sockaddr_un refusal (Linux), and the vendor's own refusal of a name longer than sun_path (macOS).
+const SUN_LEN_SENTENCE = 'path must be shorter than SUN_LEN';
+const FILE_NAME_TOO_LONG_SENTENCE = 'native pipe file name is too long';
+// sizeof(sockaddr_un.sun_path): a path connects directly only when it is shorter, leaving room for its NUL.
+const SUN_PATH_BYTES = {darwin: 104, linux: 108};
+const SHORTCUT_ATTEMPTS = 8;
+const shortcutNameDefault = () => `cua-np-${randomBytes(8).toString('hex')}`;
+const openDirectoryDefault = path => closeSync(openSync(path, 'r'));
 export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 // A write into a pipe the peer left is a close, not an error: the vendor host reports the connection closed by its
 // reader, whose EOF wins the race with the write's failure (observed on the pinned node_repl on macOS, 2026-10-14, for
@@ -73,7 +92,11 @@ export function osErrorSentence(error, platform = process.platform) {
 
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
 // every connection, connected or still connecting, without telling the worker (it is gone).
-export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native, stat = statSync}) {
+// `platform` picks the vendor's rule for a long canonical path; `shortcutRoot` and `shortcutName()` place the link a
+// path too long to connect as given goes through; `openDirectory(path)` is the vendor's open of a long path's parent.
+export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native,
+  stat = statSync, platform = process.platform, shortcutRoot = '/tmp', shortcutName = shortcutNameDefault, openDirectory = openDirectoryDefault}) {
+  const sunPath = SUN_PATH_BYTES[platform] ?? SUN_PATH_BYTES.linux;
   const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
   let counter = 0;
@@ -97,8 +120,23 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       return fail(id, `${STAT_FAILED_PREFIX}${osErrorSentence(error)}`);
     }
     if (!metadata.isSocket()) return fail(id, NOT_SOCKET_SENTENCE);
+    const refusal = longPathRefusal(canonical);
+    if (refusal) return fail(id, `${CONNECT_FAILED_PREFIX}${refusal}`);
+    let shortcut = null;
+    if (Buffer.byteLength(path) >= sunPath) {
+      try {
+        shortcut = linkTo(canonical);
+      } catch (error) {
+        return fail(id, `${CONNECT_FAILED_PREFIX}${osErrorSentence(error)}`);
+      }
+    }
     const connectionId = `native-pipe-connection-${counter++}`;
-    const socket = connect({path});
+    let socket;
+    try {
+      socket = connect({path: shortcut ?? path});
+    } finally {
+      if (shortcut) try { unlinkSync(shortcut); } catch {}
+    }
     let connected = false;
     let settled = false;      // the connect request was answered: a later connect or error changes nothing
     let reported = false;     // native_pipe_closed was sent
@@ -149,6 +187,32 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       if (!connected) return;
       reportClosed(lastError && !peerGoneOnWrite(lastError) ? osErrorSentence(lastError) : null);
     });
+  }
+
+  // The vendor's refusal of a canonical path that does not fit sun_path, or null (see the header).
+  function longPathRefusal(canonical) {
+    if (canonical.length < sunPath) return null;
+    if (platform !== 'darwin') return SUN_LEN_SENTENCE;
+    const slash = canonical.lastIndexOf(0x2f);
+    try {
+      openDirectory(slash === 0 ? '/' : canonical.subarray(0, slash));
+    } catch (error) {
+      return osErrorSentence(error);
+    }
+    return canonical.length - slash - 1 >= sunPath ? FILE_NAME_TOO_LONG_SENTENCE : null;
+  }
+
+  // A fresh link to `canonical` under shortcutRoot; a name already taken is skipped, never followed or replaced.
+  function linkTo(canonical) {
+    for (let attempt = 1; ; attempt++) {
+      const link = join(shortcutRoot, shortcutName());
+      try {
+        symlinkSync(canonical, link);
+        return link;
+      } catch (error) {
+        if (error.code !== 'EEXIST' || attempt >= SHORTCUT_ATTEMPTS) throw error;
+      }
+    }
   }
 
   function write(id, connectionId, data) {

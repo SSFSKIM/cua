@@ -10,6 +10,7 @@ test('device adapter requires its own PID readiness and bounds stop without touc
  const session=await deviceSession(endpoint,deps);
  await assert.rejects(session.start({host:'cua'}),/deadline/);assert.deepEqual(signals,['SIGTERM','SIGKILL']);
  assert.deepEqual(launches[0][1],['bin/cua.mjs','agent','run','--relay']);
+ assert.equal(launches[0][2].env.HOME,endpoint.home+'/home');assert.equal(launches[0][2].env.CHROME_CONFIG_HOME,endpoint.home+'/home/.config');
  assert.equal(launches[0][2].env.CUA_HOME,endpoint.home);assert.equal(launches[0][2].env.CUA_SHIM_SURFACES,'browser');assert.equal(launches[0][2].env.CUA_REPL_HOST,'cua');
  await session.close();assert.equal(signals.length,2);
 });

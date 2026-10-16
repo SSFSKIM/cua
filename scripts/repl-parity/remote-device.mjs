@@ -7,7 +7,8 @@ import {join,dirname,basename} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {readRegistry} from '../../src/profiles/registry.mjs';
-import {socketPathFor,socketNameFor,backendDir} from '../../src/chrome/extension.mjs';
+import {socketPathFor,socketNameFor,backendDir,CUA_EXTENSION_ID} from '../../src/chrome/extension.mjs';
+import {chromeUserData} from '../../src/profiles/chrome.mjs';
 import {cuaRecordFile} from '../../src/chrome/route.mjs';
 import {clientSecretKey} from '../../src/remote/device.mjs';
 import {readAgentState} from '../../src/remote/health.mjs';
@@ -21,9 +22,10 @@ function ownership(e){
  const marker=JSON.parse(readFileSync(join(e.home,'proof-owner.json'),'utf8'));
  if(marker.token!==e.token||marker.experiment!==e.experiment)throw new Error('Remote scratch ownership mismatch');
 }
+const scratchEnvironment=home=>({HOME:join(home,'home'),CUA_HOME:home,CHROME_CONFIG_HOME:join(home,'home','.config'),XDG_CONFIG_HOME:join(home,'home','.config')});
 function cli(home,args,{file}={}){
  const fd=file?openSync(file,'wx',0o600):undefined;
- try{return execFileSync(process.execPath,['bin/cua.mjs',...args],{env:{...process.env,CUA_HOME:home},encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
+ try{return execFileSync(process.execPath,['bin/cua.mjs',...args],{env:{...process.env,...scratchEnvironment(home)},encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
  catch(error){throw new Error(`Remote cua ${args.slice(0,2).join(' ')} failed (${error.status??error.code}); inspect privately on device`);}
  finally{if(fd!==undefined)closeSync(fd);}
 }
@@ -34,19 +36,26 @@ export function prepareEndpoint({experiment,relay,plan,prepared},{directoryRoot=
  const home=mkdtempSync(join(parent,experiment+'-')),token=randomUUID(),endpoint={...plan,experiment,home,token};
  writeFileSync(join(home,'proof-owner.json'),JSON.stringify({experiment,token}),{mode:0o600,flag:'wx'});
  try{
+  mkdirSync(join(home,'home'),{mode:0o700});
   runCli(home,['install']);
   // Discovery aliases only. Never copy profile contents or register/rebind an extension.
   const binding=registry(prepared.home).profiles[prepared.profile];
   if(!binding||binding.route!=='cua'||binding.extensionInstanceId!==prepared.extensionInstanceId)throw new Error('Prepared cua profile binding changed');
+  if(typeof binding.chromeProfileDirectory!=='string'||!binding.chromeProfileDirectory||/[\/\\\0]/.test(binding.chromeProfileDirectory)||['.','..'].includes(binding.chromeProfileDirectory))throw new Error('Invalid prepared profile directory name');
   mkdirSync(backendDir(home),{recursive:true,mode:0o700});
   const name=socketNameFor(binding.extensionInstanceId);
   symlinkSync(socketPathFor(prepared.home,name),socketPathFor(home,name));
   writeFileSync(cuaRecordFile(home),JSON.stringify({schema:1,route:'cua',launcher:null,backendsDir:backendDir(home),browsers:{}}),{mode:0o600});
   writeFileSync(join(home,'profiles.json'),JSON.stringify({version:1,profiles:{[prepared.profile]:binding}}),{mode:0o600});
+  // Agent health probes read Local State. Give them synthetic presence-only facts in a private HOME, never the
+  // owner's profile. No extension is installed here. The endpoint must still prove the exact backend is live.
+  const chrome=chromeUserData({env:scratchEnvironment(home),userHome:join(home,'home')});
+  mkdirSync(join(chrome,binding.chromeProfileDirectory,'Local Extension Settings',CUA_EXTENSION_ID),{recursive:true,mode:0o700});
+  writeFileSync(join(chrome,'Local State'),'{}',{mode:0o600});
   // Enrollment stdout goes directly to a private file. Only `remote show` is read; it has no credential.
   runCli(home,['remote','enroll','--relay',relay,'--json'],{file:join(home,'enroll.json')});
   const shown=JSON.parse(runCli(home,['remote','show','--json']));
-  return {...endpoint,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)}),profile:prepared.profile,extensionInstanceId:prepared.extensionInstanceId,release:inspect({source:home}).release,commit:prepared.commit};
+  return {...endpoint,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)}),profile:prepared.profile,extensionInstanceId:prepared.extensionInstanceId,profileFacts:'harness-supplied presence only; exact backend liveness required',release:inspect({source:home}).release,commit:prepared.commit};
  }catch(error){rmSync(home,{recursive:true,force:true});throw error;}
 }
 export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgentState,assertOwner=ownership,facts=executionFacts,timeoutMs=30000,stopTimeoutMs=10000}={}){
@@ -64,7 +73,7 @@ export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgent
    if(endpoint.device!=='mini'&&host!=='cua')throw new Error('Linux endpoint requires cua host');
    const currentFacts=facts({source:endpoint.home});
    if(currentFacts.commit!==endpoint.commit||currentFacts.release!==endpoint.release||currentFacts.dirty!==false)throw new Error('Endpoint checkout/runtime changed after preparation');
-   child=spawnAgent(process.execPath,['bin/cua.mjs','agent','run','--relay'],{env:{...process.env,CUA_HOME:endpoint.home,CUA_REPL_HOST:host,CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:endpoint.surfaces.join(','),CUA_SHIM_SECRETS:'off',CUA_AGENT_MAX_SESSIONS:'2'},stdio:['ignore','ignore','ignore']});
+   child=spawnAgent(process.execPath,['bin/cua.mjs','agent','run','--relay'],{env:{...process.env,...scratchEnvironment(endpoint.home),CUA_REPL_HOST:host,CUA_BROWSER_SERVICE:'cua',CUA_SHIM_SURFACES:endpoint.surfaces.join(','),CUA_SHIM_SECRETS:'off',CUA_AGENT_MAX_SESSIONS:'2'},stdio:['ignore','ignore','ignore']});
    exit=new Promise(resolve=>{child.once('exit',resolve);child.once('error',resolve);});
    try{await until(()=>{if(child.exitCode!==null||!child.pid)throw new Error('Owned endpoint exited before relay readiness');const state=stateOf(endpoint.home);return state?.pid===child.pid&&state.relay?.status==='connected';},{timeoutMs});return {pid:child.pid,ready:true,executionFacts:facts({source:endpoint.home})};}
    catch(e){await stop();throw e;}

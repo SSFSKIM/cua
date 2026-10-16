@@ -17,7 +17,8 @@ export function nodeEnvironment(ambient,explicitOverride){
 export const nodeVersion=path=>execFileSync(path,['--version'],{encoding:'utf8',timeout:5000,env:{PATH:'/usr/bin:/bin'}}).trim();
 export function observeLaunchNode(launch,versionOf=nodeVersion){return {path:launch.command,version:versionOf(launch.command)};}
 export function verifyOwnedHostNode(rows,root,{ownNode,entry}){
- const candidates=descendants(rows,root).filter(row=>row.command===`${ownNode.path} ${entry}`||row.command?.startsWith(`${ownNode.path} ${entry} `));
+ // The complete buildLaunch argv is behaviorally pinned in managed-node-oracle.test.mjs.
+ const candidates=descendants(rows,root).filter(row=>row.command===`${ownNode.path} --disable-sigusr1 ${entry}`);
  if(candidates.length!==1)throw new Error('Expected exactly one owned host using the attested Node');
  return {...ownNode,pid:candidates[0].pid};
 }

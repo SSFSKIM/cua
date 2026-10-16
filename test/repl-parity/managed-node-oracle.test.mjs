@@ -12,6 +12,17 @@ import {validateAttestations} from '../../scripts/repl-parity/compare.mjs';
 import {ownNodeEnv,quote} from '../../scripts/repl-parity/topology.mjs';
 import {ownNodeFacts} from '../../scripts/repl-parity/provenance.mjs';
 import {expectedSelection,selectionCases,assertSelection} from '../../scripts/repl-parity/selection.mjs';
+import {buildLaunch,REPL_HOST_SUPERVISOR} from '../../src/runtime/launch.mjs';
+import {parsePin,runtimeFor} from '../../src/runtime/manifest.mjs';
+import {scratch,fixturePin} from '../fixtures/runtime-fixture.mjs';
+
+function ownHostLaunch(t){
+ const fixture=scratch('cua-node-witness-');t.after(fixture.cleanup);
+ const ownNode={path:join(fixture.dir,'node/24.x/bin/node'),version:'v24.18.0'};
+ const runtime=runtimeFor({home:fixture.dir,pin:parsePin(fixturePin({sha256:'a'.repeat(64),length:1})),record:null});
+ const launch=buildLaunch({runtime,home:fixture.dir,sessionId:'node-witness',surfaces:['browser'],ambient:{CUA_REPL_HOST:'cua',CUA_BROWSER_SERVICE:'cua'},ownNode:ownNode.path});
+ return {ownNode,entry:REPL_HOST_SUPERVISOR,command:[launch.command,...launch.args].join(' ')};
+}
 test('managed Node enables an implicit own host even when the running and PATH Nodes are 22',()=>{
  const row={platform:'darwin',registration:'cua',surfaces:['browser'],override:'unset',node24:false,managedNode:true};
  assert.deepEqual(expectedSelection(row),{host:'cua',reason:'browser_only',status:'pass'});
@@ -57,11 +68,35 @@ test('unmanaged negative rows hide only their own Node tree and restore it after
  try{await assert.rejects(withManagedNodeUnavailable(home,async()=>{assert.equal(existsSync(join(home,'node')),false);throw new Error('row failed');}),/row failed/);assert.equal(existsSync(join(home,'node')),true);assert.equal(existsSync(join(home,'node.unavailable')),false);}
  finally{rmSync(home,{recursive:true,force:true});}
 });
-test('remote Node witness rejects a resolver-only claim, an unrelated process, and an external interpreter',()=>{
- const ownNode={path:'/scratch/node/24.x/bin/node',version:'v24.18.0'},entry='/repo/src/repl-host/supervisor.mjs';
- const rows=[{pid:10,ppid:1,command:'agent'},{pid:11,ppid:10,command:ownNode.path+' '+entry},{pid:12,ppid:1,command:'/external/node '+entry}];
- assert.deepEqual(verifyOwnedHostNode(rows,10,{ownNode,entry}),{...ownNode,pid:11});
- for(const bad of [[],rows.filter(r=>r.pid!==11),rows.map(r=>r.pid===11?{...r,command:'/external/node '+entry}:r)])assert.throws(()=>verifyOwnedHostNode(bad,10,{ownNode,entry}),/owned.*Node/);
+test('remote Node witness accepts the exact buildLaunch own-host command in its owned ancestry',t=>{
+ const {ownNode,entry,command}=ownHostLaunch(t);
+ const rows=[{pid:10,ppid:1,command:'agent'},{pid:11,ppid:10,command:'anchor'},{pid:12,ppid:11,command},{pid:13,ppid:1,command}];
+ assert.deepEqual(verifyOwnedHostNode(rows,10,{ownNode,entry}),{...ownNode,pid:12});
+});
+test('remote Node witness rejects missing ownership and non-production executable or argv shapes',t=>{
+ const {ownNode,entry,command}=ownHostLaunch(t),agent={pid:10,ppid:1,command:'agent'};
+ for(const [name,rows] of [
+  ['resolver-only claim',[]],
+  ['unrelated ancestry',[agent,{pid:12,ppid:1,command}]],
+  ['agent itself',[{...agent,command}]],
+ ])assert.throws(()=>verifyOwnedHostNode(rows,10,{ownNode,entry}),/owned.*Node/,name);
+ for(const [name,bad] of [
+  ['external interpreter',`/external/node --disable-sigusr1 ${entry}`],
+  ['executable suffix',`${ownNode.path}-other --disable-sigusr1 ${entry}`],
+  ['wrong entry',`${ownNode.path} --disable-sigusr1 /other/supervisor.mjs`],
+  ['entry suffix',`${command}.other`],
+  ['entry mentioned as an argument',`${ownNode.path} --disable-sigusr1 /other.mjs ${entry}`],
+  ['wrapper mentioning the launch',`/bin/sh -c ${command}`],
+  ['missing required flag',`${ownNode.path} ${entry}`],
+  ['extra Node flag',`${ownNode.path} --inspect --disable-sigusr1 ${entry}`],
+  ['extra flag before entry',`${ownNode.path} --disable-sigusr1 --require /other.mjs ${entry}`],
+  ['extra argument after entry',`${command} --inspect`],
+ ])assert.throws(()=>verifyOwnedHostNode([agent,{pid:12,ppid:10,command:bad}],10,{ownNode,entry}),/owned.*Node/,name);
+});
+test('remote Node witness rejects multiple owned hosts matching the production launch',t=>{
+ const {ownNode,entry,command}=ownHostLaunch(t);
+ const rows=[{pid:10,ppid:1,command:'agent'},{pid:11,ppid:10,command},{pid:12,ppid:11,command}];
+ assert.throws(()=>verifyOwnedHostNode(rows,10,{ownNode,entry}),/exactly one owned host/);
 });
 test('managed parity cannot pass with source-home Node facts alone or a missing actual launch witness',()=>{
  const meta={complete:true,host:'cua',nodeMode:'managed',connections:['a'],hostAttestations:[{connection:'a',host:'cua',serverInfo:{name:'cua-repl-host',version:'0.5.0'},_meta:{'cua/replHost':{host:'cua',version:'0.5.0'}},executionFacts:{home:'/source',ownNode:{path:'/source/node/24.x/bin/node',version:'v24.18.0'}}}]};

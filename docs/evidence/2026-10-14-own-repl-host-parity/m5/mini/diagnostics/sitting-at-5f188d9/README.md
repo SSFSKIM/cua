@@ -25,6 +25,6 @@ node scripts/repl-parity.mjs diff all-vendor-1 all-cua --through M5 --expected t
 - A second vendor run started at 11:57 and was stopped by the executor after 32 rows, once the finding made this head's
   evidence moot; it is not kept. No harness process was left on the mini.
 - Load (`*-uptime.txt`, before/after each run): mini 2.3–4.2; this Mac 48–168 (not timed evidence).
-- ssfs readiness (`ssfs-readiness.log`, profiles list key/ready/reason only, before/after each step and every 5 min):
+- ssfs readiness (`ssfs-readiness.txt`, profiles list key/ready/reason only, before/after each step and every 5 min):
   ready throughout this sitting. One drop before it: last ready 10:35:14Z (after attempt 1's cleanup), found not live at
   10:50:37Z with no harness step running in between; the session reopened Profile 1.

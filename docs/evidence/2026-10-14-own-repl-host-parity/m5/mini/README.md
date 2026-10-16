@@ -93,7 +93,7 @@ answer is the selection lane's to show once it re-runs.
 - `diagnostics/scripted-no-fixture/`: the first 3+3 scripted episodes; the archive bench fixture (127.0.0.1:48731) had not
   been started, so every setup failed with `net::ERR_CONNECTION_REFUSED` on both hosts. The recorded runs then started
   `/opt/homebrew/bin/node /tmp/bench-browser/fixture/serve.mjs` on the mini (MiniWoB 33c3b4d) as a tracked PID, and stopped
-  only that PID afterwards (`scripted/fixture.log`).
+  only that PID afterwards (`scripted/fixture.txt`).
 - `diagnostics/selection-invalid-setting/`: the selection lane's stopped run, above.
 - `diagnostics/sitting-at-5f188d9/`, `diagnostics/all-vendor-1-at-86471c6-secrets-live-capability-home/`: earlier heads.
 

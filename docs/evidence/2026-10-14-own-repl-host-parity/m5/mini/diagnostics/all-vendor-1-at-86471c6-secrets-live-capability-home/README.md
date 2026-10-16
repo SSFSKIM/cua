@@ -14,7 +14,7 @@ node scripts/repl-parity.mjs cleanup-prepared --device mini      # {"removed": t
   `secrets/browser-live/*` (secrets-live) cases fail. Every cell in those cases answers
   `Live secrets require a real capability scratch HOME` (isError), and the assertion reports `true !== false`.
 - Load: mini 2.44 / 2.86 / 2.97 before, 4.65 / 5.63 / 4.89 after; this Mac 239 / 195 / 172 before, 102 / 142 / 189 after (not a timed run).
-- ssfs readiness (profiles list, key/ready/reason only) before, every 5 minutes during, and after: ready throughout (`ssfs-readiness.log`).
+- ssfs readiness (profiles list, key/ready/reason only) before, every 5 minutes during, and after: ready throughout (`ssfs-readiness.txt`).
 
 ## Cause (harness)
 

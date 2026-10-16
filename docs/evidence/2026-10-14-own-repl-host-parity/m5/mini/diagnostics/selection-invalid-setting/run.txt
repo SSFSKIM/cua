@@ -1,0 +1,6 @@
+2026-10-16T16:49:36Z Selection oracle failed: Expected values to be strictly equal:
+2026-10-16T16:49:36Z + actual - expected
+2026-10-16T16:49:36Z 
+2026-10-16T16:49:36Z + -32000
+2026-10-16T16:49:36Z - 'invalid_repl_host'
+2026-10-16T16:49:36Z 

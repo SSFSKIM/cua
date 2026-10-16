@@ -1,0 +1,303 @@
+[
+  {
+    "pair": [
+      3,
+      4
+    ],
+    "derived": [
+      {
+        "axis": "repl-host",
+        "cases": [
+          "input/coordinates"
+        ],
+        "cells": [
+          "drag"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.evaluate"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "input/coordinates"
+        ],
+        "cells": [
+          "drag"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.releaseObject"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      }
+    ]
+  },
+  {
+    "pair": [
+      5,
+      6
+    ],
+    "derived": [
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/locators"
+        ],
+        "cells": [
+          "fill"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.evaluate"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/locators"
+        ],
+        "cells": [
+          "fill"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.releaseObject"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/locators"
+        ],
+        "cells": [
+          "press"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.evaluate"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/locators"
+        ],
+        "cells": [
+          "press"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.releaseObject"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.evaluate"
+        ],
+        "maxDelta": 19,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Page.enable"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Page.getFrameTree"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.executionContextCreated"
+        ],
+        "maxDelta": 3,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Page.createIsolatedWorld"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.releaseObject"
+        ],
+        "maxDelta": 21,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Emulation.setFocusEmulationEnabled"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Fetch.enable"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.enable"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/slow-budget"
+        ],
+        "cells": [
+          "late"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Target.setAutoAttach"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/wait-for"
+        ],
+        "cells": [
+          "visible"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.evaluate"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "actions/wait-for"
+        ],
+        "cells": [
+          "visible"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Runtime.releaseObject"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      },
+      {
+        "axis": "repl-host",
+        "cases": [
+          "waits/networkidle"
+        ],
+        "cells": [
+          "idle"
+        ],
+        "kind": "trace",
+        "methods": [
+          "Page.lifecycleEvent"
+        ],
+        "maxDelta": 1,
+        "reason": "Recorded vendor-against-vendor trace variance"
+      }
+    ]
+  }
+]

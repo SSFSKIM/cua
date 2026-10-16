@@ -170,8 +170,9 @@ cua itself keeps running on your Node; only the own host's processes use the ins
 `cua install` downloads the official nodejs.org tarball of the pinned Node 24 for this platform (or takes a local copy
 with `--node-archive <tarball>`), refuses it unless its length and SHA-256 match `runtime/releases/node/*.json` (on
 macOS also unless `bin/node` carries the OpenJS Foundation's Developer ID signature, team `HX7739G8FX`) and its
-`--version` is the pinned one, and keeps only `bin/node` and its licence in `$CUA_HOME/node/<version>`. Like the
-runtime, a verified Node makes it a no-op, and a damaged one is reported, never repaired in place. If that step fails,
+`--version` is the pinned one, and keeps only `bin/node` and its licence in `$CUA_HOME/node/<version>`, recording the
+binary's SHA-256: a `bin/node` that no longer matches its record is never run, neither by a later install nor as a
+candidate. Like the runtime, a verified Node makes it a no-op, and a damaged one is reported, never repaired in place. If that step fails,
 the command fails after the runtime is in place and says so; `--no-node` skips it, as for an offline install without
 the tarball. If no candidate qualifies, a session that would default to cua keeps the vendor host with reason
 `own_host_node_unavailable`: run `cua install`, install Node 24 or later yourself, or set `CUA_NODE` to one.
@@ -1422,7 +1423,8 @@ reached through the host's trusted pipes instead. Reading everywhere includes th
 `scoped` places one requirement on where things live: `CUA_HOME` and the cua checkout must not be inside `$TMPDIR`
 (on macOS the per-user `/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of
 cua's may sit under `$CUA_HOME/run`. A checkout there would make cua's trusted code writable; a `CUA_HOME` there
-would let cells rewrite the runtime's configuration and approvals. The default `CUA_HOME` and a directory under
+would let cells rewrite the runtime's configuration and approvals, or the Node `cua install` placed for cua's own host
+under `$CUA_HOME/node`. The default `CUA_HOME` and a directory under
 `/tmp` work when `/tmp` is not itself the temp write root. `cua serve` and the profile listing refuse such a layout
 with `sandbox_conflict`, naming each directory involved, and `cua doctor`'s `sandbox` check fails with the same
 explanation. This protects either host's trusted roots, not just the vendor's modules.

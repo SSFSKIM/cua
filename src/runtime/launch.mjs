@@ -101,6 +101,8 @@
 //                                            (src/repl-host/instructions.mjs), as NODE_REPL_TOOL_OVERRIDES
 //   NODE_REPL_DISABLE_ANALYTICS=1            kept: the retained vendor sky service reads it
 //
+// The launch record also carries `managedNodeRoot`, <home>/node (the Node `cua install` places for the own host, which
+// the scoped preflight protects for either host: src/runtime/sandbox.mjs assertSandboxFits); it is not in `env`.
 // The working directory is <home>/run/<sessionId>; model cells can see it, so it is never the caller's directory or
 // the repository. The caller creates it (mode 0700) before spawning and removes it when the connection ends.
 import {accessSync, constants, realpathSync, statSync} from 'node:fs';
@@ -214,7 +216,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[STORE_ENV.dir] = secretsDir;
     if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
-  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason}};
+  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason},
+    managedNodeRoot: owned.node};
   if (own) assertTrustedServicesContained(launch);
   return launch;
 }

@@ -10,14 +10,20 @@
 //
 // Under the home:
 //   node/<version>/bin/node, LICENSE   the kept parts of the tarball, never modified after placement
-//   node/<version>/install.json        {schema, version, platform, arch, archive: {sha256, length}, source, installedAt}
+//   node/<version>/install.json        {schema, version, platform, arch, archive: {sha256, length},
+//                                      node: {sha256, size}, source, installedAt}: `node` binds the record to the
+//                                      bytes of bin/node that install verified
 //   node/current.json                  {schema, version}: the installed Node the own host takes, replaced atomically
-import {readFileSync, readdirSync} from 'node:fs';
+// None of it is writable by a scoped cell: every launch protects node/ like the trusted code (src/runtime/sandbox.mjs).
+// And nothing there runs unless its bytes are the recorded ones: install re-checks them before reusing an install, and
+// the resolution (managedNode) before it offers the binary as a candidate, whose --version is then run.
+import {closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fail} from './errors.mjs';
-import {realHome} from './layout.mjs';
+import {homeLayout, realHome} from './layout.mjs';
 import {isRealDirectory} from './manifest.mjs';
 
 // The oldest Node major cua's own REPL host runs on (its kernel's vm modules); the vendor host keeps its pinned Node.
@@ -35,7 +41,7 @@ export const nodeDistName = ({version, platform, arch}) => `node-v${version}-${p
 const officialUrl = pin => `https://nodejs.org/dist/v${pin.version}/${nodeDistName(pin)}.tar.gz`;
 
 export function nodeLayout(home) {
-  const root = join(home, 'node');
+  const root = homeLayout(home).node;
   return {root, pointer: join(root, 'current.json'), version: version => join(root, version)};
 }
 
@@ -91,21 +97,57 @@ export function selectNodePin(pins, host = hostTarget()) {
   return matching.length ? matching.reduce((best, p) => newer(p.version, best.version) ? p : best) : null;
 }
 
-// The install record of node/<version> when it records an install of that version for `target` ({platform, arch}),
-// else null. A pin, when given, must also match the record's archive.
+const HEX64 = /^[0-9a-f]{64}$/;
+const positive = v => Number.isSafeInteger(v) && v > 0;
+const hasExactly = (value, keys) => isObject(value) && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+const RECORD_KEYS = ['schema', 'version', 'platform', 'arch', 'archive', 'node', 'source', 'installedAt'];
+
+// The install record of node/<version> when it is exactly a record of that version for `target` ({platform, arch}),
+// with the archive it came from and the digest of its bin/node, else null. A pin, when given, must also match the
+// record's archive.
 export function readNodeRecord(dir, {version, platform, arch, archive}) {
   let record;
   try { record = JSON.parse(readFileSync(join(dir, NODE_RECORD_FILE), 'utf8')); } catch { return null; }
-  const valid = isObject(record) && record.schema === 1 && record.version === version && record.platform === platform && record.arch === arch
-    && isObject(record.archive) && (!archive || (record.archive.sha256 === archive.sha256 && record.archive.length === archive.length));
+  const valid = hasExactly(record, RECORD_KEYS) && record.schema === 1 && record.version === version && record.platform === platform && record.arch === arch
+    && hasExactly(record.archive, ['sha256', 'length']) && HEX64.test(record.archive.sha256) && positive(record.archive.length)
+    && hasExactly(record.node, ['sha256', 'size']) && typeof record.node.sha256 === 'string' && HEX64.test(record.node.sha256) && positive(record.node.size)
+    && ['archive', 'download'].includes(record.source) && typeof record.installedAt === 'string'
+    && (!archive || (record.archive.sha256 === archive.sha256 && record.archive.length === archive.length));
   return valid ? record : null;
 }
 
-// The version node/current.json names, or null when there is none; a pointer that is not one is an error.
+// {sha256, size} of the regular file at `path`, read in chunks (bin/node is about 120 MB: some 100 ms).
+export function fileDigest(path) {
+  const hash = createHash('sha256');
+  const fd = openSync(path, 'r');
+  let size = 0;
+  try {
+    const chunk = Buffer.allocUnsafe(4 << 20);
+    for (let n; (n = readSync(fd, chunk, 0, chunk.length, null)) > 0; size += n) hash.update(chunk.subarray(0, n));
+  } finally { closeSync(fd); }
+  return {sha256: hash.digest('hex'), size};
+}
+
+// Whether bin/node under `dir` is, by real path, that very file (no symlinked part), a regular file, and the bytes
+// `record.node` names. Read only; nothing is run.
+export function nodeMatchesRecord(dir, record) {
+  const path = join(dir, 'bin', 'node');
+  try {
+    if (realpathSync.native(path) !== path || !lstatSync(path).isFile() || lstatSync(path).size !== record.node.size) return false;
+    const {sha256, size} = fileDigest(path);
+    return sha256 === record.node.sha256 && size === record.node.size;
+  } catch { return false; }
+}
+
+// The version node/current.json names, or null when there is none; a pointer that is not one, or cannot be read, is an
+// error (node_pointer_invalid).
 export function readNodePointer(home) {
   const {pointer} = nodeLayout(home);
   let text;
-  try { text = readFileSync(pointer, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  try { text = readFileSync(pointer, 'utf8'); } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    fail('node_pointer_invalid', `${pointer} cannot be read (${error.code ?? error.message})`);
+  }
   let json;
   try { json = JSON.parse(text); } catch { json = null; }
   if (!isObject(json) || json.schema !== 1 || typeof json.version !== 'string' || !VERSION.test(json.version)) fail('node_pointer_invalid', `${pointer} is not a valid pointer`);
@@ -113,17 +155,18 @@ export function readNodePointer(home) {
 }
 
 // The cua-installed Node of `home` for this host -> {path, version}, or {missing: why}. It never throws: the own
-// host's Node resolution (launch.mjs ownHostNode) moves on to its next candidate, naming why. Its files are not
-// checked here; the resolution runs the binary's --version as for every candidate.
+// host's Node resolution (launch.mjs ownHostNode) moves on to its next candidate, naming why. A binary is offered only
+// when its bytes are the ones its install record names (nodeMatchesRecord), so nothing unrecorded is ever run, its
+// --version probe included; the darwin signature was checked when that record was written.
 export function managedNode(home, {host = hostTarget()} = {}) {
   let real, version;
   try { real = realHome(home); } catch (error) { return {missing: `home unreadable (${error.code ?? error.message})`}; }
-  try { version = readNodePointer(real); } catch (error) {
-    return {missing: error.code === 'node_pointer_invalid' ? error.message : `pointer unreadable (${error.code ?? error.message})`};
-  }
+  try { version = readNodePointer(real); } catch (error) { return {missing: error.message}; }
   if (!version) return {missing: 'not installed'};
   const dir = nodeLayout(real).version(version);
-  if (!isRealDirectory(dir) || !readNodeRecord(dir, {version, ...host})) return {missing: `${dir} is not a recorded install for ${host.platform}-${host.arch}`};
+  const record = isRealDirectory(dir) ? readNodeRecord(dir, {version, ...host}) : null;
+  if (!record) return {missing: `${dir} is not a recorded install for ${host.platform}-${host.arch}`};
+  if (!nodeMatchesRecord(dir, record)) return {missing: `${join(dir, 'bin', 'node')} is not the binary its install record names`};
   return {path: join(dir, 'bin', 'node'), version};
 }
 

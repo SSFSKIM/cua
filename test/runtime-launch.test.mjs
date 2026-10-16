@@ -576,6 +576,34 @@ test('the scoped preflight protects the own host\'s trusted roots, its own code 
   assertSandboxFits('scoped', {...launch, replHost: {host: 'vendor', reason: 'explicit'}, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR), CUA_REPL_TRUSTED_CODE_PATHS: undefined}});
 });
 
+test('the scoped preflight protects $CUA_HOME/node, the Node cua install places for the own host, on either host, by real path', t => {
+  const {home, dir, runtime} = fixtureRuntime(t);
+  writeCuaRecord(home);
+  const node = fakeNode(dir, 'n/node', '24.1.0');
+  const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+  const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
+  const root = join(realpathSync(home), 'node');
+  assert.equal(own.managedNodeRoot, root);
+  assert.equal(vendor.managedNodeRoot, root);
+  assert.equal(Object.values(own.env).includes(root), false, 'the root is the proxy\'s to protect, not a runtime setting');
+  mkdirSync(join(root, '24.22.0'), {recursive: true});
+  symlinkSync(root, join(dir, 'node-alias'));
+  const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const launch of [own, vendor]) {
+    assertSandboxFits('scoped', launch);
+    for (const tmpdir of [root, join(root, '24.22.0', 'tmp'), join(dir, 'node-alias'), join(dir, 'node-alias', 'later')]) {
+      const overlap = outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: tmpdir}}));
+      assert.equal(overlap.code, 'sandbox_conflict', `${launch.replHost.host} ${tmpdir}`);
+      assert.match(overlap.message, new RegExp(`the Node cua installed for its own REPL host ${escaped}`));
+    }
+    assertSandboxFits('disabled', {...launch, env: {...launch.env, TMPDIR: root}});
+  }
+  // Protected before it exists, too: a first `cua install` must not find a cell's files there.
+  const fresh = fixtureRuntime(t);
+  const launch = buildLaunch({runtime: fresh.runtime, home: fresh.home, sessionId: SESSION, ambient: AMBIENT});
+  assert.equal(outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: join(realpathSync(fresh.home), 'node')}})).code, 'sandbox_conflict');
+});
+
 test('an own-host launch refuses a trusted service outside every trusted root, through a symlink too, before anything starts', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
   writeCuaRecord(home);

@@ -78,12 +78,15 @@ const within = (path, root) => {
 };
 
 // What no scoped write root may contain or lie inside, labelled: the trusted code paths (node_repl refuses to start a
-// kernel when one is writable, and a write root inside one would let cells add modules there) and CODEX_HOME, the
+// kernel when one is writable, and a write root inside one would let cells add modules there), CODEX_HOME, the
 // runtime's configuration and approvals (writable, it would let cells grant themselves approvals; node_repl does not
-// refuse that on its own: measured, issue #36).
-export const protectedPaths = ({trustedCodePaths, codexHome}) => [
+// refuse that on its own: measured, issue #36), and $CUA_HOME/node, the Node `cua install` places for cua's own host
+// with its records and pointer (src/runtime/managed-node.mjs: writable, it would let cells choose what the next
+// connection runs outside the sandbox).
+export const protectedPaths = ({trustedCodePaths, codexHome, managedNode}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
+  ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
 ];
 
 // Every overlap between the scoped profile's write roots and the protected paths ([{label, path}] each), by real path:
@@ -174,11 +177,12 @@ export function assertTrustedServicesContained(launch) {
 }
 
 // Throws `sandbox_conflict` when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of
-// its trusted code paths (trustedCodePathsOf) or its CODEX_HOME.
+// its trusted code paths (trustedCodePathsOf), its CODEX_HOME or its home's managed Node (`launch.managedNodeRoot`,
+// whichever host it runs: a vendor session's cells must not choose a later own host's Node either).
 export function assertSandboxFits(mode, launch) {
   if (mode !== 'scoped') return;
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME}),
+    protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, managedNode: launch.managedNodeRoot}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});

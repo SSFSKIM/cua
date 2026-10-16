@@ -5,6 +5,7 @@
 //                         bind's short-lived copies of Chrome extension stores (src/profiles/directory-map.mjs)
 //   state/codex/          CODEX_HOME for the runtime: its config and per-user approvals
 //   state/handshake/      per release, the runtime's recorded MCP handshake answers (src/mcp/lazy-runtime.mjs)
+//   node/                 the pinned Node cua's own REPL host runs on, and its pointer (src/runtime/managed-node.mjs)
 //   run/<session>/        per-connection working directory and private endpoints
 import {readFileSync, writeFileSync, renameSync, rmSync, mkdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -29,6 +30,7 @@ export function homeLayout(home) {
     staging: join(home, 'staging'),
     codexHome: join(home, 'state', 'codex'),
     handshake: join(home, 'state', 'handshake'),
+    node: join(home, 'node'),
     run: join(home, 'run'),
   };
 }

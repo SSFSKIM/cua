@@ -38,7 +38,8 @@
 // a connection resolves it once (`resolveOwnNode`, launch.mjs ownHostNode by default, injectable for tests).
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
-// src/repl-host, src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
+// src/repl-host, src/services and src/secrets), the runtime's CODEX_HOME or $CUA_HOME/node: `cua serve` and the listing
+// launch refuse such a launch.
 // Another mode is the user's choice and only described.
 // On Linux the release is trusted by its archive hash (runtime.signatures says so; no codesign runs), runtime.ipc does
 // not apply, the darwin helper.live and helper.permissions rows give way to display, accessibility.bus and
@@ -282,7 +283,7 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
   if (computer) return result('sandbox', 'fail', 'CUA_SHIM_SANDBOX=scoped with the computer surface on linux: under the scoped sandbox node_repl lets no runtime process connect to a socket, so the computer-use helper (sky_linux) cannot reach the X display or the session bus and every computer-use call fails; unset CUA_SHIM_SANDBOX (the Linux default with the computer surface is disabled) or use CUA_SHIM_SURFACES=browser');
   const owned = homeLayout(realHome(home));
   const conflicts = sandboxConflicts({
-    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome}),
+    protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS], codexHome: owned.codexHome, managedNode: owned.node}),
     writeRoots: scopedWriteRoots({cwd: owned.run, cwdLabel: '$CUA_HOME/run', tmpdir: env.TMPDIR}),
   });
   if (conflicts.length) return result('sandbox', 'fail', `${describeConflicts(conflicts)}. cua serve and the profile listing refuse to start like this (sandbox_conflict): ${SANDBOX_CONFLICT_HINT}`);

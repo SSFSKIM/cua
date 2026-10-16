@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {dirname, join} from 'node:path';
-import {loadNodePins, managedNode, parseNodePin, selectNodePin, NODE_PINS_DIR} from '../src/runtime/managed-node.mjs';
+import {fileDigest, loadNodePins, managedNode, parseNodePin, selectNodePin, NODE_PINS_DIR} from '../src/runtime/managed-node.mjs';
 import {developerIdRequirement, installNode, verifyNodeSignature} from '../src/runtime/node-install.mjs';
 import {ownHostNode, replHostFor} from '../src/runtime/launch.mjs';
 import {digest, scratch} from './fixtures/runtime-fixture.mjs';
@@ -135,7 +135,8 @@ for (const host of [LINUX, DARWIN]) {
     assert.match(readFileSync(join(root, 'LICENSE'), 'utf8'), /Node\.js is licensed/);
     const record = JSON.parse(readFileSync(join(root, 'install.json'), 'utf8'));
     assert.deepEqual({...record, installedAt: undefined}, {schema: 1, version: VERSION, platform: host.platform, arch: host.arch,
-      archive: {sha256: ctx.archive.sha256, length: ctx.archive.length}, source: 'archive', installedAt: undefined});
+      archive: {sha256: ctx.archive.sha256, length: ctx.archive.length}, node: fileDigest(join(root, 'bin/node')), source: 'archive', installedAt: undefined});
+    assert.equal(record.node.size, statSync(join(root, 'bin/node')).size, 'the record binds the verified bin/node by SHA-256 and size');
     assert.deepEqual(pointer(ctx.home), {schema: 1, version: VERSION});
     assert.equal(signatureChecks, host.platform === 'darwin' ? 1 : 0);
     assert.deepEqual(stagingLeftovers(ctx.home), []);
@@ -272,6 +273,71 @@ test('without tar or gzip the install is refused naming the package, before anyt
 test('a pin for another target is refused', async t => {
   const ctx = setup(t);
   await assert.rejects(install(ctx, {host: {platform: 'linux', arch: 'arm64'}}), expectCode('unsupported_platform'));
+});
+
+test('a replaced bin/node is never run: not on reinstall, even when it prints the pinned version, and not by the resolution', async t => {
+  const ctx = setup(t, {host: thisHost});
+  await install(ctx);
+  const root = join(nodeDir(ctx.home), VERSION);
+  writeFileSync(join(root, 'bin/node'), `#!/bin/sh\ntouch "$0.ran"\necho v${VERSION}\n`);
+  const probed = [];
+  const versionOf = path => { probed.push(path); return `v${VERSION}`; };
+  await assert.rejects(install(ctx, {versionOf}), err => {
+    expectCode('node_install_invalid')(err);
+    assert.equal(err.cause.code, 'node_binary_mismatch');
+    return true;
+  });
+  assert.deepEqual(probed, [], 'not run on reinstall');
+  assert.deepEqual(managedNode(ctx.home), {missing: `${join(root, 'bin/node')} is not the binary its install record names`});
+  const none = outcome(() => ownHostNode({ambient: {}, home: ctx.home, execPath: '/nonexistent', versionOf}));
+  assert.equal(none.code, 'repl_host_node');
+  assert.match(none.message, /the cua-installed Node \(.* is not the binary its install record names\)/);
+  assert.deepEqual(probed, [], 'the resolution never probes it either');
+  assert.equal(existsSync(join(root, 'bin/node.ran')), false, 'the replaced binary never ran');
+  // A symlink in its place, even to the recorded bytes elsewhere, is not the install either.
+  const s = scratch();
+  t.after(s.cleanup);
+  const original = setup(t);
+  await install(original);
+  const kept = join(s.dir, 'node');
+  writeFileSync(kept, readFileSync(join(nodeDir(original.home), VERSION, 'bin/node')));
+  rmSync(join(nodeDir(original.home), VERSION, 'bin/node'));
+  symlinkSync(kept, join(nodeDir(original.home), VERSION, 'bin/node'));
+  assert.match(managedNode(original.home, {host: LINUX}).missing, /is not the binary its install record names/);
+});
+
+test('an install record is read strictly: without the binary\'s digest, or with an empty archive, nothing is offered or reused', async t => {
+  const ctx = setup(t);
+  await install(ctx);
+  const root = join(nodeDir(ctx.home), VERSION);
+  const record = JSON.parse(readFileSync(join(root, 'install.json'), 'utf8'));
+  for (const broken of [{...record, archive: {}}, (({node, ...rest}) => rest)(record), {...record, node: {sha256: record.node.sha256}}, {...record, node: {...record.node, size: 0}},
+    {...record, extra: true}, {...record, source: 'elsewhere'}]) {
+    writeFileSync(join(root, 'install.json'), JSON.stringify(broken));
+    assert.deepEqual(managedNode(ctx.home, {host: LINUX}), {missing: `${root} is not a recorded install for linux-x64`}, JSON.stringify(broken));
+    await assert.rejects(install(ctx), expectCode('target_occupied'), 'an unrecorded tree is not cua\'s to reuse');
+  }
+});
+
+test('activation is checked before anything is published: a pointer path that is not a file fails classified and leaves the pointer and the tree untouched', async t => {
+  const ctx = setup(t);
+  mkdirSync(join(realpathSync(dirname(ctx.home)), 'home', 'node', 'current.json'), {recursive: true});
+  await assert.rejects(install(ctx), err => {
+    expectCode('activation_failed')(err);
+    assert.match(err.message, /current\.json is not a file/);
+    return true;
+  });
+  assert.deepEqual(readdirSync(nodeDir(ctx.home)), ['current.json'], 'nothing published, no temporary pointer left');
+  assert.ok(statSync(join(nodeDir(ctx.home), 'current.json')).isDirectory(), 'the pointer path is as it was');
+  assert.deepEqual(stagingLeftovers(ctx.home), []);
+  assert.deepEqual(managedNode(ctx.home, {host: LINUX}), {missing: `${join(nodeDir(ctx.home), 'current.json')} cannot be read (EISDIR)`});
+  // The same for an installed Node being re-activated: classified, nothing changed.
+  rmSync(join(nodeDir(ctx.home), 'current.json'), {recursive: true});
+  await install(ctx);
+  rmSync(join(nodeDir(ctx.home), 'current.json'));
+  mkdirSync(join(nodeDir(ctx.home), 'current.json'));
+  await assert.rejects(install(ctx), expectCode('activation_failed'));
+  assert.deepEqual(readdirSync(nodeDir(ctx.home)).sort(), [VERSION, 'current.json']);
 });
 
 test('the managed Node a home points at: only a recorded install for this host, else why not', async t => {

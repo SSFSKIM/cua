@@ -25,15 +25,13 @@
 // which connects 104 bytes or more through the parent directory (open it, pthread_fchdir_np, connect the file name),
 // so it fails only when the parent cannot be opened or the file name alone does not fit (`native pipe file name is
 // too long`). Its other two sentences, a path with no parent or no file name, cannot be reached from a canonical path
-// that names a socket. Node has no per-thread working directory, so a path that does not fit as given is connected
-// through a symbolic link to the canonical path: made under a fresh random name in /tmp (outside the scoped
-// sandbox's write roots, the run directory and $TMPDIR, unless one of them is /tmp itself), followed by connect(2),
-// which Node issues before createConnection returns, and removed at once. It exists only for that synchronous call, so no close, timeout or death of the supervisor outside that
-// call leaves it behind, and a name already present is never followed.
-import {closeSync, openSync, realpathSync, statSync, symlinkSync, unlinkSync} from 'node:fs';
-import {randomBytes} from 'node:crypto';
+// that names a socket. A path that fits is connected as given; one that does not is connected at its canonical path
+// when that fits, and otherwise (macOS) in its directory by a connector process (./native-pipe-directory.mjs). No
+// name is ever made in the filesystem for a connect.
+import {closeSync, fstatSync, openSync, realpathSync, statSync} from 'node:fs';
 import {createConnection} from 'node:net';
-import {isAbsolute, join} from 'node:path';
+import {isAbsolute} from 'node:path';
+import {connectInDirectory as connectInDirectoryDefault} from './native-pipe-directory.mjs';
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 export const CONNECT_TIMEOUT_SENTENCE = 'native pipe initial connect timed out';
@@ -50,9 +48,21 @@ const SUN_LEN_SENTENCE = 'path must be shorter than SUN_LEN';
 const FILE_NAME_TOO_LONG_SENTENCE = 'native pipe file name is too long';
 // sizeof(sockaddr_un.sun_path): a path connects directly only when it is shorter, leaving room for its NUL.
 const SUN_PATH_BYTES = {darwin: 104, linux: 108};
-const SHORTCUT_ATTEMPTS = 8;
-const shortcutNameDefault = () => `cua-np-${randomBytes(8).toString('hex')}`;
-const openDirectoryDefault = path => closeSync(openSync(path, 'r'));
+// The vendor's read-only open of a long path's parent; -> the directory's identity, which its connect must still see.
+function openDirectoryDefault(path) {
+  const fd = openSync(path, 'r');
+  try {
+    const {dev, ino} = fstatSync(fd, {bigint: true});
+    return {dev, ino};
+  } finally {
+    closeSync(fd);
+  }
+}
+// `bytes` as a string naming the same bytes, or null when they are not UTF-8 (a Node path string cannot name them).
+const asPathString = bytes => {
+  const text = bytes.toString();
+  return Buffer.from(text).equals(bytes) ? text : null;
+};
 export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 // A write into a pipe the peer left is a close, not an error: the vendor host reports the connection closed by its
 // reader, whose EOF wins the race with the write's failure (observed on the pinned node_repl on macOS, 2026-10-14, for
@@ -92,10 +102,10 @@ export function osErrorSentence(error, platform = process.platform) {
 
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
 // every connection, connected or still connecting, without telling the worker (it is gone).
-// `platform` picks the vendor's rule for a long canonical path; `shortcutRoot` and `shortcutName()` place the link a
-// path too long to connect as given goes through; `openDirectory(path)` is the vendor's open of a long path's parent.
+// `platform` picks the vendor's rule for a long canonical path; `openDirectory(path)` is the vendor's open of a long
+// path's parent (-> {dev, ino}); `connectInDirectory({directory, name, identity})` connects a file name in it.
 export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native,
-  stat = statSync, platform = process.platform, shortcutRoot = '/tmp', shortcutName = shortcutNameDefault, openDirectory = openDirectoryDefault}) {
+  stat = statSync, platform = process.platform, openDirectory = openDirectoryDefault, connectInDirectory = connectInDirectoryDefault}) {
   const sunPath = SUN_PATH_BYTES[platform] ?? SUN_PATH_BYTES.linux;
   const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
@@ -120,23 +130,10 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       return fail(id, `${STAT_FAILED_PREFIX}${osErrorSentence(error)}`);
     }
     if (!metadata.isSocket()) return fail(id, NOT_SOCKET_SENTENCE);
-    const refusal = longPathRefusal(canonical);
-    if (refusal) return fail(id, `${CONNECT_FAILED_PREFIX}${refusal}`);
-    let shortcut = null;
-    if (Buffer.byteLength(path) >= sunPath) {
-      try {
-        shortcut = linkTo(canonical);
-      } catch (error) {
-        return fail(id, `${CONNECT_FAILED_PREFIX}${osErrorSentence(error)}`);
-      }
-    }
+    const route = routeFor(path, canonical);
+    if (route.refusal) return fail(id, `${CONNECT_FAILED_PREFIX}${route.refusal}`);
     const connectionId = `native-pipe-connection-${counter++}`;
-    let socket;
-    try {
-      socket = connect({path: shortcut ?? path});
-    } finally {
-      if (shortcut) try { unlinkSync(shortcut); } catch {}
-    }
+    const socket = route.directory ? connectInDirectory(route) : connect({path: route.path});
     let connected = false;
     let settled = false;      // the connect request was answered: a later connect or error changes nothing
     let reported = false;     // native_pipe_closed was sent
@@ -189,30 +186,28 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     });
   }
 
-  // The vendor's refusal of a canonical path that does not fit sun_path, or null (see the header).
-  function longPathRefusal(canonical) {
-    if (canonical.length < sunPath) return null;
-    if (platform !== 'darwin') return SUN_LEN_SENTENCE;
-    const slash = canonical.lastIndexOf(0x2f);
-    try {
-      openDirectory(slash === 0 ? '/' : canonical.subarray(0, slash));
-    } catch (error) {
-      return osErrorSentence(error);
-    }
-    return canonical.length - slash - 1 >= sunPath ? FILE_NAME_TOO_LONG_SENTENCE : null;
-  }
-
-  // A fresh link to `canonical` under shortcutRoot; a name already taken is skipped, never followed or replaced.
-  function linkTo(canonical) {
-    for (let attempt = 1; ; attempt++) {
-      const link = join(shortcutRoot, shortcutName());
+  // How `path` is connected (see the header): {path} or {directory, name, identity}, or {refusal} for the vendor's.
+  function routeFor(path, canonical) {
+    const fits = bytes => bytes < sunPath;
+    let inDirectory = null;
+    if (!fits(canonical.length)) {
+      if (platform !== 'darwin') return {refusal: SUN_LEN_SENTENCE};
+      const slash = canonical.lastIndexOf(0x2f);
+      const directory = slash === 0 ? Buffer.from('/') : canonical.subarray(0, slash);
+      const name = canonical.subarray(slash + 1);
+      let identity;
       try {
-        symlinkSync(canonical, link);
-        return link;
+        identity = openDirectory(directory);
       } catch (error) {
-        if (error.code !== 'EEXIST' || attempt >= SHORTCUT_ATTEMPTS) throw error;
+        return {refusal: osErrorSentence(error)};
       }
+      if (!fits(name.length)) return {refusal: FILE_NAME_TOO_LONG_SENTENCE};
+      inDirectory = {directory: asPathString(directory), name: asPathString(name), identity};
     }
+    if (fits(Buffer.byteLength(path))) return {path};
+    if (!inDirectory) return {path: asPathString(canonical) ?? path};
+    if (inDirectory.directory !== null && inDirectory.name !== null) return inDirectory;
+    return {path};   // bytes no Node path string can name: Node refuses the path as given
   }
 
   function write(id, connectionId, data) {

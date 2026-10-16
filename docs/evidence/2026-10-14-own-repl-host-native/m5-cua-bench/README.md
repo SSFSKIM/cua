@@ -12,6 +12,14 @@ This is acceptance 8's native half, measured on the quiet cloud box the spec's D
 
 **What the differing sample coincides with.** Vendor run-1's typeText sample took 3,014 ms; the other five took 1,625 to 1,642 ms. Its run also recorded the box's first gedit crash report: `meta.gedit.crashReportsBefore` was 0 files and `crashReportsAfter` was 1 file, written at 18:43:36.727Z, during that run's method step. Every later run found the same single report and added none, because apport keeps one unreported report per program. That points to apport collecting the first crash as the reason this one crash ended differently: the helper saw EAGAIN (`os error 11`) instead of `NoReply`. M0's README records the same pair of sentences for this crash on the cua-linux VM (`os error 11` on 2026-10-06, `NoReply` from 2026-10-14). The error comes from the pinned `sky_linux` helper, which is the same binary under both hosts. This explains the variance but does not change the verdict. Whether the verdict stands is for the session to rule.
 
+**Session ruling (2026-10-16): acceptance 8's native half is met, and the raw `verdict: FAIL` above stays as recorded.** No rerun and no oracle change. The reasons:
+- typeText's outcome class (threw, window exited) is identical on both hosts in 6 of 6 samples.
+- The differing sentence comes from the pinned `sky_linux` helper. The own host relays it unchanged.
+- The vendor produced both sentences within this one sitting. M0 and M4 had already recorded the same pair for this crash. This is vendor-against-vendor spread, not a host difference.
+- Every latency row passes.
+
+A fresh sitting would mean rerunning until the result passes. Changing the oracle after seeing the result would loosen it post hoc. Whether `compare`'s outcome rule should absorb vendor sentence spread derived in advance from recorded vendor runs is the question #130 asks of the benchmark verdict, so it goes to #130 and is not changed in M5. The spec's Decision Log records the ruling.
+
 Medians from `comparison.md`, in milliseconds. "Judged" is the wall median, net of each side's ssh.roundtrip median for the four cold `initialize`/`total` rows:
 
 | Operation | Vendor judged | Own judged | Limit | Vendor in-cell | Own in-cell | Verdict |

@@ -539,6 +539,16 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Acceptance 8's native half is met on cua-bench (experiment `m5t6b-cua-bench-2026-10-16`, d8fefc2), with `compare`'s raw `verdict: FAIL` kept visible beside this ruling.
+  - **What failed.** The only failing row is `method.typeText`, and it failed on outcome. In 6 of 6 samples on both hosts typeText threw and its gedit window exited. One vendor sample (run-1, when the box wrote its first gedit crash report) gave `os error 11`; the other five samples gave D-Bus `NoReply`.
+  - **What passed.** All 19 latency operations and the other five method cases. In-cell medians match; for example, task.total is 17,617.1 against 17,616.9 ms.
+  - **Ruling: no rerun and no oracle change.**
+    - The sentence comes from the pinned `sky_linux` helper, and the own host relays it unchanged.
+    - The vendor produced both sentences within this one sitting. M0 and M4 had already recorded the same pair for this crash. This is vendor-against-vendor spread, not a host difference.
+    - A new sitting would rerun until it passed. Changing the oracle after seeing the result would loosen it post hoc.
+  - **Open question, moved to #130.** Should `compare`'s outcome rule absorb vendor sentence spread derived in advance from recorded vendor runs? That is the question #130 asks of the benchmark verdict, so it goes there rather than into M5.
+  Rationale: Acceptance 8 asks for no capability or performance regression. The outcome class is identical on both hosts, and every timing row passes.
+  Date/Author: 2026-10-16, session ruling on M5 task 6b's DONE_WITH_CONCERNS, recorded by the plan-executor.
 - Decision: The over-limit nativePipe oracle (commits 519146a through d49e6da).
   - **The case.** The services case gains a cell that connects to a harness-owned listener at a 192-byte absolute socket path. The peer binds a relative name inside its own deep cwd; the subject is handed the full absolute path.
   - **What counts.** The cell counts only if all three hold: the listener's own journal shows exactly one accepted connection, that connection carried exactly the six bytes sent, and the reversed response arrived. Fabricated and replayed responses fail mutation tests.

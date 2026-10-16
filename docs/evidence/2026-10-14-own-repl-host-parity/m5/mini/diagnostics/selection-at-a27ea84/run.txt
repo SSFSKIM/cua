@@ -1,0 +1,90 @@
+2026-10-16T18:09:45Z Selection oracle failed (23):
+2026-10-16T18:09:45Z row 121/260 (darwin, registration cua, maws, browser, ordinary, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 122/260 (darwin, registration cua, maws, browser, ordinary, override cua, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 123/260 (darwin, registration cua, maws, browser, ordinary, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 125/260 (darwin, registration cua, maws, browser, profiles, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 126/260 (darwin, registration cua, maws, browser, profiles, override cua, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 127/260 (darwin, registration cua, maws, browser, profiles, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 137/260 (darwin, registration cua, maws, computer,browser, ordinary, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (macos_native_peer_requires_vendor): the computer surface on macOS, whose helper accepts only the vendor host's node_repl as a peer until #117. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 139/260 (darwin, registration cua, maws, computer,browser, ordinary, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 141/260 (darwin, registration cua, maws, computer,browser, profiles, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (macos_native_peer_requires_vendor): the computer surface on macOS, whose helper accepts only the vendor host's node_repl as a peer until #117. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 142/260 (darwin, registration cua, maws, computer,browser, profiles, override cua, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS: its computer-use helper accepts only the vendor host's node_repl as a peer until #117 replaces it. Use CUA_SHIM_SURFACES=browser for cua's own host, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor). Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 143/260 (darwin, registration cua, maws, computer,browser, profiles, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:20.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 217/260 (darwin, registration chatgpt-then-cua, maws, browser, ordinary, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 218/260 (darwin, registration chatgpt-then-cua, maws, browser, ordinary, override cua, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 219/260 (darwin, registration chatgpt-then-cua, maws, browser, ordinary, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 221/260 (darwin, registration chatgpt-then-cua, maws, browser, profiles, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 222/260 (darwin, registration chatgpt-then-cua, maws, browser, profiles, override cua, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 223/260 (darwin, registration chatgpt-then-cua, maws, browser, profiles, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 233/260 (darwin, registration chatgpt-then-cua, maws, computer,browser, ordinary, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (macos_native_peer_requires_vendor): the computer surface on macOS, whose helper accepts only the vendor host's node_repl as a peer until #117. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 235/260 (darwin, registration chatgpt-then-cua, maws, computer,browser, ordinary, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 237/260 (darwin, registration chatgpt-then-cua, maws, computer,browser, profiles, override unset, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (macos_native_peer_requires_vendor): the computer surface on macOS, whose helper accepts only the vendor host's node_repl as a peer until #117. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 238/260 (darwin, registration chatgpt-then-cua, maws, computer,browser, profiles, override cua, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "refused (repl_host_refused): CUA_REPL_HOST=cua is not supported with the computer surface on macOS: its computer-use helper accepts only the vendor host's node_repl as a peer until #117 replaces it. Use CUA_SHIM_SURFACES=browser for cua's own host, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor). Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-selection/m5-WCw5C7/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z row 239/260 (darwin, registration chatgpt-then-cua, maws, computer,browser, profiles, override vendor, node24, managed Node): The input did not match the regular expression /MAWS/. Input:
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2023-11-14T22:13:21.000Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+2026-10-16T18:09:45Z 
+2026-10-16T18:09:45Z check cache: ENOENT: no such file or directory, scandir '/Users/new/.local/share/cua-parity-selection/m5-WCw5C7/state/handshake'

@@ -209,8 +209,9 @@ test('the Deadline reaches the backend as the call\'s timeoutMs; a spent one dis
 
 test('a first attachment gives each setup command what the command has left, not the allowance it started with', async t => {
   // A controlled clock: time passes only while the backend answers, 20 ms per answer, so what each command is given
-  // is checked exactly, whatever the machine's load.
-  t.mock.timers.enable({apis: ['Date'], now: 1_000_000});
+  // is checked exactly, whatever the machine's load. setTimeout is the test's too, so the controller's own deadline
+  // timers (Deadline.race) run on the same clock.
+  t.mock.timers.enable({apis: ['Date', 'setTimeout'], now: 1_000_000});
   const api = scriptedApi();
   for (const op of ['attach', 'executeCdp']) {
     const answer = api[op];

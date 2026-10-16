@@ -30,7 +30,10 @@
 // `repl.host` names the REPL host a connection here runs (launch.mjs replHostFor, with the surfaces CUA_SHIM_SURFACES
 // names) and the one the browser-only profile listing runs (profiles_list's live check, cua profiles list and bind),
 // each with its reason, and the browser route and the registration (or absence of one) that decided the browser side.
-// It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets.
+// It is `pass` while both resolve to a host a launch can run, else `fail` naming the refusal every such launch meets,
+// and `warn` where one would default to cua's own host but no Node 24 or later resolves here (own_host_node_unavailable:
+// that session keeps the vendor host), naming the candidates tried and both remedies. Node is resolved once for both, as
+// a connection resolves it once (`resolveOwnNode`, launch.mjs ownHostNode by default, injectable for tests).
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when one of the
 // profile's write roots ($CUA_HOME/run, $TMPDIR) overlaps a trusted code path (the release's modules, the checkout's
 // src/repl-host, src/services and src/secrets) or the runtime's CODEX_HOME: `cua serve` and the listing launch refuse such a launch.
@@ -55,7 +58,7 @@ import {homedir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {CuaError} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
-import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, browserSelectionFor, browserServiceFor, describeBrowserRoute, ownHostNode, replHostFor} from './launch.mjs';
+import {BROWSER_SERVICE, BROWSER_SERVICE_IMPL_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, REPL_HOST_DIR, SERVICE_SUPPORT_DIRS, SKY_SERVICE, NODE_FLOOR, browserSelectionFor, browserServiceFor, describeBrowserRoute, ownHostNode, replHostFor} from './launch.mjs';
 import {SANDBOX_CONFLICT_HINT, describeConflicts, protectedPaths, sandboxConflicts, sandboxModeFrom, scopedWriteRoots, tmpdirRoot} from './sandbox.mjs';
 import {loadPins, selectPin, locateRuntime, recoveryHint} from './manifest.mjs';
 import {checkLayout, checkVendorManifest, checkIpc, verifyCodeSignatures, ipcVersionsIn} from './checks.mjs';
@@ -80,7 +83,7 @@ const LIVE_PROBE = 'scripts/probe-runtime.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectLogin = defaultInspectLogin, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const route = chromeRoute(home);
@@ -150,7 +153,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
   checks.push(browserServiceCheck(home, env));
-  checks.push(replHostCheck(home, env, host.platform));
+  checks.push(replHostCheck(home, env, host.platform, resolveOwnNode));
   checks.push(route === 'cua' ? result('codex.login', 'skip', 'not needed: the cua extension route needs no Codex login (the ChatGPT extension route does)')
     : await codexLoginCheck({home, runtime: untrusted ? null : runtime, untrusted, inspectLogin}));
   checks.push(...await inspectChrome({home, host, env, route}));
@@ -183,39 +186,53 @@ function browserServiceCheck(home, env) {
   }
 }
 
+const ROLLBACK = 'CUA_REPL_HOST=vendor keeps the vendor host';
 const REPL_HOST_REASONS = {
-  explicit: host => `CUA_REPL_HOST=${host}`,
+  explicit: ({host}) => `CUA_REPL_HOST=${host}`,
   vendor_browser_route: () => 'the browser surface\'s service is the vendor\'s, which only the vendor host runs',
   macos_native_peer_requires_vendor: () => 'the computer surface on macOS, whose helper accepts only the vendor host\'s node_repl as a peer until #117',
-  staged_vendor_default: () => 'CUA_REPL_HOST is unset, and cua\'s own host is not yet a default (#116 makes it one for Linux and browser-only sessions in its last stage)',
+  linux: () => `CUA_REPL_HOST is unset, and cua's own host is the default on Linux (the browser surface, if on, uses cua's browser service); ${ROLLBACK}`,
+  browser_only: () => `CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; ${ROLLBACK}`,
+  own_host_node_unavailable: ({nodeTried}) => `CUA_REPL_HOST is unset, and this session would default to cua's own host, but cua's own host needs Node ${NODE_FLOOR} or later and none was found (${nodeTried.join(', ')}), so it keeps the vendor host. To move it to cua's own host, install Node ${NODE_FLOOR} or later, or set CUA_NODE to the absolute path of one`,
 };
 
-// The host a launch with `surfaces` here would run -> {host, reason, browser} or, refused, {code, message, browser}.
-function replHostSelection(home, env, platform, surfaces) {
+// The host a launch with `surfaces` here would run -> {host, reason, node?, nodeTried?, browser} or, refused,
+// {code, message, browser}. `resolveOwnNode` is the check's one Node resolution, shared by the session and the listing.
+function replHostSelection(home, env, platform, surfaces, resolveOwnNode) {
   let browser = null;
   try {
     browser = surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
-    const selected = replHostFor({platform, surfaces, ambient: env, browserSelection: browser});
-    // The own host runs only on a Node this environment resolves (the launch's own check, repl_host_node).
-    if (selected.host === 'cua') return {...selected, browser, node: ownHostNode({ambient: env})};
-    return {...selected, browser};
+    return {...replHostFor({platform, surfaces, ambient: env, browserSelection: browser, resolveOwnNode}), browser};
   } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return {code: error.code, message: error.message, browser};
   }
 }
 
-function replHostCheck(home, env, platform) {
+// The own host's Node as `resolve` finds it, asked at most once: a connection resolves it once, and the row's two
+// selections (the session's and the listing's) must agree as a connection and its listing would.
+function resolvedOnce(resolve) {
+  let outcome;
+  return () => {
+    outcome ??= (() => { try { return {node: resolve()}; } catch (error) { return {error}; } })();
+    if (outcome.error) throw outcome.error;
+    return outcome.node;
+  };
+}
+
+function replHostCheck(home, env, platform, resolveOwnNode) {
   let surfaces;
   try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     return result('repl.host', 'fail', `${error.message}; every connection is refused`);
   }
-  const session = replHostSelection(home, env, platform, surfaces);
-  const listing = replHostSelection(home, env, platform, ['browser']);
-  const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason}): ${REPL_HOST_REASONS[r.reason](r.host)}${r.node ? `, on Node ${r.node}` : ''}`);
+  const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env})));
+  const session = replHostSelection(home, env, platform, surfaces, resolve);
+  const listing = replHostSelection(home, env, platform, ['browser'], resolve);
+  const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}`);
   const route = !surfaces.includes('browser') ? 'none, no browser surface' : (session.browser ? describeBrowserRoute(session.browser) : 'not resolved');
-  return result('repl.host', session.code || listing.code ? 'fail' : 'pass',
+  const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable') ? 'warn' : 'pass';
+  return result('repl.host', status,
     `${words(session)}. Browser route: ${route}. The profile listing (browser only): ${words(listing)}. CUA_REPL_HOST=cua or vendor chooses`);
 }
 
@@ -424,10 +441,11 @@ async function consoleRow(env, uid, readConsole, whose) {
 // One-line human verdict that never overstates `ok`: blocked checks leave live capability unverified.
 export function summarize(report) {
   if (!report.ok) return 'unhealthy: see FAIL lines';
-  const blocked = report.checks.filter(c => c.status === 'blocked').map(c => c.name);
-  return blocked.length
+  const named = status => report.checks.filter(c => c.status === status).map(c => c.name);
+  const blocked = named('blocked'), warned = named('warn');
+  return (blocked.length
     ? `passive runtime checks pass; live capability remains unverified (blocked: ${blocked.join(', ')})`
-    : 'passive runtime checks pass';
+    : 'passive runtime checks pass') + (warned.length ? `; see WARN lines (warn: ${warned.join(', ')})` : '');
 }
 
 export function classifyHelper({socket, holders}, {expectedIpc, runtimeRoot}) {

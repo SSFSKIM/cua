@@ -136,14 +136,15 @@ export const listingSandboxMode = (ambient, platform) => sandboxModeFrom(ambient
 
 // The launch resolves its browser service and REPL host from `ambient` as a browser-only connection of its own would
 // (src/runtime/launch.mjs replHostFor), so a refused selection fails the listing before anything is launched.
-// `prepareLaunch` may adjust the launch record before it is spawned; it exists for tests, as openConnection's does.
-export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns, prepareLaunch = launch => launch}) {
+// `prepareLaunch` may adjust the launch record before it is spawned, and `resolveOwnNode` resolves the own host's Node
+// (replHostFor's); both exist for tests, as openConnection's do.
+export async function listLiveBackends({home, runtime, ambient = process.env, limits, tabCounts = true, sandbox, probeUserns, resolveOwnNode, prepareLaunch = launch => launch}) {
   sandbox ??= listingSandboxMode(ambient, runtime.manifest.platform);
   const sessionId = randomUUID();
   const claim = claimRunSession(home, sessionId);
   let launch;
   try {
-    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled'});
+    launch = buildLaunch({runtime, home, sessionId, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', resolveOwnNode});
     assertSandboxFits(sandbox, launch);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, probe: probeUserns});
     launch = prepareLaunch(launch);

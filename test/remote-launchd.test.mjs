@@ -120,6 +120,27 @@ test('install writes CUA_REPL_HOST into the job only when it was given, cua or v
   assert.equal(launchctl.calls.length, calls);
 });
 
+// CUA_NODE (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16): as CUA_REPL_HOST, only an explicit
+// value is persisted, so a job finds the Node 24 its own host needs (a resident Linux agent whose system Node is 22) and
+// an unset install resolves the own host's Node afresh at each connection; a value that is not an absolute path is
+// refused before anything is written.
+test('install writes CUA_NODE into the job only when it was given, as given, never a resolved Node, and refuses one that is not an absolute path first', async t => {
+  const {home, install, plist, launchctl} = setup(t);
+  for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_NODE: ''}]) {
+    await install({http: '127.0.0.1:7801', env});
+    assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_NODE)}: resolved at each connection`);
+  }
+  // Carried as given: not resolved to a real path or probed, so the job follows the path (a Node upgraded in place).
+  await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_NODE: '/opt/node-24/bin/node', CUA_REPL_HOST: 'cua'}});
+  assert.deepEqual(readPlist(readFileSync(plist, 'utf8')).environment, {...{CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, CUA_REPL_HOST: 'cua', CUA_NODE: '/opt/node-24/bin/node'});
+  const calls = launchctl.calls.length;
+  const before = readFileSync(plist, 'utf8');
+  for (const bad of ['node', 'bin/node', '~/node'])
+    await assert.rejects(install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_NODE: bad}}), {code: 'invalid_setting', message: /CUA_NODE must be the absolute path of a Node executable/}, bad);
+  assert.equal(readFileSync(plist, 'utf8'), before, 'a refused setting changes nothing');
+  assert.equal(launchctl.calls.length, calls);
+});
+
 test('install refuses a relay URL that is not wss: or loopback ws: before writing anything', async t => {
   const {home, install, plist, launchctl} = setup(t);
   const file = join(home, 'remote', 'device.json');

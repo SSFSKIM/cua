@@ -62,7 +62,12 @@ export async function withManagedNodeUnavailable(home,run){
 export async function ordinaryCall({home,env,node}){
  let launchNode;
  const client=new StdioClient({command:node,args:['scripts/repl-parity/selection-serve.mjs'],env,cwd:process.cwd(),closeTimeoutMs:15000,onNotification:message=>{if(message.method==='cua/paritySelectionLaunch')launchNode=message.params.node;}});
- try{const init=await client.initialize(),result=await client.call('js_reset');if(result.isError)throw new Error('js_reset failed');assert.ok(launchNode,'Missing real launch Node observation');return {serverInfo:init.serverInfo,_meta:result._meta??null,launchNode};}
+ try{
+  const init=await client.initialize();
+  // Production records the handshake only after a live tools/list answers; initialize and reset alone never seed it.
+  await client.request('tools/list');
+  const result=await client.call('js_reset');if(result.isError)throw new Error('js_reset failed');assert.ok(launchNode,'Missing real launch Node observation');return {serverInfo:init.serverInfo,_meta:result._meta??null,launchNode};
+ }
  finally{await client.close();}
 }
 export async function runSelection({prepared,node22}){

@@ -63,8 +63,9 @@ function runWorker(env, requests = SKY_REQUESTS, {nodeRepl = false} = {}) {
   }));
 }
 
-// `cuaRoute`: the home has cua's Chrome registration, whose default browser service is cua's.
-function launchWithFakeVendor(t, {cuaRoute = false, ...options} = {}) {
+// `cuaRoute`: the home has cua's Chrome registration, whose default browser service is cua's. `host`: the REPL host the
+// launch selects, explicitly (vendor unless named, as this hook copy is the vendor worker's); see ownAsVendorNames for cua.
+function launchWithFakeVendor(t, {cuaRoute = false, host = 'vendor', ambient = {}, ...options} = {}) {
   const s = scratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
@@ -74,8 +75,12 @@ function launchWithFakeVendor(t, {cuaRoute = false, ...options} = {}) {
   writeFileSync(runtime.paths.skyVendorService, 'export async function handleRpc(request) { return {vendor: request.type, text: request.args?.[0]?.text}; }\n');
   mkdirSync(dirname(runtime.paths.browserVendorService), {recursive: true});
   writeFileSync(runtime.paths.browserVendorService, 'export async function handleRpc(request) { return {vendor: request.method}; }\n');
-  return buildLaunch({runtime, home, sessionId: SESSION, ambient: {}, services: {sky: SKY_SERVICE}, ...options});
+  return buildLaunch({runtime, home, sessionId: SESSION, ambient: {...ambient, CUA_REPL_HOST: host}, services: {sky: SKY_SERVICE}, resolveOwnNode: () => process.execPath, ...options});
 }
+
+// An own-host launch's environment under the names this hook copy reads: the own trusted worker ports the same
+// realpath rule (NR:trusted-worker.js:19-60) over CUA_REPL_TRUSTED_SERVICES and CUA_REPL_TRUSTED_CODE_PATHS.
+const ownAsVendorNames = env => ({...env, NODE_REPL_TRUSTED_SERVICES: env.CUA_REPL_TRUSTED_SERVICES, NODE_REPL_TRUSTED_CODE_PATHS: env.CUA_REPL_TRUSTED_CODE_PATHS});
 
 test('the production sky service and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
   const {env} = launchWithFakeVendor(t, {secretsUnavailable: 'secrets_disabled'});
@@ -118,14 +123,19 @@ test('the production browser service under the vendor selection and everything i
 // launch's environment.
 const CUA_BROWSER_REQUESTS = ['browser', {method: 'setup', params: {environment: 'codex-app'}}, BROWSER_REQUESTS[2]];
 
-test('cua\'s own browser service, selected by default on the cua route, and everything it imports load under exactly the launch\'s trusted paths', {skip: typeof registerHooks !== 'function'}, async t => {
-  const {env} = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', cuaRoute: true});
-  assert.equal(env.CUA_BROWSER_SERVICE, 'cua', 'the default on the cua route, written out by the launch');
-  const [setup, reference] = await runWorker(env, CUA_BROWSER_REQUESTS, {nodeRepl: true});
-  assert.equal(setup.loadError, undefined, setup.loadError);
-  assert.deepEqual(Object.keys(setup).sort(), ['apiManifest', 'disabledMemberIds'], 'cua\'s setup, not the fake vendor\'s');
-  assert.equal(setup.apiManifest.root, 'Agent');
-  assert.match(reference.error, /\[secrets_disabled\]$/, 'a reference fails closed with the launch\'s reason');
+// On both hosts: the vendor's, and cua's own, which a browser-only session on the cua route runs by default.
+test('cua\'s own browser service, selected by default on the cua route, and everything it imports load under exactly the launch\'s trusted paths, on either host', {skip: typeof registerHooks !== 'function'}, async t => {
+  for (const host of ['vendor', 'cua']) {
+    const launch = launchWithFakeVendor(t, {surfaces: ['browser'], services: {browser: BROWSER_SERVICE}, secretsUnavailable: 'secrets_disabled', cuaRoute: true, host});
+    assert.equal(launch.replHost.host, host);
+    const env = host === 'cua' ? ownAsVendorNames(launch.env) : launch.env;
+    assert.equal(env.CUA_BROWSER_SERVICE, 'cua', `${host}: the default on the cua route, written out by the launch`);
+    const [setup, reference] = await runWorker(env, CUA_BROWSER_REQUESTS, {nodeRepl: true});
+    assert.equal(setup.loadError, undefined, `${host}: ${setup.loadError}`);
+    assert.deepEqual(Object.keys(setup).sort(), ['apiManifest', 'disabledMemberIds'], `${host}: cua's setup, not the fake vendor's`);
+    assert.equal(setup.apiManifest.root, 'Agent');
+    assert.match(reference.error, /\[secrets_disabled\]$/, `${host}: a reference fails closed with the launch's reason`);
+  }
 });
 
 test('the hook copy is effective for cua\'s service: without its directory trusted, its setup cannot load', {skip: typeof registerHooks !== 'function'}, async t => {

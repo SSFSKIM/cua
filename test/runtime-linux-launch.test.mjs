@@ -23,10 +23,10 @@ function runtimeOf(t, pinJson) {
 }
 const linux = (t, arch = 'x64') => runtimeOf(t, linuxFixturePin({arch, sha256: 'a'.repeat(64), length: 1}));
 
-test('a Linux computer-use launch passes the desktop session through and pins the Linux helper and sandbox CLI', t => {
+test('a Linux computer-use launch on the vendor host passes the desktop session through and pins the Linux helper and sandbox CLI', t => {
   const {home, runtime} = linux(t, 'arm64');
   const p = runtime.paths;
-  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}});
+  const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, services: {sky: SKY_SERVICE}});
   assert.deepEqual(env, {
     HOME: '/home/u', USER: 'u', LOGNAME: 'u', LANG: 'C.UTF-8', ...DESKTOP,
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
@@ -44,6 +44,26 @@ test('a Linux computer-use launch passes the desktop session through and pins th
     CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
   });
   assert.equal(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
+});
+
+// M5's default (spec 2026-10-14-own-repl-host-design.md, "Selection is a connection fact"): a Linux session runs cua's
+// own host where a Node 24 or later resolves, with the same desktop session, helper and sandbox CLI.
+test('by default a Linux computer-use launch runs cua\'s own host on the resolved Node, with the same desktop session, helper and sandbox CLI', t => {
+  const {home, runtime} = linux(t, 'arm64');
+  const node = '/opt/node-24/bin/node';
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: () => node});
+  assert.deepEqual(launch.replHost, {host: 'cua', reason: 'linux'});
+  assert.equal(launch.command, node);
+  const {env} = launch;
+  for (const [key, value] of Object.entries(DESKTOP)) assert.equal(env[key], value, key);
+  assert.equal(env.OAI_SKY_LINUX_BIN, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64'));
+  assert.equal(env.CODEX_CLI_PATH, join(runtime.root, 'codex'));
+  assert.equal(env.CUA_REPL_NODE_PATH, node);
+  assert.equal(JSON.parse(env.CUA_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
+  assert.deepEqual(Object.keys(env).filter(key => key.startsWith('NODE_REPL_') && key !== 'NODE_REPL_DISABLE_ANALYTICS'), [], 'no vendor host setting');
+  // Where no Node 24 resolves, the vendor host, as before M5.
+  const fallback = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, resolveOwnNode: () => { throw Object.assign(new Error('none'), {code: 'repl_host_node', tried: []}); }});
+  assert.deepEqual([fallback.replHost, fallback.command], [{host: 'vendor', reason: 'own_host_node_unavailable'}, runtime.paths.node]);
 });
 
 test('without DBUS_SESSION_BUS_ADDRESS the bus is derived from XDG_RUNTIME_DIR; with neither, no bus variable is set', t => {

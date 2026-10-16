@@ -25,7 +25,7 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
     const installed = report.checks.find(c => c.name === 'runtime.installed');
     assert.equal(installed.status, 'fail');
     assert.match(installed.detail, /cua install/);
-    for (const c of report.checks) assert.ok(['pass', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
+    for (const c of report.checks) assert.ok(['pass', 'warn', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
     for (const name of ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'])
       assert.equal(report.checks.find(c => c.name === name)?.status, 'skip', name);
   } finally { s.cleanup(); }

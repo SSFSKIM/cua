@@ -3,11 +3,14 @@ import {resolve,join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {execFileSync} from 'node:child_process';
 import {RemoteProof,disconnectProbe,checkHost} from './remote.mjs';
-import {readDevices} from '../../src/remote/devices.mjs';
+import {readDevices,endpointOf} from '../../src/remote/devices.mjs';
 import {root,remoteCommand,quote,linuxSession,ownNodeEnv} from './topology.mjs';
 import {StdioClient,textOf} from '../browser-parity/mcp.mjs';
 const json=file=>JSON.parse(readFileSync(file,'utf8'));
-const clientFor=e=>new StdioClient({command:process.execPath,args:[join(root,'scripts/repl-parity/remote-client.mjs'),e.name],timeoutMs:150000});
+export function assertRegisteredEndpoint(endpoint,entry){
+ if(!entry||entry.deviceId!==endpoint.deviceId||endpointOf(entry)!==endpoint.relayEndpoint)throw new Error('Client registration identity does not match the prepared endpoint');
+}
+const clientFor=e=>{assertRegisteredEndpoint(e,readDevices()[e.name]);return new StdioClient({command:process.execPath,args:[join(root,'scripts/repl-parity/remote-client.mjs'),e.name],timeoutMs:150000});};
 async function observedClient(e){const client=clientFor(e);try{const init=await client.initialize();const result=await client.call('js',{title:'Remote answering host',code:'nodeRepl.write("remote-proof");'});if(result.isError||!textOf(result).includes('remote-proof'))throw new Error('Remote real call failed');return {client,observation:checkHost(e.host,{host:e.host,serverInfo:init.serverInfo,_meta:result._meta??null,executionFacts:e.executionFacts})};}catch(error){await client.close();throw error;}}
 export function disconnectCell(directory){return `var fs=await import('node:fs');var proofDir=${JSON.stringify(directory)};fs.appendFileSync(proofDir+'/counter','1\\n');fs.writeFileSync(proofDir+'/started','started');var deadline=Date.now()+60000;while(!fs.existsSync(proofDir+'/release')){if(Date.now()>deadline)throw new Error('fixture release deadline');await new Promise(r=>setTimeout(r,50));}fs.writeFileSync(proofDir+'/done','done');`;}
 export async function liveDisconnect(e,helper){
@@ -44,7 +47,7 @@ export async function runRemoteProof(v){
   stop:async e=>{const h=helpers.get(e.device);if(!h?.attached)throw new Error('No live ownership handle; do not signal a journal PID. Close the original foreground controller first.');await h.request('stop');},
   remove:async e=>{
    const registered=readDevices()[e.name];
-   if(registered&&registered.deviceId!==e.deviceId)throw new Error('Client registration is not this experiment; refusing cleanup');
+   if(registered)assertRegisteredEndpoint(e,registered);
    if(registered)execFileSync(process.execPath,[join(root,'bin/cua.mjs'),'devices','remove',e.name],{stdio:'ignore'});
    await (await helper(e.device)).request('remove',e);
   },

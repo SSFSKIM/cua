@@ -1,6 +1,12 @@
 import {test} from 'node:test';
 import {EventEmitter} from 'node:events';
 import {deviceSession} from '../../scripts/repl-parity/remote-device.mjs';
+import {assertRegisteredEndpoint} from '../../scripts/repl-parity/remote-controller.mjs';
+test('an existing device with the same name cannot impersonate this experiment endpoint',()=>{
+ const endpoint={deviceId:'owned',relayEndpoint:'https://relay.test/d/owned/mcp'};
+ assert.doesNotThrow(()=>assertRegisteredEndpoint(endpoint,{deviceId:'owned',relayUrl:'https://relay.test'}));
+ for(const entry of [undefined,{deviceId:'other',relayUrl:'https://relay.test'},{deviceId:'owned',relayUrl:'https://other.test'}])assert.throws(()=>assertRegisteredEndpoint(endpoint,entry),/identity/);
+});
 
 test('device adapter requires its own PID readiness and bounds stop without touching another process',async()=>{
  const child=new EventEmitter();Object.assign(child,{pid:123,exitCode:null});const signals=[],launches=[];

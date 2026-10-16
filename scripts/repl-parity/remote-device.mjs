@@ -48,7 +48,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true}
   if(typeof binding.chromeProfileDirectory!=='string'||!binding.chromeProfileDirectory||/[\/\\\0]/.test(binding.chromeProfileDirectory)||['.','..'].includes(binding.chromeProfileDirectory))throw new Error('Invalid prepared profile directory name');
   mkdirSync(backendDir(home),{recursive:true,mode:0o700});
   const name=socketNameFor(binding.extensionInstanceId);
-  symlinkSync(socketPathFor(prepared.home,name),socketPathFor(home,name));
+  symlinkSync(socketPathFor(prepared.discoveryHome??prepared.home,name),socketPathFor(home,name));
   writeFileSync(cuaRecordFile(home),JSON.stringify({schema:1,route:'cua',launcher:null,backendsDir:backendDir(home),browsers:{}}),{mode:0o600});
   writeFileSync(join(home,'profiles.json'),JSON.stringify({version:1,profiles:{[prepared.profile]:binding}}),{mode:0o600});
   // Agent health probes read Local State. Give them synthetic presence-only facts in a private HOME, never the

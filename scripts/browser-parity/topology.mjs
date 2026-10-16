@@ -24,12 +24,14 @@ npm ci --silent
 node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';const key=${JSON.stringify(profile)};const r=JSON.parse(execFileSync(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',env:{...process.env,CUA_SHIM_SURFACES:'browser',CUA_SHIM_SECRETS:'off',CUA_REPL_HOST:'vendor',CUA_BROWSER_SERVICE:'cua'}}));(${assertPreparedProfile.toString()})(r,key);`)}
 node --input-type=module -e ${quote(`import {defaultHome} from './src/runtime/layout.mjs';import {executionFacts} from './scripts/repl-parity/provenance.mjs';import {execFileSync} from 'node:child_process';console.log(JSON.stringify({...executionFacts({source:defaultHome()}),commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),checkout:process.cwd(),home:defaultHome(),profile:${JSON.stringify(profile)},device:${JSON.stringify(device)},fixturePort:48732}))`)}`);
 }
-export function serveCommand({device,service,replHost='vendor',home,checkout=root}) {
+export function serveCommand({device,service,replHost='vendor',home,checkout=root,userHome,nodeMode,nodeOverride}) {
   if(!['vendor','cua'].includes(replHost))throw new Error('Invalid REPL host');
   if(!['vendor','cua'].includes(service)) throw new Error('service must be vendor or cua');
   if(device==='local') return {command:process.execPath,args:[fileURLToPath(new URL('../../test/browser-parity/fake-serve.mjs',import.meta.url))],cwd:root,
     env:{...process.env,HOME:home,CUA_HOME:home,CUA_BROWSER_SERVICE:service,CUA_REPL_HOST:replHost,CUA_SHIM_SURFACES:'browser'}};
-  return ssh(device,`cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_BROWSER_SERVICE=${quote(service)} CUA_REPL_HOST=${quote(replHost)} CUA_SHIM_SECRETS=off CUA_SHIM_SURFACES='browser' node test/repl-parity/serve-production.mjs`);
+  const nodeEnv=('-u CUA_NODE -u CUA_PARITY_NODE_MODE ')+(['managed','diagnostic-override'].includes(nodeMode)?`CUA_PARITY_NODE_MODE=${quote(nodeMode)} `:'')+(nodeOverride?`CUA_NODE=${quote(nodeOverride)} `:'');
+  const homeEnv=userHome?`HOME=${quote(userHome)} CHROME_CONFIG_HOME=${quote(userHome+'/.config')} XDG_CONFIG_HOME=${quote(userHome+'/.config')} `:'';
+  return ssh(device,`cd ${quote(checkout)} && exec env ${nodeEnv}${homeEnv}CUA_HOME=${quote(home)} CUA_BROWSER_SERVICE=${quote(service)} CUA_REPL_HOST=${quote(replHost)} CUA_SHIM_SECRETS=off CUA_SHIM_SURFACES='browser' node test/repl-parity/serve-production.mjs`);
 }
 // The real `cua serve` from this checkout in a scratch home (the capability host's runs). Its environment is built, not
 // inherited: only what a process needs to run (PATH, TMPDIR, locale, user name) comes from the caller; HOME is a

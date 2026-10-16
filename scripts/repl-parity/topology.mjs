@@ -14,22 +14,24 @@ export const linuxSession=`if [ "$(uname -s)" = Linux ]; then
  eval "$cua_parity_desktop_env"
  export CUA_PARITY_SCRATCH_PREFIX=${parityScratchPrefix(process.env)}
 fi`;
-// The device's own-host Node, passed in the harness's remote command environment (never a shell profile): the path
-// `prepare --node` named and recorded (facts.ownNode), or nothing, leaving the device's PATH to resolve it.
-export const ownNodeEnv=facts=>(facts?.ownNode?.path?`CUA_NODE=${quote(facts.ownNode.path)} `:'')+(facts?.chromeLaunch?'CUA_PARITY_CAPTURE_CHROME=1 ':'');
+// A resolved Node is an observation, never an override. Clear ambient CUA_NODE; only prepare --node diagnostics
+// explicitly reintroduce it. This string is env options followed by assignments, so it precedes other assignments.
+export const ownNodeEnv=facts=>'-u CUA_NODE -u CUA_PARITY_NODE_MODE '+(['managed','diagnostic-override'].includes(facts?.nodeMode)?`CUA_PARITY_NODE_MODE=${quote(facts.nodeMode)} `:'')+(facts?.nodeOverride?`CUA_NODE=${quote(facts.nodeOverride)} `:'')+(facts?.chromeLaunch?'CUA_PARITY_CAPTURE_CHROME=1 ':'');
+export const preparedHomeEnv=facts=>facts?.userHome?`HOME=${quote(facts.userHome)} CHROME_CONFIG_HOME=${quote(facts.userHome+'/.config')} XDG_CONFIG_HOME=${quote(facts.userHome+'/.config')} `:'';
 export function prepareCommand({device,commit,profile,node,home=device==='cua-linux'?'/home/admin/.local/share/cua-h4':undefined}) {
   if(!['mini','cua-linux'].includes(device))throw new Error('prepare requires a remote device');
   if(home!==undefined&&!/^\/[^\0\n]*$/.test(home))throw new Error('prepare --home needs an absolute path');
   if(node!==undefined&&!/^\/[^\0\n]*$/.test(node))throw new Error('prepare --node needs the absolute path of the device\'s Node');
-  // Reuse clone/fetch/cleanliness/installation policy; readiness below also supports discovery on Linux.
+  // Keep the clone/fetch/cleanliness discipline, replacing only its inline readiness with fresh owned preparation.
   const base=miniPrepareCommand({device,commit,profile:profile??'discovery'});
   const script=base.args.at(-1),start=script.indexOf('node --input-type=module');
-  base.args[base.args.length-1]=script.slice(0,start)+linuxSession+'\n'+(home?`export CUA_HOME=${quote(home)}\n`:'')+(device==='cua-linux'?'export CUA_PARITY_CAPTURE_CHROME=1\n':'')+(node?`export CUA_NODE=${quote(node)}\n`:'')+`node --input-type=module -e ${quote(`import {execFileSync} from 'node:child_process';import {defaultHome,readPointer} from './src/runtime/layout.mjs';import {executionFacts} from './scripts/repl-parity/provenance.mjs';const r=JSON.parse(execFileSync(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',env:{...process.env,CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:'vendor',CUA_BROWSER_SERVICE:'cua'}}));const ready=r.profiles?.filter(p=>p.ready&&p.extensionInstanceId)??[];const requested=${JSON.stringify(profile??null)};const selected=requested?ready.find(p=>p.key===requested):ready.length===1?ready[0]:null;if(!selected)throw new Error('prepare requires one ready bound profile; candidates: '+ready.map(p=>p.key).join(', '));console.log(JSON.stringify({...executionFacts({source:defaultHome()}),device:${JSON.stringify(device)},checkout:process.cwd(),commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),node:process.version,platform:process.platform,home:defaultHome(),release:readPointer(defaultHome()),profile:selected.key,chromeProfileDirectory:selected.chromeProfileDirectory??null,extensionInstanceId:selected.extensionInstanceId,display:process.env.DISPLAY??null,xSession:Object.fromEntries(['DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS','XDG_RUNTIME_DIR','XDG_DATA_DIRS'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]))}));`)}`;
+  const options=['--device',device,...(profile?['--profile',profile]:[]),...(home?['--home',home]:[]),...(node?['--node',node]:[])];
+  base.args[base.args.length-1]=script.slice(0,start)+linuxSession+'\nunset CUA_NODE CUA_PARITY_NODE_MODE\n'+(device==='cua-linux'?'export CUA_PARITY_CAPTURE_CHROME=1\n':'')+`CUA_PARITY_REMOTE=1 node scripts/repl-parity/prepare-device.mjs prepare ${options.map(quote).join(' ')}`;
   return base;
 }
 export function cellsCommand({device,checkout,home,host,fixtureServices=false,fixtureCase='',...facts}) {
   if(!['vendor','cua'].includes(host))throw new Error('Invalid host');
   if(device==='local')throw new Error('Local live runtime forbidden: use the double lane');
   const expectedFacts={device,checkout,home,...facts};
-  return {closeTimeoutMs:15000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_FIXTURE_CASE=${quote(fixtureCase)} CUA_PARITY_FIXTURE_SERVICES=${fixtureServices?'1':'0'} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-cells.mjs`),expectedFacts};
+  return {closeTimeoutMs:15000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}${preparedHomeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_FIXTURE_CASE=${quote(fixtureCase)} CUA_PARITY_FIXTURE_SERVICES=${fixtureServices?'1':'0'} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-cells.mjs`),expectedFacts};
 }

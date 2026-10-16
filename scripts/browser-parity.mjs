@@ -12,7 +12,8 @@ import {StdioClient,textOf} from './browser-parity/mcp.mjs';
 import {attest,runScenario} from './browser-parity/runner.mjs';
 import {compareRuns} from './browser-parity/compare.mjs';
 import {loadTraceAllowances} from './browser-parity/trace-tolerance.mjs';
-import {miniPrepareCommand,serveCommand,localCuaServeCommand,root,execute,remoteCommand,quote} from './browser-parity/topology.mjs';
+import {serveCommand,localCuaServeCommand,root,execute,remoteCommand,quote} from './browser-parity/topology.mjs';
+import {managePreparation} from './repl-parity/prepare-device.mjs';
 import {prepareCapabilityHome} from './browser-parity/capability-home.mjs';
 import {startCapabilityHost} from '../test/browser-parity/capability-host.mjs';
 import {fixtureProcess,traceControl} from './browser-parity/resources.mjs';
@@ -85,7 +86,7 @@ export function selectScenarioPaths(relativePaths,{local,backend,scenarios,corpu
   return paths;
 }
 export async function main(argv=process.argv.slice(2)) {
-  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},'repl-host':{type:'string',default:'vendor'},corpus:{type:'string',default:'parity'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},scenarios:{type:'string'},expected:{type:'string'},backend:{type:'string'},pending:{type:'string'},'pending-reason':{type:'string'}}});
+  const {values,positionals}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},service:{type:'string',default:'vendor'},'repl-host':{type:'string',default:'vendor'},corpus:{type:'string',default:'parity'},out:{type:'string'},profile:{type:'string'},commit:{type:'string'},home:{type:'string'},node:{type:'string'},scenarios:{type:'string'},expected:{type:'string'},backend:{type:'string'},pending:{type:'string'},'pending-reason':{type:'string'}}});
   const [action,a,b]=positionals;
   if(!['vendor','cua'].includes(values['repl-host']))throw new Error('Invalid REPL host');
   if(action==='diff') {
@@ -107,15 +108,15 @@ export async function main(argv=process.argv.slice(2)) {
     console.log(`${result.differences.length} ${values.expected?'unexpected differences':'differences'} (${result.cases} cases, ${result.cells} cells${values.expected?`, ${result.expected.length} expected`:''}${pending.length?`; ${pending.length} pending, not run: ${pending.map(p=>p.case).join(', ')}`:''}${values.scenarios?`; scenarios ${values.scenarios}`:''})`);
     return result.ok?0:1;
   }
-  if(!['prepare','run'].includes(action))throw new Error('Usage: browser-parity.mjs prepare|run|diff [options]');
+  if(!['prepare','cleanup-prepared','run'].includes(action))throw new Error('Usage: browser-parity.mjs prepare|cleanup-prepared|run|diff [options]');
   if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device))throw new Error('Invalid device');
-  if(action==='prepare') {
+  if(action==='prepare'||action==='cleanup-prepared') {
     if(values.device==='local')throw new Error('Local runs use only the fake backend; prepare is for the parity clone on a remote device');
-    const output=execute(miniPrepareCommand(values));
-    const meta=JSON.parse(output.trim().split('\n').at(-1));
+    const meta=managePreparation(action,{...values,journal:preparedPath(values.device)});
+    if(action==='cleanup-prepared'){console.log(JSON.stringify(meta));return 0;}
+    // Ownership is journaled before the fixture check, so a failed check still has an explicit cleanup path.
     const fixture=await fixtureProcess({...meta,device:values.device});
     await fixture.close();
-    mkdirSync(resolve(preparedPath(values.device),'..'),{recursive:true});writeFileSync(preparedPath(values.device),JSON.stringify(meta,null,2)+'\n');
     console.log(`prepared ${values.device} at ${meta.commit}, profile ${meta.profile}, fixture 48732`);return 0;
   }
   if(!values.out)throw new Error('run requires --out');
@@ -145,7 +146,7 @@ export async function main(argv=process.argv.slice(2)) {
   try {
     fixture=local?await startFixture({port:0}):await fixtureProcess(prepared);
     if(capability)capabilityHost=await startCapabilityHost({home:capabilityHome.dir});
-    trace=traceControl({device:values.device,home:prepared.home,path:join(prepared.home,'state',`parity-trace-${randomUUID()}.jsonl`)});
+    trace=traceControl({device:values.device,home:prepared.home,discoveryHome:prepared.discoveryHome,path:join(prepared.home,'state',`parity-trace-${randomUUID()}.jsonl`)});
     const scenarioRoot=join(root,corpusDir);
     const paths=selectScenarioPaths(scenariosAt(scenarioRoot).map(p=>relative(scenarioRoot,p)),{local,backend:values.backend,scenarios:values.scenarios,corpus:values.corpus}).map(p=>join(scenarioRoot,p));
     if(!paths.length)throw new Error('No scenarios matched');

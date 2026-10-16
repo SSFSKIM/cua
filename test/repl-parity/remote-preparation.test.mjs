@@ -7,7 +7,7 @@ import {prepareEndpoint} from '../../scripts/repl-parity/remote-device.mjs';
 import {socketPathFor,socketNameFor} from '../../src/chrome/extension.mjs';
 test('endpoint preparation installs only its scratch home, aliases one enrolled backend, and never returns enrollment credentials',()=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-remote-prep-test-'))),parent=join(root,'owned');mkdirSync(parent);
- const prepared={home:join(root,'source'),dirty:false,commit:'reviewed',release:'pinned',profile:'ssfs',extensionInstanceId:'fixture-backend'};
+ const prepared={home:join(root,'source'),discoveryHome:join(root,'original-backend'),dirty:false,commit:'reviewed',release:'pinned',profile:'ssfs',extensionInstanceId:'fixture-backend'};
  const commands=[],safe={deviceId:'x'.repeat(22),relayEndpoint:'https://relay.test/d/x/mcp',devicesEntry:'hashes-only'};
  const deps={directoryRoot:parent,tempRoot:'/not-this-test-directory',inspect:({source})=>({...prepared,home:source,ownNode:{path:source+'/node/24.x/bin/node',version:'v24.18.0'}}),registry:()=>({profiles:{ssfs:{route:'cua',chromeProfileDirectory:'Profile 1',extensionInstanceId:'fixture-backend'}}}),runCli:(home,args,{file}={})=>{
   commands.push({home,args});if(file)writeFileSync(file,JSON.stringify({clientCredential:'DO-NOT-RETURN'}),{flag:'wx',mode:0o600});
@@ -19,7 +19,7 @@ test('endpoint preparation installs only its scratch home, aliases one enrolled 
   assert.equal(statSync(join(endpoint.home,'enroll.json')).mode&0o777,0o600);assert.ok(!JSON.stringify(endpoint).includes('DO-NOT-RETURN'));
   assert.deepEqual(commands.map(c=>c.args),[['install'],['remote','enroll','--relay','wss://relay.test/ws','--json'],['remote','show','--json']]);assert.ok(commands.every(c=>c.home===endpoint.home));
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(endpoint.home,'profiles.json'),'utf8')).profiles),['ssfs']);
-  const name=socketNameFor('fixture-backend');assert.equal(readlinkSync(socketPathFor(endpoint.home,name)),socketPathFor(prepared.home,name));
+  const name=socketNameFor('fixture-backend');assert.equal(readlinkSync(socketPathFor(endpoint.home,name)),socketPathFor(prepared.discoveryHome,name));
  }finally{rmSync(root,{recursive:true,force:true});}
 });
 test('a fresh install without a scratch-owned managed Node refuses before enrollment',()=>{

@@ -17,16 +17,14 @@ test('M2 vendor pair covers every service oracle with no allowances or double-on
 });
 test('each service assertion accepts observed vendor results and rejects destroyed outcomes (M5 re-recording for the extended path case)',()=>{
  const run=load('vendor-1');
- const extendedRows=readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/long-native-pipe/services-vendor-1/results.jsonl',import.meta.url),'utf8').trim().split('\n').map(JSON.parse);
+ const extendedRows=readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/long-native-pipe/peer-witness/services-vendor-1/results.jsonl',import.meta.url),'utf8').trim().split('\n').map(JSON.parse);
  for(const scenario of services.filter(s=>s.platforms.includes(run.meta.platform))){
   const rows=(scenario.id==='cells/native-pipe/absolute-path'?extendedRows:run.rows).filter(r=>r.case===scenario.id&&r.cell);
   const raw=r=>({content:r.content,isError:r.isError,...(Object.hasOwn(r,'meta')?{_meta:r.meta}:{}),...(Object.hasOwn(r,'structuredContent')?{structuredContent:r.structuredContent}:{})});
   const groups=scenario.cells.map(c=>turnCellLabels(c).map(label=>rows.find(r=>r.cell===label)));
   const timings=groups.map(group=>Math.max(...group.map(r=>typeof r.ms==='object'?(r.ms.hostTurn??r.ms.elapsed):r.ms)));
   const results=groups.map((group,index)=>scenario.cells[index].witnessCount!==undefined?{replies:group.map(r=>({result:raw(r),observation:{...r.value,afterHookMs:r.ms.afterHook}}))}:raw(group[0]));
-  // The extended path case's only recording predates the peer witness (m5-evidence.test.mjs), so the current oracle refuses it.
-  if(scenario.id==='cells/native-pipe/absolute-path')assert.throws(()=>scenario.assert({results,timings}),/peer witness/);
-  else assert.equal(scenario.assert({results,timings}).ok,true,scenario.id);
+  assert.equal(scenario.assert({results,timings,platform:run.meta.platform}).ok,true,scenario.id);
   const destroyed=results.map(r=>r.replies?{replies:r.replies.map(reply=>({...reply,observation:{...reply.observation,hookCompletedBeforeAck:false}}))}:{...r,content:[],isError:!r.isError,_meta:{}});
   assert.throws(()=>scenario.assert({results:destroyed,timings}),undefined,`${scenario.id} must not pass empty/reversed outcomes`);
  }

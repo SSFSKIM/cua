@@ -17,10 +17,7 @@ test('M2 vendor pair covers every service oracle with no allowances or double-on
 });
 test('each service assertion accepts observed vendor results and rejects destroyed outcomes (M5 re-recording for the extended path case)',()=>{
  const run=load('vendor-1');
- const extendedRows=readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/services-vendor-1/results.jsonl',import.meta.url),'utf8').trim().split('\n').map(JSON.parse);
- // The new cell's isolated vendor observation pins its assertion before the extended pair is recorded.
- const probe=JSON.parse(readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/long-native-pipe/probe-vendor.json',import.meta.url),'utf8')).result;
- extendedRows.push({case:'cells/native-pipe/absolute-path',cell:'connect-over-limit',content:probe.content,isError:probe.isError,meta:probe._meta,ms:probe._meta['codex/nodeReplExecutionDurationMs']});
+ const extendedRows=readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/long-native-pipe/services-vendor-1/results.jsonl',import.meta.url),'utf8').trim().split('\n').map(JSON.parse);
  for(const scenario of services.filter(s=>s.platforms.includes(run.meta.platform))){
   const rows=(scenario.id==='cells/native-pipe/absolute-path'?extendedRows:run.rows).filter(r=>r.case===scenario.id&&r.cell);
   const raw=r=>({content:r.content,isError:r.isError,...(Object.hasOwn(r,'meta')?{_meta:r.meta}:{}),...(Object.hasOwn(r,'structuredContent')?{structuredContent:r.structuredContent}:{})});

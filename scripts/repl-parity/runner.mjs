@@ -29,7 +29,8 @@ export class AttestedConnections {
   }
   addObservations(observations,prefix){if(!observations.connections.length)return;validateAttestations({host:this.host,complete:true,...observations});for(const connection of observations.connections)this.externalConnections.push(`${prefix}/${connection}`);for(const a of observations.hostAttestations)this.hostAttestations.push({...a,connection:`${prefix}/${a.connection}`});}
   metadata(){return {connections:[...this.clients.map(c=>c.connection),...this.externalConnections],hostAttestations:this.hostAttestations};}
-  async close(){for(const {client} of this.clients){const status=await client.close();if(status.code!==0)throw new Error(`Harness connection cleanup failed (${status.code??status.signal})`);}}
+  // Every connection is closed before a failed one is reported, so one failure leaves no other serve running.
+  async close(){const failed=[];for(const {client,connection} of this.clients){const status=await client.close();if(status.code!==0)failed.push(`${connection} (${status.code??status.signal})`);}if(failed.length)throw new Error(`Harness connection cleanup failed: ${failed.join(', ')}`);}
 }
 export async function runRawScenario(scenario,{client,emit,checkout,reset=true,context={},profiles,replaceCode=code=>code}) {
   const results=[],timings=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});

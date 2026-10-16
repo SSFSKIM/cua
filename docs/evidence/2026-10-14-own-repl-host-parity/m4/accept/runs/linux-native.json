@@ -1,0 +1,85 @@
+{
+ "runner": "scripts/accept/linux-native.mjs",
+ "args": [],
+ "environment": {
+  "CUA_REPL_HOST": "cua",
+  "CUA_SHIM_SURFACES": "computer",
+  "CUA_NODE": "/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node"
+ },
+ "device": "cua-linux",
+ "checkout": "/home/admin/Developer/GitHub/cua-parity",
+ "commit": "a5ccc1b40b85fd688cd4f47d52a70ee3a09ec09b",
+ "harnessCommit": "60e5b8672326385b74ff8f34637b07940bf752c6",
+ "started": "2026-10-15T18:38:49.475Z",
+ "finished": "2026-10-15T18:39:15.177Z",
+ "exitCode": 0,
+ "report": {
+  "home": "/home/admin/.local/share/cua",
+  "sandbox": "(unset: the platform default)",
+  "steps": [
+   {
+    "name": "preconditions",
+    "status": "PASS",
+    "detail": {
+     "platform": "linux",
+     "display": ":0",
+     "gedit": "/usr/bin/gedit"
+    }
+   },
+   {
+    "name": "bind the fixture window by X11 id",
+    "status": "PASS",
+    "detail": {
+     "windowId": 14680312,
+     "app": "org.gnome.gedit",
+     "title": "fixture-a151a6.txt (/tmp/cua-linux-native-xR1LEl) - gedit"
+    }
+   },
+   {
+    "name": "type the marker and read it back from the accessibility tree",
+    "status": "PASS",
+    "detail": {
+     "source": "at_spi",
+     "readBack": true
+    }
+   },
+   {
+    "name": "screenshot of the window",
+    "status": "PASS",
+    "detail": {
+     "mimeType": "image/jpeg",
+     "bytes": 36895,
+     "savedTo": null
+    }
+   },
+   {
+    "name": "end_task",
+    "status": "PASS",
+    "detail": {
+     "status": "ended",
+     "ended": true,
+     "taskId": "6901190b-062b-4c23-8df0-18fe74d80e9e"
+    }
+   },
+   {
+    "name": "cua serve exited cleanly",
+    "status": "PASS",
+    "detail": {
+     "code": 0,
+     "signal": null
+    }
+   },
+   {
+    "name": "no run entry left for the connection",
+    "status": "PASS",
+    "detail": {
+     "before": [],
+     "after": []
+    }
+   }
+  ],
+  "marker": "cua-f2-a43b2ca4",
+  "status": "PASS"
+ },
+ "stderrTail": ""
+}

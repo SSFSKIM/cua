@@ -4596,5 +4596,77 @@
       }
     },
     "reason": "M3 selected-host identity only; version checked against the attested source commit. These cases have exactly the same declared cell-label set; no document or result bytes are waived."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "native/cua/computer",
+      "native/cua/computer.target",
+      "native/cua/computer.launch-app",
+      "native/cua/getapp",
+      "native/cua/listapps",
+      "native/cua/listwindows",
+      "native/target-app-decorated-tab/getaxstate",
+      "native/target-app-decorated-tab/getscreenshot",
+      "native/target-app-decorated-tab/getaxstateandscreenshot",
+      "native/target-app-decorated-tab/click",
+      "native/target-app-decorated-tab/drag",
+      "native/app/scroll",
+      "native/target-app-decorated-tab/scroll",
+      "native/target-app-decorated-tab/selecttext",
+      "native/target-app-decorated-tab/setvalue",
+      "native/target-app-decorated-tab/performsecondaryaction",
+      "native/app/presskey",
+      "native/app/typetext",
+      "native/app/paste"
+    ],
+    "cells": [
+      "exercise"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M4 selected-host identity only; version checked against the attested source commit. Native result, error and image fields remain compared."
+  },
+  {
+    "field": "meta.cua/replHost",
+    "cases": [
+      "secrets/native-live/linux/type-text",
+      "secrets/native-live/refuse/invalid-label",
+      "secrets/native-live/refuse/reserved-label",
+      "secrets/native-live/refuse/unsupported-shape",
+      "secrets/native-live/refuse/disabled",
+      "secrets/native-live/refuse/unavailable",
+      "secrets/native-live/refuse/unknown-label",
+      "secrets/native-live/refuse/unsafe-store",
+      "secrets/native-live/refuse/unreadable-store",
+      "secrets/native-live/errors/post-read-sanitized",
+      "secrets/native-live/reports/labels-not-values",
+      "secrets/native-live/no-substitution/embedded-marker",
+      "secrets/native-live/no-substitution/unsupported-methods-and-fields",
+      "secrets/native-live/no-substitution/javascript-strings"
+    ],
+    "cells": [
+      "setup",
+      "exercise"
+    ],
+    "vendor": {
+      "present": false
+    },
+    "cua": {
+      "present": true,
+      "value": {
+        "host": "cua",
+        "versionFrom": "attested-source"
+      }
+    },
+    "reason": "M4 selected-host identity only; version checked against the attested source commit. Native result, error and image fields remain compared."
   }
 ]

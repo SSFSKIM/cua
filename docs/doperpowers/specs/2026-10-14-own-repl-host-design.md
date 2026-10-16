@@ -20,7 +20,7 @@ execution, not reopen it.
 - [x] (2026-10-15T00:23Z) M1 — Kernel and supervisor; raw cell semantics on the mini (and cua-linux). Two tasks reviewed clean; whole-branch reviewer-high "correct" at dc7a86d. Own-host `cells --through M1` at 8f56fb5: mini 111/111 and cua-linux 112/112, 0 unexpected differences against the M0 vendor controls; serverInfo `cua-repl-host 0.2.0` attested on every connection.
 - [x] (2026-10-15T07:04Z) M2 — Trusted worker and privileged API; owned browser service and MAWS on the own host. Three tasks reviewed clean; whole-branch reviewer-high "correct" at bb3d59a. Mini, browser-only: services 41 cases 0 differences; tools contract 0 (Table 2 transform only); browser corpus 59/59 per host at e4ea7eb, 0 unexpected, 7 expected trace counts; MAWS live probe PASS with the own host attested. EOF drain bound for a suspended request deferred to M3.
 - [x] (2026-10-15T13:17Z) M3 — Owned cua API and documentation; complete facade coverage and profiles listing. Four tasks reviewed clean; whole-branch reviewer-high "correct". The own host with the owned facade against the M3 vendor controls on the mini, browser-only: api 290 cases, secrets-live 25 and docs-profiles 12 each 0 differences with identity slots only; tools contract 0; 59-case corpus 59/59, 0 unexpected; MAWS live probe PASS with per-session source records. core.md equals Table 3 plus the owner-approved amendment.
-- [ ] M4 — Linux native path, approvals and native baseline comparison.
+- [x] (2026-10-16T00:30Z) M4 — Linux native path, approvals and native baseline comparison. Three tasks reviewed clean; whole-branch reviewer-high "correct" at 47ba181. On cua-linux the own host answers `--suite all --through M4` with 0 unexpected differences against a fresh vendor pair (490 cases, 1,392 cells; identity slots and #135 only), every connection attesting `cua-repl-host 0.4.0`, and the three Linux acceptance runners pass. The native-baseline comparison stays open (acceptance 8): this sitting ran at load average 80–250, so it is diagnostic only and the authoritative triple moves to M5's Linux sitting. Gates run on ci-kit's hosted macOS runner (#143) at the PR head.
 - [ ] M5 — Per-surface defaults, final parity/performance/remote proofs, documentation and plugin release.
 
 ## Scope, inheritance and evidence
@@ -539,6 +539,96 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M4 task 3's follow-up, as built.
+  - **Orphaned tree.** Its root cause was a test double's deliberate busy loop, kept alive because M2's EOF drain was unbounded (M3 fixed that). What remained on the head: once a supervisor is SIGKILLed, nothing ends a kernel or worker that is busy in synchronous code. Each kernel and trusted worker now watches a lifeline FIFO whose only writer is the supervisor. A thread does the watching and exits the process when the FIFO closes. The setting is removed before the child's environment is copied, and test-harness kernels get lifelines too. The lifeline is verified live under the real macOS scoped sandbox before the PR; the Linux real-launcher check moves to M5's Linux sitting.
+  - **OS error text.** nativePipe OS errors use per-platform strerror tables (glibc on Linux, Darwin libc on macOS) for every errno the relay's syscalls can reach, not libuv's text.
+  - **M5 obligations.**
+    - Because the lifeline and the strerror tables changed the port after the M4 Linux `--suite all` recording (a5ccc1b), M5's Linux sitting re-records that pair at a head containing them. The two Linux sentences already recorded (os error 11 and os error 104) are byte-identical under the glibc table.
+    - M5 adds a live services row for a stat/connect failure sentence on both hosts.
+  - **Mini nativePipe re-check** at cbb64c1: own against a same-sitting vendor run shows 0 differences. Against `m2/vendor-1`, the only differences are the `proof` annotation the M4 oracle adds.
+  Rationale: The session ruled the orphan an M4 defect. Re-recording on Linux needs the VM, which is stopped until M5.
+  Date/Author: 2026-10-15, M4 task 3 executor, folded by the plan-executor.
+- Decision: Three session rulings at the end of M4 task 3's VM work. The session stopped the VM afterwards.
+  - (1) **The native-baseline compare in this sitting is diagnostic only.** The FAIL on getAXState, getScreenshot and the task timings is not accepted as a verdict. This Mac sat at load average 80–250, and the vendor control recorded in the same sitting was equally slow (AX 1,127 ms against M0's 426 ms). Both the own and vendor runs from this sitting are recorded as diagnostic, labelled with the load. The authoritative three own runs, plus a fresh vendor control, move to a quiet-machine sitting combined with M5's Linux steps. M4's PR states this as an open acceptance item, neither pass nor fail, and the Outcomes entry carries the load numbers.
+  - (2) **An orphaned own-host tree is an M4 defect.** The session ended an orphaned tree: supervisor pid 19955, then its sandbox sh, then the trusted worker. It started 2026-10-14 23:17 from the M1-era worktree under a scratch temp home, and was reparented to launchd. Its stdin was dead and the worker was spinning at 80–94% CPU. Two requirements follow, verified on the current head: (a) stdin EOF with no open requests exits the whole tree within the bounded drain; (b) a worker never busy-loops once its parent channel is gone. Every test that spawns a supervisor must also tear its tree down. A failure on any of these is an M4 fix, not tech debt.
+  - (3) **Task 3's nativePipe fixes go through review and re-recording.** They are two `src` fixes, so the whole-branch review covers them, and the Linux own-host `--suite all` evidence must be recorded at a head containing them (a5ccc1b or later).
+  Rationale: A timing verdict taken under extreme host load measures the machine, not the host. A spinning orphaned worker is a lifecycle defect in exactly the area this child owns.
+  Date/Author: 2026-10-15, session rulings, recorded by the plan-executor.
+- Decision: M4 task 1 (the Linux oracle) as built.
+  - **Native cases:** 19 live cases on real `sky_linux` with harness-owned gedit. Drag, scroll and click have reversible action witnesses: drag removes 15 contiguous characters, scroll moves a fixed-point witness from index 192 to index 821, and click removes one character at line 6. Each change is undone afterwards.
+  - **Full-tree check:** the AX tree must follow the pinned formatter's grammar: a named frame root, decimal ID-prefixed lines, tab hierarchy with no depth jumps, empty tails allowed, and a nested editable text node. Successive snapshots are not compared byte for byte.
+  - **Native secrets:** 14 secret cases at the service boundary.
+  - **Browser ids:** mapped by backend/profile identity.
+  - **Comparison scoping:** per-case configurations are compared only for selected cases, with legacy run-level equivalence.
+  - **Pending cells:** cell-level pending scoped to Linux/M4. The declaration hash-pins both M3 mini proofs, the projection replaces only the pending text, and an unexpected pass is reported.
+  - **Chrome launch provenance:** safe flags only; a value flag never consumes a following switch.
+  - **Vendor controls** at a5bb1cf: 493 cases (490 covered), 1,392 cells, 91 attestations per run, 0 differences, 0 allowances.
+  Rationale: This is the Linux oracle task 3 is graded against.
+  Date/Author: 2026-10-15, M4 task 1 executor and its reviews, folded by the plan-executor.
+- Decision: Two rules to keep machine load down, at the owner's request.
+  - (1) The session stops the cua-linux VM as soon as M4 task 3's live runs end, and restarts it when M5 reaches its Linux steps. The controller tells the session the moment task 3 is done with the VM, before review and PR work. M5 orders its code tasks and its mini-side runs before anything that needs cua-linux.
+  - (2) Local full `npm test` suites run one at a time and are never concurrent across executors. Focused test files may run in parallel.
+  Rationale: The load-sensitive flakes seen at load average 37–180 came from concurrent full suites, and the VM is idle between milestones.
+  Date/Author: 2026-10-15, session relaying the owner's request, recorded by the plan-executor.
+- Decision (amends the #141 entry): the pending-environment declaration works per cell. On Linux, the two logical scroll operations (coordinate and DOM) are declared once, citing #141. That declaration applies to all 14 api cases that execute those cells: every CuaAPI and DomCuaAPI member, plus `tab.cua`/`tab.dom_cua`. Every other cell in those cases still runs and is compared.
+  - Both runs must declare the same pending set, and the diff lists pending cells visibly. A pending cell that passes is reported.
+  - The two scroll-member obligations are pending on Linux and never counted as covered. The completeness gate accepts that only because a live proof on another platform exists, the mini's M3 api suite.
+  Rationale: Marking 14 whole cases pending would discard live Linux coverage of 12 members that work.
+  Date/Author: 2026-10-15, plan-executor ruling on M4 task 1's finding.
+- Decision: On cua-linux, the final M4 vendor and own pairs record exactly the two browser scroll cases (coordinate and DOM) as pending-environment, through the harness's declared `--pending` reason, citing #141.
+  - Those two cases are visible in the diff and never counted as covered.
+  - In the VM's Chrome, `Input.synthesizeScrollGesture` stalls at the 10,000 ms timeout for both hosts. It kept stalling after relaunches with the anti-throttling flags and with `--disable-gpu`.
+  - The gesture is synthesized by the cua browser service over CDP, on the same path in both lanes.
+  - The REPL-host path for these members is already proven live on the mini by M3's api suite.
+  - The Linux prepare facts record the Chrome launch line: flags, display and home.
+  Rationale: The failure is environmental and belongs to the browser service, not the host under test (session registered #141, parent #113). Holding M4 on it would not add evidence about the REPL host.
+  Date/Author: 2026-10-15, session ruling on the plan-executor's recommendation.
+- Decision: The nativePipe connect-timeout expiry, owed live since M2, is unreachable on both platforms and is proven by its socket-double unit test.
+  - On cua-linux the pinned vendor's connect to a saturated AF_UNIX listener also fails at once: `failed to connect native pipe: Resource temporarily unavailable (os error 11)` after about 1 ms, under the 1,000 ms budget. That is consistent with a non-blocking connect, which never waits on a full Unix-socket backlog.
+  - The live Linux case records the configured budget and that exact sentence, and both hosts must match it.
+  - The M2 socket-double expiry test is linked as the row's unit proof and labelled "live-unreachable: non-blocking connect".
+  - Linux transport abort differs from Darwin. On Linux the vendor delivers error-before-close and late replay with `Connection reset by peer (os error 104)`, and the oracle records platform-specific observed values.
+  Rationale: This revises the M2 premise that "a full backlog leaves connect pending on Linux". The vendor's observed behaviour refutes it, and inventing a fixture to force expiry would test something the vendor never does.
+  Date/Author: 2026-10-15, plan-executor ruling on M4 task 1's live probe.
+- Decision: M4 task 2 as built.
+  - **ApprovalStorage:** a no-callers verdict, with nothing ported. Neither the retained Linux Sky path (stdio transport) nor the owned wrappers and services call `config`/`readToml`/`writeToml`. The only caller is the vendor browser service, which never runs on the own host. Approval persistence stays proxy-owned. The verdict lives in the header of `privileged-node-repl.mjs`, and a guard test pins the worker's privileged API.
+  - **Linux native route:** it needed no production change. Tests on the production launch path cover it end to end: `sky_linux` runs as the trusted worker's non-detached stdio child, inside the worker's `own()` subtree, survives timeout and reset, is reaped on idle stop, close and worker death, and starts fresh on relaunch.
+  - **Native secrets:** substitution happens at the `{window,text}` shape; refusals come before input, and post-read errors are withheld.
+  - **Host version:** `REPL_HOST_VERSION` is 0.4.0, pinned literally in the identity test. All M4 evidence attests 0.4.0.
+  - **Still for task 3:** live Linux proof, including the Linux FIFO kernel-stdio branch.
+  Rationale: Design permits an evidence-backed no-callers verdict. The retained Linux machinery already carries the route.
+  Date/Author: 2026-10-15, M4 task 2 executor and its review, folded by the plan-executor.
+- Decision: On cua-linux, `prepare` and every live run of the cua browser service use `CUA_HOME=/home/admin/.local/share/cua-h4`, #113's cua-route home. The value travels in the harness's remote command environment, exactly like `CUA_NODE`, and the prepare facts record the home, the registration manifest and the route provenance.
+  - The VM's default home is vendor-routed: its registration and bindings belong to the OpenAI extension. It stays as it is.
+  - Nothing on the VM is re-registered or rebound.
+  - Root cause of the "no ready candidates" failure: since acd2e68 (M2), prepare has run `profiles list` with `CUA_BROWSER_SERVICE=cua` against the default home, where no cua host serves the bindings. M0 and M1 recorded on the Linux route resolved before that change.
+  - Separate gap, outside M4's scope: if `profiles list` with an explicit `CUA_BROWSER_SERVICE=cua` on a vendor-routed home reports `host_not_live` instead of refusing with a route diagnostic, that contradicts the explicit-override rule. It goes in tech-debt.
+  Rationale: The cua route exists on the VM only in the H4 home. The harness must name its home explicitly instead of inheriting a default that routes elsewhere.
+  Date/Author: 2026-10-15, session ruling after reproducing the cause on the VM, recorded by the plan-executor.
+- Decision: M4 runs as three tasks in one PR, against the cua-linux VM.
+  - **Task 1 (astra, sibling worktree, in parallel): the M4 oracle.**
+    - Vendor-side executable `native/` Linux cases for the 51 pending M4 obligations: bind, observe AX, act, verify, screenshot and end_task against harness-owned gedit windows, plus unsupported operations and observable vendor errors. Native secret rows cover the text methods.
+    - The browser `api` rows on Linux.
+    - The Linux live expiry of the nativePipe connect timeout, owed since M2.
+    - Browser ids mapped by backend/profile identity as a declared schema-known dynamic id. This is binding, carried from M3.
+    - Vendor `--suite all` controls on cua-linux.
+  - **Task 2 (opus): the port side.**
+    - The ApprovalStorage caller audit (`config`/`readToml`/`writeToml`), with only the needed subset implemented or an explicit no-callers verdict.
+    - The Linux native route through the owned worker: the unchanged Sky service and `sky_linux` as a supervised stdio child, with session cleanup.
+    - Native secret substitution.
+    - The single `REPL_HOST_VERSION` bump, binding from M3.
+  - **Task 3 (opus, after both are reviewed): the live runs.**
+    - Own `--suite all` on cua-linux against the vendor control.
+    - Three own native-baseline runs, then `compare` against M0's vendor baseline.
+    - The unchanged `linux-native`, `linux-chrome` and `linux-chrome-features` runners under host-attesting wrappers.
+  - **Binding:**
+    - `CUA_NODE` reaches the VM only through the harness's own command environment.
+    - The VM's `~/cua` and `~/cua-m4` stay untouched.
+    - Only harness-owned gedit windows are used, and the X session environment is used.
+    - Profile `me`.
+  - Locator polling recalibration from two or more vendor pairs happens before M5's repeats.
+  Rationale: Same oracle/subject separation as M0–M3. The three carried items are scheduled where their producers live.
+  Date/Author: 2026-10-15, plan-executor M4 pre-flight, with the session's post-merge instruction.
 - Decision: Three M3 task 4 findings are settled as follows.
   - **`REPL_HOST_VERSION` stays 0.3.0 through M3.** M4 bumps it once, since M4 changes the host again (ApprovalStorage, the Linux native path), and records all M4 evidence at the bumped version. M3's evidence tells the M2 and M3 0.3.0 hosts apart by attested source commit. Nothing ships to users before M5's default switch.
   - **Browser numbering race (M4 oracle input).** The browser service numbers browsers in the order backends answer, so with two bound mini profiles (ssfs, school) `browser-docs-before-state` can flip on either host. The harness will map browser ids by backend/profile identity, as a declared schema-known dynamic id, rather than by creation order. Until then, M3 records docs-profiles first and keeps the race runs as labelled diagnostics.
@@ -829,3 +919,8 @@ owned browser service/extension host. The new docs directory must be included in
   - The parallel oracle took more review waves than the port (four against one). Most findings were ways the oracle could pass a wrong host: empty or malformed traces, missing negative cases, ids projected before they were issued. Treat oracle review as the critical path.
   - Vendor nondeterminism needs mechanical absorption: the browser-id race and the locator polling counts are M4/M5 inputs.
   - The owner's document ruling held, with one narrow amendment for sentences the exclusion itself broke.
+- M4 (2026-10-16T00:30Z): the Linux native route runs through the owned trusted worker, with `sky_linux` as its supervised stdio child and native secret substitution for typeText and paste. ApprovalStorage has no callers, so nothing was ported. Against a fresh vendor pair at a5bb1cf (493 cases, 490 covered, 0 differences between the two vendor runs), the own host at a5ccc1b shows 0 unexpected differences over 490 compared cases and 1,392 cells; the expected entries are identity slots and the #135 departure. The two browser scroll members stay pending on Linux because VM Chrome stalls synthesized scroll gestures for both hosts (#141); the mini proved them at M3. nativePipe now reports OS errors with the platform's strerror text, a reader reset closes with its error as the Linux vendor does, and connect-timeout expiry is unreachable live on both platforms (a non-blocking Unix connect fails at once), so a socket-double unit test proves it. A lifeline FIFO now ties every kernel and trusted worker to its supervisor: under the real macOS scoped sandbox, busy children end 209 ms after the supervisor is killed, and the confinement cells still match the M1 vendor control. The native-baseline comparison is open: it ran at load average 80–250 with a same-sitting vendor control slowed as much, so it is diagnostic and the authoritative own triple and vendor control move to M5's Linux sitting. Lessons:
+  - Environment, not code, took most of M4's wall clock: the VM's default home is vendor-routed (runs use the H4 home), Chrome windows closed under the harness, the extension needed file-URL access, scroll gestures stall (#141), and host load invalidated timing evidence. A device prepare should say which route and home it read, and `profiles list` should refuse a forced service on a home routed elsewhere instead of reporting host_not_live (tech-debt).
+  - A test double's busy loop plus M2's unbounded drain left a supervisor tree spinning for 12 hours. Process lifetime has to be tied to the parent by construction (the lifeline), not by graceful-shutdown paths.
+  - Local full-suite gates on a shared, overloaded machine are not evidence. ci-kit's hosted runner and event-based timing assertions (#143) replaced the "wait for a quiet machine" rule.
+  - Carried to M5: re-record the Linux own `--suite all` at a head containing the lifeline and strerror changes; a live services row for the stat/connect error sentence; the quiet-machine native-baseline triple with a fresh vendor control; locator polling recalibrated from two or more vendor pairs; how the resident agent resolves Node 24 on Linux.

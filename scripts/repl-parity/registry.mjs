@@ -37,6 +37,7 @@ export function validateRegistry(scenarios,rows=inventory) {
   return scenarios;
 }
 export function inSuite(id,suite) {
+  if(suite==='native')return id.startsWith('native/')||id.startsWith('secrets/native-live/');
   if(suite==='all')return !unitCaseIds.has(id);
   if(suite==='services')return caseSchedule().some(c=>c.id===id&&c.milestone==='M2')||/^secrets\/(browser|native)\/errors\/worker-rejection-message-only$/.test(id);
   if(suite==='cells')return id.startsWith('cells/')&&!/^cells\/(facade|documentation|profiles)\//.test(id);

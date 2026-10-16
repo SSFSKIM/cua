@@ -1,5 +1,5 @@
 // Isolated no-services parity lane, not a production empty-surface option. Remote device only.
-import {writeFileSync} from 'node:fs';
+import {writeFileSync,mkdirSync,realpathSync} from 'node:fs';
 import {join,delimiter,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {fixtureServices as createFixtureServices} from './fixtures/service-home.mjs';
@@ -18,6 +18,12 @@ export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandb
   if(fixtureServices){
     const prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
     Object.assign(env,fixtureServices.env,{[`${prefix}_TRUSTED_SERVICES`]:JSON.stringify(fixtureServices.services),[`${prefix}_TRUSTED_CODE_PATHS`]:fixtureServices.roots.join(delimiter),[`${prefix}_TRUSTED_RPC_ENABLED`]:'1',[`${prefix}_JS_BANNER`]:banner,[`${prefix}_UNTRUSTED_ENV_ALLOWLIST`]:'PARITY_CELL_VISIBLE'});
+    if(fixtureServices.env.PARITY_NATIVE_SECRET_FIXTURE==='1'){
+      const home=join(launch.cwd,'home');mkdirSync(home,{recursive:true,mode:0o700});if(realpathSync(home)!==home)throw Error('Native secret fixture HOME must be canonical');env.HOME=home;
+      const modules=launch.env[`${prefix}_NODE_MODULE_DIRS`].split(delimiter)[0];
+      const facade=host==='vendor'?join(modules,'@oai/cua/dist/lib/js/oai_js_cua/src/tinysky_alt/create_tinysky_alt.js'):fileURLToPath(new URL('../../src/cua-api/create-tinysky-alt.mjs',import.meta.url));
+      env[`${prefix}_JS_BANNER`]=`globalThis.nativeSecretFactory=()=>import(${JSON.stringify(pathToFileURL(facade).href)});`;
+    }
     if(launch.cwd&&fixtureServices.env.PARITY_PIPE)env.PARITY_PIPE_RELATIVE=relative(launch.cwd,fixtureServices.env.PARITY_PIPE);
     const command=host==='vendor'?env.CUA_REPL_NODE_REPL_PATH:launch.command,args=host==='vendor'?[]:launch.args;
     env.PARITY_HOST_COMMAND=JSON.stringify([command,...args]);
@@ -42,7 +48,7 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   const env=cellsServeEnv(process.env,{scratch,sandbox,host});
   let connection,fixtureServices;
   try {
-    fixtureServices=services?await createFixtureServices({timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
+    fixtureServices=services?await createFixtureServices({nativeSecrets:process.env.CUA_PARITY_FIXTURE_CASE?.startsWith('secrets/native-live/'),timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
       chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{if(host==='cua'&&l.command!==facts.ownNode?.path)throw new Error('The own host launch does not run the Node its provenance names');if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});
     const terminate=()=>connection.close('signal');process.once('SIGTERM',terminate);process.once('SIGINT',terminate);

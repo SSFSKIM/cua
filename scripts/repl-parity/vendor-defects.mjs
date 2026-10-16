@@ -11,11 +11,11 @@ export function declaredVendorDefect(meta,row,rows){
  })??null;
 }
 export function assessAssertions(meta,rows){
- const unexpectedFailures=[],recorded=[],recordedAssertionRows=[],passed=new Set();
+ const unexpectedFailures=[],recorded=[],recordedAssertionRows=[],passed=new Set(),pending=new Set();
  for(const row of rows.filter(r=>Object.hasOwn(r,'assertion'))){
-  if(row.assertion?.ok===true){if(!row.fake)passed.add(row.case);continue;}
+  if(row.assertion?.ok===true){if(row.assertion.covered===false){if(meta.pendingObligations?.includes(row.case)&&meta.pendingEnvironment?.some(d=>d.member===row.case))pending.add(row.case);else unexpectedFailures.push(row);}else if(!row.fake)passed.add(row.case);continue;}
   const defect=declaredVendorDefect(meta,row,rows);
   if(defect){recorded.push({id:defect.id,case:row.case,platform:defect.platform,reason:defect.reason});recordedAssertionRows.push(row);}else unexpectedFailures.push(row);
  }
- return {unexpectedFailures,vendorDefects:recorded,recordedAssertionRows,coveredCases:passed.size,recordedCases:passed.size+recorded.length};
+ return {unexpectedFailures,vendorDefects:recorded,recordedAssertionRows,coveredCases:passed.size,pendingCases:[...pending],recordedCases:passed.size+recorded.length+pending.size};
 }

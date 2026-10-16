@@ -15,7 +15,7 @@ const clean=value=>JSON.parse(JSON.stringify(value));
 // Only fixture-created homes UNDER the existing writable run root qualify. The capability root's sibling home
 // is intentionally read-only under scoped policy. Realpath checks reject symlink aliases.
 export async function assertScratchHome({userHome,capabilityHome,runDirectory}){
- if(typeof userHome!=='string'||typeof capabilityHome!=='string'||typeof runDirectory!=='string'||resolve(userHome)!==join(resolve(runDirectory),'home')||dirname(resolve(runDirectory))!==join(resolve(capabilityHome),'run')||!/^[A-Za-z0-9-]{1,128}$/.test(basename(runDirectory))||!/^cua-cap-/.test(basename(capabilityHome)))throw Error('Live secrets require the capability run-directory scratch HOME');
+ if(typeof userHome!=='string'||typeof capabilityHome!=='string'||typeof runDirectory!=='string'||resolve(userHome)!==join(resolve(runDirectory),'home')||dirname(resolve(runDirectory))!==join(resolve(capabilityHome),'run')||!/^[A-Za-z0-9-]{1,128}$/.test(basename(runDirectory))||!/^cua-(?:[a-z0-9]+-)*cap-/.test(basename(capabilityHome)))throw Error('Live secrets require the capability run-directory scratch HOME');
  const root=await realpath(capabilityHome),home=await realpath(userHome);
  if(await realpath(runDirectory)!==resolve(runDirectory))throw Error('Live secrets require a canonical scratch run directory');
  if(root!==resolve(capabilityHome)||home!==resolve(userHome)||![await realpath('/tmp'),await realpath(tmpdir())].includes(dirname(root))||!(await lstat(home)).isDirectory())throw Error('Live secrets require a real capability scratch HOME');

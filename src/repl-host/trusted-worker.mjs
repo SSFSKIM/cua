@@ -8,7 +8,8 @@
 // vendor's NODE_REPL_ ones, which configure nothing here; a service is named only by an absolute path or file: URL
 // (the vendor's package-name resolution through NODE_REPL_NODE_MODULE_DIRS is not ported: cua's launch registers
 // services by real path, and resolving names through the vendor module tree would reach the legacy services the own
-// route excludes); no response-meta tracing (NR:tracing.js, vendor telemetry) and no audio. Every sentence trusted code
+// route excludes); no response-meta tracing (NR:tracing.js, vendor telemetry) and no audio; cua's lifeline watcher
+// (./lifeline.mjs) is added, so a worker never outlives its supervisor. Every sentence trusted code
 // or a cell can observe is the vendor's. #120's clean-room rewrite replaces this port before distribution.
 // Trusted service host. JSONL on stdout is reserved for the supervisor.
 import { Console } from "node:console";
@@ -22,6 +23,11 @@ import {
   createWorkerRuntime,
   drainExecBackgroundTasks,
 } from "./worker-runtime.mjs";
+import { watchLifeline } from "./lifeline.mjs";
+
+// cua: a child busy in synchronous code never reads its stdin's end, so a watcher thread ends it once its supervisor
+// is gone (./lifeline.mjs). First, so the setting has left the environment before anything copies it.
+watchLifeline();
 
 process.chdir(process.argv[2]);
 

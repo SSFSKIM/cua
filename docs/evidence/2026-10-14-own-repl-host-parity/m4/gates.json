@@ -1,0 +1,265 @@
+{
+  "sourceHead": "a5bb1cfe04348e8f146a341dccb825a3db083416",
+  "attempts": [
+    {
+      "phase": "implementation-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "gate-default.log",
+      "tests": 2412,
+      "pass": 2262,
+      "fail": 0,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "implementation-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "gate-own-node.log",
+      "tests": 2412,
+      "pass": 2336,
+      "fail": 0,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "pre-review-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "final-default.log",
+      "tests": 2414,
+      "pass": 2264,
+      "fail": 0,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "pre-review-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "final-own.log",
+      "tests": 2415,
+      "pass": 2339,
+      "fail": 0,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "review-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "reviewed-default.log",
+      "tests": 2422,
+      "pass": 2270,
+      "fail": 2,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": [
+        "wait_for_url takes a same-document navigation, then waits for wait_until's load state",
+        "create-hetzner.sh copies an upload whose local path has a space to the name the VM watches"
+      ]
+    },
+    {
+      "phase": "rerun-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "final2-default.log",
+      "tests": 2424,
+      "pass": 2273,
+      "fail": 1,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": [
+        "when the port drops the worker detaches every debuggee it holds, then retries every 5 s and is served again at the same path"
+      ]
+    },
+    {
+      "phase": "rerun-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "final2-own.log",
+      "tests": 2424,
+      "pass": 2347,
+      "fail": 1,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": [
+        "a missing element times out with the vendor's evaluating sentence, the script never dispatched"
+      ]
+    },
+    {
+      "phase": "clean-exact-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "exact-default.log",
+      "tests": 2431,
+      "pass": 2281,
+      "fail": 0,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "exact-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "exact-own.log",
+      "tests": 2431,
+      "pass": 2354,
+      "fail": 1,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": [
+        "in the owned group a kernel's end never reaps the trusted worker or its helper; the worker's own end reaps its helper but never the live kernel"
+      ]
+    },
+    {
+      "phase": "exact-own-rerun",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "exact-own-rerun.log",
+      "tests": 2432,
+      "pass": 2355,
+      "fail": 1,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": [
+        "resolve polls until the element appears, within the deadline"
+      ]
+    },
+    {
+      "phase": "clean-exact-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "exact-own-final.log",
+      "tests": 2432,
+      "pass": 2356,
+      "fail": 0,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "additional-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "exact-default-final.log",
+      "tests": 2432,
+      "pass": 2281,
+      "fail": 1,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": [
+        "the watchdog closes a link that hears no ping for watchdogMs and reconnects; a pinged link stays"
+      ]
+    },
+    {
+      "phase": "additional-default-rerun",
+      "command": "HOME=<scratch> npm test",
+      "logName": "default-clean.log",
+      "tests": 2432,
+      "pass": 2278,
+      "fail": 4,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": [
+        "a detach the user caused and a tab the user closed reach the host",
+        "a runtime that ignores EOF and SIGTERM is killed within the teardown budget",
+        "a spent resume budget answers device_offline, the attempts spaced 1x doubling to the ceiling",
+        "the real CLI stores a value typed at a pty, 0600, without echoing it"
+      ]
+    },
+    {
+      "phase": "three-review-fixes-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "cfb-default.log",
+      "tests": 2435,
+      "pass": 2285,
+      "fail": 0,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": []
+    },
+    {
+      "phase": "three-review-fixes-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "cfb-own.log",
+      "tests": 2436,
+      "pass": 2356,
+      "fail": 4,
+      "skipped": 76,
+      "cancelled": 0,
+      "failedTests": [
+        "a missing element times out with the vendor's evaluating sentence, the script never dispatched",
+        "a navigation that never commits times out at timeout_ms with the vendor's sentence",
+        "EOF while an elicitation awaits a client that never answers: the request is cancelled, the service is told why, the cell finishes and the host exits",
+        "during the drain a new elicitation is not asked of the departed client: the service is told at once"
+      ]
+    },
+    {
+      "phase": "final-head-default",
+      "command": "HOME=<scratch> npm test",
+      "logName": "finalhead-default.log",
+      "tests": 2436,
+      "pass": 2284,
+      "fail": 2,
+      "skipped": 150,
+      "cancelled": 0,
+      "failedTests": [
+        "peer: notifications reach their handler, an unknown one is ignored, and nothing is answered",
+        "a runtime that cannot start reports an exit instead of throwing"
+      ]
+    },
+    {
+      "phase": "final-head-own",
+      "command": "HOME=<scratch> CUA_NODE=/opt/homebrew/bin/node npm test",
+      "logName": "finalhead-own.log",
+      "tests": 2436,
+      "pass": 2350,
+      "fail": 9,
+      "skipped": 76,
+      "cancelled": 1,
+      "failedTests": [
+        "a worker first started during the drain gets its hooks' declared bound too",
+        "what a kernel leaves in the owned group dies with its generation: on an unexpected end and on reset",
+        "cua serve runs the resolved runtime with an allowlisted environment in an owned directory and removes it at close",
+        "with CUA_SHIM_SURFACES=computer,browser, serve registers both wrappers, configures the vendor browser service and answers profiles_list from the registry",
+        "profiles_list and cua profiles list check a bound profile against the live backends, one tab-free listing launch per request",
+        "the first connection launches at its handshake and records it; a later one answers it and tools/list with no launch, launches once at its first js and never again",
+        "the record is the runtime's raw answers; a MAWS session and a plain one replaying it each get their own descriptions",
+        "profiles_list and js teach the rules of the service the launch resolves: the vendor's on an unregistered home, cua's on the cua route",
+        "cua serve with a MAWS backend: its own host in chrome/m, listed first and preferred; profiles_list puts maws first; the description says so",
+        "two cua serve processes and a cua profiles list on one MAWS socket at once; the first exiting leaves the second serving"
+      ]
+    }
+  ],
+  "cleanExactDefault": "clean-exact-default",
+  "cleanExactOwn": "clean-exact-own",
+  "finalHeadAttempts": [
+    "final-head-default",
+    "final-head-own"
+  ],
+  "focusedFinalReview": {
+    "command": "node --test test/repl-parity/pending-cells.test.mjs test/repl-parity/m4-native.test.mjs test/repl-parity/chrome-launch.test.mjs",
+    "tests": 16,
+    "pass": 16
+  },
+  "inventory": {
+    "through": "M4",
+    "due": 542,
+    "linked": 542,
+    "uncovered": 0,
+    "note": "Executable linkage, not a claim of complete Linux live coverage"
+  },
+  "mods": {
+    "command": "npm run test:mods",
+    "pass": 32,
+    "fail": 0
+  },
+  "validate": {
+    "command": "claude plugin validate .",
+    "passed": true,
+    "warning": "CLAUDE.md at plugin root is not loaded as project context"
+  },
+  "notes": [
+    "All final-head full-run failures were retained; no budgets, assertions, test selection or npm scripts were relaxed.",
+    "Load-sensitive test debt is recorded in tech-debt-tracker.md. The controller accepted the earlier exact clean runs with targeted checks of later harness-only changes.",
+    "The initial development gate before 352f1e3 had 2406 tests, 2253 pass, 3 implementation failures and 150 skips; its temporary log was overwritten during initial iteration, and its results remain in the session transcript.",
+    "Raw test logs are not committed because secret-boundary failure diagnostics can contain synthetic test values; this file retains counts and failing test names only.",
+    "The initial implementation default/explicit-Node gate commands were launched in parallel before the owner introduced the serialization rule. Full gate commands after that rule, including both final-head forms, ran sequentially."
+  ],
+  "finalHeadFullRunsSerialized": true
+}

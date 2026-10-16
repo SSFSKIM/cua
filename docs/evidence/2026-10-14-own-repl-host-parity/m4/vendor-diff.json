@@ -1,0 +1,165 @@
+{
+  "ok": true,
+  "differences": [],
+  "expected": [],
+  "cases": 490,
+  "cells": 1392,
+  "recordedCases": 493,
+  "vendorDefects": [
+    {
+      "id": "linux-vendor-sandbox-launcher-fail-open",
+      "case": "cells/confinement/no-unsandboxed-fallback",
+      "platform": "linux",
+      "reason": "The pinned vendor Linux host executes the cell unconfined after the controlled sandbox launcher exits 73. M1 must refuse; this is recorded vendor behavior, not passing safety coverage."
+    }
+  ],
+  "pendingCells": [
+    {
+      "case": "api/browser-cuaapi/click",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-cuaapi/type",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-cuaapi/keypress",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-cuaapi/double-click",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-cuaapi/drag",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-cuaapi/scroll",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-tab/cua",
+      "logicalCell": "input/coordinates#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-domcuaapi/click",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-domcuaapi/type",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-domcuaapi/keypress",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-domcuaapi/double-click",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-domcuaapi/scroll",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-domcuaapi/get-visible-dom",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    },
+    {
+      "case": "api/browser-tab/dom-cua",
+      "logicalCell": "input/dom#scroll",
+      "cell": "scroll",
+      "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+      "status": {
+        "a": "blocked",
+        "b": "blocked"
+      }
+    }
+  ],
+  "pendingObligations": [
+    "api/browser-cuaapi/scroll",
+    "api/browser-domcuaapi/scroll"
+  ],
+  "pendingUnexpectedPasses": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

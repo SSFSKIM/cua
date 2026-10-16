@@ -12,7 +12,7 @@ if(process.env.CUA_PARITY_REMOTE!=='1'||process.env.CUA_SHIM_SURFACES!=='browser
 const home=defaultHome(),facts=executionFacts({source:home});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
 const runtime=resolveRuntime({home}),output=attestedOutput(process.stdout,facts);
 async function listBackends(){
- const directory=mkdtempSync(join(tmpdir(),'cua-parity-profile-')),proofFile=join(directory,'proof.json');
+ const directory=mkdtempSync(join(tmpdir(),(process.env.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'profile-')),proofFile=join(directory,'proof.json');
  try{
   const result=await listLiveBackends({home,runtime,ambient:process.env,tabCounts:false,prepareLaunch:launch=>{
    if(process.env.CUA_REPL_HOST==='cua'&&launch.command!==facts.ownNode?.path)throw new Error('Profile launch Node differs from provenance');

@@ -83,6 +83,19 @@ test('trusted code loads only from its real roots: an outside module, a symlink 
   assert.equal(parsed(await other.js(rpcError('pkg', {}))), 'Trusted RPC package must resolve within a configured trusted module directory: some-package');
 });
 
+// The ApprovalStorage audit (#116 M4, the spec's Design "Trusted services and privileged APIs"): no trusted code the own
+// route runs calls nodeRepl.config (readToml, writeToml or the app-server config reads and writes), so the privileged
+// API is the retained list and nothing else; the vendor's fetch, otel, telemetry and gaasBrowserConfig bridges are absent too.
+test('trusted code gets exactly the retained privileged API: no config storage, fetch, telemetry or account bridge', own, async t => {
+  const host = await startHost(t, {node, services: {svc: `export async function handleRpc() {
+    const names = new Set();
+    for (let object = nodeRepl; object && object !== Object.prototype; object = Object.getPrototypeOf(object)) for (const name of Object.getOwnPropertyNames(object)) names.add(name);
+    return [...names].sort();
+  }`}});
+  assert.deepEqual(parsed(await host.js(rpc('svc', {}))), ['addAfterSubmittedCodeHook', 'addTurnEndedHandler', 'createElicitation', 'cwd', 'emitContentItem', 'emitImage', 'env',
+    'homeDir', 'launchServices', 'nativePipe', 'requestMeta', 'setResponseMeta', 'tmpDir', 'withSuspendedTimeout', 'write']);
+});
+
 test('cells get no privilege: their nodeRepl is the base one, and privileged requests forged on the kernel\'s stdout are ignored', own, async t => {
   let connections = 0;
   const host = await startHost(t, {node, capabilities: {elicitation: {}}, services: {svc: 'export const handleRpc = () => 1;'}});
@@ -309,7 +322,7 @@ test('nativePipe through the host: absolute socket paths only, bytes both ways, 
   writeFileSync(file, '');
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: 'relative.sock'}))), 'native pipe path must be absolute');
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: file}))), 'native pipe path is not a socket');
-  assert.match(parsed(await host.js(rpc('pipe', {op: 'bad', path: join(host.root, 'absent.sock')}))), /^native pipe connect failed: ENOENT/);
+  assert.match(parsed(await host.js(rpc('pipe', {op: 'bad', path: join(host.root, 'absent.sock')}))), /^failed to connect native pipe: No such file or directory \(os error 2\)$/);
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: ''}))), 'native pipe path must be a non-empty string');
 });
 

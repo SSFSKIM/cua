@@ -10,3 +10,10 @@ test('the own host\'s Node is part of the provenance a run is prepared with: a c
  for(const ownNode of [null,undefined,{path:'/device/node',version:'v24.19.0'},{path:'/other/node',version:'v24.18.0'}])assert.throws(()=>assertPreparedFacts(expected,{...actual,ownNode}),/ownNode/);
  const legacy={...expected};delete legacy.ownNode;assertPreparedFacts(legacy,{...actual,ownNode:null});
 });
+
+test('changed browser route attestation invalidates a prepared run',()=>{
+ const expected={checkout:'/fixture',home:'/runtime',commit:'abc',release:'pinned',node:'v24.0.0',platform:'linux',browserRoute:{selection:{route:'cua'},manifests:[{sha256:'first'}]}};
+ assert.doesNotThrow(()=>assertPreparedFacts(expected,{...expected,dirty:false}));
+ assert.throws(()=>assertPreparedFacts(expected,{...expected,dirty:false,browserRoute:{selection:{route:'vendor'},manifests:[]}}),/browserRoute/);
+ assert.throws(()=>assertPreparedFacts(expected,{...expected,dirty:false,browserRoute:undefined}),/browserRoute/);
+});

@@ -10,6 +10,6 @@ export function apiCommand({device,checkout,home,host,...facts},{lane='chrome'}=
 }
 // Preserve the M0/M2 metadata vocabulary for their committed controls; M3 names its distinct lanes explicitly.
 export function evidenceBackend(scenarios){
- if(scenarios.some(s=>['chrome','binder-double','capability-host'].includes(s.backend)))return [...new Set(scenarios.map(s=>s.backend))].sort().join('+');
+ if(scenarios.some(s=>['chrome','binder-double','capability-host','native'].includes(s.backend)))return [...new Set(scenarios.map(s=>s.backend))].sort().join('+');
  return scenarios.some(s=>s.backend==='fixture-services')?(scenarios.every(s=>s.backend==='fixture-services')?'fixture-services':'no-services+fixture-services'):'no-services';
 }

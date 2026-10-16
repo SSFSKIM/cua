@@ -11,6 +11,8 @@ import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 import {ownHostNode} from '../../src/runtime/launch.mjs';
+import {lifelinePipe} from '../../src/repl-host/kernel-child.mjs';
+import {LIFELINE_ENV} from '../../src/repl-host/lifeline.mjs';
 
 export const KERNEL = fileURLToPath(new URL('../../src/repl-host/kernel.mjs', import.meta.url));
 // How long next() waits for a matching message: well past any cell these tests run.
@@ -32,9 +34,12 @@ export function defaultReply(message) {
 // child environment besides PATH, HOME and TMPDIR.
 export function startKernel(t, {node, env = {}, sessionId = 'kernel-test', args} = {}) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'cua-kernel-')));
+  // Its lifeline (src/repl-host/lifeline.mjs), as the supervisor gives one: if this test process dies before its
+  // teardown, the kernel ends even while a cell spins in synchronous code.
+  const lifeline = lifelinePipe();
   const child = spawn(node, ['--experimental-vm-modules', KERNEL, ...(args ?? ['--session-id', sessionId, '--working-dir', cwd])], {
     cwd, stdio: ['pipe', 'pipe', 'pipe'],
-    env: {PATH: '/usr/bin:/bin', HOME: cwd, TMPDIR: cwd, ...env},
+    env: {PATH: '/usr/bin:/bin', HOME: cwd, TMPDIR: cwd, ...env, [LIFELINE_ENV]: lifeline.setting},
   });
   let stderr = '';
   child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
@@ -57,6 +62,7 @@ export function startKernel(t, {node, env = {}, sessionId = 'kernel-test', args}
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     await exited;
+    lifeline.release();
     rmSync(cwd, {recursive: true, force: true});
   });
 

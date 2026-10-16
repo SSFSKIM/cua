@@ -10,7 +10,9 @@
 //   (CUA_REPL_TRUSTED_SERVICES) with the privileged nodeRepl (./privileged-node-repl.mjs, PrivilegedRuntime). It starts
 //   at the first service request and outlives kernel resets and timeouts (a fresh bootstrap sets its services up
 //   again), so service state such as browser connections and turn hooks persists; a sandbox-policy change, its own exit
-//   or the host's shutdown ends it.
+//   or the host's shutdown ends it. What it starts lives and ends with it: on Linux the vendor's Sky service runs
+//   sky_linux as the worker's own stdio child, so the helper is in the worker's protected tree (below), outlives kernel
+//   ends, and goes when the worker is stopped or reaped with it when it dies.
 //
 // Executions, in the spec's linearization points:
 // - ready + js: an execution id is allocated and the budget (timeout_ms, default 30,000 ms; ./budget.mjs) starts before

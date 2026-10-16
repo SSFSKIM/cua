@@ -1,0 +1,6 @@
+{"session":1,"pid":408175,"kind":"source","facts":{"checkout":"/home/admin/Developer/GitHub/cua-parity","commit":"a5ccc1b40b85fd688cd4f47d52a70ee3a09ec09b","dirty":false,"release":"26.928.40906-linux-arm64","ownNode":{"path":"/home/admin/.local/share/cua-parity-node/node-v24.18.0-linux-arm64/bin/node","version":"v24.18.0"},"platform":"linux","home":"/home/admin/.local/share/cua","requested":{"CUA_REPL_HOST":"cua","CUA_BROWSER_SERVICE":null,"CUA_SHIM_SURFACES":"computer"}}}
+{"session":1,"pid":408175,"kind":"initialize","serverInfo":{"name":"cua-repl-host","version":"0.4.0"}}
+{"session":1,"pid":408175,"kind":"result","tool":"js","isError":false,"replHost":{"host":"cua","version":"0.4.0"}}
+{"session":1,"pid":408175,"kind":"result","tool":"js","isError":false,"replHost":{"host":"cua","version":"0.4.0"}}
+{"session":1,"pid":408175,"kind":"result","tool":"js","isError":false,"replHost":{"host":"cua","version":"0.4.0"}}
+{"session":1,"pid":408175,"kind":"result","tool":"end_task","isError":false,"replHost":null}

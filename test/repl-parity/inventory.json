@@ -26,7 +26,8 @@
       "native/cua/computer"
     ],
     "proofs": {
-      "api/cua/computer": "binder-double"
+      "api/cua/computer": "binder-double",
+      "native/cua/computer": "native-live"
     }
   },
   {
@@ -43,7 +44,8 @@
       "native/cua/computer.target"
     ],
     "proofs": {
-      "api/cua/computer.target": "binder-double"
+      "api/cua/computer.target": "binder-double",
+      "native/cua/computer.target": "native-live"
     }
   },
   {
@@ -60,7 +62,8 @@
       "native/cua/computer.launch-app"
     ],
     "proofs": {
-      "api/cua/computer.launch-app": "binder-double"
+      "api/cua/computer.launch-app": "binder-double",
+      "native/cua/computer.launch-app": "native-live"
     }
   },
   {
@@ -77,7 +80,8 @@
       "native/cua/getapp"
     ],
     "proofs": {
-      "api/cua/getapp": "binder-double"
+      "api/cua/getapp": "binder-double",
+      "native/cua/getapp": "native-live"
     }
   },
   {
@@ -94,7 +98,8 @@
       "native/cua/listapps"
     ],
     "proofs": {
-      "api/cua/listapps": "binder-double"
+      "api/cua/listapps": "binder-double",
+      "native/cua/listapps": "native-live"
     }
   },
   {
@@ -111,7 +116,8 @@
       "native/cua/listwindows"
     ],
     "proofs": {
-      "api/cua/listwindows": "binder-double"
+      "api/cua/listwindows": "binder-double",
+      "native/cua/listwindows": "native-live"
     }
   },
   {
@@ -232,7 +238,8 @@
       "native/target-app-decorated-tab/getaxstate"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/getaxstate": "binder-double"
+      "api/target-app-decorated-tab/getaxstate": "binder-double",
+      "native/target-app-decorated-tab/getaxstate": "native-live"
     }
   },
   {
@@ -249,7 +256,8 @@
       "native/target-app-decorated-tab/getscreenshot"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/getscreenshot": "binder-double"
+      "api/target-app-decorated-tab/getscreenshot": "binder-double",
+      "native/target-app-decorated-tab/getscreenshot": "native-live"
     }
   },
   {
@@ -266,7 +274,8 @@
       "native/target-app-decorated-tab/getaxstateandscreenshot"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double"
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double",
+      "native/target-app-decorated-tab/getaxstateandscreenshot": "native-live"
     }
   },
   {
@@ -283,7 +292,8 @@
       "native/target-app-decorated-tab/click"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/click": "binder-double"
+      "api/target-app-decorated-tab/click": "binder-double",
+      "native/target-app-decorated-tab/click": "native-live"
     }
   },
   {
@@ -300,7 +310,8 @@
       "native/target-app-decorated-tab/drag"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/drag": "binder-double"
+      "api/target-app-decorated-tab/drag": "binder-double",
+      "native/target-app-decorated-tab/drag": "native-live"
     }
   },
   {
@@ -317,7 +328,8 @@
       "native/target-app-decorated-tab/scroll"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/scroll": "binder-double"
+      "api/target-app-decorated-tab/scroll": "binder-double",
+      "native/target-app-decorated-tab/scroll": "native-live"
     }
   },
   {
@@ -334,7 +346,8 @@
       "native/target-app-decorated-tab/selecttext"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/selecttext": "binder-double"
+      "api/target-app-decorated-tab/selecttext": "binder-double",
+      "native/target-app-decorated-tab/selecttext": "native-live"
     }
   },
   {
@@ -351,7 +364,8 @@
       "native/target-app-decorated-tab/setvalue"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/setvalue": "binder-double"
+      "api/target-app-decorated-tab/setvalue": "binder-double",
+      "native/target-app-decorated-tab/setvalue": "native-live"
     }
   },
   {
@@ -368,7 +382,8 @@
       "native/target-app-decorated-tab/performsecondaryaction"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/performsecondaryaction": "binder-double"
+      "api/target-app-decorated-tab/performsecondaryaction": "binder-double",
+      "native/target-app-decorated-tab/performsecondaryaction": "native-live"
     }
   },
   {
@@ -385,7 +400,8 @@
       "native/app/scroll"
     ],
     "proofs": {
-      "api/app/scroll": "binder-double"
+      "api/app/scroll": "binder-double",
+      "native/app/scroll": "native-live"
     }
   },
   {
@@ -402,7 +418,8 @@
       "native/app/paste"
     ],
     "proofs": {
-      "api/app/paste": "binder-double"
+      "api/app/paste": "binder-double",
+      "native/app/paste": "native-live"
     }
   },
   {
@@ -419,7 +436,8 @@
       "native/app/presskey"
     ],
     "proofs": {
-      "api/app/presskey": "binder-double"
+      "api/app/presskey": "binder-double",
+      "native/app/presskey": "native-live"
     }
   },
   {
@@ -436,7 +454,8 @@
       "native/app/typetext"
     ],
     "proofs": {
-      "api/app/typetext": "binder-double"
+      "api/app/typetext": "binder-double",
+      "native/app/typetext": "native-live"
     }
   },
   {
@@ -3559,7 +3578,11 @@
       "api/app/scroll": "binder-double",
       "api/target-app-decorated-tab/click": "binder-double",
       "api/target-app-decorated-tab/drag": "binder-double",
-      "api/target-app-decorated-tab/scroll": "binder-double"
+      "api/target-app-decorated-tab/scroll": "binder-double",
+      "native/app/scroll": "native-live",
+      "native/target-app-decorated-tab/click": "native-live",
+      "native/target-app-decorated-tab/drag": "native-live",
+      "native/target-app-decorated-tab/scroll": "native-live"
     }
   },
   {
@@ -3591,7 +3614,12 @@
       "api/cua/listwindows": "binder-double",
       "api/target-app-decorated-tab/getaxstate": "binder-double",
       "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double",
-      "api/target-app-decorated-tab/getscreenshot": "binder-double"
+      "api/target-app-decorated-tab/getscreenshot": "binder-double",
+      "native/cua/listapps": "native-live",
+      "native/cua/listwindows": "native-live",
+      "native/target-app-decorated-tab/getaxstate": "native-live",
+      "native/target-app-decorated-tab/getaxstateandscreenshot": "native-live",
+      "native/target-app-decorated-tab/getscreenshot": "native-live"
     }
   },
   {
@@ -3611,7 +3639,9 @@
     ],
     "proofs": {
       "api/target-app-decorated-tab/getaxstate": "binder-double",
-      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double"
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double",
+      "native/target-app-decorated-tab/getaxstate": "native-live",
+      "native/target-app-decorated-tab/getaxstateandscreenshot": "native-live"
     }
   },
   {
@@ -3628,7 +3658,8 @@
       "native/target-app-decorated-tab/getaxstateandscreenshot"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double"
+      "api/target-app-decorated-tab/getaxstateandscreenshot": "binder-double",
+      "native/target-app-decorated-tab/getaxstateandscreenshot": "native-live"
     }
   },
   {
@@ -3646,7 +3677,8 @@
       "native/app/paste"
     ],
     "proofs": {
-      "api/app/paste": "binder-double"
+      "api/app/paste": "binder-double",
+      "native/app/paste": "native-live"
     }
   },
   {
@@ -3663,7 +3695,8 @@
       "native/target-app-decorated-tab/click"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/click": "binder-double"
+      "api/target-app-decorated-tab/click": "binder-double",
+      "native/target-app-decorated-tab/click": "native-live"
     }
   },
   {
@@ -3680,7 +3713,8 @@
       "native/target-app-decorated-tab/selecttext"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/selecttext": "binder-double"
+      "api/target-app-decorated-tab/selecttext": "binder-double",
+      "native/target-app-decorated-tab/selecttext": "native-live"
     }
   },
   {
@@ -3700,7 +3734,9 @@
     ],
     "proofs": {
       "api/app/scroll": "binder-double",
-      "api/target-app-decorated-tab/scroll": "binder-double"
+      "api/target-app-decorated-tab/scroll": "binder-double",
+      "native/app/scroll": "native-live",
+      "native/target-app-decorated-tab/scroll": "native-live"
     }
   },
   {
@@ -3717,7 +3753,8 @@
       "native/target-app-decorated-tab/selecttext"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/selecttext": "binder-double"
+      "api/target-app-decorated-tab/selecttext": "binder-double",
+      "native/target-app-decorated-tab/selecttext": "native-live"
     }
   },
   {
@@ -3734,7 +3771,8 @@
       "native/target-app-decorated-tab/click"
     ],
     "proofs": {
-      "api/target-app-decorated-tab/click": "binder-double"
+      "api/target-app-decorated-tab/click": "binder-double",
+      "native/target-app-decorated-tab/click": "native-live"
     }
   },
   {
@@ -3753,7 +3791,8 @@
       "native/cua/listapps"
     ],
     "proofs": {
-      "api/cua/listapps": "binder-double"
+      "api/cua/listapps": "binder-double",
+      "native/cua/listapps": "native-live"
     }
   },
   {
@@ -3775,7 +3814,9 @@
     ],
     "proofs": {
       "api/cua/listapps": "binder-double",
-      "api/cua/listwindows": "binder-double"
+      "api/cua/listwindows": "binder-double",
+      "native/cua/listapps": "native-live",
+      "native/cua/listwindows": "native-live"
     }
   },
   {
@@ -6207,7 +6248,14 @@
     "milestone": "M2",
     "cases": [
       "cells/native-pipe/connect-timeout"
-    ]
+    ],
+    "unitProof": {
+      "file": "test/repl-host/native-pipe.test.mjs",
+      "name": "a connect that never completes expires after the connect budget with the vendor sentence; the pending socket is destroyed and a late connect is never delivered"
+    },
+    "proofs": {
+      "cells/native-pipe/connect-timeout": "live-unreachable: non-blocking connect"
+    }
   },
   {
     "id": "cell/native-pipe/base64-correlation",
@@ -7978,7 +8026,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/invalid-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/reserved-label",
@@ -8000,7 +8051,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/reserved-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/unsupported-shape",
@@ -8022,7 +8076,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/unsupported-shape": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/coerced-method",
@@ -8034,8 +8091,7 @@
     ],
     "milestone": "M4",
     "cases": [
-      "secrets/native/refuse/coerced-method",
-      "secrets/native-live/refuse/coerced-method"
+      "secrets/native/refuse/coerced-method"
     ],
     "unitCases": [
       "secrets/native/refuse/coerced-method"
@@ -8044,7 +8100,7 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": false
   },
   {
     "id": "secret/native/refuse/extra-fields",
@@ -8056,8 +8112,7 @@
     ],
     "milestone": "M4",
     "cases": [
-      "secrets/native/refuse/extra-fields",
-      "secrets/native-live/refuse/extra-fields"
+      "secrets/native/refuse/extra-fields"
     ],
     "unitCases": [
       "secrets/native/refuse/extra-fields"
@@ -8066,7 +8121,7 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": false
   },
   {
     "id": "secret/native/refuse/disabled",
@@ -8088,7 +8143,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/disabled": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/unavailable",
@@ -8110,7 +8168,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/unavailable": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/unknown-label",
@@ -8132,7 +8193,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/unknown-label": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/unsafe-store",
@@ -8154,7 +8218,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/unsafe-store": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/refuse/unreadable-store",
@@ -8176,7 +8243,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/refuse/unreadable-store": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/errors/post-read-sanitized",
@@ -8198,7 +8268,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/errors/post-read-sanitized": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/errors/worker-rejection-message-only",
@@ -8234,7 +8307,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/no-substitution/embedded-marker": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/no-substitution/unsupported-methods-and-fields",
@@ -8256,7 +8332,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/no-substitution/unsupported-methods-and-fields": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/no-substitution/javascript-strings",
@@ -8278,7 +8357,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/no-substitution/javascript-strings": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/reports/labels-not-values",
@@ -8300,7 +8382,10 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/reports/labels-not-values": "service-boundary-double"
+    }
   },
   {
     "id": "secret/native/darwin/paste",
@@ -8381,6 +8466,9 @@
       "file": "test/repl-parity/secrets.test.mjs",
       "name": "synthetic wrapper scenarios prove delivery, refusal-before-read and value-free errors without the owner store"
     },
-    "liveRequired": true
+    "liveRequired": true,
+    "proofs": {
+      "secrets/native-live/linux/type-text": "service-boundary-double"
+    }
   }
 ]

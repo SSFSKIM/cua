@@ -38,7 +38,7 @@ export function secretProofContract(row){
  if(row.kind!=='secret')return row;
  const tail=row.id.slice('secret/'.length),original=`secrets/${tail}`;
  if(tail.endsWith('/errors/worker-rejection-message-only'))return {...row,liveRequired:true};
- const unitOnly=/^browser\/refuse\/(coerced-method|extra-fields)$/.test(tail)||tail.startsWith('native/darwin/');
+ const unitOnly=/^(browser|native)\/refuse\/(coerced-method|extra-fields)$/.test(tail)||tail.startsWith('native/darwin/');
  const live=tail.replace(/^(browser|native)\//,'$1-live/');
  return {...row,cases:unitOnly?[original]:[original,`secrets/${live}`],unitCases:[original],unitProof:secretUnitProof,liveRequired:!unitOnly};
 }

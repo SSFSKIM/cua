@@ -10,7 +10,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
 | M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | merged (5722341) |
 | M3 | feat/own-repl-host-m3 | https://github.com/SSFSKIM/cua/pull/140 | merged (73598f8) |
-| M4 | feat/own-repl-host-m4 | (PR pending) | whole-branch fix wave |
+| M4 | feat/own-repl-host-m4 | (PR opened 2026-10-16) | review correct at 47ba181; gates on ci-kit |
 
 ## Log
 
@@ -107,6 +107,8 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - 2026-10-15 M4 whole-branch reviewer-high (73598f8..5359ace): two P2, sent to the task 3 executor.
   - The lifeline check could pass on an empty child set.
   - Shell injection in a test fixture.
+- 2026-10-15 M4 whole-branch review: "correct" at 47ba181 after the fix wave. Local gates held for a quiet machine; load stayed at 100–450.
+- 2026-10-16 The machine crashed and the plan-executor was lost. The session resumed M4: merged main (491590f), which brings ci-kit (#143) so `npm test` and the plugin gate run on GitHub's hosted macOS runner with Node 24, ticked M4 and wrote its Outcomes, and opened the PR. M5 goes to a fresh plan-executor.
 
 ## Environmental friction
 

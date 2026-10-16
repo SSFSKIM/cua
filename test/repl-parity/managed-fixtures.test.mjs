@@ -10,15 +10,22 @@ import * as cells from './serve-cells.mjs';
 import {prepareBinderLaunch} from './serve-binder.mjs';
 import {attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
 import {Writable} from 'node:stream';
+import {createHash} from 'node:crypto';
+import {archiveCacheDir,cachedArchives} from '../../scripts/repl-parity/archive-cache.mjs';
 
+const CACHE={vendor:{file:'r1-linux-x64.deb',bytes:Buffer.from('vendor fixture')},node:{file:'node-v24.0.0-linux-x64.tar.gz',bytes:Buffer.from('node fixture')}};
+const PINS=Object.fromEntries(Object.entries(CACHE).map(([role,{file,bytes}])=>[role,{file,archive:{url:`https://${role}.test/${file}`,length:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}}]));
+const CACHED=source=>cachedArchives(source,{pins:PINS});
 function fixture(t){
  const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-managed-fixtures-'))),source=join(root,'source'),user=join(root,'user');
  mkdirSync(join(source,'runtimes','r1'),{recursive:true});mkdirSync(user);
  writeFileSync(join(source,'runtimes','r1','marker'),'source runtime');writePointer(source,'r1');
  // Synthetic owner data must not be copied into the answering HOME.
  mkdirSync(join(user,'.config','claude-secrets'),{recursive:true});writeFileSync(join(user,'.config','claude-secrets','fixture'),'synthetic private value');
+ // The preparation's verified archive cache, in tiny fixture bytes under fixture pins.
+ mkdirSync(archiveCacheDir(source),{mode:0o700});for(const {file,bytes} of Object.values(CACHE))writeFileSync(join(archiveCacheDir(source),file),bytes);
  t.after(()=>rmSync(root,{recursive:true,force:true}));
- return {root,source,ambient:{HOME:user,PATH:'/usr/bin:/bin',TMPDIR:join(root,'long-temp'),CUA_PARITY_REMOTE:'1',CUA_PARITY_NODE_MODE:'managed',CUA_NODE:'/source-node-must-not-be-inherited'}};
+ return {root,source,archives:CACHED,ambient:{HOME:user,PATH:'/usr/bin:/bin',TMPDIR:join(root,'long-temp'),CUA_PARITY_REMOTE:'1',CUA_PARITY_NODE_MODE:'managed',CUA_NODE:'/source-node-must-not-be-inherited'}};
 }
 function installed(home,release='r1'){
  mkdirSync(join(home,'runtimes',release),{recursive:true});writeFileSync(join(home,'runtimes',release,'marker'),'fresh runtime');writePointer(home,release);
@@ -27,11 +34,12 @@ function installed(home,release='r1'){
 }
 
 test('managed remote scratch installs freshly and inspects its own Node without inheriting a source override',t=>{
- const {source,ambient}=fixture(t);let invocation,inspection;
- const scratch=prepareCapabilityHome({source,ambient,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{invocation=options;installed(options.home);},inspect:options=>{inspection=options;return {path:join(options.home,'node','24.test','bin','node'),version:'v24.18.0'};}});
+ const {source,ambient,archives}=fixture(t);let invocation,inspection;
+ const scratch=prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{invocation=options;installed(options.home);},inspect:options=>{inspection=options;return {path:join(options.home,'node','24.test','bin','node'),version:'v24.18.0'};}});
  t.after(()=>scratch.cleanup());
  assert.ok(invocation,'managed scratch must invoke the installer, not clone the source runtime');
  assert.equal(typeof scratch.then,'undefined','preparation remains synchronous');
+ assert.deepEqual(invocation.archives,{vendor:join(archiveCacheDir(source),'r1-linux-x64.deb'),node:join(archiveCacheDir(source),'node-v24.0.0-linux-x64.tar.gz')});
  assert.equal(invocation.home,scratch.dir);assert.equal(invocation.env.CUA_HOME,scratch.dir);assert.equal(invocation.env.HOME,scratch.userHome);assert.equal(invocation.env.CUA_NODE,undefined);
  assert.equal(inspection.home,scratch.dir);assert.equal(inspection.ambient.CUA_HOME,scratch.dir);assert.equal(inspection.ambient.CUA_NODE,undefined);
  assert.equal(scratch.dir.startsWith(join(ambient.HOME,'.cp')+'/'),true);assert.equal(scratch.dir.startsWith(ambient.TMPDIR+'/'),false);assert.equal(statSync(scratch.dir).mode&0o777,0o700);
@@ -43,32 +51,69 @@ test('managed remote scratch installs freshly and inspects its own Node without 
 });
 
 test('fresh install release drift is rejected and its scratch is removed',t=>{
- const {source,ambient}=fixture(t);let home;
- assert.throws(()=>prepareCapabilityHome({source,ambient,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home,'r2');},inspect:()=>{throw Error('release must be checked first');}}),/release/i);
+ const {source,ambient,archives}=fixture(t);let home;
+ assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home,'r2');},inspect:()=>{throw Error('release must be checked first');}}),/release/i);
  assert.equal(existsSync(home),false);
 });
 
 test('managed scratch rejects an unmanaged or wrong-major Node and removes the failed install',t=>{
- const {source,ambient}=fixture(t);
+ const {source,ambient,archives}=fixture(t);
  for(const ownNode of [{path:'/external/node',version:'v24.18.0'},{version:'v22.18.0'}]){
   let home;
-  assert.throws(()=>prepareCapabilityHome({source,ambient,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home);},inspect:()=>({...ownNode,path:ownNode.path??join(home,'node','22.test','bin','node')})}),/managed Node/);
+  assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home);},inspect:()=>({...ownNode,path:ownNode.path??join(home,'node','22.test','bin','node')})}),/managed Node/);
   assert.equal(existsSync(home),false);
  }
 });
 
 test('installer failures remove the scratch instead of falling back to a copied runtime',t=>{
- const {source,ambient}=fixture(t);let home;
- assert.throws(()=>prepareCapabilityHome({source,ambient,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;throw Error('install failed');}}),/install failed/);
+ const {source,ambient,archives}=fixture(t);let home;
+ assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;throw Error('install failed');}}),/install failed/);
  assert.equal(existsSync(home),false);
 });
 
-test('the default managed installer runs the checkout CLI with its isolated environment',t=>{
- const {source,ambient}=fixture(t);let invocation;
- const scratch=prepareCapabilityHome({source,ambient,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
+test('the default managed installer runs the checkout CLI with its isolated environment, from the prepared archive cache',t=>{
+ const {source,ambient,archives}=fixture(t);let invocation;
+ const scratch=prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),run:(...args)=>{invocation=args;installed(args[2].env.CUA_HOME);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
  t.after(()=>scratch.cleanup());
- assert.equal(invocation[0],process.execPath);assert.deepEqual(invocation[1],['bin/cua.mjs','install']);
+ const cache=archiveCacheDir(source);
+ assert.equal(invocation[0],process.execPath);assert.deepEqual(invocation[1],['bin/cua.mjs','install','--archive',join(cache,'r1-linux-x64.deb'),'--node-archive',join(cache,'node-v24.0.0-linux-x64.tar.gz')]);
  assert.equal(realpathSync(invocation[2].cwd),realpathSync(new URL('../../',import.meta.url)));assert.equal(invocation[2].env.CUA_HOME,scratch.dir);assert.equal(invocation[2].env.CUA_NODE,undefined);
+});
+
+test('an absent or damaged archive cache refuses before any scratch exists or anything installs',t=>{
+ const {source,ambient,archives}=fixture(t),scratchRoot=join(ambient.HOME,'.cp');let installs=0;
+ const attempt=options=>prepareCapabilityHome({source,ambient,scratchRoot,install:()=>{installs++;},inspect:()=>{throw Error('nothing installed');},...options});
+ // The default resolver reads the prepared home's cache under the checked-in pins; this fixture home has none of theirs.
+ assert.throws(()=>attempt({}),/never download.*cleanup-prepared.*prepare again/s);
+ rmSync(join(archiveCacheDir(source),'node-v24.0.0-linux-x64.tar.gz'));
+ assert.throws(()=>attempt({archives}),/node-v24\.0\.0-linux-x64\.tar\.gz.*cleanup-prepared/s);
+ assert.equal(installs,0);assert.deepEqual(existsSync(scratchRoot)?readdirSync(scratchRoot):[],[]);
+});
+
+test('an installer refusing a cached archive asks for a fresh preparation and removes the scratch',t=>{
+ const {source,ambient,archives}=fixture(t);let home;
+ const refusal=Object.assign(Error('Command failed: node bin/cua.mjs install\ncua: archive SHA-256 is 00; the pin expects 11 [archive_hash_mismatch]\n  pass the pinned ChatGPT archive, or omit --archive to download it'),{status:1});
+ assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),run:(file,args,options)=>{home=options.env.CUA_HOME;throw refusal;}}),
+  error=>/archive_hash_mismatch/.test(error.message)&&/managed fixtures never download.*cleanup-prepared.*prepare again/s.test(error.message)&&error.cause===refusal);
+ assert.equal(existsSync(home),false);
+ // Other installer failures keep their own message.
+ assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:()=>{throw Error('install failed');}}),error=>error.message==='install failed');
+});
+
+// Every remote fixture entry builds its scratch through the shared preparation from the prepared home (CUA_HOME),
+// so all of them (repl cells, binder, browser capability host, boundary probes, Linux native) install from its cache.
+test('every managed fixture consumer installs through the shared preparation without its own installer',()=>{
+ const consumers=['serve-cells.mjs','serve-binder.mjs','serve-capability.mjs','probe-boundary.mjs','serve-native.mjs'];
+ for(const file of consumers){
+  const text=readFileSync(new URL(`./${file}`,import.meta.url),'utf8'),calls=[...text.matchAll(/prepareCapabilityHome\((\{.*?\})\)/g)].map(m=>m[1]);
+  assert.ok(calls.length>0,file);
+  for(const call of calls){
+   const keys=[...call.matchAll(/[{,]\s*([A-Za-z_$][\w$]*)\s*(?=[:,}])/g)].map(m=>m[1]);
+   assert.ok(keys.includes('source'),`${file} names the prepared home`);
+   assert.deepEqual(keys.filter(key=>!['source','prefix'].includes(key)),[],`${file} takes the default installer and cache`);
+  }
+  assert.match(text,/process\.env\.CUA_HOME/,`${file} reads the prepared home from CUA_HOME`);
+ }
 });
 
 test('managed fixture environments clear overrides without deriving one from source facts',()=>{

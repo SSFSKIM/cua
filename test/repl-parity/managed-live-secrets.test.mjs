@@ -15,6 +15,7 @@ function managedFixture(t){
  const root=realpathSync(mkdtempSync(join(tmpdir(),'cua-managed-secret-test-'))),source=join(root,'source'),parent=join(root,'user','.cp');
  mkdirSync(join(source,'runtimes','fixture'),{recursive:true});writePointer(source,'fixture');
  const capability=prepareCapabilityHome({source,scratchRoot:parent,ambient:{CUA_PARITY_REMOTE:'1',CUA_PARITY_NODE_MODE:'managed',PATH:'/usr/bin:/bin'},
+  archives:()=>({vendor:'/prepared/cache/vendor.deb',node:'/prepared/cache/node.tar.gz'}),
   install:({home})=>{mkdirSync(join(home,'runtimes','fixture'),{recursive:true});writePointer(home,'fixture');},
   inspect:({home})=>({path:join(home,'node','24.fixture','bin','node'),version:'v24.18.0'})});
  t.after(()=>rmSync(root,{recursive:true,force:true}));

@@ -21,8 +21,10 @@ function fixture(run,{managed=true}={}) {
  const runCommand=(file,args,options)=>{
   commands.push({file,args,env:options.env});return JSON.stringify({profiles:[{key:'ssfs',ready:true,extensionInstanceId:'fixture-backend',chromeProfileDirectory:'Profile 1',label:'DO-NOT-RETURN'},{key:'unrelated',ready:false,extensionInstanceId:'other'}]});
  };
- const deps={ambient,inspect,run:runCommand,endpointOptions:{directoryRoot:owned,tempRoot:'/not-this-test-directory',runCli:(home,args)=>{
-  commands.push({home,args});assert.deepEqual(args,['install']);
+ const cached=[],cacheArchives=home=>{cached.push(home);return {vendor:join(home,'parity-archives','vendor.deb'),node:join(home,'parity-archives','node.tar.gz')};};
+ const deps={ambient,inspect,run:runCommand,endpointOptions:{directoryRoot:owned,tempRoot:'/not-this-test-directory',cacheArchives,runCli:(home,args)=>{
+  commands.push({home,args});assert.deepEqual(cached,[home],'the archive cache is fetched once, into this home, before install');
+  assert.deepEqual(args,['install','--archive',join(home,'parity-archives','vendor.deb'),'--node-archive',join(home,'parity-archives','node.tar.gz')]);cached.length=0;
   if(managed){mkdirSync(join(home,'node/24.18.0/bin'),{recursive:true});writeFileSync(join(home,'node/24.18.0/bin/node'),'installer double');}
  }}};
  try{return run({root,source,owned,journal,binding,registry,inspections,commands,deps});}finally{rmSync(root,{recursive:true,force:true});}

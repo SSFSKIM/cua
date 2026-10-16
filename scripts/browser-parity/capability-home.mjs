@@ -9,21 +9,24 @@
 //     vendor would refuse what cua serves and the run would compare nothing.
 //   - `home/`, the HOME the serve runs with (scripts/browser-parity/topology.mjs localCuaServeCommand), empty.
 // The directory is short because a Unix socket path below it must fit 104 bytes. Remote managed runs install
-// freshly under ~/.cp (outside TMPDIR); legacy/local doubles keep the cloned-runtime path in /tmp.
+// freshly under ~/.cp (outside TMPDIR), through the real release install path from the prepared home's verified
+// archive cache (scripts/repl-parity/archive-cache.mjs), never a download; legacy/local doubles keep the
+// cloned-runtime path in /tmp.
 import {execFileSync} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {ownNodeFacts} from '../repl-parity/provenance.mjs';
+import {cachedArchives} from '../repl-parity/archive-cache.mjs';
 import {assertManagedNode,nodeEnvironment} from '../repl-parity/node-provenance.mjs';
 import {defaultHome, homeLayout, readPointer, writePointer} from '../../src/runtime/layout.mjs';
 import {cuaRecordFile} from '../../src/chrome/route.mjs';
 import {backendDir} from '../../src/chrome/extension.mjs';
 
 // The installer and executable-facts boundaries are synchronous and injectable; local doubles never run install.
-function installRuntime({env,run}) {
-  run(process.execPath, ['bin/cua.mjs', 'install'], {
+function installRuntime({env,run,archives}) {
+  run(process.execPath, ['bin/cua.mjs', 'install', '--archive', archives.vendor, '--node-archive', archives.node], {
     cwd: fileURLToPath(new URL('../../', import.meta.url)), env,
     stdio: ['ignore', 'ignore', 'pipe'], timeout: 300000, maxBuffer: 1024 * 1024,
   });
@@ -32,12 +35,13 @@ function installRuntime({env,run}) {
 // -> {dir, userHome, release, nodeMode, ownNode?, cleanup()}; source facts remain the caller's provenance.
 export function prepareCapabilityHome({source = defaultHome(), platform = process.platform, ambient = process.env,
   prefix = (ambient.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'cap-', scratchRoot, install = installRuntime, run = execFileSync,
-  inspect = ({home,ambient}) => ownNodeFacts(ambient,{home})} = {}) {
+  archives = cachedArchives, inspect = ({home,ambient}) => ownNodeFacts(ambient,{home})} = {}) {
   const release = readPointer(source);
   const runtime = release && join(homeLayout(source).runtimes, release);
   if (!runtime || !existsSync(runtime)) throw new Error(`no installed runtime in ${source}; run \`cua install\` first`);
   if(!/^cua-[a-z0-9-]+-$/.test(prefix))throw new Error('Invalid capability scratch prefix');
   const managed = ambient.CUA_PARITY_REMOTE === '1' && ambient.CUA_PARITY_NODE_MODE === 'managed';
+  const cache = managed ? archives(source) : null;
   // Preparation may already give us a deeply nested private HOME. The account home keeps socket paths short.
   const parent = managed ? (scratchRoot ?? join(userInfo().homedir, '.cp')) : '/tmp';
   if (managed) mkdirSync(parent, {recursive: true, mode: 0o700});
@@ -48,7 +52,11 @@ export function prepareCapabilityHome({source = defaultHome(), platform = proces
     mkdirSync(userHome, {mode: 0o700});
     if (managed) {
       const env = nodeEnvironment({...ambient, CUA_HOME: dir, HOME: userHome});
-      install({home: dir, env, run});
+      try { install({home: dir, env, run, archives: cache}); }
+      catch (error) {
+        if (!/\[archive_[a-z_]+\]/.test(error.message)) throw error;
+        throw new Error(`${error.message}\nThe prepared archive cache was refused; managed fixtures never download: run cleanup-prepared, then prepare again`, {cause: error});
+      }
       if (readPointer(dir) !== release || !existsSync(join(homeLayout(dir).runtimes,release))) throw new Error('Fresh scratch runtime release differs from prepared source');
       ownNode = assertManagedNode({home: dir, ownNode: inspect({home: dir, ambient: env})});
     } else {

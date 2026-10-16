@@ -70,7 +70,7 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   const env=cellsServeEnv(fixtureNodeEnvironment(process.env),{scratch,sandbox,host});
   let connection,fixtureServices;
   try {
-    fixtureServices=services?await createFixtureServices({nativeSecrets:process.env.CUA_PARITY_FIXTURE_CASE?.startsWith('secrets/native-live/'),timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
+    fixtureServices=services?await createFixtureServices({nativeSecrets:process.env.CUA_PARITY_FIXTURE_CASE?.startsWith('secrets/native-live/'),longPathPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/absolute-path',timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
       chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{attestFixtureLaunch(l,{host,facts,home:scratch.dir,output,legacyExpected:true});if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});
     const terminate=()=>connection.close('signal');process.once('SIGTERM',terminate);process.once('SIGINT',terminate);

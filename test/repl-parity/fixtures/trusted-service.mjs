@@ -42,6 +42,18 @@ export async function handleRpc(r){
   return createSkyService({loadVendor:async()=>backend,secrets,platform:'darwin'}).handleRpc({type:'execute',method:'type_text',args:[{app:'fixture',text:'{{secret:PARITY_SYNTHETIC}}'}]});
  }
  case 'pipe':{
+  if(r.mode==='long-path'){
+   const path=nodeRepl.env.PARITY_PIPE_LONG,metadata={platform:process.platform,pathBytes:Buffer.byteLength(path),sunPathBytes:process.platform==='darwin'?104:108};
+   let socket;try{socket=await nodeRepl.nativePipe.createConnection(path);}catch(error){return {...metadata,status:'refused',bytes:[],message:error.message};}
+   return await new Promise(resolve=>{
+    const bytes=[];let message=null,finished=false;
+    const finish=status=>{if(finished)return;finished=true;clearTimeout(timer);resolve({...metadata,status,bytes,message});};
+    const timer=setTimeout(()=>{socket.end();finish('fixture-timeout');},5000);
+    socket.on('data',chunk=>bytes.push(...chunk));socket.on('error',error=>{message=error.message;});
+    socket.on('close',()=>finish(message===null?'connected':'transport-error'));
+    socket.write(new Uint8Array([0,255,128,10,13,65]));
+   });
+  }
   if(r.mode==='wire-error'&&nodeRepl.env.PARITY_FIXTURE_WIRE_INJECTION!=='1')throw new Error('Native wire injection is harness-only');
   if(r.mode==='relative')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_RELATIVE);
   if(r.mode==='timeout'){const start=performance.now();try{await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);return {refused:false};}catch(e){return {refused:true,budget:Number(nodeRepl.env.NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS??nodeRepl.env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS),observation:/timed out|timeout/i.test(e.message)?'timer-expired':/refused|temporarily unavailable/i.test(e.message)?'saturated-peer-refused':'unexpected-error',platform:process.platform,...(process.platform==='linux'?{message:e.message,boundedRefusal:performance.now()-start<1000}:{})};}}

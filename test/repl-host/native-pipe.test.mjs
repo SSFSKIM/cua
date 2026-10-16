@@ -123,6 +123,39 @@ test('a path that does not resolve is unavailable, with the platform\'s sentence
   assert.deepEqual(sent, cases.map(([name, detail]) => ({type: 'native_pipe_response', id: name, ok: false, error: `native pipe path unavailable: ${detail}`})));
 });
 
+// Rust's PathBuf keeps a canonical path's bytes; a UTF-8 string would turn a non-UTF-8 name into replacement characters.
+test('the canonical path reaches stat as realpath\'s bytes, unchanged', () => {
+  const canonical = Buffer.from([0x2f, 0x74, 0x2f, 0xff, 0x2f, 0x73]); // /t/\xff/s
+  const calls = [];
+  const {relay, sockets} = relayWith({
+    realpath: (path, options) => { calls.push(['realpath', path, options]); return canonical; },
+    stat: path => { calls.push(['stat', path]); return socketStat; },
+  });
+  relay.handle({id: 'b', op: 'connect', path: '/alias/s'});
+  assert.deepEqual(calls, [['realpath', '/alias/s', {encoding: 'buffer'}], ['stat', canonical]]);
+  assert.equal(calls[1][1], canonical, 'the same Buffer, not a decoded copy');
+  assert.deepEqual(sockets.map(socket => socket.path), ['/alias/s']);
+});
+
+// Linux names are bytes; APFS refuses a non-UTF-8 name (EILSEQ), so the case exists only on Linux.
+test('a socket under a non-UTF-8 directory, reached through an ASCII alias, connects', {skip: process.platform !== 'linux' && 'non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)'}, async t => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-pipe-')));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const raw = Buffer.concat([Buffer.from(`${dir}/`), Buffer.from([0x6e, 0xff, 0x6e])]);
+  mkdirSync(raw);
+  symlinkSync(raw, join(dir, 'alias'));
+  const path = join(dir, 'alias', 's.sock');
+  const server = createServer(c => c.end()).listen(path);
+  t.after(() => server.close());
+  await new Promise(resolve => server.once('listening', resolve));
+  const sent = [];
+  const relay = nativePipeRelay({send: message => sent.push(message)});
+  t.after(() => relay.closeAll());
+  relay.handle({id: 'n', op: 'connect', path});
+  for (let i = 0; i < 100 && !sent.some(m => m.type === 'native_pipe_response'); i++) await delay(10);
+  assert.deepEqual(sent.find(m => m.type === 'native_pipe_response'), {type: 'native_pipe_response', id: 'n', ok: true, result: {connection_id: 'native-pipe-connection-0'}});
+});
+
 test('a connected socket relays data and a write; a transport error that is not the peer leaving closes with its sentence; writes after close are refused', async () => {
   const {relay, sent, sockets} = relayWith();
   relay.handle({id: 'c', op: 'connect', path: '/tmp/s.sock'});

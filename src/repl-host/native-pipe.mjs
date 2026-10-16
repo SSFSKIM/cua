@@ -86,7 +86,8 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     if (path.includes('\0')) return fail(id, `${PATH_UNAVAILABLE_PREFIX}${NUL_IN_PATH_SENTENCE}`);
     let canonical, metadata;
     try {
-      canonical = realpath(path);
+      // Bytes, as the vendor's PathBuf holds them: decoding a Linux name that is not UTF-8 would stat another path.
+      canonical = realpath(path, {encoding: 'buffer'});
     } catch (error) {
       return fail(id, `${PATH_UNAVAILABLE_PREFIX}${osErrorSentence(error)}`);
     }

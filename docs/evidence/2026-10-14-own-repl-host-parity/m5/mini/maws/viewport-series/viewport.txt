@@ -1,0 +1,6 @@
+1-vendor-try1 PASS {'format': 'jpeg', 'width': 800, 'height': 600}
+2-cua-try1 PASS {'format': 'jpeg', 'width': 800, 'height': 600}
+3-vendor-try1 PASS {'format': 'jpeg', 'width': 800, 'height': 600}
+4-cua-try1 PASS {'format': 'jpeg', 'width': 800, 'height': 600}
+5-vendor-try1 PASS {'format': 'jpeg', 'width': 800, 'height': 600}
+6-cua-try1 PASS {'format': 'jpeg', 'width': 800, 'height': 600}

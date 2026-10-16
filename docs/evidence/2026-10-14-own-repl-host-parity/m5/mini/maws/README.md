@@ -165,8 +165,28 @@ The viewport capability goes from the facade to cua's browser service to MAWS's 
 REPL host only relays it. The likely cause is a race in which the screenshot lands before MAWS applies the emulation on a
 parked view.
 
-One failure in three is not enough to say whether the vendor host shows the same thing on the mini. **No vendor-host
-control was run.** Attempt 1 stays committed as evidence of the intermittent.
+One failure in three is not enough to say whether the vendor host shows the same thing on the mini. Attempt 1 stays
+committed as evidence of the intermittent.
+
+### The viewport series (settled: environmental or MAWS flake)
+
+By the session's ruling, `viewport-series/` ran an alternating series on the mini: vendor, own, vendor, own, vendor, own.
+- Each run had a fresh managed `cua install` home with `CUA_NODE` unset, and the same idle gates.
+- Every run was a counted first try, with a clean quit and no stray processes.
+
+**The 800×600 set gave 800×600 in all six runs:** vendor 3/3, own 3/3. Every verdict was PASS.
+- Vendor runs attested `rmcp 1.5.0` with no marker.
+- Own runs attested `cua-repl-host 0.5.0` on the managed Node under each run's home.
+
+Under the ruling ("never recurs"), attempt 1's 800×500 is an environmental or MAWS flake on the mini, not a host defect. The
+counts, including attempt 1:
+
+| Host | Runs on the mini | 800×500 |
+|---|---|---|
+| Own | 6 | 1 |
+| Vendor | 3 | 0 |
+
+Per-run rows, loads and cleanup are in `viewport-series/README.md`.
 
 ## Cleanup
 

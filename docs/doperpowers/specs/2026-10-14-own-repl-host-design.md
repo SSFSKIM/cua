@@ -539,6 +539,24 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: Four rulings shape M5's remaining live work.
+  - **Linux native speed runs on a quiet cloud box.** The comparison (acceptance 8's native half) runs on `cua-bench` (Hetzner cax31, aarch64, Ubuntu 24.04, Xvfb :0 1440x900 with openbox and AT-SPI, gedit 46), not on the cua-linux VM.
+    - Both the own triple and a fresh vendor triple run there in one sitting. The M0 VM baseline is history, not the comparator.
+    - The evidence records the box, its idle load and its environment.
+    - Task 6a makes the native-baseline harness device-generic first: per-device facts, the managed Node from a fresh `cua install`, and `compare` refusing runs from different devices.
+    - If the controller Mac goes quiet before task 6, the VM remains acceptable for the measurement. Whichever host is used, its load is stated.
+    - The VM keeps the correctness work: `--suite all` on both hosts, the Linux runners, the lifeline check, the remote endpoint and the selection lane.
+  - **MAWS under its new gate rule** (MAWS gate-offload plan §3.5–3.6, Decision Log 45–46). MAWS e2e no longer runs on the MacBook.
+    - `e2e:browser-cua` runs once on the mini's ci runner through MAWS master's `scripts/ci-gate.sh <sha> --gates e2e:browser-cua --label cua-m5`. It pushes one `ci/` ref, deleted by the script. It is a fake-host regression independent of cua, so it is never host proof.
+    - The live probe runs afterwards from the mini parity clone, between CI jobs.
+      - Its MAWS clone is scratch, outside the runner's `_work`, and its `cua install` home is fresh, with the managed Node.
+      - It starts only with both runners idle and nothing queued or in progress.
+      - It must not overlap a job; a probe that overlaps one is aborted and rerun.
+      - It quits Electron cleanly, and the evidence records that no MAWS or Electron process from the clone remains.
+  - **Chrome window loss on the mini** is tracked as #148. Two mechanisms: the browser host's cleanup has no last-tab guard, and the extension host also died once with no client activity at all. Executors check ssfs readiness around every suite. On `host_not_live`, they may reopen the mini's Profile 1 window with exactly `open -na "Google Chrome" --args --profile-directory="Profile 1" chrome://extensions/` and wait up to 60 s, logging each occurrence. A suite interrupted by a drop is committed as a labelled diagnostic and rerun.
+  - **Secrets-live scratch home.** Since managed preparation puts the capability home under `~/.cp`, the live secret service accepts exactly the capability root the producer chose for the run, passed explicitly. Every other parent is still refused (5f188d9).
+  Rationale: Session rulings with the owner and the MAWS gate session. Timing needs a quiet host, and the controller Mac's load stays at 100–450. MAWS's gate moved its Electron runs to the mini.
+  Date/Author: 2026-10-16, session rulings, recorded by the plan-executor.
 - Decision: M5 task 2, the oracle, as built (merged at 28bfd5a; the calibration evidence pin f74b312 must stay an ancestor).
   - **Stat sentence.** `cells/native-pipe/absolute-path` gains a separately journaled `stat-missing` cell, with platform-indexed expectations. Mini vendor: `native pipe path unavailable: No such file or directory (os error 2)`. The Linux control is recorded in task 6's sitting.
   - **Polling recalibration.** Two fresh vendor pairs cover actions/locators, wait-for, slow-budget, input/coordinates and waits/networkidle. `deriveTraceAllowances` takes the union of the maximum spreads per case, cell and method, across these pairs and the M2 controls. Locator bounds are 1. Slow-budget's observed vendor spread is 19 evaluates and 21 releases; that is recorded vendor variance, not a hand-chosen allowance.

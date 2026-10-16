@@ -1,7 +1,7 @@
 {
   "axis": "repl-host",
   "kind": "vendor-trace-variance",
-  "revision": "f74b312384c6ec493e2c95e4eb9f496f0c4c8d70",
+  "revision": "f7ac87d5d47e0317d18d53f96d3e4c4b2c571f69",
   "pairs": [
     {
       "a": "docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host",
@@ -22,6 +22,18 @@
     {
       "a": "docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/polling-control-5",
       "b": "docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/polling-control-6"
+    },
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/corpus-vendor-host",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/corpus-vendor-host-2"
+    },
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/corpus-vendor-host",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/corpus-vendor-host-3"
+    },
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/corpus-vendor-host-2",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/corpus-vendor-host-3"
     }
   ]
 }

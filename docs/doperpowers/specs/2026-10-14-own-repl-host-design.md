@@ -539,6 +539,31 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M5 runs as six tasks in one PR on `feat/own-repl-host-m5` (base main 56ea8c3). Code and mini-side work come first; every cua-linux step falls in one VM sitting at the end.
+  - **Task 1 (opus, main worktree): the switch.**
+    - `replHostFor`'s absent/empty defaults (`linux`, `browser_only`) and doctor's `repl.host` row, with `staged_vendor_default` gone.
+    - Package files and an `npm pack --dry-run --json` check for the owned documents and parser assets.
+    - `.claude-plugin/plugin.json` and `marketplace.json` from 0.11.0 to 0.12.0.
+    - `REPL_HOST_VERSION` from 0.4.0 to 0.5.0, so every M5 record attests one version, distinct from M4's pre-lifeline heads.
+  - **Task 2 (astra, sibling worktree, in parallel with task 1): the M5 oracle.**
+    - The live services row for a nativePipe stat/connect failure sentence, on both hosts.
+    - Locator polling recalibration from at least two vendor-against-vendor pairs.
+    - **RemoteProofEndpoints**: `scripts/repl-parity/remote.mjs` with the kill-client/count-one probe and owned cleanup. Its mini endpoint can be restarted under either host, so one enrolled browser-only identity also serves the benchmark's vendor-host control.
+    - A live selection/doctor lane for acceptance 9.
+    - The mini vendor controls those cases need.
+  - **Task 3 (sol-xhigh, after task 1's review): the documents.** README's ownership, Node floor, sandbox, Chrome, configuration and licensing sections and the staged macOS limitation; the dated Phase A/B revision of `2026-10-02-standalone-cua-design.md`.
+  - **Task 4 (opus): the mini sitting.**
+    - The cua host's `--suite all` against a fresh vendor pair.
+    - The 59-case corpus by host, docs-profiles, the MAWS probe and unchanged e2e.
+    - Scripted benchmark episodes 3+3, the selection lane and package contents.
+  - **Task 5: remote acceptance on the mini's browser-only endpoint, and the model benchmark.** Six serial controller runs: three vendor-host controls and three own, all on the same harness-owned browser-only route. That route is used because the resident mini's `computer,browser` surfaces select vendor, so #113's resident-route evidence is not a matched control.
+  - **Task 6 (opus): the cua-linux sitting.**
+    - Vendor and own `--suite all` at the M5 head, which carries the lifeline and strerror changes.
+    - The native-baseline own triple with a fresh vendor control, on a quiet controller.
+    - The three Linux runners and the Linux lifeline real-launcher check.
+    - The Linux remote endpoint with kill-client, and the selection lane.
+  Rationale: Same oracle/subject separation as M0–M4. The brief orders VM work into one sitting because the VM runs on the controller Mac and its timing needs that Mac quiet.
+  Date/Author: 2026-10-16, plan-executor M5 pre-flight.
 - Decision: M4 task 3's follow-up, as built.
   - **Orphaned tree.** Its root cause was a test double's deliberate busy loop, kept alive because M2's EOF drain was unbounded (M3 fixed that). What remained on the head: once a supervisor is SIGKILLed, nothing ends a kernel or worker that is busy in synchronous code. Each kernel and trusted worker now watches a lifeline FIFO whose only writer is the supervisor. A thread does the watching and exits the process when the FIFO closes. The setting is removed before the child's environment is copied, and test-harness kernels get lifelines too. The lifeline is verified live under the real macOS scoped sandbox before the PR; the Linux real-launcher check moves to M5's Linux sitting.
   - **OS error text.** nativePipe OS errors use per-platform strerror tables (glibc on Linux, Darwin libc on macOS) for every errno the relay's syscalls can reach, not libuv's text.

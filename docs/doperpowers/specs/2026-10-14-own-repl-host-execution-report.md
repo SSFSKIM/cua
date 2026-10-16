@@ -10,7 +10,7 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
 | M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | merged (5722341) |
 | M3 | feat/own-repl-host-m3 | https://github.com/SSFSKIM/cua/pull/140 | merged (73598f8) |
-| M4 | feat/own-repl-host-m4 | (PR opened 2026-10-16) | review correct at 47ba181; gates on ci-kit |
+| M4 | feat/own-repl-host-m4 | https://github.com/SSFSKIM/cua/pull/146 | review correct at 47ba181; gates on ci-kit |
 
 ## Log
 

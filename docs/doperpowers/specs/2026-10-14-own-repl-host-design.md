@@ -539,6 +539,22 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M5 task 1b as built (managed Node v24.22.0).
+  - **Pins.** `runtime/releases/node/<version>-<platform>-<arch>.json`. The packed runtime pin loader skips this path. Each pin names the exact official nodejs.org `.tar.gz` URL; gzip is used so macOS needs no xz. `notes` are required and record the provenance check: `SHASUMS256.txt.sig` verified against the Node.js release keys, with gpgv agreeing; all four tarballs match their signed hashes; the darwin binaries carry Developer ID team `HX7739G8FX` (certificate name "Node.js Foundation").
+  - **Install.**
+    - The runtime installs first, then Node. `tar` and `gzip` are checked before any download.
+    - On darwin, the code signature is verified against a Developer ID Application requirement for the pinned team before `--version` runs. An unverified binary never executes.
+    - Layout: `$CUA_HOME/node/<version>/{bin/node,LICENSE,install.json}`, with the pointer `node/current.json` (`{schema:1,version}`) written by write-then-rename.
+    - A damaged install fails `node_install_invalid` and is never repaired in place. A foreign directory at the target fails `target_occupied`. Old versions are kept.
+  - **Failures.**
+    - A failed Node step exits 1 with its error code. The hint says the runtime is installed and names `--node-archive <tarball>`, a retry, or `--no-node`.
+    - `--no-node` skips the step explicitly.
+    - A platform with no pin skips the step without failing.
+    - `--json` reports a `node` field.
+  - **Resolution** trusts the install record, not the checked-in pin. After a cua upgrade bumps the pin, the installed Node stays in use until `cua install` runs again.
+  - **Doctor.** No new row. `repl.host` names the Node path and lists `cua install` first among the remedies.
+  Rationale: Follows the owner's direction with the runtime's own install discipline. Verifying the signature before running anything keeps the trust chain closed on darwin; on Linux the pinned archive hash is the trust root.
+  Date/Author: 2026-10-16, M5 task 1b executor, folded by the plan-executor (task review pending).
 - Decision: `cua install` also installs a pinned official Node 24 for the own host, so the default switch does not depend on the user's Node. This is task 1b (opus), placed after task 1.
   - **Pins.** One per supported platform and arch: darwin-arm64, darwin-x64, linux-arm64, linux-x64. Each sits next to the runtime release pins and names the official nodejs.org dist tarball by https URL, length and SHA-256, for the current Node 24 LTS patch. The hashes are checked once, when the pin is written, against nodejs.org's `SHASUMS256.txt` and its GPG signature, and the pin's notes record that check, as the vendor pin's provenance was recorded.
   - **Install.** It follows the runtime's discipline in `src/runtime/install.mjs`:

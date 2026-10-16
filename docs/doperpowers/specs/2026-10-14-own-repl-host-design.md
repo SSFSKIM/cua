@@ -539,6 +539,13 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: The over-limit nativePipe oracle (commits 519146a through d49e6da).
+  - **The case.** The services case gains a cell that connects to a harness-owned listener at a 192-byte absolute socket path. The peer binds a relative name inside its own deep cwd; the subject is handed the full absolute path.
+  - **What counts.** The cell counts only if all three hold: the listener's own journal shows exactly one accepted connection, that connection carried exactly the six bytes sent, and the reversed response arrived. Fabricated and replayed responses fail mutation tests.
+  - **Linux.** The expected Linux refusal comes from disassembly, so it is machine-readable provisional (`test/repl-parity/provisional-oracles.json`). A provisional cell is never covered, and it keeps `allAssertionsPassed` false until task 6 records the live Linux vendor control.
+  - **Evidence.** The mini vendor pair at 63a5157 (`m5/long-native-pipe/peer-witness/`): 41 cases, 76 cells, 0 differences. The earlier pair has no peer witness; it is kept as history and the current oracle rejects it.
+  Rationale: Two review waves. A byte proof the subject's own transport can satisfy is not proof of a connection.
+  Date/Author: 2026-10-16, M5 oracle executor and its reviews, folded by the plan-executor.
 - Decision: nativePipe connects to socket paths beyond `sun_path` as the vendor does (30b238e, d935899, a2ae6b2, e24a1cd). The session ruled this into M5's scope, superseding the residue note in the next entry. MAWS client-mode sockets (`<userData>/browser/cua/<id>.sock`) cross 104 bytes on macOS under a longer username or a scratch user-data path, and the own host failed there while the vendor connected.
   - **The vendor's behaviour** (disassembly, `node_repl` 26.928.40906).
     - macOS: below 104 bytes the canonical path is connected directly. At 104 bytes or more the vendor opens the parent read-only, sets a per-thread cwd (`pthread_fchdir_np`) and connects the bare file name. A file name over 103 bytes is refused with `native pipe file name is too long`.

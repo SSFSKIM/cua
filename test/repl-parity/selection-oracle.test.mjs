@@ -102,3 +102,39 @@ test('selection verdict rejects mismatched real host markers under doctor\'s act
  const stale=structuredClone(observation);stale.serverInfo.version='0.0.0-stale';stale._meta['cua/replHost'].version='0.0.0-stale';
  assert.throws(()=>assertSelection(row,{doctor,observation:stale},reviewed),/version.*source|source.*version/i);
 });
+// The live lane's environment for a row, as selection-device.mjs builds it; MAWS client mode needs only a configured
+// backend path to be in play.
+const liveEnv=row=>({...envFor(row),...(row.maws?{CUA_BROWSER_BACKENDS:'/maws-fixture.sock'}:{}),...(row.browserService?{CUA_BROWSER_SERVICE:row.browserService}:{})});
+const doctorAs=(t,row,registration=row.registration)=>doctorReplHost(t,{platform:row.platform,env:liveEnv(row),node:MANAGED,registration});
+const observationFor=(row,commit)=>expectedSelection(row).host==='cua'?ownObservation(commit):{host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:null};
+test('route precedence on doctor\'s actual row: explicit service, then an active cua registration, then MAWS, then ChatGPT',async t=>{
+ const reviewed=reviewedSource(t);
+ const rows=selectionCases('darwin').filter(r=>r.node24&&!r.managedNode&&!expectedSelection(r).error).map(r=>({...r,managedNode:true}));
+ assert.ok(rows.some(r=>r.maws&&r.registration==='cua')&&rows.some(r=>r.maws&&r.registration==='chatgpt-then-cua')&&rows.some(r=>r.maws&&r.registration==='cua-then-chatgpt')&&rows.some(r=>r.browserService));
+ for(const row of rows){
+  const doctor=await doctorAs(t,row);
+  assert.doesNotThrow(()=>assertSelection(row,{doctor,observation:observationFor(row,reviewed.reviewedCommit)},reviewed),JSON.stringify(row));
+ }
+});
+test('route verdict rejects doctor\'s actual row when another source decided the route',async t=>{
+ const reviewed=reviewedSource(t);
+ const row=(registration,maws,extra={})=>({platform:'darwin',registration,maws,surfaces:['browser'],lane:'ordinary',override:'vendor',node24:true,managedNode:true,...extra});
+ const vendor={host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:null};
+ for(const [label,graded,decidedBy] of [
+  ['MAWS named where cua\'s registration decides',row('cua',true),row('none',true)],
+  ['MAWS named where cua\'s later registration decides',row('chatgpt-then-cua',true),row('chatgpt',true)],
+  ['cua\'s registration named where MAWS decides',row('cua-then-chatgpt',true),row('cua',true)],
+  ['cua\'s registration named where MAWS decides over no registration',row('none',true),row('cua',false)],
+  ['MAWS named where the ChatGPT registration decides',row('chatgpt',false),row('none',true)],
+  ['no registration named where the ChatGPT registration decides',row('chatgpt',false),row('none',false)],
+  ['a registration named where the explicit service decides',row('cua',true,{browserService:'vendor'}),row('cua',true)],
+ ]){
+  const doctor=await doctorAs(t,decidedBy);
+  assert.throws(()=>assertSelection(graded,{doctor,observation:vendor},reviewed),/browser route|MAWS/,label);
+ }
+ // MAWS named anywhere in the row, not only in its route words, where a cua registration decides.
+ const graded=row('cua',true),doctor=await doctorAs(t,graded);
+ assert.doesNotThrow(()=>assertSelection(graded,{doctor,observation:vendor},reviewed));
+ const mawsElsewhere={...doctor,detail:doctor.detail.replace('CUA_REPL_HOST=vendor. Browser route:','CUA_REPL_HOST=vendor, in MAWS. Browser route:')};
+ assert.throws(()=>assertSelection(graded,{doctor:mawsElsewhere,observation:vendor},reviewed),/MAWS only where MAWS client mode decides/);
+});

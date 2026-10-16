@@ -9,11 +9,29 @@ import {root,remoteCommand,quote,linuxSession,ownNodeEnv,execute} from './topolo
 import {checkHost} from './remote.mjs';
 import {assertManagedNode} from './node-provenance.mjs';
 const INVALID_REPL_HOST='CUA_REPL_HOST must be cua or vendor';
+// What decides a browser route, in the documented order: an explicit CUA_BROWSER_SERVICE, then an active cua
+// registration (the later of two registrations is active), then MAWS client mode, then the ChatGPT extension route, by
+// its registration or, with none, by default. The service follows: cua's for a cua registration or MAWS.
+function browserRouteDecider(row){
+ if(row.browserService)return 'explicit';
+ if(['cua','chatgpt-then-cua'].includes(row.registration))return 'cua_registration';
+ if(row.maws)return 'maws';
+ return row.registration==='none'?'unregistered':'chatgpt_registration';
+}
+// Doctor's "Browser route:" words for each decider; MAWS is named only where MAWS client mode decides.
+const ROUTE_WORDS={
+ no_browser:()=>/^none, no browser surface$/,
+ explicit:row=>new RegExp(`^CUA_BROWSER_SERVICE=${row.browserService}$`),
+ cua_registration:()=>/^the cua route, by cua's registration\b/,
+ maws:()=>/^MAWS's in-app browser\b/,
+ unregistered:()=>/^the ChatGPT extension route, as a home with no Chrome registration\b/,
+ chatgpt_registration:()=>/^the ChatGPT extension route, by its registration\b/,
+};
 export function expectedSelection(row){
- const {platform,registration,override,node24=true,maws=false,lane='ordinary'}=row;
+ const {platform,override,node24=true,lane='ordinary'}=row;
  const surfaces=lane==='profiles'?['browser']:row.surfaces;
  const browser=surfaces.includes('browser'),availableNode=node24||row.managedNode===true;
- const route=row.browserService??(maws||['cua','chatgpt-then-cua'].includes(registration)?'cua':'vendor');
+ const decider=browserRouteDecider(row),route=decider==='explicit'?row.browserService:['cua_registration','maws'].includes(decider)?'cua':'vendor';
  // An invalid value has two refusal boundaries: `cua serve` validates its settings at start (invalid_setting), while
  // the profile listing and doctor resolve the selection itself (invalid_repl_host). Both carry the one sentence.
  if(!['unset','cua','vendor'].includes(override))return {error:lane==='profiles'?'invalid_repl_host':'invalid_setting',doctorError:'invalid_repl_host',sentence:INVALID_REPL_HOST};
@@ -65,14 +83,10 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
  const ordinary=expectedSelection({...row,lane:'ordinary'}),listing=expectedSelection({...row,lane:'profiles'});
  const status=ordinary.error||listing.error?'fail':ordinary.status==='warn'||listing.status==='warn'?'warn':'pass';
  assert.equal(doctor.status,status);
- if(!row.surfaces.includes('browser'))assert.match(doctor.detail,/no browser surface/);
- else if(row.browserService)assert.ok(doctor.detail.includes('CUA_BROWSER_SERVICE='+row.browserService));
- else if(row.maws)assert.match(doctor.detail,/MAWS/);
- else if(row.registration==='none')assert.match(doctor.detail,/no Chrome registration/);
- else {
-  assert.match(doctor.detail,/registration/);
-  assert.match(doctor.detail,['cua','chatgpt-then-cua'].includes(row.registration)?/cua route|route cua/:/ChatGPT extension route/);
- }
+ const decider=row.surfaces.includes('browser')?browserRouteDecider(row):'no_browser';
+ const route=doctor.detail.split('. Browser route: ')[1]?.split('. The profile listing (browser only): ')[0];
+ assert.match(route??'',ROUTE_WORDS[decider](row),`Doctor's browser route ${JSON.stringify(route)} is not the one ${decider} decides`);
+ assert.equal(/MAWS/.test(doctor.detail),decider==='maws',`Doctor names MAWS only where MAWS client mode decides the browser route (here ${decider})`);
 }
 const describeRow=r=>[r.platform,`registration ${r.registration}`,...(r.maws?['maws']:[]),r.surfaces.join(','),r.lane,`override ${r.override}`,r.node24?'node24':'node22',...(r.managedNode?['managed Node']:[]),...(r.browserService?[`CUA_BROWSER_SERVICE=${r.browserService}`]:[])].join(', ');
 // Every failing row and check, by name; a lane that stopped early or recorded fewer rows than planned never passes.

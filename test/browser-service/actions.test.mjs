@@ -197,34 +197,44 @@ test('an open dialog or a spent budget during the obstruction check ends the cli
   assert.equal(broken.input('Input.dispatchMouseEvent').length, 0);
 });
 
-test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothing', async () => {
+test('a fill\'s paste has the caller\'s budget: queued past it, it pastes nothing', async t => {
   const {run, pastes, session} = setup([el('input', {id: 'text', type: 'text', value: 'old'})]);
   let release;
   const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
-  const error = await rejection(run('playwright_locator_fill', {selector: '#text', value: 'alpha', timeout_ms: 300}));
-  assert.equal(error.code, 'timeout');
-  release();
-  await busy;
-  await new Promise(resolve => setTimeout(resolve, 20));
+  // On a controlled clock the caller's timeout and its spent budget are the same instant. On the real one a loaded
+  // event loop can fire the wait's timer before Date.now() reaches the deadline, and a lock released in between lets
+  // the queued paste through (seen once on a hosted runner).
+  await onControlledClock(t, async () => {
+    const error = await rejection(run('playwright_locator_fill', {selector: '#text', value: 'alpha', timeout_ms: 300}));
+    assert.equal(error.code, 'timeout');
+    release();
+    await busy;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  });
   assert.equal(pastes.length, 0);
 });
 
-test('a clipboard shortcut queued behind another resolves its element within its own deadline: nothing runs after it', async () => {
+test('a clipboard shortcut queued behind another resolves its element within its own deadline: nothing runs after it', async t => {
   const field = el('input', {id: 'text', type: 'text', value: 'abc', disabled: true});
   const {browser, run, pastes, session} = setup([field]);
   session.clipboard.write([{entries: [{mime_type: 'text/plain', text: 'clip'}]}], 'test');
   let release;
   const busy = session.clipboard.runExclusive(() => new Promise(resolve => { release = resolve; }));
-  setTimeout(() => release(), 200);
-  const started = Date.now();
-  const error = await rejection(run('playwright_locator_press', {selector: '#text', value: 'Control+v', timeout_ms: 300}));
+  // On a controlled clock: the budget, the release at 200 ms and the 400 ms watch after it are exact on any machine.
+  const {error, elapsed, calls, later} = await onControlledClock(t, async () => {
+    setTimeout(() => release(), 200);
+    const started = Date.now();
+    const error = await rejection(run('playwright_locator_press', {selector: '#text', value: 'Control+v', timeout_ms: 300}));
+    const elapsed = Date.now() - started;
+    await busy;
+    const calls = browser.calls.length;
+    field.disabled = false;
+    await new Promise(resolve => setTimeout(resolve, 400));
+    return {error, elapsed, calls, later: browser.calls.length};
+  });
   assert.equal(error.code, 'timeout');
-  assert.ok(Date.now() - started < 500, `rejected with its budget (${Date.now() - started} ms)`);
-  await busy;
-  const calls = browser.calls.length;
-  field.disabled = false;
-  await new Promise(resolve => setTimeout(resolve, 400));
-  assert.equal(browser.calls.length, calls, 'no CDP call after the deadline');
+  assert.ok(elapsed >= 300 && elapsed < 400, `rejected with its 300 ms budget (${elapsed} ms)`);
+  assert.equal(later, calls, 'no CDP call after the deadline');
   assert.notEqual(field.ownerDocument.activeElement, field, 'the field was never focused');
   assert.equal(pastes.length, 0);
 });

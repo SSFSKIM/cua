@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // M5 RemoteProofEndpoints: orchestration only. All device mutations are owned by remote-device.mjs.
+import {declaredDevice} from './devices.mjs';
 import {parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
 import {validateAttestations} from './compare.mjs';
 import {attestedSourceVersion} from './source-identity.mjs';
 export function endpointPlan(experiment,device){
  if(!/^[a-z0-9][a-z0-9-]{0,13}$/.test(experiment))throw new Error('experiment must be a lowercase slug of at most 14 characters (device names are bounded)');
- if(!['mini','cua-linux'].includes(device))throw new Error('remote proof requires mini or cua-linux');
- return {device,name:`repl-${experiment}-${device==='mini'?'mini-browser':'linux'}`,surfaces:device==='mini'?['browser']:['computer','browser']};
+ declaredDevice(device);
+ return {device,name:`repl-${experiment}-${device==='mini'?'mini-browser':device==='cua-linux'?'linux':device}`,surfaces:device==='mini'?['browser']:['computer','browser']};
 }
 export function safeEnrollment(value){
  const keys=['deviceId','relayEndpoint','clientSecretKey','devicesEntry'];

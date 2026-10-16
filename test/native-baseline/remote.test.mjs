@@ -83,3 +83,10 @@ test('the own host\'s Node reaches the serve only through its command environmen
   assert.doesNotMatch(preflightScript({host: 'cua', display: ':0'}), /cua-parity-node/);
   assert.throws(() => preflightScript({host: 'vendor', display: ':0', node}), /vendor host uses its pinned one/);
 });
+
+test('ARM Linux CPU identity uses lscpu when the kernel exposes no model name to Node', async () => {
+  const {linuxCpuFacts}=await import('../../scripts/native-baseline/remote.mjs');
+  assert.deepEqual(linuxCpuFacts(JSON.stringify({lscpu:[{field:'Architecture:',data:'aarch64'},{field:'Model name:',data:'Neoverse-N1'}]}),[{model:'unknown'},{model:'unknown'}]),{model:'Neoverse-N1',count:2});
+  assert.deepEqual(linuxCpuFacts('',[{model:'Test CPU'}]),{model:'Test CPU',count:1});
+  assert.deepEqual(linuxCpuFacts('',[{model:'unknown'}]),{model:null,count:1});
+});

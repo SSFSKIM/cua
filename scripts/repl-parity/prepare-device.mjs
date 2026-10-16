@@ -5,6 +5,7 @@ import {basename,dirname,join,resolve,isAbsolute} from 'node:path';
 import {loadavg,availableParallelism} from 'node:os';
 import {parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
+import {declaredDevice} from './devices.mjs';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {executionFacts} from './provenance.mjs';
 import {prepareEndpoint,removeEndpoint} from './remote-device.mjs';
@@ -16,7 +17,7 @@ const SESSION_KEYS=['DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS','XDG_RUNTI
 const SAFE_KEYS=['PATH','TMPDIR','LANG','LC_ALL','LC_CTYPE','USER','LOGNAME','HOME','CUA_HOME','CHROME_CONFIG_HOME','XDG_CONFIG_HOME','CUA_PARITY_NODE_MODE',...SESSION_KEYS];
 const selectKeys=(env,keys)=>Object.fromEntries(keys.filter(key=>env[key]!==undefined).map(key=>[key,env[key]]));
 export function prepareDevice({device,profile,node,home}, {ambient=process.env,inspect=executionFacts,run=execFileSync,endpointOptions={}}={}) {
- const experiment='parity',plan=endpointPlan(experiment,device),source=home??(device==='cua-linux'?'/home/admin/.local/share/cua-h4':defaultHome(ambient));
+ const experiment='parity',plan=endpointPlan(experiment,device),source=home??declaredDevice(device).discoveryHome??defaultHome(ambient);
  if(!isAbsolute(source)||/[\0\n]/.test(source))throw new Error('prepare --home needs an absolute path');
  const sourceEnv=nodeEnvironment({...ambient,CUA_HOME:source},node);delete sourceEnv.CUA_PARITY_NODE_MODE;
  const listing=JSON.parse(run(process.execPath,['bin/cua.mjs','profiles','list','--json'],{encoding:'utf8',timeout:90000,maxBuffer:1024*1024,env:{...sourceEnv,CUA_SHIM_SECRETS:'off',CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:'vendor',CUA_BROWSER_SERVICE:'cua'}}));

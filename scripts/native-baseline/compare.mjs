@@ -17,6 +17,7 @@
 // (summary.mjs coverageProblems), the baseline the vendor host's and the candidate cua's, on a like machine, runtime,
 // native service, sandbox policy and plan.
 import {attestation, operationRank, summarize} from './summary.mjs';
+import {environmentProblems} from './environment.mjs';
 
 export const TOLERANCE = {ratio: 0.1, floorMs: 500};
 export const latencyLimit = median => median + Math.max(TOLERANCE.ratio * median, TOLERANCE.floorMs);
@@ -115,7 +116,7 @@ function judgeMethod(op, baseline, candidate) {
 // (summary.mjs readRuns), baseline the vendor host's, candidate cua's.
 export function compare(baselineRuns, candidateRuns) {
   const baseline = sideOf('baseline', baselineRuns, 'vendor'), candidate = sideOf('candidate', candidateRuns, 'cua');
-  const problems = [...baseline.problems, ...candidate.problems];
+  const problems = [...baseline.problems, ...candidate.problems, ...environmentProblems([...baselineRuns.map(r=>({...r,name:'baseline '+r.name})), ...candidateRuns.map(r=>({...r,name:'candidate '+r.name}))])];
   const left = attestation(baselineRuns[0].meta), right = attestation(candidateRuns[0].meta);
   for (const [key, label] of Object.entries(COMPARABLE)) if (left[key] !== right[key]) problems.push(`${label} differs (baseline ${left[key] ?? '–'}, candidate ${right[key] ?? '–'})`);
   const ops = [...new Set([...baseline.summary.operations, ...candidate.summary.operations].map(o => o.op))]

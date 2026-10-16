@@ -24,11 +24,11 @@ test('an over-limit connect counts only with the harness-owned peer witness, nev
   assert.throws(()=>run(peer===undefined?subjectOnly:{...subjectOnly,peer}),/peer witness/,JSON.stringify(peer));
  assert.throws(()=>run({...longValue('linux'),peer:{accepted:1,received:[[0,255,128,10,13,65]]}},'linux'),/peer witness/,'a Linux refusal the peer saw connect is not a refusal');
 });
-test('the source-derived Linux over-limit refusal is provisional: it is checked, but its case is never counted as covered',()=>{
+test('the live-confirmed Linux over-limit refusal counts as covered alongside Darwin',()=>{
  const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');
  const text=text=>({isError:false,content:[{type:'text',text}]});
  const run=platform=>s.assert({results:[text('true'),text('native pipe path unavailable: No such file or directory (os error 2)'),result(longValue(platform))],timings:[0,0,0],platform});
- assert.deepEqual(run('linux'),{ok:true,pendingCells:['connect-over-limit'],covered:false});
+ assert.deepEqual(run('linux'),{ok:true});
  assert.deepEqual(run('darwin'),{ok:true});
 });
 test('missing native pipe oracle rejects a successful connect and changed OS sentence on each platform',()=>{

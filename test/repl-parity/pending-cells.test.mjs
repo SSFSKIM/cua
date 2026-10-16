@@ -54,32 +54,41 @@ test('pending projection preserves annotations and metadata siblings on its clas
  const a=run();for(const [field,value] of [['annotations',{audience:['assistant']}],['_meta',{fixture:'changed'}]]){const b=run();b.rows[0].content[0][field]=value;assert.equal(compareParityRuns(a,b).ok,false,field);}
 });
 
-// A provisional oracle cell: its platform expectation is source-derived until a live vendor control is recorded.
-const overLimit='cells/native-pipe/absolute-path';
-function servicesRun({platform='linux',cells=['cell-1','stat-missing','connect-over-limit'],assertion}={}){
- const rows=[...cells.map(cell=>({case:overLimit,cell,ok:true,isError:false,content:[{type:'text',text:cell}]})),{case:overLimit,assertion:assertion??(platform==='linux'&&cells.includes('connect-over-limit')?{ok:true,pendingCells:['connect-over-limit'],covered:false}:{ok:true})}];
- return {meta:{host:'vendor',complete:true,platform,caseIds:[overLimit],caseCells:{[overLimit]:cells},connections:['c1'],hostAttestations:[{connection:'c1',host:'vendor',serverInfo:{name:'rmcp',version:'1'},_meta:null}]},tools:{},rows};
+// Keep the pending machinery exercised after the real Linux cell is confirmed. Install a test-only unconfirmed
+// declaration in the shared data array, and restore it after each test; no production expectation is left provisional.
+const unconfirmedCase='cells/fixture/unconfirmed';
+function unconfirmed(t){
+ const entry={case:unconfirmedCase,cell:'unconfirmed-cell',platform:'linux',reason:'Fixture expectation awaits a live vendor control'};
+ provisionalOracles.push(entry);t.after(()=>provisionalOracles.splice(provisionalOracles.indexOf(entry),1));
 }
-test('the Linux over-limit refusal is declared provisional in data the oracle and the accounting share',()=>{
- assert.deepEqual(provisionalCellsFor('linux',overLimit).map(d=>d.cell),['connect-over-limit']);
- assert.deepEqual(provisionalCellsFor('darwin',overLimit),[]);
- assert.deepEqual(provisionalCellsFor('linux',overLimit,['cell-1','stat-missing']),[],'a recording without the cell carries no provisional claim');
- for(const d of provisionalOracles){const s=scenarios.find(s=>s.id===d.case);assert.ok(s?.platforms.includes(d.platform),d.case);assert.ok(s.cells.some(c=>c.label===d.cell),d.cell);assert.match(d.reason,/task 6/);}
+function servicesRun({platform='linux',cells=['cell-1','stat-missing','unconfirmed-cell'],assertion}={}){
+ const rows=[...cells.map(cell=>({case:unconfirmedCase,cell,ok:true,isError:false,content:[{type:'text',text:cell}]})),{case:unconfirmedCase,assertion:assertion??(platform==='linux'&&cells.includes('unconfirmed-cell')?{ok:true,pendingCells:['unconfirmed-cell'],covered:false}:{ok:true})}];
+ return {meta:{host:'vendor',complete:true,platform,caseIds:[unconfirmedCase],caseCells:{[unconfirmedCase]:cells},connections:['c1'],hostAttestations:[{connection:'c1',host:'vendor',serverInfo:{name:'rmcp',version:'1'},_meta:null}]},tools:{},rows};
+}
+test('an unconfirmed declaration is shared by the oracle and accounting, without reopening the confirmed Linux cell',t=>{
+ unconfirmed(t);
+ assert.deepEqual(provisionalCellsFor('linux','cells/native-pipe/absolute-path'),[]);
+ assert.deepEqual(provisionalCellsFor('linux',unconfirmedCase).map(d=>d.cell),['unconfirmed-cell']);
+ assert.deepEqual(provisionalCellsFor('darwin',unconfirmedCase),[]);
+ assert.deepEqual(provisionalCellsFor('linux',unconfirmedCase,['cell-1','stat-missing']),[],'a recording without the cell carries no provisional claim');
 });
-test('a provisional cell executes and compares exactly, but its case is pending on Linux and never counted as covered',()=>{
+test('a provisional cell executes and compares exactly, but its case is pending on Linux and never counted as covered',t=>{
+ unconfirmed(t);
  const a=servicesRun(),b=servicesRun(),assessed=assessAssertions(a.meta,a.rows);
- assert.deepEqual([assessed.coveredCases,assessed.pendingCases,assessed.unexpectedFailures.length],[0,[overLimit],0]);
+ assert.deepEqual([assessed.coveredCases,assessed.pendingCases,assessed.unexpectedFailures.length],[0,[unconfirmedCase],0]);
  const diff=compareParityRuns(a,b);assert.equal(diff.ok,true,JSON.stringify(diff.differences));assert.equal(diff.cases,0);assert.equal(diff.recordedCases,1);assert.equal(diff.allAssertionsPassed,false);
- assert.deepEqual(diff.provisionalCells.map(({case:id,cell})=>({case:id,cell})),[{case:overLimit,cell:'connect-over-limit'}]);
+ assert.deepEqual(diff.provisionalCells.map(({case:id,cell})=>({case:id,cell})),[{case:unconfirmedCase,cell:'unconfirmed-cell'}]);
  const changed=servicesRun();changed.rows[2].content[0].text='connected';assert.equal(compareParityRuns(a,changed).ok,false,'the provisional cell is still compared exactly');
 });
-test('a Linux assertion that claims the provisional cell as covered is refused, not counted',()=>{
- for(const assertion of [{ok:true},{ok:true,pendingCells:['connect-over-limit'],covered:true},{ok:true,pendingCells:[],covered:false}]){
+test('a Linux assertion that claims the provisional cell as covered is refused, not counted',t=>{
+ unconfirmed(t);
+ for(const assertion of [{ok:true},{ok:true,pendingCells:['unconfirmed-cell'],covered:true},{ok:true,pendingCells:[],covered:false}]){
   const claimed=servicesRun({assertion});assert.equal(assessAssertions(claimed.meta,claimed.rows).coveredCases,0,JSON.stringify(assertion));
   assert.throws(()=>compareParityRuns(claimed,servicesRun({assertion})),/pending|provisional/i);
  }
 });
-test('Darwin, and Linux recordings made before the cell existed, keep ordinary coverage',()=>{
+test('Darwin, and Linux recordings made before the cell existed, keep ordinary coverage',t=>{
+ unconfirmed(t);
  for(const options of [{platform:'darwin'},{cells:['cell-1','stat-missing']}]){
   const a=servicesRun(options),b=servicesRun(options);assert.equal(assessAssertions(a.meta,a.rows).coveredCases,1);
   const diff=compareParityRuns(a,b);assert.equal(diff.ok,true);assert.equal(diff.cases,1);assert.equal(diff.allAssertionsPassed,true);assert.deepEqual(diff.provisionalCells,[]);

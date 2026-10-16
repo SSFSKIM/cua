@@ -57,8 +57,9 @@ add('native-pipe/absolute-path',[`try{${rpc({op:'pipe',mode:'relative'})};nodeRe
  // Observed mini vendor at 519146a: a 192-byte absolute path connects, and the owned peer reverses all six bytes.
  // Success counts only with `peer`, the owned listener's own journal: one accepted connection that received exactly
  // the six request bytes. The subject's response alone (bytes, close) can be produced without any OS connect.
- // Linux has no parent-directory connect in the vendor disassembly (session, 2026-10-16). That refusal is declared
- // provisional (provisional-oracles.json): checked here, never counted as covered until task 6's vendor control.
+ // Linux refusal and zero accepted connections are live-confirmed by task 6 (source b3cb6db, evidence d6622d4):
+ // docs/evidence/2026-10-14-own-repl-host-parity/m5/linux/services-vendor/results.jsonl, connect-over-limit.
+ // linux-native-error-evidence.test.mjs replays that control; this expectation is no longer provisional.
  const long={darwin:{subject:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'darwin',status:'connected',sunPathBytes:104},peer:{accepted:1,received:[[0,255,128,10,13,65]]}},linux:{subject:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform:'linux',status:'refused',sunPathBytes:108},peer:{accepted:0,received:[]}}};
  assert.equal(r[2].isError,false);const {peer,...subject}=JSON.parse(text(r[2]));
  assert.deepEqual(subject,long[platform].subject);

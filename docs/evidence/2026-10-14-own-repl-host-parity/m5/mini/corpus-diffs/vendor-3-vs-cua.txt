@@ -1,0 +1,3 @@
+{"case":"actions/locators","cell":"select","kind":"trace","method":"Runtime.evaluate","a":4,"b":3}
+{"case":"actions/locators","cell":"select","kind":"trace","method":"Runtime.releaseObject","a":2,"b":1}
+2 unexpected differences (59 cases, 151 cells, 0 expected)

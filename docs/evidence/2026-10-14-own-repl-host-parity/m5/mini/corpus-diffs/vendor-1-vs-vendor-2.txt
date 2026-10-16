@@ -1,0 +1,6 @@
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.evaluate","a":12,"b":11}
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.releaseObject","a":8,"b":7}
+{"case":"input/coordinates","cell":"double","kind":"trace","method":"Runtime.evaluate","a":1,"b":2}
+{"case":"input/coordinates","cell":"double","kind":"trace","method":"Runtime.releaseObject","a":0,"b":1}
+{"case":"waits/zero-budget","cell":"idle","kind":"trace","method":"Page.lifecycleEvent","a":6,"b":5}
+5 differences (59 cases, 151 cells)

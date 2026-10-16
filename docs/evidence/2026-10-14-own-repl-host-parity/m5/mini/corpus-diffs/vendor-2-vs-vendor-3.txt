@@ -1,0 +1,9 @@
+{"case":"actions/locators","cell":"select","kind":"trace","method":"Runtime.evaluate","a":3,"b":4}
+{"case":"actions/locators","cell":"select","kind":"trace","method":"Runtime.releaseObject","a":1,"b":2}
+{"case":"actions/slow-budget","cell":"late","kind":"trace","method":"Runtime.evaluate","a":81,"b":80}
+{"case":"actions/slow-budget","cell":"late","kind":"trace","method":"Runtime.releaseObject","a":77,"b":76}
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.evaluate","a":11,"b":12}
+{"case":"actions/wait-for","cell":"visible","kind":"trace","method":"Runtime.releaseObject","a":7,"b":8}
+{"case":"input/coordinates","cell":"double","kind":"trace","method":"Runtime.evaluate","a":2,"b":1}
+{"case":"input/coordinates","cell":"double","kind":"trace","method":"Runtime.releaseObject","a":1,"b":0}
+8 differences (59 cases, 151 cells)

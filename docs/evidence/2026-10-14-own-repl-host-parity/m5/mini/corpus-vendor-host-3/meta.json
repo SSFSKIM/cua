@@ -1,0 +1,3002 @@
+{
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+  "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+  "dirty": false,
+  "release": "26.928.40906-darwin-arm64",
+  "node": "v24.18.0",
+  "runtimeNode": "v24.21.0",
+  "platform": "darwin",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "browserRoute": {
+    "selection": {
+      "service": "cua",
+      "reason": "cua_route",
+      "explicit": false,
+      "route": "cua",
+      "registration": {
+        "route": "cua",
+        "at": 1792161223827.6782
+      }
+    },
+    "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+    "manifests": []
+  },
+  "device": "mini",
+  "profile": "ssfs",
+  "chromeProfileDirectory": "Profile 1",
+  "extensionInstanceId": "3b45d47c-51f6-469b-a915-3d46ac5fb0ad",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "discoveryHome": "/Users/new/Library/Application Support/cua",
+  "fixturePort": 48732,
+  "userHome": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/home",
+  "ownedPreparation": {
+    "device": "mini",
+    "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+    "experiment": "parity",
+    "token": "84118080-9cfb-45f0-8384-19c9b389150b"
+  },
+  "display": null,
+  "xSession": {},
+  "environment": {
+    "CUA_REPL_HOST": "vendor",
+    "CUA_BROWSER_SERVICE": "cua",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_HOME": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m"
+  },
+  "load": {
+    "average": [
+      2.306640625,
+      2.5830078125,
+      3.03466796875
+    ],
+    "cpus": 10
+  },
+  "host": "vendor",
+  "observedHost": "vendor",
+  "fake": false,
+  "service": "cua",
+  "backend": "live",
+  "started": "2026-10-16T16:42:16.081Z",
+  "elicitations": [],
+  "attestations": [
+    {
+      "case": "actions/concurrent-fill",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/doubleclick",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/locators",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/overlay",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/slow-budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/strict-error",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "actions/wait-for",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/clipboard-page",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/clipboard",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/cursor",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/export-authenticated",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/export-rejections",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/history",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/logs",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/m2-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/m3-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/m3-members",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/page-assets",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "capabilities/viewport",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/alert",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/paused-response",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/paused-response",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "dialogs/prompt",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/ask-where-to-save",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/blocked-navigation",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/chooser",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/media",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "downloads/two-tabs",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/attributes",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/context-loss",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/counter",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/late-completion",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/mutation",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/no-replay",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "evaluate/read",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "examples/concurrency",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "examples/tabs",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/ax-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/coordinates",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/dom",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/long-type",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/oopif-type",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/queued-shortcuts",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "input/rich-text",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/frames",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/locators",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/oopif",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/snapshot",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/visible-dom-dense",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "reads/zero-budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "screenshot/clip",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "screenshot/modes",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/discovery",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/lifecycle",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/manual-handoff-disabled",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "tabs/navigation",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "waits/networkidle",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "waits/page",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    },
+    {
+      "case": "waits/zero-budget",
+      "service": "cua",
+      "header": "# Selected Browser",
+      "marker": "cua browser service 0.1.0"
+    }
+  ],
+  "complete": true,
+  "cases": [
+    "actions/concurrent-fill",
+    "actions/doubleclick",
+    "actions/locators",
+    "actions/overlay",
+    "actions/slow-budget",
+    "actions/strict-error",
+    "actions/wait-for",
+    "capabilities/clipboard-page",
+    "capabilities/clipboard",
+    "capabilities/cursor",
+    "capabilities/export-authenticated",
+    "capabilities/export-rejections",
+    "capabilities/history",
+    "capabilities/logs",
+    "capabilities/m2-disabled",
+    "capabilities/m3-disabled",
+    "capabilities/m3-members",
+    "capabilities/page-assets",
+    "capabilities/viewport",
+    "dialogs/alert",
+    "dialogs/paused-response",
+    "dialogs/prompt",
+    "downloads/ask-where-to-save",
+    "downloads/blocked-navigation",
+    "downloads/chooser",
+    "downloads/media",
+    "downloads/two-tabs",
+    "evaluate/attributes",
+    "evaluate/budget",
+    "evaluate/context-loss",
+    "evaluate/counter",
+    "evaluate/late-completion",
+    "evaluate/mutation",
+    "evaluate/no-replay",
+    "evaluate/read",
+    "examples/concurrency",
+    "examples/tabs",
+    "input/ax-disabled",
+    "input/coordinates",
+    "input/dom",
+    "input/long-type",
+    "input/oopif-type",
+    "input/queued-shortcuts",
+    "input/rich-text",
+    "reads/frames",
+    "reads/locators",
+    "reads/oopif",
+    "reads/snapshot",
+    "reads/visible-dom-dense",
+    "reads/zero-budget",
+    "screenshot/clip",
+    "screenshot/modes",
+    "tabs/discovery",
+    "tabs/lifecycle",
+    "tabs/manual-handoff-disabled",
+    "tabs/navigation",
+    "waits/networkidle",
+    "waits/page",
+    "waits/zero-budget"
+  ],
+  "connections": [
+    "connection-1",
+    "connection-2",
+    "connection-3",
+    "connection-4",
+    "connection-5",
+    "connection-6",
+    "connection-7",
+    "connection-8",
+    "connection-9",
+    "connection-10",
+    "connection-11",
+    "connection-12",
+    "connection-13",
+    "connection-14",
+    "connection-15",
+    "connection-16",
+    "connection-17",
+    "connection-18",
+    "connection-19",
+    "connection-20",
+    "connection-21",
+    "connection-22",
+    "connection-23",
+    "connection-24",
+    "connection-25",
+    "connection-26",
+    "connection-27",
+    "connection-28",
+    "connection-29",
+    "connection-30",
+    "connection-31",
+    "connection-32",
+    "connection-33",
+    "connection-34",
+    "connection-35",
+    "connection-36",
+    "connection-37",
+    "connection-38",
+    "connection-39",
+    "connection-40",
+    "connection-41",
+    "connection-42",
+    "connection-43",
+    "connection-44",
+    "connection-45",
+    "connection-46",
+    "connection-47",
+    "connection-48",
+    "connection-49",
+    "connection-50",
+    "connection-51",
+    "connection-52",
+    "connection-53",
+    "connection-54",
+    "connection-55",
+    "connection-56",
+    "connection-57",
+    "connection-58",
+    "connection-59",
+    "connection-60",
+    "connection-61"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "1e304112-26ca-4caf-a73c-8b4a58a5d7f4"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "970c97c3-f0d7-48a5-a4e7-78d71df4d9ad"
+      }
+    },
+    {
+      "connection": "connection-3",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "39ef8a64-9411-429f-84a8-cbe0a1ad0f4a"
+      }
+    },
+    {
+      "connection": "connection-4",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "3d39471d-998d-4deb-9765-dbf67236fd91"
+      }
+    },
+    {
+      "connection": "connection-5",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "48b3c96c-40b7-4451-b310-a541fdb29fd5"
+      }
+    },
+    {
+      "connection": "connection-6",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "2b4252bc-7619-41ad-a6f0-95710a189502"
+      }
+    },
+    {
+      "connection": "connection-7",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 57,
+        "cua/taskId": "2789de05-53db-47b5-aa02-6daa98d16727"
+      }
+    },
+    {
+      "connection": "connection-8",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "faccf079-2397-4835-84cc-a95d3e6ae088"
+      }
+    },
+    {
+      "connection": "connection-9",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 58,
+        "cua/taskId": "9928ae91-56e6-4ac7-b300-1295be68c791"
+      }
+    },
+    {
+      "connection": "connection-10",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "62972b38-a9c5-45e9-9fff-16207a204682"
+      }
+    },
+    {
+      "connection": "connection-11",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "6e3e89c3-b25d-444a-b0d4-165be327c60c"
+      }
+    },
+    {
+      "connection": "connection-12",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "283749dd-8551-45f2-ba1b-1fed5874566b"
+      }
+    },
+    {
+      "connection": "connection-13",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 52,
+        "cua/taskId": "f41ab3db-a710-4d59-a7b8-73dcc5ecf016"
+      }
+    },
+    {
+      "connection": "connection-14",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "eb0f0d09-d355-4d6f-8426-d07a582c4875"
+      }
+    },
+    {
+      "connection": "connection-15",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "0f7aaf68-349b-45d7-8569-4837cc331fdb"
+      }
+    },
+    {
+      "connection": "connection-16",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 58,
+        "cua/taskId": "33b2f611-8f09-44a5-b2a3-5f13837fbed3"
+      }
+    },
+    {
+      "connection": "connection-17",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "39c94e0c-44f7-4df2-8c23-65b1324c4182"
+      }
+    },
+    {
+      "connection": "connection-18",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "e3c0f6db-8cb7-401c-94dc-8c7be6e08582"
+      }
+    },
+    {
+      "connection": "connection-19",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 57,
+        "cua/taskId": "e3e759f0-6352-48c4-8a2d-cc0ccc5ddd95"
+      }
+    },
+    {
+      "connection": "connection-20",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "cdf5d89d-da5e-42ea-b343-3366f768830f"
+      }
+    },
+    {
+      "connection": "connection-21",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "9a838d0d-cff0-4a53-9b19-1953406e7bdf"
+      }
+    },
+    {
+      "connection": "connection-22",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "bdb74c19-5f55-415b-b6c9-30ed03b05591"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "7c74a95b-bb09-4861-897b-654e6dd1741f"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "0ae03a8d-5fb7-461e-af61-7034058d3f9e"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "d06ea8ef-3a20-4061-95eb-e8bc72458300"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "07a3d683-90e0-4d5d-8713-c2c3a4703e7e"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "13cac84d-f09a-42ba-8b3c-af2a8c5abfbd"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "7b62094a-fefd-4f1b-b310-e66254a35078"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "7d48a759-d6c5-4745-b54b-b91cc47a5b1b"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "41a4e15d-7913-44bc-b57d-7af131c607c6"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "456d1f6c-6cbe-48a5-8b03-c502387296cd"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "b9f27464-be11-473a-a587-dd1946709bfa"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "12e5580b-809f-4dea-a9fd-4af69ec70990"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "f1b18f34-3d78-4911-9e2d-86b6ede60d3a"
+      }
+    },
+    {
+      "connection": "connection-35",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "e426fa23-5627-4a0c-8b17-674a295748a7"
+      }
+    },
+    {
+      "connection": "connection-36",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "4371e235-eae4-46bc-845c-3643e3d95719"
+      }
+    },
+    {
+      "connection": "connection-37",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 52,
+        "cua/taskId": "c01f0d2b-6d23-4551-9592-4b156600cc67"
+      }
+    },
+    {
+      "connection": "connection-38",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "bae00d70-4191-4bb4-9451-ace07a86cddf"
+      }
+    },
+    {
+      "connection": "connection-39",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "5b1002d6-6378-49a8-81d3-f169fb4d93cf"
+      }
+    },
+    {
+      "connection": "connection-40",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 51,
+        "cua/taskId": "2c86f838-f3ae-47c4-8dc6-28157b7c4eb5"
+      }
+    },
+    {
+      "connection": "connection-41",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "14622d5e-0fef-4dd9-877e-714a9cffa1cc"
+      }
+    },
+    {
+      "connection": "connection-42",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "3f65a976-020a-4fff-a62f-72c4b37f2afe"
+      }
+    },
+    {
+      "connection": "connection-43",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 60,
+        "cua/taskId": "141fe80f-cbad-4ab9-a158-df504ff396ff"
+      }
+    },
+    {
+      "connection": "connection-44",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "4b793522-ed4a-4afa-930e-be399d37cacc"
+      }
+    },
+    {
+      "connection": "connection-45",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "6b9bb3a9-8c96-4f7a-badc-4c99ea07244a"
+      }
+    },
+    {
+      "connection": "connection-46",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "e8b25cb7-48a7-48e7-a24f-58cc87f3b199"
+      }
+    },
+    {
+      "connection": "connection-47",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "2b7c664a-b1a1-4478-8e4c-eb3cae66f3ca"
+      }
+    },
+    {
+      "connection": "connection-48",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 59,
+        "cua/taskId": "a749b2d9-f80a-4f00-b284-c4dedec7b201"
+      }
+    },
+    {
+      "connection": "connection-49",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 56,
+        "cua/taskId": "268e1932-9c0c-4aed-9259-e47a4f69d34f"
+      }
+    },
+    {
+      "connection": "connection-50",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "171a1ff6-ea89-40f0-9155-8e846752f00b"
+      }
+    },
+    {
+      "connection": "connection-51",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "bee6f63c-e759-4de5-a7c1-8d7e8d4bf1e9"
+      }
+    },
+    {
+      "connection": "connection-52",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 52,
+        "cua/taskId": "f415b4be-a663-4b37-af84-087f200b44fc"
+      }
+    },
+    {
+      "connection": "connection-53",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "0192ab4f-5b73-4309-aa72-1f2d860f3881"
+      }
+    },
+    {
+      "connection": "connection-54",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "6924f365-c0bb-4472-af18-f419f738fbaf"
+      }
+    },
+    {
+      "connection": "connection-55",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 59,
+        "cua/taskId": "a3a19116-c636-4a9b-b7b3-6f305e9d1d20"
+      }
+    },
+    {
+      "connection": "connection-56",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "430f5c6d-c319-41cd-a662-1612e9c316dc"
+      }
+    },
+    {
+      "connection": "connection-57",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 53,
+        "cua/taskId": "1f5589f4-c079-4c26-bfdd-44944a48d3e7"
+      }
+    },
+    {
+      "connection": "connection-58",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "a4637151-c267-407b-8234-e8e527dc6bc9"
+      }
+    },
+    {
+      "connection": "connection-59",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 54,
+        "cua/taskId": "e5fae8ff-ab03-44df-849f-c41ef90a95eb"
+      }
+    },
+    {
+      "connection": "connection-60",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 55,
+        "cua/taskId": "552123a0-d210-48af-b7a4-952b1306c04b"
+      }
+    },
+    {
+      "connection": "connection-61",
+      "host": "vendor",
+      "serverInfo": {
+        "name": "rmcp",
+        "version": "1.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792161223827.6782
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-3nGo8m/chrome/cua-registration.json",
+          "manifests": []
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 52,
+        "cua/taskId": "39fa6b0a-6d6d-4dcd-9a1c-f9a271dba7ea"
+      }
+    }
+  ],
+  "finished": "2026-10-16T16:48:59.715Z"
+}

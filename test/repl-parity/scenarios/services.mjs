@@ -48,10 +48,15 @@ add('trusted/no-account-telemetry-app-server',[`let results=[];for(let name of [
 // Darwin vendor observation: 2026-10-16 mini; Linux control is recorded at M5's VM sitting.
 // Keep the stat diagnostic byte-exact, independently of the subject's strerror table.
 add('native-pipe/absolute-path',[`try{${rpc({op:'pipe',mode:'relative'})};nodeRepl.write('CONNECTED');}catch(e){nodeRepl.write(e.message.includes('absolute'));}`,
- {label:'stat-missing',code:`try{${rpc({op:'pipe',mode:'missing'})};nodeRepl.write('CONNECTED');}catch(e){nodeRepl.write(e.message);}`}],(r,t,{platform='darwin'}={})=>{
+ {label:'stat-missing',code:`try{${rpc({op:'pipe',mode:'missing'})};nodeRepl.write('CONNECTED');}catch(e){nodeRepl.write(e.message);}`},
+ {label:'connect-over-limit',code:value({op:'pipe',mode:'long-path'})}],(r,t,{platform='darwin'}={})=>{
  okText('true',0)(r);
  const sentences={darwin:'native pipe path unavailable: No such file or directory (os error 2)',linux:'native pipe path unavailable: No such file or directory (os error 2)'};
  assert.ok(Object.hasOwn(sentences,platform));okText(sentences[platform],1)(r);
+ // Observed mini vendor at 519146a: a 192-byte absolute path connects, and the owned peer reverses all six bytes.
+ // Linux's platform-indexed control is recorded in task 6; neither a transport failure nor a refusal is waived.
+ const long={darwin:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'darwin',status:'connected',sunPathBytes:104},linux:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'linux',status:'connected',sunPathBytes:108}};
+ json(long[platform],2)(r);
 });
 // macOS refuses a full Unix accept queue immediately. This proves the configured bound and refusal, NOT timer expiry.
 // Linux also refuses immediately (vendor observation at 352f1e3); timer expiry retains its named socket-double proof.

@@ -11,13 +11,16 @@ const json=p=>JSON.parse(readFileSync(new URL(p,base),'utf8'));
 const load=name=>({meta:json(`${name}/meta.json`),tools:json(`${name}/tools.json`),rows:readFileSync(new URL(`${name}/results.jsonl`,base),'utf8').trim().split('\n').map(JSON.parse)});
 test('M2 vendor pair covers every service oracle with no allowances or double-only substitutions',()=>{
  const a=load('vendor-1'),b=load('vendor-2'),selected=services.filter(s=>s.platforms.includes(a.meta.platform));
- // M5 adds stat-missing to the existing path case; it is not retroactively part of the immutable M2 recording.
- const result=compareParityRuns(a,b,{caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s).filter(label=>label!=='stat-missing')]))});
+ // M5 adds stat-missing and connect-over-limit; neither is retroactively part of the immutable M2 recording.
+ const result=compareParityRuns(a,b,{caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s).filter(label=>!['stat-missing','connect-over-limit'].includes(label))]))});
  assert.equal(result.ok,true,JSON.stringify(result.differences));assert.equal(result.allAssertionsPassed,true);assert.equal(result.cases,41);assert.deepEqual(result.expected,[]);
 });
 test('each service assertion accepts observed vendor results and rejects destroyed outcomes (M5 re-recording for the extended path case)',()=>{
  const run=load('vendor-1');
  const extendedRows=readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/services-vendor-1/results.jsonl',import.meta.url),'utf8').trim().split('\n').map(JSON.parse);
+ // The new cell's isolated vendor observation pins its assertion before the extended pair is recorded.
+ const probe=JSON.parse(readFileSync(new URL('../../docs/evidence/2026-10-14-own-repl-host-parity/m5/long-native-pipe/probe-vendor.json',import.meta.url),'utf8')).result;
+ extendedRows.push({case:'cells/native-pipe/absolute-path',cell:'connect-over-limit',content:probe.content,isError:probe.isError,meta:probe._meta,ms:probe._meta['codex/nodeReplExecutionDurationMs']});
  for(const scenario of services.filter(s=>s.platforms.includes(run.meta.platform))){
   const rows=(scenario.id==='cells/native-pipe/absolute-path'?extendedRows:run.rows).filter(r=>r.case===scenario.id&&r.cell);
   const raw=r=>({content:r.content,isError:r.isError,...(Object.hasOwn(r,'meta')?{_meta:r.meta}:{}),...(Object.hasOwn(r,'structuredContent')?{structuredContent:r.structuredContent}:{})});

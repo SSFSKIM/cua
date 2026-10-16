@@ -539,6 +539,15 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: An implicit default selects the own host only where a Node ≥24 resolves. This is ruled for M5, before any default flips.
+  - **Node resolution:** once per connection, in the existing order: `CUA_NODE`, then the node running cua, then `node` on PATH. Doctor and the profile listing use the same rule.
+  - **No Node ≥24:** with `CUA_REPL_HOST` absent or empty, a session the table would move to cua (`linux`, `browser_only`) selects vendor with reason `own_host_node_unavailable`, recorded in the connection's selection provenance. The cache identity carries the resolved host, so installing Node 24 takes effect on the next connection.
+  - **Doctor:** the `repl.host` row is `warn` for that reason and names both remedies: install Node 24 or later, or set `CUA_NODE`.
+  - **Explicit cua:** an explicit `CUA_REPL_HOST=cua` still refuses with the `repl_host_node` diagnostic. It is never downgraded.
+  - **Agent install:** `agent install` persists an explicitly supplied `CUA_NODE` into the launchd/systemd job, exactly as it persists `CUA_REPL_HOST`: only an explicit value, never a resolved one. This reverses M0 task 1's "`CUA_NODE` is not persisted into jobs". The 2026-10-14 ruling kept `CUA_NODE` out of shell profiles because a profile reaches every checkout on the device; a job-scoped explicit value reaches only that agent. It answers M4's carried question of how the Linux resident agent finds Node 24.
+  - **Acceptance 9's selection lane** covers all four cases: Node 22 implicit selects vendor with the reason; Node 22 with explicit cua refuses; Node 24 implicit selects cua; a persisted `CUA_NODE` on an installed job.
+  Rationale: cua's package floor is Node 22 (`^22.14 || >=23.7`), and the controller Mac and cua-linux run Node 22. A refusing default would break every working Node 22 session, against #114's no-regression contract. Raising the package floor would break every Node 22 install. Only this option keeps both no-regression and "an explicit choice is never silently downgraded". The selection is deterministic per connection, not a fallback after a failed launch.
+  Date/Author: 2026-10-16, session ruling on the plan-executor's question (option A), recorded by the plan-executor.
 - Decision: M5 runs as six tasks in one PR on `feat/own-repl-host-m5` (base main 56ea8c3). Code and mini-side work come first; every cua-linux step falls in one VM sitting at the end.
   - **Task 1 (opus, main worktree): the switch.**
     - `replHostFor`'s absent/empty defaults (`linux`, `browser_only`) and doctor's `repl.host` row, with `staged_vendor_default` gone.

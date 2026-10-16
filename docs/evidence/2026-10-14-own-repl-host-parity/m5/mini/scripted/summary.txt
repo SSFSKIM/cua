@@ -1,0 +1,16 @@
+comparison axis: host; browser service: cua
+bench/drag-box vendor ep-1: raw 1, reward 0.9566166666666667, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-1: raw 1, reward 0.9795666666666667, drag (77,98)->(77,191), pass
+bench/drag-box vendor ep-2: raw 1, reward 0.95755, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-2: raw 1, reward 0.9672722222222222, drag (77,98)->(77,191), pass
+bench/drag-box vendor ep-3: raw 1, reward 0.9672222222222222, drag (121,114)->(76,93), pass
+bench/drag-items vendor ep-3: raw 1, reward 0.9801944444444445, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-1: raw 1, reward 0.9576555555555556, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-1: raw 1, reward 0.9816888888888888, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-2: raw 1, reward 0.9729444444444444, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-2: raw 1, reward 0.9681666666666666, drag (77,98)->(77,191), pass
+bench/drag-box cua ep-3: raw 1, reward 0.9680277777777778, drag (121,114)->(76,93), pass
+bench/drag-items cua ep-3: raw 1, reward 0.9786777777777778, drag (77,98)->(77,191), pass
+bench/drag-box: vendor 3/3, cua 3/3
+bench/drag-items: vendor 3/3, cua 3/3
+verdict: equal: every scripted episode passes on both hosts

@@ -304,6 +304,33 @@ test('the connect budget includes the connector\'s synchronous start', async () 
   relay.closeAll();
 });
 
+test('a connect that arrives after the budget has run out is never accepted', () => {
+  const run = ({startMs, blockAfterMs}) => {
+    const sent = [];
+    const sockets = [];
+    const relay = nativePipeRelay({send: m => sent.push(m), connectTimeoutMs: 10, platform: 'darwin',
+      realpath: () => Buffer.from(`/${'p'.repeat(140)}/s.sock`), stat: () => socketStat, openDirectory: () => ({dev: 1n, ino: 2n}),
+      connectInDirectory: () => {
+        for (const end = Date.now() + startMs; Date.now() < end;);
+        const socket = new SocketDouble();
+        sockets.push(socket);
+        queueMicrotask(() => socket.emit('connect'));
+        return socket;
+      }});
+    relay.handle({id: 'c', op: 'connect', path: `/${'./'.repeat(80)}s.sock`});
+    for (const end = Date.now() + blockAfterMs; Date.now() < end;);
+    return new Promise(resolve => setTimeout(() => { relay.closeAll(); resolve({sent, destroyed: sockets[0].destroyed}); }, 30));
+  };
+  const timedOut = {sent: [{type: 'native_pipe_response', id: 'c', ok: false, error: 'native pipe initial connect timed out'}], destroyed: true};
+  return Promise.all([
+    // The start alone used the budget up: the timeout is decided before any connect can be seen.
+    run({startMs: 30, blockAfterMs: 0}).then(result => assert.deepEqual(result, timedOut)),
+  ]).then(async () => {
+    // The connect is queued in time but delivered after the deadline, ahead of the timer.
+    assert.deepEqual(await run({startMs: 0, blockAfterMs: 30}), timedOut);
+  });
+});
+
 test('macOS: a socket whose own name is longer than sun_path is refused with the vendor\'s sentence', darwinOnly, async t => {
   const {path: bound} = await longListener(t, scratch(t), 150);
   const path = join(bound, '..', 'n'.repeat(110));

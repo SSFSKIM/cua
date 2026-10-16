@@ -136,7 +136,7 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     if (route.refusal) return fail(id, `${CONNECT_FAILED_PREFIX}${route.refusal}`);
     const connectionId = `native-pipe-connection-${counter++}`;
     // The budget runs from here: a connector's synchronous spawn counts against it.
-    const started = performance.now();
+    const deadline = performance.now() + connectTimeoutMs;
     const socket = route.directory ? connectInDirectory(route, {own}) : connect({path: route.path});
     let connected = false;
     let settled = false;      // the connect request was answered: a later connect or error changes nothing
@@ -149,17 +149,20 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       connections.delete(connectionId);
       if (!closedAll) send({type: 'native_pipe_closed', connection_id: connectionId, error});
     };
-    const timeout = setTimeout(() => {
+    const expire = () => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       connecting.delete(socket);
       socket.destroy();
       fail(id, CONNECT_TIMEOUT_SENTENCE);
-    }, Math.max(0, connectTimeoutMs - (performance.now() - started)));
+    };
+    const timeout = setTimeout(expire, Math.max(0, deadline - performance.now()));
     connecting.set(socket, timeout);
     socket.once('connect', () => {
       clearTimeout(timeout);
       connecting.delete(socket);
+      if (performance.now() >= deadline) expire();   // delivered after the deadline, ahead of the timer
       if (settled || closedAll) return socket.destroy();
       settled = true;
       connected = true;
@@ -188,6 +191,8 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       if (!connected) return;
       reportClosed(lastError && !peerGoneOnWrite(lastError) ? osErrorSentence(lastError) : null);
     });
+    // A start that used the whole budget is a timeout now, before any connect it queued can be seen.
+    if (performance.now() >= deadline) expire();
   }
 
   // How `path` is connected (see the header): {path} or {directory, name, identity}, or {refusal} for the vendor's.

@@ -6,12 +6,13 @@ import {RemoteProof,disconnectProbe,checkHost} from './remote.mjs';
 import {readDevices,endpointOf} from '../../src/remote/devices.mjs';
 import {root,remoteCommand,quote,linuxSession,ownNodeEnv} from './topology.mjs';
 import {StdioClient,textOf} from '../browser-parity/mcp.mjs';
+import {assertManagedNode} from './node-provenance.mjs';
 const json=file=>JSON.parse(readFileSync(file,'utf8'));
 export function assertRegisteredEndpoint(endpoint,entry){
  if(!entry||entry.deviceId!==endpoint.deviceId||endpointOf(entry)!==endpoint.relayEndpoint)throw new Error('Client registration identity does not match the prepared endpoint');
 }
 const clientFor=e=>{assertRegisteredEndpoint(e,readDevices()[e.name]);return new StdioClient({command:process.execPath,args:[join(root,'scripts/repl-parity/remote-client.mjs'),e.name],timeoutMs:150000});};
-async function observedClient(e){const client=clientFor(e);try{const init=await client.initialize();const result=await client.call('js',{title:'Remote answering host',code:'nodeRepl.write("remote-proof");'});if(result.isError||!textOf(result).includes('remote-proof'))throw new Error('Remote real call failed');return {client,observation:checkHost(e.host,{host:e.host,serverInfo:init.serverInfo,_meta:result._meta??null,executionFacts:e.executionFacts})};}catch(error){await client.close();throw error;}}
+async function observedClient(e){const client=clientFor(e);try{const init=await client.initialize();const result=await client.call('js',{title:'Remote answering host',code:'nodeRepl.write("remote-proof");'});if(result.isError||!textOf(result).includes('remote-proof'))throw new Error('Remote real call failed');return {client,observation:checkHost(e.host,{host:e.host,serverInfo:init.serverInfo,_meta:result._meta??null,executionFacts:e.executionFacts},{reviewedCommit:e.commit})};}catch(error){await client.close();throw error;}}
 export function disconnectCell(directory){return `var fs=await import('node:fs');var proofDir=${JSON.stringify(directory)};fs.appendFileSync(proofDir+'/counter','1\\n');fs.writeFileSync(proofDir+'/started','started');var deadline=Date.now()+60000;while(!fs.existsSync(proofDir+'/release')){if(Date.now()>deadline)throw new Error('fixture release deadline');await new Promise(r=>setTimeout(r,50));}fs.writeFileSync(proofDir+'/done','done');`;}
 export async function liveDisconnect(e,helper){
  const {directory}=await helper.request('fixture');let original,replacement,pending;
@@ -42,6 +43,11 @@ export async function runRemoteProof(v){
   attest:async e=>{const {client,observation}=await observedClient(e);try{
    const profiles=await client.call('profiles_list');
    if(!profiles.structuredContent?.profiles?.some(p=>p.key===e.profile&&p.ready&&p.extensionInstanceId===e.extensionInstanceId))throw new Error('host_not_live: prepared profile is not ready; only the session may restore its Chrome window');
+   if(e.host==='cua'){
+    const answeringHost=await (await helper(e.device)).request('nodeWitness');
+    if(!e.nodeOverride)assertManagedNode(answeringHost);
+    e.executionFacts={...e.executionFacts,answeringHost,ownNode:answeringHost.ownNode};observation.executionFacts=e.executionFacts;
+   }
    await client.call('end_task');return observation;
   }finally{await client.close();}},
   stop:async e=>{const h=helpers.get(e.device);if(!h?.attached)throw new Error('No live ownership handle; do not signal a journal PID. Close the original foreground controller first.');await h.request('stop');},
@@ -55,7 +61,7 @@ export async function runRemoteProof(v){
  const proof=new RemoteProof({experiment:v.experiment,relay:v.relay,io,state});
  const handoff=()=>{for(const e of proof.state.endpoints)console.log(JSON.stringify({name:e.name,device:e.device,deviceId:e.deviceId,relayEndpoint:e.relayEndpoint,clientSecretKey:e.clientSecretKey,devicesEntry:e.devicesEntry,needed:[`Relay operator: merge devicesEntry for ${e.name} into the current table; preserve other devices; apply relay/deploy/update.sh --devices <merged-table>.`,`Owner: transfer the credential privately from ${e.home}/enroll.json into /secret ${e.clientSecretKey}; do not paste it into this session.`,`After transfer: node bin/cua.mjs devices add ${e.name} --relay ${new URL(e.relayEndpoint).origin} --device ${e.deviceId}`]}));};
  try{
-  if(v.action==='prepare'){await proof.prepare(v.device??['cua-linux','mini']);handoff();return;}
+  if(v.action==='prepare'){await proof.prepare(v.device);handoff();return;}
   if(!state)throw new Error('Prepare first');
   if(v.action==='cleanup'){await proof.cleanup();}
   else if(v.action==='start'){

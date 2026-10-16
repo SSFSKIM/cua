@@ -8,17 +8,19 @@ import {execFileSync} from 'node:child_process';import {resolve} from 'node:path
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {ownHostNode} from '../../src/runtime/launch.mjs';
 import {isDeepStrictEqual} from 'node:util';
+import {nodeVersion} from './node-provenance.mjs';
 const checkout=resolve(fileURLToPath(new URL('../../',import.meta.url)));
-export function executionFacts({source}) {
+export function executionFacts({source,ambient=process.env}) {
  const runtime=resolveRuntime({home:source});const git=args=>execFileSync('git',args,{cwd:checkout,encoding:'utf8'}).trim();
- const runtimeNode=execFileSync(runtime.paths.node,['--version'],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:process.env.HOME}}).trim();
- return {checkout,home:runtime.home,commit:git(['rev-parse','HEAD']),dirty:git(['status','--porcelain'])!=='',release:runtime.release,node:process.version,runtimeNode,platform:process.platform,ownNode:ownNodeFacts(),browserRoute:browserRouteFacts(source),...(process.platform==='linux'&&process.env.CUA_PARITY_CAPTURE_CHROME==='1'?{chromeLaunch:chromeLaunchFacts(fs,{display:process.env.DISPLAY??JSON.parse(process.env.CUA_PARITY_EXPECTED??'{}').display,home:runtime.home})}:{})};
+ const runtimeNode=execFileSync(runtime.paths.node,['--version'],{encoding:'utf8',env:{PATH:ambient.PATH,HOME:ambient.HOME}}).trim();
+ return {checkout,home:runtime.home,commit:git(['rev-parse','HEAD']),dirty:git(['status','--porcelain'])!=='',release:runtime.release,node:process.version,runtimeNode,platform:process.platform,ownNode:ownNodeFacts(ambient,{home:runtime.home}),browserRoute:browserRouteFacts(source),...(process.platform==='linux'&&process.env.CUA_PARITY_CAPTURE_CHROME==='1'?{chromeLaunch:chromeLaunchFacts(fs,{display:process.env.DISPLAY??JSON.parse(process.env.CUA_PARITY_EXPECTED??'{}').display,home:runtime.home})}:{})};
 }
-// The own host's Node as a launch from this environment resolves it (src/runtime/launch.mjs ownHostNode: CUA_NODE, the
-// running node, node on PATH), with the version that executable itself reports; null where none qualifies.
-export function ownNodeFacts(ambient=process.env){
- let path;try{path=ownHostNode({ambient});}catch{return null;}
- return {path,version:execFileSync(path,['--version'],{encoding:'utf8',env:{PATH:'/usr/bin:/bin'}}).trim()};
+// Resolve for the actual home, not an ambient source home's Node. Task 1b supplies the managed candidate between
+// explicit CUA_NODE and the bootstrap/PATH Nodes. Keep the resolver boundary injectable until that producer lands.
+export function ownNodeFacts(ambient=process.env,{home=ambient.CUA_HOME,resolveNode=ownHostNode,versionOf=nodeVersion}={}){
+ const environment=home?{...ambient,CUA_HOME:home}:ambient;
+ let path;try{path=resolveNode({ambient:environment,home});}catch{return null;}
+ return {path,version:versionOf(path)};
 }
 export function assertPreparedFacts(expected,actual){
  if(!expected||!actual)throw new Error('Missing execution provenance');

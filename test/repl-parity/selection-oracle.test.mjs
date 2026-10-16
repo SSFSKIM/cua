@@ -1,5 +1,6 @@
 import {test} from 'node:test';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {installRoutes} from '../../scripts/repl-parity/selection-device.mjs';
@@ -32,12 +33,48 @@ test('selection matrix covers both launch consumers, registration orderings, sur
  for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor','invalid'])assert.ok(rows.some(r=>r.registration===registration&&r.lane===lane&&r.override===override));
  assert.ok(rows.some(r=>r.maws));assert.ok(rows.some(r=>!r.node24));
 });
-test('selection verdict rejects wrong doctor explanation and mismatched real host markers',()=>{
- const row={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:true};
- const doctor={status:'pass',detail:'cua (browser_only); browser service cua; route cua; registration cua'};
- const observation={host:'cua',serverInfo:{name:'cua-repl-host',version:'0.5.0'},_meta:{'cua/replHost':{host:'cua',version:'0.5.0'}},executionFacts:{ownNode:{path:'/node',version:'v24.18.0'}}};
- assert.doesNotThrow(()=>assertSelection(row,{doctor,observation}));
- assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:'vendor staged_vendor_default'},observation}));
- assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:null}}));
- assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,serverInfo:{name:'cua-repl-host',version:'0.4.0'}}}));
+function reviewedSource(t){
+ const sourceRepo=mkdtempSync(join(tmpdir(),'cua-selection-source-'));t.after(()=>rmSync(sourceRepo,{recursive:true,force:true}));
+ const git=(...args)=>execFileSync('git',args,{cwd:sourceRepo,encoding:'utf8'}).trim();
+ git('init','-q');mkdirSync(join(sourceRepo,'src/repl-host'),{recursive:true});writeFileSync(join(sourceRepo,'src/repl-host/identity.mjs'),"export const REPL_HOST_VERSION = '0.5.0';\n");
+ git('add','.');git('-c','user.name=Test','-c','user.email=test@example.test','-c','commit.gpgsign=false','commit','-qm','reviewed identity');
+ return {sourceRepo,reviewedCommit:git('rev-parse','HEAD')};
+}
+const ownObservation=commit=>({host:'cua',serverInfo:{name:'cua-repl-host',version:'0.5.0'},_meta:{'cua/replHost':{host:'cua',version:'0.5.0'}},executionFacts:{commit,dirty:false,ownNode:{path:'/node',version:'v24.18.0'}}});
+const doctorDetail=(ordinary,listing=ordinary)=>`${ordinary}. Browser route: the cua route, by cua's registration. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
+test('selection verdict rejects wrong doctor explanation and mismatched real host markers',t=>{
+ const reviewed=reviewedSource(t),row={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:true};
+ const doctor={status:'pass',detail:doctorDetail('cua host (browser_only): the browser-only session, on Node /node')};
+ const observation=ownObservation(reviewed.reviewedCommit);
+ assert.doesNotThrow(()=>assertSelection(row,{doctor,observation},reviewed));
+ assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:'vendor staged_vendor_default'},observation},reviewed));
+ assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,_meta:null}},reviewed));
+ assert.throws(()=>assertSelection(row,{doctor,observation:{...observation,serverInfo:{name:'cua-repl-host',version:'0.4.0'}}},reviewed));
+ const stale=structuredClone(observation);stale.serverInfo.version='0.0.0-stale';stale._meta['cua/replHost'].version='0.0.0-stale';
+ assert.throws(()=>assertSelection(row,{doctor,observation:stale},reviewed),/version.*source|source.*version/i);
+});
+test('doctor verdict uses canonical leading host and reason, not explanation or the listing suffix',async t=>{
+ const reviewed=reviewedSource(t),observation=ownObservation(reviewed.reviewedCommit);
+ for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua'])await t.test(`${lane}, ${override}`,()=>{
+  const row={platform:'darwin',surfaces:['browser'],registration:'cua',override,node24:true,lane};
+  const sentence=override==='cua'?'cua host (explicit): CUA_REPL_HOST=cua, on Node /node':'cua host (browser_only): the browser-only session, on Node /node';
+  const doctor={status:'pass',detail:doctorDetail(sentence)};
+  assert.doesNotThrow(()=>assertSelection(row,{doctor,observation},reviewed));
+  const corruptHost=sentence.replace(/^cua host/,'vendor host');
+  const detail=lane==='ordinary'?doctorDetail(corruptHost,sentence):doctorDetail(sentence,corruptHost);
+  assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail},observation},reviewed),/Doctor host\/reason/);
+  const corruptReason=sentence.replace(override==='cua'?'(explicit)':'(browser_only)',override==='cua'?'(not_explicit)':'(not_browser_only)');
+  const reasonDetail=lane==='ordinary'?doctorDetail(corruptReason,sentence):doctorDetail(sentence,corruptReason);
+  assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:reasonDetail},observation},reviewed),/Doctor host\/reason/);
+ });
+ const row={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:true,lane:'profiles'};
+ assert.throws(()=>assertSelection(row,{doctor:{status:'pass',detail:'cua host (browser_only): on Node /node; the cua route, by registration'},observation},reviewed),/Doctor host\/reason/);
+});
+test('managed Node doctor path is checked inside the selected sentence, not borrowed from another lane',t=>{
+ const reviewed=reviewedSource(t),row={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:false,managedNode:true,lane:'profiles'};
+ const observation=ownObservation(reviewed.reviewedCommit);observation.executionFacts.home='/scratch';observation.executionFacts.ownNode.path='/scratch/node/24.x/bin/node';
+ const sentence='cua host (browser_only): the browser-only session, on Node '+observation.executionFacts.ownNode.path;
+ const doctor={status:'pass',detail:doctorDetail(sentence)};
+ assert.doesNotThrow(()=>assertSelection(row,{doctor,observation},reviewed));
+ assert.throws(()=>assertSelection(row,{doctor:{...doctor,detail:doctorDetail(sentence,sentence.replace(observation.executionFacts.ownNode.path,'/wrong/node'))},observation},reviewed),/Doctor must name the managed Node/);
 });

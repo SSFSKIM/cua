@@ -7,18 +7,19 @@ import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
 import {resolve,join} from 'node:path';
 import {root,remoteCommand,quote,linuxSession,ownNodeEnv,execute} from './topology.mjs';
 import {checkHost} from './remote.mjs';
+import {assertManagedNode} from './node-provenance.mjs';
 export function expectedSelection(row){
  const {platform,registration,override,node24=true,maws=false,lane='ordinary'}=row;
  const surfaces=lane==='profiles'?['browser']:row.surfaces;
- const browser=surfaces.includes('browser');
+ const browser=surfaces.includes('browser'),availableNode=node24||row.managedNode===true;
  const route=row.browserService??(maws||['cua','chatgpt-then-cua'].includes(registration)?'cua':'vendor');
  if(!['unset','cua','vendor'].includes(override))return {error:'invalid_repl_host'};
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};
  const refused=browser&&route==='vendor'||platform==='darwin'&&surfaces.includes('computer');
- if(override==='cua')return refused?{error:'repl_host_refused'}:!node24?{error:'repl_host_node'}:{host:'cua',reason:'explicit',status:'pass'};
+ if(override==='cua')return refused?{error:'repl_host_refused'}:!availableNode?{error:'repl_host_node'}:{host:'cua',reason:'explicit',status:'pass'};
  if(browser&&route==='vendor')return {host:'vendor',reason:'vendor_browser_route',status:'pass'};
  if(platform==='darwin'&&surfaces.includes('computer'))return {host:'vendor',reason:'macos_native_peer_requires_vendor',status:'pass'};
- if(!node24)return {host:'vendor',reason:'own_host_node_unavailable',status:'warn'};
+ if(!availableNode)return {host:'vendor',reason:'own_host_node_unavailable',status:'warn'};
  return {host:'cua',reason:platform==='linux'?'linux':'browser_only',status:'pass'};
 }
 export function selectionCases(platform){
@@ -26,15 +27,20 @@ export function selectionCases(platform){
  for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const maws of [false,true])for(const surfaces of [['browser'],['computer'],['computer','browser']])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor','invalid'])rows.push({platform,registration,maws,surfaces,lane,override,node24:true});
  for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override,node24:false});
  for(const browserService of ['cua','vendor'])for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:browserService==='cua'?'none':'cua',maws:false,surfaces:['browser'],lane,override,node24:true,browserService});
+ for(const lane of ['ordinary','profiles'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override:'unset',node24:false,managedNode:true});
  return rows;
 }
-export function assertSelection(row,{doctor,observation,error}){
+export function assertSelection(row,{doctor,observation,error},reviewedSource){
  const expected=expectedSelection(row);assert.ok(doctor,'Missing doctor repl.host row');
  if(expected.error){assert.equal(error,expected.error);assert.equal(doctor.status,'fail');assert.ok(doctor.detail.includes(expected.error));return;}
- assert.equal(error,undefined);checkHost(expected.host,observation);
+ assert.equal(error,undefined);checkHost(expected.host,observation,reviewedSource);
  // Doctor reports ordinary and listing independently in one row; use the relevant sentence.
- const detail=row.lane==='profiles'?doctor.detail.split('The profile listing (browser only): ')[1]??doctor.detail:doctor.detail.split('. Browser route:')[0];
- assert.ok(detail.includes(expected.host)&&detail.includes(expected.reason),'Doctor host/reason differs from independent M5 table');
+ const detail=row.lane==='profiles'?doctor.detail.split('The profile listing (browser only): ')[1]?.split('. CUA_REPL_HOST=')[0]:doctor.detail.split('. Browser route:')[0];
+ assert.ok(detail?.startsWith(`${expected.host} host (${expected.reason}):`),'Doctor host/reason differs from independent M5 table');
+ if(row.managedNode&&expected.host==='cua'){
+  const actual=assertManagedNode(observation.executionFacts);
+  assert.ok(detail.includes(actual.path),'Doctor must name the managed Node that actually answered');
+ }
  const ordinary=expectedSelection({...row,lane:'ordinary'}),listing=expectedSelection({...row,lane:'profiles'});
  const status=ordinary.error||listing.error?'fail':ordinary.status==='warn'||listing.status==='warn'?'warn':'pass';
  assert.equal(doctor.status,status);

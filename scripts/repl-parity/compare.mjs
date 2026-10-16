@@ -5,6 +5,7 @@ import {compareRuns} from '../browser-parity/compare.mjs';
 import {assessAssertions,vendorDefects} from './vendor-defects.mjs';
 import {normalizeHostDiagnostic} from './diagnostics.mjs';
 import {isDeepStrictEqual} from 'node:util';
+import {assertManagedNode} from './node-provenance.mjs';
 export function validateAttestations(meta) {
   if(meta.complete!==true)throw new Error('Incomplete parity run');
   if(!['vendor','cua'].includes(meta.host))throw new Error('Invalid requested host');
@@ -19,7 +20,9 @@ export function validateAttestations(meta) {
     const marker=a._meta?.['cua/replHost'];
     if(meta.host==='cua') {
       // The own host's Node, resolved and re-read on the device for this connection (scripts/repl-parity/provenance.mjs).
-      const own=a.executionFacts?.ownNode;
+      const answering=a.executionFacts?.answeringHost;
+      if(meta.nodeMode==='managed'||answering?.nodeMode==='managed')assertManagedNode(answering);
+      const own=answering?.ownNode??a.executionFacts?.ownNode;
       if(!own||typeof own.path!=='string'||!own.path.startsWith('/')||!(Number(/^v(\d+)\./.exec(own.version??'')?.[1])>=24))throw new Error('Own host attestation lacks the Node it ran on');
       if(a.serverInfo.name!=='cua-repl-host'||marker?.host!=='cua'||!marker.version||marker.version!==a.serverInfo.version||(meta.hostVersion&&marker.version!==meta.hostVersion))throw new Error('Own host attestation mismatch');
     } else if(a.serverInfo.name==='cua-repl-host'||a._meta&&Object.hasOwn(a._meta,'cua/replHost'))throw new Error('Vendor host attestation mismatch');

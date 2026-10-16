@@ -3,6 +3,7 @@
 import {parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
 import {validateAttestations} from './compare.mjs';
+import {attestedSourceVersion} from './source-identity.mjs';
 export function endpointPlan(experiment,device){
  if(!/^[a-z0-9][a-z0-9-]{0,13}$/.test(experiment))throw new Error('experiment must be a lowercase slug of at most 14 characters (device names are bounded)');
  if(!['mini','cua-linux'].includes(device))throw new Error('remote proof requires mini or cua-linux');
@@ -13,29 +14,44 @@ export function safeEnrollment(value){
  if(keys.some(k=>typeof value?.[k]!=='string'||!value[k]))throw new Error('Missing safe enrollment fields');
  return Object.fromEntries(keys.map(k=>[k,value[k]]));
 }
-export function checkHost(host,observation){
+// Own-host callers supply the reviewed commit, never a version inferred from the answering markers.
+export function checkHost(host,observation,{reviewedCommit,sourceRepo}={}){
  if(observation?.host!==host)throw new Error('Endpoint host attestation mismatch');
- validateAttestations({host,complete:true,connections:['endpoint'],hostAttestations:[{...observation,connection:'endpoint'}]});
+ const meta={host,complete:true,connections:['endpoint'],hostAttestations:[{...observation,connection:'endpoint'}]};
+ validateAttestations(meta);
+ if(host==='cua')attestedSourceVersion({...meta,commit:reviewedCommit,hostVersion:observation.serverInfo.version},{repo:sourceRepo});
  return observation;
 }
+function checkDevices(experiment,devices){
+ if(!Array.isArray(devices)||!devices.length||new Set(devices).size!==devices.length)throw new Error('Choose distinct nonempty proof devices');
+ for(const device of devices)endpointPlan(experiment,device);
+}
+function checkPreparedEndpoints(state,{partial=false}={}){
+ checkDevices(state.experiment,state.requestedDevices);
+ const devices=state.endpoints?.map(e=>e.device);
+ if(!Array.isArray(devices)||new Set(devices).size!==devices.length||devices.some(d=>!state.requestedDevices.includes(d))||!partial&&devices.length!==state.requestedDevices.length)throw new Error('Prepared endpoints must match the requested proof devices');
+}
 export class RemoteProof {
- constructor({experiment,relay,io,state}){
+ constructor({experiment,relay,io,state,sourceRepo}){
   endpointPlan(experiment,'mini');const url=new URL(relay);
   if(url.protocol!=='wss:'||url.username||url.password||url.hash||url.search)throw new Error('relay requires a credential-free wss URL');
-  this.io=io;this.state=state??{schema:1,experiment,relay,phase:'new',endpoints:[]};
+  this.io=io;this.sourceRepo=sourceRepo;this.state=state??{schema:1,experiment,relay,phase:'new',endpoints:[]};
   if(state&&(state.experiment!==undefined&&state.experiment!==experiment||state.relay!==undefined&&state.relay!==relay))throw new Error('Journal identity mismatch');
  }
  async save(){await this.io.save(this.state);return this.state;}
- async prepare(devices=['cua-linux','mini']){
+ async prepare(devices=this.state.requestedDevices??['cua-linux','mini']){
   if(!['new','preparing'].includes(this.state.phase))throw new Error('Experiment already prepared; resume its journal');
-  if(!devices.length||new Set(devices).size!==devices.length)throw new Error('Choose distinct proof devices');
-  for(const device of devices)endpointPlan(this.state.experiment,device);
+  checkDevices(this.state.experiment,devices);
+  if(this.state.requestedDevices&&(devices.length!==this.state.requestedDevices.length||devices.some(d=>!this.state.requestedDevices.includes(d))))throw new Error('Requested proof devices differ from the journal');
+  this.state.requestedDevices??=[...devices];checkPreparedEndpoints(this.state,{partial:true});
   this.state.phase='preparing';await this.save();
-  for(const device of devices){if(this.state.endpoints.some(e=>e.device===device))continue;const endpoint=await this.io.prepare(endpointPlan(this.state.experiment,device));this.state.endpoints.push(endpoint);await this.save();}
-  this.state.phase='handoff';return this.save();
+  for(const device of this.state.requestedDevices){if(this.state.endpoints.some(e=>e.device===device))continue;const endpoint=await this.io.prepare(endpointPlan(this.state.experiment,device));this.state.endpoints.push(endpoint);await this.save();}
+  checkPreparedEndpoints(this.state);this.state.phase='handoff';return this.save();
  }
  async start({operatorReady=false,ownerReady=false}={}){
   if(!operatorReady||!ownerReady)throw new Error('Needs relay operator table merge and owner /secret transfer before start');
+  if(this.state.phase!=='handoff')throw new Error('Complete preparation before starting proof devices');
+  checkPreparedEndpoints(this.state);
   try{for(const endpoint of this.state.endpoints)await this.startEndpoint(endpoint,'cua');}
   catch(error){
    const failures=[];
@@ -49,7 +65,7 @@ export class RemoteProof {
   if(endpoint.pid)throw new Error('Endpoint is already running');
   Object.assign(endpoint,await this.io.start(endpoint,host),{host});await this.save();
   if(!endpoint.ready||!Number.isInteger(endpoint.pid)||endpoint.pid<=0)throw new Error('Endpoint is not relay-ready with an owned PID');
-  endpoint.hostAttestation=checkHost(host,await this.io.attest(endpoint,host));await this.save();
+  endpoint.hostAttestation=checkHost(host,await this.io.attest(endpoint,host),{reviewedCommit:endpoint.commit,sourceRepo:this.sourceRepo});await this.save();
  }
  async restart(device,host){
   if(device!=='mini'||!['cua','vendor'].includes(host))throw new Error('Only the mini benchmark endpoint supports host restart');

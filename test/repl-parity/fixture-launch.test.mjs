@@ -36,9 +36,9 @@ test('the boundary probe passes an explicit CUA_NODE to its serve-cells children
   assert.equal('CUA_NODE' in boundaryPreflightEnv({PATH: '/usr/bin'}, {scratch, tmp: '/tmp/b/tmp', host: 'cua'}), false);
 });
 
-test('every remote lane passes the own-host Node prepare recorded, never one from the device\'s shell environment', async () => {
+test('every remote lane passes only a recorded diagnostic Node override, never a source resolution or shell setting', async () => {
   const facts = {device: 'cua-linux', checkout: '/home/admin/cua-parity', home: '/home/admin/.local/share/cua', commit: 'abc', release: 'pin', node: 'v22.23.3', platform: 'linux',
-    ownNode: {path: NODE, version: 'v24.18.0'}};
+    ownNode: {path: NODE, version: 'v24.18.0'},nodeOverride:NODE};
   const lane = await remoteCapabilityLane({...facts, host: 'cua'},
     {start: async () => ({executionFacts: {...facts, dirty: false}, userHome: '/tmp/u', home: '/tmp/h', close: async () => {}})});
   const script = lane.command.args.at(-1);
@@ -49,8 +49,10 @@ test('every remote lane passes the own-host Node prepare recorded, never one fro
   assert.match(run('/shell/profile/node'), new RegExp(`^CUA_NODE=${NODE}$`, 'm'));
   assert.doesNotMatch(run(NODE), /SECRET_TOKEN/);
   const cells = cellsCommand({...facts, host: 'cua'}).args.at(-1);
-  assert.match(cells, new RegExp(`exec env CUA_NODE='${NODE}' CUA_PARITY_EXPECTED=`));
-  assert.doesNotMatch(cellsCommand({...facts, ownNode: null, host: 'vendor'}).args.at(-1), /CUA_NODE/);
+  assert.match(cells, new RegExp(`exec env -u CUA_NODE CUA_NODE='${NODE}' CUA_PARITY_EXPECTED=`));
+  const managed=cellsCommand({...facts,nodeOverride:null,host:'cua'}).args.at(-1);
+  assert.match(managed,/exec env -u CUA_NODE CUA_PARITY_EXPECTED=/);
+  assert.doesNotMatch(managed,/CUA_NODE='/);
   assert.match(prepareCommand({device: 'cua-linux', commit: 'abcdef1', profile: 'me', node: NODE}).args.at(-1), new RegExp(`export CUA_NODE='${NODE}'`));
   assert.throws(() => prepareCommand({device: 'cua-linux', commit: 'abcdef1', profile: 'me', node: 'node'}), /absolute/);
 });

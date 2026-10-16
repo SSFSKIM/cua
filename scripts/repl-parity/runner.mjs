@@ -8,7 +8,11 @@ import {validateAttestations} from './compare.mjs';
 export class AttestedConnections {
   constructor(host){this.host=host;this.clients=[];this.hostAttestations=[];this.externalConnections=[];}
   async open(command,{capabilities}={}){
-    const client=new StdioClient(command),connection=`connection-${this.clients.length+1}`;
+    let answeringHost;
+    const client=new StdioClient({...command,onNotification:message=>{
+      if(message.method==='cua/parityAnsweringHost')answeringHost=message.params;
+      command.onNotification?.(message);
+    }}),connection=`connection-${this.clients.length+1}`;
     this.clients.push({client,connection});
     const init=await client.initialize(capabilities);
     const executionFacts=init._meta?.['cua/parityExecution'];if(command.expectedFacts)assertPreparedFacts(command.expectedFacts,executionFacts);
@@ -18,8 +22,9 @@ export class AttestedConnections {
       const result=pending.then(r=>{
         // Proxy-local tools cannot establish host identity. Every real host result is checked, not just the first.
         if(name==='js'||name==='js_reset'){
-          const a={connection,host:this.host,serverInfo:init.serverInfo,...(executionFacts?{executionFacts}:{}),_meta:Object.hasOwn(r,'_meta')?r._meta:null};
-          validateAttestations({host:this.host,complete:true,connections:[connection],hostAttestations:[a]});
+          const observedFacts=executionFacts?{...executionFacts,...(answeringHost?{answeringHost}:{})}:undefined;
+          const a={connection,host:this.host,serverInfo:init.serverInfo,...(observedFacts?{executionFacts:observedFacts}:{}),_meta:Object.hasOwn(r,'_meta')?r._meta:null};
+          validateAttestations({host:this.host,nodeMode:command.expectedFacts?.nodeMode,complete:true,connections:[connection],hostAttestations:[a]});
           if(!observation){observation=a;this.hostAttestations.push(a);}
         }
         return r;

@@ -1423,8 +1423,8 @@ reached through the host's trusted pipes instead. Reading everywhere includes th
 `scoped` places one requirement on where things live: `CUA_HOME` and the cua checkout must not be inside `$TMPDIR`
 (on macOS the per-user `/var/folders/…/T` directory; `mktemp -d` without a template puts things there), and nothing of
 cua's may sit under `$CUA_HOME/run`. A checkout there would make cua's trusted code writable; a `CUA_HOME` there
-would let cells rewrite the runtime's configuration and approvals, or the Node `cua install` placed for cua's own host
-under `$CUA_HOME/node`. The default `CUA_HOME` and a directory under
+would let cells rewrite the runtime's configuration and approvals, the Node `cua install` placed for cua's own host
+under `$CUA_HOME/node`, or what `cua install` verifies in `$CUA_HOME/staging` before placing it. The default `CUA_HOME` and a directory under
 `/tmp` work when `/tmp` is not itself the temp write root. `cua serve` and the profile listing refuse such a layout
 with `sandbox_conflict`, naming each directory involved, and `cua doctor`'s `sandbox` check fails with the same
 explanation. This protects either host's trusted roots, not just the vendor's modules.

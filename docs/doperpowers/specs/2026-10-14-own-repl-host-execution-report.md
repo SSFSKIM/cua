@@ -111,6 +111,11 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - 2026-10-15 M4 whole-branch review: "correct" at 47ba181 after the fix wave. Local gates held for a quiet machine; load stayed at 100–450.
 - 2026-10-16 The machine crashed and the plan-executor was lost. The session resumed M4: merged main (491590f), which brings ci-kit (#143) so `npm test` and the plugin gate run on GitHub's hosted macOS runner with Node 24, ticked M4 and wrote its Outcomes, and opened the PR. M5 goes to a fresh plan-executor.
 - 2026-10-16 M5 pre-flight (fresh plan-executor, base 56ea8c3): six tasks (spec Decision Log). Session ruled the implicit default without Node ≥24 (vendor with `own_host_node_unavailable`; explicit `CUA_NODE` persisted in agent jobs) and confirmed the remote/benchmark logistics (one mini browser-only endpoint restarted per host; session operates the relay; owner transfers keys). Task 2 (oracle, astra, sibling worktree) and task 1 (switch, opus) dispatched in parallel.
+- 2026-10-16 M5 code tasks reviewed:
+  - Task 1 (opus; one wave): the switch at 02fc34c. Doctor missed a relative `CUA_NODE` on vendor selections; fixed.
+  - Task 3 (sol-xhigh; clean): README and the standalone spec's Phase A/B revision at 4df9c8a. The #113 spec was reconciled at b061921 on the session's ruling: the vendor browser-service removal and the rollback's end move to #79; visible-DOM caps move to #147.
+  - Task 1b (opus; two waves; owner direction): the managed Node 24 (v24.22.0) from `cua install`, at d64a6b8. Review closed the managed root and staging against scoped writes, bound the install record to the binary's SHA-256 and size, made activation roll back, and classified filesystem errors at the CLI.
+  - Task 2 (astra oracle, sibling worktree): stat sentence row, polling recalibration from two fresh vendor pairs, RemoteProofEndpoints, the selection lane (260 rows per platform) and managed-Node preparation. Two review waves closed stale-version, doctor-substring and empty-preparation false greens. One Important finding is open in its third wave: the Node witness rejects production's `--disable-sigusr1` argv.
 
 ## Environmental friction
 

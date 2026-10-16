@@ -6,12 +6,16 @@
 // (CUA_SHIM_SURFACES=computer) and the REPL host is the requested one (--host vendor|cua, CUA_REPL_HOST, independent of
 // the browser service, which a computer-only serve does not use). The platform comes from the device: macOS drives
 // TextEdit (scripts/native-baseline/macos.mjs), which must not be running when a run starts; Linux drives gedit in the X
-// session (scripts/native-baseline/linux.mjs, --display, default :0), and no gedit may be running either. Either way
+// session (scripts/native-baseline/linux.mjs, discovered on that device), and no gedit may be running either. Either way
 // every window the run touches is its own.
 //
-//   node scripts/native-baseline.mjs run --device <alias> --host vendor|cua [--node <path>] --out docs/evidence/<dir>/run-1
-//     --node (cua only): the absolute path of the device's Node for cua's own host, passed as CUA_NODE in the serve's
-//     command environment; the serve itself runs on the device's node, as the vendor baseline's does.
+//   node scripts/native-baseline.mjs prepare --device <alias> --commit <reviewed SHA>
+//   node scripts/native-baseline.mjs run --device <alias> --experiment <sitting-id> --host vendor|cua --out <dir>/run-1
+//     Run three fresh vendor controls and three own runs with one experiment id on the same device/controller.
+//     Every run installs the runtime and managed Node in its own private CUA_HOME, then removes that home after cleanup.
+//     --node (cua only) is a recorded diagnostic override, never accepted by compare. Ambient CUA_NODE is cleared.
+//     --display asserts the discovered display; it never guesses an X cookie or moves the run to another session.
+//     Device declarations live in repl-parity/devices.mjs; native preparation needs no H4 home or Chrome binding.
 //   node scripts/native-baseline.mjs summary docs/evidence/<dir>
 //   node scripts/native-baseline.mjs compare <vendor-dir> <cua-dir> [--out comparison.md]
 //
@@ -35,8 +39,13 @@
 // Nothing a cell returns is screen content: counts, lengths, booleans, ids, hashes and the vendor's error sentences
 // (scripts/native-baseline/cells.mjs, linux-cells.mjs). A cell that times out stops all further GUI input (something
 // may be waiting on the device; the harness never answers a permission prompt).
-import {parseArgs} from 'node:util';
-import {appendFileSync, existsSync, mkdirSync, writeFileSync} from 'node:fs';
+import {parseArgs, isDeepStrictEqual} from 'node:util';
+import {execFileSync} from 'node:child_process';
+import {arch, hostname, platform, release, cpus} from 'node:os';
+import {declaredDevice} from './repl-parity/devices.mjs';
+import {assertManagedNode} from './repl-parity/node-provenance.mjs';
+import {nativePrepareCommand} from './repl-parity/topology.mjs';
+import {appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {StdioClient, textOf} from './browser-parity/mcp.mjs';
@@ -44,7 +53,7 @@ import {execute, remoteCommand} from './browser-parity/topology.mjs';
 import * as cells from './native-baseline/cells.mjs';
 import {linuxAdapter} from './native-baseline/linux.mjs';
 import {macosAdapter} from './native-baseline/macos.mjs';
-import {assertOwnNode, handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
+import {assertOwnNode, handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, preparationScript, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
 import {hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
 import {compare, renderComparison} from './native-baseline/compare.mjs';
 
@@ -72,9 +81,45 @@ export function hostAttestationOf(serverInfo, toolResult) {
 const liveIo = device => ({
   remote: script => execute(remoteCommand(device, script)).trim(),
   connect: options => new StdioClient(options),
+  controllerLoad: () => execFileSync('uptime', [], {encoding:'utf8'}).trim(),
 });
 
-export async function run({device, out, host, node, samples = 30, cold = 5, tasks = 10, display = ':0', spikeWaitMs = 3 * 3600_000, io = liveIo(device), log = console.log}) {
+export async function run(options) {
+  const {device, out, host, node, display, experiment, io = liveIo(device)} = options;
+  declaredDevice(device);
+  if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
+  assertOwnNode(host, node);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(experiment ?? '')) throw new Error('run requires --experiment <same-sitting id>');
+  const file = join(resolve(out), 'meta.json');
+  if (existsSync(file) || existsSync(join(resolve(out),'preparation.json')) || existsSync(join(resolve(out),'results.jsonl'))) throw new Error('Output directory already contains a run');
+  mkdirSync(resolve(out), {recursive:true});
+  const prepared = JSON.parse(io.remote(preparationScript('prepare', {device, display, node})).split('\n').at(-1));
+  let code;
+  try {
+    writeFileSync(join(resolve(out),'preparation.json'),JSON.stringify(prepared,null,2)+'\n');
+    code = await runPrepared({...options, io, prepared});
+  }
+  finally {
+    const meta = existsSync(file) ? JSON.parse(readFileSync(file,'utf8')) : null;
+    // Do not remove a runtime while a surviving process may still use it; journal its ownership for explicit cleanup.
+    if (meta?.leftovers?.serves > 0 || meta?.leftovers?.error) {
+      meta.preparationCleanup = {removed:false, reason:'serve cleanup unconfirmed'}; meta.complete = false; code = 1;
+    } else {
+      try {
+        const result = JSON.parse(io.remote(preparationScript('cleanup', prepared)).split('\n').at(-1));
+        if (result.removed !== true) throw new Error('Scratch home removal was not confirmed');
+        if (meta) meta.preparationCleanup = result;
+      } catch (error) {
+        if (!meta) throw error;
+        meta.preparationCleanup = {removed:false, error:error.message}; meta.complete = false; code = 1;
+      }
+    }
+    if (meta) writeFileSync(file, JSON.stringify(meta,null,2)+'\n');
+  }
+  return code;
+}
+
+async function runPrepared({device, out, host, node, experiment, prepared, samples = 30, cold = 5, tasks = 10, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, io, log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertOwnNode(host, node);
@@ -89,8 +134,10 @@ export async function run({device, out, host, node, samples = 30, cold = 5, task
     log('waiting for cua-116-spike on the device to finish');
     await sleep(30_000);
   }
-  const pre = JSON.parse(remote(preflightScript({host, display, node})).split('\n').at(-1));
+  const pre = JSON.parse(remote(preflightScript({host, display, node, prepared})).split('\n').at(-1));
+  pre.xSession = prepared.xSession; pre.userHome = prepared.userHome;
   const adapter = ADAPTERS[pre.platform];
+  if (declaredDevice(device).platform !== pre.platform) throw new Error('Device platform does not match its declaration');
   if (!adapter) throw new Error(`the native baseline has no adapter for ${pre.platform}`);
   if (pre.dirty) throw new Error('the parity clone is dirty');
   if (!pre.release) throw new Error('no runtime installed in the device home');
@@ -100,12 +147,18 @@ export async function run({device, out, host, node, samples = 30, cold = 5, task
   if (pre.serves) throw new Error('a serve of the parity clone is already running on the device');
   if (node !== undefined && !pre.ownNode?.version) throw new Error(`the own host's Node ${node} did not run on the device`);
 
+  if (node === undefined) assertManagedNode({home: prepared.home, ownNode: pre.ownNode});
+
   mkdirSync(dir, {recursive: true});
   writeFileSync(join(dir, 'results.jsonl'), '');
   const emit = row => { appendFileSync(join(dir, 'results.jsonl'), JSON.stringify(row) + '\n'); return row; };
   const linux = pre.platform === 'linux';
-  const meta = {device, platform: pre.platform, host, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
-    environment: {CUA_REPL_HOST: host, ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? {DISPLAY: display, XAUTHORITY: '~/.Xauthority'} : {})},
+  const meta = {measurement: {schema:2, experiment, freshInstall:true}, nodeMode: node ? 'diagnostic-override' : 'managed',
+    preparation: prepared, controllerIdentity: io.controllerIdentity ?? {hostname:hostname(),platform:platform(),arch:arch(),os:release(),node:process.version,cpu:{model:cpus()[0]?.model,count:cpus().length}}, userHome: prepared.userHome, xSession: prepared.xSession,
+    deviceIdentity: {alias:device,arch:pre.arch,hostname:pre.hostname,os:pre.os,cpu:pre.cpu},
+    load: {device:{before:pre.uptime,after:null},controller:{before:io.controllerLoad(),after:null}},
+    device, platform: pre.platform, host, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
+    environment: {CUA_REPL_HOST: host, ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? prepared.xSession : {})},
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false};
   Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
   adapter.start(meta, pre);
@@ -124,7 +177,7 @@ export async function run({device, out, host, node, samples = 30, cold = 5, task
   };
   meta.helperAtStart = helperAttestation();
   const connect = () => {
-    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, host, platform: pre.platform, display, node}), clientName: 'cua-native-baseline',
+    const client = io.connect({...serveCommand({device, checkout: pre.checkout, home: pre.home, userHome: prepared.userHome, xSession:prepared.xSession, host, platform: pre.platform, display, node}), clientName: 'cua-native-baseline',
       answer: adapter.answer,
       onElicitation: (row, msg) => {
         const entry = {t: row.t, at: performance.now(), app: msg.params?._meta?.tool_params?.app ?? null, action: row.action};
@@ -145,7 +198,14 @@ export async function run({device, out, host, node, samples = 30, cold = 5, task
     try { result = await client.request('tools/call', {name: 'js', arguments: {code, timeout_ms: timeoutMs}}, timeoutMs + 15_000); } catch (error) {
       return {wallMs: performance.now() - started, started, failure: error.message, timedOut: /timed out/.test(error.message)};
     }
-    if (!client.attested) { meta.hostAttestations.push(hostAttestationOf(client.serverInfo, result)); client.attested = true; }
+    if (!client.attested) {
+      meta.hostAttestations.push(hostAttestationOf(client.serverInfo, result)); client.attested = true;
+      const answering = result?._meta?.['cua/nativeExecution'];
+      if (!answering?.path || !answering?.version) throw new Error('Missing answering Node executable/version on real call');
+      if (host === 'cua' && !isDeepStrictEqual(answering, pre.ownNode)) throw new Error('The answering Node differs from the prepared own host Node');
+      if (meta.answeringNode && !isDeepStrictEqual(answering, meta.answeringNode)) throw new Error('The answering Node changed between connections');
+      meta.answeringNode = answering;
+    }
     const text = textOf(result), cell = cells.parseCell(text);
     const timedOut = !cell && /timed? ?out|timeout/i.test(text);
     return {wallMs: performance.now() - started, started, text, cell, isError: result.isError === true, timedOut,
@@ -242,7 +302,7 @@ export async function run({device, out, host, node, samples = 30, cold = 5, task
     meta.complete = true;
   } catch (error) {
     meta.error = error.message;
-    if (!(error instanceof Stop)) console.error(error.message);
+    if (!(error instanceof Stop)) log(error.message);
   } finally {
     try { await adapter.cleanup(ctx); } catch (error) { meta.cleanupError = error.message; meta.complete = false; }
     for (const client of clients) { try { await client.close(); } catch {} }
@@ -252,8 +312,12 @@ export async function run({device, out, host, node, samples = 30, cold = 5, task
     } catch (error) { meta.leftovers = {error: error.message}; meta.complete = false; }
     if (stopped) { meta.complete = false; meta.stopped = stopped; }
     // Every connection must have attested the requested host; an unattested or mixed run is not a measurement of it.
+    const nodeProof = meta.hostAttestations.every(a => isDeepStrictEqual(a?._meta?.['cua/nativeExecution'], meta.answeringNode));
+    if (!meta.answeringNode || !nodeProof) { meta.complete = false; meta.error ??= 'Missing or inconsistent answering Node witness'; }
     const attestation = hostProblem(meta, 'this run');
     if (attestation) { meta.complete = false; meta.error ??= attestation; meta.attestationProblem = attestation; }
+    try { meta.load.device.after = remote('uptime'); meta.load.controller.after = io.controllerLoad(); }
+    catch (error) { meta.complete = false; meta.error ??= `Load recording failed: ${error.message}`; }
     meta.finished = new Date().toISOString();
     writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
   }
@@ -281,17 +345,18 @@ export function compareDirs(baselineDir, candidateDir, {out} = {}) {
 
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
-    device: {type: 'string'}, host: {type: 'string'}, node: {type: 'string'}, display: {type: 'string', default: ':0'}, out: {type: 'string'},
+    device: {type: 'string'}, host: {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
     samples: {type: 'string', default: '30'}, cold: {type: 'string', default: '5'}, tasks: {type: 'string', default: '10'}}});
   const [action, dir, other] = positionals;
+  if (action === 'prepare') { process.stdout.write(execute(nativePrepareCommand({device:values.device,commit:values.commit}))); return 0; }
   if (action === 'summary') { if (!dir) throw new Error('summary requires the evidence directory'); return summary(dir); }
   if (action === 'compare') { if (!dir || !other) throw new Error('compare requires <vendor-dir> <cua-dir>'); return compareDirs(dir, other, {out: values.out}); }
-  if (action !== 'run') throw new Error('Usage: native-baseline.mjs run --device <alias> --host vendor|cua [--node <own host Node, cua only>] [--display :0] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>]');
+  if (action !== 'run') throw new Error('Usage: native-baseline.mjs prepare --device <declared alias> --commit <SHA> | run --device <declared alias> --experiment <sitting-id> --host vendor|cua [--node <diagnostic override, cua only>] [--display <X display assertion>] --out <dir> | summary <dir> | compare <vendor-dir> <cua-dir> [--out <file>]');
   if (!values.device || !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(values.device)) throw new Error('run requires --device <ssh alias>');
   if (!HOSTS.includes(values.host)) throw new Error('run requires --host vendor|cua');
   if (!values.out) throw new Error('run requires --out');
   const count = name => { const n = Number(values[name]); if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };
-  return run({device: values.device, host: values.host, node: values.node, display: values.display, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
+  return run({device: values.device, host: values.host, node: values.node, display: values.display, experiment:values.experiment, out: values.out, samples: count('samples'), cold: count('cold'), tasks: count('tasks')});
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

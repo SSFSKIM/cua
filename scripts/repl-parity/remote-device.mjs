@@ -27,16 +27,16 @@ function cli(home,args,{file}={}){
  catch(error){throw new Error(`Remote cua ${args.slice(0,2).join(' ')} failed (${error.status??error.code}); inspect privately on device`);}
  finally{if(fd!==undefined)closeSync(fd);}
 }
-export function prepareEndpoint({experiment,relay,plan,prepared}){
- endpointPlan(experiment,plan.device);assertPreparedFacts(prepared,executionFacts({source:prepared.home}));
- mkdirSync(base(),{recursive:true,mode:0o700});const parent=realpathSync(base());
- if(parent===realpathSync(tmpdir())||parent.startsWith(realpathSync(tmpdir())+'/'))throw new Error('Remote home must be outside TMPDIR');
+export function prepareEndpoint({experiment,relay,plan,prepared},{directoryRoot=base(),tempRoot=realpathSync(tmpdir()),inspect=executionFacts,runCli=cli,registry=readRegistry}={}){
+ endpointPlan(experiment,plan.device);assertPreparedFacts(prepared,inspect({source:prepared.home}));
+ mkdirSync(directoryRoot,{recursive:true,mode:0o700});const parent=realpathSync(directoryRoot);
+ if(parent===tempRoot||parent.startsWith(tempRoot+'/'))throw new Error('Remote home must be outside TMPDIR');
  const home=mkdtempSync(join(parent,experiment+'-')),token=randomUUID(),endpoint={...plan,experiment,home,token};
  writeFileSync(join(home,'proof-owner.json'),JSON.stringify({experiment,token}),{mode:0o600,flag:'wx'});
  try{
-  cli(home,['install']);
+  runCli(home,['install']);
   // Discovery aliases only. Never copy profile contents or register/rebind an extension.
-  const binding=readRegistry(prepared.home).profiles[prepared.profile];
+  const binding=registry(prepared.home).profiles[prepared.profile];
   if(!binding||binding.route!=='cua'||binding.extensionInstanceId!==prepared.extensionInstanceId)throw new Error('Prepared cua profile binding changed');
   mkdirSync(backendDir(home),{recursive:true,mode:0o700});
   const name=socketNameFor(binding.extensionInstanceId);
@@ -44,9 +44,9 @@ export function prepareEndpoint({experiment,relay,plan,prepared}){
   writeFileSync(cuaRecordFile(home),JSON.stringify({schema:1,route:'cua',launcher:null,backendsDir:backendDir(home),browsers:{}}),{mode:0o600});
   writeFileSync(join(home,'profiles.json'),JSON.stringify({version:1,profiles:{[prepared.profile]:binding}}),{mode:0o600});
   // Enrollment stdout goes directly to a private file. Only `remote show` is read; it has no credential.
-  cli(home,['remote','enroll','--relay',relay,'--json'],{file:join(home,'enroll.json')});
-  const shown=JSON.parse(cli(home,['remote','show','--json']));
-  return {...endpoint,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)}),profile:prepared.profile,extensionInstanceId:prepared.extensionInstanceId,release:executionFacts({source:home}).release,commit:prepared.commit};
+  runCli(home,['remote','enroll','--relay',relay,'--json'],{file:join(home,'enroll.json')});
+  const shown=JSON.parse(runCli(home,['remote','show','--json']));
+  return {...endpoint,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)}),profile:prepared.profile,extensionInstanceId:prepared.extensionInstanceId,release:inspect({source:home}).release,commit:prepared.commit};
  }catch(error){rmSync(home,{recursive:true,force:true});throw error;}
 }
 export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgentState,assertOwner=ownership,facts=executionFacts,timeoutMs=30000,stopTimeoutMs=10000}={}){

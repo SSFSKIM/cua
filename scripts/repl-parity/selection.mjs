@@ -8,12 +8,15 @@ import {resolve,join} from 'node:path';
 import {root,remoteCommand,quote,linuxSession,ownNodeEnv,execute} from './topology.mjs';
 import {checkHost} from './remote.mjs';
 import {assertManagedNode} from './node-provenance.mjs';
+const INVALID_REPL_HOST='CUA_REPL_HOST must be cua or vendor';
 export function expectedSelection(row){
  const {platform,registration,override,node24=true,maws=false,lane='ordinary'}=row;
  const surfaces=lane==='profiles'?['browser']:row.surfaces;
  const browser=surfaces.includes('browser'),availableNode=node24||row.managedNode===true;
  const route=row.browserService??(maws||['cua','chatgpt-then-cua'].includes(registration)?'cua':'vendor');
- if(!['unset','cua','vendor'].includes(override))return {error:'invalid_repl_host'};
+ // An invalid value has two refusal boundaries: `cua serve` validates its settings at start (invalid_setting), while
+ // the profile listing and doctor resolve the selection itself (invalid_repl_host). Both carry the one sentence.
+ if(!['unset','cua','vendor'].includes(override))return {error:lane==='profiles'?'invalid_repl_host':'invalid_setting',doctorError:'invalid_repl_host',sentence:INVALID_REPL_HOST};
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};
  const refused=browser&&route==='vendor'||platform==='darwin'&&surfaces.includes('computer');
  if(override==='cua')return refused?{error:'repl_host_refused'}:!availableNode?{error:'repl_host_node'}:{host:'cua',reason:'explicit',status:'pass'};
@@ -30,12 +33,23 @@ export function selectionCases(platform){
  for(const lane of ['ordinary','profiles'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override:'unset',node24:false,managedNode:true});
  return rows;
 }
-export function assertSelection(row,{doctor,observation,error},reviewedSource){
+// Doctor reports ordinary and listing independently in one row; the row's lane reads its own sentence.
+function laneSentence(row,detail){
+ return row.lane==='profiles'?detail.split('The profile listing (browser only): ')[1]?.split('. CUA_REPL_HOST=')[0]:detail.split('. Browser route:')[0];
+}
+export function assertSelection(row,{doctor,observation,error,errorMessage},reviewedSource){
  const expected=expectedSelection(row);assert.ok(doctor,'Missing doctor repl.host row');
- if(expected.error){assert.equal(error,expected.error);assert.equal(doctor.status,'fail');assert.ok(doctor.detail.includes(expected.error));return;}
+ const detail=laneSentence(row,doctor.detail);
+ if(expected.error){
+  assert.ok(error===expected.error,`Real ${row.lane??'ordinary'} call ${error===undefined?'was not refused':`refused with ${error}`} where the independent M5 table expects ${expected.error}`);
+  if(expected.sentence)assert.ok(errorMessage===expected.sentence,`Real call refusal sentence ${JSON.stringify(errorMessage)} differs from ${JSON.stringify(expected.sentence)}`);
+  assert.equal(doctor.status,'fail');
+  const refused=`refused (${expected.doctorError??expected.error}): `;
+  assert.ok(detail?.startsWith(refused),`Doctor ${row.lane??'ordinary'} sentence ${JSON.stringify(detail)} does not open with ${JSON.stringify(refused)}`);
+  if(expected.sentence)assert.ok(detail===refused+expected.sentence,`Doctor refusal sentence ${JSON.stringify(detail)} differs from ${JSON.stringify(refused+expected.sentence)}`);
+  return;
+ }
  assert.equal(error,undefined);checkHost(expected.host,observation,reviewedSource);
- // Doctor reports ordinary and listing independently in one row; use the relevant sentence.
- const detail=row.lane==='profiles'?doctor.detail.split('The profile listing (browser only): ')[1]?.split('. CUA_REPL_HOST=')[0]:doctor.detail.split('. Browser route:')[0];
  assert.ok(detail?.startsWith(`${expected.host} host (${expected.reason}):`),'Doctor host/reason differs from independent M5 table');
  if(row.managedNode&&expected.host==='cua'){
   const actual=assertManagedNode(observation.executionFacts);
@@ -53,6 +67,15 @@ export function assertSelection(row,{doctor,observation,error},reviewedSource){
   assert.match(doctor.detail,['cua','chatgpt-then-cua'].includes(row.registration)?/cua route|route cua/:/ChatGPT extension route/);
  }
 }
+const describeRow=r=>[r.platform,`registration ${r.registration}`,...(r.maws?['maws']:[]),r.surfaces.join(','),r.lane,`override ${r.override}`,r.node24?'node24':'node22',...(r.managedNode?['managed Node']:[]),...(r.browserService?[`CUA_BROWSER_SERVICE=${r.browserService}`]:[])].join(', ');
+// Every failing row and check, by name; a lane that stopped early or recorded fewer rows than planned never passes.
+export function selectionVerdict(evidence){
+ const failures=evidence.failures??[];
+ const lines=failures.map(f=>f.check?`check ${f.check}: ${f.message}`:`row ${f.row}/${evidence.planned} (${describeRow(f.case)}): ${f.message}`);
+ if(!evidence.complete)lines.push(`lane stopped before finishing: ${evidence.error??'no reason recorded'}`);
+ else if(evidence.rows?.length!==evidence.planned)lines.push(`lane recorded ${evidence.rows?.length} of ${evidence.planned} planned rows`);
+ return {ok:lines.length===0,lines};
+}
 export async function main(argv=process.argv.slice(2)){
  const {values:v}=parseArgs({args:argv,options:{device:{type:'string'},out:{type:'string'},node22:{type:'string'}}});
  if(!['mini','cua-linux'].includes(v.device)||!v.out||!v.node22?.startsWith('/'))throw new Error('selection.mjs --device mini|cua-linux --node22 <device Node 22> --out <new dir>');
@@ -60,7 +83,8 @@ export async function main(argv=process.argv.slice(2)){
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
  const command=remoteCommand(v.device,`${linuxSession}\ncd ${quote(prepared.checkout)} && exec env ${ownNodeEnv(prepared)}CUA_PARITY_REMOTE=1 node scripts/repl-parity/selection-device.mjs ${quote(JSON.stringify({prepared,node22:v.node22}))}`);
  const evidence=JSON.parse(execute(command));writeFileSync(join(out,'selection.json'),JSON.stringify(evidence,null,2)+'\n');
- if(!evidence.complete)throw new Error(`Selection oracle failed: ${evidence.error??'incomplete'}`);
+ const verdict=selectionVerdict(evidence);
+ if(!verdict.ok)throw new Error(`Selection oracle failed (${verdict.lines.length}):\n${verdict.lines.join('\n')}`);
  console.log(JSON.stringify({complete:true,rows:evidence.rows.length,cache:evidence.cache,job:evidence.job}));
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(e=>{console.error(e.message);process.exitCode=1;});

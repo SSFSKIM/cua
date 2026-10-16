@@ -25,7 +25,31 @@ export function installRoutes(home,registration){
  }
 }
 const files=dir=>readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(join(dir,e.name)):[join(dir,e.name)]);
-function errorCode(error){for(const code of ['invalid_repl_host','repl_host_refused','repl_host_node'])if(String(error?.message??error).includes(code))return code;return error?.code??'unexpected_error';}
+// A refused call as {code, message}: the listing's refusal as it reported it, serve's start-time refusal from the
+// observation frame (selection-serve.mjs), or a selection code the real server named in its error message. Anything
+// else is unexpected_error with its message kept, so a harness or environment failure stays visible in the evidence.
+export function refusalOf(error){
+ if(error?.refusal)return error.refusal;
+ const message=String(error?.message??error);
+ const early=/^serve refused before launch \(([a-z_]+)\): (.*)$/s.exec(message);
+ if(early)return {code:early[1],message:early[2]};
+ return {code:['invalid_repl_host','repl_host_refused','repl_host_node'].find(code=>message.includes(code))??'unexpected_error',message};
+}
+export function listingOutcome(stdout){
+ let parsed;try{parsed=JSON.parse(stdout);}catch{throw new Error(`Selection listing printed no JSON: ${JSON.stringify(stdout.slice(0,200))}`);}
+ if(parsed.error)throw Object.assign(new Error(`listing refused (${parsed.error})`),{refusal:{code:parsed.error,message:parsed.message??null}});
+ return parsed.observation;
+}
+// Runs every planned row and then every check whatever an earlier one did, recording each failure (1-based row number
+// and its case, or the check's name) in `failures`, which it returns. `around` wraps a row's evaluation in the row's
+// environment (the managed Node moved aside); a failure of `around` itself is the environment's, not the row's, and
+// stops the lane with the failures recorded so far.
+export async function evaluateSelection({cases,evaluateRow,checks,around=(row,run)=>run(),failures=[]}){
+ const attempt=async(label,run)=>{try{await run();}catch(error){failures.push({...label,message:error.message});}};
+ for(const [index,row] of cases.entries())await around(row,()=>attempt({row:index+1,case:row},()=>evaluateRow(row)));
+ for(const [check,run] of Object.entries(checks))await attempt({check},run);
+ return failures;
+}
 export function installSelectionRuntime(home,ambient,{run=execFileSync,inspect=executionFacts}={}){
  const env=nodeEnvironment({...ambient,CUA_HOME:home});
  run(process.execPath,['bin/cua.mjs','install'],{env,stdio:['ignore','ignore','pipe'],timeout:300000,maxBuffer:1024*1024});
@@ -55,42 +79,47 @@ export async function runSelection({prepared,node22}){
   const installed=installSelectionRuntime(home,base),ownNode=installed.ownNode;
   assert.equal(installed.release,prepared.release,'Fresh install must retain the prepared runtime pin');
   result.installation={method:'cua install',home,ownNode};
-  for(const planned of selectionCases(process.platform)){
-   const row={...planned,managedNode:planned.managedNode??planned.node24};
-   const runRow=async()=>{
+  const cases=selectionCases(process.platform).map(planned=>({...planned,managedNode:planned.managedNode??planned.node24}));
+  result.planned=cases.length;result.failures=[];
+  const evaluateRow=async row=>{
    installRoutes(home,row.registration);
    const node=row.node24?ownNode.path:node22;
    const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.browserService?{CUA_BROWSER_SERVICE:row.browserService}:{}),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{})};
    if(!row.node24)env.PATH=nodeBin+':/usr/bin:/bin';
    const doc=spawnSync(node,['bin/cua.mjs','doctor','--json'],{env,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});
-   let doctor;try{doctor=JSON.parse(doc.stdout).checks.find(c=>c.name==='repl.host');}catch{throw new Error('Doctor returned no JSON repl.host row');}
-   let observation,error;
+   let doctor;try{doctor=JSON.parse(doc.stdout).checks.find(c=>c.name==='repl.host');}catch{}
+   let observation,refusal;
    try{
     let observed;
-    if(row.lane==='profiles'){
-     // Run the independent listing in the SAME Node environment as doctor (including the Node 22 rows).
-     const listing=spawnSync(node,['scripts/repl-parity/selection-listing.mjs'],{env,encoding:'utf8',timeout:90000,maxBuffer:1024*1024});
-     const parsed=JSON.parse(listing.stdout);if(parsed.error)throw Object.assign(new Error(parsed.error),{code:parsed.error});observed=parsed.observation;
-    }else observed=await ordinaryCall({home,env,node});
+    // Run the independent listing in the SAME Node environment as doctor (including the Node 22 rows).
+    if(row.lane==='profiles')observed=listingOutcome(spawnSync(node,['scripts/repl-parity/selection-listing.mjs'],{env,encoding:'utf8',timeout:90000,maxBuffer:1024*1024}).stdout);
+    else observed=await ordinaryCall({home,env,node});
     const host=observed.serverInfo.name==='cua-repl-host'?'cua':'vendor';
     observation={...observed,host,executionFacts:{commit:installed.commit,dirty:installed.dirty,home,ownNode:host==='cua'?observed.launchNode:null}};
-   }catch(e){error=errorCode(e);}
-   const evidence={row,doctor,observation,...(error?{error}:{})};result.rows.push(evidence);assertSelection(row,evidence,{reviewedCommit:prepared.commit});
-   };
-   if(row.managedNode)await runRow();else await withManagedNodeUnavailable(home,runRow);
-  }
-  installRoutes(home,'cua');const env={...base,CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:'cua'};
-  const first=await ordinaryCall({home,env,node:ownNode.path});const again=await ordinaryCall({home,env,node:ownNode.path});assert.deepEqual(first.serverInfo,again.serverInfo);
-  const cached=files(homeLayout(home).handshake).filter(f=>f.endsWith('.json'));
-  const ownFile=cached.find(f=>f.includes('/cua@')&&f.includes('browser@'));assert.ok(ownFile,'Own handshake was not cached');
-  const record=JSON.parse(readFileSync(ownFile,'utf8'));record.host.version='0.0.0-parity-old';record.initialize.serverInfo={name:'cua-repl-host',version:'0.0.0-parity-old'};
-  const oldDirectory=join(dirname(dirname(ownFile)),'cua@0.0.0-parity-old');mkdirSync(oldDirectory,{recursive:true});writeFileSync(join(oldDirectory,basename(ownFile)),JSON.stringify(record));rmSync(ownFile);
-  const after=await ordinaryCall({home,env,node:ownNode.path});assert.deepEqual(after.serverInfo,first.serverInfo);
-  const vendor=await ordinaryCall({home,env:{...env,CUA_REPL_HOST:'vendor'},node:ownNode.path});assert.notEqual(vendor.serverInfo.name,'cua-repl-host');
-  result.cache={sameSelection:true,staleVersionMiss:true,crossHostMiss:true};
-  // Job serialization only: no launchd/systemd installation, no live enrollment.
-  mkdirSync(join(home,'remote'),{recursive:true});writeFileSync(join(home,'remote','device.json'),JSON.stringify({schema:1,deviceId:Buffer.alloc(16,1).toString('base64url'),secret:Buffer.alloc(32,2).toString('base64url'),enrolledAt:'2026-10-16T00:00:00Z'}),{mode:0o600});
-  result.job=await checkScratchJob({home,userHome,node:ownNode.path,env:base,platform:process.platform});
+   }catch(e){refusal=refusalOf(e);}
+   const evidence={row,doctor:doctor??null,observation,...(refusal?{error:refusal.code,errorMessage:refusal.message}:{})};result.rows.push(evidence);
+   if(!doctor)throw new Error(`Doctor returned no JSON repl.host row (exit ${doc.status??doc.signal}${doc.error?`, ${doc.error.message}`:''})`);
+   assertSelection(row,evidence,{reviewedCommit:prepared.commit});
+  };
+  const checks={
+   cache:async()=>{
+    installRoutes(home,'cua');const env={...base,CUA_SHIM_SURFACES:'browser',CUA_REPL_HOST:'cua'};
+    const first=await ordinaryCall({home,env,node:ownNode.path});const again=await ordinaryCall({home,env,node:ownNode.path});assert.deepEqual(first.serverInfo,again.serverInfo);
+    const cached=files(homeLayout(home).handshake).filter(f=>f.endsWith('.json'));
+    const ownFile=cached.find(f=>f.includes('/cua@')&&f.includes('browser@'));assert.ok(ownFile,'Own handshake was not cached');
+    const record=JSON.parse(readFileSync(ownFile,'utf8'));record.host.version='0.0.0-parity-old';record.initialize.serverInfo={name:'cua-repl-host',version:'0.0.0-parity-old'};
+    const oldDirectory=join(dirname(dirname(ownFile)),'cua@0.0.0-parity-old');mkdirSync(oldDirectory,{recursive:true});writeFileSync(join(oldDirectory,basename(ownFile)),JSON.stringify(record));rmSync(ownFile);
+    const after=await ordinaryCall({home,env,node:ownNode.path});assert.deepEqual(after.serverInfo,first.serverInfo);
+    const vendor=await ordinaryCall({home,env:{...env,CUA_REPL_HOST:'vendor'},node:ownNode.path});assert.notEqual(vendor.serverInfo.name,'cua-repl-host');
+    result.cache={sameSelection:true,staleVersionMiss:true,crossHostMiss:true};
+   },
+   // Job serialization only: no launchd/systemd installation, no live enrollment.
+   job:async()=>{
+    mkdirSync(join(home,'remote'),{recursive:true});writeFileSync(join(home,'remote','device.json'),JSON.stringify({schema:1,deviceId:Buffer.alloc(16,1).toString('base64url'),secret:Buffer.alloc(32,2).toString('base64url'),enrolledAt:'2026-10-16T00:00:00Z'}),{mode:0o600});
+    result.job=await checkScratchJob({home,userHome,node:ownNode.path,env:base,platform:process.platform});
+   },
+  };
+  await evaluateSelection({cases,evaluateRow,checks,failures:result.failures,around:(row,run)=>row.managedNode?run():withManagedNodeUnavailable(home,run)});
   result.complete=true;
  }catch(error){result.error=error.message;}finally{rmSync(home,{recursive:true,force:true});}
  return result;

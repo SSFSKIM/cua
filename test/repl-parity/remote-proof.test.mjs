@@ -43,6 +43,12 @@ test('failed attestation tears down the just-started owned process',async()=>{
  const proof=new RemoteProof({experiment:'m5-a',relay:'wss://relay.test/ws',io,state:{phase:'handoff',endpoints:[endpointPlan('m5-a','mini')]}});
  await assert.rejects(proof.start({operatorReady:true,ownerReady:true}),/attest/);assert.equal(stopped,1);
 });
+test('startup failure tries every owned endpoint even if an earlier stop fails',async()=>{
+ const stopped=[];
+ const io={save(){},start:async e=>({pid:e.device==='mini'?11:12,ready:true}),attest:async()=>{throw new Error('bad attestation');},stop:async e=>{stopped.push(e.pid);if(e.pid===10)throw new Error('stop failed');}};
+ const proof=new RemoteProof({experiment:'m5-a',relay:'wss://relay.test/ws',io,state:{phase:'handoff',endpoints:[{...endpointPlan('m5-a','mini'),pid:10},{...endpointPlan('m5-a','cua-linux'),pid:20}]}});
+ await assert.rejects(proof.start({operatorReady:true,ownerReady:true}));assert.deepEqual(stopped,[10,20]);
+});
 test('disconnect probe kills only its client after started, reconnects without resubmission and rejects replay',async()=>{
  for(const count of [1,2]){
   const events=[];let submitted=0;

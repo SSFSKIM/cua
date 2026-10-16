@@ -1,4 +1,14 @@
 import {test} from 'node:test';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {installRoutes} from '../../scripts/repl-parity/selection-device.mjs';
+import {chromeRoute} from '../../src/chrome/route.mjs';
+test('scratch registration fixtures actually change route in both orders without touching browser manifests',()=>{
+ const home=mkdtempSync(join(tmpdir(),'cua-selection-test-'));
+ try{for(const [registration,route] of [['cua-then-chatgpt','vendor'],['chatgpt-then-cua','cua'],['none',null],['chatgpt','vendor'],['cua','cua']]){installRoutes(home,registration);assert.equal(chromeRoute(home),route);}}
+ finally{rmSync(home,{recursive:true,force:true});}
+});
 import assert from 'node:assert/strict';
 import {expectedSelection,selectionCases,assertSelection} from '../../scripts/repl-parity/selection.mjs';
 test('independent M5 table preserves route precedence, explicit refusals and Node fallback',()=>{

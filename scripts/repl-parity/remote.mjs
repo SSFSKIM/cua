@@ -34,7 +34,12 @@ export class RemoteProof {
  async start({operatorReady=false,ownerReady=false}={}){
   if(!operatorReady||!ownerReady)throw new Error('Needs relay operator table merge and owner /secret transfer before start');
   try{for(const endpoint of this.state.endpoints)await this.startEndpoint(endpoint,'cua');}
-  catch(error){for(const endpoint of this.state.endpoints)if(endpoint.pid)await this.io.stop(endpoint);throw error;}
+  catch(error){
+   const failures=[];
+   for(const endpoint of this.state.endpoints)if(endpoint.pid)try{await this.io.stop(endpoint);delete endpoint.pid;endpoint.ready=false;}catch(e){failures.push(e.message);}
+   this.state.phase=failures.length?'cleanup-failed':'handoff';await this.save();
+   throw new Error(error.message+(failures.length?`; cleanup: ${failures.join('; ')}`:''));
+  }
   this.state.phase='running';return this.save();
  }
  async startEndpoint(endpoint,host){

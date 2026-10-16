@@ -1,16 +1,14 @@
 // Live selection probe on the prepared device. Runtime and route metadata only are copied; HOME is empty.
 import {execFileSync,spawnSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,symlinkSync,utimesSync,readdirSync} from 'node:fs';
-import {join} from 'node:path';
+import {join,dirname,basename} from 'node:path';
 import {homedir} from 'node:os';
 import {pathToFileURL} from 'node:url';
 import assert from 'node:assert/strict';
 import {StdioClient} from '../browser-parity/mcp.mjs';
-import {selectionCases,assertSelection,expectedSelection} from './selection.mjs';
+import {selectionCases,assertSelection} from './selection.mjs';
 import {executionFacts,assertPreparedFacts} from './provenance.mjs';
 import {readPointer,writePointer,homeLayout} from '../../src/runtime/layout.mjs';
-import {resolveRuntime} from '../../src/runtime/manifest.mjs';
-import {listLiveBackends} from '../../src/profiles/inventory.mjs';
 import {agentJobSpec} from '../../src/remote/job.mjs';
 import {cuaRecordFile,vendorRecordFile} from '../../src/chrome/route.mjs';
 import {socketPathFor,socketNameFor,backendDir} from '../../src/chrome/extension.mjs';
@@ -47,7 +45,6 @@ export async function runSelection({prepared,node22}){
   mkdirSync(backendDir(home),{recursive:true});const name=socketNameFor(prepared.extensionInstanceId);symlinkSync(socketPathFor(prepared.home,name),socketPathFor(home,name));
   const base=Object.fromEntries(['PATH','TMPDIR','LANG','LC_ALL','USER','LOGNAME','DISPLAY','XAUTHORITY','DBUS_SESSION_BUS_ADDRESS','XDG_RUNTIME_DIR','XDG_DATA_DIRS'].filter(k=>process.env[k]!==undefined).map(k=>[k,process.env[k]]));
   Object.assign(base,{HOME:userHome,CUA_HOME:home,CUA_SHIM_SECRETS:'off',CUA_PARITY_REMOTE:'1'});
-  const runtime=resolveRuntime({home});
   for(const row of selectionCases(process.platform)){
    installRoutes(home,row.registration);
    const node=row.node24?ownNode.path:node22;
@@ -71,7 +68,8 @@ export async function runSelection({prepared,node22}){
   const first=await ordinaryCall({home,env,node:ownNode.path});const again=await ordinaryCall({home,env,node:ownNode.path});assert.deepEqual(first.serverInfo,again.serverInfo);
   const cached=files(homeLayout(home).handshake).filter(f=>f.endsWith('.json'));
   const ownFile=cached.find(f=>f.includes('/cua@')&&f.includes('browser@'));assert.ok(ownFile,'Own handshake was not cached');
-  const record=JSON.parse(readFileSync(ownFile,'utf8'));record.host.version='stale-version';record.initialize.serverInfo={name:'poison-stale-cache',version:'0'};writeFileSync(ownFile,JSON.stringify(record));
+  const record=JSON.parse(readFileSync(ownFile,'utf8'));record.host.version='0.0.0-parity-old';record.initialize.serverInfo={name:'cua-repl-host',version:'0.0.0-parity-old'};
+  const oldDirectory=join(dirname(dirname(ownFile)),'cua@0.0.0-parity-old');mkdirSync(oldDirectory,{recursive:true});writeFileSync(join(oldDirectory,basename(ownFile)),JSON.stringify(record));rmSync(ownFile);
   const after=await ordinaryCall({home,env,node:ownNode.path});assert.deepEqual(after.serverInfo,first.serverInfo);
   const vendor=await ordinaryCall({home,env:{...env,CUA_REPL_HOST:'vendor'},node:ownNode.path});assert.notEqual(vendor.serverInfo.name,'cua-repl-host');
   result.cache={sameSelection:true,staleVersionMiss:true,crossHostMiss:true};

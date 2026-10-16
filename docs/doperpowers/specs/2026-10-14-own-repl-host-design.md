@@ -62,7 +62,7 @@ Use the recovered schemas and verbatim base descriptions in the embedded index, 
 `src/mcp/surface.mjs` host rules still layer above the base tools; the vendor launcher currently supplies overrides and cannot simply disappear with its effective text. M0 records both base and effective contracts; M1 reproduces the effective retained tool surface, documenting
 only approved branding/exclusion departures. The core API document is a different output, not a replacement for MCP instructions.
 
-The own host uses the user's Node **≥24**, resolved to an absolute executable before constructing the allowlisted environment, with `--experimental-vm-modules` for the kernel. Vendor-routed sessions keep the pinned vendor Node. Do not infer a patched JavaScript engine from the
+The own host runs on a Node **≥24** (revised 2026-10-16). By default that is the official Node 24 LTS which `cua install` pins and installs under `$CUA_HOME/node/<version>/`; the user's own Node is an override (`CUA_NODE`) and a fallback (the node running cua, then PATH). The cua process itself keeps running on the user's Node within the package's engines range. The chosen Node is resolved to an absolute executable before constructing the allowlisted environment, with `--experimental-vm-modules` for the kernel. Vendor-routed sessions keep the pinned vendor Node. Do not infer a patched JavaScript engine from the
 vendor distribution's `24.21.0-cua.1` name: its binary identifies as `24.21.0`. Keeping vendor Node for the own host would preserve distribution coupling and, as the peer spike shows, would not restore native socket authorization.
 
 ### Selection is a connection fact, not an opportunistic fallback
@@ -539,6 +539,22 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: `cua install` also installs a pinned official Node 24 for the own host, so the default switch does not depend on the user's Node. This is task 1b (opus), placed after task 1.
+  - **Pins.** One per supported platform and arch: darwin-arm64, darwin-x64, linux-arm64, linux-x64. Each sits next to the runtime release pins and names the official nodejs.org dist tarball by https URL, length and SHA-256, for the current Node 24 LTS patch. The hashes are checked once, when the pin is written, against nodejs.org's `SHASUMS256.txt` and its GPG signature, and the pin's notes record that check, as the vendor pin's provenance was recorded.
+  - **Install.** It follows the runtime's discipline in `src/runtime/install.mjs`:
+    - fetch the tarball, or take a local `--node-archive`;
+    - verify length and SHA-256 before anything reads the archive;
+    - stage it, and keep only what the own host needs (`bin/node` and the licence);
+    - verify that `node --version` matches the pin, and on darwin that its code signature is the OpenJS Foundation's Developer ID;
+    - one rename into `$CUA_HOME/node/<version>/`, then a pointer write.
+    An existing verified version makes this a no-op, and any failure leaves everything untouched. On Linux the archive hash is the trust root.
+  - **Resolution order for the own host:** `CUA_NODE`, then the cua-installed Node, then the node running cua, then PATH. The `own_host_node_unavailable` rule stays as the safety net for installs without the managed Node (offline, skipped, or an unpinned platform). Doctor's remedy list gains `cua install`.
+  - **cua itself** keeps running on the user's Node, with `engines` unchanged. Only the own host's children use the managed Node.
+  - **Acceptance 9's selection lane** gains a fifth case: no `CUA_NODE`, PATH Node 22 and the managed Node installed give an implicit cua.
+  - **Evidence.** M5's live runs on the mini and cua-linux use the managed Node from a fresh `cua install` in their scratch homes, not the hand-installed `~/.local/share/cua-parity-node` on the VM, so the release path itself is what gets proven.
+  - **Rejected alternatives.** The vendor runtime's bundled Node: the Design rejects it for distribution coupling, and it does not restore native peer authorization. Raising `engines` to 24 would break every Node 22 install.
+  Rationale: The owner's direction, relayed by the session. A default whose availability depends on what Node the user happens to have serves only part of the users the switch is for; cua already owns a verified-pin install path, so the managed Node rides it.
+  Date/Author: 2026-10-16, owner direction relayed by the session, recorded by the plan-executor.
 - Decision: M5 task 1 as built.
   - **Selection.** `replHostFor` resolves Node through an injectable resolver. It calls it at most once, and only when the answer would be cua. The selection then carries either the resolved Node or the candidates it tried. `buildLaunch` no longer takes a separate `ownNode`.
   - **CUA_NODE.**

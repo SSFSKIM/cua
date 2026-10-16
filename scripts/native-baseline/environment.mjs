@@ -5,7 +5,7 @@ const relativeNode = meta => meta.ownNode?.path?.startsWith(meta.home + '/') ? m
 export function comparisonEnvironment(meta) {
   const {CUA_REPL_HOST: _host, ...environment} = meta.environment ?? {};
   return {device:meta.device, identity:meta.deviceIdentity, controller:meta.controllerIdentity, platform:meta.platform, hardware:meta.hardware, os:meta.os,
-    display:meta.display, xSession:meta.xSession, gedit:meta.gedit?.version, environment,
+    display:meta.display, xSession:meta.xSession, gedit:meta.gedit?.version, locale:meta.gedit?.locale, environment,
     checkout:meta.checkout, node:meta.node, ownNode:{path:relativeNode(meta),version:meta.ownNode?.version}, nodeMode:meta.nodeMode,
     runtime:meta.runtime, sandbox:meta.sandbox, protocolVersion:meta.protocolVersion, plan:meta.plan,
     experiment:meta.measurement?.experiment};
@@ -30,6 +30,7 @@ export function environmentProblems(runs) {
       if (typeof meta.load?.[place]?.[when] !== 'string' || !meta.load[place][when].trim()) problems.push(`${name}: missing ${place} ${when} uptime`);
     }
     if (meta.platform === 'linux' && (!meta.xSession?.DISPLAY || !meta.gedit?.version)) problems.push(`${name}: Linux desktop environment is incomplete`);
+    if (meta.platform === 'linux' && !meta.gedit?.locale?.LANG) problems.push(`${name}: gedit locale is missing`);
     const actual = comparisonEnvironment(meta);
     for (const key of Object.keys(reference)) if (!isDeepStrictEqual(reference[key],actual[key])) problems.push(`${name}: ${key} environment differs from ${runs[0].name}`);
   }

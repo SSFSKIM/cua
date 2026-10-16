@@ -12,7 +12,7 @@ import {basename} from 'node:path';
 import {quote} from '../browser-parity/topology.mjs';
 import * as cells from './cells.mjs';
 import * as linux from './linux-cells.mjs';
-import {assertDisplay, servePattern} from './remote.mjs';
+import {assertDisplay, servePattern, NATIVE_LOCALE} from './remote.mjs';
 import {sessionEnvironment} from '../repl-parity/devices.mjs';
 
 const ROLES = ['scratch', 'victim'];
@@ -45,7 +45,10 @@ import {join} from 'node:path';
 const dir = mkdtempSync("/tmp/cua-native-baseline-");
 const file = join(dir, ${JSON.stringify(role)} + "-" + randomBytes(3).toString("hex") + ".txt");
 writeFileSync(file, "");
-const child = spawn("gedit", ["--standalone", file], {detached: true, stdio: "ignore", env: ${xSession === undefined ? `{...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: join(homedir(), ".Xauthority")}` : `{...Object.fromEntries(['PATH','LANG','LC_ALL','LC_CTYPE'].filter(k => process.env[k] !== undefined).map(k => [k,process.env[k]])), ...${JSON.stringify(sessionEnvironment(xSession))}, HOME: ${JSON.stringify(userHome ?? null)} ?? homedir()}`} });
+const env = ${xSession === undefined ? `{...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: join(homedir(), ".Xauthority")}` : `{PATH: process.env.PATH, ...${JSON.stringify(sessionEnvironment(xSession))}, HOME: ${JSON.stringify(userHome ?? null)} ?? homedir()}`};
+for (const key of Object.keys(env)) if (key.startsWith('LC_') || key === 'LANGUAGE') delete env[key];
+Object.assign(env, ${JSON.stringify(NATIVE_LOCALE)});
+const child = spawn("gedit", ["--standalone", file], {detached: true, stdio: "ignore", env});
 child.once("error", e => { console.error(e.message); process.exitCode = 1; });
 if (child.pid) { child.unref(); console.log(JSON.stringify({pid: child.pid, dir, file})); }`);
 }
@@ -130,7 +133,7 @@ export const linuxAdapter = {
     if (!pre.gedit) return 'gedit is not installed on the device';
     return null;
   },
-  start(meta, pre) { meta.gedit = {version: pre.gedit, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
+  start(meta, pre) { meta.gedit = {version: pre.gedit, locale: NATIVE_LOCALE, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
 
   async gui(ctx) {
     const {meta, device, guard, js, row, emit, measure} = ctx;

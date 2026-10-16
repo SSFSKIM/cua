@@ -10,6 +10,8 @@ export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 // The MCP protocol version the harness asks for; the handshake record is kept per surface set and this version.
 export const PROTOCOL_VERSION = '2025-06-18';
 export const HOSTS = ['vendor', 'cua'];
+// Locale is part of the measured desktop environment, never an SSH-login preference.
+export const NATIVE_LOCALE = Object.freeze({LANG: 'C.UTF-8'});
 const assertHost = host => { if (!HOSTS.includes(host)) throw new Error('host must be vendor or cua'); };
 // An X display name (:0, :1.0, localhost:10.0), nothing a shell could read otherwise.
 // The own host's Node: an absolute path a shell cannot read otherwise, and only for the cua host (the vendor host runs on
@@ -36,7 +38,7 @@ export function nativeEnvironment({home, userHome, host, display, platform, xSes
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
-  const clean = userHome ? `-i PATH="$PATH" LANG=C.UTF-8 HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(userHome + '/.config')} `
+  const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(userHome + '/.config')} `
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
   return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
 }

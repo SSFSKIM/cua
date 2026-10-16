@@ -75,3 +75,24 @@ test('an authless cloud X session cannot inherit a login cookie or bus when open
   assert.equal(captured.DBUS_SESSION_BUS_ADDRESS,undefined);
   assert.equal(captured.HOME,'/scratch/home');
 });
+
+test('different SSH locales cannot change gedit or serve locale, including the legacy VM launch form', () => {
+  const ambientLocales = [
+    {LANG:'en_US.UTF-8',LC_ALL:'en_US.UTF-8',LC_CTYPE:'en_US.UTF-8',LC_MESSAGES:'en_US.UTF-8',LANGUAGE:'en_US'},
+    {LANG:'fr_FR.UTF-8',LC_ALL:'fr_FR.UTF-8',LC_CTYPE:'fr_FR.UTF-8',LC_MESSAGES:'fr_FR.UTF-8',LANGUAGE:'fr_FR'},
+  ];
+  for (const ambient of ambientLocales) {
+    for (const session of [undefined,xSession]) {
+      const command=spawnGeditScript({display:':7',role:'scratch',xSession:session,userHome:'/scratch/home'});
+      const source=execFileSync('/bin/sh',['-c',`node() { printf '%s' "$3"; }; ${command}`],{encoding:'utf8'});
+      let captured;
+      new Function('spawn','randomBytes','mkdtempSync','writeFileSync','homedir','join','process','console',source.replace(/^import .*;$/gm,''))(
+        (_exe,_args,opts)=>{captured=opts.env;return {once(){},pid:42,unref(){}};},()=>({toString:()=> 'abcdef'}),()=>'/tmp/cua-native-baseline-AbCdEf',()=>{},()=>'/account',join,{env:{PATH:'/usr/bin',HOME:'/account',...ambient}},{log(){}});
+      const locale=Object.fromEntries(Object.entries(captured).filter(([key])=>key==='LANG'||key==='LANGUAGE'||key.startsWith('LC_')));
+      assert.deepEqual(locale,{LANG:'C.UTF-8'});
+    }
+    const script=serveCommand({device:'cua-bench',checkout:'/tmp',home:'/scratch',userHome:'/scratch/home',host:'cua',platform:'linux',display:':7',xSession}).args.at(-1);
+    const shell=script.replace('exec env ','env ').replace(/node .*$/, 'sh -c \'printf "%s|%s|%s|%s|%s" "$LANG" "${LC_ALL-unset}" "${LC_CTYPE-unset}" "${LC_MESSAGES-unset}" "${LANGUAGE-unset}"\'');
+    assert.equal(execFileSync('/bin/sh',['-c',shell],{encoding:'utf8',env:{PATH:process.env.PATH,HOME:'/account',...ambient}}),'C.UTF-8|unset|unset|unset|unset');
+  }
+});

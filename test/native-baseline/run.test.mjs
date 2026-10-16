@@ -108,6 +108,7 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   const meta = metaOf(out), rows = results(out);
   assert.equal(meta.complete, true, meta.error);
   assert.equal(meta.platform, 'linux');
+  assert.deepEqual(meta.gedit.locale,{LANG:'C.UTF-8'});
   assert.equal(meta.host, 'vendor');
   assert.equal(meta.connections, 3);
   assert.deepEqual(meta.sandbox, {mode: 'disabled', explicit: false});

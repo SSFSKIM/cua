@@ -22,7 +22,7 @@ const meta = (host, n, extra = {}) => ({
   controllerIdentity:{hostname:'controller',platform:'darwin',arch:'arm64',os:'25.6',cpu:{model:'Apple',count:10}},
   deviceIdentity: {alias: 'cua-linux', arch: 'arm64', hostname: 'vm', os: {name:'Ubuntu',version:'24.04'}, cpu: {model:'test CPU', count:4}},
   xSession: {DISPLAY:':0', XAUTHORITY:'/home/admin/.Xauthority', DBUS_SESSION_BUS_ADDRESS:'unix:path=/run/user/1000/bus'},
-  gedit: {version:'gedit 46'}, nodeMode:'managed', ownNode:{path:'/scratch/node/24.22.0/bin/node',version:'v24.22.0'},
+  gedit: {version:'gedit 46',locale:{LANG:'C.UTF-8'}}, nodeMode:'managed', ownNode:{path:'/scratch/node/24.22.0/bin/node',version:'v24.22.0'},
   home:'/scratch', userHome:'/scratch/home', node:'v22.23.3', checkout:'/home/admin/Developer/GitHub/cua-parity',
   load:{device:{before:'up 1 day',after:'up 1 day'},controller:{before:'up 2 days',after:'up 2 days'}},
   device: 'cua-linux', host, hostAttestations: Array.from({length: 6}, () => attest(host)), connections: 6,
@@ -253,4 +253,17 @@ test('comparison requires executable witnesses on real calls, not just host iden
   const vendor=three('vendor'),own=three('cua');
   delete own[0].meta.hostAttestations[0]._meta['cua/nativeExecution'];
   assert.equal(judge(t,vendor,own).verdict,'NO VERDICT');
+});
+
+
+test('comparison refuses differing or unrecorded gedit locales across six runs', t => {
+  const vendor=three('vendor'),own=three('cua');
+  own[1].meta.gedit.locale.LC_ALL='fr_FR.UTF-8';
+  let result=judge(t,vendor,own);
+  assert.equal(result.verdict,'NO VERDICT');
+  assert.match(result.problems.join('\n'),/locale/);
+  for(const run of [...vendor,...own])delete run.meta.gedit.locale;
+  result=judge(t,vendor,own);
+  assert.equal(result.verdict,'NO VERDICT');
+  assert.match(result.problems.join('\n'),/locale/);
 });

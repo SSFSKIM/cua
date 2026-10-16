@@ -41,13 +41,13 @@ Each own connection's `hostAttestations[].answeringHost` records the home and th
 | Diff | `repl-parity.mjs diff all-vendor-2 all-cua --through M5 --expected test/repl-parity/expected-differences.json` (`all-diff.json`) | **0 unexpected differences**, 1,380 cells, 1,367 expected (identity slots), all assertions pass. The services suite's `stat-missing` cell is byte-identical on both hosts: `native pipe path unavailable: No such file or directory (os error 2)`, the M5 oracle's vendor sentence; the over-limit connect cell is identical too |
 | M5 completeness gate | `CUA_REPL_PARITY_THROUGH=M5 node --test test/repl-parity/inventory.test.mjs` (`inventory-through-m5.txt`) | 8/8; "through M5: 542 due; 542 executable-linked; 0 uncovered" |
 | docs-profiles, own host | `repl-parity.mjs run --host cua --device mini --suite docs-profiles --out docs-profiles-cua` | 12/12 pass, 4 connections `cua-repl-host 0.5.0` |
-| Browser corpus | `browser-parity.mjs run --device mini --service cua --repl-host vendor\|cua --out corpus-*-host` | 59/59 cases ok on every run (3 vendor, 1 own); 61/61 attestations each, `cua-repl-host 0.5.0` on the own run. Diffs: see below, **open** |
+| Browser corpus | `browser-parity.mjs run --device mini --service cua --repl-host vendor\|cua --out corpus-*-host` | 59/59 cases ok on every run (3 vendor, 1 own); 61/61 attestations each, `cua-repl-host 0.5.0` on the own run. With the recalibrated tolerance (89496dd), **0 unexpected differences** against each of the three vendor runs (151 cells; 3, 6 and 2 expected trace counts) |
 | Scripted benchmark | `browser-parity.mjs run --device mini --service cua --repl-host <h> --corpus bench --out scripted/<h>/ep-<n>`, n=1..3, alternating vendor then cua; `bench-scripted-summary.mjs scripted --axis host` (`scripted/summary.txt`) | **equal: every scripted episode passes on both hosts**: drag-box vendor 3/3, cua 3/3; drag-items vendor 3/3, cua 3/3; raw reward 1 on all 12, identical drag paths (121,114)->(76,93) and (77,98)->(77,191) |
 | Selection lane | `scripts/repl-parity/selection.mjs --device mini --node22 /Users/new/.nvm/versions/node/v22.18.0/bin/node` | **open**: stopped at row 4 (see `diagnostics/selection-invalid-setting/`) |
 | Doctor matrix | `doctor/run-doctor.mjs` (`doctor/doctor.json`) | agrees with the selection table and the answered runs (below) |
 | Package contents | `package/` (recorded at 5f188d9; no package-affecting change since) | ok |
 
-### Browser corpus diffs (open: vendor trace-count variance outside the calibration)
+### Browser corpus diffs (closed at 89496dd: vendor trace-count variance, recalibrated mechanically)
 
 `corpus-diffs/` holds each vendor run against the own run (`--expected test/browser-parity/repl-host-expected-differences.json`)
 and each vendor pair. Every non-zero line is a trace count, never content:
@@ -58,8 +58,16 @@ and each vendor pair. Every non-zero line is a trace count, never content:
 - The vendor against itself: 1 vs 2, 5 differences; 1 vs 3, 5; 2 vs 3, 8 (the same cells, plus `actions/wait-for` `visible`
   and `actions/slow-budget` `late`). In each cell above the own host's count equals another vendor run's.
 
-No allowance was added. By the session's ruling the oracle owner recalibrates the derived tolerance mechanically from these
-three vendor runs (pinned at f7ac87d); the three vendor-vs-own diffs are re-run with the new fixture when it lands.
+No allowance was added. By the session's ruling the oracle owner recalibrated the derived tolerance mechanically from these
+three vendor runs (pinned at f7ac87d): 89496dd adds five vendor-derived slots, each maxDelta 1, and grows no prior bound. Re-run
+with `test/browser-parity/repl-host-expected-differences.json` at 89496dd, recordings unchanged
+(`corpus-diffs/vendor-<n>-vs-cua-at-89496dd.txt`):
+
+- vendor-1 vs own: **0 unexpected differences** (59 cases, 151 cells, 3 expected)
+- vendor-2 vs own: **0 unexpected differences** (59 cases, 151 cells, 6 expected)
+- vendor-3 vs own: **0 unexpected differences** (59 cases, 151 cells, 2 expected)
+
+The pre-recalibration diffs stay beside them as `vendor-<n>-vs-cua.txt`.
 
 ### Selection lane (open)
 

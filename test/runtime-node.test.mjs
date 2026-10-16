@@ -11,6 +11,7 @@ import {dirname, join} from 'node:path';
 import {fileDigest, loadNodePins, managedNode, parseNodePin, selectNodePin, NODE_PINS_DIR} from '../src/runtime/managed-node.mjs';
 import {developerIdRequirement, installNode, verifyNodeSignature} from '../src/runtime/node-install.mjs';
 import {ownHostNode, replHostFor} from '../src/runtime/launch.mjs';
+import {main} from '../src/cli.mjs';
 import {digest, scratch} from './fixtures/runtime-fixture.mjs';
 
 const expectCode = code => err => { assert.equal(err.code, code, `expected ${code}, got ${err.code}: ${err.message}`); return true; };
@@ -304,6 +305,12 @@ test('a replaced bin/node is never run: not on reinstall, even when it prints th
   rmSync(join(nodeDir(original.home), VERSION, 'bin/node'));
   symlinkSync(kept, join(nodeDir(original.home), VERSION, 'bin/node'));
   assert.match(managedNode(original.home, {host: LINUX}).missing, /is not the binary its install record names/);
+  // And a symlinked bin directory holding the very bytes.
+  mkdirSync(join(s.dir, 'bin'));
+  writeFileSync(join(s.dir, 'bin/node'), readFileSync(kept));
+  rmSync(join(nodeDir(original.home), VERSION, 'bin'), {recursive: true});
+  symlinkSync(join(s.dir, 'bin'), join(nodeDir(original.home), VERSION, 'bin'));
+  assert.match(managedNode(original.home, {host: LINUX}).missing, /is not the binary its install record names/);
 });
 
 test('an install record is read strictly: without the binary\'s digest, or with an empty archive, nothing is offered or reused', async t => {
@@ -403,4 +410,58 @@ test('acceptance 9\'s fifth case: no CUA_NODE, Node 22 on PATH and running cua, 
   // The production default resolver reads the home it is given.
   assert.equal(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {PATH: dirname(node22)}, home: ctx.home, browserSelection: null}).node,
     join(nodeDir(ctx.home), VERSION, 'bin/node'));
+});
+
+test('on a case-insensitive volume the same install is found and reused through a differently cased home', async t => {
+  const ctx = setup(t, {host: thisHost});
+  mkdirSync(ctx.home);
+  const upper = join(dirname(ctx.home), 'HOME');
+  let insensitive = false;
+  try { insensitive = statSync(upper).ino === statSync(ctx.home).ino; } catch {}
+  if (!insensitive) return t.skip('this volume is case-sensitive');
+  await install(ctx);
+  const found = managedNode(upper);
+  assert.equal(found.version, VERSION, JSON.stringify(found));
+  const again = await install({...ctx, home: upper});
+  assert.deepEqual([again.changed, again.activated], [false, false]);
+});
+
+// `cua install`'s Node step through the CLI's own handler, with the runtime installer stubbed (its archive is OpenAI's)
+// and the real Node installer: whatever fails, the output says the runtime is in place and what to do, as JSON too.
+async function cliInstall(t, args, deps) {
+  const out = [], err = [];
+  const write = {stdout: process.stdout.write, stderr: process.stderr.write};
+  process.stdout.write = chunk => { out.push(String(chunk)); return true; };
+  process.stderr.write = chunk => { err.push(String(chunk)); return true; };
+  try {
+    const status = await main(['install', ...args], deps);
+    return {status, stdout: out.join(''), stderr: err.join('')};
+  } finally { Object.assign(process.stdout, {write: write.stdout}); Object.assign(process.stderr, {write: write.stderr}); }
+}
+const runtimeInstalled = async () => ({release: '0.0.1-fixture', root: '/fixture/runtime', changed: false, releaseChanged: false, record: {source: 'archive'}, chromeHost: {root: '/fixture/runtime/chrome-plugin', changed: false}});
+
+test('a filesystem failure in the Node step fails classified, with the runtime-installed remedy, in JSON and in text', async t => {
+  const ctx = setup(t, {host: thisHost});
+  mkdirSync(ctx.home);
+  writeFileSync(join(ctx.home, 'node'), 'a file where the Node directory goes');
+  // The runtime pin only has to be selectable for this host; its installer is the stub.
+  const runtimePin = {release: '0.0.1-fixture', platform: thisHost.platform, arch: thisHost.arch, appVersion: '0.0.1', archive: {url: 'https://example.invalid/runtime'}};
+  const deps = {home: ctx.home, installRuntime: runtimeInstalled, pins: () => [runtimePin], nodePins: () => [ctx.pin]};
+  const json = await cliInstall(t, ['--json', '--node-archive', ctx.archive.path], deps);
+  assert.equal(json.status, 1);
+  const {ok, error} = JSON.parse(json.stdout);
+  assert.equal(ok, false);
+  assert.equal(error.code, 'node_install_failed');
+  assert.match(error.message, new RegExp(`^Node ${VERSION} for cua's own REPL host was not installed: could not create .*/node \\(EEXIST\\)`));
+  assert.match(error.hint, /^0\.0\.1-fixture is installed and active; for the Node, run cua install again, pass --node-archive <node-v24\.22\.0-.*\.tar\.gz> with the pinned tarball, or pass --no-node/);
+  assert.match(json.stderr, /\[node_install_failed\]/);
+  assert.doesNotMatch(json.stderr, /unexpected error/);
+
+  // A failure the installer does not classify is normalized at the step's boundary all the same.
+  const raw = await cliInstall(t, ['--node-archive', ctx.archive.path], {...deps, installNode: async () => { throw Object.assign(new Error('EIO: i/o error, read'), {code: 'EIO'}); }});
+  assert.equal(raw.status, 1);
+  assert.match(raw.stderr, /^cua: Node 24\.22\.0 for cua's own REPL host was not installed: EIO: EIO: i\/o error, read \[node_install_failed\]$/m);
+  assert.match(raw.stderr, /^ {2}0\.0\.1-fixture is installed and active; for the Node/m);
+  assert.doesNotMatch(raw.stderr, /unexpected error/);
+  assert.match(raw.stdout, /0\.0\.1-fixture is already installed and verified/, 'the runtime\'s own line came first');
 });

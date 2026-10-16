@@ -132,16 +132,16 @@ function progressReporter() {
 // each verified and activated on its own. A failed Node step fails the command after the runtime is in place, saying
 // so; --no-node skips it (an offline install without the tarball), and a platform with no Node pin has none to take.
 // Either way the own host then runs on CUA_NODE or the user's Node 24, else sessions keep the vendor host.
-async function install(args) {
+// `deps` is a test seam of this module API only (the installers, the pins and the home); the CLI passes none.
+async function install(args, {installRuntime: runtimeInstaller = installRuntime, installNode: nodeInstaller = installNode, pins: pinsOf = loadPins, nodePins = loadNodePins, home = defaultHome()} = {}) {
   const {values} = parse(args, {archive: {type: 'string'}, release: {type: 'string'}, 'node-archive': {type: 'string'}, 'no-node': {type: 'boolean'}});
   if (values['no-node'] && values['node-archive'] !== undefined) throw new UsageError('install takes --node-archive or --no-node, not both');
-  const pins = loadPins();
+  const pins = pinsOf();
   const manifest = values.release ? findPin(pins, values.release) : selectPin(pins);
-  const nodePin = values['no-node'] ? null : selectNodePin(loadNodePins());
-  const home = defaultHome();
+  const nodePin = values['no-node'] ? null : selectNodePin(nodePins());
   const onProgress = values.json ? undefined : progressReporter();
   if (!values.json) process.stderr.write(`installing ${manifest.release} from ${values.archive ?? manifest.archive.url}\n`);
-  const result = await installRuntime({home, manifest, archivePath: values.archive, onProgress});
+  const result = await runtimeInstaller({home, manifest, archivePath: values.archive, onProgress});
   if (!values.json) {
     if (!result.chromeHost.changed) print(`${result.release} is already installed and verified, with its Chrome host; active at ${result.root}`);
     else if (result.releaseChanged) print(`installed and activated ${result.release} at ${result.root}, with its Chrome host at ${result.chromeHost.root}`);
@@ -156,11 +156,13 @@ async function install(args) {
   } else {
     if (!values.json) process.stderr.write(`installing Node ${nodePin.version} for cua's own REPL host from ${values['node-archive'] ?? nodePin.archive.url}\n`);
     try {
-      node = await installNode({home, pin: nodePin, archivePath: values['node-archive'], onProgress});
+      node = await nodeInstaller({home, pin: nodePin, archivePath: values['node-archive'], onProgress});
     } catch (error) {
-      if (!(error instanceof CuaError)) throw error;
+      // Every failure of the step, a raw filesystem one too, reports that the runtime is in place and what to do.
+      const code = error instanceof CuaError ? error.code : 'node_install_failed';
+      const why = error instanceof CuaError ? error.message : `${error.code ?? 'error'}: ${error.message}`;
       const remedy = `${result.release} is installed and active; for the Node, run cua install again, pass --node-archive <${nodeDistName(nodePin)}.tar.gz> with the pinned tarball, or pass --no-node (${ownNodeFallback})`;
-      throw new CuaError(error.code, `Node ${nodePin.version} for cua's own REPL host was not installed: ${error.message}`, {hint: error.hint ? `${error.hint}; ${remedy}` : remedy, cause: error});
+      throw new CuaError(code, `Node ${nodePin.version} for cua's own REPL host was not installed: ${why}`, {hint: error.hint ? `${error.hint}; ${remedy}` : remedy, cause: error});
     }
     if (!values.json) print(node.changed ? `installed Node ${node.version} for cua's own REPL host at ${node.root}`
       : `Node ${node.version} for cua's own REPL host is already installed and verified at ${node.root}${node.activated ? '; it is the active one again' : ''}`);
@@ -804,14 +806,15 @@ export function unregisterLines(result) {
 
 const COMMANDS = {install, doctor, runtime, serve, secrets, login, profiles, chrome, remote, agent, devices};
 
-export async function main(argv) {
+// `deps` reaches only the install handler, as its test seam.
+export async function main(argv, deps) {
   const [command, ...rest] = argv;
   const json = rest.includes('--json');
   try {
     if (command === 'help' || command === '--help' || command === '-h') { print(USAGE); return 0; }
     const handler = COMMANDS[command];
     if (!handler) throw new UsageError(command ? `unknown command "${command}"` : 'missing command');
-    return (await handler(rest)) ?? 0;
+    return (await (handler === install ? install(rest, deps) : handler(rest))) ?? 0;
   } catch (error) {
     if (error instanceof UsageError) {
       process.stderr.write(`cua: ${error.message}\n${USAGE}\n`);

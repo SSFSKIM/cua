@@ -59,8 +59,9 @@ export async function installNode({home, pin, archivePath, fetch = globalThis.fe
   const real = realHome(home, {create: true});
   const nodes = nodeLayout(real);
   const {staging} = homeLayout(real);
-  mkdirSync(nodes.root, {recursive: true, mode: 0o700});
-  mkdirSync(staging, {recursive: true, mode: 0o700});
+  for (const dir of [nodes.root, staging]) {
+    try { mkdirSync(dir, {recursive: true, mode: 0o700}); } catch (error) { fail('node_install_failed', `could not create ${dir} (${error.code ?? error.message})`, {cause: error}); }
+  }
   const target = nodes.version(pin.version);
   const result = (record, changed, activated) => ({version: pin.version, root: target, node: join(target, 'bin', 'node'), changed, activated, source: record.source});
   const checks = {verifySignature, versionOf};
@@ -187,5 +188,7 @@ function snapshotArchive(path, dest, pin) {
   if (!stat.isFile()) fail('archive_missing', `Node archive ${path} is not a file`);
   if (stat.size !== pin.archive.length) fail('archive_length_mismatch', `Node archive ${path} is ${stat.size} bytes; the pin expects ${pin.archive.length}`,
     {hint: `pass the pinned ${nodeDistName(pin)}.tar.gz from ${pin.archive.url}, or omit --node-archive to download it`});
-  copyFileSync(path, dest, fsConstants.COPYFILE_FICLONE);
+  try { copyFileSync(path, dest, fsConstants.COPYFILE_FICLONE); } catch (error) {
+    fail('archive_missing', `Node archive ${path} could not be copied into staging (${error.code ?? error.message})`, {cause: error});
+  }
 }

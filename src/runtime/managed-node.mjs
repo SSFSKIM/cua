@@ -17,7 +17,7 @@
 // None of it is writable by a scoped cell: every launch protects node/ like the trusted code (src/runtime/sandbox.mjs).
 // And nothing there runs unless its bytes are the recorded ones: install re-checks them before reusing an install, and
 // the resolution (managedNode) before it offers the binary as a candidate, whose --version is then run.
-import {closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync} from 'node:fs';
+import {closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {dirname, join} from 'node:path';
@@ -128,12 +128,16 @@ export function fileDigest(path) {
   return {sha256: hash.digest('hex'), size};
 }
 
-// Whether bin/node under `dir` is, by real path, that very file (no symlinked part), a regular file, and the bytes
+// Whether bin/node under `dir` (node/<version> of a real home) is that very file, with no symlinked part below the home
+// (node/, node/<version>, bin and bin/node each checked with lstat, so no path-spelling comparison is involved: a
+// case-insensitive volume reached through another case is still the same install), a regular file, and the bytes
 // `record.node` names. Read only; nothing is run.
 export function nodeMatchesRecord(dir, record) {
   const path = join(dir, 'bin', 'node');
   try {
-    if (realpathSync.native(path) !== path || !lstatSync(path).isFile() || lstatSync(path).size !== record.node.size) return false;
+    if (![dirname(dir), dir, join(dir, 'bin')].every(part => lstatSync(part).isDirectory())) return false;
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.size !== record.node.size) return false;
     const {sha256, size} = fileDigest(path);
     return sha256 === record.node.sha256 && size === record.node.size;
   } catch { return false; }

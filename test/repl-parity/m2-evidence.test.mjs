@@ -24,7 +24,9 @@ test('each service assertion accepts observed vendor results and rejects destroy
   const groups=scenario.cells.map(c=>turnCellLabels(c).map(label=>rows.find(r=>r.cell===label)));
   const timings=groups.map(group=>Math.max(...group.map(r=>typeof r.ms==='object'?(r.ms.hostTurn??r.ms.elapsed):r.ms)));
   const results=groups.map((group,index)=>scenario.cells[index].witnessCount!==undefined?{replies:group.map(r=>({result:raw(r),observation:{...r.value,afterHookMs:r.ms.afterHook}}))}:raw(group[0]));
-  assert.equal(scenario.assert({results,timings}).ok,true,scenario.id);
+  // The extended path case's only recording predates the peer witness (m5-evidence.test.mjs), so the current oracle refuses it.
+  if(scenario.id==='cells/native-pipe/absolute-path')assert.throws(()=>scenario.assert({results,timings}),/peer witness/);
+  else assert.equal(scenario.assert({results,timings}).ok,true,scenario.id);
   const destroyed=results.map(r=>r.replies?{replies:r.replies.map(reply=>({...reply,observation:{...reply.observation,hookCompletedBeforeAck:false}}))}:{...r,content:[],isError:!r.isError,_meta:{}});
   assert.throws(()=>scenario.assert({results:destroyed,timings}),undefined,`${scenario.id} must not pass empty/reversed outcomes`);
  }

@@ -2,7 +2,7 @@
 // and NR:trusted-worker.js:134-230. Not a host implementation; the selected real host supplies nodeRepl.
 import {createBrowserService,PINNED_VENDOR_VERSION} from '../../../src/services/browser.mjs';
 import {createSkyService} from '../../../src/services/sky.mjs';
-import {writeFileSync} from 'node:fs';
+import {writeFileSync,readFileSync} from 'node:fs';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const events=[];let calls=0,completedHooks=0;
 const request={message:'Synthetic fixture approval',requestedSchema:{type:'object',properties:{fixture:{type:'string'}}},meta:{fixture:'request'}};
@@ -44,10 +44,14 @@ export async function handleRpc(r){
  case 'pipe':{
   if(r.mode==='long-path'){
    const path=nodeRepl.env.PARITY_PIPE_LONG,metadata={platform:process.platform,pathBytes:Buffer.byteLength(path),sunPathBytes:process.platform==='darwin'?104:108};
-   let socket;try{socket=await nodeRepl.nativePipe.createConnection(path);}catch(error){return {...metadata,status:'refused',bytes:[],message:error.message};}
-   return await new Promise(resolve=>{
+   // `peer` is the owned listener's own journal (fixtures/long-pipe.mjs), read from disk once the subject's socket has
+   // settled; the nativePipe under test never touches it, so a success the listener did not see cannot be reported.
+   const journal=nodeRepl.env.PARITY_PIPE_LONG_PEER;if(!journal)throw new Error('The long-path peer witness is harness-only');
+   const peer=()=>JSON.parse(readFileSync(journal,'utf8'));
+   let socket;try{socket=await nodeRepl.nativePipe.createConnection(path);}catch(error){return {...metadata,status:'refused',bytes:[],message:error.message,peer:peer()};}
+   return await new Promise((resolve,reject)=>{
     const bytes=[];let message=null,finished=false;
-    const finish=status=>{if(finished)return;finished=true;clearTimeout(timer);resolve({...metadata,status,bytes,message});};
+    const finish=status=>{if(finished)return;finished=true;clearTimeout(timer);try{resolve({...metadata,status,bytes,message,peer:peer()});}catch(error){reject(error);}};
     const timer=setTimeout(()=>{socket.end();finish('fixture-timeout');},5000);
     socket.on('data',chunk=>bytes.push(...chunk));socket.on('error',error=>{message=error.message;});
     socket.on('close',()=>finish(message===null?'connected':'transport-error'));

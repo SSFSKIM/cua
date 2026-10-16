@@ -1,0 +1,8 @@
+[
+  {
+    "case": "cells/native-pipe/absolute-path",
+    "cell": "connect-over-limit",
+    "platform": "linux",
+    "reason": "The Linux over-limit refusal ('failed to connect native pipe: path must be shorter than SUN_LEN', no connection) is derived from the vendor's linux-arm64 node_repl disassembly, not observed live. It stays pending, checked but never counted as covered, until task 6's cua-linux sitting records the vendor control and the oracle cites it."
+  }
+]

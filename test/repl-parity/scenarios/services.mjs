@@ -3,13 +3,14 @@
 // Rust-only ordering/timer/turn behavior is checked against the committed mini vendor observations.
 import assert from 'node:assert/strict';
 import {caseSchedule} from '../../../scripts/repl-parity/registry.mjs';
+import {provisionalCellsFor} from '../../../scripts/repl-parity/pending-cells.mjs';
 const plan=new Map(caseSchedule().map(c=>[c.id,c])),scenarios=[];
 const text=r=>(r.content??[]).filter(c=>c.type==='text').map(c=>c.text).join('\n');
 const rpc=r=>`await nodeRepl.rpc('fixture',${JSON.stringify(r)})`;
 const value=r=>`nodeRepl.write(JSON.stringify(${rpc(r)}));`;
 const okText=(expected,index=-1)=>(r)=>{assert.equal(r[index<0?r.length+index:index].isError,false);assert.equal(text(r[index<0?r.length+index:index]),expected);};
 const json=(expected,index=-1)=>r=>{const x=r[index<0?r.length+index:index];assert.equal(x.isError,false);assert.deepEqual(JSON.parse(text(x)),expected);};
-function add(id,cells,check,options={}){if(!id.startsWith('secrets/'))id=`cells/${id}`;const p=plan.get(id);if(!p)throw new Error(id);scenarios.push({...p,backend:'fixture-services',cells:cells.map((c,i)=>typeof c==='string'?{label:`cell-${i+1}`,code:c}:c),assert:({results,timings,...context})=>{check(results,timings,context);return {ok:true};},...options});}
+function add(id,cells,check,options={}){if(!id.startsWith('secrets/'))id=`cells/${id}`;const p=plan.get(id);if(!p)throw new Error(id);scenarios.push({...p,backend:'fixture-services',cells:cells.map((c,i)=>typeof c==='string'?{label:`cell-${i+1}`,code:c}:c),assert:({results,timings,...context})=>{check(results,timings,context);const provisional=provisionalCellsFor(context.platform,id);return provisional.length?{ok:true,pendingCells:provisional.map(p=>p.cell),covered:false}:{ok:true};},...options});}
 for(const action of ['accept','decline','cancel'])add(`elicitation/${action}`,[{label:'reply',answer:{action},code:value({op:'elicit'})}],json({action,content:action==='accept'?{}:null,_meta:action==='accept'?{persist:'session'}:null}));
 add('elicitation/content-and-meta',[{label:'reply',answer:{action:'accept',content:{fixture:'yes'},_meta:{fixture:'reply'}},code:value({op:'elicit'})}],json({action:'accept',content:{fixture:'yes'},_meta:{fixture:'reply'}}));
 add('elicitation/accepted-response-persistence',[{label:'reply',answer:{action:'accept',content:{fixture:'approved'}},code:value({op:'elicit'})}],json({action:'accept',content:{fixture:'approved'},_meta:{persist:'session'}}));
@@ -54,10 +55,14 @@ add('native-pipe/absolute-path',[`try{${rpc({op:'pipe',mode:'relative'})};nodeRe
  const sentences={darwin:'native pipe path unavailable: No such file or directory (os error 2)',linux:'native pipe path unavailable: No such file or directory (os error 2)'};
  assert.ok(Object.hasOwn(sentences,platform));okText(sentences[platform],1)(r);
  // Observed mini vendor at 519146a: a 192-byte absolute path connects, and the owned peer reverses all six bytes.
- // Linux has no parent-directory connect in the vendor disassembly (session, 2026-10-16). Its source-grounded
- // refusal below is provisional until task 6 records the Linux vendor control; it is not a live Linux observation.
- const long={darwin:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'darwin',status:'connected',sunPathBytes:104},linux:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform:'linux',status:'refused',sunPathBytes:108}};
- json(long[platform],2)(r);
+ // Success counts only with `peer`, the owned listener's own journal: one accepted connection that received exactly
+ // the six request bytes. The subject's response alone (bytes, close) can be produced without any OS connect.
+ // Linux has no parent-directory connect in the vendor disassembly (session, 2026-10-16). That refusal is declared
+ // provisional (provisional-oracles.json): checked here, never counted as covered until task 6's vendor control.
+ const long={darwin:{subject:{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform:'darwin',status:'connected',sunPathBytes:104},peer:{accepted:1,received:[[0,255,128,10,13,65]]}},linux:{subject:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform:'linux',status:'refused',sunPathBytes:108},peer:{accepted:0,received:[]}}};
+ assert.equal(r[2].isError,false);const {peer,...subject}=JSON.parse(text(r[2]));
+ assert.deepEqual(subject,long[platform].subject);
+ assert.deepEqual(peer,long[platform].peer,'over-limit connect outcome lacks its harness-owned peer witness');
 });
 // macOS refuses a full Unix accept queue immediately. This proves the configured bound and refusal, NOT timer expiry.
 // Linux also refuses immediately (vendor observation at 352f1e3); timer expiry retains its named socket-double proof.

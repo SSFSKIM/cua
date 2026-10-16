@@ -4,7 +4,7 @@ const scenario=services.find(s=>s.id==='cells/native-pipe/data-close-error');
 const live={proof:'live-abort',events:['close'],lateEvents:[{event:'close'}],message:null};
 const wire={entry:'worker-stdin',observedConnection:true,proof:'boundary-double',events:['error','close'],lateEvents:[{event:'error',message:'fixture transport error'},{event:'close'}],message:'fixture transport error'};
 const result=value=>({isError:false,content:[{type:'text',text:JSON.stringify(value)}]});
-const longValue=platform=>platform==='darwin'?{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform,status:'connected',sunPathBytes:104}:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform,status:'refused',sunPathBytes:108};
+const longValue=platform=>platform==='darwin'?{bytes:[65,13,10,128,255,0],message:null,pathBytes:192,platform,status:'connected',sunPathBytes:104,peer:{accepted:1,received:[[0,255,128,10,13,65]]}}:{bytes:[],message:'failed to connect native pipe: path must be shorter than SUN_LEN',pathBytes:192,platform,status:'refused',sunPathBytes:108,peer:{accepted:0,received:[]}};
 test('over-limit native pipe preserves the platform outcome, exact bytes and exact refusal sentence',()=>{
  const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');assert.ok(s.cells.some(c=>c.label==='connect-over-limit'));
  const text=text=>({isError:false,content:[{type:'text',text}]});
@@ -14,6 +14,22 @@ test('over-limit native pipe preserves the platform outcome, exact bytes and exa
   for(const patch of [{status:platform==='darwin'?'refused':'connected'},{status:'fixture-timeout'},{message:'failed to connect native pipe: Invalid argument (os error 22)'},{message:'invented sentence'},{bytes:platform==='darwin'?[]:[65,13,10,128,255,0]},{bytes:[0,255,128,10,13,65]},{pathBytes:80},{sunPathBytes:1},{platform:'other'}])assert.throws(()=>run(result({...valid,...patch})));
   assert.throws(()=>run({...result(valid),isError:true}));assert.throws(()=>run(text('wrong error sentence')));
  }
+});
+test('an over-limit connect counts only with the harness-owned peer witness, never on the subject response alone',()=>{
+ const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');
+ const text=text=>({isError:false,content:[{type:'text',text}]});
+ const run=(value,platform='darwin')=>s.assert({results:[text('true'),text('native pipe path unavailable: No such file or directory (os error 2)'),result(value)],timings:[0,0,0],platform});
+ const {peer:_,...subjectOnly}=longValue('darwin');
+ for(const peer of [undefined,null,{accepted:0,received:[]},{accepted:1,received:[]},{accepted:1,received:[[1,2,3]]},{accepted:1,received:[[65,13,10,128,255,0]]},{accepted:2,received:[[0,255,128,10,13,65],[0,255,128,10,13,65]]},{accepted:1,received:[[0,255,128],[10,13,65]]},{accepted:1,received:[[0,255,128,10,13,65]],extra:true}])
+  assert.throws(()=>run(peer===undefined?subjectOnly:{...subjectOnly,peer}),/peer witness/,JSON.stringify(peer));
+ assert.throws(()=>run({...longValue('linux'),peer:{accepted:1,received:[[0,255,128,10,13,65]]}},'linux'),/peer witness/,'a Linux refusal the peer saw connect is not a refusal');
+});
+test('the source-derived Linux over-limit refusal is provisional: it is checked, but its case is never counted as covered',()=>{
+ const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');
+ const text=text=>({isError:false,content:[{type:'text',text}]});
+ const run=platform=>s.assert({results:[text('true'),text('native pipe path unavailable: No such file or directory (os error 2)'),result(longValue(platform))],timings:[0,0,0],platform});
+ assert.deepEqual(run('linux'),{ok:true,pendingCells:['connect-over-limit'],covered:false});
+ assert.deepEqual(run('darwin'),{ok:true});
 });
 test('missing native pipe oracle rejects a successful connect and changed OS sentence on each platform',()=>{
  const s=services.find(s=>s.id==='cells/native-pipe/absolute-path');

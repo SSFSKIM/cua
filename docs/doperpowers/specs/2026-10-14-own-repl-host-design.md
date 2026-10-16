@@ -539,6 +539,24 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M5 task 2, the oracle, as built (merged at 28bfd5a; the calibration evidence pin f74b312 must stay an ancestor).
+  - **Stat sentence.** `cells/native-pipe/absolute-path` gains a separately journaled `stat-missing` cell, with platform-indexed expectations. Mini vendor: `native pipe path unavailable: No such file or directory (os error 2)`. The Linux control is recorded in task 6's sitting.
+  - **Polling recalibration.** Two fresh vendor pairs cover actions/locators, wait-for, slow-budget, input/coordinates and waits/networkidle. `deriveTraceAllowances` takes the union of the maximum spreads per case, cell and method, across these pairs and the M2 controls. Locator bounds are 1. Slow-budget's observed vendor spread is 19 evaluates and 21 releases; that is recorded vendor variance, not a hand-chosen allowance.
+  - **RemoteProofEndpoints** (`scripts/repl-parity/remote.mjs`).
+    - Endpoint homes are fresh, installed scratch `CUA_HOME`s outside TMPDIR, with ownership markers and journals.
+    - Enrollment stdout goes straight to a 0600 file. Only credential-free fields are read. Preparation stops for the relay merge and the owner's key transfer.
+    - Start requires a completed preparation with exactly the requested endpoint set.
+    - The controller takes three stdin ops: `restart` (mini under vendor or cua, same identity), `probe` (kill-client/count-one) and `stop`. Stdin EOF stops the agents.
+    - Endpoints allow two sessions, so the probe can reconnect while the killed session still exists.
+    - Scratch agents get a private HOME with synthetic, presence-only Chrome metadata for the prepared binding. No profile contents are copied and no extension is installed.
+  - **Attestation.** Own-host success is bound to the reviewed source commit, and the version is read from that commit's `identity.mjs`, so matching stale markers fail. The managed answering Node must lie under the answering home's `node/` subtree. Remote endpoints also witness the exact production supervisor argv (`NODE --disable-sigusr1 SUPERVISOR`) inside the owned agent's process subtree. A cached initialize never satisfies attestation without a real result marker.
+  - **Selection lane** (`scripts/repl-parity/selection.mjs`).
+    - An independent expected table with 260 rows per platform runs the real doctor CLI. It compares the leading `HOST host (REASON)` tokens of the ordinary and listing sentences with the host that actually answers.
+    - Cache reuse, version-namespace misses, cross-host separation, and job serialization with a persisted `CUA_NODE` are checked over service-manager doubles.
+    - Unmanaged Node 22 fallback is tested by moving the harness-owned `node/` tree aside and restoring it.
+  - **Preparation.** `prepare` on both parity CLIs creates fresh installed scratch homes through `cua install` and requires the managed Node. `cleanup-prepared --device <d>` removes them by ownership marker. `prepare --node` survives only as a recorded diagnostic override. Browser tracing configuration follows the recorded discovery home.
+  Rationale: The oracle that tasks 4 to 6 are graded by. Three review waves closed the false greens: agreeing stale versions, doctor substring matching, an empty preparation reaching "running", and the witness rejecting the production argv.
+  Date/Author: 2026-10-16, M5 task 2 executor and its reviews, folded by the plan-executor.
 - Decision: M5 task 1b as built (managed Node v24.22.0).
   - **Pins.** `runtime/releases/node/<version>-<platform>-<arch>.json`. The packed runtime pin loader skips this path. Each pin names the exact official nodejs.org `.tar.gz` URL; gzip is used so macOS needs no xz. `notes` are required and record the provenance check: `SHASUMS256.txt.sig` verified against the Node.js release keys, with gpgv agreeing; all four tarballs match their signed hashes; the darwin binaries carry Developer ID team `HX7739G8FX` (certificate name "Node.js Foundation").
   - **Install.**
@@ -554,7 +572,7 @@ owned browser service/extension host. The new docs directory must be included in
   - **Resolution** trusts the install record, not the checked-in pin. After a cua upgrade bumps the pin, the installed Node stays in use until `cua install` runs again.
   - **Doctor.** No new row. `repl.host` names the Node path and lists `cua install` first among the remedies.
   Rationale: Follows the owner's direction with the runtime's own install discipline. Verifying the signature before running anything keeps the trust chain closed on darwin; on Linux the pinned archive hash is the trust root.
-  Date/Author: 2026-10-16, M5 task 1b executor, folded by the plan-executor (task review pending).
+  Date/Author: 2026-10-16, M5 task 1b executor and its reviews (two fix waves: managed root and staging protected from scoped writes, record bound to the binary's SHA-256 and size, activation rollback, classified CLI errors), folded by the plan-executor.
 - Decision: `cua install` also installs a pinned official Node 24 for the own host, so the default switch does not depend on the user's Node. This is task 1b (opus), placed after task 1.
   - **Pins.** One per supported platform and arch: darwin-arm64, darwin-x64, linux-arm64, linux-x64. Each sits next to the runtime release pins and names the official nodejs.org dist tarball by https URL, length and SHA-256, for the current Node 24 LTS patch. The hashes are checked once, when the pin is written, against nodejs.org's `SHASUMS256.txt` and its GPG signature, and the pin's notes record that check, as the vendor pin's provenance was recorded.
   - **Install.** It follows the runtime's discipline in `src/runtime/install.mjs`:

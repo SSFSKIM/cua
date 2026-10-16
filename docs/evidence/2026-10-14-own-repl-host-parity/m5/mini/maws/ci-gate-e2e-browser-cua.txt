@@ -1,0 +1,13 @@
+ci-gate: 688fb0e350fcc71fa9b44b82bdf85cecbfcf7ac5 as ci/cua-m5-688fb0e3 (Gates: e2e:browser-cua)
+ci-gate: https://github.com/SSFSKIM/MAWS/actions/runs/38936813609
+success	e2e:browser-cua
+skipped	packaged
+success	plan
+skipped	probes
+skipped	static
+skipped	unit
+skipped	unit:darwin
+skipped	warm
+ci-gate: run 38936813609 success
+ci-gate: removed ci/cua-m5-688fb0e3
+ci-gate: transcript in /tmp/maws-review/gates/ci-688fb0e3.log

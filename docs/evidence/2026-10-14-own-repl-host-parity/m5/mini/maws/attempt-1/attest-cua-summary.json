@@ -1,0 +1,153 @@
+{
+  "version": "0.5.0",
+  "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+  "home": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r",
+  "sessions": [
+    {
+      "session": 1,
+      "pid": 83074,
+      "source": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "home": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r",
+        "cuaNodeSet": false,
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "platform": "darwin"
+      },
+      "answering": {
+        "pid": 83260,
+        "path": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r/node/24.22.0/bin/node",
+        "version": "v24.22.0",
+        "underHomeNode": true
+      },
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.5.0"
+        }
+      ],
+      "hostResults": 11,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.5.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task",
+        "end_task"
+      ],
+      "sourceOk": true,
+      "managedNodeOk": true,
+      "ok": true
+    },
+    {
+      "session": 2,
+      "pid": 86903,
+      "source": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "home": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r",
+        "cuaNodeSet": false,
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "platform": "darwin"
+      },
+      "answering": {
+        "pid": 86914,
+        "path": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r/node/24.22.0/bin/node",
+        "version": "v24.22.0",
+        "underHomeNode": true
+      },
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.5.0"
+        }
+      ],
+      "hostResults": 1,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.5.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "profiles_list",
+        "end_task"
+      ],
+      "sourceOk": true,
+      "managedNodeOk": true,
+      "ok": true
+    },
+    {
+      "session": 3,
+      "pid": 87015,
+      "source": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "home": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r",
+        "cuaNodeSet": false,
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "platform": "darwin"
+      },
+      "answering": {
+        "pid": 87027,
+        "path": "/Users/new/.local/share/cua-parity-maws/cua-home-KKa48r/node/24.22.0/bin/node",
+        "version": "v24.22.0",
+        "underHomeNode": true
+      },
+      "initialize": [
+        {
+          "name": "cua-repl-host",
+          "version": "0.5.0"
+        }
+      ],
+      "hostResults": 10,
+      "markers": [
+        {
+          "host": "cua",
+          "version": "0.5.0"
+        }
+      ],
+      "proxyLocalTools": [
+        "end_task"
+      ],
+      "sourceOk": true,
+      "managedNodeOk": true,
+      "ok": true
+    }
+  ],
+  "attestationOk": true,
+  "mawsQuit": {
+    "spawns": 1,
+    "signals": [
+      "SIGTERM"
+    ],
+    "exit": {
+      "kind": "maws",
+      "event": "exit",
+      "code": 0,
+      "signal": null,
+      "at": 1792170727687,
+      "msAfterSigterm": 171
+    },
+    "ok": true
+  },
+  "ok": true
+}

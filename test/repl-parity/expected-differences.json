@@ -2962,7 +2962,9 @@
       "cells/native-pipe/absolute-path"
     ],
     "cells": [
-      "cell-1"
+      "cell-1",
+      "stat-missing",
+      "connect-over-limit"
     ],
     "field": "meta.cua/replHost",
     "vendor": {

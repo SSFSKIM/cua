@@ -539,6 +539,18 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision: M5 task 1 as built.
+  - **Selection.** `replHostFor` resolves Node through an injectable resolver. It calls it at most once, and only when the answer would be cua. The selection then carries either the resolved Node or the candidates it tried. `buildLaunch` no longer takes a separate `ownNode`.
+  - **CUA_NODE.**
+    - A value that is not an absolute path is refused as an invalid setting, also at serve and agent start through `settingsFrom`.
+    - An absolute path that is missing or older than 24 falls through to the next candidate, as the ruling orders.
+    - Agent jobs store an explicit `CUA_NODE` exactly as given: validated as absolute, never resolved or probed.
+  - **Doctor.** A new `warn` status that does not change `ok`. `repl.host` warns when either the session or the profile listing lacks Node 24. Doctor resolves Node once for both.
+  - **Package Node floor.** It stays `^22.14 || >=23.7`, because cua itself runs on Node 22. The own host's floor is 24, checked per connection. A test pins both, and another checks `npm pack --dry-run --json` for the owned documents and parser assets.
+  - **Versions.** Host 0.5.0, plugin 0.12.0.
+  - **Tests.** Tests that drive the fake vendor runtime now set `CUA_REPL_HOST=vendor`, and each gained an own-host counterpart, so the result no longer depends on the Node that runs them.
+  Rationale: Applies the 2026-10-16 ruling. Without the explicit vendor pin, default-path tests passed on local Node 22 and failed on CI's Node 24.
+  Date/Author: 2026-10-16, M5 task 1 executor, folded by the plan-executor.
 - Decision: An implicit default selects the own host only where a Node ≥24 resolves. This is ruled for M5, before any default flips.
   - **Node resolution:** once per connection, in the existing order: `CUA_NODE`, then the node running cua, then `node` on PATH. Doctor and the profile listing use the same rule.
   - **No Node ≥24:** with `CUA_REPL_HOST` absent or empty, a session the table would move to cua (`linux`, `browser_only`) selects vendor with reason `own_host_node_unavailable`, recorded in the connection's selection provenance. The cache identity carries the resolved host, so installing Node 24 takes effect on the next connection.

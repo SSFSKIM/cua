@@ -268,6 +268,42 @@ test('macOS: when the relay\'s process is killed, its connector exits and the se
   assert.equal(await until(() => listener.peers[0].ended, 5000), true, 'the server sees the connection end');
 });
 
+test('macOS: the connector runs as the supervisor does, is owned from its spawn and released only once it has exited', darwinOnly, async t => {
+  const listener = await longListener(t, scratch(t), 170, {echo: true});
+  const owned = [];
+  const sent = [];
+  const relay = nativePipeRelay({send: m => sent.push(m), own: pid => {
+    const entry = {pid, released: null};
+    owned.push(entry);
+    return () => { entry.released = {aliveThen: alive(pid)}; };
+  }});
+  t.after(() => relay.closeAll());
+  relay.handle({id: 'c', op: 'connect', path: listener.path});
+  const response = await answered(sent, 'c');
+  assert.equal(response.ok, true, response.error);
+  await until(() => listener.peers[0]?.pids.length);
+  const connector = listener.peers[0].pids[0];
+  assert.deepEqual(owned, [{pid: connector, released: null}], 'owned from its spawn, not released while it lives');
+  const {execFileSync} = process.getBuiltinModule('node:child_process');
+  assert.match(execFileSync('/bin/ps', ['-o', 'command=', '-p', String(connector)]).toString(), / --disable-sigusr1 .*native-pipe-connector\.mjs /);
+  relay.handle({id: 'x', op: 'close', connection_id: response.result.connection_id});
+  assert.equal(await until(() => owned[0].released !== null), true);
+  assert.deepEqual(owned[0].released, {aliveThen: false}, 'released after the connector has exited');
+});
+
+test('the connect budget includes the connector\'s synchronous start', async () => {
+  const sent = [];
+  const relay = nativePipeRelay({send: m => sent.push(m), connectTimeoutMs: 300, platform: 'darwin',
+    realpath: () => Buffer.from(`/${'p'.repeat(140)}/s.sock`), stat: () => socketStat, openDirectory: () => ({dev: 1n, ino: 2n}),
+    connectInDirectory: () => { const end = Date.now() + 400; while (Date.now() < end); return new SocketDouble(); }});
+  relay.handle({id: 'c', op: 'connect', path: `/${'./'.repeat(80)}s.sock`});
+  const returned = performance.now();
+  await until(() => sent.length);
+  assert.deepEqual(sent, [{type: 'native_pipe_response', id: 'c', ok: false, error: 'native pipe initial connect timed out'}]);
+  assert.ok(performance.now() - returned < 150, 'the budget had already run out when the start returned');
+  relay.closeAll();
+});
+
 test('macOS: a socket whose own name is longer than sun_path is refused with the vendor\'s sentence', darwinOnly, async t => {
   const {path: bound} = await longListener(t, scratch(t), 150);
   const path = join(bound, '..', 'n'.repeat(110));

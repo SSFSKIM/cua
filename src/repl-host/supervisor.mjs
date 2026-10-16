@@ -336,7 +336,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       onEnd: ending => { if (self.child === child && !self.failed) workerEnded(self, ending); },
     });
     self.child = child;
-    self.relay = nativePipeRelay({send: message => child.send(message), connectTimeoutMs: settings.pipeConnectTimeoutMs});
+    self.relay = nativePipeRelay({send: message => child.send(message), connectTimeoutMs: settings.pipeConnectTimeoutMs,
+      own: pid => groupReaper?.own(pid) ?? (() => {})});
     // Registered before anything else can run: no other child's end may take the worker or what it starts.
     if (child.pid && groupReaper) release = groupReaper.own(child.pid);
     self.cancelReady = timer(readyTimeoutMs, () => workerNotReady(self, child));

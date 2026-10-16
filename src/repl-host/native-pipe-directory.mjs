@@ -6,11 +6,13 @@
 // (LOCAL_PEERPID names the last operator), which a server that authorizes its peer by ancestry at accept, such as
 // MAWS, can catch mid-check; the connector stays the one live peer, a child of the supervisor, until the close.
 //
-// connectInDirectory({directory, name, identity}) -> a socket for the relay: it emits connect, data, end, error and
+// connectInDirectory({directory, name, identity}, {own}) -> a socket for the relay: it emits connect, data, end, error and
 // close as a net.Socket does, and takes write(bytes, callback), end(callback) and destroy(). Nothing is made in the
 // filesystem. The connector runs unsandboxed, as the supervisor and its own connects do: it opens only this socket,
 // and the scoped sandbox would deny that. It ends with its connection, on destroy (killed) and when the supervisor's
-// IPC channel closes, whatever ended the supervisor.
+// IPC channel closes, whatever ended the supervisor. It is the supervisor's child, not the trusted worker's, so
+// `own(pid)` registers it with the owned-group reaper from its spawn until it has actually exited: a kernel's end, which
+// reaps the group, must not take a connection the worker still holds.
 import {spawn} from 'node:child_process';
 import {EventEmitter} from 'node:events';
 import {fileURLToPath} from 'node:url';
@@ -109,8 +111,9 @@ class ConnectorSocket extends EventEmitter {
   }
 }
 
-export function connectInDirectory({directory, name, identity}) {
-  const child = spawn(process.execPath, [CONNECTOR, name, String(identity?.dev), String(identity?.ino)],
+export function connectInDirectory({directory, name, identity}, {own = () => () => {}} = {}) {
+  const child = spawn(process.execPath, ['--disable-sigusr1', CONNECTOR, name, String(identity?.dev), String(identity?.ino)],
     {cwd: directory, env: {}, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'advanced'});
+  if (child.pid) child.once('exit', own(child.pid));
   return new ConnectorSocket(child);
 }

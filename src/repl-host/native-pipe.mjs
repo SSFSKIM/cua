@@ -103,9 +103,11 @@ export function osErrorSentence(error, platform = process.platform) {
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
 // every connection, connected or still connecting, without telling the worker (it is gone).
 // `platform` picks the vendor's rule for a long canonical path; `openDirectory(path)` is the vendor's open of a long
-// path's parent (-> {dev, ino}); `connectInDirectory({directory, name, identity})` connects a file name in it.
+// path's parent (-> {dev, ino}); `connectInDirectory({directory, name, identity}, {own})` connects a file name in it,
+// `own(pid)` (the owned-group reaper's, -> release) protecting the connector process while it lives.
 export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native,
-  stat = statSync, platform = process.platform, openDirectory = openDirectoryDefault, connectInDirectory = connectInDirectoryDefault}) {
+  stat = statSync, platform = process.platform, openDirectory = openDirectoryDefault, connectInDirectory = connectInDirectoryDefault,
+  own = () => () => {}}) {
   const sunPath = SUN_PATH_BYTES[platform] ?? SUN_PATH_BYTES.linux;
   const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
@@ -133,7 +135,9 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
     const route = routeFor(path, canonical);
     if (route.refusal) return fail(id, `${CONNECT_FAILED_PREFIX}${route.refusal}`);
     const connectionId = `native-pipe-connection-${counter++}`;
-    const socket = route.directory ? connectInDirectory(route) : connect({path: route.path});
+    // The budget runs from here: a connector's synchronous spawn counts against it.
+    const started = performance.now();
+    const socket = route.directory ? connectInDirectory(route, {own}) : connect({path: route.path});
     let connected = false;
     let settled = false;      // the connect request was answered: a later connect or error changes nothing
     let reported = false;     // native_pipe_closed was sent
@@ -151,7 +155,7 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       connecting.delete(socket);
       socket.destroy();
       fail(id, CONNECT_TIMEOUT_SENTENCE);
-    }, connectTimeoutMs);
+    }, Math.max(0, connectTimeoutMs - (performance.now() - started)));
     connecting.set(socket, timeout);
     socket.once('connect', () => {
       clearTimeout(timeout);

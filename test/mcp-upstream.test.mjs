@@ -13,10 +13,17 @@ const FAKE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-ups
 const UPSTREAM_URL = JSON.stringify(pathToFileURL(join(dirname(FAKE), '..', '..', 'src', 'mcp', 'upstream.mjs')).href);
 const alive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-// The budget for teardowns a test expects to confirm. It has to leave a loaded machine (several suites at once) room
-// to observe the anchor's exit and list the group empty; tests about the budget itself set their own.
-const CONFIRM_MS = 3000;
-const waitFile = async file => { for (let i = 0; i < 200 && !existsSync(file); i++) await sleep(10); return Number(readFileSync(file, 'utf8')); };
+// The budget for teardowns a test expects to confirm. Teardown escalates at fixed fractions of it (SIGTERM at 0.4,
+// SIGKILL at 0.7) and must then observe the anchor's exit and list the group empty in the last 0.3, so this is a
+// liveness bound: the time a heavily loaded machine needs to deliver a SIGKILL and run pgrep (3 s missed by 0.3 s on a
+// loaded runner). Tests about the budget itself set their own.
+const CONFIRM_MS = 10_000;
+// Waits on conditions are bounded for liveness only; the condition, not the clock, ends them.
+const LIVENESS_MS = 20_000;
+const waitFile = async file => {
+  for (const until = Date.now() + LIVENESS_MS; !existsSync(file) && Date.now() < until;) await sleep(10);
+  return Number(readFileSync(file, 'utf8'));
+};
 
 function start(t, mode, extraArgs = [], options = {}) {
   const diagnostics = [];
@@ -32,7 +39,7 @@ function start(t, mode, extraArgs = [], options = {}) {
   t.after(async () => { await upstream.terminate({budgetMs: 1000}); });
   const request = async (id, method, params = {}) => {
     upstream.send({jsonrpc: '2.0', id, method, params});
-    for (let i = 0; i < 300; i++) { const m = messages.find(x => x.id === id); if (m) return m; await sleep(10); }
+    for (const until = Date.now() + LIVENESS_MS; Date.now() < until; await sleep(10)) { const m = messages.find(x => x.id === id); if (m) return m; }
     throw new Error(`no reply to ${method}`);
   };
   return {upstream, diagnostics, messages, exit, request};
@@ -112,7 +119,7 @@ test('a runtime that cannot start reports an exit instead of throwing', async ()
   const info = await new Promise(resolve => upstream.onExit(resolve));
   assert.equal(info.code, null);
   assert.match(info.error, /ENOENT/);
-  assert.deepEqual(await upstream.terminate({budgetMs: 500}), {confirmed: true, steps: ['eof']});
+  assert.deepEqual(await upstream.terminate({budgetMs: CONFIRM_MS}), {confirmed: true, steps: ['eof']});
 });
 
 test('once the group\'s identity cannot be established, teardown signals nothing and reports cleanup unconfirmed', async t => {

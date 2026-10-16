@@ -9,7 +9,7 @@ import {StdioClient} from '../browser-parity/mcp.mjs';
 import {selectionCases,assertSelection} from './selection.mjs';
 import {executionFacts,assertPreparedFacts} from './provenance.mjs';
 import {readPointer,writePointer,homeLayout} from '../../src/runtime/layout.mjs';
-import {agentJobSpec} from '../../src/remote/job.mjs';
+import {checkScratchJob} from './selection-job.mjs';
 import {cuaRecordFile,vendorRecordFile} from '../../src/chrome/route.mjs';
 import {socketPathFor,socketNameFor,backendDir} from '../../src/chrome/extension.mjs';
 export function installRoutes(home,registration){
@@ -75,8 +75,7 @@ export async function runSelection({prepared,node22}){
   result.cache={sameSelection:true,staleVersionMiss:true,crossHostMiss:true};
   // Job serialization only: no launchd/systemd installation, no live enrollment.
   mkdirSync(join(home,'remote'),{recursive:true});writeFileSync(join(home,'remote','device.json'),JSON.stringify({schema:1,deviceId:Buffer.alloc(16,1).toString('base64url'),secret:Buffer.alloc(32,2).toString('base64url'),enrolledAt:'2026-10-16T00:00:00Z'}),{mode:0o600});
-  const job=await agentJobSpec({home,env:{...env,CUA_NODE:ownNode.path},http:'127.0.0.1:7801',surfaces:'browser',node:ownNode.path});assert.equal(job.environment.CUA_NODE,ownNode.path);
-  const implicit=await agentJobSpec({home,env:base,http:'127.0.0.1:7801',surfaces:'browser',node:ownNode.path});assert.equal(Object.hasOwn(implicit.environment,'CUA_NODE'),false);result.job={explicitNodePersisted:true,implicitNodeOmitted:true};
+  result.job=await checkScratchJob({home,userHome,node:ownNode.path,env:base,platform:process.platform});
   result.complete=true;
  }catch(error){result.error=error.message;}finally{rmSync(home,{recursive:true,force:true});}
  return result;

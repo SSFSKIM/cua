@@ -1,7 +1,7 @@
 {
   "axis": "repl-host",
   "kind": "vendor-trace-variance",
-  "revision": "50f556baa72ce3024f7108f4978536fbe0788c3c",
+  "revision": "f74b312384c6ec493e2c95e4eb9f496f0c4c8d70",
   "pairs": [
     {
       "a": "docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host",
@@ -14,6 +14,14 @@
         "input/coordinates",
         "waits/networkidle"
       ]
+    },
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/polling-control-3",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/polling-control-4"
+    },
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/polling-control-5",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m5/oracle/polling-control-6"
     }
   ]
 }

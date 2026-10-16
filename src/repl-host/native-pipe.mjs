@@ -13,7 +13,14 @@
 // docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Gaps" 4, and the connect failure
 // observed on cua-linux, M4) are kept; the rest are cua's. An OS error reads as the vendor's Rust host displays it
 // (osErrorSentence).
-import {statSync} from 'node:fs';
+//
+// The path check follows the vendor's validate_native_pipe_path (node_repl 26.928.40906, disassembled on darwin-arm64
+// and linux-arm64): is_absolute; then canonicalize, i.e. realpath(3), whose every failure (ENOENT, ENOTDIR, EACCES,
+// ELOOP, ENAMETOOLONG, EIO, an interior NUL) is `native pipe path unavailable: `; then metadata of the canonical path,
+// whose failure is `native pipe stat failed: `; then the socket type. The connect itself still goes to the path as
+// given: the vendor connects the canonical path through its parent directory on macOS, which Node cannot, and
+// resolving here would only lengthen the sun_path (/tmp is /private/tmp there).
+import {realpathSync, statSync} from 'node:fs';
 import {createConnection} from 'node:net';
 import {isAbsolute} from 'node:path';
 
@@ -23,6 +30,10 @@ export const NOT_ABSOLUTE_SENTENCE = 'native pipe path must be absolute';
 export const NOT_SOCKET_SENTENCE = 'native pipe path is not a socket';
 export const WRITE_FAILED_PREFIX = 'native pipe write failed: ';
 export const CONNECT_FAILED_PREFIX = 'failed to connect native pipe: ';
+export const PATH_UNAVAILABLE_PREFIX = 'native pipe path unavailable: ';
+export const STAT_FAILED_PREFIX = 'native pipe stat failed: ';
+// Rust std's refusal of a path holding a NUL byte, raised before any syscall (std::sys small_c_string NUL_ERR).
+const NUL_IN_PATH_SENTENCE = 'file name contained an unexpected NUL byte';
 export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 // A write into a pipe the peer left is a close, not an error: the vendor host reports the connection closed by its
 // reader, whose EOF wins the race with the write's failure (observed on the pinned node_repl on macOS, 2026-10-14, for
@@ -32,7 +43,7 @@ export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 const PEER_GONE = new Set(['EPIPE', 'ECONNRESET', 'ECONNABORTED']);
 const peerGoneOnWrite = error => error.syscall !== 'read' && PEER_GONE.has(error.code);
 
-// strerror for every errno the relay's syscalls (stat, connect, read, write, close of a Unix socket) can reach, as the
+// strerror for every errno the relay's syscalls (realpath, stat, connect, read, write, close of a Unix socket) can reach, as the
 // vendor's Rust host displays an OS error: glibc's text on Linux (glibc's errlist), Darwin libc's on macOS (checked
 // against os.strerror on macOS 15). libuv's own messages are not strerror (ELOOP, ENFILE, ENOMEM, ETIMEDOUT, ... differ).
 const COMMON = {
@@ -62,7 +73,7 @@ export function osErrorSentence(error, platform = process.platform) {
 
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
 // every connection, connected or still connecting, without telling the worker (it is gone).
-export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, stat = statSync}) {
+export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native, stat = statSync}) {
   const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
   let counter = 0;
@@ -72,11 +83,19 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
 
   function open(id, path) {
     if (typeof path !== 'string' || !isAbsolute(path)) return fail(id, NOT_ABSOLUTE_SENTENCE);
+    if (path.includes('\0')) return fail(id, `${PATH_UNAVAILABLE_PREFIX}${NUL_IN_PATH_SENTENCE}`);
+    let canonical, metadata;
     try {
-      if (!stat(path).isSocket()) return fail(id, NOT_SOCKET_SENTENCE);
+      canonical = realpath(path);
     } catch (error) {
-      return fail(id, `${CONNECT_FAILED_PREFIX}${osErrorSentence(error)}`);
+      return fail(id, `${PATH_UNAVAILABLE_PREFIX}${osErrorSentence(error)}`);
     }
+    try {
+      metadata = stat(canonical);
+    } catch (error) {
+      return fail(id, `${STAT_FAILED_PREFIX}${osErrorSentence(error)}`);
+    }
+    if (!metadata.isSocket()) return fail(id, NOT_SOCKET_SENTENCE);
     const connectionId = `native-pipe-connection-${counter++}`;
     const socket = connect({path});
     let connected = false;

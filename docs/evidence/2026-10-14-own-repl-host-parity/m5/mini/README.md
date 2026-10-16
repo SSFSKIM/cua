@@ -43,7 +43,7 @@ Each own connection's `hostAttestations[].answeringHost` records the home and th
 | docs-profiles, own host | `repl-parity.mjs run --host cua --device mini --suite docs-profiles --out docs-profiles-cua` | 12/12 pass, 4 connections `cua-repl-host 0.5.0` |
 | Browser corpus | `browser-parity.mjs run --device mini --service cua --repl-host vendor\|cua --out corpus-*-host` | 59/59 cases ok on every run (3 vendor, 1 own); 61/61 attestations each, `cua-repl-host 0.5.0` on the own run. With the recalibrated tolerance (89496dd), **0 unexpected differences** against each of the three vendor runs (151 cells; 3, 6 and 2 expected trace counts) |
 | Scripted benchmark | `browser-parity.mjs run --device mini --service cua --repl-host <h> --corpus bench --out scripted/<h>/ep-<n>`, n=1..3, alternating vendor then cua; `bench-scripted-summary.mjs scripted --axis host` (`scripted/summary.txt`) | **equal: every scripted episode passes on both hosts**: drag-box vendor 3/3, cua 3/3; drag-items vendor 3/3, cua 3/3; raw reward 1 on all 12, identical drag paths (121,114)->(76,93) and (77,98)->(77,191) |
-| Selection lane | `scripts/repl-parity/selection.mjs --device mini --node22 /Users/new/.nvm/versions/node/v22.18.0/bin/node` | **open**: at a27ea84, 238/260 rows pass and the job check passes; 22 rows and the cache check fail on oracle assertions (`diagnostics/selection-at-a27ea84/`) |
+| Selection lane | `scripts/repl-parity/selection.mjs --device mini --node22 /Users/new/.nvm/versions/node/v22.18.0/bin/node` | **260/260 rows pass**; cache reuse, stale-version miss and cross-host miss pass; job check passes (`selection/`, at 1d1ed89) |
 | Doctor matrix | `doctor/run-doctor.mjs` (`doctor/doctor.json`) | agrees with the selection table and the answered runs (below) |
 | Package contents | `package/` (recorded at 5f188d9; no package-affecting change since) | ok |
 
@@ -69,18 +69,31 @@ with `test/browser-parity/repl-host-expected-differences.json` at 89496dd, recor
 
 The pre-recalibration diffs stay beside them as `vendor-<n>-vs-cua.txt`.
 
-### Selection lane (open)
+### Selection lane (closed at 1d1ed89)
 
-First run (oracle at d49e6da, `diagnostics/selection-invalid-setting/`): stopped at row 4, where the real `cua serve` refuses an
-invalid `CUA_REPL_HOST` with `invalid_setting` and doctor with `invalid_repl_host` (M0's documented split). Ruling: the oracle
-changes. 30094d0 and 6c79de0 read each lane's code at its refusal boundary, evaluate every row and accept doctor's on-Node clause.
+```sh
+node scripts/repl-parity/selection.mjs --device mini --node22 /Users/new/.nvm/versions/node/v22.18.0/bin/node --out selection
+```
 
-Second run, both preparations re-made at a27ea84 (`diagnostics/selection-at-a27ea84/`): all 260 rows evaluated. Host,
-reason, status and answering host agree with the independent table on every row, and the job check passes. Still failing:
-- 22 MAWS rows on homes that also carry a cua registration fail only the oracle's `/MAWS/` route assertion; doctor names the
-  deciding cua registration instead.
-- The cache check finds no handshake record, because its calls never send `tools/list`, which is when the product records one.
-Both are oracle assertions, so ruling them is the oracle owner's call; the product is unchanged (e24a1cd).
+Run 2026-10-16 18:23–18:26 UTC with both preparations re-made at `1d1ed89` (product code still `e24a1cd`; selection oracle
+30094d0, 6c79de0, 8a2e90f, 1d1ed89). `selection/selection.json`: `complete: true`, 260 of 260 planned rows evaluated, 0 failures.
+Doctor's `repl.host` row (host, reason, status, route and on-Node clause) and the host that really answered agree with the
+independent table on every row, for the ordinary and the profiles-listing lanes. The checks:
+- cache: `sameSelection`, `staleVersionMiss`, `crossHostMiss` all true;
+- job: `explicitNodePersisted`, `implicitNodeOmitted` (scratch installed job, service-manager double).
+
+The five Node cases:
+- managed Node 24 installed, `CUA_NODE` unset: 252 rows;
+- PATH Node 22 with no managed Node, implicit: `vendor host (own_host_node_unavailable)`, `warn` (2 rows);
+- the same with explicit `CUA_REPL_HOST=cua`: refused with `repl_host_node` (2 rows);
+- PATH Node 22 with the managed Node installed: implicit cua (2 rows);
+- a persisted `CUA_NODE` on an installed job: the job check.
+Every own-host answer came from `<selection home>/node/24.22.0/bin/node` v24.22.0, the managed Node.
+
+Earlier runs, kept as diagnostics:
+- `diagnostics/selection-invalid-setting/` (oracle d49e6da): stopped at row 4, `invalid_setting` vs `invalid_repl_host`.
+- `diagnostics/selection-at-a27ea84/`: 238/260; 22 MAWS-plus-cua-registration rows failed the oracle's route assertion, and
+  the cache check found no record because its calls never sent `tools/list`. Both were fixed in the oracle (8a2e90f, 1d1ed89).
 
 ### Doctor (`node bin/cua.mjs doctor --json`, prepared session environment, `CUA_NODE` unset)
 
@@ -96,8 +109,8 @@ Run on the mini in the repl-parity scratch environment (`CUA_HOME`, private `HOM
 
 Both service settings give the same host and reason; the route names `CUA_BROWSER_SERVICE=cua` or "the cua route, by cua's
 registration". Real calls agree: explicit `cua` answered as `cua-repl-host 0.5.0` on that managed Node (all-cua, corpus, scripted),
-explicit `vendor` as `rmcp 1.5.0`, and an invalid value refuses before launch (`invalid_setting`, above). The unset row's real
-answer is the selection lane's to show once it re-runs.
+explicit `vendor` as `rmcp 1.5.0`, and an invalid value refuses before launch (`invalid_setting`, above). The selection lane
+shows the unset rows' real answers (`cua host (browser_only)` on the managed Node for this route).
 
 ## Diagnostics kept (not evidence)
 
@@ -118,13 +131,14 @@ answer is the selection lane's to show once it re-runs.
 10.6–26.3. The scripted episodes are outcome evidence, not timing.
 
 `ssfs-readiness.txt`: `profiles list` (key, ready and reason only) before and after every run and every 5 minutes while runs
-were going, 95 checks from 14:32Z to 16:50Z. ssfs was `ready:true` at every one; the standing Profile 1 reopen was never
+were going, checks from 14:32Z to 18:26Z. ssfs was `ready:true` at every one; the standing Profile 1 reopen was never
 used. (`school` reported `binding_stale` throughout; it is not used.)
 
 ## Left in place
 
-The sitting's preparations at 8a134ab (`parity-pmQfYc`, `parity-3nGo8m`) were cleaned up when both CLIs were re-prepared at
-a27ea84 for the selection lane's second run. No `cleanup-prepared` was run after that: task 5 reuses these preparations.
-- repl-parity: journal `.doperpowers/sde/repl-parity/mini.json`, owned home `/Users/new/.local/share/cua-parity-remote/parity-ZRdeHK` (a27ea84, managed Node v24.22.0).
-- browser-parity: journal `.doperpowers/sde/browser-parity/mini.json`, owned home `/Users/new/.local/share/cua-parity-remote/parity-ukpsMv` (a27ea84, managed Node v24.22.0).
+The sitting's preparations at 8a134ab (`parity-pmQfYc`, `parity-3nGo8m`) and a27ea84 (`parity-ZRdeHK`, `parity-ukpsMv`)
+were each cleaned up when both CLIs were re-prepared for the next selection run. No `cleanup-prepared` was run after the last
+one: task 5 reuses these preparations.
+- repl-parity: journal `.doperpowers/sde/repl-parity/mini.json`, owned home `/Users/new/.local/share/cua-parity-remote/parity-014R7C` (1d1ed89, managed Node v24.22.0).
+- browser-parity: journal `.doperpowers/sde/browser-parity/mini.json`, owned home `/Users/new/.local/share/cua-parity-remote/parity-EekeWV` (1d1ed89, managed Node v24.22.0).
 The `~/.cp` capability homes, the selection homes and the bench fixture are gone.

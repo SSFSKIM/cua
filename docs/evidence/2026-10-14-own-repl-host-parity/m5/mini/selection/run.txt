@@ -1,0 +1,1 @@
+2026-10-16T18:26:09Z {"complete":true,"rows":260,"cache":{"sameSelection":true,"staleVersionMiss":true,"crossHostMiss":true},"job":{"explicitNodePersisted":true,"implicitNodeOmitted":true,"proof":"scratch-installed-job; service-manager double","platform":"darwin"}}

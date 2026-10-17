@@ -36,7 +36,7 @@ Child 2, board #115, of composite #114 (recorded on the board; no checked-in par
 - #117 native engine (paused);
 - #120 clean-room rewrite (not current work).
 
-#79 (removing the ChatGPT extension route, the vendor browser service and `cua login`) runs ahead of this ticket. It is a prerequisite of M2.
+#79 (removing the ChatGPT extension route, the vendor browser service and `cua login`) ran ahead of this ticket and landed in main on 2026-10-17 (PR #152, merge 94366c1, plugin 0.13.0). It was the prerequisite of M2.
 
 Owner principle (2026-10-17, #114): referenceable originals are used as far as they go. Distribution stays internal (research purpose). The repository is public.
 
@@ -385,7 +385,7 @@ Each item is behaviour someone can check. The commands are in Concrete Steps.
     - `HOME=<scratch> npm test`, `npm run test:mods` and `claude plugin validate .` pass.
     - README's sandbox, CODEX_HOME, Linux and configuration text matches the behaviour.
     - The standalone spec (`docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`) and the #116 spec carry dated Decision Log entries.
-    - The plugin version is one minor above main's at M4.
+    - The plugin version is one minor above main's at M4 (0.13.0 → 0.14.0 as of #79's merge).
 
 ## Constraints binding every milestone
 
@@ -795,6 +795,10 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   - The app-server audit matches sensitive keys in any spelling and keeps only four allowlisted settings by exact path and value; it withheld only the notification's `installationId`. The replay renders `${CUA_HOME}` from CODEX_HOME. `app-server.mjs reaudit` re-audits a committed capture from its raw log.
   - The fingerprint comparison keys each check by operation, filter and label and compares result and errno.
   Rationale: what M1 and M2 consume as oracles must be truthful under failure, private by construction, and never touch a process the harness did not start; the review's three findings (the audit's short-value exception, a helper adopted by a global pgrep, errno dropped from the comparison) were fixed before the merge.
+  Date/Author: 2026-10-17, execution session.
+
+- Decision: #79 is in main (2026-10-17: PR #152, merge 94366c1, plugin 0.13.0), so M2's prerequisite is met and the order M1 → M2 → M3 stands. What changed underneath this spec: `replHostFor` and `browserSelectionFor` no longer have the ChatGPT-route default or the vendor browser route, and a browser-only launch goes to the own host on Node 24 or later; `CUA_BROWSER_SERVICE` is gone from production, and the vendor browser service survives only as the test oracle `test/browser-parity/vendor-oracle.mjs` on the vendor host; the three release pins lost `chromePlugin`. CODEX_CLI_PATH, CODEX_HOME and the CodexCLI.app relocation stay for this ticket. The spec's text named none of the removed selections; the M0 branch merges main before its PR, and the harness drops anything that set or read `CUA_BROWSER_SERVICE` or the vendor browser route. Tests that drive a fake runtime pin `CUA_REPL_HOST=vendor` explicitly (main 9c45c6c), and this ticket's new tests follow that pattern. Parity on the mini (acceptance 12) compares the browser suites through whatever vendor-host oracle #79 left; M1 confirms the lanes still run before relying on them.
+  Rationale: the spec cites #79's outcome; recording what it removed keeps M1 to M4 from building against a selection that no longer exists.
   Date/Author: 2026-10-17, execution session.
 
 ## Outcomes & Retrospective

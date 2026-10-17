@@ -386,7 +386,7 @@ Each item is behaviour someone can check. The commands are in Concrete Steps.
     - `HOME=<scratch> npm test`, `npm run test:mods` and `claude plugin validate .` pass.
     - README's sandbox, CODEX_HOME, Linux and configuration text matches the behaviour.
     - The standalone spec (`docs/doperpowers/specs/2026-10-02-standalone-cua-design.md`) and the #116 spec carry dated Decision Log entries.
-    - The plugin version is one minor above main's at M4 (0.13.0 → 0.14.0 as of #79's merge).
+    - The plugin version is the next minor after main's version at M4 (likely 0.15.0: #154, the secrets mod change, releases as 0.14.0 first).
 
 ## Constraints binding every milestone
 

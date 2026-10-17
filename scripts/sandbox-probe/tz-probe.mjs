@@ -5,7 +5,7 @@
 // Codex CLI.
 //
 //   node scripts/sandbox-probe/tz-probe.mjs --launcher codex|cua --role kernel|worker [--runs 80] [--bound-ms 15000]
-//     [--notification-center deny|allow] [--codex <path>] [--node <path>] [--out <result.json>]
+//     [--notification-center deny|allow] [--home scratch|real] [--codex <path>] [--node <path>] [--out <result.json>]
 //   node scripts/sandbox-probe/tz-probe.mjs verdict <control.json> <grant.json>     (exits 0 only for keep)
 //
 // Each run is one fresh child: a plain Node script (childScript), not cua's runtime, which settles the zone as it loads
@@ -16,6 +16,12 @@
 // default). A run is `completed` (the child reported its local-time use and exited 0 within the bound), `hung` (the bound
 // was reached; the whole process group and anything still carrying the run's tag are killed) or `launcher-failure`
 // (anything else: the launcher refused, or the child exited without its report). Runs are sequential.
+//
+// HOME is a condition of the measurement (the hang depends on it: spec, Surprises & Discoveries). The launcher and its
+// child get either a fresh, empty HOME the probe makes and removes (`scratch`, the default), or the account's own
+// (`real`, its passwd entry, whatever HOME the probe itself was started with). A result records the class, and the path
+// only for the probe's own scratch HOME. It also records the Node (path and version), the platform and architecture,
+// and the launcher's identity (for `codex`, the executable's path and SHA-256).
 //
 // Launchers:
 //   codex  the signed Codex CLI's `codex sandbox`, with the policy cua's own host passes it today (src/runtime/sandbox.mjs
@@ -29,12 +35,14 @@
 // `verdict` applies acceptance 13 to one role's pair of results: the grant is kept only if the denying control hung at
 // least once and the grant's runs neither hung nor failed to launch; a control that did not hang is inconclusive. Only
 // 80-run probes bounded at 15 s give that verdict; a smaller pair is labelled diagnostic, with what the rule gives it.
+// The pair must differ only in the tested permission: a pair whose recorded conditions differ, or that does not record
+// them (schema 1 results), is refused.
 import {spawn, execFileSync} from 'node:child_process';
 import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
-import {arch, homedir, platform, tmpdir} from 'node:os';
+import {arch, platform, tmpdir, userInfo} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
-import {randomBytes} from 'node:crypto';
-import {parseArgs} from 'node:util';
+import {createHash, randomBytes} from 'node:crypto';
+import {isDeepStrictEqual, parseArgs} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
 
@@ -42,6 +50,7 @@ export const MARKER = 'CUA_TZ_PROBE ';
 export const LAUNCHERS = ['codex', 'cua'];
 export const ROLES = ['kernel', 'worker'];
 export const NOTIFICATION_CENTER = ['deny', 'allow'];
+export const HOMES = ['scratch', 'real'];
 const CONTEXTS = 200, TARGET_MS = 2500, OUTPUT_CAP = 64 * 1024;
 
 // The child's source. `targetMs` (when its local-time use happens, in ms since the process started) exists for the
@@ -72,6 +81,13 @@ export function codexLaunch({codex, node, script, tag, cwd, home, notificationCe
 // cwd, profile}.
 export function cuaLaunch() {
   throw new Error('--launcher cua is cua\'s own launcher in src/sandbox, which M1 adds; until then the probe runs only --launcher codex');
+}
+
+// What identifies the launcher a result ran under, compared by the verdict. M1 gives `cua` its identity (which
+// src/sandbox build rendered the profile) with cuaLaunch.
+export function launcherIdentity({launcher, codexPath}) {
+  if (launcher !== 'codex') return cuaLaunch();
+  return {launcher, path: codexPath, sha256: createHash('sha256').update(readFileSync(codexPath)).digest('hex')};
 }
 
 // -> {outcome, localTimeAtMs?} for one finished or bounded run.
@@ -120,27 +136,32 @@ async function installedCodex() {
 }
 
 // Runs `runs` children under the launcher and role. -> the result: what ran, every run's outcome and the counts.
-export async function probe({launcher, role, runs = 80, boundMs = 15_000, notificationCenter = 'deny', codex, node = process.execPath, out, targetMs = TARGET_MS, log = () => {}}) {
+export async function probe({launcher, role, runs = 80, boundMs = 15_000, notificationCenter = 'deny', home = 'scratch', codex, node = process.execPath, out, targetMs = TARGET_MS, log = () => {}}) {
   if (!LAUNCHERS.includes(launcher)) throw new Error('--launcher must be codex or cua');
   if (!ROLES.includes(role)) throw new Error('--role must be kernel or worker');
   if (!NOTIFICATION_CENTER.includes(notificationCenter)) throw new Error('--notification-center must be deny or allow');
+  if (!HOMES.includes(home)) throw new Error('--home must be real or scratch');
   for (const [name, value] of [['runs', runs], ['bound-ms', boundMs]]) if (!Number.isSafeInteger(value) || value < 1) throw new Error(`--${name} must be a positive integer`);
   if (launcher === 'codex' && notificationCenter !== 'deny') codexLaunch({notificationCenter});
   const launchOf = launcher === 'codex' ? codexLaunch : cuaLaunch;
   const codexPath = launcher === 'codex' ? resolve(codex ?? await installedCodex()) : null;
   const id = randomBytes(4).toString('hex'), tagOf = n => `cua-tz-probe-${id}-${n}`;
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-tz-probe-')));
-  const result = {probe: 'tz', schema: 1, launcher, role, notificationCenter, runs, boundMs, contexts: CONTEXTS, targetMs,
+  // The probe's own scratch HOME is a directory of its own beside the working directory, as the M0 baseline's was.
+  const homePath = home === 'real' ? userInfo().homedir : realpathSync(mkdtempSync(join(tmpdir(), 'cua-tz-home-')));
+  const result = {probe: 'tz', schema: 2, launcher, role, notificationCenter, runs, boundMs, contexts: CONTEXTS, targetMs,
     platform: platform(), arch: arch(), node: {path: node, version: nodeVersion(node)}, ...(codexPath ? {codex: codexPath} : {}),
+    home: home === 'real' ? {class: 'real'} : {class: 'scratch', path: homePath},
     tag: `cua-tz-probe-${id}`, scratch: dir, started: new Date().toISOString(), results: []};
   let finished = false;
   try {
+    result.launcherIdentity = launcherIdentity({launcher, codexPath});
     const script = join(dir, 'tz-child.mjs');
     writeFileSync(script, childScript({targetMs}));
     for (const sub of ['tmp', 'codex-home']) mkdirSync(join(dir, sub));
     for (let n = 1; n <= runs; n++) {
       const tag = tagOf(n);
-      const launch = launchOf({codex: codexPath, node, script, tag, cwd: dir, home: homedir(), role, notificationCenter});
+      const launch = launchOf({codex: codexPath, node, script, tag, cwd: dir, home: homePath, role, notificationCenter});
       result.profile ??= launch.profile;
       const outcome = await runOnce(launch, {boundMs, tag});
       result.results.push({run: n, ...outcome});
@@ -150,6 +171,7 @@ export async function probe({launcher, role, runs = 80, boundMs = 15_000, notifi
   } finally {
     result.leftovers = sweep(result.tag, {kill: true});
     rmSync(dir, {recursive: true, force: true});
+    if (home === 'scratch') rmSync(homePath, {recursive: true, force: true});
     result.finished = new Date().toISOString();
     const count = outcome => result.results.filter(r => r.outcome === outcome).length;
     result.counts = {completed: count('completed'), hung: count('hung'), launcherFailure: count('launcher-failure')};
@@ -162,12 +184,24 @@ export async function probe({launcher, role, runs = 80, boundMs = 15_000, notifi
 // Acceptance 13's measurement: 80 fresh children a configuration, each bounded at 15 s. Smaller probes are diagnostics.
 export const ACCEPTANCE = Object.freeze({runs: 80, boundMs: 15_000});
 
-// Acceptance 13's verdict on one role's denying control and its grant (results of the same launcher, role, runs and
-// bound, each with one outcome per run). -> {verdict: 'keep' | 'remove' | 'inconclusive', reason}; for a pair smaller
-// than ACCEPTANCE, {verdict: 'diagnostic', rule: <what the rule gives>, reason}, never a keep.
+// The conditions a control and its grant must share: everything recorded about how they ran except the tested
+// permission and what is each probe's own (its tag, scratch directories, times, runs, profile description). A HOME is
+// compared by class: two scratch HOMEs are the same condition.
+const CONDITIONS = {launcher: r => r.launcher, role: r => r.role, runs: r => r.runs, bound: r => r.boundMs, contexts: r => r.contexts,
+  targetMs: r => r.targetMs, platform: r => r.platform, arch: r => r.arch, node: r => r.node, 'home class': r => r.home?.class,
+  'launcher identity': r => r.launcherIdentity};
+
+// Acceptance 13's verdict on one role's denying control and its grant (results that differ only in the tested
+// permission, each with one outcome per run). -> {verdict: 'keep' | 'remove' | 'inconclusive', reason}; for a pair
+// smaller than ACCEPTANCE, {verdict: 'diagnostic', rule: <what the rule gives>, reason}, never a keep.
 export function tzVerdict(control, grant) {
   if (control?.notificationCenter !== 'deny' || grant?.notificationCenter !== 'allow') throw new Error('the control must be --notification-center deny and the grant --notification-center allow');
-  for (const key of ['launcher', 'role', 'runs', 'boundMs']) if (control[key] !== grant[key]) throw new Error('the control and the grant must be runs of the same launcher, role, runs and bound');
+  for (const [label, r] of [['control', control], ['grant', grant]]) {
+    const missing = Object.entries(CONDITIONS).filter(([, of]) => of(r) === undefined || of(r) === null).map(([name]) => name);
+    if (missing.length) throw new Error(`the ${label} does not record its ${missing.join(', ')}; a pair is compared only under recorded, equal conditions`);
+  }
+  const differing = Object.entries(CONDITIONS).filter(([, of]) => !isDeepStrictEqual(of(control), of(grant))).map(([name]) => name);
+  if (differing.length) throw new Error(`the control and the grant differ in ${differing.join(', ')}; they must differ only in --notification-center`);
   for (const [label, r] of [['control', control], ['grant', grant]]) {
     const {completed, hung, launcherFailure} = r.counts ?? {};
     if (![completed, hung, launcherFailure].every(Number.isSafeInteger) || completed + hung + launcherFailure !== r.runs || r.results?.length !== r.runs)
@@ -185,7 +219,7 @@ const integer = (value, name) => { const n = Number(value); if (!Number.isSafeIn
 export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
     launcher: {type: 'string'}, role: {type: 'string'}, runs: {type: 'string', default: '80'}, 'bound-ms': {type: 'string', default: '15000'},
-    'notification-center': {type: 'string', default: 'deny'}, codex: {type: 'string'}, node: {type: 'string'}, out: {type: 'string'}}});
+    'notification-center': {type: 'string', default: 'deny'}, home: {type: 'string', default: 'scratch'}, codex: {type: 'string'}, node: {type: 'string'}, out: {type: 'string'}}});
   if (positionals[0] === 'verdict') {
     const [control, grant] = positionals.slice(1).map(file => JSON.parse(readFileSync(resolve(file), 'utf8')));
     if (!grant) throw new Error('verdict requires <control.json> <grant.json>');
@@ -193,11 +227,11 @@ export async function main(argv = process.argv.slice(2)) {
     console.log(JSON.stringify(verdict));
     return verdict.verdict === 'keep' ? 0 : 1;
   }
-  if (positionals.length) throw new Error('Usage: tz-probe.mjs --launcher codex|cua --role kernel|worker [--runs N] [--bound-ms MS] [--notification-center deny|allow] [--codex PATH] [--node PATH] [--out FILE] | verdict <control.json> <grant.json>');
+  if (positionals.length) throw new Error('Usage: tz-probe.mjs --launcher codex|cua --role kernel|worker [--runs N] [--bound-ms MS] [--notification-center deny|allow] [--home scratch|real] [--codex PATH] [--node PATH] [--out FILE] | verdict <control.json> <grant.json>');
   const result = await probe({launcher: values.launcher, role: values.role, runs: integer(values.runs, 'runs'), boundMs: integer(values['bound-ms'], 'bound-ms'),
-    notificationCenter: values['notification-center'], codex: values.codex, node: values.node ? resolve(values.node) : process.execPath, out: values.out,
+    notificationCenter: values['notification-center'], home: values.home, codex: values.codex, node: values.node ? resolve(values.node) : process.execPath, out: values.out,
     log: line => console.error(line)});
-  console.log(JSON.stringify({launcher: result.launcher, role: result.role, notificationCenter: result.notificationCenter, runs: result.runs, counts: result.counts, leftovers: result.leftovers}));
+  console.log(JSON.stringify({launcher: result.launcher, role: result.role, notificationCenter: result.notificationCenter, home: result.home.class, runs: result.runs, counts: result.counts, leftovers: result.leftovers}));
   return 0;
 }
 

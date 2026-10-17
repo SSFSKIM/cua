@@ -18,7 +18,13 @@ The CLI renders one profile for both roles; the role is recorded. Every child re
 - **The Codex CLI copy.** That sitting used the resident runtime's CodexCLI.app; this one the approved scratch copy `~/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app` (same release and signature).
 - **Time and machine state.** Eight days of uptime later, with the mini shared by other sessions.
 
-**What it means for M4.** Acceptance 13 keeps the `notification_center` line only if M4's denying control hangs at least once in 80. If M4's control behaves as this baseline did, the verdict is **inconclusive** and the line is left out, with #138 open and these numbers. M4 should run its control under the same conditions as this baseline (scratch HOME, managed Node) so the two compare, and the dispatching session decides whether a real-HOME control is worth the mini rules' exception.
+**What it means for M4.** Acceptance 13 keeps the `notification_center` line only if M4's denying control hangs at least once in 80. If M4's control behaves as this baseline did, the verdict is **inconclusive** and the line is left out, with #138 open and these numbers. M4 should run its control under the same conditions as this baseline (scratch HOME, managed Node) so the two compare, and the dispatching session decides whether a real-HOME control is worth the mini rules' exception. (Superseded by the spec's Surprises & Discoveries: the dispatching session approved a real-HOME baseline, and M4's control runs under the HOME class that reproduces; see the next section.)
+
+## What these files record, and how M4 treats them
+
+`kernel.json` and `worker.json` are schema 1. They record the launcher, role, runs, bound, platform, architecture and Node (path and version), but neither the HOME their children ran under nor the launcher's identity beyond its path: the scratch HOME is known only from the command below (`HOME=$S/home`, which that command does not create, so the children's HOME was most likely a path that did not exist). Since the review fix of 2026-10-17 the probe owns HOME (`--home scratch`, a fresh empty directory it makes and removes, or `--home real`), records its class (and its path only for its own scratch), records the launcher's identity (for `codex`, the executable's SHA-256), and writes schema 2. `tz-probe.mjs verdict` compares a control and a grant only when both record these conditions and they differ only in `--notification-center`, so it refuses these two files.
+
+M4 therefore treats them as a recorded control only: the scratch-HOME rate (0 of 160) beside the history-hang README's real-HOME rate, never one side of acceptance 13's pair. M4's pair is two schema 2 runs of `--launcher cua` per role, under the HOME class that reproduces the hang (spec, Surprises & Discoveries).
 
 ## Commands
 

@@ -147,8 +147,8 @@ async function baseline(item, ctx) {
   }
 }
 
-// The time-zone baseline (scripts/sandbox-probe/tz-probe.mjs) on the mini, per role, with a scratch HOME (`tz`) or the
-// account's (`tz-real-home`).
+// The time-zone baseline (scripts/sandbox-probe/tz-probe.mjs) on the mini, per role, its children under the probe's own
+// scratch HOME (`tz`) or the account's (`tz-real-home`); the probe records the class, and the copy must carry it.
 async function tz(item, ctx) {
   const {exec, log, evidence, now} = ctx, realHome = item === 'tz-real-home';
   const target = join(evidence, 'tz-probe', realHome ? 'real-home' : 'scratch-home');
@@ -159,7 +159,7 @@ async function tz(item, ctx) {
     const started = now();
     const script = `set -u; S=$(mktemp -d /tmp/cua-115-tz.XXXXXX) || exit 90; cd ~/Developer/GitHub/cua-parity || exit 91; `
       + `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=${realHome ? '"$HOME"' : '"$S/home"'} LANG=C.UTF-8 CUA_HOME=${APPROVED} ${APPROVED}/node/24.22.0/bin/node scripts/sandbox-probe/tz-probe.mjs `
-      + `--launcher codex --role ${role} --runs 80 --bound-ms 15000 --codex ${APPROVED}/runtimes/${RELEASE}/CodexCLI.app/Contents/MacOS/codex `
+      + `--launcher codex --role ${role} --runs 80 --bound-ms 15000 --home ${realHome ? 'real' : 'scratch'} --codex ${APPROVED}/runtimes/${RELEASE}/CodexCLI.app/Contents/MacOS/codex `
       + `--node ${APPROVED}/node/24.22.0/bin/node --out "$S/${role}.json" >"$S/${role}.log" 2>&1; echo "TZ $? $S"`;
     let text;
     try { text = exec('ssh', ['-o', 'BatchMode=yes', 'mini', script]); } catch (error) { frontAfter(`${item} ${role}`, {exec, log}); throw new Stop(`${item} ${role}: the remote probe did not report (${error.message.split('\n')[0]})`); }
@@ -170,7 +170,7 @@ async function tz(item, ctx) {
     mkdirSync(target, {recursive: true});
     try {
       exec('scp', ['-q', `mini:${remoteDir}/${role}.json`, `mini:${remoteDir}/${role}.log`, `${target}/`]);
-      verifyTz(local, {role, startedAt: started});
+      verifyTz(local, {role, startedAt: started, home: realHome ? 'real' : 'scratch'});
     } catch (error) {
       rmSync(local, {force: true}); rmSync(join(target, `${role}.log`), {force: true});
       throw new Stop(`${item} ${role}: the copy did not verify (${error.message}); the result stays on the mini in ${remoteDir}`);
@@ -179,11 +179,13 @@ async function tz(item, ctx) {
     log(`${item} ${role}: archived ${local}`);
   }
 }
-// A copied tz result: parses, is this role's 80-run acceptance probe, accounts for every run, and began after the item.
-export function verifyTz(file, {role, startedAt}) {
+// A copied tz result: parses, is this role's 80-run acceptance probe under the item's HOME class, accounts for every
+// run, and began after the item.
+export function verifyTz(file, {role, startedAt, home}) {
   const r = JSON.parse(readFileSync(file, 'utf8'));
   const counts = r.counts ?? {};
   if (r.role !== role || r.runs !== 80 || r.boundMs !== 15000) throw new Error('not this role\'s 80-run probe');
+  if (r.home?.class !== home) throw new Error(`the probe ran under HOME class ${r.home?.class ?? 'none'}, not ${home}`);
   if ((counts.completed ?? 0) + (counts.hung ?? 0) + (counts.launcherFailure ?? 0) !== 80 || r.results?.length !== 80) throw new Error('the counts do not account for 80 runs');
   if (!(Date.parse(r.started) >= startedAt - 5000)) throw new Error('the result predates this item');
   return r;

@@ -150,7 +150,7 @@ test('a native run that exits 0 without a complete run record stops the sequence
   await assert.rejects(sequence(['vendor'], {exec, run, log: quiet, evidence, now: Date.now, sleep: noSleep}), /not a complete, cleaned-up run/);
 });
 
-const tzResult = (role, started = new Date().toISOString(), runs = 80) => JSON.stringify({role, runs, boundMs: 15000, started,
+const tzResult = (role, started = new Date().toISOString(), runs = 80, home = {class: 'real'}) => JSON.stringify({role, runs, boundMs: 15000, started, home,
   counts: {completed: runs, hung: 0, launcherFailure: 0}, results: Array.from({length: runs}, (_, i) => ({run: i + 1, outcome: 'completed'}))});
 
 test('tz: the remote result is removed only after its copy verifies; a failed or stale copy keeps it on the mini', async t => {
@@ -161,6 +161,7 @@ test('tz: the remote result is removed only after its copy verifies; a failed or
   await sequence(['tz-real-home'], {exec: ok.exec, run: () => 0, log: quiet, evidence, now: Date.now, sleep: noSleep});
   assert.equal(ok.calls.filter(c => c.startsWith('ssh') && c.includes('rm -rf /tmp/cua-115-tz.R')).length, 2);
   assert.ok(ok.calls.some(c => c.includes('HOME="$HOME"')), 'the real HOME');
+  assert.equal(ok.calls.filter(c => c.includes('tz-probe.mjs') && c.includes('--home real ')).length, 2, 'the probe gives its children the real HOME');
   // A transfer that fails: nothing removed on the mini, nothing half-archived here.
   const evidence2 = evidenceDir(t);
   const broken = world({fail: new Set(['scp'])});
@@ -178,6 +179,21 @@ test('tz: the remote result is removed only after its copy verifies; a failed or
   const failed = world({tz: {kernel: 'TZ 1 /tmp/cua-115-tz.Rk\n'}});
   await assert.rejects(sequence(['tz'], {exec: failed.exec, run: () => 0, log: quiet, evidence: evidence4, now: Date.now, sleep: noSleep}), /exited 1; its output stays on the mini/);
   assert.throws(() => verifyTz(join(evidence, 'tz-probe', 'real-home', 'kernel.json'), {role: 'worker', startedAt: 0}), /not this role/);
+});
+
+test('tz: the scratch item gives the children the probe\'s own scratch HOME, and a copy under the other HOME class is refused', async t => {
+  const evidence = evidenceDir(t);
+  const target = join(evidence, 'tz-probe', 'scratch-home');
+  const ok = world();
+  ok.state.copies.default = args => { const role = /(kernel|worker)\.json$/.exec(args[1])[1]; writeFileSync(join(target, `${role}.json`), tzResult(role, undefined, 80, {class: 'scratch', path: '/private/tmp/cua-tz-home-x'})); writeFileSync(join(target, `${role}.log`), ''); };
+  await sequence(['tz'], {exec: ok.exec, run: () => 0, log: quiet, evidence, now: Date.now, sleep: noSleep});
+  assert.equal(ok.calls.filter(c => c.includes('tz-probe.mjs') && c.includes('--home scratch ')).length, 2);
+  assert.equal(ok.calls.some(c => c.includes('HOME="$HOME"')), false, 'the probe itself does not run under the real HOME either');
+  const file = join(target, 'kernel.json');
+  assert.equal(verifyTz(file, {role: 'kernel', startedAt: 0, home: 'scratch'}).home.class, 'scratch');
+  assert.throws(() => verifyTz(file, {role: 'kernel', startedAt: 0, home: 'real'}), /HOME class scratch, not real/);
+  writeFileSync(file, JSON.stringify({...JSON.parse(readFileSync(file, 'utf8')), home: undefined}));
+  assert.throws(() => verifyTz(file, {role: 'kernel', startedAt: 0, home: 'scratch'}), /HOME class none, not scratch/);
 });
 
 test('accept-native: cleanup and acceptance statuses are both reported, the report comes only from this run\'s directory and verifies', async t => {

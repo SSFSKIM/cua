@@ -5,9 +5,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync, execFileSync} from 'node:child_process';
-import {chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
-import {tmpdir} from 'node:os';
+import {tmpdir, userInfo} from 'node:os';
+import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {childScript, classify, codexLaunch, MARKER, main, probe, tzVerdict} from '../../scripts/sandbox-probe/tz-probe.mjs';
 
@@ -65,6 +66,7 @@ function fakeCodex(dir, plan) {
 const {spawn} = require('node:child_process'); const {readFileSync} = require('node:fs'); const {join} = require('node:path');
 const args = process.argv.slice(2), command = args.slice(args.indexOf('--') + 1), tag = command.at(-1);
 const plan = JSON.parse(readFileSync(join(__dirname, 'plan.json'), 'utf8')), mode = plan[(Number(tag.split('-').at(-1)) - 1) % plan.length];
+require('node:fs').appendFileSync(join(__dirname, 'homes'), process.env.HOME + '\\n');
 if (mode === 'fail') { process.stderr.write('sandbox-exec: profile refused\\n'); process.exit(71); }
 if (mode === 'hang') { spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', tag], {stdio: 'ignore'}); setInterval(() => {}, 1000); }
 else spawn(command[0], command.slice(1), {stdio: 'inherit'}).on('exit', code => process.exit(code ?? 1));
@@ -110,19 +112,22 @@ test('the CLI accepts the documented options, writes its result and refuses anyt
   ]) await assert.rejects(main(args), error, args.join(' '));
 });
 
+// What a result records about the conditions it ran under, beside the tested permission (schema 2).
+const CONDITIONS = {contexts: 200, targetMs: 2500, platform: 'darwin', arch: 'arm64', node: {path: '/h/node/24.22.0/bin/node', version: 'v24.22.0'},
+  home: {class: 'real'}, launcherIdentity: {launcher: 'cua', source: 'src/sandbox'}};
 test('the #138 verdict keeps the grant only when the denying control hangs and the grant neither hangs nor fails to launch', () => {
-  const run = (notificationCenter, counts, {runs = 80, boundMs = 15000} = {}) => ({launcher: 'cua', role: 'kernel', runs, boundMs, notificationCenter,
+  const run = (notificationCenter, counts, {runs = 80, boundMs = 15000} = {}) => ({...CONDITIONS, launcher: 'cua', role: 'kernel', runs, boundMs, notificationCenter,
     counts: {completed: runs - counts.hung - counts.launcherFailure, ...counts}, results: Array.from({length: runs}, (_, i) => ({run: i + 1}))});
   assert.equal(tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 0})).verdict, 'keep');
   assert.equal(tzVerdict(run('deny', {hung: 0, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 0})).verdict, 'inconclusive');
   assert.equal(tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), run('allow', {hung: 1, launcherFailure: 0})).verdict, 'remove');
   assert.equal(tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 2})).verdict, 'remove');
   assert.throws(() => tzVerdict(run('allow', {hung: 3, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 0})), /control.*deny/);
-  assert.throws(() => tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), {...run('allow', {hung: 0, launcherFailure: 0}), role: 'worker'}), /same launcher, role, runs and bound/);
+  assert.throws(() => tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), {...run('allow', {hung: 0, launcherFailure: 0}), role: 'worker'}), /differ in role/);
 });
 
 test('a pair smaller than 80 runs at 15 s is a diagnostic: what the rule gives is reported, never a keep', () => {
-  const run = (notificationCenter, hung, {runs, boundMs}) => ({launcher: 'cua', role: 'kernel', runs, boundMs, notificationCenter,
+  const run = (notificationCenter, hung, {runs, boundMs}) => ({...CONDITIONS, launcher: 'cua', role: 'kernel', runs, boundMs, notificationCenter,
     counts: {completed: runs - hung, hung, launcherFailure: 0}, results: Array.from({length: runs}, (_, i) => ({run: i + 1}))});
   for (const size of [{runs: 1, boundMs: 15000}, {runs: 80, boundMs: 1500}, {runs: 79, boundMs: 15000}]) {
     const verdict = tzVerdict(run('deny', 1, size), run('allow', 0, size));
@@ -138,7 +143,7 @@ test('a pair smaller than 80 runs at 15 s is a diagnostic: what the rule gives i
 
 test('the CLI verdict exits 0 only for an acceptance keep', t => {
   const dir = scratch(t);
-  const write = (name, notificationCenter, hung, runs) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({launcher: 'cua', role: 'kernel', runs, boundMs: 15000, notificationCenter,
+  const write = (name, notificationCenter, hung, runs) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({...CONDITIONS, launcher: 'cua', role: 'kernel', runs, boundMs: 15000, notificationCenter,
     counts: {completed: runs - hung, hung, launcherFailure: 0}, results: Array.from({length: runs}, (_, i) => ({run: i + 1}))})); return file; };
   const verdict = (...files) => spawnSync(process.execPath, [SCRIPT, 'verdict', ...files], {encoding: 'utf8'});
   const keep = verdict(write('c80.json', 'deny', 2, 80), write('g80.json', 'allow', 0, 80));
@@ -147,4 +152,56 @@ test('the CLI verdict exits 0 only for an acceptance keep', t => {
   const small = verdict(write('c1.json', 'deny', 1, 1), write('g1.json', 'allow', 0, 1));
   assert.equal(small.status, 1);
   assert.match(small.stdout, /"verdict":"diagnostic"/);
+});
+
+// Review finding (M0 PR, P2): a control and a grant are compared only when they ran under the same conditions; HOME is a
+// demonstrated confounder (0 of 160 hung under a scratch HOME against 15 of 80 under the real one).
+test('the verdict refuses a pair that differs in anything but the tested permission, or does not record its conditions', () => {
+  const run = (notificationCenter, hung, over = {}) => ({...CONDITIONS, launcher: 'cua', role: 'kernel', runs: 80, boundMs: 15000, notificationCenter,
+    counts: {completed: 80 - hung, hung, launcherFailure: 0}, results: Array.from({length: 80}, (_, i) => ({run: i + 1})), ...over});
+  const control = run('deny', 3);
+  // What legitimately differs between two probes: the permission, and each probe's own tag, scratch, times, runs, profile text.
+  const grant = run('allow', 0, {tag: 'other', scratch: '/tmp/x', started: '2026-10-18T00:00:00Z', profile: 'with the notification_center line'});
+  assert.equal(tzVerdict(control, grant).verdict, 'keep');
+  assert.equal(tzVerdict(run('deny', 3, {home: {class: 'scratch', path: '/tmp/cua-tz-home-a'}}), run('allow', 0, {home: {class: 'scratch', path: '/tmp/cua-tz-home-b'}})).verdict, 'keep',
+    'two scratch HOMEs are the same condition');
+  for (const [field, value] of [
+    ['home', {class: 'scratch', path: '/tmp/cua-tz-home-a'}],
+    ['node', {...CONDITIONS.node, version: 'v24.18.0'}],
+    ['node', {...CONDITIONS.node, path: '/usr/local/bin/node'}],
+    ['platform', 'linux'],
+    ['arch', 'x64'],
+    ['launcherIdentity', {launcher: 'cua', source: 'src/sandbox', build: 'other'}],
+    ['contexts', 100],
+    ['targetMs', 0],
+    ['launcher', 'codex'],
+  ]) {
+    const label = {home: 'home class', launcherIdentity: 'launcher identity'}[field] ?? field;
+    assert.throws(() => tzVerdict(control, run('allow', 0, {[field]: value})), new RegExp(`differ in ${label}`), `${field} differs`);
+  }
+  // Results written before the conditions were recorded (schema 1: no HOME class, no launcher identity) are refused.
+  const {home: _home, launcherIdentity: _identity, ...schema1} = control;
+  assert.throws(() => tzVerdict(schema1, grant), /the control does not record its home class, launcher identity/);
+});
+
+test('a probe records its HOME class, its own scratch HOME\'s path, the Node, the platform and the launcher\'s identity', async t => {
+  const dir = scratch(t), codex = fakeCodex(dir, ['ok']);
+  const result = await probe({launcher: 'codex', role: 'kernel', runs: 1, boundMs: 15_000, notificationCenter: 'deny', codex, node: process.execPath, targetMs: 0});
+  assert.equal(result.schema, 2);
+  assert.equal(result.home.class, 'scratch');
+  assert.match(result.home.path, /cua-tz-home-/);
+  assert.equal(existsSync(result.home.path), false, 'the probe\'s scratch HOME is removed');
+  assert.deepEqual(readFileSync(join(dir, 'homes'), 'utf8').trim().split('\n'), [result.home.path], 'the launcher and its child ran under it');
+  assert.deepEqual(result.node, {path: process.execPath, version: process.version});
+  assert.equal(result.platform, process.platform);
+  assert.deepEqual(result.launcherIdentity, {launcher: 'codex', path: codex, sha256: createHash('sha256').update(readFileSync(codex)).digest('hex')});
+});
+
+test('under --home real the child gets the account\'s HOME and the result records only the class', async t => {
+  const dir = scratch(t), codex = fakeCodex(dir, ['ok']);
+  const result = await probe({launcher: 'codex', role: 'kernel', runs: 1, boundMs: 15_000, notificationCenter: 'deny', home: 'real', codex, node: process.execPath, targetMs: 0});
+  assert.deepEqual(result.home, {class: 'real'});
+  assert.deepEqual(readFileSync(join(dir, 'homes'), 'utf8').trim().split('\n'), [userInfo().homedir]);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(`"${userInfo().homedir}"`), 'the real HOME\'s path is not recorded');
+  await assert.rejects(probe({launcher: 'codex', role: 'kernel', runs: 1, home: 'mine', codex, node: process.execPath}), /--home must be real or scratch/);
 });

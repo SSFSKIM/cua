@@ -59,7 +59,7 @@ export function withSandbox(meta, state) {
 // realpath keeps the caller's casing), or of its nearest existing ancestor with the rest appended (a session directory
 // is checked before it is created; macOS temp directories sit below /var -> /private/var). A dangling symlink is
 // followed to its target, resolved the same way: it may name a protected directory that is created right after.
-function realish(path, depth = 0) {
+export function realish(path, depth = 0) {
   try {
     return realpathSync.native(path);
   } catch (error) {

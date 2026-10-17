@@ -1,4 +1,4 @@
-// Explicit M4/#141 deferral, not an expected-difference allowance. Every cell still executes. Only the two
+// Explicit M5/#141 deferral, not an expected-difference allowance. Every cell still executes. Only the two
 // approved logical cells may have their recorded stall compared as pending; every sibling result remains exact.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -22,10 +22,12 @@ export function classifyPendingCell(result){
 }
 export function assertAlternativeProof(run,id){
  validateAttestations(run.meta);
+ assert.equal(run.meta.through,policy.through,'alternate proof must cover the declared milestone');
  assert.equal(run.meta.platform,'darwin','alternate proof must be another platform');assert.equal(run.meta.device,'mini');assert.notEqual(run.meta.fake,true);
  assert.equal(run.meta.caseProofs?.[id],'chrome','alternate proof must be Chrome-live');assert.ok(run.meta.caseIds.includes(id));
  const rows=run.rows.filter(r=>r.case===id);assert.ok(rows.length>1);assert.ok(rows.every(r=>!r.fake));
- assert.equal(rows.filter(r=>r.assertion?.ok===true).length,1,'alternate proof must pass');
+ const assertions=rows.filter(r=>r.assertion);assert.equal(assertions.length,1,'alternate proof requires one assertion');
+ assert.deepEqual(assertions[0].assertion,{ok:true},'alternate proof must pass without pending coverage');
  const cells=rows.filter(r=>r.cell);assert.deepEqual(cells.map(r=>r.cell).sort(),[...run.meta.caseCells[id]].sort());
  assert.ok(cells.every(r=>r.ok===true&&r.isError===false));assert.equal(classifyPendingCell(cells.find(r=>r.cell==='scroll')),'unexpected-pass');
 }
@@ -41,7 +43,7 @@ export function loadAlternativeProofs(){
 }
 export function resolvePendingDeclarations({logicalCells=[],reason,platform,through,scenarios,caseIds}={}){
  if(!logicalCells.length){if(reason)throw Error('pending reason requires a declared cell');return {pendingEnvironment:[],pendingObligations:[]};}
- if(platform!==policy.platform||through!==policy.through)throw Error('Pending cells are approved only for Linux through M4');
+ if(platform!==policy.platform||through!==policy.through)throw Error(`Pending cells are approved only for Linux through ${policy.through}`);
  if(reason!==policy.reason)throw Error('Pending reason must match the approved #141 reason');
  if(new Set(logicalCells).size!==logicalCells.length)throw Error('Duplicate pending logical cell');
  const selected=logicalCells.map(name=>{const scope=policy.scopes.find(s=>s.logicalCell===name);if(!scope)throw Error('Unknown pending logical cell: '+name);return scope;}).sort((a,b)=>a.logicalCell.localeCompare(b.logicalCell));

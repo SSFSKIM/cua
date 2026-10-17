@@ -4,15 +4,15 @@ import {PENDING_REASON,resolvePendingDeclarations,classifyPendingCell,pendingCel
 import {compareParityRuns} from '../../scripts/repl-parity/compare.mjs';
 import {assessAssertions} from '../../scripts/repl-parity/vendor-defects.mjs';
 const names=['input/coordinates#scroll','input/dom#scroll'];
-const resolve=logicalCells=>resolvePendingDeclarations({logicalCells,reason:PENDING_REASON,platform:'linux',through:'M4',scenarios});
+const resolve=logicalCells=>resolvePendingDeclarations({logicalCells,reason:PENDING_REASON,platform:'linux',through:'M5',scenarios});
 const raw=value=>({isError:false,content:[{type:'text',text:'CUA_PARITY_RESULT '+JSON.stringify({...value,$imageCount:0})}]});
 const blocked=()=>raw({ok:false,error:{code:'Error',message:'Timed out after 10000ms waiting for CDP command Input.synthesizeScrollGesture.'}});
 const passed=()=>raw({ok:true,value:{before:0,moved:true}});
 test('declared logical scroll cells expand to fourteen consumers but only two pending members',()=>{
  const p=resolve(names);assert.equal(p.pendingObligations.length,2);assert.equal(p.pendingEnvironment.flatMap(d=>d.cases).length,14);
  assert.deepEqual(pendingCellsFor(p.pendingEnvironment,'api/browser-cuaapi/click').map(c=>c.cell),['scroll']);
- assert.throws(()=>resolve(['unknown#cell']),/Unknown/);assert.throws(()=>resolvePendingDeclarations({logicalCells:names,reason:PENDING_REASON,platform:'darwin',through:'M4',scenarios}),/Linux/);
- assert.throws(()=>resolvePendingDeclarations({logicalCells:names,reason:'hide failures',platform:'linux',through:'M4',scenarios}),/reason/);
+ assert.throws(()=>resolve(['unknown#cell']),/Unknown/);assert.throws(()=>resolvePendingDeclarations({logicalCells:names,reason:PENDING_REASON,platform:'darwin',through:'M5',scenarios}),/Linux/);
+ assert.throws(()=>resolvePendingDeclarations({logicalCells:names,reason:'hide failures',platform:'linux',through:'M5',scenarios}),/reason/);
 });
 test('pending recognizes only the recorded environmental failure or an actual unexpected pass',()=>{
  assert.equal(classifyPendingCell(blocked()),'blocked');assert.equal(classifyPendingCell(passed()),'unexpected-pass');
@@ -22,7 +22,7 @@ test('pending recognizes only the recorded environmental failure or an actual un
 function run({pass=false}={}){
  const p=resolve(names),ids=p.pendingEnvironment.flatMap(d=>d.cases),rows=[];
  for(const id of ids){const pending=pendingCellsFor(p.pendingEnvironment,id)[0];rows.push({case:id,cell:'scroll',ok:true,...(pass?passed():blocked()),pendingCell:{...pending,status:pass?'unexpected-pass':'blocked'}},{case:id,assertion:{ok:true,pendingCells:['scroll'],covered:!p.pendingObligations.includes(id)}});}
- return {meta:{...p,host:'vendor',complete:true,platform:'linux',through:'M4',caseIds:ids,caseCells:Object.fromEntries(ids.map(id=>[id,['scroll']])),caseProofs:Object.fromEntries(ids.map(id=>[id,'chrome'])),connections:['c1'],hostAttestations:[{connection:'c1',host:'vendor',serverInfo:{name:'rmcp',version:'1'},_meta:null}]},rows};
+ return {meta:{...p,host:'vendor',complete:true,platform:'linux',through:'M5',caseIds:ids,caseCells:Object.fromEntries(ids.map(id=>[id,['scroll']])),caseProofs:Object.fromEntries(ids.map(id=>[id,'chrome'])),connections:['c1'],hostAttestations:[{connection:'c1',host:'vendor',serverInfo:{name:'rmcp',version:'1'},_meta:null}]},rows};
 }
 test('pending sets must match, remain visible, preserve other fields, and never count the scroll members',()=>{
  const a=run(),b=run({pass:true}),diff=compareParityRuns(a,b);assert.equal(diff.ok,true);assert.equal(diff.cases,12);assert.equal(diff.pendingCells.length,14);assert.equal(diff.pendingUnexpectedPasses.length,14);assert.equal(diff.allAssertionsPassed,false);
@@ -31,8 +31,8 @@ test('pending sets must match, remain visible, preserve other fields, and never 
  const corrupt=run();corrupt.rows[0].structuredContent={unexpected:true};assert.equal(compareParityRuns(a,corrupt).ok,false);
  const missing=run();missing.rows.shift();assert.equal(compareParityRuns(a,missing).ok,false);
 });
-test('the platform pending gate needs real, passing M3 mini evidence, not a fake or failing row',()=>{
- const proof=loadAlternativeProofs()[0],id='api/browser-cuaapi/scroll';assert.doesNotThrow(()=>assertAlternativeProof(proof,id));
+test('the platform pending gate needs real, passing M5 mini evidence, not a fake or failing row',()=>{
+ const proof=loadAlternativeProofs()[0],id='api/browser-cuaapi/scroll';assert.equal(proof.meta.through,'M5');assert.doesNotThrow(()=>assertAlternativeProof(proof,id));
  for(const change of [r=>r.meta.platform='linux',r=>r.rows.find(x=>x.case===id&&x.assertion).assertion.ok=false,r=>r.rows.find(x=>x.case===id&&x.cell==='scroll').fake=true,r=>r.meta.hostAttestations=[]]){const wrong=structuredClone(proof);change(wrong);assert.throws(()=>assertAlternativeProof(wrong,id));}
 });
 
@@ -93,4 +93,32 @@ test('Darwin, and Linux recordings made before the cell existed, keep ordinary c
   const a=servicesRun(options),b=servicesRun(options);assert.equal(assessAssertions(a.meta,a.rows).coveredCases,1);
   const diff=compareParityRuns(a,b);assert.equal(diff.ok,true);assert.equal(diff.cases,1);assert.equal(diff.allAssertionsPassed,true);assert.deepEqual(diff.provisionalCells,[]);
  }
+});
+
+test('M5 pending declarations reject undeclared cells even if both sides carry the same annotation',()=>{
+ assert.throws(()=>resolvePendingDeclarations({logicalCells:['input/dom#click'],reason:PENDING_REASON,platform:'linux',through:'M5',scenarios}),/Unknown pending logical cell/);
+ const a=run(),b=run();
+ for(const side of [a,b]){const extra={...structuredClone(side.rows[0]),cell:'undeclared'};side.rows.push(extra);side.meta.caseCells[extra.case].push(extra.cell);}
+ assert.throws(()=>compareParityRuns(a,b),/undeclared pending cell/);
+});
+test('M5 pending members require both matching live M5 alternate-platform proofs',()=>{
+ const proofs=loadAlternativeProofs();
+ for(const id of ['api/browser-cuaapi/scroll','api/browser-domcuaapi/scroll']){
+  assert.doesNotThrow(()=>assertAlternativeCoverage(proofs,id));
+  for(const change of [
+   run=>{run.meta.platform='linux';},
+   run=>{run.meta.through='M3';},
+   run=>{run.rows=run.rows.filter(row=>row.case!==id);},
+   run=>{run.rows.find(row=>row.case===id&&row.cell==='scroll').content=blocked().content;},
+   run=>{run.rows.find(row=>row.case===id&&row.assertion).assertion={ok:true,covered:false,pendingCells:['scroll']};},
+  ]){const wrong=structuredClone(proofs);change(wrong[1]);assert.throws(()=>assertAlternativeCoverage(wrong,id));}
+ }
+});
+test('passing M5 pending cells remain visible on both sides without covering either Linux scroll member',()=>{
+ const a=run({pass:true}),b=run({pass:true}),diff=compareParityRuns(a,b);
+ assert.equal(diff.ok,true);assert.equal(diff.cases,12);assert.equal(diff.recordedCases,14);assert.equal(diff.allAssertionsPassed,false);
+ assert.equal(diff.pendingCells.length,14);assert.equal(diff.pendingUnexpectedPasses.length,28);
+ assert.ok(diff.pendingCells.every(cell=>cell.status.a==='unexpected-pass'&&cell.status.b==='unexpected-pass'));
+ assert.deepEqual([...diff.pendingObligations].sort(),['api/browser-cuaapi/scroll','api/browser-domcuaapi/scroll']);
+ assert.equal(assessAssertions(a.meta,a.rows).coveredCases,12);
 });

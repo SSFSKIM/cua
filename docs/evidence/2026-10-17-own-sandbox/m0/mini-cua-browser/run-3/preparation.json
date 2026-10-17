@@ -1,0 +1,14 @@
+{
+  "device": "mini",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-Y6Bmeq",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-Y6Bmeq/home",
+  "token": "8d74ef56-8531-4bd9-b41c-77b444443c91",
+  "xSession": {},
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-Y6Bmeq/harness-tmp",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-Y6Bmeq/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

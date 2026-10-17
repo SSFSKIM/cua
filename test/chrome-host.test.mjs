@@ -500,7 +500,8 @@ test('a turn that has ended takes no new tabs; one ending while createTab is in 
   await a.end('task-2');
   await assert.rejects(pending, /turn task-2 has ended/);
   await settle(); await settle();
-  assert.deepEqual([...ext.state.tabs.keys()], [], 'the tab created after the turn ended was closed');
+  const left = [...ext.state.tabs.values()];
+  assert.deepEqual(left.map(t => t.groupId), [-1], 'the tab created after the turn ended was closed; a New Tab page keeps its window');
 });
 
 test('getUserTabs lists tabs no session owns; claimUserTab leases one and returns {id, title, url}; getCommittedTabUrl reads it', async () => {
@@ -555,6 +556,90 @@ test('a tab the user closes is no longer owned', async () => {
   await settle();
   assert.deepEqual(host.status().sessions[0].tabs, []);
   assert.deepEqual(await a.call('getTabs', {}), []);
+});
+
+// CDP that closes tabs as Chrome does: Page.close on a tab's debuggee, Target.closeTarget of its page target (T-<id>).
+const closingCdp = holder => ({debuggee, method, params}) => {
+  const tabId = method === 'Page.close' ? debuggee.tabId : method === 'Target.closeTarget' ? Number(String(params?.targetId).slice(2)) : null;
+  if (tabId !== null) setImmediate(() => holder.ext.userCloseTab(tabId));
+  return method === 'Target.closeTarget' ? {success: true} : {};
+};
+const keeps = sent => sent('tabs.create').filter(p => !p.group);
+
+// #148: Chrome closes a window with its last tab, and a profile left with no window unloads, its extension and host
+// with it.
+test('closing a window\'s last tab keeps the window: a New Tab page opens there first, ungrouped and owned by no session', async () => {
+  const {ext, client, session, sent} = setup();
+  const user = ext.addTab({title: 'Mine'});
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  await a.call('attach', {tabId: tab.id});
+  ext.userCloseTab(user.id);                  // the user closed their own tabs: only the agent's is left
+  await a.end();
+  assert.equal(ext.state.tabs.has(tab.id), false, 'the agent tab closed');
+  assert.equal(ext.state.windows.has(1), true, 'its window stays open');
+  const left = [...ext.state.tabs.values()];
+  assert.deepEqual(left.map(t => [t.windowId, t.groupId]), [[1, -1]]);
+  assert.deepEqual(keeps(sent), [{windowId: 1}], 'a plain New Tab page: no url, group or guard');
+  const order = ext.calls.filter(x => x.method === 'tabs.remove' || (x.method === 'tabs.create' && !x.params.group)).map(x => x.method);
+  assert.deepEqual(order, ['tabs.create', 'tabs.remove'], 'it opens before the last tab closes');
+  assert.deepEqual((await a.call('getUserTabs', {})).map(t => t.id), [left[0].id], 'no session owns it');
+});
+
+test('a tab its window keeps others beside closes as before, and so does the last tab of a window that is not normal', async () => {
+  const holder = {};
+  const {ext, client, session, sent} = setup({cdp: closingCdp(holder), windows: [{id: 1, focused: true, type: 'normal'}, {id: 2, focused: false, type: 'popup'}]});
+  holder.ext = ext;
+  const user = ext.addTab({title: 'Mine'});
+  const popup = ext.addTab({windowId: 2, url: 'https://popup.fixture.invalid/', title: 'Sign in'});
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  await a.call('claimUserTab', {tabId: popup.id});
+  await a.call('attach', {tabId: popup.id});
+  await a.call('executeCdp', {target: {tabId: popup.id}, method: 'Page.close', commandParams: {}});
+  await settle();
+  assert.equal(ext.state.windows.has(2), false, 'a popup window closes with its last tab');
+  await a.end();
+  assert.equal(ext.state.tabs.has(tab.id), false);
+  assert.deepEqual([...ext.state.tabs.keys()], [user.id]);
+  assert.deepEqual(keeps(sent), []);
+});
+
+test('the agent closing its window\'s last tab itself (Target.closeTarget, Page.close) gets the New Tab page first too', async () => {
+  const holder = {};
+  const {ext, client, session, sent} = setup({cdp: closingCdp(holder)});
+  holder.ext = ext;
+  const a = session(client(), 'sA');
+  const t1 = await a.call('createTab', {}), t2 = await a.call('createTab', {});
+  for (const t of [t1, t2]) await a.call('attach', {tabId: t.id});
+  assert.deepEqual(await a.call('executeCdp', {target: {tabId: t1.id}, method: 'Target.closeTarget', commandParams: {targetId: `T-${t1.id}`}}), {success: true});
+  await settle();
+  assert.equal(ext.state.tabs.has(t1.id), false);
+  assert.deepEqual(keeps(sent), [], 'not the last: its window keeps the other');
+  assert.deepEqual(await a.call('executeCdp', {target: {tabId: t2.id}, method: 'Page.close', commandParams: {}}), {});
+  await settle();
+  assert.equal(ext.state.windows.has(1), true);
+  assert.deepEqual([...ext.state.tabs.values()].map(t => t.groupId), [-1]);
+  assert.deepEqual(keeps(sent), [{windowId: 1}]);
+});
+
+test('a turn ending with several tabs in a window that holds nothing else opens one New Tab page, not one per tab', async () => {
+  const {ext, client, session, sent} = setup();
+  const a = session(client(), 'sA');
+  for (let i = 0; i < 3; i++) await a.call('createTab', {});
+  await a.end();
+  assert.deepEqual([...ext.state.tabs.values()].map(t => [t.windowId, t.groupId]), [[1, -1]]);
+  assert.equal(keeps(sent).length, 1);
+});
+
+test('a MAWS peer\'s closes are its own: no New Tab page, its windows being the app\'s', async () => {
+  const {ext, client, session, sent} = setup({helloFields: {profileName: 'MAWS'}, extraPrimitives: {'cursor.move': () => ({})}, lastTabClosesWindow: false});
+  const a = session(client(), 'sA');
+  const tab = await a.call('createTab', {});
+  await a.end();
+  assert.equal(ext.state.tabs.has(tab.id), false);
+  assert.deepEqual(keeps(sent), []);
+  assert.equal(sent('tabs.query').length, 0, 'no check runs');
 });
 
 test('status() is the <name>.json shape', async () => {

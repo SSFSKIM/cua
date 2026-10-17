@@ -99,6 +99,7 @@ test('tab removals and url/title/status updates are told to the host; nothing el
 
 test('groups are per (window, key): a closed or moved group is replaced, group.title renames only its own, and a failed group leaves the tab', async () => {
   const {stub, host} = await start();
+  stub.addTab();                              // the user's, so window 1 outlives the group's tabs
   const w2 = stub.addWindow();
   const a = await host.request('tabs.create', {url: 'about:blank', windowId: 1, group: {key: 'S', title: 'cua'}});
   const b = await host.request('tabs.create', {url: 'about:blank', windowId: w2, group: {key: 'S', title: 'cua'}});

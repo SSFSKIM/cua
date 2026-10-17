@@ -33,7 +33,8 @@ export function createFakeMawsExtension({instanceId = `maws:${randomUUID()}`, ch
   const refusals = [];
   let blank = null;
   const ext = createFakeCuaExtension({
-    instanceId, ...options,
+    // A MAWS window is the app's: it stays when its last tab closes.
+    instanceId, lastTabClosesWindow: chrome, ...options,
     cdp: cdp ?? (params => {
       if (params.method !== 'Target.closeTarget' || params.debuggee?.tabId === undefined) return blank(params);
       setImmediate(() => ext.userCloseTab(params.debuggee.tabId));

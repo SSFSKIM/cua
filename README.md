@@ -552,8 +552,10 @@ Chrome backend is live at all, `list` and `profiles_list` report the profile `ho
 profile's Chrome directory: open a window in that Chrome profile, open the cua extension's popup if it still has no
 backend (that wakes it and shows whether its host is connected, and if not why; on the ChatGPT extension route, click
 that extension's icon), then retry. Chrome unloads a profile, and with it the extension and its host, when the profile's
-last window closes; a cua task in a profile that had no window opens one for its tab, so closing that tab, or ending the
-task without marking the tab handoff, unloads the profile again (issue #41). Turning the ChatGPT extension off and on at
+last window closes. On the ChatGPT extension route a task in a profile that had no window opens one for its tab, so
+closing that tab, or ending the task without marking the tab handoff, unloads the profile again (issue #41). cua's own
+extension route never closes a window's last tab: when a task's end, or the agent itself, closes the last tab of a normal
+window, a New Tab page opens in that window first, so the window and the profile stay (issue #148). Turning the ChatGPT extension off and on at
 `chrome://extensions` wakes it too, but can mint a new instance id, so run `cua profiles bind <key>` afterwards. cua
 never opens a window or wakes the extension on its own; it does not drive Chrome.
 

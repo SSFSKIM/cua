@@ -24,6 +24,11 @@
 //   answering the vendor extension's timeout wording; the next command then answers "Debugger unattached", the string
 //   the service's single re-attach recovers from (browser-service.mjs 47585-47595).
 // - A detach the user caused (canceled_by_user) is forwarded as onCDPDetach and the tab is never attached again.
+// - No close the host makes or relays takes a window's last tab with it (closeTab): Chrome closes a window with its last
+//   tab, and a profile left with no window unloads, its extension and this host with it, so the next session finds the
+//   profile not live (#148). Before a turn's end, a cleanup, or the agent's own Target.closeTarget or Page.close closes
+//   the last tab of a normal window (every other tab of it closing too), a New Tab page opens there: inactive,
+//   ungrouped, nobody's.
 // - Owned tabs are guarded (extension/background.js, "Page guards"): created tabs from creation, every tab again before
 //   each attach (waited for at most GUARD_WAIT_MS), until the turn releases or hands it off (not waited for). An attach Chrome refuses because another extension's frame is
 //   in the tab ("Cannot access a chrome-extension:// URL of different extension") is retried once after a sweep. A page's
@@ -226,7 +231,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       }
       release(s, tab);
       work.push(detached.then(() => {
-        if (tab.origin === 'created' && tab.mark === 'none') return quiet(extension.request('tabs.remove', {tabId: tab.tabId}));
+        if (tab.origin === 'created' && tab.mark === 'none') return quiet(closeTab(tab.tabId));
         unguard(tab);
         if (tab.origin === 'created') return quiet(extension.request('tabs.ungroup', {tabId: tab.tabId}));
       }));
@@ -317,6 +322,36 @@ export function createHost({extension: port, hello, home = null, now = () => new
     return (await extension.request('windows.create', {focused: false})).id;
   }
 
+  // A tab counts as closing from its close until Chrome reports it removed (or the close fails), so tabs a turn's end
+  // closes together see each other go. The checks run one at a time: of those, exactly one opens the New Tab page.
+  // A MAWS peer's windows are its app's, which decides itself what a window without tabs does.
+  const closing = new Set();
+  let keeping = Promise.resolve();
+  function closeTab(tabId, close = () => extension.request('tabs.remove', {tabId})) {
+    if (cursorPeer) return close();
+    closing.add(tabId);
+    const kept = keeping.then(() => keepWindow(tabId)).catch(() => {});   // a refusal is logged; the close goes ahead
+    keeping = kept;
+    return kept.then(close).catch(error => { closing.delete(tabId); throw error; });
+  }
+  async function keepWindow(tabId) {
+    const [tabs, windows] = await Promise.all([extension.request('tabs.query', {}), extension.request('windows.query', {})]);
+    const windowId = tabs.find(t => t.id === tabId)?.windowId;
+    if (windows.find(w => w.id === windowId)?.type !== 'normal') return;
+    if (tabs.some(t => t.windowId === windowId && !closing.has(t.id))) return;
+    await extension.request('tabs.create', {windowId});
+    log(`window ${windowId} kept open with a New Tab page: tab ${tabId} was its last`);
+  }
+
+  // The tab a CDP command sent to tab `tabId` closes, else null: Page.close on the tab's own debuggee, or
+  // Target.closeTarget of a tab's page target (the service's tab.close()).
+  async function closedBy(tabId, {method, sessionId, targetId, params}) {
+    if (method === 'Page.close') return sessionId == null && targetId == null ? tabId : null;
+    if (method !== 'Target.closeTarget' || typeof params?.targetId !== 'string') return null;
+    const info = (await extension.request('debugger.getTargets', {}).catch(() => [])).find(t => t.id === params.targetId);
+    return info?.type === 'page' && Number.isInteger(info.tabId) ? info.tabId : null;
+  }
+
   // --- the backend methods ------------------------------------------------------------------------------------------
 
   const handlers = {
@@ -355,7 +390,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       const windowId = await pickWindow(preferredWindowId);
       const created = await extension.request('tabs.create', {url: 'about:blank', windowId, group: {key: s.id, title: s.title}, guard: true});
       if (s.closed || s.ended.has(turn)) {
-        await quiet(extension.request('tabs.remove', {tabId: created.id}));
+        await quiet(closeTab(created.id));
         refuse(turnOver(s, turn));
       }
       own(s, newTab(created.id, created.windowId ?? windowId, turn, 'created'));
@@ -437,9 +472,10 @@ export function createHost({extension: port, hello, home = null, now = () => new
         debuggee = {targetId};
       }
       const limit = typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_CDP_TIMEOUT_MS;
+      const send = () => extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}, timeoutMs: limit});
       const command = method === 'Target.getTargets'
         ? extension.request('debugger.getTargets', {}).then(targetInfos => ({targetInfos}))
-        : extension.request('debugger.sendCommand', {debuggee, ...(sessionId != null ? {sessionId} : {}), method, params: commandParams ?? {}, timeoutMs: limit});
+        : cursorPeer ? send() : closedBy(tabId, {method, sessionId, targetId, params: commandParams}).then(closes => (closes === null ? send() : closeTab(closes, send)));
       let timer;
       const timeout = new Promise((resolve, reject) => { timer = setTimeout(() => reject(TIMED_OUT), limit); });
       try {
@@ -578,6 +614,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       tell(o.session, 'onCDPDetach', {tabId: o.tabId, ...(o.targetId !== undefined ? {targetId: o.targetId} : {}), reason});
     },
     'tabs.removed'({tabId}) {
+      closing.delete(tabId);
       const owner = owners.get(tabId);
       if (!owner) return;
       release(owner.session, owner.tab);
@@ -613,7 +650,7 @@ export function createHost({extension: port, hello, home = null, now = () => new
       }
       const created = await extension.request('tabs.create', {url, openerTabId, group: {key: s.id, title: s.title}, guard: true});
       if (!live()) {
-        await quiet(extension.request('tabs.remove', {tabId: created.id}));
+        await quiet(closeTab(created.id));
         return;
       }
       own(s, newTab(created.id, created.windowId, turn, 'created'));
@@ -826,9 +863,11 @@ export async function runHost({stdin, stdout, env = process.env, home = env.CUA_
   chmodSync(socketPath, 0o600);
   // Connections are accepted from the next turn on; the host exists before the first one arrives.
   host = createHost({extension, hello, home, log, pid, statusName: name, peerCheck: authorize?.peerCheck ?? 'off'});
-  // The log takes the profile's name only now: a host refused above never replaces the serving host's log.
+  // The log takes the profile's name only now: a host refused above never replaces the serving host's log. The previous
+  // host's log stays beside it as <name>.prev.log: how that host ended is what a profile found not live asks.
   if (!socketName) {
     const named = join(logs, `${name}.log`);
+    try { renameSync(named, join(logs, `${name}.prev.log`)); } catch {}
     try { renameSync(logPath, named); logPath = named; } catch (error) { log(`log rename failed: ${error.message}`); }
   }
   log(`listening ${socketPath}`);

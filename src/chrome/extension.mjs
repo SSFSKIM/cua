@@ -32,8 +32,9 @@ export const backendDir = home => join(home, 'chrome', 'b');
 // each configured MAWS backend (src/chrome/client-mode.mjs), 0700. Nothing scans it: a process lists exactly the
 // client-mode hosts it opened, so one MAWS session's backend never reaches another process's vendor service.
 export const clientModeDir = home => join(home, 'chrome', 'm');
-// $CUA_HOME/chrome/logs: one log per host (<pid>.log, renamed <name>.log once the extension said hello), and the
-// launcher's append-only log of each start and of whatever Node itself writes to stderr (warnings, a crash before main).
+// $CUA_HOME/chrome/logs: one log per host (<pid>.log, renamed <name>.log once the extension said hello; the previous
+// host's becomes <name>.prev.log), and the launcher's append-only log of each start and of whatever Node itself writes
+// to stderr (warnings, a crash before main).
 export const logDir = home => join(home, 'chrome', 'logs');
 export const launcherLog = home => join(logDir(home), 'launcher.log');
 // $CUA_HOME/chrome/host: the shell launcher the native-messaging manifest names (`cua chrome register` writes it).

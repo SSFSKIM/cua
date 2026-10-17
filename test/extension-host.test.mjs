@@ -224,6 +224,24 @@ test('a detach the user caused and a tab the user closed reach the host', async 
   assert.deepEqual((await s.call('getTabs')).map(x => x.id), [one.id]);
 });
 
+// #148: Chrome closes a window with its last tab, and a profile left with no window unloads, its extension and host
+// with it.
+test('a turn ending in a window that holds only its tabs leaves the window open with a New Tab page that nobody owns', async t => {
+  const {stub, socketPath} = await start(t);
+  const user = stub.addTab({title: 'Mine', url: 'https://user.invalid/', active: true});
+  const c = await backendClient(t, socketPath);
+  const a = c.session('sess-a');
+  await a.call('createTab', {});
+  await a.call('createTab', {});
+  stub.userCloseTab(user.id);
+  await a.end();
+  assert.equal(stub.state.windows.has(1), true, 'the window stays open');
+  assert.deepEqual([...stub.state.tabs.values()].map(tab => [tab.windowId, tab.url, tab.groupId]), [[1, 'chrome://newtab/', -1]]);
+  assert.deepEqual(stub.callsOf('tabs.create').at(-1), [{windowId: 1, active: false}], 'opened inactive, ungrouped, unguarded');
+  assert.equal(stub.port.connected, true, 'the host still serves');
+  assert.deepEqual((await c.session('sess-b').call('getUserTabs', {})).map(tab => tab.title), ['']);
+});
+
 test('a profile with no normal window gets one, unfocused, and the tab opens there', async t => {
   const {stub, socketPath} = await start(t, {windows: [{id: 7, focused: true, type: 'popup'}]});
   const c = await backendClient(t, socketPath);

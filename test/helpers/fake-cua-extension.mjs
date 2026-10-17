@@ -7,7 +7,8 @@
 // other extensions attach alongside, so there is no foreign refusal). Another extension's frame in a tab
 // (`addForeignFrame`) makes Chrome detach the tab and refuse attaching it ("Cannot access a chrome-extension:// URL of
 // different extension") until a tabs.guard sweep removes it; a frame can survive a number of sweeps (`sticky`), as one
-// re-inserted by its extension does.
+// re-inserted by its extension does. As in Chrome, a window closes with its last tab (`lastTabClosesWindow: false`
+// keeps it, for a peer whose windows are not Chrome's).
 //
 // Two wirings: `api` ({request(method, params)}, answered on a later turn) plugs straight into createHost, with
 // `onNotify` receiving the extension's notifications; `connect({toHost, fromHost})` speaks real native-messaging
@@ -29,7 +30,8 @@ export function defaultCdp({method, params}) {
 // `extraPrimitives` adds primitives another peer serves (the fake MAWS peer's cursor.move); `helloFields` adds fields to
 // its hello (profileName, a peer's own extensionId).
 export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.1.0', protocolVersion = 1,
-  windows = [{id: 1, focused: true, type: 'normal'}], tabs = [], cdp = defaultCdp, extraPrimitives = {}, helloFields = {}} = {}) {
+  windows = [{id: 1, focused: true, type: 'normal'}], tabs = [], cdp = defaultCdp, extraPrimitives = {}, helloFields = {},
+  lastTabClosesWindow = true} = {}) {
   let nextTabId = 100;
   let nextWindowId = 50;
   let nextGroupId = 900;
@@ -140,8 +142,10 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
       const d = debuggeeOf(key);
       if (d.tabId === tabId || String(d.targetId ?? '').startsWith(`T-${tabId}-`)) { state.held.delete(key); emit('debugger.detached', {debuggee: d, reason: 'target_closed'}); }
     }
+    const windowId = state.tabs.get(tabId)?.windowId;
     state.tabs.delete(tabId);
     state.guarded.delete(tabId);
+    if (lastTabClosesWindow && ![...state.tabs.values()].some(t => t.windowId === windowId)) state.windows.delete(windowId);
     emit('tabs.removed', {tabId});
   }
 

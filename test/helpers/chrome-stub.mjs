@@ -118,7 +118,10 @@ export function createChromeStub({home, nativeHost = 'process', hostInstalled = 
       state.groups.delete(tab.groupId);
       ev.groupRemoved.dispatch({id: tab.groupId});
     }
-    ev.tabsRemoved.dispatch(tabId, {windowId: tab?.windowId, isWindowClosing: false});
+    // A window closes with its last tab.
+    const isWindowClosing = tab !== undefined && ![...state.tabs.values()].some(t => t.windowId === tab.windowId);
+    if (isWindowClosing) state.windows.delete(tab.windowId);
+    ev.tabsRemoved.dispatch(tabId, {windowId: tab?.windowId, isWindowClosing});
   }
   function requireDebuggee(d) {
     if (d?.targetId !== undefined) {

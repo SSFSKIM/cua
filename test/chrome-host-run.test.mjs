@@ -241,6 +241,30 @@ test('the port dropping mid-task fails pending requests with "extension disconne
   assert.match(readFileSync(result.logPath, 'utf8'), /native port closed/);
 });
 
+test('a new host of the profile keeps the previous host\'s log as <name>.prev.log', async t => {
+  const scratch = shortScratch('cua-h1-');
+  t.after(scratch.cleanup);
+  const first = createFakeCuaExtension();
+  const name = socketNameFor(first.instanceId);
+  const serve = async ext => {
+    const toHost = new PassThrough(), fromHost = new PassThrough();
+    const port = ext.connect({toHost, fromHost});
+    const pid = nextPid++;
+    const done = runHost({stdin: toHost, stdout: fromHost, home: scratch.dir, pid});
+    await waitFor(() => existsSync(join(backendDir(scratch.dir), `${name}.sock`)), 'the socket');
+    port.disconnect();
+    assert.equal((await done).reason, 'port_closed');
+    return pid;
+  };
+  const before = await serve(first);
+  const after = await serve(createFakeCuaExtension({instanceId: first.instanceId}));
+  assert.deepEqual(readdirSync(logDir(scratch.dir)).sort(), [`${name}.log`, `${name}.prev.log`]);
+  const previous = readFileSync(join(logDir(scratch.dir), `${name}.prev.log`), 'utf8');
+  assert.match(previous, new RegExp(`start pid=${before} `));
+  assert.match(previous, /native port closed \(end\)\n.*exit 0 \(port_closed\)\n$/);
+  assert.match(readFileSync(join(logDir(scratch.dir), `${name}.log`), 'utf8'), new RegExp(`^\\S+ start pid=${after} `));
+});
+
 test('a host->extension frame over 1 MB is refused with message_too_large and the port stays up', async t => {
   const h = start(t);
   await waitFor(() => existsSync(h.socketPath), 'the socket');

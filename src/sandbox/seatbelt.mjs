@@ -20,7 +20,7 @@
 // else is refused (SandboxStateError), never rendered. Byte parity with the original for these inputs is pinned by
 // test/fixtures/sandbox/seatbelt (rendered by the original's own crates, scripts/sandbox-golden).
 //
-// Deviations from the original, each strictly tighter or a fix:
+// Deviations from the original, each strictly tighter or a fix but the last, a bounded widening:
 // - No Codex config: no config stack, MDM preferences, /etc/codex or $CODEX_HOME/.env is read, and no arg0 PATH entry
 //   is added. The profile is exactly the input, the same on every machine.
 // - The TIOCSTI line is `(deny file-ioctl (ioctl-command 2147578994))`, the number upstream adopted after the tag
@@ -33,7 +33,9 @@
 //   in the profile. Without it a path inside is readable but unresolvable: realpath(3) and Node's module resolution
 //   lstat every component, and the denied ancestor's lstat fails with EPERM (measured on macOS 26 with the original's
 //   own rendering of "deny the cua home, read runtimes/": a module import under runtimes/ failed). Its contents and
-//   its listing stay denied.
+//   its listing stay denied. The ancestors are taken from the rendered (real-path) roots, never as a subpath; for cua's
+//   macOS layout they are exactly the cua home and its run/ (test/sandbox/reexposed.test.mjs). The one deviation that
+//   widens what the original grants, accepted as a recorded deviation (#115 M1).
 import {lstatSync, readFileSync, realpathSync, statSync} from 'node:fs';
 import {posix} from 'node:path';
 import {SandboxStateError} from '../runtime/sandbox.mjs';

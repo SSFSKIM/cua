@@ -113,6 +113,17 @@ export function compareFingerprints(left, right) {
   return {equal, sandboxed: [left.sandboxed, right.sandboxed], cwdEqual, checks, env};
 }
 
+// #115 M1: what the port's one widening (src/sandbox/seatbelt.mjs header, the metadata of denied ancestors) may give, in
+// a kernel fingerprint under cua's launcher: the cua home and its run/ resolvable (metadata) but not listable (data), and
+// another session's run directory neither. -> {ok, rows: [{label, op, want, got}]}; a missing row is no pass.
+const GRANT_PINS = [['cua-home', 'allow', 'deny'], ['cua-home/run', 'allow', 'deny'], ['cua-home/run/other', 'deny', 'deny']];
+export function metadataGrantPins(fingerprint) {
+  const got = (label, op) => fingerprint.checks.find(row => row.filter === 'path' && row.label === label && row.op === op)?.result ?? null;
+  const rows = GRANT_PINS.flatMap(([label, metadata, data]) => [['file-read-metadata', metadata], ['file-read-data', data]]
+    .map(([op, want]) => ({label, op, want, got: got(label, op)})));
+  return {ok: rows.every(row => row.got === row.want), rows};
+}
+
 // Two experiment.mjs runs: the confinement cell's outcomes key by key, and whether each cell succeeded (timings and
 // counts aside: app and window counts move with the desktop).
 export function compareExperiments(left, right) {

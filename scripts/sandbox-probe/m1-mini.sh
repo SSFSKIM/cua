@@ -8,7 +8,11 @@
 # oracles      in the scratch tree ~/cua-115/repo checked out at <sha>: the fingerprint under cua's launcher (kernel and
 #              worker roles, scoped and default) against M0's golden-kernel and signed-CLI fingerprints, and cua's port
 #              rendering M0's two argv captures (oracle.mjs fingerprint --launcher cua, port-vs-capture,
-#              compare-fingerprints). Non-GUI: plain probes under sandbox-exec on the approved home and the scratch HOME.
+#              compare-fingerprints). Each kernel fingerprint also pins the port's metadata grant (compare.mjs
+#              metadataGrantPins: the cua home and its run/ metadata only, another session's run/<id> nothing) and fails
+#              the item if it does not hold. Against M0's golden kernel the cua kernel differs by that grant (metadata on
+#              cua-home) and the new cua-home/run target, by design. Non-GUI: plain probes under sandbox-exec on the
+#              approved home and the scratch HOME.
 # own-sandbox  scripts/accept/own-sandbox.mjs on the approved home (cua's own host, browser surface only, no helper, no
 #              GUI): acceptance 1-5 for the own host on macOS.
 # cfprefs      the #116 cells and services suites on cua's own host at <before-sha> (today's profile, the Codex CLI's)

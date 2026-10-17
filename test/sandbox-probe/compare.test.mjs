@@ -3,7 +3,7 @@
 // CLI's arg0 directory, the pid) normalized away and every remaining difference named.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, metadataGrantPins, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
 
 test('profileFromPolicy turns cua\'s sorted -c table into the original\'s permission profile, in the same order', () => {
   const policy = {filesystem: [['/a', 'read'], ['/z', 'none'], [':root', 'read'], [':tmpdir', 'write'], [':workspace_roots', {'.': 'write'}]], cwd: '/run'};
@@ -129,4 +129,20 @@ test('comparePortToCapture: cua\'s port against the signed CLI\'s capture, equal
   assert.deepEqual(other.paramsDiffering, [{index: 0, captured: '-DWRITABLE_ROOT_0=/run', golden: '-DWRITABLE_ROOT_0=/elsewhere'}]);
   const extraEnv = comparePortToCapture({captured: {...captured, env: [...captured.env, 'SURPRISE=1']}, port});
   assert.equal(extraEnv.equalButDeviations, false, 'any other environment difference is a difference');
+});
+
+// #115 M1: the fingerprint under cua's kernel launcher pins the port's metadata grant (src/sandbox/seatbelt.mjs header):
+// the cua home and its run/ resolvable but not listable, another session's run directory neither.
+test('metadataGrantPins holds only for metadata-only on the granted directories and nothing on another session', () => {
+  const rows = over => [['cua-home', 'allow', 'deny'], ['cua-home/run', 'allow', 'deny'], ['cua-home/run/other', 'deny', 'deny']]
+    .flatMap(([label, metadata, data]) => [{op: 'file-read-metadata', filter: 'path', label, result: over[`${label} metadata`] ?? metadata}, {op: 'file-read-data', filter: 'path', label, result: over[`${label} data`] ?? data}]);
+  const pins = over => metadataGrantPins({checks: rows(over)});
+  assert.equal(pins({}).ok, true);
+  assert.deepEqual(pins({}).rows.map(r => [r.label, r.op, r.want, r.got]), [
+    ['cua-home', 'file-read-metadata', 'allow', 'allow'], ['cua-home', 'file-read-data', 'deny', 'deny'],
+    ['cua-home/run', 'file-read-metadata', 'allow', 'allow'], ['cua-home/run', 'file-read-data', 'deny', 'deny'],
+    ['cua-home/run/other', 'file-read-metadata', 'deny', 'deny'], ['cua-home/run/other', 'file-read-data', 'deny', 'deny']]);
+  for (const over of [{'cua-home data': 'allow'}, {'cua-home/run data': 'allow'}, {'cua-home metadata': 'deny'}, {'cua-home/run/other metadata': 'allow'}, {'cua-home/run/other data': 'allow'}])
+    assert.equal(pins(over).ok, false, JSON.stringify(over));
+  assert.equal(metadataGrantPins({checks: rows({}).filter(r => r.label !== 'cua-home/run')}).ok, false, 'a missing row is no pass');
 });

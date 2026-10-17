@@ -19,6 +19,8 @@
 //     (M1) the same probe under cua's own launcher: the own host's launch built by cua's own code (supervisor.mjs
 //     hostSettings, kernelLaunch's sandboxedLaunch, src/sandbox) for that role, the kernel's with the deny list
 //     buildLaunch resolves for the scratch home and user home (its missing targets created there, as the host does).
+//     The kernel's run records `pins` (compare.mjs metadataGrantPins) and fails when the port's metadata grant gives
+//     more than the cua home's and its run/'s metadata.
 //   node scripts/sandbox-probe/oracle.mjs port-vs-capture --capture <capture.json> --out <file>
 //     (M1) cua's port (src/sandbox/seatbelt.mjs) rendering a capture's own input, compared with what the signed CLI
 //     handed sandbox-exec (compare.mjs comparePortToCapture). The capture's run directory and its temp are recreated
@@ -48,7 +50,7 @@ import {ownHostNode} from '../../src/runtime/launch.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, profileFromPolicy} from './compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, metadataGrantPins, profileFromPolicy} from './compare.mjs';
 
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 // KERN_PROCARGS2 carries the kernel's "apple" strings after the environment (per-process entropy and code identity, not
@@ -171,7 +173,7 @@ async function fingerprint(values) {
     mkdirSync(other, {recursive: true, mode: 0o700});
     // sandbox_check reports a missing path as denied, so every target exists (the spec creates the deny targets too).
     for (const dir of [join(userHome, '.config', 'cua'), join(userHome, STORE_RELATIVE)]) mkdirSync(dir, {recursive: true, mode: 0o700});
-    const targets = {'cua-home': layout.home, 'cua-home/state': join(layout.home, 'state'), 'cua-home/runtimes': layout.runtimes, 'cua-home/node': layout.node,
+    const targets = {'cua-home': layout.home, 'cua-home/run': layout.run, 'cua-home/state': join(layout.home, 'state'), 'cua-home/runtimes': layout.runtimes, 'cua-home/node': layout.node,
       'cua-home/run/other': other, 'config-cua': join(userHome, '.config', 'cua'), store: join(userHome, STORE_RELATIVE),
       checkout: dirname(dirname(dirname(new URL(import.meta.url).pathname)))};
     // A file a cell must not be able to read through a link: a synthetic sentinel in the scratch store.
@@ -194,7 +196,11 @@ async function fingerprint(values) {
     });
     rmSync(join(layout.run, built.sessionId), {recursive: true, force: true});
     if (run.status !== 0) throw new Error(`fingerprint under ${built.launch.command} exited ${run.status}: ${run.stderr.slice(0, 2000)}`);
-    writeFileSync(values.out, json({input: describe(built), launcher: values.label ?? (launcher === 'cua' ? `cua-${built.role}` : values.cli ?? 'golden-kernel'), fingerprint: JSON.parse(run.stdout)}));
+    const fingerprint = JSON.parse(run.stdout);
+    // cua's kernel carries the port's metadata grant (compare.mjs metadataGrantPins): recorded, and a violation fails the run.
+    const pins = launcher === 'cua' && built.role === 'kernel' ? metadataGrantPins(fingerprint) : undefined;
+    writeFileSync(values.out, json({input: describe(built), launcher: values.label ?? (launcher === 'cua' ? `cua-${built.role}` : values.cli ?? 'golden-kernel'), fingerprint, ...(pins ? {pins} : {})}));
+    if (pins && !pins.ok) throw new Error(`the metadata grant's pins do not hold: ${JSON.stringify(pins.rows.filter(row => row.got !== row.want))}`);
   } finally {
     tcp.close(); uds.close(); rmSync(sock, {force: true});
   }

@@ -4,12 +4,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {AttestedConnections, runRawScenario, usePauseGate} from '../../scripts/repl-parity/runner.mjs';
 
 // `queuePings`: a host that answers a ping only once the running js call has answered (no control traffic during execution).
-function host(t, {queuePings}) {
+// `rejectJs`: a host that answers a js call with an RPC error at once, and a ping only after `pingDelayMs`.
+function host(t, {queuePings = false, rejectJs = false, pingDelayMs = 0} = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua-dispatch-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const server = join(dir, 'server.mjs'), log = join(dir, 'received.jsonl');
@@ -23,14 +25,15 @@ createInterface({input: process.stdin}).on('line', line => {
   appendFileSync(${JSON.stringify(log)}, line + '\\n');
   if (m.id === undefined) return;
   if (m.method === 'initialize') return send({id: m.id, result: {protocolVersion: '2025-06-18', capabilities: {tools: {}}, serverInfo: {name: 'fake', version: '0'}}});
-  if (m.method === 'ping') return queue && running ? queued.push(m.id) : send({id: m.id, result: {}});
+  if (m.method === 'ping') return queue && running ? queued.push(m.id) : setTimeout(() => send({id: m.id, result: {}}), ${pingDelayMs});
+  if (${rejectJs}) return send({id: m.id, error: {code: -32000, message: 'host refused the js call'}});
   running++;
   setTimeout(() => {
     send({id: m.id, result: {content: [{type: 'text', text: 'completed'}], isError: false}});
     if (--running === 0) { for (const id of queued) send({id, result: {}}); queued = []; }
   }, 300);
 });`);
-  return {command: {command: process.execPath, args: [server]}, received: () => readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line))};
+  return {dir, command: {command: process.execPath, args: [server]}, received: () => readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line))};
 }
 
 async function connect(t, command) {
@@ -67,4 +70,20 @@ test('a held dispatch emits no cancellation before its js request, and the cance
   const messages = received().filter(m => m.method === 'tools/call' || m.method === 'notifications/cancelled');
   assert.deepEqual(messages.map(m => m.method), ['tools/call', 'notifications/cancelled']);
   assert.equal(messages[1].params.requestId, messages[0].id);
+});
+
+test('a js call the host rejects while the ping is pending is caught by the harness, which then cleans up', async t => {
+  const {dir, command} = host(t, {rejectJs: true, pingDelayMs: 300});
+  const harness = join(dir, 'harness.mjs');
+  writeFileSync(harness, `import {AttestedConnections, runRawScenario} from ${JSON.stringify(new URL('../../scripts/repl-parity/runner.mjs', import.meta.url).href)};
+const pool = new AttestedConnections('vendor');
+const client = await pool.open(${JSON.stringify(command)});
+try {
+  await runRawScenario({id: 'dispatch', cells: [{label: 'running', code: '1', ping: true}], assert: () => ({ok: true})}, {client, emit: async () => {}, checkout: '', reset: false});
+} catch (error) { console.log('caught: ' + error.message); }
+finally { await pool.close(); console.log('cleanup done'); }`);
+  const run = spawnSync(process.execPath, [harness], {encoding: 'utf8', timeout: 20_000, env: {...process.env, CUA_REPL_HOST: 'vendor'}});
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /caught: (host refused the js call|ping completed only after the cell settled)/);
+  assert.match(run.stdout, /cleanup done/);
 });

@@ -50,9 +50,8 @@ export class AttestedConnections {
   async close(){const failed=[];for(const {client,connection} of this.clients){const status=await client.close();if(status.code!==0)failed.push(`${connection} (${status.code??status.signal})`);}if(failed.length)throw new Error(`Harness connection cleanup failed: ${failed.join(', ')}`);}
 }
 // -> {request}, the host's own request (boxed, so awaiting does not adopt it), once it has been written: a wrapped call
-// may be held at the run's pause first. A held call that fails (the pause lost) fails here too; its result's own
-// rejection is then this one, already reported.
-const written=pending=>(pending.dispatched??Promise.resolve({request:pending})).catch(error=>{pending.catch(()=>{});throw error;});
+// may be held at the run's pause first, and a held call that fails (the pause lost) fails here too.
+const written=pending=>pending.dispatched??Promise.resolve({request:pending});
 export async function runRawScenario(scenario,{client,emit,checkout,reset=true,context={},profiles,replaceCode=code=>code,pause=runPause}) {
   const results=[],timings=[],pausedCells=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});
   if(reset)await client.call('js_reset');
@@ -87,6 +86,9 @@ export async function runRawScenario(scenario,{client,emit,checkout,reset=true,c
       else {
         const code=cellCode({...cell,raw:true,code:replaceCode(cell.code.replaceAll('@@CHECKOUT@@',checkout))});
         const pending=client.call('js',{code,title:'REPL parity fixture',...(cell.timeoutMs?{timeout_ms:cell.timeoutMs}:{})},cell.requestMeta);
+        // Handled from the start: it may reject while the dispatch or the ping is awaited, or be left behind when the
+        // ping check throws; it is still awaited below, where its own rejection reaches the cell.
+        pending.catch(()=>{});
         const {request}=cell.cancelAfterMs!==undefined||cell.ping?await written(pending):{};
         if(cell.cancelAfterMs!==undefined)timer=setTimeout(()=>client.cancel(request.requestId),cell.cancelAfterMs);
         if(cell.ping){let settled=false;request.then(()=>{settled=true;},()=>{settled=true;});await client.request('ping',{},1000);if(settled)throw new Error('ping completed only after the cell settled');}

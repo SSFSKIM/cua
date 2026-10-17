@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "experiment": "m5t5r1",
+  "relay": "wss://178-104-102-73.sslip.io/ws",
+  "phase": "operator-cleanup",
+  "endpoints": [
+    {
+      "device": "mini",
+      "name": "repl-m5t5r1-mini-browser",
+      "surfaces": [
+        "browser"
+      ],
+      "experiment": "m5t5r1",
+      "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+      "token": "00d396b8-f063-4e26-a0f4-841e1223dc0d",
+      "nodeMode": "managed",
+      "profile": "ssfs",
+      "extensionInstanceId": "3b45d47c-51f6-469b-a915-3d46ac5fb0ad",
+      "profileFacts": "harness-supplied presence only; exact backend liveness required",
+      "release": "26.928.40906-darwin-arm64",
+      "ownNode": {
+        "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+        "version": "v24.22.0"
+      },
+      "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+      "deviceId": "Vu5kX8vUd7cYoR6CwjG_-w",
+      "relayEndpoint": "https://178-104-102-73.sslip.io/d/Vu5kX8vUd7cYoR6CwjG_-w/mcp",
+      "clientSecretKey": "CUA_DEVICE_Vu5kX8vUd7cYoR6CwjG__w",
+      "devicesEntry": "\"Vu5kX8vUd7cYoR6CwjG_-w\": {\"deviceCredentialSha256\": \"41a99808d6c3f1944661669232bd007a0db7ebea969241b5fd10980d547f4d97\", \"clientCredentialSha256\": \"0f015131bbc4c6c467b32135ab95efd7f8d2ff5bd94e29d0ce9c156631119e68\"}",
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+        "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792175387349.6655
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+          "ownNode": {
+            "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "pid": 27974,
+          "nodeMode": "managed"
+        }
+      },
+      "host": "cua",
+      "disconnect": {
+        "requestId": 3,
+        "disruption": "after-started",
+        "count": 1,
+        "load": "9:21  up 7 days, 14:28, 2 users, load averages: 2.61 3.53 3.31"
+      },
+      "ready": false,
+      "hostAttestation": {
+        "host": "cua",
+        "serverInfo": {
+          "name": "cua-repl-host",
+          "version": "0.5.0"
+        },
+        "_meta": {
+          "codex/nodeReplExecutionDurationMs": 122,
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "4ef2b631-7144-48e6-84ad-9bfd46c40c09"
+        },
+        "executionFacts": {
+          "checkout": "/Users/new/Developer/GitHub/cua-parity",
+          "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+          "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+          "dirty": false,
+          "release": "26.928.40906-darwin-arm64",
+          "node": "v24.18.0",
+          "runtimeNode": "v24.21.0",
+          "platform": "darwin",
+          "ownNode": {
+            "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "browserRoute": {
+            "selection": {
+              "service": "cua",
+              "reason": "cua_route",
+              "explicit": false,
+              "route": "cua",
+              "registration": {
+                "route": "cua",
+                "at": 1792175387349.6655
+              }
+            },
+            "recordPath": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/chrome/cua-registration.json",
+            "manifests": []
+          },
+          "answeringHost": {
+            "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+            "ownNode": {
+              "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+              "version": "v24.22.0"
+            },
+            "pid": 27974,
+            "nodeMode": "managed"
+          }
+        }
+      },
+      "removed": true
+    }
+  ],
+  "requestedDevices": [
+    "mini"
+  ]
+}

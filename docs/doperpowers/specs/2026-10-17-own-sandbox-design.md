@@ -161,10 +161,10 @@ Re-exposed inside the denied home (most-specific wins):
 
 The `tmpdir` write grant then names a directory nobody else uses. `os.tmpdir()` in a cell returns it. It is removed with the run directory when the connection ends.
 
-Before any profile is rendered, each deny target that does not exist is created as a directory with mode 0700 (idempotent). Every deny target is a directory by construction, and an existing target is left as it is. The path emitted is its real path (`realish`, `src/runtime/sandbox.mjs`). The reasons are two original behaviours:
+Before any profile is rendered, every deny target is emitted at its real path (`realish`, `src/runtime/sandbox.mjs`: a missing tail is kept as spelled under its nearest existing ancestor's real path). On Linux each deny target that does not exist is then created as a directory with mode 0700 (idempotent): cua's fixed targets (the store root, `~/.config/cua`, the cua home) with parents created only inside HOME, and an external dangling tier target as its leaf only, when its parent exists; anything else refuses. On macOS nothing is created (Decision Log, 2026-10-17, "deny targets are created on Linux only"). Every deny target is a directory by construction, and an existing target is left as it is. The reasons are two original behaviours:
 
 - **Linux**: the original emits no mask for an unreadable root that does not exist (`U@ff6aec96:linux-sandbox/src/bwrap.rs:1320-1352`), and `--ro-bind / /` is a live view. A store created mid-session would be readable by the running kernel.
-- **macOS**: the original falls back to the logical path when canonicalization fails (`U@ff6aec96:sandboxing/src/seatbelt.rs:217-231`), which a symlinked ancestor defeats.
+- **macOS**: the original falls back to the logical path when canonicalization fails (`U@ff6aec96:sandboxing/src/seatbelt.rs:217-231`), which a symlinked ancestor defeats. cua's port does not: `realish` resolves the missing tail under its nearest existing ancestor's real path, so the deny matches the path when it appears later, and nothing needs creating.
 
 A target that cannot be created refuses the launch. This is cheap and closes both.
 
@@ -871,6 +871,14 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   - Also from the live run: `scripts/accept/own-sandbox.mjs` had not parsed since 6016a8a, a nested template, so accept-native crashed on load. Every acceptance script is now syntax-checked, and accept-native's imports are loaded by the unit suite. Three M0/M1 tests now hold under accept-native's `env -i` item-1 environment on the mini.
   Rationale: the owner's ruling denies the kernel the secret store, and a deny that depends on discovery is only as good as the discovery. A store with broken permissions is a misconfiguration the error names; a cell reading a tier is not recoverable.
   Date/Author: 2026-10-17, execution session.
+
+- Decision: deny targets are created on Linux only, and bounded there (2026-10-17, M1; ruled by the dispatching session). M1 first built the Design as written: `mkdirSync(…, {recursive: true})` for every missing target on both OSes. For a dangling symlinked tier that would create a directory chain wherever the link points.
+  - **macOS** creates nothing. Every missing target is denied at its `realish` path, and seatbelt matches it when it appears later, including through a symlinked `~/.config`.
+  - **Linux**, where a mask is made only for a path that exists, creates cua's fixed targets (store root, `~/.config/cua`, the cua home) 0700 with parents only inside HOME. It creates an external dangling tier target as its leaf only, when its parent exists. Anything else refuses with the classified sentence.
+  - Tests pin each case. M1's mini run checks that a store root missing at launch stays denied after it is created mid-session.
+  Rejected: creating everywhere (the Design as first written), because on macOS it is a side effect with no purpose once `realish` handles the missing tail; and creating nothing on Linux, because the mask needs the path.
+  Rationale: create only where the confinement needs it, and never outside what cua owns beyond a single leaf whose parent already exists.
+  Date/Author: 2026-10-17, execution session (ruled by the dispatching session).
 
 ## Outcomes & Retrospective
 

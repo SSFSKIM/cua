@@ -45,7 +45,7 @@ function wrapper(t, args, fail = {}) {
   const log = join(dir, 'log');
   writeFileSync(log, '');
   const run = spawnSync('sh', ['scripts/sandbox-probe/m1-mini.sh', ...args], {cwd: REPO, encoding: 'utf8',
-    env: {PATH: `${bin}:/usr/bin:/bin`, LOG: log, REAL_NODE: process.execPath, M1_MINI_EVIDENCE: join(dir, 'evidence'), M1_MINI_SCRATCH: join(dir, 'scratch'), ...fail}});
+    env: {PATH: `${bin}:/usr/bin:/bin`, LOG: log, REAL_NODE: process.execPath, M1_MINI_EVIDENCE: join(dir, 'evidence'), M1_MINI_SCRATCH: join(dir, 'scratch'), M1_MINI_PAUSE_WATCH: 'true', ...fail}});
   return {...run, log: readFileSync(log, 'utf8')};
 }
 const failures = stderr => stderr.split('\n').filter(line => line.includes(': FAILED: '));
@@ -77,6 +77,7 @@ test('own-sandbox: a failing check still collects its report and exits 1', t => 
 test('cfprefs: complete runs judged equal exit 0; a failed run, a failed prepare or an unequal pair exits 1 after everything ran', t => {
   const ok = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness']);
   assert.equal(ok.status, 0, ok.stderr);
+  assert.equal((ok.log.match(/run --device mini --host cua --suite \w+ --out \S+ --pause-file \S+cua115-cfprefs-pause\.json/g) ?? []).length, 4, 'every GUI-bound suite run honours the pause file');
   const broken = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness'], {FAIL_PARITY: 'run .*--suite services .*after-services'});
   assert.equal(broken.status, 1);
   assert.deepEqual(failures(broken.stderr).map(line => line.replace(/.*FAILED: /, '')), ['after services run (exit 1)', 'before vs after, services: a side has no run']);

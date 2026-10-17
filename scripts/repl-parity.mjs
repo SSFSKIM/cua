@@ -11,7 +11,8 @@ import {managePreparation} from './repl-parity/prepare-device.mjs';
 import {selectScenarios,inventory,caseSchedule,inSuite,milestones,scenarioCellLabels} from './repl-parity/registry.mjs';
 import scenarios from '../test/repl-parity/scenarios/index.mjs';
 import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
-import {AttestedConnections,runRawScenario} from './repl-parity/runner.mjs';
+import {AttestedConnections,runRawScenario,usePauseGate} from './repl-parity/runner.mjs';
+import {pauseGate} from './mini-pause.mjs';
 import {runSecretCase} from '../test/repl-parity/fixtures/secret-cases.mjs';
 import {declaredVendorDefect,assessAssertions} from './repl-parity/vendor-defects.mjs';
 import {runBoundaryScenario} from './repl-parity/boundaries.mjs';
@@ -27,7 +28,7 @@ const state=device=>join(root,'.doperpowers/sde/repl-parity',`${device}.json`);
 const save=(p,value)=>writeFileSync(p,JSON.stringify(value,null,2)+'\n');
 // The CLI's arguments, validated: the action, its options and positionals. It reads no journal and starts nothing.
 export function parseSelection(argv){
- const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'}}});
+ const {values:v,positionals:[action,a,b]}=parseArgs({args:argv,allowPositionals:true,options:{device:{type:'string',default:'local'},host:{type:'string',default:'vendor'},suite:{type:'string'},through:{type:'string'},out:{type:'string'},expected:{type:'string'},commit:{type:'string'},profile:{type:'string'},node:{type:'string'},home:{type:'string'},'pending-cell':{type:'string',multiple:true},'pending-reason':{type:'string'},'pause-file':{type:'string'}}});
  if((v['pending-cell']?.length||v['pending-reason'])&&(action!=='run'||!isDeclaredDevice(v.device)||DEVICES[v.device].platform!=='linux'))throw new Error('Pending declarations require a live Linux run; diff reads recorded declarations');
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
  if(!(v.device==='local'||isDeclaredDevice(v.device))||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
@@ -64,6 +65,10 @@ export async function main(argv=process.argv.slice(2)){
  const environmentPending=resolvePendingDeclarations({logicalCells:v['pending-cell']??[],reason:v['pending-reason'],platform:prepared.platform,through:v.through,scenarios:selected});
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
  const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,nodeMode:prepared.nodeMode??null,nodeOverride:prepared.nodeOverride??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:['computer'],sandbox:'disabled'}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),complete:false,connections:[],hostAttestations:[]};
+ // --pause-file or CUA_PAUSE_FILE (scripts/mini-pause.mjs): every cell waits at its boundary while the file exists; each pause is evidence.
+ const pauseFile=v['pause-file']??process.env.CUA_PAUSE_FILE;
+ if(pauseFile){meta.pauses=[];usePauseGate(pauseGate({file:pauseFile,record:p=>meta.pauses.push(p),log:line=>console.error(`repl-parity: ${line}`)}));}
+ const pause=pauseFile?pauseGate({file:pauseFile,record:p=>meta.pauses.push(p)}):null;
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
  const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
  const clients=new Map();let browserFixture,profileClient;const profileObservations=[];
@@ -89,6 +94,8 @@ export async function main(argv=process.argv.slice(2)){
       const assertion=await runRawScenario(scenario,{client:fixture,checkout:prepared.checkout,emit,context:{platform:prepared.platform}});if(!assertion.ok)failed=true;
       const status=await fixture.close();if(status.code!==0)throw new Error('Fixture service cleanup failed');continue;
     }
+    // A lane that runs a whole case remotely (its own process, at the prepared commit) waits at the case boundary.
+    if(pause&&['host-boundary','secret-double'].includes(scenario.backend))await pause.wait(scenario.id);
     if(scenario.backend==='host-boundary'){const result=await runBoundaryScenario(scenario,{prepared,host:v.host});pool.addObservations(result.observations,scenario.id);const assertion=scenario.assert({results:result.rows.filter(r=>r.cell==='boundary').map(r=>r.value)});for(const row of result.rows)emit(row.assertion?{...row,assertion}:row);continue;}
     if(scenario.backend==='secret-double'){
       const result=await runSecretCase(scenario.id);for(const row of [{case:scenario.id,cell:'boundary',ok:true,value:result,fake:true},{case:scenario.id,assertion:await scenario.assert({results:[result]}),fake:true}])emit(row);continue;

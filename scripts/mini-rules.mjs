@@ -22,7 +22,7 @@
 // preparation was cleaned up; anything else already there stops. Evidence is archived only from a directory the item
 // created for itself, only after the copy is verified (parsed, complete, newer than the item's start), and the remote
 // copy is removed only after that. Every check and decision is appended to the sitting log.
-import {execFileSync, spawnSync} from 'node:child_process';
+import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, rmSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -82,7 +82,7 @@ export function observe({exec}) {
   const front = frontmost({exec});
   try { return {front, ...observeRunner({exec})}; } catch (error) { if (error instanceof Stop) throw new Unread(error.message); throw error; }
 }
-function observeRunner({exec}) {
+export function observeRunner({exec}) {
   const busy = call(exec, 'runner state', 'gh', ['api', `${REPO}/runners`, '--jq', '[.runners[] | select(.name == "ci-kit-mac-mini") | .busy] | first']).trim();
   if (busy !== 'true' && busy !== 'false') throw missing('runner state', `got ${JSON.stringify(busy)}`);
   let queued = 0;
@@ -311,6 +311,20 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const ctx = {exec: liveExec, log, evidence: EVIDENCE, now: Date.now, sleep: ms => new Promise(r => setTimeout(r, ms)),
     run: (cmd, args) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit'}).status ?? 1};
   const [first, ...rest] = process.argv.slice(2);
-  const work = first === 'gated' ? gated(rest[0] === '--' ? rest.slice(1) : rest, ctx) : sequence(process.argv.slice(2), ctx).then(() => 0);
+  // gated [--pause [--mirror <path on the mini>]] -- <command>: --pause is for a GUI-bound group (MAWS DL 58). A pause
+  // watcher (scripts/mini-pause.mjs) runs beside the command, which gets the pause file as CUA_PAUSE_FILE (the mirror's
+  // path, for a group that runs on the mini) and waits at its cell boundaries; the watcher ends with it.
+  const options = [];
+  while (rest[0] === '--pause' || rest[0] === '--mirror') options.push(...(rest[0] === '--mirror' ? rest.splice(0, 2) : rest.splice(0, 1)));
+  if (rest[0] === '--') rest.shift();
+  if (first === 'gated' && options.includes('--pause')) {
+    const file = join(EVIDENCE, 'mini-rules', `pause-${process.pid}.json`), mirror = options[options.indexOf('--mirror') + 1];
+    const watcher = spawn(process.execPath, [join(ROOT, 'scripts/mini-pause.mjs'), 'watch', '--file', file, '--log', join(EVIDENCE, 'mini-rules', 'pauses.log'), ...(options.includes('--mirror') ? ['--mirror', mirror] : [])],
+      {stdio: ['ignore', 'ignore', 'inherit']});
+    log(`pause watcher ${watcher.pid} for gated ${rest.join(' ')}`);
+    ctx.run = (cmd, args) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit', env: {...process.env, CUA_PAUSE_FILE: options.includes('--mirror') ? mirror : file}}).status ?? 1;
+    process.once('exit', () => watcher.kill('SIGTERM'));
+  }
+  const work = first === 'gated' ? gated(rest, ctx) : sequence(process.argv.slice(2), ctx).then(() => 0);
   work.then(code => { process.exitCode = code; }, error => { console.error(error.message); process.exitCode = error instanceof Stop ? 4 : 1; });
 }

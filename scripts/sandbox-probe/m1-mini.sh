@@ -71,12 +71,20 @@ own-sandbox)
   ;;
 cfprefs)
   before=${2:?before sha}; after=${3:?after sha}; profile=${4:?harness profile}; mkdir -p "$E/cfprefs"
+  # GUI-bound: the suites pause at their next cell while MAWS CI's mac lane is busy or has a macOS job queued (MAWS DL 58).
+  # The watcher runs here, from this checkout, whichever commit a side prepares on the mini; it is this item's own
+  # process, ended with it. Its log is evidence; each run's pauses are in its meta.json.
+  PAUSE="$L/cua115-cfprefs-pause.json"
+  rm -f "$PAUSE"
+  ${M1_MINI_PAUSE_WATCH:-node scripts/mini-pause.mjs} watch --file "$PAUSE" --log "$E/cfprefs/pauses.log" &
+  WATCHER=$!
+  trap 'status=$?; kill "$WATCHER" 2>/dev/null || true; wait "$WATCHER" 2>/dev/null || true; exit $status' EXIT
   for side in before after; do
     if [ "$side" = before ]; then sha=$before; else sha=$after; fi
     if node scripts/repl-parity.mjs prepare --device mini --commit "$sha" --profile "$profile" >/dev/null; then
       step "$side: start the denial log" remote "rm -f /tmp/cua115-denials-$side.ndjson; nohup log stream --style ndjson --predicate 'sender == \"Sandbox\"' > /tmp/cua115-denials-$side.ndjson 2>/dev/null & echo \$! > /tmp/cua115-denials-$side.pid"
       for suite in cells services; do
-        step "$side $suite run" node scripts/repl-parity.mjs run --device mini --host cua --suite "$suite" --out "$E/cfprefs/$side-$suite"
+        step "$side $suite run" node scripts/repl-parity.mjs run --device mini --host cua --suite "$suite" --out "$E/cfprefs/$side-$suite" --pause-file "$PAUSE"
       done
       step "$side: stop the denial log" remote "kill \$(cat /tmp/cua115-denials-$side.pid); rm -f /tmp/cua115-denials-$side.pid"
       step "$side: collect the denial log" scp -q "mini:/tmp/cua115-denials-$side.ndjson" "$L/cua115-denials-$side.ndjson"

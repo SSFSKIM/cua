@@ -5,6 +5,12 @@ import {createNormalizer} from '../browser-parity/normalize.mjs';
 import {exactImage,imageHash} from '../browser-parity/image-hash.mjs';
 import {assertPreparedFacts} from './provenance.mjs';
 import {validateAttestations} from './compare.mjs';
+import {NO_PAUSE} from '../mini-pause.mjs';
+// The run's pause gate (scripts/mini-pause.mjs pauseGate, MAWS DL 58), set once per run: every lane's cells wait at
+// their boundary while the mini's CI runner is busy. A cell that waited, or during which the pause turned on, keeps its
+// raw `ms` but is marked `pause`, and its timing is handed to the scenario's assertion as undefined: dropped, not judged.
+let runPause=NO_PAUSE;
+export const usePauseGate=gate=>{runPause=gate??NO_PAUSE;};
 export class AttestedConnections {
   constructor(host){this.host=host;this.clients=[];this.hostAttestations=[];this.externalConnections=[];}
   async open(command,{capabilities}={}){
@@ -37,19 +43,24 @@ export class AttestedConnections {
   // Every connection is closed before a failed one is reported, so one failure leaves no other serve running.
   async close(){const failed=[];for(const {client,connection} of this.clients){const status=await client.close();if(status.code!==0)failed.push(`${connection} (${status.code??status.signal})`);}if(failed.length)throw new Error(`Harness connection cleanup failed: ${failed.join(', ')}`);}
 }
-export async function runRawScenario(scenario,{client,emit,checkout,reset=true,context={},profiles,replaceCode=code=>code}) {
-  const results=[],timings=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});
+export async function runRawScenario(scenario,{client,emit,checkout,reset=true,context={},profiles,replaceCode=code=>code,pause=runPause}) {
+  const results=[],timings=[],pausedCells=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});
   if(reset)await client.call('js_reset');
+  // A cell's pause: waited at its boundary, or the pause file appeared while it ran.
+  const pausedDuring=(where,waited)=>{if(waited)return waited;if(!pause.active())return null;const during={where,reason:pause.reason(),during:true};pause.note(during);return during;};
+  const timed=(paused,ms)=>{if(paused){pausedCells.push(timings.length);timings.push(undefined);}else timings.push(ms);};
   for(const cell of scenario.cells){
+    const where=`${scenario.id} ${cell.label??cell.op}`,waited=await pause.wait(where);
     if(cell.answer)client.setElicitationAnswer(async()=>{if(cell.answerDelayMs)await new Promise(r=>setTimeout(r,cell.answerDelayMs));return cell.answer;});
     const start=performance.now();let result,timer;
     if(cell.op==='turn'){
       const replies=await observeTurnReplies(cell,{client}),witnessed=cell.witnessCount!==undefined;
       if(replies.some(r=>r.result.isError))throw new Error('Turn completion refused');
-      results.push(witnessed?{replies}:replies[0].result);timings.push(Math.max(...replies.map(r=>r.hostTurnMs)));
+      const paused=pausedDuring(where,waited);
+      results.push(witnessed?{replies}:replies[0].result);timed(paused,Math.max(...replies.map(r=>r.hostTurnMs)));
       for(const [index,reply] of replies.entries()){
         const {afterHookMs,...proof}=reply.observation;
-        await emit({case:scenario.id,cell:turnCellLabels(cell)[index],ok:true,...await normalizeRawResult(reply.result,{normalize}),...(witnessed?{value:proof}:{}),ms:{elapsed:reply.elapsed,hostTurn:reply.hostTurnMs,...(witnessed?{afterHook:afterHookMs}:{})}});
+        await emit({case:scenario.id,cell:turnCellLabels(cell)[index],ok:true,...await normalizeRawResult(reply.result,{normalize}),...(witnessed?{value:proof}:{}),ms:{elapsed:reply.elapsed,hostTurn:reply.hostTurnMs,...(witnessed?{afterHook:afterHookMs}:{})},...(paused?{pause:paused}:{})});
       }
       continue;
     }
@@ -57,8 +68,9 @@ export async function runRawScenario(scenario,{client,emit,checkout,reset=true,c
       if(cell.op==='profiles'){
         if(!profiles)throw new Error('Profiles host observer unavailable');
         const observed=await profiles();result=observed.result;
-        results.push(observed);timings.push(performance.now()-start);
-        await emit({case:scenario.id,cell:cell.label,ok:true,...await normalizeRawResult(result,{normalize}),ms:performance.now()-start});continue;
+        const paused=pausedDuring(where,waited),ms=performance.now()-start;
+        results.push(observed);timed(paused,ms);
+        await emit({case:scenario.id,cell:cell.label,ok:true,...await normalizeRawResult(result,{normalize}),ms,...(paused?{pause:paused}:{})});continue;
       }
       if(cell.op==='reset')result=await client.call('js_reset');
       else if(cell.op==='endTask')result=await client.call('end_task');
@@ -70,12 +82,13 @@ export async function runRawScenario(scenario,{client,emit,checkout,reset=true,c
         result=await pending;
       }
     } finally {clearTimeout(timer);}
-    timings.push(performance.now()-start);results.push(result);
+    const ms=performance.now()-start,paused=pausedDuring(where,waited);
+    timed(paused,ms);results.push(result);
     const raw=await normalizeRawResult(result,{normalize,imageMode:scenario.imageMode??'exact',tool:cell.op==='endTask'?'end_task':undefined});
     // A tool error is raw outcome data; only independent assertions decide if the error was expected.
-    await emit({case:scenario.id,cell:cell.label,ok:true,...raw,...(scenario.screenshotTolerance!==undefined?{screenshotTolerance:scenario.screenshotTolerance}:{}),ms:performance.now()-start});
+    await emit({case:scenario.id,cell:cell.label,ok:true,...raw,...(scenario.screenshotTolerance!==undefined?{screenshotTolerance:scenario.screenshotTolerance}:{}),ms,...(paused?{pause:paused}:{})});
   }
-  let assertion;try{assertion=await scenario.assert({results,timings,...context,...(context.getFixtureState?{fixtureState:await context.getFixtureState()}: {})});if(!assertion||typeof assertion.ok!=='boolean')throw new Error('Invalid independent assertion');}catch(e){assertion={ok:false,reason:e.message};}
+  let assertion;try{assertion=await scenario.assert({results,timings,pausedCells,...context,...(context.getFixtureState?{fixtureState:await context.getFixtureState()}: {})});if(!assertion||typeof assertion.ok!=='boolean')throw new Error('Invalid independent assertion');}catch(e){assertion={ok:false,reason:e.message};}
   await emit({case:scenario.id,assertion});return assertion;
 }
 

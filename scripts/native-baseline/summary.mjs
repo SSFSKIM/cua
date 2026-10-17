@@ -49,6 +49,11 @@ export function readRuns(dir) {
   });
 }
 
+// The harness's default sample plan: what a run measures unless told otherwise, and the only plan whose comparison is
+// acceptance evidence (a smaller one is a diagnostic, scripts/native-baseline/compare.mjs compareSameHost).
+export const DEFAULT_PLAN = Object.freeze({samples: 30, cold: 5, tasks: 10});
+export const isDefaultPlan = plan => Object.entries(DEFAULT_PLAN).every(([key, n]) => plan?.[key] === n);
+
 // The surface a run measured: recorded since #115 added the browser-surface mode; every earlier run was a native one.
 export const surfaceOf = meta => meta.surface ?? 'computer';
 

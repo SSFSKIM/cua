@@ -61,7 +61,7 @@ import {linuxAdapter} from './native-baseline/linux.mjs';
 import {macosAdapter} from './native-baseline/macos.mjs';
 import {assertOwnNode, assertSurface, handshakeScript, HOSTS, preflightScript, PROTOCOL_VERSION, serveCommand, preparationScript, SPIKE_SCRIPT} from './native-baseline/remote.mjs';
 import {browserAdapter} from './native-baseline/browser.mjs';
-import {hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
+import {DEFAULT_PLAN, hostProblem, readRuns, renderMarkdown, summarize} from './native-baseline/summary.mjs';
 import {compare, compareSameHost, renderComparison} from './native-baseline/compare.mjs';
 
 // Cold connections cycle through this plan; each is labelled by the record it found.
@@ -127,7 +127,7 @@ export async function run(options) {
   return code;
 }
 
-async function runPrepared({device, out, host, node, experiment, prepared, surface, samples = 30, cold = 5, tasks = 10, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, io, log = console.log}) {
+async function runPrepared({device, out, host, node, experiment, prepared, surface, samples = DEFAULT_PLAN.samples, cold = DEFAULT_PLAN.cold, tasks = DEFAULT_PLAN.tasks, display = prepared.xSession.DISPLAY ?? ':0', spikeWaitMs = 3 * 3600_000, io, log = console.log}) {
   if (device === 'local') throw new Error('the native baseline runs on a device (--device <ssh alias>), never on this machine');
   if (!HOSTS.includes(host)) throw new Error('run requires --host vendor|cua');
   assertOwnNode(host, node);
@@ -363,7 +363,7 @@ export async function main(argv = process.argv.slice(2)) {
   const {values, positionals} = parseArgs({args: argv, allowPositionals: true, options: {
     device: {type: 'string'}, host: {type: 'string'}, node: {type: 'string'}, display: {type: 'string'}, experiment: {type:'string'}, commit:{type:'string'}, out: {type: 'string'},
     surfaces: {type: 'string', default: 'computer'}, 'same-host': {type: 'boolean', default: false},
-    samples: {type: 'string', default: '30'}, cold: {type: 'string', default: '5'}, tasks: {type: 'string', default: '10'}}});
+    samples: {type: 'string', default: String(DEFAULT_PLAN.samples)}, cold: {type: 'string', default: String(DEFAULT_PLAN.cold)}, tasks: {type: 'string', default: String(DEFAULT_PLAN.tasks)}}});
   const [action, dir, other] = positionals;
   if (action === 'prepare') { process.stdout.write(execute(nativePrepareCommand({device:values.device,commit:values.commit}))); return 0; }
   if (action === 'summary') { if (!dir) throw new Error('summary requires the evidence directory'); return summary(dir); }

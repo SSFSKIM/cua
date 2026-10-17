@@ -27,7 +27,8 @@
 //          (cuaLaunch); until then it is refused.
 //
 // `verdict` applies acceptance 13 to one role's pair of results: the grant is kept only if the denying control hung at
-// least once and the grant's runs neither hung nor failed to launch; a control that did not hang is inconclusive.
+// least once and the grant's runs neither hung nor failed to launch; a control that did not hang is inconclusive. Only
+// 80-run probes bounded at 15 s give that verdict; a smaller pair is labelled diagnostic, with what the rule gives it.
 import {spawn, execFileSync} from 'node:child_process';
 import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {arch, homedir, platform, tmpdir} from 'node:os';
@@ -158,15 +159,26 @@ export async function probe({launcher, role, runs = 80, boundMs = 15_000, notifi
   return result;
 }
 
+// Acceptance 13's measurement: 80 fresh children a configuration, each bounded at 15 s. Smaller probes are diagnostics.
+export const ACCEPTANCE = Object.freeze({runs: 80, boundMs: 15_000});
+
 // Acceptance 13's verdict on one role's denying control and its grant (results of the same launcher, role, runs and
-// bound). -> {verdict: 'keep' | 'remove' | 'inconclusive', reason}.
+// bound, each with one outcome per run). -> {verdict: 'keep' | 'remove' | 'inconclusive', reason}; for a pair smaller
+// than ACCEPTANCE, {verdict: 'diagnostic', rule: <what the rule gives>, reason}, never a keep.
 export function tzVerdict(control, grant) {
   if (control?.notificationCenter !== 'deny' || grant?.notificationCenter !== 'allow') throw new Error('the control must be --notification-center deny and the grant --notification-center allow');
   for (const key of ['launcher', 'role', 'runs', 'boundMs']) if (control[key] !== grant[key]) throw new Error('the control and the grant must be runs of the same launcher, role, runs and bound');
+  for (const [label, r] of [['control', control], ['grant', grant]]) {
+    const {completed, hung, launcherFailure} = r.counts ?? {};
+    if (![completed, hung, launcherFailure].every(Number.isSafeInteger) || completed + hung + launcherFailure !== r.runs || r.results?.length !== r.runs)
+      throw new Error(`the ${label} does not account for each of its ${r.runs} runs`);
+  }
   const c = control.counts, g = grant.counts;
-  if (!(c.hung >= 1)) return {verdict: 'inconclusive', reason: `the denying control did not reproduce the hang (0 of ${control.runs}); the line is left out`};
-  if (g.hung === 0 && g.launcherFailure === 0) return {verdict: 'keep', reason: `the control hung ${c.hung} of ${control.runs}; with the line, 0 hung and 0 launcher failures of ${grant.runs}`};
-  return {verdict: 'remove', reason: `the control hung ${c.hung} of ${control.runs}; with the line, ${g.hung} hung and ${g.launcherFailure} launcher failures of ${grant.runs}`};
+  const ruled = !(c.hung >= 1) ? {verdict: 'inconclusive', reason: `the denying control did not reproduce the hang (0 of ${control.runs}); the line is left out`}
+    : g.hung === 0 && g.launcherFailure === 0 ? {verdict: 'keep', reason: `the control hung ${c.hung} of ${control.runs}; with the line, 0 hung and 0 launcher failures of ${grant.runs}`}
+    : {verdict: 'remove', reason: `the control hung ${c.hung} of ${control.runs}; with the line, ${g.hung} hung and ${g.launcherFailure} launcher failures of ${grant.runs}`};
+  if (control.runs === ACCEPTANCE.runs && control.boundMs === ACCEPTANCE.boundMs) return ruled;
+  return {verdict: 'diagnostic', rule: ruled.verdict, reason: `${control.runs} runs bounded at ${control.boundMs} ms are a diagnostic, not acceptance 13's ${ACCEPTANCE.runs} runs at ${ACCEPTANCE.boundMs} ms (the rule gives ${ruled.verdict}: ${ruled.reason})`};
 }
 
 const integer = (value, name) => { const n = Number(value); if (!Number.isSafeInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`); return n; };

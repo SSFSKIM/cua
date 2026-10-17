@@ -12,6 +12,12 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {readRuns} from '../../scripts/native-baseline/summary.mjs';
 import {compareSameHost, renderComparison, SAME_HOST_JUDGED} from '../../scripts/native-baseline/compare.mjs';
+import {nativeEnvironment} from '../../scripts/native-baseline/remote.mjs';
+import {sandboxLaunchOf} from '../../scripts/native-baseline/provenance.mjs';
+import {buildLaunch} from '../../src/runtime/launch.mjs';
+import {parsePin, runtimeFor} from '../../src/runtime/manifest.mjs';
+import {scratch as runtimeScratch, fixturePin} from '../fixtures/runtime-fixture.mjs';
+import {realpathSync} from 'node:fs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/native-baseline.mjs', import.meta.url));
 const OWN_NODE = {path: '/scratch/node/24.22.0/bin/node', version: 'v24.22.0'};
@@ -20,24 +26,25 @@ const BEFORE = {launcher: 'codex-cli', tmpdir: 'inherited'}, AFTER = {launcher: 
 const attest = (host, launch) => ({host, serverInfo: host === 'cua' ? {name: 'cua-repl-host', version: '0.2.0'} : {name: 'node_repl', version: '0.1.0'},
   _meta: {'cua/nativeExecution': host === 'cua' ? OWN_NODE : VENDOR_NODE, 'cua/sandboxLaunch': launch, ...(host === 'cua' ? {'cua/replHost': {host: 'cua', version: '0.2.0'}} : {})}});
 
-// The mini's own-host browser-only session (two connections a run: the cold plan of 2).
+// The mini's own-host browser-only session, run at the harness's default plan (five cold connections a run).
+const PLAN = {samples: 30, cold: 5, tasks: 10, coldPlan: ['miss', 'hit', 'miss', 'hit', 'hit']};
 function browserMeta({host = 'cua', launch = BEFORE, experiment = '115-m0', n = 1, commit = 'aaaaaaa', ...extra} = {}) {
   return {measurement: {schema: 2, experiment, freshInstall: true}, nodeMode: 'managed', answeringNode: host === 'cua' ? OWN_NODE : VENDOR_NODE, sandboxLaunch: launch,
     controllerIdentity: {hostname: 'controller', platform: 'darwin', arch: 'arm64', os: '25.6', cpu: {model: 'Apple', count: 10}},
     deviceIdentity: {alias: 'mini', arch: 'arm64', hostname: 'mini', os: {name: 'macOS', version: '27.0'}, cpu: {model: 'Apple M2 Pro', count: 10}},
     xSession: {}, ownNode: OWN_NODE, home: '/scratch', userHome: '/scratch/home', node: 'v24.18.0', checkout: '/Users/someone/cua-parity',
     load: {device: {before: 'up', after: 'up'}, controller: {before: 'up', after: 'up'}},
-    device: 'mini', host, surface: 'browser', hostAttestations: [attest(host, launch), attest(host, launch)], connections: 2, commit, complete: true,
-    protocolVersion: '2025-06-18', platform: 'darwin', plan: {samples: 30, cold: 2, tasks: 10, coldPlan: ['miss', 'hit', 'miss', 'hit', 'hit']},
+    device: 'mini', host, surface: 'browser', hostAttestations: Array.from({length: 5}, () => attest(host, launch)), connections: 5, commit, complete: true,
+    protocolVersion: '2025-06-18', platform: 'darwin', plan: PLAN,
     environment: {CUA_REPL_HOST: host, CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'},
     runtime: {release: '26.928.40906-darwin-arm64'}, hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 16 * 1024 ** 3},
     os: {name: 'macOS', version: '27.0', build: '26A428'}, display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2},
     service: {surface: 'browser'}, sandbox: {mode: 'scoped', explicit: false}, started: `2026-10-17T0${n}:00:00Z`, finished: `2026-10-17T0${n}:05:00Z`, ...extra};
 }
-function browserRows({firstJs = {miss: 580, hit: 480}, slow = 1} = {}) {
+function browserRows({firstJs = {miss: 580, hit: 480}, slow = 1, cold = PLAN.coldPlan} = {}) {
   return [
     ...[1, 2, 3, 4, 5].map(s => ({op: 'ssh.roundtrip', sample: s, ok: true, wallMs: 100})),
-    ...[[1, 'miss'], [2, 'hit']].flatMap(([s, label]) => [
+    ...cold.map((label, i) => [i + 1, label]).flatMap(([s, label]) => [
       {op: `cold.${label}.initialize`, sample: s, ok: true, wallMs: 900 * slow, planned: label},
       {op: `cold.${label}.tools_list`, sample: s, ok: true, wallMs: 20 * slow, planned: label},
       {op: `cold.${label}.first_js`, sample: s, ok: true, wallMs: firstJs[label], inCellMs: 0.01, planned: label},
@@ -57,12 +64,12 @@ function linuxMeta({sandbox = 'disabled', launch = BEFORE, n = 1, ...extra} = {}
     runtime: {release: '26.928.40906-linux-arm64'}, os: {name: 'Ubuntu', version: '24.04.3 LTS', build: '6.14.0-gcp'}, display: {pixels: '1280 x 800', resolution: '1280 x 800', scale: 1},
     hardware: {model: 'Google Compute Engine', chip: 'arm64, 4 CPUs', memoryBytes: 16 * 1024 ** 3},
     service: {surface: 'computer', engine: 'sky', answered: 'vendor', helper: 'pinned runtime'}, sandbox: {mode: sandbox, explicit: false},
-    plan: {samples: 2, cold: 2, tasks: 1, coldPlan: ['miss', 'hit', 'miss', 'hit', 'hit']}, ...extra};
+    hostAttestations: Array.from({length: 6}, () => attest('cua', launch)), connections: 6, ...extra};
 }
 function linuxRows() {
   const each = (op, n) => Array.from({length: n}, (_, i) => ({op, sample: i + 1, ok: true, wallMs: 30}));
-  return [...browserRows(), ...each('warm.noop', 2), ...each('warm.getState', 2), ...each('warm.listApps', 2), ...each('setup.findWindow', 1), ...each('bind.getApp', 1),
-    ...each('warm.getAXState', 2), ...each('warm.getScreenshot', 2), ...each('task.act', 1), ...each('task.verify', 1), ...each('task.clear', 1), ...each('task.total', 1),
+  return [...browserRows(), ...each('warm.noop', 30), ...each('warm.getState', 30), ...each('warm.listApps', 30), ...each('setup.findWindow', 1), ...each('bind.getApp', 1),
+    ...each('warm.getAXState', 30), ...each('warm.getScreenshot', 30), ...each('task.act', 10), ...each('task.verify', 10), ...each('task.clear', 10), ...each('task.total', 10),
     ...METHODS.flatMap(op => each(op, 1)), ...each('end_task', 1)];
 }
 const linuxThree = (metaOptions = {}) => [1, 2, 3].map(n => ({meta: linuxMeta({n, ...metaOptions}), rows: linuxRows()}));
@@ -130,7 +137,7 @@ test('any other difference between the sides gives no verdict', t => {
     ['another runtime release', three(), three({runtime: {release: '26.999.1-darwin-arm64'}}), /release differs/],
     ['another surface', three(), three({surface: 'computer', service: {surface: 'computer', engine: 'sky', answered: 'vendor'}}), /differs/],
     ['another device', three(), three({device: 'cua-gce'}), /device differs/],
-    ['another plan', three(), three({plan: {samples: 30, cold: 5, tasks: 10, coldPlan: []}}), /plan differs/],
+    ['another plan', three(), three({plan: {...PLAN, samples: 10}}), /sample plan differs/],
     ['a side mixing two sittings', three(), three().map((r, i) => (i === 1 ? {...r, meta: {...r.meta, measurement: {...r.meta.measurement, experiment: 'other'}}} : r)), /candidate run-2: experiment environment differs/],
     ['a side with two launch witnesses', three(), three().map((r, i) => (i === 2 ? {...r, meta: browserMeta({n: 3, launch: AFTER})} : r)), /candidate: run-3 .*sandbox launch/],
     ['an incomplete run', three(), three({complete: false}), /incomplete/],
@@ -153,4 +160,39 @@ test('the CLI compare --same-host prints the same-host comparison and exits 0 on
   assert.match(fail.stdout, /Verdict: \*\*FAIL\*\*/);
   // Without --same-host, two runs of one host are no vendor/cua comparison.
   assert.equal(spawnSync(process.execPath, [SCRIPT, 'compare', before, after], {encoding: 'utf8'}).status, 1);
+});
+
+// The baseline's TMPDIR as a real M0 run records it: the prepared serve's generated environment (env -i, so no TMPDIR),
+// the production launch built from it, and the witness of that launch. The comparison must accept that baseline
+// against an after run with the session's own TMPDIR, and record the change.
+test('a prepared serve has no TMPDIR, its launch\'s witness says so, and the per-session TMPDIR after it is the permitted change', t => {
+  const s = runtimeScratch();
+  t.after(s.cleanup);
+  const home = realpathSync(s.dir);
+  const generated = nativeEnvironment({home, userHome: join(home, 'home'), host: 'vendor', platform: 'darwin'});
+  const shown = spawnSync('/bin/sh', ['-c', `env ${generated} ${JSON.stringify(process.execPath)} -e 'console.log(JSON.stringify(process.env))'`], {encoding: 'utf8', env: {PATH: process.env.PATH, TMPDIR: '/var/folders/caller/T/'}});
+  assert.equal(shown.status, 0, shown.stderr);
+  const serveEnv = JSON.parse(shown.stdout);
+  assert.equal(serveEnv.TMPDIR, undefined, 'env -i drops the caller\'s TMPDIR');
+  const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
+  const launch = buildLaunch({runtime, home, sessionId: '6f1c2d3e-0000-4000-8000-000000000001', ambient: serveEnv});
+  const recorded = sandboxLaunchOf(launch, home);
+  assert.deepEqual(recorded, {launcher: 'codex-cli', tmpdir: 'unset'});
+  const result = judge(t, three({launch: recorded}), three({launch: AFTER}));
+  assert.equal(result.verdict, 'PASS', result.problems.join(' | '));
+  assert.deepEqual(result.permitted.map(p => [p.field, p.baseline, p.candidate]), [['sandbox launcher', 'codex-cli', 'cua'], ['TMPDIR', 'unset', 'session']]);
+  // The reverse is no per-session TMPDIR, and is refused.
+  assert.equal(judge(t, three({launch: AFTER}), three({launch: {launcher: 'cua', tmpdir: 'unset'}})).verdict, 'NO VERDICT');
+});
+
+test('runs smaller than the default plan are a diagnostic: the rule\'s verdict is reported, never as a PASS', t => {
+  const small = (options = {}) => [1, 2, 3].map(n => ({meta: browserMeta({n, plan: {...PLAN, cold: 2}, connections: 2, hostAttestations: [attest('cua', BEFORE), attest('cua', BEFORE)], ...options}),
+    rows: browserRows({cold: ['miss', 'hit']})}));
+  const result = judge(t, small(), small());
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.verdict, 'DIAGNOSTIC');
+  assert.deepEqual(result.diagnostic.verdict, 'PASS');
+  assert.match(renderComparison(result), /Verdict: \*\*DIAGNOSTIC\*\* \(the rule gives PASS; .*not acceptance evidence\)/);
+  const cli = spawnSync(process.execPath, [SCRIPT, 'compare', '--same-host', side(t, small()), side(t, small())], {encoding: 'utf8'});
+  assert.equal(cli.status, 1, 'a diagnostic never exits as a pass');
 });

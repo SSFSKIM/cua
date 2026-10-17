@@ -111,11 +111,40 @@ test('the CLI accepts the documented options, writes its result and refuses anyt
 });
 
 test('the #138 verdict keeps the grant only when the denying control hangs and the grant neither hangs nor fails to launch', () => {
-  const run = (notificationCenter, counts) => ({launcher: 'cua', role: 'kernel', runs: 80, boundMs: 15000, notificationCenter, counts: {completed: 80 - counts.hung - counts.launcherFailure, ...counts}});
+  const run = (notificationCenter, counts, {runs = 80, boundMs = 15000} = {}) => ({launcher: 'cua', role: 'kernel', runs, boundMs, notificationCenter,
+    counts: {completed: runs - counts.hung - counts.launcherFailure, ...counts}, results: Array.from({length: runs}, (_, i) => ({run: i + 1}))});
   assert.equal(tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 0})).verdict, 'keep');
   assert.equal(tzVerdict(run('deny', {hung: 0, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 0})).verdict, 'inconclusive');
   assert.equal(tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), run('allow', {hung: 1, launcherFailure: 0})).verdict, 'remove');
   assert.equal(tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 2})).verdict, 'remove');
   assert.throws(() => tzVerdict(run('allow', {hung: 3, launcherFailure: 0}), run('allow', {hung: 0, launcherFailure: 0})), /control.*deny/);
   assert.throws(() => tzVerdict(run('deny', {hung: 3, launcherFailure: 0}), {...run('allow', {hung: 0, launcherFailure: 0}), role: 'worker'}), /same launcher, role, runs and bound/);
+});
+
+test('a pair smaller than 80 runs at 15 s is a diagnostic: what the rule gives is reported, never a keep', () => {
+  const run = (notificationCenter, hung, {runs, boundMs}) => ({launcher: 'cua', role: 'kernel', runs, boundMs, notificationCenter,
+    counts: {completed: runs - hung, hung, launcherFailure: 0}, results: Array.from({length: runs}, (_, i) => ({run: i + 1}))});
+  for (const size of [{runs: 1, boundMs: 15000}, {runs: 80, boundMs: 1500}, {runs: 79, boundMs: 15000}]) {
+    const verdict = tzVerdict(run('deny', 1, size), run('allow', 0, size));
+    assert.equal(verdict.verdict, 'diagnostic', JSON.stringify(size));
+    assert.equal(verdict.rule, 'keep');
+    assert.match(verdict.reason, /diagnostic, not acceptance 13's 80 runs at 15000 ms/);
+  }
+  // Counts that do not account for every run are refused.
+  const short = run('allow', 0, {runs: 80, boundMs: 15000});
+  short.results.pop();
+  assert.throws(() => tzVerdict(run('deny', 1, {runs: 80, boundMs: 15000}), short), /does not account for each of its 80 runs/);
+});
+
+test('the CLI verdict exits 0 only for an acceptance keep', t => {
+  const dir = scratch(t);
+  const write = (name, notificationCenter, hung, runs) => { const file = join(dir, name); writeFileSync(file, JSON.stringify({launcher: 'cua', role: 'kernel', runs, boundMs: 15000, notificationCenter,
+    counts: {completed: runs - hung, hung, launcherFailure: 0}, results: Array.from({length: runs}, (_, i) => ({run: i + 1}))})); return file; };
+  const verdict = (...files) => spawnSync(process.execPath, [SCRIPT, 'verdict', ...files], {encoding: 'utf8'});
+  const keep = verdict(write('c80.json', 'deny', 2, 80), write('g80.json', 'allow', 0, 80));
+  assert.equal(keep.status, 0, keep.stderr);
+  assert.match(keep.stdout, /"verdict":"keep"/);
+  const small = verdict(write('c1.json', 'deny', 1, 1), write('g1.json', 'allow', 0, 1));
+  assert.equal(small.status, 1);
+  assert.match(small.stdout, /"verdict":"diagnostic"/);
 });

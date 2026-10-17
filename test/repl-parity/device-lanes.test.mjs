@@ -2,14 +2,11 @@
 // lanes (native, API, capability) run on any declared device of the right platform instead of naming cua-linux.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
-import {tmpdir} from 'node:os';
 import {declaredDevice} from '../../scripts/repl-parity/devices.mjs';
 import {nativeCommand} from '../../scripts/repl-parity/native.mjs';
 import {apiCommand} from '../../scripts/repl-parity/api-lanes.mjs';
 import {capabilityFixtureCommand} from '../../scripts/repl-parity/capability.mjs';
-import {main} from '../../scripts/repl-parity.mjs';
+import {parseSelection} from '../../scripts/repl-parity.mjs';
 
 const facts = {platform: 'linux', checkout: '/fixture/cua-parity', home: '/fixture/home'};
 
@@ -42,12 +39,13 @@ test('the API and capability lanes accept any declared device and still refuse a
   assert.throws(() => capabilityFixtureCommand({...prepared, device: 'local'}), /remote/);
 });
 
-test('the parity CLI selects a declared device, and pending declarations need a Linux one', async t => {
-  const out = mkdtempSync(join(tmpdir(), 'cua-parity-device-'));
-  t.after(() => rmSync(out, {recursive: true, force: true}));
-  // A declared device gets past selection to its (absent) preparation journal.
-  await assert.rejects(main(['run', '--device', 'cua-gce', '--host', 'vendor', '--suite', 'all', '--out', join(out, 'run')]), /ENOENT|no such file/);
-  await assert.rejects(main(['run', '--device', 'cua-nowhere', '--host', 'vendor', '--out', join(out, 'run')]), /Invalid parity selection/);
-  await assert.rejects(main(['run', '--device', 'cua-gce', '--host', 'cua', '--pending-cell', 'x', '--pending-reason', 'y', '--out', join(out, 'run')]), /ENOENT|no such file/);
-  await assert.rejects(main(['run', '--device', 'mini', '--host', 'cua', '--pending-cell', 'x', '--pending-reason', 'y', '--out', join(out, 'run')]), /live Linux run/);
+// Selection only: parseSelection reads no preparation journal and starts nothing, so no live device is ever reached.
+test('the parity CLI selects a declared device, and pending declarations need a Linux one', () => {
+  const pending = ['--pending-cell', 'x', '--pending-reason', 'y'];
+  assert.equal(parseSelection(['run', '--device', 'cua-gce', '--host', 'vendor', '--suite', 'all', '--out', '/nowhere']).v.device, 'cua-gce');
+  assert.equal(parseSelection(['run', '--device', 'cua-gce', '--host', 'cua', ...pending, '--out', '/nowhere']).v['pending-reason'], 'y');
+  assert.equal(parseSelection(['diff', 'a', 'b']).v.device, 'local');
+  assert.throws(() => parseSelection(['run', '--device', 'cua-nowhere', '--host', 'vendor', '--out', '/nowhere']), /Invalid parity selection/);
+  assert.throws(() => parseSelection(['run', '--device', 'mini', '--host', 'cua', ...pending, '--out', '/nowhere']), /live Linux run/);
+  assert.throws(() => parseSelection(['run', '--device', 'cua-gce', '--host', 'both']), /Invalid parity selection/);
 });

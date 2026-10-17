@@ -22,9 +22,11 @@
 // side must be a whole, attested triple of one sitting; across the sides everything must match except what the change
 // is: the commit, the sitting, and the configuration differences acceptance 11 permits, each recorded in the result
 // (`permitted`): the sandbox launcher (the Codex CLI to cua's own or its compat executable), TMPDIR (the caller's to the
-// session's own), and on Linux computer sessions the platform-default sandbox mode from disabled to scoped.
+// session's own), and on Linux computer sessions the platform-default sandbox mode from disabled to scoped. Only runs of
+// the harness's default plan (summary.mjs DEFAULT_PLAN) are acceptance evidence: a comparison of smaller runs is
+// labelled DIAGNOSTIC, with the verdict it would have had, and is never a PASS.
 import {isDeepStrictEqual} from 'node:util';
-import {attestation, operationRank, summarize, surfaceOf} from './summary.mjs';
+import {attestation, DEFAULT_PLAN, isDefaultPlan, operationRank, summarize, surfaceOf} from './summary.mjs';
 import {comparisonEnvironment, environmentProblems} from './environment.mjs';
 
 export const TOLERANCE = {ratio: 0.1, floorMs: 500};
@@ -140,7 +142,10 @@ export const SAME_HOST_JUDGED = ['cold.miss.first_js', 'cold.hit.first_js'];
 // the problems for any other: the sandbox mode (Linux computer sessions, platform default, disabled -> scoped), the
 // launcher and TMPDIR (the sandbox launch witness, scripts/native-baseline/provenance.mjs sandboxLaunchOf).
 const LAUNCHER_MOVES = [['codex-cli', 'cua'], ['codex-cli', 'cua-compat']];
-const TMPDIR_MOVES = [['inherited', 'session']];
+// The per-session TMPDIR is the permitted change whatever the baseline had: a prepared serve starts from `env -i`
+// (scripts/native-baseline/remote.mjs nativeEnvironment), so a baseline launch has no TMPDIR at all ('unset'); an
+// unprepared one copies the caller's ('inherited').
+const TMPDIR_MOVES = [['inherited', 'session'], ['unset', 'session']];
 function permittedChanges(before, after) {
   const permitted = [], problems = [];
   const mode = s => (s?.mode ? `${s.mode} (${s.explicit ? 'CUA_SHIM_SANDBOX' : 'platform default'})` : null);
@@ -163,7 +168,8 @@ function permittedChanges(before, after) {
 }
 
 // -> compare()'s result for one host's runs before a change (`baselineRuns`) and after it (`candidateRuns`), with
-// `mode: 'same-host'` and the permitted differences found (`permitted`).
+// `mode: 'same-host'`, the permitted differences found (`permitted`) and, for runs of another plan than the default,
+// verdict 'DIAGNOSTIC' and `diagnostic: {verdict, reason}` (the verdict the rule gives them, never acceptance).
 export function compareSameHost(baselineRuns, candidateRuns) {
   const expected = baselineRuns[0]?.meta?.host ?? null;
   const usage = 'compare --same-host compares one host before and after';
@@ -189,9 +195,13 @@ export function compareSameHost(baselineRuns, candidateRuns) {
     return judged;
   });
   for (const op of SAME_HOST_JUDGED) if (!ops.includes(op)) operations.push({op, kind: 'latency', basis: null, baseline: null, candidate: null, limitMs: null, verdict: 'fail', reasons: ['no samples on either side']});
-  const verdict = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
+  const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
+  const small = [...baselineRuns, ...candidateRuns].filter(r => !isDefaultPlan(r.meta.plan)).map(r => r.name);
+  const diagnostic = ruled !== 'NO VERDICT' && small.length
+    ? {verdict: ruled, reason: `runs of another plan than the default (${DEFAULT_PLAN.cold} cold, ${DEFAULT_PLAN.samples} warm, ${DEFAULT_PLAN.tasks} tasks) are diagnostics, not acceptance evidence`} : null;
   const describe = (side, a) => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: a, sshMedianMs: side.ssh});
-  return {mode: 'same-host', baseline: describe(baseline, left), candidate: describe(candidate, right), operations, permitted: changes.permitted, problems, verdict};
+  return {mode: 'same-host', baseline: describe(baseline, left), candidate: describe(candidate, right), operations, permitted: changes.permitted, problems,
+    verdict: diagnostic ? 'DIAGNOSTIC' : ruled, ...(diagnostic ? {diagnostic} : {})};
 }
 
 const fmt = value => (value === null || value === undefined ? '–' : value < 10 ? value.toFixed(2) : value.toFixed(1));
@@ -225,6 +235,6 @@ export function renderComparison(result) {
   const notes = result.operations.filter(o => o.reasons.length).map(o => `- ${o.op} (${o.verdict}): ${o.reasons.join('; ')}`);
   lines.push('', '## Failures and notes', '', ...(notes.length ? notes : ['None.']));
   lines.push('', '## Problems', '', ...(result.problems.length ? result.problems.map(p => `- ${p}`) : ['None: both sides are complete, attested and comparable.']));
-  lines.push('', `Verdict: **${result.verdict}**`);
+  lines.push('', `Verdict: **${result.verdict}**${result.diagnostic ? ` (the rule gives ${result.diagnostic.verdict}; ${result.diagnostic.reason})` : ''}`);
   return lines.join('\n') + '\n';
 }

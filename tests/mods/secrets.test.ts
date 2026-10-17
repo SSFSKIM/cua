@@ -2,7 +2,8 @@ import { describe, expect, mock, test, tier } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { MASK, guardReason, maskEcho, maskEdit, projectSlug, readField, rootFromGit, substitutionFor } from '../../hooks/mods/secrets'
+import { isDevcloudMarker } from '../../hooks/mods/one-guard'
+import { MASK, maskEcho, maskEdit, projectSlug, readField, rootFromGit } from '../../hooks/mods/secrets'
 
 tier('user')
 
@@ -85,17 +86,23 @@ const ok = (stdout = '') => ({ value: { exitCode: 0, stdout, stderr: '', isStdou
 const gitRepo = (_: unknown, e: { argv: readonly string[] }) => (e.argv[0] === 'git' ? ok('/work/repo/.git\n/work/repo\n') : undefined)
 
 // A headless session in /work/repo/sub whose ~/.config/claude-secrets holds
-// `files` and whose project folder holds `projectFiles`: the mod reads both at
-// session start, as it does in a session.
-const startWith = async ($: Engine, on: On, files: Record<string, string>, projectFiles: Record<string, string> = {}) => {
-  const tiers: Record<string, Record<string, string>> = { [GLOBAL_DIR]: files, [PROJECT_DIR]: projectFiles }
-  const entries = (names: Record<string, string>) => Object.keys(names).map((name) => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false }))
+// `files`, whose project folder holds `projectFiles` and whose other folders
+// (`otherTiers`, by path) hold theirs: the mods read them at session start, as
+// they do in a session.
+const startWith = async ($: Engine, on: On, files: Record<string, string>, projectFiles: Record<string, string> = {}, otherTiers: Record<string, Record<string, string>> = {}) => {
+  const tiers: Record<string, Record<string, string>> = { [GLOBAL_DIR]: files, [PROJECT_DIR]: projectFiles, ...otherTiers }
+  const entry = (name: string, kind: 'file' | 'dir') => ({ name, kind, size: 0, mtimeMs: 0, isLink: false })
+  // A folder's files, and the tiers beneath it as folders.
+  const entries = (path: string) => [
+    ...Object.keys(tiers[path] ?? {}).map((name) => entry(name, 'file')),
+    ...[...new Set(Object.keys(tiers).filter((dir) => dir.startsWith(`${path}/`)).map((dir) => dir.slice(path.length + 1).split('/')[0]!))].map((name) => entry(name, 'dir')),
+  ]
   mock.env(on, { HOME: '/home/t' })
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('process.run', (_, e) => gitRepo(_, e) ?? ok())
   on('fs.exists', (_, e) => ({ value: e.path in tiers && Object.keys(tiers[e.path] ?? {}).length > 0 }))
-  on('fs.list', (_, e) => ({ value: entries(tiers[e.path] ?? {}) }))
+  on('fs.list', (_, e) => ({ value: entries(e.path) }))
   on('fs.read', (_, e) => {
     const at = e.path.lastIndexOf('/')
     return { value: tiers[e.path.slice(0, at)]?.[e.path.slice(at + 1)] ?? '' }
@@ -297,7 +304,8 @@ describe('the tiers', () => {
     on('tool.call', () => ({ result: { stdout: 'sk-global-0123456789 sk-project-0123456789', stderr: '', interrupted: false } }))
     await startWith($, on, { API_KEY: 'sk-global-0123456789' }, { API_KEY: 'sk-project-0123456789' })
     const ran = await $.tool.call({ tool: 'Bash', command: 'env' })
-    expect(ran.result).toEqual({ stdout: '[secret:API_KEY] [secret:API_KEY]', stderr: '', interrupted: false })
+    // The project's key shadows the global one, whose handle says so (since 0.14.0).
+    expect(ran.result).toEqual({ stdout: '[secret:API_KEY@global] [secret:API_KEY]', stderr: '', interrupted: false })
   })
 })
 
@@ -322,41 +330,24 @@ test('the field stores what was typed, the last characters and Enter arriving to
   expect(seen.written?.stdin).toBe('sk-live-9')
 })
 
-describe('the guard', () => {
-  test('lets a command use a value through the substitution form', () => {
-    expect(guardReason({ tool: 'Bash', command: 'curl -H "Authorization: Bearer $(cat ~/.config/claude-secrets/API_KEY)" https://x' })).toBeUndefined()
-    expect(guardReason({ tool: 'Bash', command: 'K="$(cat "$HOME"/.config/claude-secrets/API_KEY)" ./run' })).toBeUndefined()
-    // The client registration `cua remote enroll --json` prints (clientRegisterCommand).
-    const register = 'claude mcp add --transport http cua_repl https://relay.example/d/a-b_c/mcp --header "Authorization: Bearer $(cat ~/.config/claude-secrets/CUA_DEVICE_a_b_c)"'
-    expect(guardReason({ tool: 'Bash', command: register })).toBeUndefined()
-  })
+const STORED = 'sk-live-0123456789'
+const bash = (stdout: string) => ({ stdout, stderr: '', interrupted: false })
 
-  test("admits the session's own project tier in that form, and no other project's", () => {
-    const own = 'curl -H "X-Key: $(cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY)" https://x'
-    const other = 'curl -H "X-Key: $(cat ~/.config/claude-secrets/projects/-Users-u-other/API_KEY)" https://x'
-    const form = substitutionFor('-Users-u-repo')
-    expect(guardReason({ tool: 'Bash', command: own }, form)).toBeUndefined()
-    expect(guardReason({ tool: 'Bash', command: '$(cat ~/.config/claude-secrets/GLOBAL_KEY)' }, form)).toBeUndefined()
-    expect(guardReason({ tool: 'Bash', command: other }, form)).toContain('not for reading')
-    // Before a project is known, only the global tier.
-    expect(guardReason({ tool: 'Bash', command: own }, substitutionFor())).toContain('not for reading')
+// The bottom of `tool.call`: records each call that ran and prints `stdout`.
+const printing = (on: On, stdout: string) => {
+  const ran: Record<string, unknown>[] = []
+  on('tool.call', (_, e) => {
+    ran.push(e as Record<string, unknown>)
+    return { result: bash(stdout) }
   })
+  return ran
+}
 
-  test("in a session, a command naming another project's secret is refused before it runs", async ($, on) => {
-    let ran = 0
-    on('tool.call', () => {
-      ran++
-      return { result: { stdout: '', stderr: '', interrupted: false } }
-    })
-    await startWith($, on, {}, { API_KEY: 'sk-project-0123456789' })
-    const own = await $.tool.call({ tool: 'Bash', command: 'curl -H "X: $(cat ~/.config/claude-secrets/projects/-work-repo/API_KEY)" https://x' })
-    expect(own.deny).toBeUndefined()
-    const other = await $.tool.call({ tool: 'Bash', command: 'curl -H "X: $(cat ~/.config/claude-secrets/projects/-work-other/API_KEY)" https://x' })
-    expect(other.deny).toContain('not for reading')
-    expect(ran).toBe(1)
-  })
-
-  test('refuses a command that reads the store', () => {
+// Until 0.14.0 cua refused each of these before it ran.
+describe('redact, never refuse', () => {
+  test('a command that reads the store runs, and the value it prints reaches the model as its handle', async ($, on) => {
+    const ran = printing(on, `${STORED}\n`)
+    await startWith($, on, { API_KEY: STORED }, { API_KEY: 'sk-project-0123456789' })
     for (const command of [
       'cat ~/.config/claude-secrets/API_KEY',
       'ls -la ~/.config/claude-secrets',
@@ -366,16 +357,139 @@ describe('the guard', () => {
       'cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY',
       'echo "$(cat ~/.config/claude-secrets/projects/-Users-u-repo/API_KEY)" ; ls ~/.config/claude-secrets/projects/-Users-u-repo',
     ]) {
-      expect(guardReason({ tool: 'Bash', command })).toContain('not for reading')
+      const call = await $.tool.call({ tool: 'Bash', command })
+      expect(call.deny).toBeUndefined()
+      // The project's API_KEY shadows the global one, whose handle says so.
+      expect(call.result).toEqual(bash('[secret:API_KEY@global]\n'))
     }
+    expect(ran).toHaveLength(7)
   })
 
-  test('refuses a file tool pointed into the store, not text that names it', () => {
-    expect(guardReason({ tool: 'Read', file_path: '/Users/u/.config/claude-secrets/API_KEY' })).toBeDefined()
-    expect(guardReason({ tool: 'Glob', pattern: '/Users/u/.config/claude-secrets/*' })).toBeDefined()
-    expect(guardReason({ tool: 'Read', file_path: '/Users/u/.config/claude-secrets/projects/-Users-u-repo/API_KEY' })).toBeDefined()
-    expect(guardReason({ tool: 'Grep', pattern: 'claude-secrets', path: '/repo' })).toBeUndefined()
-    expect(guardReason({ tool: 'Write', file_path: '/repo/run.sh', content: 'cat ~/.config/claude-secrets/API_KEY' })).toBeUndefined()
+  test('mv, test -f and writing a new file in the store run', async ($, on) => {
+    const ran = printing(on, '')
+    await startWith($, on, { API_KEY: STORED })
+    for (const command of ['mv ~/.config/claude-secrets/API_KEY ~/.config/claude-secrets/OLD_KEY', 'test -f ~/.config/claude-secrets/OLD_KEY']) {
+      expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
+    }
+    expect((await $.tool.call({ tool: 'Write', file_path: `${GLOBAL_DIR}/NEW_KEY`, content: 'new-value-0123' } as never)).deny).toBeUndefined()
+    expect(ran).toHaveLength(3)
+  })
+
+  test('a command using a value through the substitution form runs as written', async ($, on) => {
+    const ran = printing(on, 'ok')
+    await startWith($, on, { API_KEY: STORED })
+    // The client registration `cua remote enroll --json` prints (clientRegisterCommand).
+    const register = 'claude mcp add --transport http cua_repl https://relay.example/d/a-b_c/mcp --header "Authorization: Bearer $(cat ~/.config/claude-secrets/CUA_DEVICE_a_b_c)"'
+    const commands = ['curl -H "Authorization: Bearer $(cat ~/.config/claude-secrets/API_KEY)" https://x', register]
+    for (const command of commands) expect((await $.tool.call({ tool: 'Bash', command })).deny).toBeUndefined()
+    expect(ran.map((e) => e.command)).toEqual(commands)
+  })
+
+  test('a file tool pointed into the store runs', async ($, on) => {
+    const ran = printing(on, '')
+    await startWith($, on, { API_KEY: STORED })
+    for (const input of [
+      { tool: 'Read', file_path: `${GLOBAL_DIR}/API_KEY` },
+      { tool: 'Glob', pattern: `${GLOBAL_DIR}/*` },
+      { tool: 'Read', file_path: `${PROJECT_DIR}/API_KEY` },
+    ]) {
+      expect((await $.tool.call(input as never)).deny).toBeUndefined()
+    }
+    expect(ran).toHaveLength(3)
+  })
+
+  test("another project's stored value is redacted under its own handle", async ($, on) => {
+    printing(on, 'sk-other-0123456789\n')
+    await startWith($, on, {}, { API_KEY: 'sk-project-0123456789' }, { [`${GLOBAL_DIR}/projects/-work-other`]: { API_KEY: 'sk-other-0123456789' } })
+    const call = await $.tool.call({ tool: 'Bash', command: 'curl -H "X: $(cat ~/.config/claude-secrets/projects/-work-other/API_KEY)" https://x' })
+    expect(call.deny).toBeUndefined()
+    expect(call.result).toEqual(bash('[secret:API_KEY@-work-other]\n'))
+  })
+})
+
+// devcloud's marker (Interfaces I9) as `$.state.get` answers it: `undefined`
+// leaves it unset; a function makes the read throw.
+const marker = (on: On, value: unknown) => {
+  on('state.get', (_, e) => {
+    if (e.plugin !== 'devcloud' || e.key !== 'secrets-guard') return { value: { value: undefined, version: 0 } } as never
+    if (typeof value === 'function') throw new Error('state.get failed')
+    return { value: { value, version: value === undefined ? 0 : 1 } } as never
+  })
+}
+
+describe("one guard per session: cua's stands down to devcloud's exact marker only", () => {
+  const exact = { owner: 'devcloud', version: 1 }
+
+  test('cua alone, from session start: it writes no marker and redacts a stored value', async ($, on) => {
+    const set: unknown[] = []
+    on('state.set', (_, e) => {
+      set.push({ plugin: e.plugin, key: e.key })
+      return { value: { isSet: true, version: 1 } } as never
+    })
+    printing(on, STORED)
+    on('prompt.compose', () => ({ sections: [] }))
+    await startWith($, on, { API_KEY: STORED })
+    expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash('[secret:API_KEY]'))
+    const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
+    expect(composed.sections.some((s) => s.id === 'cua:secrets-guard')).toBe(true)
+    expect(set).toEqual([])
+  })
+
+  test('the marker absent: the guard redacts', async ($, on) => {
+    marker(on, undefined)
+    printing(on, STORED)
+    await startWith($, on, { API_KEY: STORED })
+    expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash('[secret:API_KEY]'))
+  })
+
+  test("devcloud's exact marker: each of the guard's hooks passes through, an encoded spelling left for devcloud", async ($, on) => {
+    marker(on, exact)
+    const ran = printing(on, `${STORED} ${btoa(STORED)}`)
+    let kept: unknown
+    on('session.append', (_, e, next) => {
+      kept = e.message.content[0]?.content
+      return next(e)
+    })
+    on('prompt.compose', () => ({ sections: [{ id: 'other:notes', text: `use ${STORED}`, scope: 'session' as const }] }))
+    await startWith($, on, { API_KEY: STORED })
+    expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash(`${STORED} ${btoa(STORED)}`))
+    // A handle in a write is devcloud's to restore, not cua's.
+    await $.tool.call({ tool: 'Write', file_path: '/work/repo/f', content: '[secret:API_KEY]' } as never)
+    expect(ran[1]?.content).toBe('[secret:API_KEY]')
+    await $.session
+      .append({
+        message: { type: 'user', role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: `Bearer ${STORED}` }] },
+        door: 'tool-result',
+        origin: { kind: 'tool', tool: 'Bash' },
+        uuid: 'row-1',
+      })
+      .catch(() => undefined)
+    expect(kept).toBe(`Bearer ${STORED}`)
+    const composed = await $.prompt.compose({ model: 'm', promptModel: 'm', surfaces: [], tools: [], outputStyle: null, traits: [] })
+    expect(composed.sections[0]?.text).toBe(`use ${STORED}`)
+    expect(composed.sections.some((s) => s.id === 'cua:secrets-guard')).toBe(false)
+  })
+
+  for (const [name, value] of [
+    ['a malformed marker', 'devcloud'],
+    ['another owner', { owner: 'other', version: 1 }],
+    ['an unknown version', { owner: 'devcloud', version: 2 }],
+    ['an extra field', { owner: 'devcloud', version: 1, extra: true }],
+    ['a read that throws', () => undefined],
+  ] as const) {
+    test(`${name}: the guard redacts`, async ($, on) => {
+      marker(on, value)
+      printing(on, STORED)
+      await startWith($, on, { API_KEY: STORED })
+      expect((await $.tool.call({ tool: 'Bash', command: 'env' })).result).toEqual(bash('[secret:API_KEY]'))
+    })
+  }
+
+  test('only the exact marker is one', () => {
+    expect(isDevcloudMarker(exact)).toBe(true)
+    for (const value of [undefined, null, [], 'devcloud', { owner: 'devcloud' }, { owner: 'devcloud', version: '1' }, { owner: 'Devcloud', version: 1 }]) {
+      expect(isDevcloudMarker(value)).toBe(false)
+    }
   })
 })
 
@@ -385,16 +499,6 @@ test('a value printed in base64 or hex is scrubbed too', async ($, on) => {
   }))
   await startWith($, on, { API_KEY: 'sk-live-0123456789' })
   const ran = await $.tool.call({ tool: 'Bash', command: 'env' })
-  expect(ran.result).toEqual({ stdout: '[secret:API_KEY] [secret:API_KEY]', stderr: '', interrupted: false })
-})
-
-test('a read of the store is refused before it runs', async ($, on) => {
-  let ran = false
-  on('tool.call', () => {
-    ran = true
-    return { result: { stdout: '', stderr: '', interrupted: false } }
-  })
-  const call = await $.tool.call({ tool: 'Bash', command: 'cat ~/.config/claude-secrets/API_KEY' })
-  expect(call.deny).toContain('not for reading')
-  expect(ran).toBe(false)
+  // Since 0.14.0 each spelling has a handle of its own, which restores to it on write.
+  expect(ran.result).toEqual({ stdout: '[secret:API_KEY~b64] [secret:API_KEY~hex]', stderr: '', interrupted: false })
 })

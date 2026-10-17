@@ -9,8 +9,12 @@ extension route and `cua login` were removed by #79, 2026-10-17). The living spe
 `docs/doperpowers/specs/2026-10-02-standalone-cua-design.md` (Decision Log newest-first;
 Surprises & Discoveries for observations). Phase reports and residue live beside it; live-run evidence under
 `docs/evidence/`; narrow debts in `tech-debt-tracker.md`. The plugin bundles the server with the `cua-remote` skill
-(`skills/cua-remote/SKILL.md`: onboard a device, connect a client to it) the `/secret` mod (`hooks/mods/`, tests
-`npm run test:mods`) and an `Elicitation` hook that accepts cua_repl's approvals (`hooks/cua-approve.sh`).
+(`skills/cua-remote/SKILL.md`: onboard a device, connect a client to it) the `/secret` mod and devcloud's secrets guard
+(`hooks/mods/`, tests `npm run test:mods`) and an `Elicitation` hook that accepts cua_repl's approvals
+(`hooks/cua-approve.sh`). The guard redacts and never refuses (stored values, credential-file values and token-shaped
+strings become handles that restore to their exact bytes on write); it is vendored from doperpowers'
+`devcloud/` (`hooks/mods/guard/VENDORED.md`: change it there and resync), and stands down when devcloud's own plugin
+is loaded, so one guard decides every handle.
 
 Working rules:
 - The vendor runtime is unmodified and version-pinned; cua wraps it and never patches it. Verify runtime claims against

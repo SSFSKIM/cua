@@ -81,7 +81,8 @@ registered with `cua devices` (Remote control, 4), with no registration in Claud
 carries the `cua-remote` skill, the procedure for setting up or driving another computer through cua
 (Remote control), and, where function hooks are enabled (`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`), the `/secret KEY`
 command: a value typed into a masked field and stored for the session's project (`/secret -g KEY`: for every
-project; mode 600, see Secrets), which the model sees only by its key (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
+project; mode 600, see Secrets), which the model sees only by its key, and a secrets guard that redacts secrets in
+what the model reads (`hooks/mods/README.md`). Allow the tools in your settings so each call does not prompt:
 `"mcp__plugin_cua_cua_repl__*"` under `permissions.allow`. App approvals are a separate dialog; see the next section.
 This repository is the plugin's source of truth.
 
@@ -251,9 +252,9 @@ Existing files stay where they are; nothing moves between tiers.
 
 The preferred way to store one is `/secret KEY` in Claude Code (the plugin's mod, where function hooks are enabled):
 it opens a masked field, writes the file in the session's project tier (`/secret -g KEY` or `--global`: the global
-tier), and keeps the value out of the model's view of tool output. The model's system prompt lists the keys of both
-tiers, each marked `(project)` or `(global)`, a global key the project shadows included. Without the mod, cua does
-the same at a terminal, on the global tier unless told `--project`:
+tier), and the model sees only the key. The model's system prompt lists the keys of both tiers, each marked
+`(project)` or `(global)`, a global key the project shadows included. Without the mod, cua does the same at a
+terminal, on the global tier unless told `--project`:
 
 ```sh
 node bin/cua.mjs secrets set WORK_PASSWORD             # typed twice at a masked prompt, nothing echoed
@@ -309,9 +310,22 @@ REPL client read back diagnostics of the matched elements (tag, role, type, labe
 read it, and that includes the agent's JavaScript cells. Under every sandbox mode cells read everywhere your account
 can (the vendor's sandbox can deny a directory, but the same profile binds the trusted service that must read the
 value, so cua cannot deny the store to cells alone; measured, Decision Log 2026-10-07). This is the same exposure as
-Bash in Claude Code, where the mod's guard (not a sandbox) keeps the model from reading the directory; cua's host
-notes tell the agent never to read it. The guarantee is narrower and holds: the agent works with keys, and trusted
-code fills the value in.
+Bash in Claude Code, where nothing keeps the model from reading the directory: the plugin's secrets guard (not a
+sandbox) redacts what it reads instead, and cua's host notes tell the agent never to read it. The guarantee is
+narrower and holds: the agent works with keys, and trusted code fills the value in.
+
+**The secrets guard.** Where function hooks are enabled, the plugin carries devcloud's secrets guard (vendored from
+the doperpowers marketplace; `hooks/mods/guard/VENDORED.md`). It redacts and never refuses: no tool call is refused
+for touching the store, and a value a tool prints reaches the model and the transcript as a handle. Stored values of
+every tier become `[secret:KEY]` (an encoding of one, `[secret:KEY~b64]` and the like), values in well-known
+credential files (`gh`, `codex`, `gcloud`, `.netrc`, `.pgpass` and others) `[secret:<file>:<field>]`, and
+token-shaped strings anywhere `[redacted:<kind>#<id>]`. A handle written into a Write, Edit, MultiEdit or
+NotebookEdit call is restored to its exact bytes before the call runs, and in Bash where it stands as a plain value
+in a plain position. Until 0.14.0 cua had a stricter guard of its own, which refused any tool call naming the store.
+When devcloud's own plugin is enabled beside cua, cua's copy stands down and devcloud's guard decides every handle;
+only devcloud's exact marker stands it down, and anything else leaves cua's guard acting. Known limit: if devcloud is
+disabled mid-session its marker may outlive it, and cua's guard then stays stood down until the next session
+(`hooks/mods/README.md`).
 
 `cua doctor`'s `secrets.store` row reports the store from metadata only: `blocked` while nothing is stored, `fail`
 for a directory open to others or a key file cua would refuse (named by key), `pass` with the number of keys.

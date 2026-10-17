@@ -5,8 +5,8 @@ import type { EngineInterface, Hook, On } from 'claude-code'
  * bullets, stored as `~/.config/claude-secrets/projects/<slug>/KEY` for the
  * session's project (`/secret -g KEY`: `~/.config/claude-secrets/KEY`, for
  * every project; mode 600), and the model sees only the key. The value never passes through the prompt box, so neither
- * the prompt history nor the transcript can hold it; a stored value that turns
- * up in a tool's output reaches neither the model nor the transcript file.
+ * the prompt history nor the transcript can hold it. A stored value that turns
+ * up in a tool's output is the secrets guard's (./guard, devcloud's, vendored).
  *
  * Not the prompt box: when the last keys and Enter arrive in one read (mosh,
  * a slow link), the editor inserts and submits them before a `prompt.edit`
@@ -33,8 +33,6 @@ const RESERVED = /^CUA_DEVICE_/i
 const PROJECTS = /^projects$/i
 // Claude Code cuts a slug at this length and adds a hash of the whole path.
 const SLUG_MAX = 200
-// Shorter values would scrub ordinary words out of everything the model reads.
-const SCRUB_MIN = 6
 
 const PANE = 'secret'
 const FIELD = 'secret-value'
@@ -51,9 +49,8 @@ let typed = ''
 let pending: Pending | undefined
 // The session's project root, once resolved.
 let project: string | undefined
-// Every stored secret of both tiers, by `<scope>/<key>`, so that no row the
-// model reads carries one.
-const known = new Map<string, { key: string; scope: Scope; value: string }>()
+// Every stored key of both tiers, by `<scope>/<key>`, for the system prompt.
+const known = new Map<string, { key: string; scope: Scope }>()
 
 type Edit = { text: string; start: number; end: number; inputText: string }
 type Masked = { held: string; box?: { text: string; cursor: number } }
@@ -101,78 +98,6 @@ export function maskEcho(text: string): string {
   return text.replace(ECHO, (_, head: string, value: string, tail: string) => head + MASK.repeat(value.length) + tail)
 }
 
-// The value and the encodings a command prints it in by accident: base64
-// (padded or not), hex either case, URL encoding. A slice or a transformation
-// of its own making is beyond this; the guard below keeps the store unread.
-function spellings(value: string): string[] {
-  const bytes = Array.from(new TextEncoder().encode(value), (b) => b.toString(16).padStart(2, '0')).join('')
-  const base64 = btoa(String.fromCharCode(...new TextEncoder().encode(value)))
-  return [...new Set([value, base64, base64.replace(/=+$/, ''), bytes, bytes.toUpperCase(), encodeURIComponent(value)])]
-}
-
-function scrub(text: string): string {
-  let out = maskEcho(text)
-  for (const { key, value } of known.values()) {
-    if (value.length < SCRUB_MIN) continue
-    for (const spelling of spellings(value)) out = out.split(spelling).join(`[secret:${key}]`)
-  }
-  return out
-}
-
-// The one form a command may name a stored value in: substituted where it is
-// used, so the command's own output is all that could carry it. It admits the
-// global tier and, given the session's project slug, that project's tier
-// only: another project's values are not loaded for scrubbing, so a command
-// naming its folder is refused like any other read of the store.
-export function substitutionFor(slug?: string): RegExp {
-  const tier = slug === undefined ? '' : `(?:projects\\/${slug.replace(/[^A-Za-z0-9-]/g, '')}\\/)?`
-  return new RegExp(
-    `\\$\\(\\s*cat\\s+(?:~|"?\\$HOME"?|"?\\$\\{HOME\\}"?|\\/(?:Users|home)\\/[^/\\s"')]+)\\/\\.config\\/claude-secrets\\/${tier}[A-Za-z_][A-Za-z0-9_]*\\s*\\)`,
-    'g',
-  )
-}
-// The session's form, rebuilt once its project is resolved.
-let substitution = substitutionFor()
-
-/**
- * Why a tool call would read the store itself, or undefined: a command naming
- * the folder (the projects' folders beneath it included) other than in the
- * substitution form (`form`, the session's: its own project's folder and the
- * global one), or a file tool whose path
- * (a Glob's pattern) points into it. What a Write or an Edit puts in a file,
- * or what a Grep searches for, is not a read of the store.
- */
-export function guardReason(input: Readonly<Record<string, unknown>>, form: RegExp = substitution): string | undefined {
-  const reads =
-    typeof input.command === 'string'
-      ? input.command.replace(form, '').includes('.config/claude-secrets')
-      : Object.entries(input).some(
-          ([field, value]) =>
-            (/path$/i.test(field) || (input.tool === 'Glob' && field === 'pattern')) &&
-            typeof value === 'string' &&
-            value.includes('claude-secrets'),
-        )
-  if (!reads) return undefined
-  return (
-    'secrets: the stored values are not for reading. Use one only inside the command that needs it, ' +
-    'as "$(cat ~/.config/claude-secrets/KEY)"; the stored keys are listed in the system prompt.'
-  )
-}
-
-// A tool's record, every string in it scrubbed; the same object when none changed.
-function scrubRecord(value: unknown): unknown {
-  if (typeof value === 'string') return scrub(value)
-  if (Array.isArray(value)) {
-    const items = value.map(scrubRecord)
-    return items.some((item, i) => item !== value[i]) ? items : value
-  }
-  if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value).map(([k, v]) => [k, scrubRecord(v)] as const)
-    return entries.some(([k, v]) => v !== (value as Record<string, unknown>)[k]) ? Object.fromEntries(entries) : value
-  }
-  return value
-}
-
 /**
  * A project's path as Claude Code names its folder under ~/.claude/projects/:
  * every character other than an ASCII letter or digit becomes '-', and a slug
@@ -212,7 +137,6 @@ async function projectOf($: EngineInterface, cwd?: string): Promise<string> {
     if (git.exitCode === 0 && commonDir?.startsWith('/') && topLevel?.startsWith('/')) root = rootFromGit(commonDir, topLevel)
   } catch {}
   project = root
-  substitution = substitutionFor(projectSlug(root))
   return root
 }
 
@@ -246,7 +170,7 @@ async function storeField($: EngineInterface, { key, scope }: Pending, value: st
     $.ui.toast(`secret: not stored, ${added.stderr.trim().split('\n')[0] || 'the write failed'}`)
     return
   }
-  known.set(`${scope}/${key}`, { key, scope, value })
+  known.set(`${scope}/${key}`, { key, scope })
   typed = ''
   pending = undefined
   await $.ui.close({ id: PANE })
@@ -281,8 +205,8 @@ function shownDir(scope: Scope): string {
   return scope === 'global' || project === undefined ? DIR : `${DIR}/projects/${projectSlug(project)}`
 }
 
-// Taken with both matchers below: the other mods register session.start too,
-// and an event is registered without one once per module.
+// Taken with both matchers below: the secrets guard (./guard) registers
+// session.start too, and an event is registered without one once per module.
 const secretsStart: Hook<'session.start'> = async ($, e, next) => {
   await $.command.register({
     name: 'secret',
@@ -297,9 +221,7 @@ const secretsStart: Hook<'session.start'> = async ($, e, next) => {
     const dir = `${home}/${await tierDir($, scope)}`
     if (!(await $.fs.exists(dir))) continue
     for (const entry of await $.fs.list(dir)) {
-      if (entry.kind === 'file' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name)) {
-        known.set(`${scope}/${entry.name}`, { key: entry.name, scope, value: await $.fs.read(`${dir}/${entry.name}`) })
-      }
+      if (entry.kind === 'file' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name)) known.set(`${scope}/${entry.name}`, { key: entry.name, scope })
     }
   }
   return next(e)
@@ -384,41 +306,24 @@ export function registerSecrets(on: On) {
     return next(e)
   })
 
-  // The tool's own record is what the transcript file keeps beside the row the
-  // model reads (`toolUseResult`), and `session.append` cannot reach it.
-  on('tool.call', async (_, e, next) => {
-    const reason = guardReason(e)
-    if (reason !== undefined) return { deny: reason }
-    const ran = await next(e)
-    if (ran.deny !== undefined || known.size === 0) return ran
-    const result = scrubRecord(ran.result)
-    if (result === ran.result) return ran
-    return ran.isError ? { deny: scrub(ran.text ?? '') } : { result, context: ran.context }
-  }).catch((_, e, next) => (next.called ? next(e) : { deny: 'secrets: its guard failed, so the call did not run.' }))
-
-  // The last line of defence: a stored value that turns up in any row the
-  // conversation keeps (a tool's output, an echo) is replaced by its key.
-  on('session.append', async (_, e, next) => {
+  // A `/secret` echo typed where nothing masked it is masked in the row the
+  // conversation keeps, whichever guard holds the session. Taken with a
+  // matcher every row meets: the guard registers session.append too.
+  on('session.append', { uuid: /(?:)/ }, async (_, e, next) => {
     let isChanged = false
     const content = e.message.content.map((block) => {
-      if (block.type === 'text' && typeof block.text === 'string') {
-        const text = scrub(block.text)
-        if (text === block.text) return block
-        isChanged = true
-        return { ...block, text }
-      }
-      if (block.type === 'tool_result') {
-        const inner = scrubRecord(block.content)
-        if (inner === block.content) return block
-        isChanged = true
-        return { ...block, content: inner }
-      }
-      return block
+      if (block.type !== 'text' || typeof block.text !== 'string') return block
+      const text = maskEcho(block.text)
+      if (text === block.text) return block
+      isChanged = true
+      return { ...block, text }
     })
     return isChanged ? next({ ...e, message: { ...e.message, content } }) : next(e)
   })
 
-  on('prompt.compose', async ($, e, next) => {
+  // Taken with a matcher every composition meets: the guard registers
+  // prompt.compose too.
+  on('prompt.compose', { model: /(?:)/ }, async ($, e, next) => {
     const composed = await next(e)
     if (known.size === 0) return composed
     const lines = await Promise.all(listed().map(async (s) => `- ${describe(s)}: ${await usage($, s.key, s.scope)}`))

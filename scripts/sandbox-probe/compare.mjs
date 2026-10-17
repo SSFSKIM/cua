@@ -124,6 +124,40 @@ export function metadataGrantPins(fingerprint) {
   return {ok: rows.every(row => row.got === row.want), rows};
 }
 
+// #115 M1: a fingerprint comparison (compareFingerprints) judged against the deviations declared for its pair, as
+// `left/right`. Undeclared is any check that differs otherwise, any environment difference not named, a cwd that
+// differs or an unsandboxed side. -> {ok, pair, undeclared: {checks, env, cwd, sandboxed}}.
+//   golden-kernel/cua-kernel  M0's golden kernel (the original's rendering of the same deny list) against cua's kernel:
+//                             the metadata grant on the cua home (the port's one widening), the new cua-home/run
+//                             target, and CODEX_HOME, which only the Codex launch sets.
+//   signed/cua-worker         M0's signed-CLI kernel (no deny list) against cua's trusted worker: the new target; the
+//                             CLI's CODEX_HOME, CoreFoundation's __CF_USER_TEXT_ENCODING and its arg0 PATH entry; the
+//                             worker's own host settings, which it gets and a kernel never does.
+const NEW_TARGET = row => row.label === 'cua-home/run' && row.left === null;
+export const FINGERPRINT_DEVIATIONS = Object.freeze({
+  'golden-kernel/cua-kernel': {
+    check: row => NEW_TARGET(row) || (row.op === 'file-read-metadata' && row.label === 'cua-home' && row.left?.result === 'deny' && row.right?.result === 'allow'),
+    onlyLeft: ['CODEX_HOME'], onlyRight: [], differing: () => false,
+  },
+  'signed/cua-worker': {
+    check: NEW_TARGET,
+    onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'],
+    differing: ({name, left, right}) => name === 'PATH' && left === `${/^[^:]*\/arg0\/codex-arg0[^:]*:/.exec(left)?.[0] ?? '\0'}${right}`,
+  },
+});
+export function judgeFingerprints(comparison, pair) {
+  const declared = FINGERPRINT_DEVIATIONS[pair];
+  if (!declared) throw new Error(`no declared deviations for ${pair}; known: ${Object.keys(FINGERPRINT_DEVIATIONS).join(', ')}`);
+  const undeclared = {
+    checks: comparison.checks.filter(row => !declared.check(row)),
+    env: {onlyLeft: comparison.env.onlyLeft.filter(name => !declared.onlyLeft.includes(name)), onlyRight: comparison.env.onlyRight.filter(name => !declared.onlyRight.includes(name)),
+      differing: comparison.env.differing.filter(d => !declared.differing(d))},
+    cwd: !comparison.cwdEqual, sandboxed: !comparison.sandboxed.every(Boolean),
+  };
+  const ok = !undeclared.checks.length && !undeclared.env.onlyLeft.length && !undeclared.env.onlyRight.length && !undeclared.env.differing.length && !undeclared.cwd && !undeclared.sandboxed;
+  return {ok, pair, undeclared};
+}
+
 // Two experiment.mjs runs: the confinement cell's outcomes key by key, and whether each cell succeeded (timings and
 // counts aside: app and window counts move with the desktop).
 export function compareExperiments(left, right) {

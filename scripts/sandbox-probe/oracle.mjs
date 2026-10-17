@@ -25,7 +25,9 @@
 //     (M1) cua's port (src/sandbox/seatbelt.mjs) rendering a capture's own input, compared with what the signed CLI
 //     handed sandbox-exec (compare.mjs comparePortToCapture). The capture's run directory and its temp are recreated
 //     for the rendering, as they were when the capture ran, and removed after.
-//   node scripts/sandbox-probe/oracle.mjs compare-fingerprints <a.json> <b.json> [--out <file>]
+//   node scripts/sandbox-probe/oracle.mjs compare-fingerprints <a.json> <b.json> [--expect <pair>] [--out <file>]
+//     (M1) --expect judges the comparison against that pair's declared deviations (compare.mjs judgeFingerprints) and
+//     exits 1 beyond them; port-vs-capture likewise exits 1 unless the port equals the capture but for its deviations.
 //   node scripts/sandbox-probe/oracle.mjs compare-experiments <a.json> <b.json> [--out <file>]
 //     two experiment.mjs runs (experiment A: the signed CLI against the public build; the replay against the signed CLI).
 //
@@ -50,7 +52,7 @@ import {ownHostNode} from '../../src/runtime/launch.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {sandboxArgs, sandboxPolicy, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {STORE_RELATIVE} from '../../src/secrets/store.mjs';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, metadataGrantPins, profileFromPolicy} from './compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, judgeFingerprints, metadataGrantPins, profileFromPolicy} from './compare.mjs';
 
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 // KERN_PROCARGS2 carries the kernel's "apple" strings after the environment (per-process entropy and code identity, not
@@ -141,7 +143,10 @@ function portVsCapture(values) {
     const command = input.args.slice(input.args.indexOf('--') + 1);
     const {args} = seatbeltCommand({profile: profileFromPolicy(input.policy), cwd: input.cwd, command, tmpdir: input.env.TMPDIR});
     const port = {args, env: sandboxedEnv(input.env, {platform: 'darwin', network: 'restricted'})};
-    writeFileSync(values.out, json({input: {capture: values.capture, mode: input.mode, cwd: input.cwd}, port, comparison: comparePortToCapture({captured, port})}));
+    const comparison = comparePortToCapture({captured, port});
+    writeFileSync(values.out, json({input: {capture: values.capture, mode: input.mode, cwd: input.cwd}, port, comparison}));
+    // Written either way; anything beyond the declared deviations (comparePortToCapture) exits 1.
+    if (!comparison.equalButDeviations) process.exitCode = 1;
   } finally { if (created) rmSync(created, {recursive: true, force: true}); }
 }
 
@@ -211,14 +216,18 @@ function compareFiles(values, positionals, kind) {
   const result = kind === 'experiments'
     ? {left: {file: positionals[0], label: a.label, cli: a.cli, appServer: a.appServer}, right: {file: positionals[1], label: b.label, cli: b.cli, appServer: b.appServer}, ...compareExperiments(a, b)}
     : {left: {file: positionals[0], launcher: a.launcher}, right: {file: positionals[1], launcher: b.launcher}, ...compareFingerprints(a.fingerprint, b.fingerprint)};
+  // --expect <pair>: judged against that pair's declared deviations (compare.mjs judgeFingerprints); written either way,
+  // and a difference beyond them exits 1.
+  if (values.expect) result.judgement = judgeFingerprints(result, values.expect);
   if (values.out) writeFileSync(values.out, json(result));
   process.stdout.write(json(result));
+  if (result.judgement && !result.judgement.ok) process.exitCode = 1;
 }
 
 async function main() {
   const {values, positionals} = parseArgs({allowPositionals: true, options: {home: {type: 'string'}, 'user-home': {type: 'string'}, mode: {type: 'string'},
     cli: {type: 'string'}, cap: {type: 'string'}, fp: {type: 'string'}, out: {type: 'string'}, generator: {type: 'string'}, capture: {type: 'string'}, label: {type: 'string'},
-    launcher: {type: 'string'}, role: {type: 'string'}}});
+    launcher: {type: 'string'}, role: {type: 'string'}, expect: {type: 'string'}}});
   const [command, ...rest] = positionals;
   if (command === 'capture') capture(values);
   else if (command === 'golden') golden(values);

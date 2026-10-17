@@ -3,7 +3,7 @@
 // CLI's arg0 directory, the pid) normalized away and every remaining difference named.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, metadataGrantPins, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, judgeFingerprints, metadataGrantPins, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
 
 test('profileFromPolicy turns cua\'s sorted -c table into the original\'s permission profile, in the same order', () => {
   const policy = {filesystem: [['/a', 'read'], ['/z', 'none'], [':root', 'read'], [':tmpdir', 'write'], [':workspace_roots', {'.': 'write'}]], cwd: '/run'};
@@ -145,4 +145,48 @@ test('metadataGrantPins holds only for metadata-only on the granted directories 
   for (const over of [{'cua-home data': 'allow'}, {'cua-home/run data': 'allow'}, {'cua-home metadata': 'deny'}, {'cua-home/run/other metadata': 'allow'}, {'cua-home/run/other data': 'allow'}])
     assert.equal(pins(over).ok, false, JSON.stringify(over));
   assert.equal(metadataGrantPins({checks: rows({}).filter(r => r.label !== 'cua-home/run')}).ok, false, 'a missing row is no pass');
+});
+
+// #115 M1 review: each fingerprint comparison is judged against its pair's declared deviations, and anything else fails.
+test('judgeFingerprints accepts exactly the declared deviations of each pair', () => {
+  const comparison = (checks = [], env = {}, extra = {}) => ({equal: false, sandboxed: [true, true], cwdEqual: true, checks, env: {onlyLeft: [], onlyRight: [], differing: [], ...env}, ...extra});
+  const grant = {op: 'file-read-metadata', filter: 'path', label: 'cua-home', left: {result: 'deny', errno: null}, right: {result: 'allow', errno: null}};
+  const newTarget = {op: 'file-read-data', filter: 'path', label: 'cua-home/run', left: null, right: {result: 'deny', errno: null}};
+  assert.equal(judgeFingerprints(comparison([grant, newTarget], {onlyLeft: ['CODEX_HOME']}), 'golden-kernel/cua-kernel').ok, true);
+  const arg0 = {name: 'PATH', left: '/h/state/codex/tmp/arg0/codex-arg0*:/usr/bin:/bin', right: '/usr/bin:/bin'};
+  const worker = comparison([newTarget], {onlyLeft: ['CODEX_HOME', '__CF_USER_TEXT_ENCODING'], onlyRight: ['CUA_REPL_NODE_PATH', 'CUA_REPL_SANDBOX_EXEC', 'CUA_SANDBOX_DENY_READ', 'LANG'], differing: [arg0]});
+  assert.equal(judgeFingerprints(worker, 'signed/cua-worker').ok, true);
+  const rejected = [
+    ['golden-kernel/cua-kernel', comparison([grant], {}, {cwdEqual: false})],
+    ['golden-kernel/cua-kernel', comparison([{...grant, op: 'file-read-data'}])],
+    ['golden-kernel/cua-kernel', comparison([{...grant, label: 'store'}])],
+    ['golden-kernel/cua-kernel', comparison([{...newTarget, left: {result: 'allow'}}])],
+    ['golden-kernel/cua-kernel', comparison([], {onlyRight: ['CUA_SANDBOX_DENY_READ']})],
+    ['golden-kernel/cua-kernel', comparison([], {}, {sandboxed: [true, false]})],
+    ['signed/cua-worker', comparison([grant])],
+    ['signed/cua-worker', comparison([], {differing: [{...arg0, right: '/usr/local/bin:/usr/bin:/bin'}]})],
+    ['signed/cua-worker', comparison([], {onlyRight: ['NODE_OPTIONS']})],
+  ];
+  for (const [pair, c] of rejected) assert.equal(judgeFingerprints(c, pair).ok, false, `${pair} ${JSON.stringify(c)}`);
+  assert.throws(() => judgeFingerprints(comparison(), 'unknown/pair'), /no declared deviations/);
+});
+
+test('oracle.mjs compare-fingerprints --expect writes its judgement and exits 1 beyond the declared deviations', async t => {
+  const {mkdtempSync, readFileSync, rmSync, writeFileSync} = await import('node:fs');
+  const {spawnSync} = await import('node:child_process');
+  const {join} = await import('node:path');
+  const {tmpdir} = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'cua-oracle-expect-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const fp = (result, env = {}) => ({launcher: 'x', fingerprint: {sandboxed: true, cwd: '/h/run/s', env: {HOME: '/u', ...env},
+    checks: [{op: 'file-read-metadata', filter: 'path', label: 'cua-home', result}, {op: 'file-read-data', filter: 'path', label: 'store', result: 'deny'}]}});
+  const write = (name, value) => { writeFileSync(join(dir, name), JSON.stringify(value)); return join(dir, name); };
+  const golden = write('golden.json', fp('deny', {CODEX_HOME: '/h/state/codex'}));
+  const oracle = (right, out) => spawnSync(process.execPath, ['scripts/sandbox-probe/oracle.mjs', 'compare-fingerprints', golden, right, '--expect', 'golden-kernel/cua-kernel', '--out', join(dir, out)], {cwd: new URL('../..', import.meta.url).pathname, encoding: 'utf8'});
+  const declared = oracle(write('cua.json', fp('allow')), 'ok.json');
+  assert.equal(declared.status, 0, declared.stderr);
+  assert.equal(JSON.parse(readFileSync(join(dir, 'ok.json'), 'utf8')).judgement.ok, true);
+  const beyond = oracle(write('leaky.json', {...fp('allow'), fingerprint: {...fp('allow').fingerprint, checks: [...fp('allow').fingerprint.checks.slice(0, 1), {op: 'file-read-data', filter: 'path', label: 'store', result: 'allow'}]}}), 'bad.json');
+  assert.equal(beyond.status, 1);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'bad.json'), 'utf8')).judgement.undeclared.checks.map(c => c.label), ['store']);
 });

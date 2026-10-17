@@ -17,9 +17,9 @@
 // The session's TMPDIR (which the vendor host hands node_repl, and so its script directory) is a fresh directory of
 // its own under the account's temporary directory, so no cell ever looks at another session's temp. A native run
 // refuses to start while any SkyComputerUseService runs (it would not be this run's), and quits only the helper this
-// run started, by pid, if it has not quit by itself. Cells write only into the run's scratch directory, its session
+// run started (its CODEX_CLI_PATH is this run's own slot; helpers.mjs), by pid, if it has not quit by itself; a
+// helper whose ownership cannot be read fails the run. Cells write only into the run's scratch directory, its session
 // temp and its run directory; nothing else is written outside --scratch, the scratch homes and --out.
-import {execFileSync} from 'node:child_process';
 import {chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
@@ -29,14 +29,13 @@ import {parseArgs} from 'node:util';
 import {StdioClient, textOf} from '../browser-parity/mcp.mjs';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {auditExchange} from './app-server.mjs';
+import {createHelperTracker, helperPids, isAlive} from './helpers.mjs';
 
 const SERVE = fileURLToPath(new URL('./serve-slot.mjs', import.meta.url));
 const SLOT_BODY = fileURLToPath(new URL('./cli-slot.mjs', import.meta.url));
 const FINDER = 'com.apple.finder';
 const MARK = 'CUA115 ';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const sh = (cmd, args) => { try { return execFileSync(cmd, args, {encoding: 'utf8'}); } catch (error) { return error.stdout ?? ''; } };
-const helperPids = () => sh('/usr/bin/pgrep', ['-f', 'SkyComputerUseService']).split('\n').filter(Boolean).map(Number);
 
 // A cell body wrapped so its value (or error) comes back as one marked JSON line.
 const cell = body => `{let __r; const __t0 = performance.now();
@@ -152,7 +151,8 @@ async function main() {
     return result;
   };
   const results = {};
-  let helpersStarted = [];
+  // This run's helpers are those whose CODEX_CLI_PATH is this run's own slot (helpers.mjs); no other is ever signalled.
+  const helpers = createHelperTracker({slot});
   try {
     const init = await client.initialize({elicitation: {form: {}}});
     out.serverInfo = init?.serverInfo ?? null;
@@ -161,22 +161,20 @@ async function main() {
     if (values.native) {
       for (const [name, body] of NATIVE) {
         results[name] = await js(name, body);
-        helpersStarted = [...new Set([...helpersStarted, ...helperPids()])];
+        helpers.observe();
       }
-      out.helperCodexCliPath = helpersStarted.map(pid => (sh('/bin/ps', ['eww', '-o', 'command=', '-p', String(pid)]).match(/\sCODEX_CLI_PATH=(\S*)/) ?? [])[1] ?? null);
     }
     await client.call('end_task', {}).catch(() => null);
   } catch (error) {
     ev('driver error', {message: error.message});
+    out.driverError = error.message;
   } finally {
     out.serveExit = await client.close();
     tcp.close(); uds.close(); rmSync(unixPath, {force: true});
   }
   if (values.native) {
-    for (let i = 0; i < 50 && helpersStarted.some(pid => helperPids().includes(pid)); i++) await sleep(100);
-    const left = helpersStarted.filter(pid => helperPids().includes(pid));
-    for (const pid of left) { try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ } }
-    out.helpers = {started: helpersStarted.length, quitByThemselves: helpersStarted.length - left.length, quitByHarness: left.length};
+    for (let i = 0; i < 50 && helpers.owned().some(isAlive); i++) await sleep(100);
+    out.helpers = {...helpers.stopLeft(), foreignSeen: helpers.foreignSeen().length};
   }
   out.results = results;
   out.elicitations = elicitations;
@@ -196,6 +194,7 @@ async function main() {
   writeFileSync(values.out, `${JSON.stringify(out, null, 2)}\n`);
   rmSync(marker, {force: true});
   rmSync(sessionTmp, {recursive: true, force: true});
+  if (out.driverError) process.exitCode = 1;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

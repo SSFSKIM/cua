@@ -6,15 +6,21 @@
 // - Admission. The run holds `<home>/.cua-native-admission` (created atomically, with its token and the time it was
 //   taken) from preparation to the end of cleanup; a second run is refused while it is held. Every harness serve on that
 //   home must present the token (CUA_NATIVE_ADMISSION, serve.mjs) and registers its pid there while it runs.
-// - Nobody else. Preparation refuses while any other process names the home on its command line or as CUA_HOME in its
-//   environment (only pids are read and nothing is recorded), which accounts for serves that predate the admission.
+// - Nobody else. Preparation refuses while the admission is held (which covers the harness serves registered under it),
+//   while any other process names the home on its command line, or while any process runs the approved helper's exact
+//   executable. No process's environment is scanned to find users.
+// - A TMPDIR of the run's own (`<scratch>/tmp`, 0700). Every serve of the run carries it, buildLaunch copies it into the
+//   runtime's environment, and `open` passes node_repl's environment to the helper: it is the witness of which run a
+//   helper belongs to.
 // - State. The home's state/ and run/ are moved into the run's scratch directory and back. Every move is recorded in
 //   `recovery.json` as it happens; a failed preparation undoes only the moves that happened, and a failed undo or
 //   restoration deletes nothing, keeps the scratch directory and the admission, and names the recovery directory.
 //   Cleanup moves what the run wrote out of the home before moving the originals back, and is resumable.
-// - The helper. The native helper the run's native calls opened outlives the serve. Cleanup stops, by pid, every helper
-//   proven to be the run's (the approved copy's executable, started after this run's admission, which no other run
-//   could hold), and refuses to restore anything while any other process uses the home.
+// - The helper. The native helper the run's native calls opened outlives the serve. Cleanup stops, by pid, only a helper
+//   proven to be the run's: its executable (read from the process, lsof's txt, never its command line) is exactly the
+//   approved helper's executable, and the TMPDIR in that pid's environment is exactly the run's. Only TMPDIR is
+//   extracted from that environment, only for such candidate pids, and only compared; nothing else from it is kept,
+//   logged or reported. Anything not proven is never signalled, and nothing is restored while it remains.
 // HOME is the account's (native calls fail at the native pipe under a scratch HOME), and XDG_CONFIG_HOME is the run's
 // scratch directory, so nothing under the account's configuration is read or written.
 import * as fs from 'node:fs';
@@ -34,8 +40,9 @@ export const REUSE_REASON = 'a new on-disk copy of the native helper raises a on
 const RUN_OWNED = ['state', 'run'];
 // The approved home's runtime as the serve will resolve it, and the release this checkout pins for the machine.
 const locateApproved = home => {
-  const runtime = locateRuntime({home});
-  return {release: runtime.release, root: runtime.root, helper: runtime.paths.skyServiceApp, pinned: selectPin(loadPins()).release};
+  const runtime = locateRuntime({home}), helper = runtime.paths.skyServiceApp;
+  const name = execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', join(helper, 'Contents', 'Info.plist')], {encoding: 'utf8'}).trim();
+  return {release: runtime.release, root: runtime.root, helper, executable: fs.realpathSync(join(helper, 'Contents', 'MacOS', name)), pinned: selectPin(loadPins()).release};
 };
 // The processes whose command line names `home` (pgrep -f, the path matched literally). The preparing process and its
 // callers (the ssh shell whose command names the home) are not others.
@@ -54,26 +61,44 @@ export const processesUsing = home => {
   const callers = callerPids();
   return found.filter(pid => !callers.has(pid));
 };
-// The processes whose environment sets CUA_HOME to `home` (a serve passes it there, not on its command line). Read
-// with `ps -E`, matched in memory; only the pids leave this function.
-export const processesWithHome = home => {
-  const text = execFileSync('/bin/ps', ['-A', '-E', '-ww', '-o', 'pid=,command='], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
-  const marker = ` CUA_HOME=${home}`, callers = callerPids();
-  return text.split('\n').flatMap(line => {
-    const at = line.indexOf(marker), after = line[at + marker.length];
-    return at >= 0 && (after === undefined || after === ' ') ? [Number(line.trim().split(/\s+/)[0])] : [];
-  }).filter(pid => pid > 0 && !callers.has(pid));
-};
-// Every other process using `home`, with its start time (from its elapsed time, so up to a second late) and whether its
-// command is the approved helper's executable.
-export const homeUsers = (home, helper) => [...new Set([...processesUsing(home), ...processesWithHome(home)])].flatMap(pid => {
-  let out;
-  try { out = execFileSync('/bin/ps', ['-o', 'etime=,command=', '-p', String(pid)], {encoding: 'utf8'}).trim(); } catch { return []; }   // gone
-  const [etime, ...command] = out.split(/\s+/);
-  const [days, clock] = etime.includes('-') ? etime.split('-') : ['0', etime];
-  const seconds = Number(days) * 86400 + clock.split(':').map(Number).reduce((total, part) => total * 60 + part, 0);
-  return [{pid, startedAt: Date.now() - seconds * 1000, helper: Boolean(helper) && command.join(' ').includes(helper)}];
-});
+// The executable a process runs, from the process itself (lsof's first txt entry), never its argv; null once it is gone.
+export function executableOf(pid, {exec = execFileSync} = {}) {
+  let text;
+  try { text = exec('/usr/sbin/lsof', ['-a', '-p', String(pid), '-d', 'txt', '-Fn'], {encoding: 'utf8'}); } catch (error) {
+    if (!isAlive(pid)) return null;
+    throw new Error(`could not read the executable of process ${pid}`);
+  }
+  const line = String(text).split('\n').find(l => l.startsWith('n'));
+  if (!line) { if (!isAlive(pid)) return null; throw new Error(`could not read the executable of process ${pid}`); }
+  return line.slice(1);
+}
+// Whether `pid`'s environment sets TMPDIR to exactly `tmpdir`. The environment is the part of `ps -E`'s line after the
+// process's own command; only TMPDIR is extracted, only compared, and nothing read leaves this function: a failure says
+// only that it failed.
+export function hasRunTmpdir(pid, tmpdir, {exec = execFileSync} = {}) {
+  const failed = () => new Error(`could not read TMPDIR of process ${pid}`);
+  let command, withEnvironment;
+  try {
+    command = String(exec('/bin/ps', ['-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'})).replace(/\n$/, '');
+    withEnvironment = String(exec('/bin/ps', ['-E', '-ww', '-o', 'command=', '-p', String(pid)], {encoding: 'utf8'})).replace(/\n$/, '');
+  } catch { throw failed(); }
+  if (!command || !withEnvironment.startsWith(command)) throw failed();
+  const values = withEnvironment.slice(command.length).split(' ').filter(word => word.startsWith('TMPDIR=')).map(word => word.slice('TMPDIR='.length));
+  return values.length === 1 && values[0] === tmpdir;
+}
+// Every other process using `home`: whoever names it on the command line, and whoever runs the approved helper's exact
+// executable. A helper is the run's (`owned`) only when its environment's TMPDIR is the run's; the environment of any
+// other process is never read.
+export function homeUsers(home, {executable, tmpdir}, {exec = execFileSync, candidates = processesUsing} = {}) {
+  return candidates(home).flatMap(pid => {
+    const running = executableOf(pid, {exec});
+    if (running === null) return [];   // gone
+    const helper = running === executable;
+    let owned = false, unreadable = false;
+    if (helper && tmpdir) { try { owned = hasRunTmpdir(pid, tmpdir, {exec}); } catch { unreadable = true; } }
+    return [{pid, helper, owned, ...(unreadable ? {unreadable: true} : {})}];
+  });
+}
 const isAlive = pid => { try { process.kill(pid, 0); return true; } catch (error) { return error.code === 'EPERM'; } };
 const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 export const ADMISSION = '.cua-native-admission';
@@ -90,9 +115,12 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
   if (parent === tempRoot || parent.startsWith(tempRoot + '/')) throw new Error('Native scratch home must be outside TMPDIR');
   const home = fs.mkdtempSync(join(parent, 'run-')), userHome = join(home, 'home'), token = randomUUID();
   fs.writeFileSync(join(home, 'native-owner.json'), JSON.stringify({device, token}), {mode: 0o600, flag: 'wx'});
-  const prepared = {device, home, userHome, token, xSession, nodeMode: node ? 'diagnostic-override' : 'managed', nodeOverride: node ?? null};
+  // On macOS a run's serves also get a TMPDIR of their own, as an approved-runtime run's do (one witness for every mini run).
+  const runTmp = declaration.platform === 'darwin' ? join(home, 'harness-tmp') : undefined;
+  const prepared = {device, home, userHome, token, xSession, ...(runTmp ? {tmpdir: runTmp} : {}), nodeMode: node ? 'diagnostic-override' : 'managed', nodeOverride: node ?? null};
   try {
     fs.mkdirSync(userHome, {mode: 0o700});
+    if (runTmp) fs.mkdirSync(runTmp, {mode: 0o700});
     // All CUA settings belong to this run, not the invoking SSH login. X-session keys are the only desktop inheritance.
     const environment = Object.fromEntries(['PATH', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'USER', 'LOGNAME'].filter(k => ambient[k] !== undefined).map(k => [k, ambient[k]]));
     Object.assign(environment, xSession, {HOME: userHome, CUA_HOME: home, XDG_CONFIG_HOME: join(userHome, '.config'), CUA_SHIM_SECRETS: 'off'});
@@ -105,6 +133,7 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
 }
 const reuseSeams = ({locate = locateApproved, usersOf = homeUsers, rename = fs.renameSync, undo, kill = pid => process.kill(pid, 'SIGTERM'), alive = isAlive,
   wait = () => pause(200), now = Date.now, userHomeDir = homedir()} = {}) => ({locate, usersOf, rename, undo: undo ?? rename, kill, alive, wait, now, userHomeDir});
+const describeUsers = users => `${users.length} process(es) (pids ${users.map(u => u.pid).join(', ')})`;
 const writeRecovery = (scratch, recovery) => fs.writeFileSync(join(scratch, 'recovery.json'), JSON.stringify(recovery, null, 2) + '\n', {mode: 0o600});
 const recoveryOf = scratch => JSON.parse(fs.readFileSync(join(scratch, 'recovery.json'), 'utf8'));
 const keptError = (what, error, scratch) => Object.assign(new Error(`${what}: ${error.message}; nothing was deleted, the admission is kept, recovery in ${scratch} (recovery.json)`), {cause: error});
@@ -128,20 +157,21 @@ function prepareReused({device, node, approvedHome, declaration}, {directoryRoot
   }
   let scratch;
   try {
-    const users = usersOf(home, runtime.helper);
-    if (users.length) throw new Error(`the approved home is in use by ${users.length} process(es); refusing to share it`);
+    const users = usersOf(home, {executable: runtime.executable, tmpdir: null});
+    if (users.length) throw new Error(`the approved home is in use by ${describeUsers(users)}${users.some(u => u.helper) ? ', including the approved helper' : ''}; refusing to share it`);
     scratch = fs.mkdtempSync(join(parent, 'run-'));
     fs.writeFileSync(join(scratch, 'native-owner.json'), JSON.stringify({device, token, approvedHome: home}), {mode: 0o600, flag: 'wx'});
     fs.mkdirSync(join(admission, 'serves'), {mode: 0o700});
     fs.writeFileSync(join(admission, 'owner.json'), JSON.stringify({token, scratch, admittedAt}), {mode: 0o600, flag: 'wx'});
   } catch (error) { if (scratch) fs.rmSync(scratch, {recursive: true, force: true}); fs.rmSync(admission, {recursive: true, force: true}); throw error; }
-  const stash = join(scratch, 'stash'), configHome = join(scratch, 'config');
+  const stash = join(scratch, 'stash'), configHome = join(scratch, 'config'), runTmp = join(scratch, 'tmp');
   fs.mkdirSync(stash, {mode: 0o700});
   fs.mkdirSync(configHome, {mode: 0o700});
+  fs.mkdirSync(runTmp, {mode: 0o700});
   const recovery = {home, stash, stashed: [], restored: [], runWritten: []};
   writeRecovery(scratch, recovery);
-  const prepared = {device, home, userHome: userHomeDir, configHome, scratch, token, admission: token, xSession: {}, nodeMode: 'managed', nodeOverride: null,
-    runtimeReuse: {approvedHome: home, release: runtime.release, runtimeRoot: runtime.root, helper: runtime.helper, reason: REUSE_REASON}};
+  const prepared = {device, home, userHome: userHomeDir, configHome, tmpdir: runTmp, scratch, token, admission: token, xSession: {}, nodeMode: 'managed', nodeOverride: null,
+    runtimeReuse: {approvedHome: home, release: runtime.release, runtimeRoot: runtime.root, helper: runtime.helper, executable: runtime.executable, reason: REUSE_REASON}};
   try {
     for (const name of RUN_OWNED) {
       if (!fs.existsSync(join(home, name))) continue;
@@ -189,11 +219,11 @@ function cleanupReused(prepared, options) {
   if (owner?.token !== token || owner.scratch !== scratch) throw new Error('Native scratch ownership mismatch (the approved home\'s admission is not this run\'s)');
   const serving = fs.readdirSync(join(admission, 'serves')).map(Number).filter(pid => alive(pid));
   if (serving.length) throw new Error(`${serving.length} admitted serve(s) still running on the approved home; nothing was restored`);
-  // Only a helper proven to be this run's is signalled: the approved copy's executable, started after this run took the
-  // admission (no other run could use the home since). Anything else using the home stops the cleanup.
-  const users = usersOf(home, prepared.runtimeReuse.helper);
-  const strangers = users.filter(u => !(u.helper && u.startedAt >= owner.admittedAt));
-  if (strangers.length) throw new Error(`${strangers.length} process(es) using the approved home are not proven this run's (pids ${strangers.map(u => u.pid).join(', ')}); none was signalled and nothing was restored`);
+  // Only a helper proven to be this run's is signalled: the approved helper's exact executable carrying this run's
+  // TMPDIR. Anything else using the home (or a helper whose TMPDIR could not be read) stops the cleanup unsignalled.
+  const users = usersOf(home, {executable: prepared.runtimeReuse.executable, tmpdir: prepared.tmpdir});
+  const strangers = users.filter(u => !u.owned);
+  if (strangers.length) throw new Error(`${describeUsers(strangers)} using the approved home are not proven this run's${strangers.some(u => u.unreadable) ? ' (a helper\'s TMPDIR could not be read)' : ''}; none was signalled, nothing was restored, the admission is kept, recovery in ${scratch}`);
   const helpersStopped = [];
   for (const {pid} of users) {
     kill(pid);

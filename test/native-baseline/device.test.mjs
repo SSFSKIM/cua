@@ -108,7 +108,7 @@ test('an approved runtime is reused in place: no install, its state/ and run/ st
   writeFileSync(join(approved, 'state', 'codex', 'kept'), 'task 1');
   mkdirSync(join(approved, 'run'));
   const helper = join(approved, 'runtimes', 'r1', 'Sky.app');
-  const locate = home => ({release: 'r1', root: join(home, 'runtimes', 'r1'), helper: join(home, 'runtimes', 'r1', 'Sky.app'), pinned: 'r1'});
+  const locate = home => ({release: 'r1', root: join(home, 'runtimes', 'r1'), helper: join(home, 'runtimes', 'r1', 'Sky.app'), executable: join(home, 'runtimes', 'r1', 'Sky.app', 'Contents', 'MacOS', 'Sky'), pinned: 'r1'});
   const calls = [];
   const options = {directoryRoot: root, tempRoot: '/different-tmp', userHomeDir: '/Users/owner', locate, usersOf: () => [],
     run: (...a) => { calls.push(a); return ''; }, inspect: ({source}) => ({home: source, ownNode: {path: join(source, 'node/24.22.0/bin/node'), version: 'v24.22.0'}})};
@@ -118,7 +118,7 @@ test('an approved runtime is reused in place: no install, its state/ and run/ st
   assert.equal(prepared.userHome, '/Users/owner');
   assert.equal(prepared.configHome, join(prepared.scratch, 'config'));
   assert.deepEqual(prepared.runtimeReuse, {approvedHome: approved, release: 'r1', runtimeRoot: join(approved, 'runtimes', 'r1'), helper,
-    reason: 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused'});
+    executable: join(helper, 'Contents', 'MacOS', 'Sky'), reason: 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused'});
   assert.deepEqual(readdirSync(approved), ['.cua-native-admission'], 'state/ and run/ are stashed away; the run holds the admission');
   mkdirSync(join(approved, 'state', 'handshake'), {recursive: true});   // what the run writes
   mkdirSync(join(approved, 'run', 'session'), {recursive: true});
@@ -167,21 +167,17 @@ test('the in-use check sees other processes naming the home, never the preparing
   assert.deepEqual(JSON.parse(run('/bin/sh', ['-c', `node --input-type=module -e '${probe}' ${home}`], {encoding: 'utf8'})), [other.pid]);
 });
 
-test('the in-use check also sees a process that names the home only as CUA_HOME in its environment, and reports only its pid', async t => {
-  const {spawn} = await import('node:child_process');
-  const {mkdtempSync: mk, realpathSync} = await import('node:fs');
-  const {processesWithHome, homeUsers} = await import('../../scripts/native-baseline/prepare.mjs');
-  const home = realpathSync(mk(join(tmpdir(), 'native-inuse-env-test-')));
-  t.after(() => rmSync(home, {recursive: true, force: true}));
-  assert.deepEqual(processesWithHome(home), []);
-  const serve = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {stdio: 'ignore', env: {PATH: process.env.PATH, CUA_HOME: home}});
-  const near = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], {stdio: 'ignore', env: {PATH: process.env.PATH, CUA_HOME: home + '-other'}});
-  t.after(() => { serve.kill(); near.kill(); });
-  await new Promise(r => setTimeout(r, 300));
-  assert.deepEqual(processesWithHome(home), [serve.pid]);
-  const [user] = homeUsers(home, join(home, 'runtimes', 'r', 'Sky.app'));
-  assert.deepEqual(Object.keys(user).sort(), ['helper', 'pid', 'startedAt']);
-  assert.equal(user.pid, serve.pid);
-  assert.equal(user.helper, false);
-  assert.ok(Math.abs(user.startedAt - Date.now()) < 3000);
+test('a mini run\'s serves carry a TMPDIR of the run\'s own (0700), the witness of which run a helper belongs to; Linux runs do not', async t => {
+  const {statSync, realpathSync} = await import('node:fs');
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), 'native-prepare-test-')));
+  t.after(() => rmSync(parent, {recursive: true, force: true}));
+  const inspect = ({source}) => ({home: source, ownNode: {path: join(source, 'node/24.22.0/bin/node'), version: 'v24.22.0'}});
+  const mini = prepareNative({device: 'mini'}, {directoryRoot: join(parent, 'm'), tempRoot: '/different-tmp', run: () => '', inspect});
+  assert.equal(mini.tmpdir, join(mini.home, 'harness-tmp'));
+  assert.equal(statSync(mini.tmpdir).mode & 0o777, 0o700);
+  const linux = prepareNative({device: 'cua-bench'}, {directoryRoot: join(parent, 'l'), tempRoot: '/different-tmp', desktop: () => xSession, run: () => '', inspect});
+  assert.equal(linux.tmpdir, undefined);
+  const script = serveCommand({device: 'mini', checkout: '/tmp', home: mini.home, userHome: mini.userHome, tmpdir: mini.tmpdir, host: 'cua', platform: 'darwin', surface: 'browser'}).args.at(-1);
+  const shell = script.replace('exec env ', 'env ').replace(/node .*$/, 'sh -c \'printf "%s" "$TMPDIR"\'');
+  assert.equal(execFileSync('/bin/sh', ['-c', shell], {encoding: 'utf8', env: {PATH: process.env.PATH, TMPDIR: '/caller-tmp'}}), mini.tmpdir);
 });

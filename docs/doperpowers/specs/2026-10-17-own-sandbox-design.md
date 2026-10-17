@@ -862,6 +862,10 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: each keeps the port's byte parity on everything but the named deviations and keeps the harness's witnesses truthful under the per-session TMPDIR.
   Date/Author: 2026-10-17, execution session.
 
+- Decision: one load threshold for every comparative mini run (2026-10-17, the dispatching session). The mini's idle 1-minute load now sits at 2 to 3 (other sessions' work), so the residue's original bar of 2, set for M0a's cargo builds at load 16, almost never cleared. Every comparative run on the mini, M0's residue and M1's alike and later ones too, starts only at a 1-minute load under 5, beside the other pre-run checks, and records its observed load in its evidence. M4's vendor/own and before/after comparisons are read against those recorded loads. M0's vendor run-1 ran under the old bar, and its load is recorded beside run-2 and run-3. The two TextEdit-driving runs of a window (the residue's accept-native and M1's accept-native with item 11) run back to back at its end, so the owner stands by once.
+  Rationale: a bar the machine's idle state cannot meet blocks the runs without protecting the measurement; recording the load keeps the spread visible to whoever judges the comparison.
+  Date/Author: 2026-10-17, execution session.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

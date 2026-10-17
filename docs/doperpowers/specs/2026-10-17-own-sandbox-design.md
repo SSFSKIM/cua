@@ -618,7 +618,7 @@ ssh mini 'cd ~/cua-115/repo && xcrun clang -O2 -o /tmp/cua-fp scripts/sandbox-pr
 
 ```
 node scripts/native-baseline.mjs prepare --device mini --commit <reviewed SHA>
-node scripts/native-baseline.mjs run --device mini --experiment 115-m0 --host vendor --out "$E/m0/mini-vendor-computer/run-1"                     # run-1..3
+node scripts/native-baseline.mjs run --device mini --experiment 115-m0 --host vendor --approved-runtime ~/cua-115/home --out "$E/m0/mini-vendor-computer/run-1"   # run-1..3; on the mini, through scripts/mini-rules.mjs (Decision Log, "native runs on the mini")
 node scripts/native-baseline.mjs run --device mini --experiment 115-m0 --host cua --surfaces browser --out "$E/m0/mini-cua-browser/run-1"         # run-1..3; --surfaces added in M0
 node scripts/native-baseline.mjs prepare --device cua-gce --commit <reviewed SHA>
 node scripts/native-baseline.mjs run --device cua-gce --experiment 115-m0 --host cua --display :0 --out "$E/m0/gce-cua-computer/run-1"           # run-1..3

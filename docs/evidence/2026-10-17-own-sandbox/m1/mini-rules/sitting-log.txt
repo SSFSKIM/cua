@@ -391,3 +391,70 @@
 2026-10-17T20:07:11.272Z watch cfprefs-8bf4343: reading: front=com.apple.SecurityAgent busy=false workers=0 queued=0 load=5.95 -> STOP
 2026-10-17T20:07:11.272Z watch cfprefs-8bf4343: STOP the run: com.apple.SecurityAgent in front (front=com.apple.SecurityAgent busy=false workers=0 queued=0 load=5.95)
 2026-10-17T20:07:17.183Z watch cfprefs-8bf4343: ended pids 35598 17932 17925 17920 73891 73881 73871 72991 35582 9486
+2026-10-17T21:00:29.762Z gated sh /tmp/cua-115-m1/tier-check.sh f8019bf: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.43 -> idle
+2026-10-17T21:01:18.769Z gated sh /tmp/cua-115-m1/tier-check.sh f8019bf: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.11 -> idle
+2026-10-17T21:01:18.771Z idle before gated sh /tmp/cua-115-m1/tier-check.sh f8019bf
+2026-10-17T21:01:23.556Z gated sh /tmp/cua-115-m1/tier-check.sh f8019bf: exit 0
+2026-10-17T21:01:24.265Z front after gated sh /tmp/cua-115-m1/tier-check.sh f8019bf: com.apple.Terminal
+2026-10-17T21:01:30.293Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.11 -> idle
+2026-10-17T21:02:20.520Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 2: Runner.Worker seen: pid 77688 (elapsed 00:38) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:02:20.521Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 2: front=com.apple.Terminal busy=true workers=1 queued=3 load=3.69 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:02:20.521Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:03:25.341Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 01:43) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:03:25.342Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=5.32 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s), load 5.32)
+2026-10-17T21:03:25.342Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:04:29.455Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 02:47) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:04:29.456Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=3.72 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:04:29.457Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:05:34.496Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 03:52) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:05:34.497Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=3.78 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:05:34.497Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:06:47.754Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 05:05) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:06:47.755Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=3.58 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:06:47.755Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:07:52.371Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 06:10) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:07:52.372Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.06 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:07:52.372Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:09:29.285Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 07:47) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:09:29.285Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=5.35 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s), load 5.35)
+2026-10-17T21:09:29.290Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:10:33.629Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 08:51) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:10:33.630Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=3.03 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:10:33.630Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:11:38.136Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 77688 (elapsed 09:56) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:11:38.137Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.05 -> contention (runner busy, 1 Runner.Worker, 3 queued macOS job(s))
+2026-10-17T21:11:38.137Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:12:41.823Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 8907 (elapsed 00:20) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:12:41.824Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=2 load=4.42 -> contention (runner busy, 1 Runner.Worker, 2 queued macOS job(s))
+2026-10-17T21:12:41.824Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:13:46.105Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 11201 (elapsed 00:46) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:13:46.105Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.88 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s))
+2026-10-17T21:13:46.105Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:14:50.557Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 11201 (elapsed 01:50) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:14:50.557Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.53 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s))
+2026-10-17T21:14:50.558Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:15:53.973Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 11201 (elapsed 02:53) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:15:53.974Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.5 -> contention (runner busy, 1 Runner.Worker, 1 queued macOS job(s))
+2026-10-17T21:15:53.974Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:16:57.597Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 22535 (elapsed 00:05) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:16:57.598Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.38 -> contention (runner busy, 1 Runner.Worker)
+2026-10-17T21:16:57.598Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:18:01.474Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 22535 (elapsed 01:09) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:18:01.475Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.78 -> contention (runner busy, 1 Runner.Worker)
+2026-10-17T21:18:01.482Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:19:04.925Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 22535 (elapsed 02:12) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:19:04.927Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.51 -> contention (runner busy, 1 Runner.Worker)
+2026-10-17T21:19:04.927Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:20:08.681Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: Runner.Worker seen: pid 22535 (elapsed 03:16) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:20:08.681Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.7 -> contention (runner busy, 1 Runner.Worker)
+2026-10-17T21:20:08.682Z waiting before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:21:12.996Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.33 -> idle
+2026-10-17T21:22:02.246Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.78 -> idle
+2026-10-17T21:22:02.247Z idle before gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf
+2026-10-17T21:22:16.996Z gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: exit 0
+2026-10-17T21:22:17.703Z front after gated sh scripts/sandbox-probe/m1-mini.sh oracles f8019bf: com.apple.Terminal
+2026-10-17T21:22:22.528Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.61 -> idle
+2026-10-17T21:23:11.382Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.06 -> idle
+2026-10-17T21:23:11.383Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf
+2026-10-17T21:23:18.863Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf: exit 0
+2026-10-17T21:23:19.754Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf: com.apple.Terminal

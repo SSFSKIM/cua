@@ -2,11 +2,25 @@
 
 M1's held runs (task-4 report, "Held runs"; `scripts/sandbox-probe/m1-mini.sh`), on the mini.
 
-**Status.** M1's final SHA is 5d9bf70. Every item reruns there so that the evidence carries one SHA. Earlier runs are kept as attempts under `m1/<item>-attempt-N/`.
+**Status.** M1's final code SHA is **f8019bf**, reviewed clean on PR #156's fixes; it changed `src/sandbox/policy.mjs` after 5d9bf70. Every item reruns there so that the evidence carries one SHA. Earlier runs are kept as attempts under `m1/<item>-attempt-N/`.
 
 **Where the runs come from.** Attempt 1 ran from M1's working checkout. During the cfprefs attempt, M1's executor committed four times into that checkout (15:42:57Z to 15:58:22Z), so the two sides of that measurement ran different harness code: before recorded f4bec92, after recorded 080981b. From the rerun on, the harness runs from a separate clone that nothing else writes to, and the evidence is committed on `feat/115-own-sandbox-m1-evidence`.
 
-# The rerun at 5d9bf70
+# The rerun at f8019bf (final code SHA)
+
+The harness is this clone at f8019bf. Every step was gated with two readings and a front-app check after it, and every step was headless.
+
+| Step | Ended | Result | Evidence |
+|---|---|---|---|
+| Tier discovery | 21:01:24Z | **proceeds**: `projects/` absent, 0 tiers, 0 symlinked, 0 absent targets | `tier-discovery/tier-check.json` |
+| Oracles | 21:22:17Z | **PASS**: all four fingerprint judgements ok; port against signed capture has equal argv and profile with no parameter differing, in both modes | `oracles/` |
+| Own-sandbox | 21:23:19Z | **PASS**: 76 of 76 checks, including the six store-root checks | `own-sandbox/own-sandbox.json` |
+
+Before oracles, the gate waited from about 21:01Z to 21:21Z while a real CI job held the runner. The busy flag was set, and the new probe logged Runner.Worker pid 22535.
+
+cfprefs (90cbfe0 against f8019bf) and parity (f8019bf) follow. The 5d9bf70 runs of the steps above are kept as `tier-discovery-attempt-3/`, `oracles-attempt-2/` and `own-sandbox-attempt-2/`.
+
+# The rerun at 5d9bf70 (superseded by f8019bf)
 
 **Gate.** Every step had two readings about 45 s apart before it and a frontmost check after it. The current mini rules applied (load under 5). The readings are in `mini-rules/sitting-log.txt`. GUI-bound groups also had the runner watched during the run (MAWS DL 58), with a reading every 30 s; a busy runner, a queued macOS job or a system dialog would have ended the run's own process tree. The watch never fired.
 

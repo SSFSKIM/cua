@@ -31,6 +31,11 @@ E=${M1_MINI_EVIDENCE:-docs/evidence/2026-10-17-own-sandbox/m1}
 L=${M1_MINI_SCRATCH:-/tmp}
 item=${1:?item: oracles, own-sandbox or cfprefs}
 remote() { ssh -o BatchMode=yes mini "$1"; }
+# A revision reaches the mini's shell source (checkout) and the parity harness: a 7-40 digit lowercase hex commit id only.
+revision() {
+  case $1 in *[!0-9a-f]*|'') echo "m1-mini $item: refused: $1 is not a commit id (7-40 lowercase hex digits)" >&2; exit 2;; esac
+  if [ ${#1} -lt 7 ] || [ ${#1} -gt 40 ]; then echo "m1-mini $item: refused: $1 is not a commit id (7-40 lowercase hex digits)" >&2; exit 2; fi
+}
 checkout() { remote "cd ~/cua-115/repo && git fetch -q origin && git checkout -q --detach $1 && npm ci --silent --no-audit --no-fund"; }
 
 failed=0
@@ -47,7 +52,7 @@ finish() {
 
 case "$item" in
 oracles)
-  sha=${2:?sha}; checkout "$sha"; mkdir -p "$E/oracles"
+  sha=${2:?sha}; revision "$sha"; checkout "$sha"; mkdir -p "$E/oracles"
   remote 'test -x ~/cua-115/bin-cua-fp || (cd ~/cua-115/repo && SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk xcrun clang -O2 -Wall -o ~/cua-115/bin-cua-fp scripts/sandbox-probe/fingerprint.c)'
   remote 'rm -rf ~/cua-115/m1-oracles && mkdir -p ~/cua-115/m1-oracles'
   M0=docs/evidence/2026-10-17-own-sandbox/m0
@@ -64,13 +69,13 @@ oracles)
   finish
   ;;
 own-sandbox)
-  sha=${2:?sha}; checkout "$sha"; mkdir -p "$E/own-sandbox"
+  sha=${2:?sha}; revision "$sha"; checkout "$sha"; mkdir -p "$E/own-sandbox"
   step "own-sandbox check" remote 'cd ~/cua-115/repo && node scripts/accept/own-sandbox.mjs --home ~/cua-115/home --out ~/cua-115/m1-own-sandbox.json'
   step "collect the check's report" scp -q 'mini:~/cua-115/m1-own-sandbox.json' "$E/own-sandbox/own-sandbox.json"
   finish
   ;;
 cfprefs)
-  before=${2:?before sha}; after=${3:?after sha}; profile=${4:?harness profile}; mkdir -p "$E/cfprefs"
+  before=${2:?before sha}; after=${3:?after sha}; profile=${4:?harness profile}; revision "$before"; revision "$after"; mkdir -p "$E/cfprefs"
   # GUI-bound: the suites pause at their next cell while MAWS CI's mac lane is busy or has a macOS job queued (MAWS DL 58).
   # The watcher runs here, from this checkout, whichever commit a side prepares on the mini; it is this item's own
   # process, ended with it, and the pause file and its heartbeat are removed only then (a watcher that fails leaves a

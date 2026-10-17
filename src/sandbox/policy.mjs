@@ -55,6 +55,22 @@ function realOf(path, role, store) {
   try { return realish(path); } catch (error) { return discoveryFailed(role, store, error); }
 }
 
+// The real targets of the cua home's top-level entries that are symlinks, except `reexposed` (entry names): a denied
+// home (macOS) or home directory (Linux) does not cover what a symlink inside it leads to, since seatbelt and
+// bubblewrap match by real path. Discovered at launch as the store's tiers are: an absent home has none; any other
+// failure to list or inspect it refuses.
+const homeDiscoveryFailed = (home, error) => fail('sandbox_state_invalid',
+  `the cua home ${home} could not be read (${error.code ?? 'error'}), so the kernel's deny list cannot be established; this confined launch is refused`,
+  {hint: 'fix that directory\'s permissions for your account (chmod u+rwx), or run the connection with CUA_SHIM_SANDBOX=disabled'});
+function linkedOutOf(home, reexposed) {
+  let names;
+  try { names = readdirSync(home).sort(); } catch (error) { if (error.code === 'ENOENT') return []; return homeDiscoveryFailed(home, error); }
+  return names.filter(name => !reexposed.includes(name)).flatMap(name => {
+    const path = join(home, name);
+    try { return lstatSync(path).isSymbolicLink() ? [realish(path)] : []; } catch (error) { if (error.code === 'ENOENT') return []; return homeDiscoveryFailed(home, error); }
+  });
+}
+
 // The deny list for one launch -> {deny, reexpose, metadataOnly}, absolute paths. Denied (the kernel role only):
 // - the secret store: `secretsDir` when secrets are on, else the default store for `env` (it exists whatever this
 //   connection's setting); the real target of projects/ when it is a symlink, and of every symlinked tier inside it (the
@@ -65,7 +81,10 @@ function realOf(path, role, store) {
 //   other session's run/<id>, with runtimes/ and node/ (what the kernel's Node and packages load from), the launch's
 //   run/<sessionId> and its session temp re-exposed; on Linux the home's private directories and run/ one by one
 //   (state/, remote/, chrome/, run/), with run/<sessionId> and its session temp re-exposed: there the original does not
-//   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all.
+//   re-bind a read entry inside a denied directory (#115 M0c), so runtimes/ and node/ are not denied at all;
+// - on macOS, the real target of every top-level entry of the home that is a symlink, but runtimes/ and node/ (re-exposed
+//   at their real paths): a symlinked state/, remote/, chrome/, run/... leads out of the denied home (linkedOutOf). On
+//   Linux the listed directories are denied at their real paths (realDenyList), which is the same rule there.
 // `tiers`: the deny targets that are tier targets outside the store (their creation rule differs, prepareDenyTargets);
 // every other deny target is one of cua's fixed ones (the store, ~/.config/cua, the cua home or its directories).
 // `metadataOnly`: the denied directories above the re-exposed paths whose metadata the kernel may read so those paths
@@ -101,6 +120,7 @@ export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId
     return {deny, reexpose: [run, sessionTmp], metadataOnly: [], tiers};
   }
   add(layout.home);
+  for (const target of linkedOutOf(layout.home, ['runtimes', 'node'])) if (!deny.some(member => within(target, realish(member)))) add(target);
   return {deny, reexpose: [layout.runtimes, layout.node, run, sessionTmp], metadataOnly: [layout.home, layout.run], tiers};
 }
 
@@ -154,6 +174,19 @@ export function parseDenyRead(value) {
     ? {deny: parsed.deny, reexpose: parsed.reexpose, metadataOnly: parsed.metadataOnly, tiers: parsed.tiers} : null;
 }
 
+// Every host read path is a kernel read grant, so one inside a deny target (and outside every re-exposed path) would
+// reopen it: a Node under the home's state/ reopens all of state/, one under run/<other> another session. Refused
+// (sandbox_conflict), by real path.
+function assertReadPathsOutsideDenied(readPaths, denyRead) {
+  const deny = denyRead.deny.map(realish), reexposed = denyRead.reexpose.map(realish);
+  for (const path of readPaths.filter(Boolean)) {
+    const real = realish(path), target = deny.find(member => within(real, member));
+    if (target && !reexposed.some(root => within(real, root)))
+      fail('sandbox_conflict', `the host read path ${path} lies inside ${target}, which JavaScript cells may not read, outside what is re-exposed there; the kernel's read grant would reopen it, so this kernel launch is refused`,
+        {hint: 'keep the Node and module directories cua\'s own host reads outside the cua home\'s private directories, other sessions\' run directories, the secret store and ~/.config/cua'});
+  }
+}
+
 const PROFILE_SPECIALS = {':root': 'root', ':minimal': 'minimal', ':tmpdir': 'tmpdir', ':slash_tmp': 'slash_tmp'};
 const sortedEntries = map => [...map].sort(([a], [b]) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
 const entryOf = ([key, access]) => {
@@ -174,6 +207,7 @@ export function roleProfile({state, role, readPaths = [], denyRead, network = 'r
   const filesystem = new Map(table.filesystem);
   if (role === 'kernel') {
     if (!denyRead) throw new SandboxStateError('the kernel\'s deny list is missing (sandbox_state_invalid)');
+    assertReadPathsOutsideDenied(readPaths, denyRead);
     for (const path of denyRead.reexpose) if (!filesystem.has(path)) filesystem.set(path, 'read');
     for (const path of denyRead.deny) filesystem.set(path, 'none');
   }

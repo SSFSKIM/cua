@@ -58,7 +58,7 @@ function wrapper(t, args, fail = {}) {
 const failures = stderr => stderr.split('\n').filter(line => line.includes(': FAILED: '));
 
 test('oracles: every step passing exits 0', t => {
-  const run = wrapper(t, ['oracles', 'abc123']);
+  const run = wrapper(t, ['oracles', 'abc1234']);
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stderr, /every step passed/);
   assert.equal((run.log.match(/oracle\.mjs fingerprint/g) ?? []).length, 4);
@@ -66,7 +66,7 @@ test('oracles: every step passing exits 0', t => {
 });
 
 test('oracles: failing pins, comparisons and the port each count, and the evidence is still collected; exit 1', t => {
-  const run = wrapper(t, ['oracles', 'abc123'], {FAIL_SSH: 'fingerprint .*--role kernel|compare-fingerprints .*signed|port-vs-capture'});
+  const run = wrapper(t, ['oracles', 'abc1234'], {FAIL_SSH: 'fingerprint .*--role kernel|compare-fingerprints .*signed|port-vs-capture'});
   assert.equal(run.status, 1);
   assert.equal(failures(run.stderr).length, 6, run.stderr);
   assert.match(run.stderr, /6 step\(s\) failed/);
@@ -75,26 +75,38 @@ test('oracles: failing pins, comparisons and the port each count, and the eviden
 });
 
 test('own-sandbox: a failing check still collects its report and exits 1', t => {
-  const run = wrapper(t, ['own-sandbox', 'abc123'], {FAIL_SSH: 'own-sandbox\\.mjs'});
+  const run = wrapper(t, ['own-sandbox', 'abc1234'], {FAIL_SSH: 'own-sandbox\\.mjs'});
   assert.equal(run.status, 1);
   assert.deepEqual(failures(run.stderr).map(line => line.replace(/.*FAILED: /, '')), ['own-sandbox check (exit 1)']);
   assert.match(run.log, /scp -q mini:~\/cua-115\/m1-own-sandbox\.json/);
 });
 
 test('cfprefs: complete runs judged equal exit 0; a failed run, a failed prepare or an unequal pair exits 1 after everything ran', t => {
-  const ok = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness']);
+  const ok = wrapper(t, ['cfprefs', 'aaa1111', 'bbb2222', 'harness']);
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal((ok.log.match(/run --device mini --host cua --suite \w+ --out \S+ --pause-file \S+cua115-cfprefs-pause\.json/g) ?? []).length, 4, 'every GUI-bound suite run honours the pause file');
   assert.match(ok.log, /^watch \S+cua115-cfprefs-pause\.json$/m, 'the item ran its watcher');
   assert.deepEqual(readdirSync(join(ok.dir, 'scratch')).filter(n => n.startsWith('cua115-cfprefs-pause')), [], 'and removed the pause files once the group was done');
-  const broken = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness'], {FAIL_PARITY: 'run .*--suite services .*after-services'});
+  const broken = wrapper(t, ['cfprefs', 'aaa1111', 'bbb2222', 'harness'], {FAIL_PARITY: 'run .*--suite services .*after-services'});
   assert.equal(broken.status, 1);
   assert.deepEqual(failures(broken.stderr).map(line => line.replace(/.*FAILED: /, '')), ['after services run (exit 1)', 'before vs after, services: a side has no run']);
   assert.equal((broken.log.match(/cleanup-prepared/g) ?? []).length, 2, 'both sides cleaned up');
-  const unprepared = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness'], {FAIL_PARITY: 'prepare .*--commit bbb'});
+  const unprepared = wrapper(t, ['cfprefs', 'aaa1111', 'bbb2222', 'harness'], {FAIL_PARITY: 'prepare .*--commit bbb2222'});
   assert.equal(unprepared.status, 1);
   assert.ok(failures(unprepared.stderr).some(line => /after: prepare at bbb/.test(line)), unprepared.stderr);
-  const lost = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness'], {FAIL_SCP: 'denials-before'});
+  const lost = wrapper(t, ['cfprefs', 'aaa1111', 'bbb2222', 'harness'], {FAIL_SCP: 'denials-before'});
   assert.equal(lost.status, 1);
   assert.ok(failures(lost.stderr).some(line => /denial log is missing/.test(line)), lost.stderr);
+});
+
+// A revision is interpolated into the mini's shell source, so only a hex commit id is accepted, before anything runs.
+test('a revision that is not a 7-40 digit hex commit id is refused before anything reaches the mini', t => {
+  for (const bad of ['$(touch /tmp/cua-115-pwned)', 'abc1234;id', 'ABCDEF1', 'abc12', 'a'.repeat(41), 'abc1234\n$(id)', 'main']) {
+    for (const args of [['oracles', bad], ['own-sandbox', bad], ['cfprefs', bad, 'a'.repeat(40), 'p'], ['cfprefs', 'a'.repeat(40), bad, 'p']]) {
+      const run = wrapper(t, args);
+      assert.notEqual(run.status, 0, JSON.stringify(args));
+      assert.match(run.stderr, /not a commit id/, JSON.stringify(args));
+      assert.equal(run.log, '', `${JSON.stringify(args)}: nothing ran`);
+    }
+  }
 });

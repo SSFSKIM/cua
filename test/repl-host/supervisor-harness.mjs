@@ -10,6 +10,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {quote} from '../../scripts/browser-parity/topology.mjs';
 
 export const SUPERVISOR = fileURLToPath(new URL('../../src/repl-host/supervisor.mjs', import.meta.url));
 const DEADLINE_MS = 20_000;
@@ -20,7 +21,7 @@ const DEADLINE_MS = 20_000;
 // takes read access to the child's lifeline FIFO away before running it, as a sandbox policy that denied the path would.
 export function sandboxDouble(dir, {refuse = false, denyLifeline = null, exec = false, records = join(dir, 'codex')} = {}) {
   const path = join(dir, refuse ? 'refusing-sandbox' : exec ? 'sandbox-exec' : 'sandbox');
-  const log = JSON.stringify(join(records, 'launches'));
+  const log = quote(join(records, 'launches'));
   const deny = denyLifeline ? `case "$*" in *${denyLifeline === 'worker' ? 'trusted-worker' : 'kernel'}.mjs*) chmod 000 "\${CUA_REPL_LIFELINE#*:*:}";; esac\n` : '';
   writeFileSync(path, refuse
     ? `#!/bin/sh\nmkdir -p ${log} && printf refused > ${log}/$$\nprintf 'fixture sandbox launcher refused\\n' >&2\nexit 73\n`

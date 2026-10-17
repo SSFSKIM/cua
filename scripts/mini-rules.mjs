@@ -65,13 +65,14 @@ export function frontmost({exec}) {
 // probe shell, whose argv names the path. Each worker is reported with its command (args only), its parent's pid and
 // command and its elapsed time; never its environment (no ps -E).
 export const RUNNER_WORKER = '/Users/new/actions-runner-maws/bin/Runner.Worker';
+// It runs as `sh -c '<script>'`: ssh hands it to the remote account's login shell, and zsh would not split $p by words.
 export const workerProbe = (executable = RUNNER_WORKER) => {
   const exe = quote(executable);
-  return `p=$(pgrep -x ${quote(basename(executable))}); s=$?; echo "pgrep_status=$s"; n=0
+  return `sh -c ${quote(`p=$(pgrep -x ${quote(basename(executable))}); s=$?; echo "pgrep_status=$s"; n=0
 for pid in $p; do c=$(ps -o command= -p "$pid") || continue
   case "$c" in ${exe}|${exe}' '*) n=$((n+1)); pp=$(ps -o ppid= -p "$pid" | tr -d ' ')
     echo "worker_pid=$pid"; echo "worker_etime=$(ps -o etime= -p "$pid" | tr -d ' ')"; echo "worker_command=$c"; echo "worker_ppid=$pp"; echo "worker_parent=$(ps -o command= -p "$pp")";; esac
-done; echo "workers=$n"; uptime`;
+done; echo "workers=$n"; uptime`)}`;
 };
 // The probe's worker lines -> [{pid, etime, command, ppid, parent}].
 function workersSeen(text) {

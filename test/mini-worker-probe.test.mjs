@@ -26,12 +26,14 @@ function runner(t) {
   });
   return {executable, start};
 }
-const probe = executable => spawnSync('/bin/sh', ['-c', workerProbe(executable)], {encoding: 'utf8'}).stdout;
+// The probe as ssh runs it: as source for the remote account's login shell, sh or zsh.
+const probe = (executable, shell = '/bin/sh') => spawnSync(shell, ['-c', workerProbe(executable)], {encoding: 'utf8'}).stdout;
+const ZSH = ['/bin/zsh', '/usr/bin/zsh'].find(path => spawnSync('test', ['-x', path]).status === 0);
 const count = text => Number(/workers=(\d+)/.exec(text)[1]);
 
 test('a concurrent shell whose argv names the Runner.Worker path is not a worker', async t => {
   const {executable, start} = runner(t);
-  await start('/bin/sh', ['-c', `sleep 30; : ${executable} ${RUNNER_WORKER}`]);
+  await start('/bin/sh', ['-c', 'sleep 30; : "$1" "$2"', 'sh', executable, RUNNER_WORKER]);
   const text = probe(executable);
   assert.equal(count(text), 0, text);
   assert.doesNotMatch(text, /worker_pid=/);
@@ -53,7 +55,8 @@ test('a process running the Runner.Worker executable is a worker, logged with it
 test('the default probe matches only the mac lane runner\'s own executable', () => {
   assert.equal(RUNNER_WORKER, '/Users/new/actions-runner-maws/bin/Runner.Worker');
   assert.equal(workerProbe(), workerProbe(RUNNER_WORKER));
-  assert.match(workerProbe(), /pgrep -x 'Runner\.Worker'/);
+  assert.match(workerProbe(), /^sh -c '/, 'one sh script, whatever the login shell');
+  assert.match(workerProbe(), /pgrep -x '\\''Runner\.Worker'\\''/);
   assert.doesNotMatch(workerProbe(), /pgrep -f|ps [^;|]*(-E|\be\b|eww)/, 'no argv match, no environment');
 });
 
@@ -72,4 +75,15 @@ test('a worker reading logs what it saw, once per reading, in the gate and in th
   const lines = [];
   await assert.rejects(gate('x', {exec, sleep: async () => {}, log: line => lines.push(line), maxWaits: 0}), /did not become idle/);
   assert.ok(lines.some(line => line.includes('Runner.Worker seen: pid 4242 (elapsed 01:02) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 1 2; parent 4200 /Users/new/actions-runner-maws/bin/Runner.Listener run')), lines.join('\n'));
+});
+
+test('two workers count as two whichever shell the remote account logs in with, zsh included', {skip: !ZSH && 'needs zsh'}, async t => {
+  const {executable, start} = runner(t);
+  await start(executable, ['30']);
+  await start(executable, ['31']);
+  for (const shell of ['/bin/sh', ZSH]) {
+    const text = probe(executable, shell);
+    assert.equal(count(text), 2, `${shell}: ${text}`);
+    assert.equal(text.match(/^worker_pid=/gm)?.length, 2, shell);
+  }
 });

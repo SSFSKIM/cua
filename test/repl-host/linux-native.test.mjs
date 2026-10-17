@@ -10,10 +10,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {mkdirSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {BROWSER_SERVICE, SKY_SERVICE, buildLaunch} from '../../src/runtime/launch.mjs';
+import {BROWSER_SERVICE, SKY_SERVICE, buildLaunch, createLaunchDirs} from '../../src/runtime/launch.mjs';
 import {SANDBOX_META_KEY, sandboxModeFrom, sandboxState} from '../../src/runtime/sandbox.mjs';
 import {spawnUpstream} from '../../src/mcp/upstream.mjs';
 import {handshakeRecords, lazyRuntime} from '../../src/mcp/lazy-runtime.mjs';
@@ -43,7 +42,7 @@ async function linuxSession(t, {surfaces, secrets = {}}) {
   const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, resolveOwnNode: () => node});
   // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.
   if (services.sky && LINUX_SKY !== SKY_SERVICE) launch.env.CUA_REPL_TRUSTED_CODE_PATHS += `:${dirname(SKY_SERVICE)}`;
-  for (const dir of [launch.cwd, launch.env.CODEX_HOME]) mkdirSync(dir, {recursive: true, mode: 0o700});
+  createLaunchDirs(launch);
   const meta = {[SANDBOX_META_KEY]: sandboxState(sandboxModeFrom({}, {platform: 'linux', surfaces}), launch.cwd)};
   let current = null;
   const upstream = lazyRuntime({start: async () => (current = spawnUpstream(launch, {stderr: 'ignore'})),

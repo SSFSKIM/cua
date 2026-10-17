@@ -2,7 +2,7 @@ import {createAgentState} from '../src/remote/health.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
-import {chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, realpathSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
 import {agentChecks, inspectRuntime, classifyHelper, summarize} from '../src/runtime/doctor.mjs';
 import {agentPlistPath, installAgent} from '../src/remote/launchd.mjs';
 import {enrollDevice} from '../src/remote/device.mjs';
@@ -75,30 +75,29 @@ test('a healthy installed runtime names its release and passes every installed-r
   assert.equal(check(report, 'helper.live').status, 'blocked');
 });
 
-// Issue #36: under the scoped default a home or checkout below $TMPDIR would make node_repl refuse every kernel; the
-// doctor says so plainly, while disabled and default are choices it only describes.
-test('the sandbox check describes the mode and fails a scoped home whose runtime lies below $TMPDIR, naming the remedy', {skip: !darwin}, async t => {
+// Issue #36: under the scoped default a home or checkout below the caller's $TMPDIR made node_repl refuse every kernel.
+// Since #115 a session's TMPDIR is its own, inside its run directory, so the caller's $TMPDIR no longer matters; the
+// doctor still fails a home whose run directories would overlap something protected, and describes the other modes.
+test('the sandbox check describes the mode, ignores the caller\'s $TMPDIR, and fails a home whose run directories overlap a protected path', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
-  const scoped = check(await inspect({TMPDIR: '/private/var/folders/xx/T/'}), 'sandbox');
-  assert.equal(scoped.status, 'pass');
-  assert.match(scoped.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*run directory and \$TMPDIR.*no network/);
-  const conflicted = await inspect({TMPDIR: realpathSync(home)});
-  assert.equal(conflicted.ok, false);
-  const failed = check(conflicted, 'sandbox');
+  for (const TMPDIR of ['/private/var/folders/xx/T/', realpathSync(home)]) {
+    const scoped = check(await inspect({TMPDIR}), 'sandbox');
+    assert.equal(scoped.status, 'pass', TMPDIR);
+    assert.match(scoped.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*run directory and its session temp.*no network/);
+  }
+  // $CUA_HOME/run resolving into $CUA_HOME/staging puts every session's run directory inside install's staging.
+  const real = realpathSync(home);
+  rmSync(join(real, 'run'), {recursive: true, force: true});
+  mkdirSync(join(real, 'staging', 'runs'), {recursive: true});
+  symlinkSync(join(real, 'staging', 'runs'), join(real, 'run'));
+  const failed = check(await inspect({}), 'sandbox');
   assert.equal(failed.status, 'fail');
-  assert.match(failed.detail, /\$TMPDIR \(.*\), which contains the trusted code path .*runtimes/);
+  assert.match(failed.detail, /a connection's run directory, \$CUA_HOME\/run\/<session> \(.*\), which lies inside cua install's staging directory/);
   assert.match(failed.detail, /cua serve .*refuse/);
-  assert.match(failed.detail, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
-  // $CUA_HOME/node, the Node cua install places for the own host, is protected as the connection protects it.
-  const node = check(await inspect({TMPDIR: join(realpathSync(home), 'node')}), 'sandbox');
-  assert.equal(node.status, 'fail');
-  assert.match(node.detail, /\$TMPDIR \(.*\/node\), which contains the Node cua installed for its own REPL host/);
-  const staging = check(await inspect({TMPDIR: join(realpathSync(home), 'staging')}), 'sandbox');
-  assert.equal(staging.status, 'fail');
-  assert.match(staging.detail, /\$TMPDIR \(.*\/staging\), which contains cua install's staging directory/);
+  assert.match(failed.detail, /CUA_SHIM_SANDBOX=disabled/);
   for (const [mode, text] of [['disabled', /wherever your account can.*network/], ['default', /denies every write/]]) {
-    const row = check(await inspect({TMPDIR: realpathSync(home), CUA_SHIM_SANDBOX: mode}), 'sandbox');
+    const row = check(await inspect({CUA_SHIM_SANDBOX: mode}), 'sandbox');
     assert.equal(row.status, 'pass', mode);
     assert.match(row.detail, text, mode);
   }

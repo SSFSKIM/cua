@@ -34,7 +34,9 @@ export function attestFixtureLaunch(launch,{facts,home,host,nodeMode=process.env
 export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false,fixtureServices}={}) {
   const env={...launch.env};
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
-  if(brokenSandbox)env.CODEX_CLI_PATH=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
+  // The broken launcher stands in for whichever sandbox launcher the launch names: cua's own (sandbox-exec, the macOS
+  // own host since #115 M1) or the Codex CLI.
+  if(brokenSandbox)env[env.CUA_REPL_SANDBOX_EXEC?'CUA_REPL_SANDBOX_EXEC':'CODEX_CLI_PATH']=typeof brokenSandbox==='string'?brokenSandbox:'/cua-parity-unavailable-sandbox';
   const banner=witness?'globalThis.__parityBannerWitness = Symbol("fixture-banner");':'void 0;';
   for(const key of Object.keys(env))if(/^(SKY_|OAI_SKY_|CUA_SKY_|CUA_BROWSER_|BROWSER_USE_)/.test(key))delete env[key];
   if(fixtureServices){

@@ -28,8 +28,9 @@ test('a Linux computer-use launch on the vendor host passes the desktop session 
   const p = runtime.paths;
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, services: {sky: SKY_SERVICE}});
   assert.deepEqual(env, {
-    HOME: '/home/u', USER: 'u', LOGNAME: 'u', LANG: 'C.UTF-8', ...DESKTOP,
+    HOME: '/home/u', USER: 'u', LOGNAME: 'u', LANG: 'C.UTF-8', ...DESKTOP, TMPDIR: join(home, 'run', SESSION, 'tmp'),
     PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+    CUA_SANDBOX_DENY_READ: env.CUA_SANDBOX_DENY_READ,
     CODEX_HOME: join(home, 'state', 'codex'),
     CUA_REPL_NODE_REPL_PATH: p.nodeRepl,
     CUA_REPL_ENABLED_SURFACES: 'computer',
@@ -44,6 +45,10 @@ test('a Linux computer-use launch on the vendor host passes the desktop session 
     CUA_SKY_VENDOR_SERVICE: p.skyVendorService,
   });
   assert.equal(JSON.parse(env.NODE_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
+  // The Linux shape of the deny list (#115 M0c): the home's private directories and run/ one by one, the session re-exposed.
+  const {deny, reexpose} = JSON.parse(env.CUA_SANDBOX_DENY_READ);
+  assert.deepEqual(deny.slice(-4), ['state', 'remote', 'chrome', 'run'].map(dir => join(home, dir)));
+  assert.deepEqual(reexpose, [join(home, 'run', SESSION), join(home, 'run', SESSION, 'tmp')]);
 });
 
 // M5's default (spec 2026-10-14-own-repl-host-design.md, "Selection is a connection fact"): a Linux session runs cua's
@@ -57,7 +62,10 @@ test('by default a Linux computer-use launch runs cua\'s own host on the resolve
   const {env} = launch;
   for (const [key, value] of Object.entries(DESKTOP)) assert.equal(env[key], value, key);
   assert.equal(env.OAI_SKY_LINUX_BIN, join(runtime.root, 'cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64'));
-  assert.equal(env.CODEX_CLI_PATH, join(runtime.root, 'codex'));
+  assert.equal(env.CODEX_CLI_PATH, join(runtime.root, 'codex'), 'the own host on Linux keeps the Codex CLI until #115 M3');
+  assert.equal(env.CODEX_HOME, join(home, 'state', 'codex'));
+  assert.equal(env.CUA_REPL_SANDBOX_EXEC, undefined, 'cua\'s own sandbox is macOS\'s until M3');
+  assert.equal(env.TMPDIR, join(home, 'run', SESSION, 'tmp'), 'the session\'s own TMPDIR, on Linux too');
   assert.equal(env.CUA_REPL_NODE_PATH, node);
   assert.equal(JSON.parse(env.CUA_REPL_TRUSTED_SERVICES).sky, SKY_SERVICE);
   assert.deepEqual(Object.keys(env).filter(key => key.startsWith('NODE_REPL_') && key !== 'NODE_REPL_DISABLE_ANALYTICS'), [], 'no vendor host setting');

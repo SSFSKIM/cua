@@ -1,7 +1,9 @@
 // Drives cua's own REPL host (src/repl-host/supervisor.mjs) as cua's proxy does: a real supervisor process on the own
 // host's Node, a real kernel, MCP over its stdio. The sandbox launcher is a double (`sandboxDouble`): a script that
-// records its argv and runs the command after `--` as its own child, as `codex sandbox` does, without confining it; the
-// real launcher is exercised only by the live parity runs. Every process belongs to the test and is gone after it.
+// records its argv and runs the command after `--` without confining it: as sandbox-exec does (it execs the command:
+// cua's own sandbox, the macOS route, CUA_REPL_SANDBOX_EXEC) or as `codex sandbox` does (as its own child: the Codex
+// CLI's route, CODEX_CLI_PATH). The real launchers are exercised only by the live runs. Every process belongs to the
+// test and is gone after it.
 import {spawn, execFileSync} from 'node:child_process';
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -12,23 +14,25 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 export const SUPERVISOR = fileURLToPath(new URL('../../src/repl-host/supervisor.mjs', import.meta.url));
 const DEADLINE_MS = 20_000;
 
-// The launcher double. `refuse`: it prints to stderr and exits 73 without running anything, like a sandbox that cannot
-// start. `denyLifeline` ('kernel' | 'worker'): for that child it takes read access to the child's lifeline FIFO away
-// before running it, as a sandbox policy that denied the path would.
-export function sandboxDouble(dir, {refuse = false, denyLifeline = null} = {}) {
-  const path = join(dir, refuse ? 'refusing-sandbox' : 'sandbox');
+// The launcher double, recording each launch's argv in <records>/launches/<pid>. `exec`: it execs the command (as
+// sandbox-exec does), else runs it as its own child (as `codex sandbox` does). `refuse`: it prints to stderr and exits 73
+// without running anything, like a sandbox that cannot start. `denyLifeline` ('kernel' | 'worker'): for that child it
+// takes read access to the child's lifeline FIFO away before running it, as a sandbox policy that denied the path would.
+export function sandboxDouble(dir, {refuse = false, denyLifeline = null, exec = false, records = join(dir, 'codex')} = {}) {
+  const path = join(dir, refuse ? 'refusing-sandbox' : exec ? 'sandbox-exec' : 'sandbox');
+  const log = JSON.stringify(join(records, 'launches'));
   const deny = denyLifeline ? `case "$*" in *${denyLifeline === 'worker' ? 'trusted-worker' : 'kernel'}.mjs*) chmod 000 "\${CUA_REPL_LIFELINE#*:*:}";; esac\n` : '';
   writeFileSync(path, refuse
-    ? '#!/bin/sh\nmkdir -p "$CODEX_HOME/launches" && printf refused > "$CODEX_HOME/launches/$$"\nprintf \'fixture sandbox launcher refused\\n\' >&2\nexit 73\n'
-    : '#!/bin/sh\nmkdir -p "$CODEX_HOME/launches"\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$CODEX_HOME/launches/$$"\n' + deny
-      + 'while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\nshift\n"$@"\nexit $?\n');
+    ? `#!/bin/sh\nmkdir -p ${log} && printf refused > ${log}/$$\nprintf 'fixture sandbox launcher refused\\n' >&2\nexit 73\n`
+    : `#!/bin/sh\nmkdir -p ${log}\nfor a in "$@"; do printf '%s\\n' "$a"; done > ${log}/$$\n${deny}`
+      + `while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done\nshift\n${exec ? 'exec "$@"\n' : '"$@"\nexit $?\n'}`);
   chmodSync(path, 0o755);
   return path;
 }
 
-// The launches the double recorded: [{pid, argv}] in pid order.
-export function launches(codexHome) {
-  const dir = join(codexHome, 'launches');
+// The launches the double recorded under `records`: [{pid, argv}] in pid order.
+export function launches(records) {
+  const dir = join(records, 'launches');
   if (!existsSync(dir)) return [];
   return readdirSync(dir).map(Number).sort((a, b) => a - b).map(pid => ({pid, argv: readFileSync(join(dir, String(pid)), 'utf8').split('\n').slice(0, -1)}));
 }
@@ -62,11 +66,13 @@ export const SCOPED = cwd => ({type: 'managed', file_system: {type: 'restricted'
 ]}, network: 'restricted'});
 
 // Starts a supervisor -> the driver. `env` adds to (or, as undefined, removes from) the host's environment; `sandbox`
-// is 'double' (default), 'refusing' or null (no CODEX_CLI_PATH). `services` ({name: module source}) are fixture trusted
+// is 'double' (default), 'refusing' or null (no sandbox launcher); `launcher` the route the double stands in for:
+// 'seatbelt' (default: CUA_REPL_SANDBOX_EXEC, cua's own sandbox, with a deny list of <root>/denied) or 'codex'
+// (CODEX_CLI_PATH and CODEX_HOME, the Codex CLI's). `services` ({name: module source}) are fixture trusted
 // services, written as <root>/trusted/<name>.mjs (the one trusted code path) and registered with rpc enabled.
 // `capabilities` are the client's in initialize; `onServerRequest(msg)` answers the requests the host sends the client
 // (elicitations), returning the reply's {result} or {error}, or nothing to leave it unanswered.
-export async function startHost(t, {node, env = {}, sandbox = 'double', denyLifeline = null, initialize = true, services = null, capabilities = {}, onServerRequest = () => undefined} = {}) {
+export async function startHost(t, {node, env = {}, sandbox = 'double', launcher = 'seatbelt', denyLifeline = null, initialize = true, services = null, capabilities = {}, onServerRequest = () => undefined} = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cua-host-')));
   const cwd = join(root, 'run');
   const codexHome = join(root, 'codex');
@@ -79,8 +85,12 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', denyLife
     Object.assign(serviceEnv, {CUA_REPL_TRUSTED_SERVICES: JSON.stringify(Object.fromEntries(Object.keys(services).map(name => [name, join(trusted, `${name}.mjs`)]))),
       CUA_REPL_TRUSTED_CODE_PATHS: trusted, CUA_REPL_TRUSTED_RPC_ENABLED: '1'});
   }
-  const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CODEX_HOME: codexHome, CUA_REPL_NODE_PATH: node, ...serviceEnv,
-    ...(sandbox ? {CODEX_CLI_PATH: sandboxDouble(root, {refuse: sandbox === 'refusing', denyLifeline})} : {})};
+  const denied = join(root, 'denied');
+  const double = sandbox ? sandboxDouble(root, {refuse: sandbox === 'refusing', denyLifeline, exec: launcher === 'seatbelt'}) : null;
+  const launcherEnv = !double ? {} : launcher === 'seatbelt'
+    ? {CUA_REPL_SANDBOX_EXEC: double, CUA_SANDBOX_DENY_READ: JSON.stringify({deny: [denied], reexpose: []})}
+    : {CODEX_CLI_PATH: double, CODEX_HOME: codexHome};
+  const base = {PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: root, TMPDIR: tmp, CUA_REPL_NODE_PATH: node, ...serviceEnv, ...launcherEnv};
   const childEnv = Object.fromEntries(Object.entries({...base, ...env}).filter(([, v]) => v !== undefined));
   const child = spawn(node, ['--disable-sigusr1', SUPERVISOR], {cwd, env: childEnv, stdio: ['pipe', 'pipe', 'pipe']});
   let stderr = '';
@@ -135,7 +145,7 @@ export async function startHost(t, {node, env = {}, sandbox = 'double', denyLife
   const kill = child.kill.bind(child), end = child.stdin.end.bind(child.stdin);
   child.kill = (...args) => { if (child.exitCode === null && child.signalCode === null) track(); return kill(...args); };
   child.stdin.end = (...args) => { if (child.exitCode === null && child.signalCode === null) track(); return end(...args); };
-  const host = {child, cwd, root, codexHome, tmp, trusted, send, request, call, js, exited, frames, serverRequests, track, stderr: () => stderr};
+  const host = {child, cwd, root, codexHome, tmp, trusted, denied, send, request, call, js, exited, frames, serverRequests, track, stderr: () => stderr};
   if (initialize) {
     host.initialized = await request('initialize', {protocolVersion: '2025-06-18', capabilities, clientInfo: {name: 'test', version: '0'}});
     send({jsonrpc: '2.0', method: 'notifications/initialized'});

@@ -3,7 +3,7 @@
 // CLI's arg0 directory, the pid) normalized away and every remaining difference named.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {compareCapture, compareExperiments, compareFingerprints, envDiff, envObject, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
+import {compareCapture, compareExperiments, compareFingerprints, comparePortToCapture, envDiff, envObject, profileFromPolicy} from '../../scripts/sandbox-probe/compare.mjs';
 
 test('profileFromPolicy turns cua\'s sorted -c table into the original\'s permission profile, in the same order', () => {
   const policy = {filesystem: [['/a', 'read'], ['/z', 'none'], [':root', 'read'], [':tmpdir', 'write'], [':workspace_roots', {'.': 'write'}]], cwd: '/run'};
@@ -113,4 +113,20 @@ test('compareFingerprints tells failures apart by errno, and checks apart by fil
   assert.equal(compareFingerprints(attempt(1), attempt(1)).equal, true);
   const byFilter = compareFingerprints(attempt(1), attempt(1, 'none'));
   assert.deepEqual(byFilter.checks.map(c => [c.filter, Boolean(c.left), Boolean(c.right)]), [['attempt', true, false], ['none', false, true]]);
+});
+
+test('comparePortToCapture: cua\'s port against the signed CLI\'s capture, equal but for its recorded deviations', () => {
+  const captured = {captured: true, execPath: '/usr/bin/sandbox-exec', argv: ['/usr/bin/sandbox-exec', ...golden.argsSymbolic],
+    env: ['CODEX_SANDBOX=seatbelt', 'HOME=/h', 'PATH=/codex-home/tmp/arg0/codex-arg0AbC:/usr/bin', '__CF_USER_TEXT_ENCODING=0x1F5:0x3:0x33']};
+  const port = {args: golden.argsNumeric, env: {CODEX_SANDBOX: 'seatbelt', HOME: '/h', PATH: '/usr/bin'}};
+  const result = comparePortToCapture({captured, port});
+  assert.equal(result.argvEqual, true, 'argv equal once the TIOCSTI line is read in the tag\'s form');
+  assert.equal(result.tiocsti, 'numeric');
+  assert.deepEqual(result.cliOnlyEnv, ['the CLI\'s arg0 PATH entry', '__CF_USER_TEXT_ENCODING']);
+  assert.equal(result.equalButDeviations, true);
+  const other = comparePortToCapture({captured, port: {...port, args: [...port.args.slice(0, 2), '-DWRITABLE_ROOT_0=/elsewhere', ...port.args.slice(3)]}});
+  assert.equal(other.equalButDeviations, false);
+  assert.deepEqual(other.paramsDiffering, [{index: 0, captured: '-DWRITABLE_ROOT_0=/run', golden: '-DWRITABLE_ROOT_0=/elsewhere'}]);
+  const extraEnv = comparePortToCapture({captured: {...captured, env: [...captured.env, 'SURPRISE=1']}, port});
+  assert.equal(extraEnv.equalButDeviations, false, 'any other environment difference is a difference');
 });

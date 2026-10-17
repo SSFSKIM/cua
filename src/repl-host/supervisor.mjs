@@ -2,8 +2,11 @@
 // (src/runtime/launch.mjs) starts in place of the vendor's Node -> cua-repl -> Rust node_repl when a connection selects
 // cua's host. It speaks MCP (JSON-RPC 2.0, one message per line on stdin/stdout; stdout carries nothing else) with
 // cua's proxy (src/mcp/server.mjs), answers the HostMcp contract (./tools.mjs) and supplies the vendor supervisor's
-// behaviour around its two children, each launched lazily under the retained sandbox (src/runtime/sandbox.mjs
-// sandboxPolicy/sandboxArgs) for the policy each call's `codex/sandbox-state-meta` carries:
+// behaviour around its two children, each launched lazily under a sandbox for the policy each call's
+// `codex/sandbox-state-meta` carries: on macOS cua's own (src/sandbox: the role's profile under /usr/bin/sandbox-exec,
+// which execs the child, so the child process is Node itself), elsewhere the retained Codex CLI (src/runtime/sandbox.mjs
+// sandboxPolicy/sandboxArgs) until #115 M3. The kernel's profile adds the launch's deny list (CUA_SANDBOX_DENY_READ):
+// the secret store, ~/.config/cua and cua's home, with what the kernel needs re-exposed; the worker's does not:
 // - the kernel (./kernel.mjs, KernelWire), which runs cells: the host times executions, assembles their results
 //   (./results.mjs) and owns the kernel's lifecycle;
 // - the trusted worker (./trusted-worker.mjs, TrustedServiceWire), which runs the registered trusted services
@@ -63,8 +66,11 @@
 // answers, response meta (observed on the pinned node_repl, 2026-10-14).
 //
 // Settings (environment, owned names; src/runtime/launch.mjs builds them): CUA_REPL_NODE_PATH (the Node both children
-// run on, absolute), CODEX_CLI_PATH (the sandbox launcher; without it no sandboxed execution runs at all), CODEX_HOME
-// (the launcher's), CUA_REPL_TRUSTED_SERVICES and CUA_REPL_TRUSTED_RPC_ENABLED (the worker and cells' rpc),
+// run on, absolute), the sandbox launcher (without one no sandboxed execution runs at all): CUA_REPL_SANDBOX_EXEC
+// (macOS: sandbox-exec, under which src/sandbox renders each child's profile) or else CODEX_CLI_PATH and CODEX_HOME (the
+// Codex CLI's `sandbox`), CUA_SANDBOX_DENY_READ (the kernel's deny list; without a well-formed one no sandboxed child of
+// either role is launched on cua's own sandbox), CUA_REPL_TRUSTED_SERVICES and CUA_REPL_TRUSTED_RPC_ENABLED (the worker
+// and cells' rpc),
 // CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS, CUA_REPL_TOOL_OVERRIDES (the tool text, ./tools.mjs), and for the kernel
 // CUA_REPL_JS_BANNER, CUA_REPL_UNTRUSTED_ENV_ALLOWLIST (and the names it lists), CUA_REPL_NODE_MODULE_DIRS. The
 // kernel's environment is only these and HOME, PATH, TMPDIR, TMP and LC_ALL, never the host's own; the worker, trusted
@@ -82,6 +88,8 @@ import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
 import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
 import {launchServicesAction} from './launch-services.mjs';
 import {SANDBOX_META_KEY, SandboxStateError, sandboxArgs, sandboxPolicy} from '../runtime/sandbox.mjs';
+import {parseDenyRead, tableKey as launchKey} from '../sandbox/policy.mjs';
+import {sandboxedLaunch} from '../sandbox/index.mjs';
 
 export const KERNEL = fileURLToPath(new URL('./kernel.mjs', import.meta.url));
 // What a kernel reads beyond its own code under a restricted profile: cua's facade (src/cua-api), which the banner
@@ -94,7 +102,12 @@ export const TIMEOUT_SENTENCE = 'js execution timed out; kernel reset, rerun you
 export const RESET_SENTENCE = 'js kernel reset';
 export const EMPTY_SOURCE_SENTENCE = 'js expects non-empty JavaScript source';
 export const SHUTTING_DOWN_SENTENCE = 'js execution unavailable because the runtime manager is shutting down';
-export const NO_SANDBOX_SENTENCE = 'js sandbox unavailable: no sandbox launcher is configured (CODEX_CLI_PATH), and JavaScript never runs unconfined in its place; nothing was run';
+export const NO_SANDBOX_SENTENCE = 'js sandbox unavailable: this host has no sandbox launcher, and JavaScript never runs unconfined in its place; nothing was run';
+// A sandboxed child that cannot be launched as asked (`why`: its deny list, a deny target, a state the sandbox cannot
+// render) is never launched another way.
+export const sandboxRefusedSentence = why => `js sandbox unavailable: ${why}; JavaScript never runs unconfined in its place, and nothing was run`;
+export const DENY_LIST_INVALID = 'the launch\'s deny list (CUA_SANDBOX_DENY_READ) is missing or malformed (sandbox_state_invalid)';
+class LaunchRefused extends Error {}
 export const NO_TRUSTED_SERVICES = 'No trusted RPC services are configured';
 export const TRUSTED_EXIT_SENTENCE = 'trusted Node process exited unexpectedly';
 export const EXEC_CONTEXT_NOT_FOUND = 'node_repl exec context not found';
@@ -120,7 +133,9 @@ export const sortedJson = value => (Array.isArray(value) ? value.map(sortedJson)
 export function hostSettings(env, {cwd}) {
   const node = env.CUA_REPL_NODE_PATH;
   if (typeof node !== 'string' || !isAbsolute(node)) throw new Error('CUA_REPL_NODE_PATH must be the absolute path of the kernel\'s Node');
-  const codexCli = env.CODEX_CLI_PATH && isAbsolute(env.CODEX_CLI_PATH) ? env.CODEX_CLI_PATH : null;
+  const absolute = value => (typeof value === 'string' && isAbsolute(value) ? value : null);
+  const launcher = absolute(env.CUA_REPL_SANDBOX_EXEC) ? {kind: 'seatbelt', exec: env.CUA_REPL_SANDBOX_EXEC}
+    : absolute(env.CODEX_CLI_PATH) ? {kind: 'codex', cli: env.CODEX_CLI_PATH, codexHome: env.CODEX_HOME ?? null} : null;
   const moduleDirs = (env.CUA_REPL_NODE_MODULE_DIRS ?? '').split(delimiter).filter(dir => isAbsolute(dir));
   const kernelEnv = {};
   for (const key of KERNEL_ENV) if (typeof env[key] === 'string') kernelEnv[key] = env[key];
@@ -136,27 +151,40 @@ export function hostSettings(env, {cwd}) {
   }
   const pipeTimeout = Number(env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS);
   const workerEnv = Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string'));
-  return {node, codexCli, codexHome: env.CODEX_HOME ?? null, workingDir: cwd, kernelEnv, workerEnv,
+  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workingDir: cwd, kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
     readPaths: [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS, ...moduleDirs], sessionId: randomUUID().replaceAll('-', '')};
 }
 
-// A child launch of `command` ([node, ...args]) with `env` for `policy` (sandboxPolicy) -> {command, args, env, cwd,
-// key}; `key` names the policy, the same for both children, so a call under another policy gets fresh ones.
-function childLaunch(settings, policy, command, env) {
-  if (policy.disabled) return {command: command[0], args: command.slice(1), env: {...env}, cwd: settings.workingDir, key: 'disabled'};
-  const args = sandboxArgs(policy, command);
-  const cwd = policy.cwd ?? settings.workingDir;
-  return {command: settings.codexCli, args, env: {...env, ...(settings.codexHome ? {CODEX_HOME: settings.codexHome} : {})}, cwd, key: JSON.stringify([cwd, policy.filesystem])};
+// A child launch of `command` ([node, ...args]) with `env` in `role` for `policy` (sandboxPolicy's, carrying the call's
+// `state`) -> {command, args, env, cwd, key}. `key` is the policy state's (src/sandbox/policy.mjs tableKey), the same for
+// both children, so a call under another state gets fresh ones. Throws LaunchRefused, with the sentence the call is answered with, when
+// the sandbox cannot launch it as asked.
+function childLaunch(settings, policy, role, command, env) {
+  const key = launchKey(policy);
+  if (policy.disabled) return {command: command[0], args: command.slice(1), env: {...env}, cwd: settings.workingDir, key};
+  const {launcher} = settings;
+  if (launcher.kind === 'codex') {
+    const cwd = policy.cwd ?? settings.workingDir;
+    return {command: launcher.cli, args: sandboxArgs(policy, command), env: {...env, ...(launcher.codexHome ? {CODEX_HOME: launcher.codexHome} : {})}, cwd, key};
+  }
+  if (!settings.denyRead) throw new LaunchRefused(sandboxRefusedSentence(DENY_LIST_INVALID));
+  try {
+    const launch = sandboxedLaunch({platform: 'darwin', state: policy.state, role, command, env, cwd: settings.workingDir, readPaths: settings.readPaths, denyRead: settings.denyRead});
+    return {...launch, command: launcher.exec, key};
+  } catch (error) {
+    if (error instanceof SandboxStateError || error?.code) throw new LaunchRefused(sandboxRefusedSentence(error.message));
+    throw error;
+  }
 }
 
 export function kernelLaunch(settings, policy) {
-  return childLaunch(settings, policy, [settings.node, '--experimental-vm-modules', KERNEL, '--session-id', settings.sessionId, '--working-dir', settings.workingDir], settings.kernelEnv);
+  return childLaunch(settings, policy, 'kernel', [settings.node, '--experimental-vm-modules', KERNEL, '--session-id', settings.sessionId, '--working-dir', settings.workingDir], settings.kernelEnv);
 }
 
 export function workerLaunch(settings, policy) {
-  return childLaunch(settings, policy, [settings.node, '--experimental-vm-modules', TRUSTED_WORKER, settings.workingDir], settings.workerEnv);
+  return childLaunch(settings, policy, 'worker', [settings.node, '--experimental-vm-modules', TRUSTED_WORKER, settings.workingDir], settings.workerEnv);
 }
 
 // Serves MCP on `input`/`output` -> {closed: Promise<exit code>, shutdown()}. `startKernel` is the child seam for both
@@ -169,7 +197,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // registered with `own` while it runs, so another child's end never takes it or what it started.
   const groupReaper = reaper();
   const reap = groupReaper?.reap ?? (() => {});
-  const sandboxed = settings.codexCli !== null;
+  const sandboxed = settings.launcher !== null;
   let initialized = false;
   let formSupported = false;  // the client's initialize offered form elicitation
   let closing = false;
@@ -288,7 +316,11 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     if (!settings.services) return answer(hooks ? {ok: true, value: null} : {ok: false, error: NO_TRUSTED_SERVICES});
     if (!current) return answer({ok: false, error: EXEC_CONTEXT_NOT_FOUND});
     if (hooks && !worker) return answer({ok: true, value: null});
-    const self = worker ?? launchWorker(current.policy);
+    let self;
+    try { self = worker ?? launchWorker(current.policy); } catch (error) {
+      if (error instanceof LaunchRefused) return answer({ok: false, error: error.message});
+      throw error;
+    }
     if (!self) return answer({ok: false, error: TRUSTED_EXIT_SENTENCE});
     self.pending.set(message.id, kernelSelf);
     const sent = self.post(sortedJson({
@@ -506,7 +538,12 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   async function runJs(id, {code, timeoutMs}, policy, requestMeta) {
     if (terminated) return toolResult(id, sentenceResult(SHUTTING_DOWN_SENTENCE));
     if (!policy.disabled && !sandboxed) return toolResult(id, sentenceResult(NO_SANDBOX_SENTENCE));
-    const launch = kernelLaunch(settings, policy);
+    // A launch the sandbox refuses answers the call, and nothing runs.
+    let launch;
+    try { launch = kernelLaunch(settings, policy); } catch (error) {
+      if (error instanceof LaunchRefused) return toolResult(id, sentenceResult(error.message));
+      throw error;
+    }
     // A policy change takes both children: neither keeps running under the old policy.
     if (kernel && kernel.key !== launch.key) await stopKernel();
     if (worker && worker.key !== launch.key) await stopWorker();
@@ -587,7 +624,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
       if (name === 'js') {
         const parsed = jsArguments(args);
         let policy;
-        try { policy = sandboxPolicy(meta && Object.hasOwn(meta, SANDBOX_META_KEY) ? meta[SANDBOX_META_KEY] : undefined, {readPaths: settings.readPaths}); } catch (error) {
+        const state = meta && Object.hasOwn(meta, SANDBOX_META_KEY) ? meta[SANDBOX_META_KEY] : undefined;
+        try { policy = {...sandboxPolicy(state, {readPaths: settings.readPaths}), state}; } catch (error) {
           if (error instanceof SandboxStateError) throw new InvalidParams(`js: ${SANDBOX_META_KEY}: ${error.message}`);
           throw error;
         }

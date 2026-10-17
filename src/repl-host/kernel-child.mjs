@@ -6,7 +6,8 @@
 //   or "exited(signal=…)","kernel_stderr_tail":"<last 20 non-empty lines, each at most 512 characters, joined by ' | '>",
 //   "reason":"stdout_eof","stream_error":null}
 // (sentence, field order and tail shape observed on the pinned node_repl, 2026-10-14). `kernel_pid` is the spawned
-// child's, which under the sandbox is the launcher's, not the kernel Node's.
+// child's: on macOS the kernel Node's own (sandbox-exec execs it, #115), under the Codex CLI's launcher (Linux until
+// #115 M3) the launcher's.
 //
 // On Linux the kernel's stdin, stdout and stderr are real pipes (FIFOs opened then unlinked at once), as the vendor's
 // are: Node's own child pipes are Unix socket pairs, which the Linux sandbox's network filter makes unreadable and
@@ -15,8 +16,9 @@
 // have all closed (observed on this Mac, 2026-10-14), so a FIFO would hide the kernel's end.
 //
 // The child stays in the supervisor's process group, the group cua's proxy owns (src/mcp/upstream.mjs). Stopping it
-// freezes and SIGKILLs the child and every process descending from it (killProcessTree), so a kernel under a sandbox
-// launcher (which runs it as its own child) or a kernel busy in synchronous code is gone, not orphaned. Whenever a
+// freezes and SIGKILLs the child and every process descending from it (killProcessTree), so a kernel under the Codex
+// CLI's launcher (which runs it as its own child), what a cell started, or a kernel busy in synchronous code is gone,
+// not orphaned. Whenever a
 // kernel ends, expectedly or not, `reap` (the supervisor's ownedGroupReaper) then removes what it left in the owned
 // group: a process a cell started is reparented when its kernel dies, so no tree leads to it any more.
 import {spawn, execFileSync} from 'node:child_process';

@@ -66,6 +66,30 @@ export function compareCapture({captured, golden}) {
   };
 }
 
+// cua's port (src/sandbox/seatbelt.mjs, M1) against the signed CLI's capture for the same input: `port` is {args,
+// env} from the port, its args in cua's numeric TIOCSTI form (a recorded deviation), read here in the tag's form. The
+// child environments may differ only by what the CLI adds and cua's launcher leaves out: its arg0 PATH entry and
+// CoreFoundation's __CF_USER_TEXT_ENCODING. -> compareCapture's result plus {tiocsti, cliOnlyEnv, equalButDeviations}.
+const TIOCSTI = {numeric: '(deny file-ioctl (ioctl-command 2147578994))', symbolic: '(deny file-ioctl (ioctl-command TIOCSTI))'};
+export function comparePortToCapture({captured, port}) {
+  const [flag, profile, ...rest] = port.args;
+  const numeric = profile.endsWith(`\n${TIOCSTI.numeric}`);
+  const asTag = numeric ? `${profile.slice(0, -TIOCSTI.numeric.length)}${TIOCSTI.symbolic}` : profile;
+  const result = compareCapture({captured, golden: {argsSymbolic: [flag, asTag, ...rest], env: port.env}});
+  if (!result.captured) return result;
+  const cliOnlyEnv = [];
+  const differing = result.env.differing.filter(({name, captured: c, golden: g}) => {
+    if (name === 'PATH' && /^[^:]*\/tmp\/arg0\/codex-arg0[A-Za-z0-9]+:/.test(c) && c.slice(c.indexOf(':') + 1) === g) { cliOnlyEnv.push('the CLI\'s arg0 PATH entry'); return false; }
+    return true;
+  });
+  const onlyCaptured = result.env.onlyCaptured.filter(name => {
+    if (name === '__CF_USER_TEXT_ENCODING') { cliOnlyEnv.push(name); return false; }
+    return true;
+  });
+  return {...result, tiocsti: numeric ? 'numeric' : 'symbolic', cliOnlyEnv,
+    equalButDeviations: result.argvEqual && !differing.length && !onlyCaptured.length && !result.env.onlyGolden.length};
+}
+
 // Named per run: the CLI's arg0 directory ($CODEX_HOME/tmp/arg0/codex-arg0<random>) and the session's run directory
 // (run/<uuid>, with its temp).
 const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')

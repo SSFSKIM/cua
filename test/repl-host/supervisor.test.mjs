@@ -3,10 +3,11 @@
 // the M1 probes of 2026-10-14). Needs Node 24 or later for the kernel (CUA_NODE); skips visibly otherwise.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, readFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
 import {dirname, join} from 'node:path';
 import {kernelNode} from './kernel-harness.mjs';
-import {alive, descendants, launches, startHost, texts} from './supervisor-harness.mjs';
+import {SCOPED, alive, descendants, launches, startHost, texts} from './supervisor-harness.mjs';
 import {CUA_API_READ_PATHS, KERNEL, NO_SANDBOX_SENTENCE} from '../../src/repl-host/supervisor.mjs';
 import {toolsFor} from '../../src/repl-host/tools.mjs';
 import {REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION} from '../../src/repl-host/identity.mjs';
@@ -35,7 +36,7 @@ test('the handshake names cua-repl-host; every tool result carries the host mark
     assert.deepEqual(result._meta[REPL_HOST_META_KEY], MARKER);
 });
 
-test('cells persist in one kernel launched lazily under the recovered sandbox argv, with the kernel\'s own argv and the vendor\'s result shape', own, async t => {
+test('cells persist in one kernel launched lazily under cua\'s sandbox: sandbox-exec runs the kernel\'s own argv under its role\'s profile', own, async t => {
   assert.deepEqual(CUA_API_READ_PATHS, [join(dirname(KERNEL), '..', 'cua-api'), join(dirname(KERNEL), '..', '..', 'docs', 'cua-api')].map(path => join(path)),
     'the facade the banner imports and the documents it reads are readable under a restricted profile');
   const host = await startHost(t, {node});
@@ -48,6 +49,21 @@ test('cells persist in one kernel launched lazily under the recovered sandbox ar
   assert.equal(more.length, 0, 'one kernel for both cells');
   const sessionId = launch.argv[launch.argv.indexOf('--session-id') + 1];
   assert.match(sessionId, /^[0-9a-f]{32}$/);
+  assert.equal(launch.argv[0], '-p');
+  assert.deepEqual(launch.argv.slice(launch.argv.indexOf('--') + 1), [node, '--experimental-vm-modules', KERNEL, '--session-id', sessionId, '--working-dir', host.cwd]);
+  const params = launch.argv.slice(2, launch.argv.indexOf('--'));
+  const readable = params.filter(p => /^-DREADABLE_ROOT_\d+=/.test(p)).map(p => p.slice(p.indexOf('=') + 1));
+  for (const path of [dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS].map(p => realpathSync(p))) assert.ok(readable.includes(path), `${path} is readable`);
+  assert.ok(params.some(p => /^-DREADABLE_ROOT_\d+_EXCLUDED_0=/.test(p) && p.endsWith(`=${host.denied}`)), 'the kernel is denied the launch\'s deny list');
+  assert.deepEqual(params.filter(p => /^-DWRITABLE_ROOT_\d+=/.test(p)), [`-DWRITABLE_ROOT_0=${host.tmp}`, `-DWRITABLE_ROOT_1=${host.cwd}`], 'its TMPDIR and run directory are writable');
+  assert.ok(existsSync(host.denied), 'the missing deny target was created before the profile was rendered');
+});
+
+test('on the Codex CLI\'s route (Linux until #115 M3) the kernel launches under the recovered `codex sandbox` argv', own, async t => {
+  const host = await startHost(t, {node, launcher: 'codex'});
+  await host.js('nodeRepl.write(1)');
+  const [launch] = launches(host.codexHome);
+  const sessionId = launch.argv[launch.argv.indexOf('--session-id') + 1];
   assert.deepEqual(launch.argv, ['sandbox', '-c', 'shell_environment_policy.inherit="all"', '-c', 'default_permissions="node_repl"', '-c',
     `permissions.node_repl={filesystem = {${[dirname(node), dirname(KERNEL), ...CUA_API_READ_PATHS].sort().map(p => `"${p}" = "read"`).join(', ')}, ":root" = "read", ":tmpdir" = "write", ":workspace_roots" = {"." = "write"}}, network = {enabled = false}}`,
     '--', node, '--experimental-vm-modules', KERNEL, '--session-id', sessionId, '--working-dir', host.cwd]);
@@ -113,23 +129,28 @@ test('js_reset stops the kernel and clears bindings, launched or not; a cancella
 });
 
 test('a kernel that dies under a running cell answers it with the vendor\'s exit diagnostic; the next cell gets a fresh kernel', own, async t => {
-  const host = await startHost(t, {node});
-  await host.js('nodeRepl.write("warm")');
-  const running = host.js('let fs=await import("node:fs");fs.writeSync(2,"fixture stderr line\\n");await new Promise(r=>setTimeout(r,5000));');
-  await delay(300);
-  const kernel = kernelOf(host);
-  process.kill(kernel.pid, 'SIGKILL');
-  const result = await running;
-  assert.equal(result.isError, true);
-  const {sentence, info, keys} = diagnosticOf(result);
-  assert.equal(sentence, 'node_repl kernel exited unexpectedly');
-  assert.deepEqual(keys, ['kernel_pid', 'kernel_status', 'kernel_stderr_tail', 'reason', 'stream_error']);
-  assert.equal(info.kernel_pid, launches(host.codexHome)[0].pid, 'the launcher\'s pid, as the vendor reports it');
-  assert.equal(info.kernel_status, 'exited(code=137)');
-  assert.match(info.kernel_stderr_tail, /ExperimentalWarning: VM Modules is an experimental feature/);
-  assert.match(info.kernel_stderr_tail, / \| fixture stderr line$|fixture stderr line \| /);
-  assert.deepEqual([info.reason, info.stream_error], ['stdout_eof', null]);
-  assert.deepEqual(texts(await host.js('nodeRepl.write("after")')), ['after']);
+  // Under cua's sandbox the kernel process is Node itself (sandbox-exec execs it): its pid and its own signal death are
+  // reported. Under the Codex CLI the launcher's are, as the vendor reports them (128 + the signal).
+  for (const [launcher, status] of [['seatbelt', 'exited(signal=9)'], ['codex', 'exited(code=137)']]) {
+    const host = await startHost(t, {node, launcher});
+    await host.js('nodeRepl.write("warm")');
+    const running = host.js('let fs=await import("node:fs");fs.writeSync(2,"fixture stderr line\\n");await new Promise(r=>setTimeout(r,5000));');
+    await delay(300);
+    const kernel = kernelOf(host);
+    process.kill(kernel.pid, 'SIGKILL');
+    const result = await running;
+    assert.equal(result.isError, true);
+    const {sentence, info, keys} = diagnosticOf(result);
+    assert.equal(sentence, 'node_repl kernel exited unexpectedly');
+    assert.deepEqual(keys, ['kernel_pid', 'kernel_status', 'kernel_stderr_tail', 'reason', 'stream_error']);
+    assert.equal(info.kernel_pid, launches(host.codexHome)[0].pid, `${launcher}: the spawned child's pid`);
+    if (launcher === 'seatbelt') assert.equal(info.kernel_pid, kernel.pid, 'which is the kernel Node\'s own');
+    assert.equal(info.kernel_status, status, launcher);
+    assert.match(info.kernel_stderr_tail, /ExperimentalWarning: VM Modules is an experimental feature/);
+    assert.match(info.kernel_stderr_tail, / \| fixture stderr line$|fixture stderr line \| /);
+    assert.deepEqual([info.reason, info.stream_error], ['stdout_eof', null]);
+    assert.deepEqual(texts(await host.js('nodeRepl.write("after")')), ['after']);
+  }
 });
 
 test('a sandbox launcher that fails is a refusal on every platform: no cell runs unconfined in its place', own, async t => {
@@ -153,6 +174,51 @@ test('without a sandbox launcher the host advertises no sandbox and refuses sand
   assert.deepEqual(texts(await host.js('nodeRepl.write("unconfined")', {mode: 'disabled'})), ['unconfined']);
 });
 
+test('cua\'s sandbox splits the roles: the kernel is denied the deny list, the trusted worker is not, and both share one launch key', own, async t => {
+  const host = await startHost(t, {node, services: {svc: 'let calls = 0; export const handleRpc = () => ++calls;'}});
+  const rpc = 'nodeRepl.write(JSON.stringify(await nodeRepl.rpc("svc", {})));';
+  assert.deepEqual(texts(await host.js(rpc)), ['1']);
+  assert.deepEqual(texts(await host.js(rpc)), ['2'], 'the worker of the kernel\'s state is kept: one key for both roles');
+  const all = launches(host.codexHome);
+  const kernel = all.find(l => l.argv.includes(KERNEL)), worker = all.find(l => l.argv.some(a => a.endsWith('trusted-worker.mjs')));
+  assert.equal(all.length, 2, 'one kernel and one worker');
+  const denied = launch => launch.argv.some(a => /^-DREADABLE_ROOT_\d+_EXCLUDED_\d+=/.test(a) && a.endsWith(`=${host.denied}`));
+  assert.equal(denied(kernel), true, 'the kernel\'s profile excludes the deny list');
+  assert.equal(denied(worker), false, 'the worker\'s does not');
+  assert.ok(worker.argv.includes('(allow file-read*)'), 'the worker reads everywhere (the double records one line per line of the profile)');
+  assert.ok(!kernel.argv.includes('(allow file-read*)'), 'the kernel lists what it reads');
+});
+
+test('cua\'s sandbox fails closed: no deny list, a deny target that cannot be created, a state it cannot render; disabled still runs', own, async t => {
+  const refused = async (host, mode, why) => {
+    const marker = join(host.tmp, `must-not-run-${mode}`);
+    const result = await host.js(`(await import('node:fs')).writeFileSync(${JSON.stringify(marker)},'executed');`, {mode});
+    assert.equal(result.isError, true, mode);
+    assert.match(texts(result)[0], why, mode);
+    assert.match(texts(result)[0], /JavaScript never runs unconfined in its place, and nothing was run$/);
+    assert.equal(existsSync(marker), false, `${mode}: nothing ran`);
+  };
+  for (const value of [undefined, '{"deny":["relative"],"reexpose":[]}']) {
+    const host = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: value}});
+    for (const mode of ['scoped', 'default']) await refused(host, mode, /^js sandbox unavailable: the launch's deny list \(CUA_SANDBOX_DENY_READ\) is missing or malformed \(sandbox_state_invalid\)/);
+    assert.deepEqual(launches(host.codexHome), [], 'nothing was launched');
+    assert.deepEqual(texts(await host.js('nodeRepl.write("unconfined by choice")', {mode: 'disabled'})), ['unconfined by choice']);
+  }
+  const blocked = await startHost(t, {node});
+  const locked = join(blocked.root, 'locked');
+  mkdirSync(locked, {mode: 0o500});
+  const denyIn = JSON.stringify({deny: [join(locked, 'store')], reexpose: []});
+  const uncreatable = await startHost(t, {node, env: {CUA_SANDBOX_DENY_READ: denyIn}});
+  await refused(uncreatable, 'scoped', /^js sandbox unavailable: the deny target .*locked\/store could not be created \(EACCES\)/);
+  const host = await startHost(t, {node});
+  symlinkSync(host.cwd, join(host.root, 'run-link'));
+  const linked = join(host.root, 'run-link');
+  const result = await host.request('tools/call', {name: 'js', arguments: {code: `(await import('node:fs')).writeFileSync(${JSON.stringify(join(host.tmp, 'linked'))},'x')`},
+    _meta: {'codex/sandbox-state-meta': {permissionProfile: SCOPED(linked), sandboxCwd: pathToFileURL(linked).href}}});
+  assert.match(texts(result.result)[0], /^js sandbox unavailable: writable root .*run-link contains symlink component .*run-link; symlinked writable roots are not supported\./);
+  assert.equal(existsSync(join(host.tmp, 'linked')), false);
+});
+
 test('a call under another sandbox policy gets a fresh kernel; disabled runs the kernel\'s Node directly', own, async t => {
   const host = await startHost(t, {node});
   await host.js('let sb=1;');
@@ -161,7 +227,7 @@ test('a call under another sandbox policy gets a fresh kernel; disabled runs the
   assert.equal(kernelOf(host).ppid, host.child.pid);
   await host.js('let sb2=1;', {mode: 'default'});
   const last = launches(host.codexHome).at(-1).argv;
-  assert.match(last[6], /":root" = "read"}, network = \{enabled = false\}\}$/, 'the default mode writes nowhere');
+  assert.ok(!last.some(a => a.startsWith('-DWRITABLE_ROOT')), 'the default mode writes nowhere');
   assert.equal((await host.request('tools/call', {name: 'js', arguments: {code: '1'}, _meta: {'codex/sandbox-state-meta': null}})).error.message,
     'js: codex/sandbox-state-meta: invalid type: null, expected struct SandboxState');
 });

@@ -187,7 +187,7 @@ test('install and recovery hints name the archive this host installs: a zip on m
 
 test('the sandbox-conflict hint names this platform\'s default home', async () => {
   const {sandboxConflictHint} = await import('../src/runtime/sandbox.mjs');
-  assert.equal(sandboxConflictHint('darwin'), 'keep CUA_HOME and the cua checkout outside $TMPDIR, and nothing of cua\'s under $CUA_HOME/run '
+  assert.equal(sandboxConflictHint('darwin'), 'keep CUA_HOME outside cua\'s checkout, ~/.config/cua and the secret store, and nothing of cua\'s under $CUA_HOME/run '
     + '(the default CUA_HOME, ~/Library/Application Support/cua, and a directory under /tmp both work), or set CUA_SHIM_SANDBOX=disabled');
   assert.match(sandboxConflictHint('linux'), /the default CUA_HOME, ~\/\.local\/share\/cua,/);
   assert.doesNotMatch(sandboxConflictHint('linux'), /Library/);

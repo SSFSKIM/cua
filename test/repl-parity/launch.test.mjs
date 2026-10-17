@@ -13,4 +13,7 @@ test('isolated own-host lane keeps the supervisor launch and gives it the same n
  assert.equal(launch.env.CUA_REPL_JS_BANNER,'globalThis.__parityBannerWitness = Symbol("fixture-banner");');
  for(const key of ['SKY_CUA_SERVICE_PATH','CUA_BROWSER_SERVICE','BROWSER_USE_BACKEND_PATHS'])assert.equal(launch.env[key],undefined,key);
  assert.equal(noServicesLaunch(supervisor,{host:'cua',brokenSandbox:'/fixture/failing-sandbox'}).env.CODEX_CLI_PATH,'/fixture/failing-sandbox');
+ const seatbelt={...supervisor,env:{...supervisor.env,CODEX_CLI_PATH:undefined,CUA_REPL_SANDBOX_EXEC:'/usr/bin/sandbox-exec'}};
+ const broken=noServicesLaunch(seatbelt,{host:'cua',brokenSandbox:'/fixture/failing-sandbox'}).env;
+ assert.deepEqual([broken.CUA_REPL_SANDBOX_EXEC,broken.CODEX_CLI_PATH],['/fixture/failing-sandbox',undefined],'cua\'s own sandbox launcher is the one replaced on the macOS own host');
 });

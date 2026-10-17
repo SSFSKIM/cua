@@ -123,7 +123,7 @@ test('assertSandboxFits refuses a scoped launch whose $TMPDIR covers a protected
     assert.match(error.message, /^CUA_SHIM_SANDBOX=scoped lets JavaScript cells write/);
     assert.ok(error.message.includes(`write $TMPDIR (${join(base, 'T')}), which contains the trusted code path ${join(base, 'T/cua/runtimes/r/modules')}, the runtime's configuration and approvals ${join(base, 'T/cua/state/codex')}. `), error.message);
     assert.match(error.message, /node_repl refuses to start a kernel over writable trusted code/);
-    assert.match(error.hint, /outside \$TMPDIR/);
+    assert.match(error.hint, /keep CUA_HOME outside cua's checkout, ~\/\.config\/cua and the secret store/);
     assert.match(error.hint, /CUA_SHIM_SANDBOX=disabled/);
     return true;
   });

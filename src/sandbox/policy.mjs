@@ -122,8 +122,7 @@ export function roleProfile({state, role, readPaths = [], denyRead, network = 'r
 
 // The launch key: the call's sandbox state, its cwd and the read paths, never the role-rendered profile, so the kernel
 // and the trusted worker of one state share it (the supervisor stops the worker whenever its key differs from the
-// kernel launch's). Throws SandboxStateError for a state that cannot be rendered.
-export function stateKey({state, readPaths = []}) {
-  const table = sandboxPolicy(state, {readPaths});
-  return table.disabled ? 'disabled' : JSON.stringify([table.cwd, table.filesystem]);
-}
+// kernel launch's). Throws SandboxStateError for a state that cannot be rendered. `tableKey` is the same key for a state
+// already validated (sandboxPolicy's result).
+export const tableKey = table => (table.disabled ? 'disabled' : JSON.stringify([table.cwd, table.filesystem]));
+export const stateKey = ({state, readPaths = []}) => tableKey(sandboxPolicy(state, {readPaths}));

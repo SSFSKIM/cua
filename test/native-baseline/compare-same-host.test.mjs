@@ -162,10 +162,12 @@ test('the CLI compare --same-host prints the same-host comparison and exits 0 on
   assert.equal(spawnSync(process.execPath, [SCRIPT, 'compare', before, after], {encoding: 'utf8'}).status, 1);
 });
 
-// The baseline's TMPDIR as a real M0 run records it: the prepared serve's generated environment (env -i, so no TMPDIR),
-// the production launch built from it, and the witness of that launch. The comparison must accept that baseline
-// against an after run with the session's own TMPDIR, and record the change.
-test('a prepared serve has no TMPDIR, its launch\'s witness says so, and the per-session TMPDIR after it is the permitted change', t => {
+// The baseline's TMPDIR as a real M0 run recorded it: the prepared serve's generated environment (env -i, so no TMPDIR)
+// and, before #115 M1, a launch that copied the caller's TMPDIR, hence none ('unset'). Since M1 buildLaunch gives every
+// launch its session's own TMPDIR, and the macOS own host no CODEX_CLI_PATH: the witness of a launch built from the same
+// environment now says 'session', and 'cua' for the own host. The comparison accepts the M0 baseline against such an
+// after run and records the change.
+test('a prepared serve has no TMPDIR; since M1 its launches carry the session\'s own, the witness says so, and the change is permitted', t => {
   const s = runtimeScratch();
   t.after(s.cleanup);
   const home = realpathSync(s.dir);
@@ -175,10 +177,12 @@ test('a prepared serve has no TMPDIR, its launch\'s witness says so, and the per
   const serveEnv = JSON.parse(shown.stdout);
   assert.equal(serveEnv.TMPDIR, undefined, 'env -i drops the caller\'s TMPDIR');
   const runtime = runtimeFor({home, pin: parsePin(fixturePin({sha256: 'a'.repeat(64), length: 1})), record: null});
-  const launch = buildLaunch({runtime, home, sessionId: '6f1c2d3e-0000-4000-8000-000000000001', ambient: serveEnv});
-  const recorded = sandboxLaunchOf(launch, home);
-  assert.deepEqual(recorded, {launcher: 'codex-cli', tmpdir: 'unset'});
-  const result = judge(t, three({launch: recorded}), three({launch: AFTER}));
+  const vendor = buildLaunch({runtime, home, sessionId: '6f1c2d3e-0000-4000-8000-000000000001', ambient: serveEnv});
+  assert.deepEqual(sandboxLaunchOf(vendor, home), {launcher: 'codex-cli', tmpdir: 'session'}, 'the vendor host keeps the Codex CLI until M2, with the session\'s TMPDIR');
+  const own = buildLaunch({runtime, home, sessionId: '6f1c2d3e-0000-4000-8000-000000000001', ambient: {...serveEnv, CUA_REPL_HOST: 'cua'}, surfaces: ['browser'], resolveOwnNode: () => process.execPath});
+  assert.deepEqual(sandboxLaunchOf(own, home), {launcher: runtime.manifest.platform === 'darwin' ? 'cua' : 'codex-cli', tmpdir: 'session'}, 'the macOS own host launches through cua\'s own sandbox');
+  const m0 = {launcher: 'codex-cli', tmpdir: 'unset'};
+  const result = judge(t, three({launch: m0}), three({launch: AFTER}));
   assert.equal(result.verdict, 'PASS', result.problems.join(' | '));
   assert.deepEqual(result.permitted.map(p => [p.field, p.baseline, p.candidate]), [['sandbox launcher', 'codex-cli', 'cua'], ['TMPDIR', 'unset', 'session']]);
   // The reverse is no per-session TMPDIR, and is refused.

@@ -338,3 +338,56 @@
 2026-10-17T19:35:40.169Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.32 -> idle
 2026-10-17T19:36:13.095Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.55 -> idle
 2026-10-17T19:36:46.315Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.09 -> idle
+2026-10-17T19:41:08.999Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 8bf4343 ssfs: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.23 -> idle
+2026-10-17T19:41:56.718Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 8bf4343 ssfs: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.84 -> idle
+2026-10-17T19:41:56.718Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 8bf4343 ssfs
+2026-10-17T19:41:56.776Z watch cfprefs-8bf4343: started for pid 9486 (mode pause-aware)
+2026-10-17T19:41:59.748Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.85 -> idle
+2026-10-17T19:42:32.875Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.78 -> idle
+2026-10-17T19:43:05.958Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.24 -> idle
+2026-10-17T19:43:39.356Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.27 -> idle
+2026-10-17T19:44:12.453Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.15 -> idle
+2026-10-17T19:44:45.943Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.96 -> idle
+2026-10-17T19:45:19.091Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.17 -> idle
+2026-10-17T19:45:51.353Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.25 -> idle
+2026-10-17T19:46:23.215Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.21 -> idle
+2026-10-17T19:46:56.791Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.93 -> idle
+2026-10-17T19:47:29.323Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.43 -> idle
+2026-10-17T19:48:01.652Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.31 -> idle
+2026-10-17T19:48:37.365Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.61 -> idle
+2026-10-17T19:49:09.452Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.47 -> idle
+2026-10-17T19:49:41.624Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.45 -> idle
+2026-10-17T19:50:13.793Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.88 -> idle
+2026-10-17T19:50:45.976Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.71 -> idle
+2026-10-17T19:51:18.210Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.69 -> idle
+2026-10-17T19:51:50.444Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.99 -> idle
+2026-10-17T19:52:22.574Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.8 -> idle
+2026-10-17T19:52:55.213Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.1 -> idle
+2026-10-17T19:53:28.362Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.79 -> idle
+2026-10-17T19:54:00.678Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.6 -> idle
+2026-10-17T19:54:32.905Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.46 -> idle
+2026-10-17T19:55:04.904Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.25 -> idle
+2026-10-17T19:55:36.894Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.22 -> idle
+2026-10-17T19:56:09.484Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.96 -> idle
+2026-10-17T19:56:42.616Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.84 -> idle
+2026-10-17T19:57:15.855Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.64 -> idle
+2026-10-17T19:57:50.034Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=33.09 -> idle
+2026-10-17T19:58:22.951Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=22.45 -> idle
+2026-10-17T19:58:55.856Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=14.57 -> idle
+2026-10-17T19:59:28.945Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=11.48 -> idle
+2026-10-17T20:00:02.241Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.9 -> idle
+2026-10-17T20:00:35.426Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.26 -> idle
+2026-10-17T20:01:08.051Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.16 -> idle
+2026-10-17T20:01:40.874Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6 -> idle
+2026-10-17T20:02:13.561Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.34 -> idle
+2026-10-17T20:02:46.929Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.2 -> idle
+2026-10-17T20:03:20.151Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.85 -> idle
+2026-10-17T20:03:53.420Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.95 -> idle
+2026-10-17T20:04:26.542Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.7 -> idle
+2026-10-17T20:04:59.357Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.29 -> idle
+2026-10-17T20:05:32.568Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.56 -> idle
+2026-10-17T20:06:05.613Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.05 -> idle
+2026-10-17T20:06:38.380Z watch cfprefs-8bf4343: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.05 -> idle
+2026-10-17T20:07:11.272Z watch cfprefs-8bf4343: reading: front=com.apple.SecurityAgent busy=false workers=0 queued=0 load=5.95 -> STOP
+2026-10-17T20:07:11.272Z watch cfprefs-8bf4343: STOP the run: com.apple.SecurityAgent in front (front=com.apple.SecurityAgent busy=false workers=0 queued=0 load=5.95)
+2026-10-17T20:07:17.183Z watch cfprefs-8bf4343: ended pids 35598 17932 17925 17920 73891 73881 73871 72991 35582 9486

@@ -752,6 +752,10 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: each finding was a launch failure, a state break or an unmeasurable claim in the plan as written. None changes an owner ruling.
   Date/Author: 2026-10-17, design session.
 
+- Decision: execution pre-flight (2026-10-17, execution session). M0 runs as three tasks of the subagent-driven loop, one PR: M0a, the mini oracles (experiment A, the golden generator and its fixtures, the argv capture, the fingerprint probe under the signed CLI and the public build, the app-server capture and replay); M0b, the harness extensions (native-baseline `--surfaces browser` and `compare --same-host`, repl-parity's GCE device, device-parameterized native lane, host-aware preparation and the transition allowance, tz-probe), local code and tests; M0c, the GCE box provisioned, the Linux probes (XShm, app launch, nesting), and the baselines and controls, which consume M0b's harness. The x64 GCE instance is created only in M3, where its smoke runs. Every other milestone is one task.
+  Rationale: M0 alone spans two machines, a Rust build, C probes, four harness changes and a dozen live runs; one executor for all of it would not fit one context, and M0c consumes M0b, so the frontier review falls between them. M0a's verdicts come first because a design surprise there stops the work before anything else is built.
+  Date/Author: 2026-10-17, execution session.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

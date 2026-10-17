@@ -13,7 +13,8 @@ import {textEdit} from './textedit-double.mjs';
 
 const AsyncFunction = (async () => {}).constructor;
 const RELEASE = '26.928.40906-linux-arm64';
-const HOME = '/home/admin/.local/share/cua';
+const HOME = '/home/admin/.local/share/cua-native-baseline/run-AbCdEf';
+const prepared = {device:'cua-linux',home:HOME,userHome:HOME+'/home',token:'test-token',nodeMode:'managed',nodeOverride:null,xSession:{DISPLAY:':0',XAUTHORITY:'/home/admin/.Xauthority',DBUS_SESSION_BUS_ADDRESS:'unix:path=/run/user/1000/bus'},ownNode:{path:HOME+'/node/24.22.0/bin/node',version:'v24.22.0'}};
 globalThis.__baselineTransitionMs = 200;
 globalThis.__baselineWindowMs = 200;
 
@@ -25,13 +26,16 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
   });
   const state = {desktop, record: true, clears: 0, spawned: [], terminated: [], scripts: []};
   const record = `${HOME}/state/handshake/${RELEASE}/${host === 'cua' ? 'cua@0.1.0' : `vendor@${RELEASE}`}/computer@2025-06-18.json`;
-  const pre = {platform: 'linux', node: 'v22.23.3', commit: 'c0ffee1', dirty: false, checkout: '/home/admin/Developer/GitHub/cua-parity', home: HOME, release: RELEASE,
+  const pre = {arch:'arm64',hostname:'vm',cpu:{model:'test CPU',count:4},uptime:'device before',ownNode:prepared.ownNode,platform: 'linux', node: 'v22.23.3', commit: 'c0ffee1', dirty: false, checkout: '/home/admin/Developer/GitHub/cua-parity', home: HOME, release: RELEASE,
     handshakeRecord: record, runtimeRoot: `${HOME}/runtimes/${RELEASE}`, spikeRunning: false, serves: 0,
     hardware: {model: null, chip: 'arm64, 4 CPUs', memoryBytes: 8e9}, os: {name: 'Ubuntu', version: '24.04.5 LTS', build: '7.0.0-38-generic'},
     display: {pixels: '1024 x 768', resolution: '1024 x 768', scale: 1, depth: 24}, x: {display: ':0', xauthority: '~/.Xauthority', xauthorityPresent: true, bus: 'unix:path=/run/user/1000/bus'},
     gedit: 'gedit - Version 46.2', geditRunning, sandbox: {mode: 'disabled', explicit: false}};
   const remote = script => {
     state.scripts.push(script);
+    if (script === 'uptime') return 'device after';
+    if (/prepare.mjs prepare/.test(script)) return JSON.stringify(prepared);
+    if (/prepare.mjs cleanup/.test(script)) return JSON.stringify({removed:true});
     if (script === 'true') return '';
     if (/hostIdentity/.test(script)) return JSON.stringify(pre);
     if (/cua-116-\[s\]pike/.test(script)) return 'idle';
@@ -60,13 +64,13 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
     leftovers: () => ({serves: 0, geditRunning: [...desktop.windows.values()].filter(w => !w.crashed && !w.closed).length}),
     crashReports: () => ({files: 1, newest: '2026-10-07T02:00:00.000Z'}),
   };
-  return {state, pre, io: {remote, device: () => device, connect: options => fakeClient(options, desktop.cua, state)}};
+  return {state, pre, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, desktop.cua, state)}};
 }
 
 // The MCP client: initialize answers as the answering host does, js evaluates the cell, end_task acknowledges.
 function fakeClient(options, cua, state) {
   const own = state.answeringHost === 'cua';
-  const meta = own ? {'cua/replHost': {host: 'cua', version: '0.1.0'}, 'cua/taskId': 't'} : {'cua/taskId': 't'};
+  const meta = own ? {'cua/nativeExecution': state.answeringNode ?? prepared.ownNode, 'cua/replHost': {host: 'cua', version: '0.1.0'}, 'cua/taskId': 't'} : {'cua/nativeExecution': {path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't'};
   state.serves = [...(state.serves ?? []), options.args.at(-1)];
   state.options = options;
   return {
@@ -94,7 +98,7 @@ function outDir(t) {
 }
 const results = out => readFileSync(join(out, 'results.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
 const metaOf = out => JSON.parse(readFileSync(join(out, 'meta.json'), 'utf8'));
-const plan = {samples: 3, cold: 2, tasks: 2, log: () => {}};
+const plan = {experiment:'test-sitting',samples: 3, cold: 2, tasks: 2, log: () => {}};
 
 test('a Linux vendor-host run records every operation, the method cases and one host attestation per connection', async t => {
   const {state, io} = fakeDevice();
@@ -104,11 +108,12 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   const meta = metaOf(out), rows = results(out);
   assert.equal(meta.complete, true, meta.error);
   assert.equal(meta.platform, 'linux');
+  assert.deepEqual(meta.gedit.locale,{LANG:'C.UTF-8'});
   assert.equal(meta.host, 'vendor');
   assert.equal(meta.connections, 3);
   assert.deepEqual(meta.sandbox, {mode: 'disabled', explicit: false});
-  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/taskId': 't'}})));
-  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', DISPLAY: ':0', XAUTHORITY: '~/.Xauthority'});
+  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/nativeExecution':{path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't'}})));
+  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...prepared.xSession});
   // The cold plan: a planned miss clears the record first; each connection is labelled by the record it found.
   assert.equal(state.clears, 1);
   const ops = [...new Set(rows.map(r => r.op))];
@@ -142,7 +147,7 @@ test('a run whose connections answer another host than the one requested is not 
   assert.equal(await run({device: 'cua-linux', out, host: 'cua', ...plan, io}), 1);
   const meta = metaOf(out);
   assert.equal(meta.complete, false);
-  assert.match(meta.error, /host attestation missing or mismatched \(requested cua\)/);
+  assert.match(meta.attestationProblem, /host attestation missing or mismatched \(requested cua\)/);
   assert.ok(state.serves.every(s => /CUA_REPL_HOST=cua /.test(s)));
 });
 
@@ -191,11 +196,14 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
     },
   };
   const release = '26.928.40906-darwin-arm64', home = '/Users/someone/Library/Application Support/cua';
-  const pre = {platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
+  const pre = {ownNode:prepared.ownNode,arch:'arm64',hostname:'mini',cpu:{model:'Apple',count:10},uptime:'device before',platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
     handshakeRecord: `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
     hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 17179869184}, os: {name: 'macOS', version: '27.0', build: '26A428'},
     display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}};
   const remote = script => {
+    if (script === 'uptime') return 'device after';
+    if (/prepare.mjs prepare/.test(script)) return JSON.stringify({...prepared,device:'mini',xSession:{}});
+    if (/prepare.mjs cleanup/.test(script)) return JSON.stringify({removed:true});
     if (script === 'true') return '';
     if (/hostIdentity/.test(script)) return JSON.stringify(pre);
     if (/cua-116-\[s\]pike/.test(script)) return 'idle';
@@ -204,7 +212,7 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   };
   const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit})};
   const out = outDir(t);
-  const code = await run({device: 'mini', out, host: 'vendor', ...plan, io: {remote, device: () => device, connect: options => fakeClient(options, cua, state)}});
+  const code = await run({device: 'mini', out, host: 'vendor', ...plan, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
   const meta = metaOf(out), rows = results(out);
   assert.equal(code, 0, meta.error);
   assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
@@ -239,6 +247,7 @@ test('a cua-host run names the own host\'s Node in every serve and records it, k
   const {state, pre, io} = fakeDevice({host: 'cua'});
   state.answeringHost = 'cua';
   pre.ownNode = {path: NODE, version: 'v24.18.0'};
+  state.answeringNode=pre.ownNode;
   const out = outDir(t);
   assert.equal(await run({device: 'cua-linux', out, host: 'cua', node: NODE, ...plan, io}), 0);
   const meta = metaOf(out);
@@ -256,4 +265,45 @@ test('a cua-host run refuses an own-host Node the device cannot run, before any 
   pre.ownNode = {path: '/nowhere/node', version: null};
   await assert.rejects(run({device: 'cua-linux', out: outDir(t), host: 'cua', node: '/nowhere/node', ...plan, io}), /own host's Node \/nowhere\/node did not run on the device/);
   assert.equal(state.serves, undefined);
+});
+
+
+test('a cloud run records machine and both load snapshots, keeps its X env and owns a fresh install', async t => {
+  const {state,pre,io}=fakeDevice({host:'cua'});state.answeringHost='cua';
+  pre.hostname='cloud-bench';pre.cpu={model:'Ampere',count:8};
+  const remote=io.remote;
+  io.remote=script=> /prepare.mjs prepare/.test(script) ? JSON.stringify({...prepared,device:'cua-bench',xSession:{DISPLAY:':7',DBUS_SESSION_BUS_ADDRESS:'unix:path=/run/user/2000/bus'}}) : remote(script);
+  const out=outDir(t);
+  assert.equal(await run({device:'cua-bench',out,host:'cua',...plan,io}),0);
+  const meta=metaOf(out);
+  assert.deepEqual(meta.deviceIdentity,{alias:'cua-bench',arch:'arm64',hostname:'cloud-bench',os:pre.os,cpu:{model:'Ampere',count:8}});
+  assert.deepEqual(meta.load,{device:{before:'device before',after:'device after'},controller:{before:'controller load',after:'controller load'}});
+  assert.equal(meta.measurement.freshInstall,true);
+  assert.equal(meta.nodeMode,'managed');
+  assert.equal(meta.environment.CUA_NODE,undefined);
+  assert.equal(meta.environment.DISPLAY,':7');
+  assert.ok(state.serves.every(s=>!s.includes('XAUTHORITY=')&&!s.includes('CUA_NODE=')));
+  assert.equal(meta.preparationCleanup.removed,true);
+});
+test('a cached handshake and host marker without the answering executable cannot complete a run', async t => {
+  const {state,io}=fakeDevice({host:'cua'});state.answeringHost='cua';
+  const connect=io.connect;io.connect=options=>{const c=connect(options),request=c.request;c.request=async(...args)=>{const r=await request(...args);if(r._meta)delete r._meta['cua/nativeExecution'];return r;};return c;};
+  const out=outDir(t);
+  assert.equal(await run({device:'cua-linux',out,host:'cua',...plan,io}),1);
+  assert.match(metaOf(out).error,/answering Node/);
+});
+
+test('one cold connection without executable proof invalidates otherwise successful warm measurements', async t => {
+  const {state,io}=fakeDevice({host:'cua'});state.answeringHost='cua';
+  const connect=io.connect;let first=true;
+  io.connect=options=>{const c=connect(options),request=c.request;c.request=async(...args)=>{const r=await request(...args);if(first&&r._meta){first=false;delete r._meta['cua/nativeExecution'];}return r;};return c;};
+  const out=outDir(t);
+  assert.equal(await run({device:'cua-linux',out,host:'cua',...plan,io}),1);
+  assert.match(metaOf(out).error,/answering Node/);
+});
+test('a refusal before connecting still removes the run-owned fresh installation', async t => {
+  const {state,io}=fakeDevice({geditRunning:true});
+  await assert.rejects(run({device:'cua-linux',out:outDir(t),host:'vendor',...plan,io}),/gedit is running/);
+  assert.ok(state.scripts.some(s=>s.includes('prepare.mjs cleanup')));
+  assert.equal(state.serves,undefined);
 });

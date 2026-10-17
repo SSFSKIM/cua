@@ -1,0 +1,9 @@
+total 499504
+drwx------ 2 admin admin      4096 Oct 16 22:03 .
+drwx------ 9 admin admin      4096 Oct 16 22:04 ..
+-rw------- 1 admin admin 453477698 Oct 16 22:03 26.928.40906-linux-arm64-linux-arm64.deb
+-rw------- 1 admin admin  57997377 Oct 16 22:03 node-v24.22.0-linux-arm64.tar.gz
+install 1 rc=0 secs=23.696798252 source=archive archive
+install 2 rc=0 secs=23.551648899 source=archive archive
+install 3 rc=0 secs=22.125932408 source=archive archive
+1.31 0.67 0.45 1/375 102994

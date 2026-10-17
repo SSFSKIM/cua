@@ -1,0 +1,89 @@
+{
+ "runner": "scripts/accept/linux-native.mjs",
+ "args": [],
+ "environment": {
+  "CUA_REPL_HOST": "cua",
+  "CUA_SHIM_SURFACES": "computer",
+  "CUA_HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+  "HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home",
+  "CHROME_CONFIG_HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home/.config",
+  "XDG_CONFIG_HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home/.config",
+  "CUA_NODE": "(unset)"
+ },
+ "device": "cua-linux",
+ "checkout": "/home/admin/Developer/GitHub/cua-parity",
+ "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+ "harnessCommit": "2f837fa527d11fda2f88d10ba3eac04a6bb80865",
+ "started": "2026-10-16T21:28:04.198Z",
+ "finished": "2026-10-16T21:28:27.998Z",
+ "exitCode": 0,
+ "report": {
+  "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+  "sandbox": "(unset: the platform default)",
+  "steps": [
+   {
+    "name": "preconditions",
+    "status": "PASS",
+    "detail": {
+     "platform": "linux",
+     "display": ":0",
+     "gedit": "/usr/bin/gedit"
+    }
+   },
+   {
+    "name": "bind the fixture window by X11 id",
+    "status": "PASS",
+    "detail": {
+     "windowId": 18874616,
+     "app": "org.gnome.gedit",
+     "title": "fixture-5f3e4b.txt (/tmp/cua-linux-native-VfFz89) - gedit"
+    }
+   },
+   {
+    "name": "type the marker and read it back from the accessibility tree",
+    "status": "PASS",
+    "detail": {
+     "source": "at_spi",
+     "readBack": true
+    }
+   },
+   {
+    "name": "screenshot of the window",
+    "status": "PASS",
+    "detail": {
+     "mimeType": "image/jpeg",
+     "bytes": 36894,
+     "savedTo": null
+    }
+   },
+   {
+    "name": "end_task",
+    "status": "PASS",
+    "detail": {
+     "status": "ended",
+     "ended": true,
+     "taskId": "957fe6aa-1685-4522-b587-530b43166ffa"
+    }
+   },
+   {
+    "name": "cua serve exited cleanly",
+    "status": "PASS",
+    "detail": {
+     "code": 0,
+     "signal": null
+    }
+   },
+   {
+    "name": "no run entry left for the connection",
+    "status": "PASS",
+    "detail": {
+     "before": [],
+     "after": []
+    }
+   }
+  ],
+  "marker": "cua-f2-373f2d93",
+  "status": "PASS"
+ },
+ "stderrTail": ""
+}

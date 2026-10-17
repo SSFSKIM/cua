@@ -1,0 +1,6 @@
+rc=0
+2026-10-16T18:03:35Z processes whose command names the scratch MAWS clone or Electron:
+(none)
+2026-10-16T18:03:30Z viewport-series/6-cua-try1:during workers=0 queued=0 in_progress=0 load="2.38 2.72 3.16"
+2026-10-16T18:03:31Z viewport-series/6-cua-try1:end workers=0 queued=0 in_progress=0 load="2.27 2.69 3.15"
+no overlap

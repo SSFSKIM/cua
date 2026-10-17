@@ -27,7 +27,10 @@ export async function fixtureProcess({device,checkout,port=48732}) {
   } catch(e) {child.kill('SIGTERM');throw e;}
   return {url:`http://127.0.0.1:${localPort}`,browserURL:`http://127.0.0.1:${port}`,async close(){child.stdin.end();let timer;await Promise.race([closed,new Promise(resolve=>{timer=setTimeout(()=>{child.kill('SIGTERM');resolve();},3000);})]);clearTimeout(timer);}};
 }
-export function traceControl({device,home,path}) {
+export function traceControl({device,home,discoveryHome,path}) {
+  // The browser host still belongs to its original discovery home; only the REPL session moved. Its opt-in trace
+  // config must remain beside that unchanged host, while the value-free sink belongs to the scratch experiment.
+  home=discoveryHome??home;
   const config=join(home,'state/host-trace.json');
   if(device==='local') {
     mkdirSync(join(home,'state'),{recursive:true});

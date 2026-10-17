@@ -322,7 +322,7 @@ test('nativePipe through the host: absolute socket paths only, bytes both ways, 
   writeFileSync(file, '');
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: 'relative.sock'}))), 'native pipe path must be absolute');
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: file}))), 'native pipe path is not a socket');
-  assert.match(parsed(await host.js(rpc('pipe', {op: 'bad', path: join(host.root, 'absent.sock')}))), /^failed to connect native pipe: No such file or directory \(os error 2\)$/);
+  assert.match(parsed(await host.js(rpc('pipe', {op: 'bad', path: join(host.root, 'absent.sock')}))), /^native pipe path unavailable: No such file or directory \(os error 2\)$/);
   assert.equal(parsed(await host.js(rpc('pipe', {op: 'bad', path: ''}))), 'native pipe path must be a non-empty string');
 });
 
@@ -389,6 +389,44 @@ for (const wrapper of [false, true]) {
   });
 }
 
+
+// A service that holds one nativePipe connection across calls: open it, then send `ping` and await the echo.
+const HELD_PIPE_SERVICE = {pipe: `let connection = null, waiting = null, closed = false;
+  export async function handleRpc(request) {
+    if (request.op === 'open') {
+      connection = await nodeRepl.nativePipe.createConnection(request.path);
+      connection.on('data', data => waiting?.(Buffer.from(data).toString()));
+      connection.on('close', () => { closed = true; waiting?.('closed'); });
+      return 'open';
+    }
+    if (closed) return 'closed';
+    const echoed = new Promise(resolve => { waiting = resolve; });
+    connection.write(new TextEncoder().encode('ping'));
+    return echoed;
+  }`};
+
+// macOS connects a long socket path through a connector process, a child of the supervisor that holds the connection.
+test('in the owned group, a long-path connection the worker holds survives a kernel\'s crash and reset: its connector is never reaped', {skip: own.skip || (process.platform !== 'darwin' && 'long socket paths connect only on macOS')}, async t => {
+  const host = await anchoredHost(t, {services: HELD_PIPE_SERVICE});
+  const dir = join(host.root, 'd'.repeat(192 - host.root.length - '/s.sock'.length - 1));
+  mkdirSync(dir);
+  const path = join(dir, 's.sock');
+  assert.equal(Buffer.byteLength(path), 192);
+  const alias = join(host.root, 'a');
+  symlinkSync(dir, alias);
+  const server = createServer(c => { c.on('error', () => {}); c.on('data', d => c.write(d)); }).listen(join(alias, 's.sock'));
+  t.after(() => server.close());
+  await new Promise(resolve => server.once('listening', resolve));
+  assert.deepEqual(texts(await host.call('js', {code: rpc('pipe', {op: 'open', path})})), ['"open"']);
+  assert.deepEqual(texts(await host.call('js', {code: rpc('pipe', {op: 'ping'})})), ['"ping"']);
+  const fatal = await host.call('js', {code: 'setTimeout(()=>{throw new Error("late")},10);await new Promise(r=>setTimeout(r,300));'});
+  assert.match(fatal.content[0].text, /^node_repl kernel uncaught exception: late/);
+  await delay(500);
+  assert.deepEqual(texts(await host.call('js_reset', {})), ['js kernel reset']);
+  await delay(300);
+  assert.deepEqual(texts(await host.call('js', {code: rpc('pipe', {op: 'ping'})})), ['"ping"'], 'the same connection still echoes');
+  assert.equal((await host.terminate()).confirmed, true);
+});
 
 test('launchServices.openApplication reaches the host\'s LaunchServices boundary (mocked) from trusted code, normalized, and only for the running execution', own, async t => {
   const {createSupervisor} = await import('../../src/repl-host/supervisor.mjs');

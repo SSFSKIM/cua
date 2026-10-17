@@ -26,7 +26,7 @@
 // (scripts/probe-secrets.mjs points the sky service at a controlled fake target) and is not reachable from the CLI. `chrome` (the Chrome facts), `listBackends` (the readiness listing) and `host` ({platform,
 // arch}, the process's by default: which pin resolves and the host notes) and
 // `probeUserns` (whether bubblewrap can create a user namespace, asked for a scoped launch on Linux) exist for tests
-// only, as is `idleTimer` (createServer's clock for the idle stop). `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
+// only, as are `resolveOwnNode` (the own REPL host's Node, src/runtime/launch.mjs replHostFor) and `idleTimer` (createServer's clock for the idle stop). `onWithdrawn(requestId)` is told when a cancellation withdrew a request before it reached the runtime, the one
 // case in which a request is never answered (the HTTP layer ends the stream that waits for it). `devices` (a device
 // directory, src/remote/directory.mjs) gives the connection the device tools and their host-notes rule: the stdio `serve`
 // passes one; the HTTP agent never does, so a device never drives a third one through itself. `browserBackends` (the
@@ -42,7 +42,7 @@ import {spawnUpstream} from './upstream.mjs';
 import {handshakeRecords, lazyRuntime} from './lazy-runtime.mjs';
 import {homeLayout, realHome} from '../runtime/layout.mjs';
 import {resolveRuntime} from '../runtime/manifest.mjs';
-import {browserSelectionFor, buildLaunch, ownHostNode, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
+import {browserSelectionFor, buildLaunch, replHostFor, SKY_SERVICE, BROWSER_SERVICE} from '../runtime/launch.mjs';
 import {hostIdentity} from '../repl-host/identity.mjs';
 import {claimRunSession} from '../runtime/run-dir.mjs';
 import {connectionSecrets} from '../secrets/store.mjs';
@@ -57,11 +57,11 @@ const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVI
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env, extensionId: extensionIdFor(chromeRoute(home))}),
-  listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null, idleTimer, onProfilesList}) {
+  listBackends, onWithdrawn, probeUserns, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
-  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns});
+  listBackends ??= () => listLiveBackends({home, runtime, ambient: env, tabCounts: false, sandbox, probeUserns, resolveOwnNode});
   const claim = claimRunSession(home, sessionId);
   let launch;
   let listingLeftover = false;
@@ -95,13 +95,14 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // launch of this connection (the first, and any after an idle stop) uses them: the rules profiles_list and js teach
     // are that service's, and the recorded handshake is that host's, so a registration of the other route meanwhile
     // must not switch the runtime under them. An explicit CUA_REPL_HOST the connection cannot honour fails the open.
-    // A new connection resolves again.
+    // The own host's Node is resolved with the selection, once (its probe runs `--version` on up to three candidates),
+    // and only when the selection would be cua's own host: a default that finds no Node 24 keeps the vendor host
+    // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
+    // so a Node installed meanwhile takes effect on the next connection.
     const browserSelection = serverSettings.surfaces.includes('browser') ? browserSelectionFor(env, home) : null;
-    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, browserSelection});
-    // The own host's Node is resolved once too: its probe runs `--version` on up to three candidates.
-    const ownNode = replHost.host === 'cua' ? ownHostNode({ambient: env}) : undefined;
+    const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, browserSelection, resolveOwnNode});
     const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, browserSelection, replHost, ownNode, surfaces: serverSettings.surfaces,
+      runtime, home, sessionId, ambient: env, browserSelection, replHost, surfaces: serverSettings.surfaces,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},

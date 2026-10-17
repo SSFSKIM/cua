@@ -1,0 +1,4 @@
+at: 2026-10-16T21:34:18Z
+mac: 14:34  up 18 days,  2:35, 29 users, load averages: 21.33 31.82 29.98
+vm:  21:34:18 up  2:58,  4 users,  load average: 1.23, 0.82, 0.83
+me: [{"key":"me","ready":true,"reason":null}]

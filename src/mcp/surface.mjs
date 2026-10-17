@@ -1,6 +1,7 @@
 // What the model sees of the server: the four-tool surface (five with the browser surface, which adds profiles_list),
 // server instructions with host notes for the enabled surfaces, and the result rewrites the proxy applies (image MIME
 // correction, token-bearing URL redaction). Pure functions; the server applies them to relayed messages.
+import {isAbsolute} from 'node:path';
 import {fail} from '../runtime/errors.mjs';
 
 const SURFACES = ['computer', 'browser'];
@@ -28,6 +29,15 @@ export function replHostFrom(env) {
   const value = env.CUA_REPL_HOST;
   if (value === undefined || value === '') return null;
   if (value !== 'cua' && value !== 'vendor') fail('invalid_setting', 'CUA_REPL_HOST must be cua or vendor');
+  return value;
+}
+
+// The CUA_NODE the caller set: null when unset or empty (the own REPL host's Node is then the node running cua or the
+// first on PATH, src/runtime/launch.mjs ownHostNode), else an absolute path, which is all a value is checked for here.
+export function cuaNodeFrom(env) {
+  const value = env.CUA_NODE;
+  if (value === undefined || value === '') return null;
+  if (!isAbsolute(value)) fail('invalid_setting', 'CUA_NODE must be the absolute path of a Node executable');
   return value;
 }
 

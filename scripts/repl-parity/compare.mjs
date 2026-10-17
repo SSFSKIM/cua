@@ -5,6 +5,7 @@ import {compareRuns} from '../browser-parity/compare.mjs';
 import {assessAssertions,vendorDefects} from './vendor-defects.mjs';
 import {normalizeHostDiagnostic} from './diagnostics.mjs';
 import {isDeepStrictEqual} from 'node:util';
+import {assertManagedNode} from './node-provenance.mjs';
 export function validateAttestations(meta) {
   if(meta.complete!==true)throw new Error('Incomplete parity run');
   if(!['vendor','cua'].includes(meta.host))throw new Error('Invalid requested host');
@@ -19,7 +20,9 @@ export function validateAttestations(meta) {
     const marker=a._meta?.['cua/replHost'];
     if(meta.host==='cua') {
       // The own host's Node, resolved and re-read on the device for this connection (scripts/repl-parity/provenance.mjs).
-      const own=a.executionFacts?.ownNode;
+      const answering=a.executionFacts?.answeringHost;
+      if(meta.nodeMode==='managed'||answering?.nodeMode==='managed')assertManagedNode(answering);
+      const own=answering?.ownNode??a.executionFacts?.ownNode;
       if(!own||typeof own.path!=='string'||!own.path.startsWith('/')||!(Number(/^v(\d+)\./.exec(own.version??'')?.[1])>=24))throw new Error('Own host attestation lacks the Node it ran on');
       if(a.serverInfo.name!=='cua-repl-host'||marker?.host!=='cua'||!marker.version||marker.version!==a.serverInfo.version||(meta.hostVersion&&marker.version!==meta.hostVersion))throw new Error('Own host attestation mismatch');
     } else if(a.serverInfo.name==='cua-repl-host'||a._meta&&Object.hasOwn(a._meta,'cua/replHost'))throw new Error('Vendor host attestation mismatch');
@@ -99,7 +102,8 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
   for(const [side,assessment] of [['a',leftAssertions],['b',rightAssertions]])for(const row of assessment.unexpectedFailures){
     if(!differences.some(d=>d.kind==='assertion'&&d.side===side&&d.case===row.case&&d.cell===row.cell))differences.push({kind:'assertion',side,case:row.case,cell:row.cell,message:'undeclared assertion failure'});
   }
-  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],allAssertionsPassed:!differences.length&&!vendorDefects.length&&!pendingLeft.observations.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
+  const provisionalCells=[...new Map([...pendingLeft.provisional,...pendingRight.provisional].map(p=>[`${p.case}|${p.cell}`,p])).values()];
+  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!provisionalCells.some(p=>p.case===id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],provisionalCells,allAssertionsPassed:!differences.length&&!vendorDefects.length&&!pendingLeft.observations.length&&!provisionalCells.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }
 
 // The expected-differences file: exact identity-slot allowances (field meta.cua/replHost, both sides' values named) and

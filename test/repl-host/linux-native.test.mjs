@@ -40,7 +40,7 @@ async function linuxSession(t, {surfaces, secrets = {}}) {
   const fixture = linuxNativeRuntime(t, {node, secrets});
   const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', CUA_BROWSER_SERVICE: 'cua', ...DESKTOP};
   const services = {...(surfaces.includes('computer') ? {sky: LINUX_SKY} : {}), ...(surfaces.includes('browser') ? {browser: BROWSER_SERVICE} : {})};
-  const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, ownNode: node});
+  const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, resolveOwnNode: () => node});
   // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.
   if (services.sky && LINUX_SKY !== SKY_SERVICE) launch.env.CUA_REPL_TRUSTED_CODE_PATHS += `:${dirname(SKY_SERVICE)}`;
   for (const dir of [launch.cwd, launch.env.CODEX_HOME]) mkdirSync(dir, {recursive: true, mode: 0o700});

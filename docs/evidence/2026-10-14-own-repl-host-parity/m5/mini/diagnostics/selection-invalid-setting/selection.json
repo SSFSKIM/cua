@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+  "platform": "darwin",
+  "load": "1:49  up 7 days,  6:56, 2 users, load averages: 2.66 2.80 3.12",
+  "complete": false,
+  "rows": [
+    {
+      "row": {
+        "platform": "darwin",
+        "registration": "none",
+        "maws": false,
+        "surfaces": [
+          "browser"
+        ],
+        "lane": "ordinary",
+        "override": "unset",
+        "node24": true,
+        "managedNode": true
+      },
+      "doctor": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (vendor_browser_route): the browser surface's service is the vendor's, which only the vendor host runs. Browser route: the ChatGPT extension route, as a home with no Chrome registration is read. The profile listing (browser only): vendor host (vendor_browser_route): the browser surface's service is the vendor's, which only the vendor host runs. CUA_REPL_HOST=cua or vendor chooses"
+      },
+      "observation": {
+        "serverInfo": {
+          "name": "rmcp",
+          "version": "1.5.0"
+        },
+        "_meta": {
+          "cua/taskId": "e98bbc46-89d0-4046-b926-09cda8c88089"
+        },
+        "launchNode": {
+          "path": "/Users/new/.local/share/cua-parity-selection/m5-M9HpQP/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "host": "vendor",
+        "executionFacts": {
+          "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+          "dirty": false,
+          "home": "/Users/new/.local/share/cua-parity-selection/m5-M9HpQP",
+          "ownNode": null
+        }
+      }
+    },
+    {
+      "row": {
+        "platform": "darwin",
+        "registration": "none",
+        "maws": false,
+        "surfaces": [
+          "browser"
+        ],
+        "lane": "ordinary",
+        "override": "cua",
+        "node24": true,
+        "managedNode": true
+      },
+      "doctor": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (repl_host_refused): CUA_REPL_HOST=cua needs cua's own browser service, but this home's browser service resolves to the vendor's: the ChatGPT extension route, as a home with no Chrome registration is read. Run `cua chrome register` to move this home to the cua route, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor host. Browser route: the ChatGPT extension route, as a home with no Chrome registration is read. The profile listing (browser only): refused (repl_host_refused): CUA_REPL_HOST=cua needs cua's own browser service, but this home's browser service resolves to the vendor's: the ChatGPT extension route, as a home with no Chrome registration is read. Run `cua chrome register` to move this home to the cua route, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      },
+      "error": "repl_host_refused"
+    },
+    {
+      "row": {
+        "platform": "darwin",
+        "registration": "none",
+        "maws": false,
+        "surfaces": [
+          "browser"
+        ],
+        "lane": "ordinary",
+        "override": "vendor",
+        "node24": true,
+        "managedNode": true
+      },
+      "doctor": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the ChatGPT extension route, as a home with no Chrome registration is read. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      },
+      "observation": {
+        "serverInfo": {
+          "name": "rmcp",
+          "version": "1.5.0"
+        },
+        "_meta": {
+          "cua/taskId": "b739f2c4-7ee2-4998-b22a-2fe481a75da8"
+        },
+        "launchNode": {
+          "path": "/Users/new/.local/share/cua-parity-selection/m5-M9HpQP/runtimes/26.928.40906-darwin-arm64/cua_node/bin/node",
+          "version": "v24.21.0"
+        },
+        "host": "vendor",
+        "executionFacts": {
+          "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+          "dirty": false,
+          "home": "/Users/new/.local/share/cua-parity-selection/m5-M9HpQP",
+          "ownNode": null
+        }
+      }
+    },
+    {
+      "row": {
+        "platform": "darwin",
+        "registration": "none",
+        "maws": false,
+        "surfaces": [
+          "browser"
+        ],
+        "lane": "ordinary",
+        "override": "invalid",
+        "node24": true,
+        "managedNode": true
+      },
+      "doctor": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: the ChatGPT extension route, as a home with no Chrome registration is read. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      },
+      "error": -32000
+    }
+  ],
+  "installation": {
+    "method": "cua install",
+    "home": "/Users/new/.local/share/cua-parity-selection/m5-M9HpQP",
+    "ownNode": {
+      "path": "/Users/new/.local/share/cua-parity-selection/m5-M9HpQP/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    }
+  },
+  "error": "Expected values to be strictly equal:\n+ actual - expected\n\n+ -32000\n- 'invalid_repl_host'\n"
+}

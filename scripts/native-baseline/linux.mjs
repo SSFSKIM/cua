@@ -1,4 +1,4 @@
-// The native baseline on Linux: gedit on the X session of the cua-linux VM, driven by the vendor's sky_linux helper.
+// The native baseline on Linux: gedit on a declared Linux device’s recorded X session, driven by the vendor's sky_linux helper.
 // What differs from macOS (./macos.mjs) is the target and its window: the run opens its own standalone gedit on a new
 // empty file in a new /tmp directory, finds that window by the file name and binds it by X11 window id, so every
 // observation and action is on the run's own window; it types with pressKey (./linux-cells.mjs says why) and clears the
@@ -12,7 +12,8 @@ import {basename} from 'node:path';
 import {quote} from '../browser-parity/topology.mjs';
 import * as cells from './cells.mjs';
 import * as linux from './linux-cells.mjs';
-import {assertDisplay, servePattern} from './remote.mjs';
+import {assertDisplay, servePattern, NATIVE_LOCALE} from './remote.mjs';
+import {sessionEnvironment} from '../repl-parity/devices.mjs';
 
 const ROLES = ['scratch', 'victim'];
 const DIR = /^\/tmp\/cua-native-baseline-[A-Za-z0-9]{6}$/;
@@ -33,7 +34,7 @@ const OURS = `const ours = (pid, file) => { try { return execFileSync('ps', ['-o
 
 // Opens a standalone gedit (its own process, not a window of a running instance) on a new empty file in a new run
 // directory, detached from the ssh session, in the X session. Prints {pid, dir, file}.
-export function spawnGeditScript({display, role}) {
+export function spawnGeditScript({display, role, xSession, userHome}) {
   assertDisplay(display);
   if (!ROLES.includes(role)) throw new Error('role must be scratch or victim');
   return node(`import {spawn} from 'node:child_process';
@@ -44,7 +45,10 @@ import {join} from 'node:path';
 const dir = mkdtempSync("/tmp/cua-native-baseline-");
 const file = join(dir, ${JSON.stringify(role)} + "-" + randomBytes(3).toString("hex") + ".txt");
 writeFileSync(file, "");
-const child = spawn("gedit", ["--standalone", file], {detached: true, stdio: "ignore", env: {...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: join(homedir(), ".Xauthority")}});
+const env = ${xSession === undefined ? `{...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: join(homedir(), ".Xauthority")}` : `{PATH: process.env.PATH, ...${JSON.stringify(sessionEnvironment(xSession))}, HOME: ${JSON.stringify(userHome ?? null)} ?? homedir()}`};
+for (const key of Object.keys(env)) if (key.startsWith('LC_') || key === 'LANGUAGE') delete env[key];
+Object.assign(env, ${JSON.stringify(NATIVE_LOCALE)});
+const child = spawn("gedit", ["--standalone", file], {detached: true, stdio: "ignore", env});
 child.once("error", e => { console.error(e.message); process.exitCode = 1; });
 if (child.pid) { child.unref(); console.log(JSON.stringify({pid: child.pid, dir, file})); }`);
 }
@@ -102,10 +106,10 @@ const times = names.map(n => statSync('/var/crash/' + n).mtimeMs).sort((a, b) =>
 console.log(JSON.stringify({files: names.length, newest: times.length ? new Date(times[0]).toISOString() : null}));`)}`;
 
 // The device operations of a Linux run, over `remote(script) -> stdout`.
-export function linuxDevice(remote, {display, checkout, runtimeRoot}) {
+export function linuxDevice(remote, {display, checkout, runtimeRoot, xSession, userHome}) {
   return {
     spawnGedit(role) {
-      const line = remote(spawnGeditScript({display, role})).split('\n').at(-1);
+      const line = remote(spawnGeditScript({display, role, xSession, userHome})).split('\n').at(-1);
       return ownedEntry({...JSON.parse(line), role});
     },
     targetState: (entry, options) => remote(targetStateScript(entry, options)).trim(),
@@ -120,16 +124,16 @@ export function linuxDevice(remote, {display, checkout, runtimeRoot}) {
 export const linuxAdapter = {
   platform: 'linux',
   target: 'gedit',
-  device: (remote, {pre, display}) => linuxDevice(remote, {display, checkout: pre.checkout, runtimeRoot: pre.runtimeRoot}),
+  device: (remote, {pre, display}) => linuxDevice(remote, {display, checkout: pre.checkout, runtimeRoot: pre.runtimeRoot, xSession: pre.xSession, userHome: pre.userHome}),
   // Linux asks no per-app approval (src/mcp/surface.mjs LINUX_COMPUTER_RULES): nothing is accepted.
   answer: () => ({action: 'decline'}),
   refuse(pre) {
     if (pre.geditRunning) return 'gedit is running on the device: its windows may be the owner\'s; close it (or wait) and re-run';
-    if (!pre.display) return `the X display ${pre.x?.display ?? '?'} did not answer xdpyinfo with the account's ~/.Xauthority; run inside the device's X session`;
+    if (!pre.display) return `the X display ${pre.x?.display ?? '?'} did not answer xdpyinfo with the recorded X-session environment; run inside the device's X session`;
     if (!pre.gedit) return 'gedit is not installed on the device';
     return null;
   },
-  start(meta, pre) { meta.gedit = {version: pre.gedit, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
+  start(meta, pre) { meta.gedit = {version: pre.gedit, locale: NATIVE_LOCALE, owned: [], targetCleanup: [], crashReportsBefore: null}; meta.x = pre.x; },
 
   async gui(ctx) {
     const {meta, device, guard, js, row, emit, measure} = ctx;

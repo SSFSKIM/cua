@@ -10,7 +10,8 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 | M1 | feat/own-repl-host-m1 | https://github.com/SSFSKIM/cua/pull/137 | merged (397d532) |
 | M2 | feat/own-repl-host-m2 | https://github.com/SSFSKIM/cua/pull/139 | merged (5722341) |
 | M3 | feat/own-repl-host-m3 | https://github.com/SSFSKIM/cua/pull/140 | merged (73598f8) |
-| M4 | feat/own-repl-host-m4 | https://github.com/SSFSKIM/cua/pull/146 | review correct at 47ba181; gates on ci-kit |
+| M4 | feat/own-repl-host-m4 | https://github.com/SSFSKIM/cua/pull/146 | merged (56ea8c3) |
+| M5 | feat/own-repl-host-m5 | https://github.com/SSFSKIM/cua/pull/149 | reviewed correct; awaiting session merge |
 
 ## Log
 
@@ -109,6 +110,38 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
   - Shell injection in a test fixture.
 - 2026-10-15 M4 whole-branch review: "correct" at 47ba181 after the fix wave. Local gates held for a quiet machine; load stayed at 100–450.
 - 2026-10-16 The machine crashed and the plan-executor was lost. The session resumed M4: merged main (491590f), which brings ci-kit (#143) so `npm test` and the plugin gate run on GitHub's hosted macOS runner with Node 24, ticked M4 and wrote its Outcomes, and opened the PR. M5 goes to a fresh plan-executor.
+- 2026-10-16 M5 pre-flight (fresh plan-executor, base 56ea8c3): six tasks (spec Decision Log). Session ruled the implicit default without Node ≥24 (vendor with `own_host_node_unavailable`; explicit `CUA_NODE` persisted in agent jobs) and confirmed the remote/benchmark logistics (one mini browser-only endpoint restarted per host; session operates the relay; owner transfers keys). Task 2 (oracle, astra, sibling worktree) and task 1 (switch, opus) dispatched in parallel.
+- 2026-10-16 M5 code tasks reviewed:
+  - Task 1 (opus; one wave): the switch at 02fc34c. Doctor missed a relative `CUA_NODE` on vendor selections; fixed.
+  - Task 3 (sol-xhigh; clean): README and the standalone spec's Phase A/B revision at 4df9c8a. The #113 spec was reconciled at b061921 on the session's ruling: the vendor browser-service removal and the rollback's end move to #79; visible-DOM caps move to #147.
+  - Task 1b (opus; two waves; owner direction): the managed Node 24 (v24.22.0) from `cua install`, at d64a6b8. Review closed the managed root and staging against scoped writes, bound the install record to the binary's SHA-256 and size, made activation roll back, and classified filesystem errors at the CLI.
+  - Task 2 (astra oracle, sibling worktree): stat sentence row, polling recalibration from two fresh vendor pairs, RemoteProofEndpoints, the selection lane (260 rows per platform) and managed-Node preparation. Two review waves closed stale-version, doctor-substring and empty-preparation false greens. One Important finding is open in its third wave: the Node witness rejects production's `--disable-sigusr1` argv.
+
+- 2026-10-16 M5 live work and its fix waves:
+  - **Mini sitting (T4).**
+    - A secrets-live scratch-home bug blocked the first attempt; the oracle fix binds the exact capability root.
+    - The live run then found a product difference: the nativePipe stat sentence (184f4e3, 32d7335, grounded in a vendor disassembly).
+    - The session also ruled over-limit socket paths into scope. They are reached through a supervisor-owned connector process (30b238e through e24a1cd, four review waves). The rejected alternatives were a /tmp alias, which could be redirected, and handing the socket back to the supervisor, which flips peer identity.
+    - The oracle followed with a peer-side witness for the over-limit cell, identity-slot scope for the two new cells, mechanical corpus recalibration from three vendor controls, selection refusal boundaries, doctor's on-Node clause, browser-route precedence, and the cache tools/list call.
+    - Final mini evidence at product e24a1cd:
+      - `--suite all`: 479/479, 0 unexpected, inventory 542/542.
+      - Corpus: 0 unexpected against three vendor controls.
+      - docs-profiles 12/12; scripted bench 12/12 by host; selection 260/260.
+      - MAWS: e2e green on the mini runner, the probe passes, and an 800x500 viewport flake did not recur in 6 alternating runs.
+  - **T5, remote endpoint and model benchmark.**
+    - The mini endpoint passes acceptance, and kill-client counts 1.
+    - Model benchmark: tool time 23/23. The outcome line reads `regression`, ruled not a host regression.
+    - Elicitation is not reachable live on this route.
+  - **T6a and T6b, native speed.**
+    - T6a made the native baseline device-generic and pinned gedit's locale.
+    - T6b ran on the cua-bench GCE box: every latency row passes. compare's FAIL, on typeText's crash sentence, is ruled vendor spread (#130).
+  - **T6, cua-linux.**
+    - Services 0 differences, and the Linux over-limit refusal is confirmed live. Runners PASS; the lifeline ends children in 251 ms; selection 260/260.
+    - The sandwich shows 0 differences over 490 cases, after an archive cache stopped per-connection 511 MB downloads from overrunning the probe bounds.
+    - The Linux endpoint passes, with kill-client 1.
+    - The VM was resized to 2 vCPU / 4 GB mid-sitting; no OOM.
+    - #141 is carried into M5 by ruling; Linux completeness rests on the `--through M4` diff over the identical case set.
+  - **Whole-branch reviewer-high:** "correct".
 
 ## Environmental friction
 
@@ -118,3 +151,15 @@ Executed by the plan-executor for the session that owns #116. Spec: `docs/doperp
 - The cua-linux VM's Chrome was not running at first, and the mini's Profile 1 window closed once; the session restored both.
 - Local `node --test test/repl-parity/` fails on Node 22 (directory argument); use a glob.
 - 2026-10-14 (M2): the mini's Downloads privacy consent for the ssh session had to be granted by the owner (as in #113 M3); ssfs went host_not_live twice when the Profile 1 window closed, and the session reopened it each time. The harness forced several interim handbacks while executors ran; the session resumed the controller each time.
+- 2026-10-16 (M5):
+  - **Machine and Chrome.** This Mac's load (100–450) ruled out local full suites and local timing. Gates ran on ci-kit, and native speed moved to a cloud box.
+    - The mini's Chrome window loss happened four times by M5, once with no client activity. It is tracked as #148, and a logged standing reopen permission was added.
+    - The VM was resized mid-sitting.
+  - **Messaging.**
+    - Many worker handbacks reached the session instead of the controller; the session relayed them.
+    - The harness repeatedly forced interim handbacks.
+    - Sol and astra executors declined to write report files, so the controller transcribed them.
+  - **Credentials and access.**
+    - The owner's first `/secret` attempt typed the value in the prompt box, which was refused.
+    - The relay's ssh host key had changed after a server rebuild; the session replaced the stale entry.
+    - One oracle worker's RED test made a single read-only ssh to cua-linux before its executor seam existed. It was fixed and reported.

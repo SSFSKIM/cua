@@ -267,6 +267,14 @@ test('CUA_REPL_HOST is checked at start whatever the surfaces: cua, vendor, or u
   }
 });
 
+test('CUA_NODE is checked at start whatever the surfaces: an absolute path, or unset (each connection resolves the own host\'s Node)', () => {
+  for (const surfaces of ['computer', 'browser', 'computer,browser']) {
+    for (const value of [undefined, '', '/opt/node-24/bin/node', '/absent/node']) settingsFrom({CUA_SHIM_SURFACES: surfaces, CUA_NODE: value});
+    for (const bad of ['node', 'bin/node', '~/node'])
+      assert.throws(() => settingsFrom({CUA_SHIM_SURFACES: surfaces, CUA_NODE: bad}), error => error.code === 'invalid_setting' && /CUA_NODE must be the absolute path of a Node executable/.test(error.message), `${surfaces} ${bad}`);
+  }
+});
+
 test('CUA_BROWSER_SERVICE is checked at start with the browser surface: cua, vendor, or unset (the launch resolves it)', () => {
   for (const value of [undefined, '', 'cua', 'vendor']) settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: value});
   for (const bad of ['openai', 'Cua', ' vendor'])

@@ -13,9 +13,25 @@
 // docs/doperpowers/research/2026-10-14-own-repl-host/node-repl-embedded-INDEX.md "Gaps" 4, and the connect failure
 // observed on cua-linux, M4) are kept; the rest are cua's. An OS error reads as the vendor's Rust host displays it
 // (osErrorSentence).
-import {statSync} from 'node:fs';
+//
+// The path check follows the vendor's validate_native_pipe_path (node_repl 26.928.40906, disassembled on darwin-arm64
+// and linux-arm64): is_absolute; then canonicalize, i.e. realpath(3), whose every failure (ENOENT, ENOTDIR, EACCES,
+// ELOOP, ENAMETOOLONG, EIO, an interior NUL) is `native pipe path unavailable: `; then metadata of the canonical path,
+// whose failure is `native pipe stat failed: `; then the socket type.
+//
+// The connect then follows the vendor's per-platform rule for a canonical path that does not fit sun_path (its own
+// connect, same build): on Linux, tokio's UnixStream::connect, where std's sockaddr_un refuses 108 bytes or more
+// (`failed to connect native pipe: path must be shorter than SUN_LEN`); on macOS, start_macos_native_pipe_connect,
+// which connects 104 bytes or more through the parent directory (open it, pthread_fchdir_np, connect the file name),
+// so it fails only when the parent cannot be opened or the file name alone does not fit (`native pipe file name is
+// too long`). Its other two sentences, a path with no parent or no file name, cannot be reached from a canonical path
+// that names a socket. A path that fits is connected as given; one that does not is connected at its canonical path
+// when that fits, and otherwise (macOS) in its directory by a connector process (./native-pipe-directory.mjs). No
+// name is ever made in the filesystem for a connect.
+import {closeSync, fstatSync, openSync, realpathSync, statSync} from 'node:fs';
 import {createConnection} from 'node:net';
 import {isAbsolute} from 'node:path';
+import {connectInDirectory as connectInDirectoryDefault} from './native-pipe-directory.mjs';
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 1000;
 export const CONNECT_TIMEOUT_SENTENCE = 'native pipe initial connect timed out';
@@ -23,6 +39,30 @@ export const NOT_ABSOLUTE_SENTENCE = 'native pipe path must be absolute';
 export const NOT_SOCKET_SENTENCE = 'native pipe path is not a socket';
 export const WRITE_FAILED_PREFIX = 'native pipe write failed: ';
 export const CONNECT_FAILED_PREFIX = 'failed to connect native pipe: ';
+export const PATH_UNAVAILABLE_PREFIX = 'native pipe path unavailable: ';
+export const STAT_FAILED_PREFIX = 'native pipe stat failed: ';
+// Rust std's refusal of a path holding a NUL byte, raised before any syscall (std::sys small_c_string NUL_ERR).
+const NUL_IN_PATH_SENTENCE = 'file name contained an unexpected NUL byte';
+// Rust std's sockaddr_un refusal (Linux), and the vendor's own refusal of a name longer than sun_path (macOS).
+const SUN_LEN_SENTENCE = 'path must be shorter than SUN_LEN';
+const FILE_NAME_TOO_LONG_SENTENCE = 'native pipe file name is too long';
+// sizeof(sockaddr_un.sun_path): a path connects directly only when it is shorter, leaving room for its NUL.
+const SUN_PATH_BYTES = {darwin: 104, linux: 108};
+// The vendor's read-only open of a long path's parent; -> the directory's identity, which its connect must still see.
+function openDirectoryDefault(path) {
+  const fd = openSync(path, 'r');
+  try {
+    const {dev, ino} = fstatSync(fd, {bigint: true});
+    return {dev, ino};
+  } finally {
+    closeSync(fd);
+  }
+}
+// `bytes` as a string naming the same bytes, or null when they are not UTF-8 (a Node path string cannot name them).
+const asPathString = bytes => {
+  const text = bytes.toString();
+  return Buffer.from(text).equals(bytes) ? text : null;
+};
 export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 // A write into a pipe the peer left is a close, not an error: the vendor host reports the connection closed by its
 // reader, whose EOF wins the race with the write's failure (observed on the pinned node_repl on macOS, 2026-10-14, for
@@ -32,7 +72,7 @@ export const NOT_CONNECTED_SENTENCE = 'native pipe connection is closed';
 const PEER_GONE = new Set(['EPIPE', 'ECONNRESET', 'ECONNABORTED']);
 const peerGoneOnWrite = error => error.syscall !== 'read' && PEER_GONE.has(error.code);
 
-// strerror for every errno the relay's syscalls (stat, connect, read, write, close of a Unix socket) can reach, as the
+// strerror for every errno the relay's syscalls (realpath, stat, connect, read, write, close of a Unix socket) can reach, as the
 // vendor's Rust host displays an OS error: glibc's text on Linux (glibc's errlist), Darwin libc's on macOS (checked
 // against os.strerror on macOS 15). libuv's own messages are not strerror (ELOOP, ENFILE, ENOMEM, ETIMEDOUT, ... differ).
 const COMMON = {
@@ -62,7 +102,13 @@ export function osErrorSentence(error, platform = process.platform) {
 
 // One relay per trusted worker: `send(message)` writes to that worker. -> {handle(message), closeAll()}; closeAll ends
 // every connection, connected or still connecting, without telling the worker (it is gone).
-export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, stat = statSync}) {
+// `platform` picks the vendor's rule for a long canonical path; `openDirectory(path)` is the vendor's open of a long
+// path's parent (-> {dev, ino}); `connectInDirectory({directory, name, identity}, {own})` connects a file name in it,
+// `own(pid)` (the owned-group reaper's, -> release) protecting the connector process while it lives.
+export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS, connect = createConnection, realpath = realpathSync.native,
+  stat = statSync, platform = process.platform, openDirectory = openDirectoryDefault, connectInDirectory = connectInDirectoryDefault,
+  own = () => () => {}}) {
+  const sunPath = SUN_PATH_BYTES[platform] ?? SUN_PATH_BYTES.linux;
   const connections = new Map();     // connection_id -> {socket, reportClosed}
   const connecting = new Map();      // socket -> its connect timer, until the connect is answered
   let counter = 0;
@@ -72,13 +118,26 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
 
   function open(id, path) {
     if (typeof path !== 'string' || !isAbsolute(path)) return fail(id, NOT_ABSOLUTE_SENTENCE);
+    if (path.includes('\0')) return fail(id, `${PATH_UNAVAILABLE_PREFIX}${NUL_IN_PATH_SENTENCE}`);
+    let canonical, metadata;
     try {
-      if (!stat(path).isSocket()) return fail(id, NOT_SOCKET_SENTENCE);
+      // Bytes, as the vendor's PathBuf holds them: decoding a Linux name that is not UTF-8 would stat another path.
+      canonical = realpath(path, {encoding: 'buffer'});
     } catch (error) {
-      return fail(id, `${CONNECT_FAILED_PREFIX}${osErrorSentence(error)}`);
+      return fail(id, `${PATH_UNAVAILABLE_PREFIX}${osErrorSentence(error)}`);
     }
+    try {
+      metadata = stat(canonical);
+    } catch (error) {
+      return fail(id, `${STAT_FAILED_PREFIX}${osErrorSentence(error)}`);
+    }
+    if (!metadata.isSocket()) return fail(id, NOT_SOCKET_SENTENCE);
+    const route = routeFor(path, canonical);
+    if (route.refusal) return fail(id, `${CONNECT_FAILED_PREFIX}${route.refusal}`);
     const connectionId = `native-pipe-connection-${counter++}`;
-    const socket = connect({path});
+    // The budget runs from here: a connector's synchronous spawn counts against it.
+    const deadline = performance.now() + connectTimeoutMs;
+    const socket = route.directory ? connectInDirectory(route, {own}) : connect({path: route.path});
     let connected = false;
     let settled = false;      // the connect request was answered: a later connect or error changes nothing
     let reported = false;     // native_pipe_closed was sent
@@ -90,17 +149,20 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       connections.delete(connectionId);
       if (!closedAll) send({type: 'native_pipe_closed', connection_id: connectionId, error});
     };
-    const timeout = setTimeout(() => {
+    const expire = () => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       connecting.delete(socket);
       socket.destroy();
       fail(id, CONNECT_TIMEOUT_SENTENCE);
-    }, connectTimeoutMs);
+    };
+    const timeout = setTimeout(expire, Math.max(0, deadline - performance.now()));
     connecting.set(socket, timeout);
     socket.once('connect', () => {
       clearTimeout(timeout);
       connecting.delete(socket);
+      if (performance.now() >= deadline) expire();   // delivered after the deadline, ahead of the timer
       if (settled || closedAll) return socket.destroy();
       settled = true;
       connected = true;
@@ -129,6 +191,32 @@ export function nativePipeRelay({send, connectTimeoutMs = DEFAULT_CONNECT_TIMEOU
       if (!connected) return;
       reportClosed(lastError && !peerGoneOnWrite(lastError) ? osErrorSentence(lastError) : null);
     });
+    // A start that used the whole budget is a timeout now, before any connect it queued can be seen.
+    if (performance.now() >= deadline) expire();
+  }
+
+  // How `path` is connected (see the header): {path} or {directory, name, identity}, or {refusal} for the vendor's.
+  function routeFor(path, canonical) {
+    const fits = bytes => bytes < sunPath;
+    let inDirectory = null;
+    if (!fits(canonical.length)) {
+      if (platform !== 'darwin') return {refusal: SUN_LEN_SENTENCE};
+      const slash = canonical.lastIndexOf(0x2f);
+      const directory = slash === 0 ? Buffer.from('/') : canonical.subarray(0, slash);
+      const name = canonical.subarray(slash + 1);
+      let identity;
+      try {
+        identity = openDirectory(directory);
+      } catch (error) {
+        return {refusal: osErrorSentence(error)};
+      }
+      if (!fits(name.length)) return {refusal: FILE_NAME_TOO_LONG_SENTENCE};
+      inDirectory = {directory: asPathString(directory), name: asPathString(name), identity};
+    }
+    if (fits(Buffer.byteLength(path))) return {path};
+    if (!inDirectory) return {path: asPathString(canonical) ?? path};
+    if (inDirectory.directory !== null && inDirectory.name !== null) return inDirectory;
+    return {path};   // bytes no Node path string can name: Node refuses the path as given
   }
 
   function write(id, connectionId, data) {

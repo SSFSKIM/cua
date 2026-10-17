@@ -6,7 +6,7 @@
 // handshake, its tools or the API a first call documents), so a recorded handshake of the older host is never replayed
 // for the newer one (src/mcp/lazy-runtime.mjs handshakeRecords keys records by hostIdentity).
 export const REPL_HOST_NAME = 'cua-repl-host';
-export const REPL_HOST_VERSION = '0.4.0';
+export const REPL_HOST_VERSION = '0.5.0';
 export const REPL_HOST_META_KEY = 'cua/replHost';
 
 // -> {host: 'cua' | 'vendor', version}: the answering host of a connection whose selection is `host`, on runtime `release`.

@@ -1,0 +1,90 @@
+{
+  "commit": "8a134abb538def03605bc1a52a26d48a5f4cb23c",
+  "home": "/Users/new/.local/share/cua-parity-remote/parity-pmQfYc",
+  "ownNodeAtPrepare": {
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "rows": [
+    {
+      "browserService": "cua",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (browser_only) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "cua",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "cua",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "cua",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: CUA_BROWSER_SERVICE=cua. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "unset",
+      "override": "unset",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (browser_only) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T14:33:16.327Z. The profile listing (browser only): cua host (browser_only) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service; CUA_REPL_HOST=vendor keeps the vendor host. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "unset",
+      "override": "cua",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "cua host (explicit) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST=cua. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T14:33:16.327Z. The profile listing (browser only): cua host (explicit) on Node /Users/new/.local/share/cua-parity-remote/parity-pmQfYc/node/24.22.0/bin/node: CUA_REPL_HOST=cua. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "unset",
+      "override": "vendor",
+      "ok": true,
+      "replHost": {
+        "name": "repl.host",
+        "status": "pass",
+        "detail": "vendor host (explicit): CUA_REPL_HOST=vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T14:33:16.327Z. The profile listing (browser only): vendor host (explicit): CUA_REPL_HOST=vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    },
+    {
+      "browserService": "unset",
+      "override": "invalid",
+      "ok": false,
+      "replHost": {
+        "name": "repl.host",
+        "status": "fail",
+        "detail": "refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. Browser route: the cua route, by cua's registration (cua chrome register) of 2026-10-16T14:33:16.327Z. The profile listing (browser only): refused (invalid_repl_host): CUA_REPL_HOST must be cua or vendor. CUA_REPL_HOST=cua or vendor chooses"
+      }
+    }
+  ]
+}

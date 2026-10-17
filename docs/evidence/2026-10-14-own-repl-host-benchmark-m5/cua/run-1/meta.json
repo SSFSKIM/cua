@@ -1,0 +1,82 @@
+{
+  "experimentId": "orh-m5-host-a",
+  "host": "cua",
+  "hostAttestations": [
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 123,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "a9ffcb1a-bf56-4df7-b192-28bb93241830"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+        "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+        "dirty": false,
+        "release": "26.928.40906-darwin-arm64",
+        "node": "v24.18.0",
+        "runtimeNode": "v24.21.0",
+        "platform": "darwin",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792175387349.6655
+            }
+          },
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+          "ownNode": {
+            "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "pid": 85071,
+          "nodeMode": "managed"
+        }
+      },
+      "connection": "endpoint-restart-before-cua-run-1",
+      "level": "endpoint",
+      "agentPid": 84951
+    }
+  ],
+  "service": "cua",
+  "surfaces": [
+    "browser"
+  ],
+  "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+  "profile": "ssfs",
+  "model": "claude-sonnet (benchmark controller subagent)",
+  "node": "managed Node v24.22.0 (<endpoint home>/node/24.22.0/bin/node, from cua install); agent on v24.18.0",
+  "runtime": "26.928.40906-darwin-arm64",
+  "platform": "darwin-arm64",
+  "sandbox": "scoped (cua proxy default for browser-only)",
+  "backend": "cua extension backend, profile ssfs",
+  "started": "2026-10-17T00:38:38.484Z",
+  "finished": "2026-10-17T00:41:48.469Z",
+  "attestation": {
+    "route": "harness-owned browser-only endpoint repl-m5t5r1-mini-browser (scripts/repl-parity/remote.mjs, agent restarted under CUA_REPL_HOST=cua by the dispatcher)",
+    "residentCommit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+    "selectedBrowserHeader": "# Selected Browser - Name: cua - Type: extension - ID: 1 - Service: cua browser service 0.1.0",
+    "marker": "cua browser service 0.1.0"
+  },
+  "remoteDirectory": "/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/cua-bench/orh-m5-host-a/cua/cua/run-1"
+}

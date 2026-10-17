@@ -1,0 +1,93 @@
+{
+  "checkout": "/home/admin/Developer/GitHub/cua-parity",
+  "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+  "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+  "dirty": false,
+  "release": "26.928.40906-linux-arm64",
+  "node": "v22.23.3",
+  "runtimeNode": "v24.21.0",
+  "platform": "linux",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "browserRoute": {
+    "selection": {
+      "service": "cua",
+      "reason": "cua_route",
+      "explicit": false,
+      "route": "cua",
+      "registration": {
+        "route": "cua",
+        "at": 1792176123302.951
+      }
+    },
+    "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+    "manifests": []
+  },
+  "chromeLaunch": [
+    {
+      "executable": "/opt/google/chrome/chrome",
+      "flags": [
+        "--profile-directory=Default",
+        "--disable-gpu",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling"
+      ],
+      "display": ":0",
+      "displaySource": "prepared-X-session (process environment unavailable)",
+      "profileDirectory": "Default",
+      "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+      "unrecordedFlagNames": [],
+      "omittedPositionalArguments": 1
+    }
+  ],
+  "device": "cua-linux",
+  "profile": "me",
+  "chromeProfileDirectory": "Default",
+  "extensionInstanceId": "ee43424f-bb6d-4f91-9101-226f44c4ad9e",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "discoveryHome": "/home/admin/.local/share/cua-h4",
+  "fixturePort": 48732,
+  "userHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home",
+  "ownedPreparation": {
+    "device": "cua-linux",
+    "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+    "experiment": "parity",
+    "token": "7b53ab8c-1534-4ad1-a707-6acb82dc0958"
+  },
+  "display": ":0",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "environment": {
+    "PATH": "/home/admin/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin",
+    "LANG": "C.UTF-8",
+    "USER": "admin",
+    "LOGNAME": "admin",
+    "HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home",
+    "CUA_HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+    "CHROME_CONFIG_HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home/.config",
+    "XDG_CONFIG_HOME": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/home/.config",
+    "CUA_PARITY_NODE_MODE": "managed",
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/home/admin/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "load": {
+    "average": [
+      0.9,
+      0.31,
+      0.11
+    ],
+    "cpus": 4
+  }
+}

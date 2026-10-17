@@ -25,6 +25,11 @@ test('serve-cells keeps an explicit CUA_NODE in the connection environment it re
   assert.equal('CUA_NODE' in cellsServeEnv({...ambient, CUA_NODE: ''}, {scratch, sandbox: 'scoped', host: 'cua'}), false);
 });
 
+test('managed mode survives boundary child rebuilding without importing an ambient Node override',()=>{
+ const env=boundaryServeEnv({...ambient,CUA_PARITY_NODE_MODE:'managed'},{tmp:'/tmp/b',home:'/owned',host:'cua',facts:{},control:'/tmp/control'});
+ assert.equal(env.CUA_PARITY_NODE_MODE,'managed');assert.equal(env.CUA_NODE,undefined);
+ assert.equal(cellsServeEnv({...ambient,CUA_PARITY_NODE_MODE:'managed'},{scratch,host:'cua',sandbox:'scoped'}).CUA_NODE,undefined);
+});
 test('the boundary probe passes an explicit CUA_NODE to its serve-cells children and its negative preflights', () => {
   const child = boundaryServeEnv(ambient, {tmp: '/tmp/b/tmp', home: '/tmp/cua-home', host: 'cua', facts: {release: 'r'}, control: '/tmp/b/c1', sandbox: 'scoped', witness: false, brokenSandbox: ''});
   assert.equal(child.CUA_NODE, NODE);
@@ -36,9 +41,9 @@ test('the boundary probe passes an explicit CUA_NODE to its serve-cells children
   assert.equal('CUA_NODE' in boundaryPreflightEnv({PATH: '/usr/bin'}, {scratch, tmp: '/tmp/b/tmp', host: 'cua'}), false);
 });
 
-test('every remote lane passes the own-host Node prepare recorded, never one from the device\'s shell environment', async () => {
+test('every remote lane passes only a recorded diagnostic Node override, never a source resolution or shell setting', async () => {
   const facts = {device: 'cua-linux', checkout: '/home/admin/cua-parity', home: '/home/admin/.local/share/cua', commit: 'abc', release: 'pin', node: 'v22.23.3', platform: 'linux',
-    ownNode: {path: NODE, version: 'v24.18.0'}};
+    ownNode: {path: NODE, version: 'v24.18.0'},nodeOverride:NODE};
   const lane = await remoteCapabilityLane({...facts, host: 'cua'},
     {start: async () => ({executionFacts: {...facts, dirty: false}, userHome: '/tmp/u', home: '/tmp/h', close: async () => {}})});
   const script = lane.command.args.at(-1);
@@ -49,9 +54,10 @@ test('every remote lane passes the own-host Node prepare recorded, never one fro
   assert.match(run('/shell/profile/node'), new RegExp(`^CUA_NODE=${NODE}$`, 'm'));
   assert.doesNotMatch(run(NODE), /SECRET_TOKEN/);
   const cells = cellsCommand({...facts, host: 'cua'}).args.at(-1);
-  assert.match(cells, new RegExp(`exec env CUA_NODE='${NODE}' CUA_PARITY_EXPECTED=`));
-  assert.doesNotMatch(cellsCommand({...facts, ownNode: null, host: 'vendor'}).args.at(-1), /CUA_NODE/);
-  assert.match(prepareCommand({device: 'cua-linux', commit: 'abcdef1', profile: 'me', node: NODE}).args.at(-1), new RegExp(`export CUA_NODE='${NODE}'`));
+  const resultingEnv=script=>execFileSync('/bin/sh',['-c',script.slice(script.lastIndexOf('exec env'),script.lastIndexOf(' node test/'))+' /usr/bin/env'],{encoding:'utf8',env:{PATH:'/usr/bin:/bin',CUA_NODE:'/ambient/node'}});
+  assert.match(resultingEnv(cells),new RegExp(`^CUA_NODE=${NODE}$`,'m'));
+  const managed=cellsCommand({...facts,nodeOverride:null,host:'cua'}).args.at(-1);
+  assert.doesNotMatch(resultingEnv(managed),/^CUA_NODE=/m);
   assert.throws(() => prepareCommand({device: 'cua-linux', commit: 'abcdef1', profile: 'me', node: 'node'}), /absolute/);
 });
 

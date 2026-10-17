@@ -1,0 +1,42 @@
+{
+  "host": "vendor",
+  "serverInfo": {
+    "name": "rmcp",
+    "version": "1.5.0"
+  },
+  "_meta": {
+    "codex/nodeReplExecutionDurationMs": 62,
+    "cua/taskId": "12135d6d-b3ff-419a-9b50-f6247ab7b0a6"
+  },
+  "executionFacts": {
+    "checkout": "/Users/new/Developer/GitHub/cua-parity",
+    "home": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M",
+    "commit": "1d1ed89bb192041e1be4e50d62bd772f12577356",
+    "dirty": false,
+    "release": "26.928.40906-darwin-arm64",
+    "node": "v24.18.0",
+    "runtimeNode": "v24.21.0",
+    "platform": "darwin",
+    "ownNode": {
+      "path": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    },
+    "browserRoute": {
+      "selection": {
+        "service": "cua",
+        "reason": "cua_route",
+        "explicit": false,
+        "route": "cua",
+        "registration": {
+          "route": "cua",
+          "at": 1792175387349.6655
+        }
+      },
+      "recordPath": "/Users/new/.local/share/cua-parity-remote/m5t5r1-weUX8M/chrome/cua-registration.json",
+      "manifests": []
+    }
+  },
+  "connection": "endpoint-restart-before-vendor-run-3",
+  "level": "endpoint",
+  "agentPid": 65646
+}

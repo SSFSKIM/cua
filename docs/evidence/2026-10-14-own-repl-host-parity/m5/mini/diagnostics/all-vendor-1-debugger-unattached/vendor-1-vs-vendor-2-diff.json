@@ -1,0 +1,68 @@
+{
+  "ok": false,
+  "differences": [
+    {
+      "kind": "assertion",
+      "side": "a",
+      "case": "api/browser-tab/cua",
+      "message": "case assertion failed"
+    },
+    {
+      "case": "api/browser-tab/cua",
+      "cell": "type",
+      "kind": "semantic",
+      "a": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "CUA_PARITY_RESULT {\"ok\":false,\"error\":{\"code\":\"Error\",\"message\":\"playwright.evaluate was interrupted: Debugger unattached. The script was sent to the page once and may have run there; it was not run again.\"},\"$imageCount\":0}"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/taskId": "<task:1>"
+        }
+      },
+      "b": {
+        "ok": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "CUA_PARITY_RESULT {\"ok\":true,\"value\":\"pointer\",\"$imageCount\":0}"
+          }
+        ],
+        "isError": false,
+        "meta": {
+          "cua/taskId": "<task:1>"
+        }
+      }
+    },
+    {
+      "case": "api/browser-tab/cua",
+      "kind": "assertion",
+      "a": {
+        "assertion": {
+          "ok": false,
+          "reason": "type: playwright.evaluate was interrupted: Debugger unattached. The script was sent to the page once and may have run there; it was not run again."
+        }
+      },
+      "b": {
+        "assertion": {
+          "ok": true
+        }
+      }
+    }
+  ],
+  "expected": [],
+  "cases": 0,
+  "cells": 1380,
+  "recordedCases": 0,
+  "vendorDefects": [],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "provisionalCells": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

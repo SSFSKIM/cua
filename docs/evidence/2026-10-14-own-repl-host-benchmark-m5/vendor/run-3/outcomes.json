@@ -1,0 +1,192 @@
+{
+  "T0": {
+    "answer": "selected cua browser id=1 (Service: cua browser service 0.1.0); tabsBefore=1",
+    "ok": true
+  },
+  "T1": {
+    "answer": "{\"title\":\"Bench Home\",\"benchId\":\"BENCH-2026-10-05\"}",
+    "ok": true
+  },
+  "T2": {
+    "answer": "1437.50",
+    "ok": true
+  },
+  "T3": {
+    "answer": "D",
+    "ok": true
+  },
+  "T4": {
+    "answer": "LATE-7f3a",
+    "ok": true
+  },
+  "T5": {
+    "answer": "50,40,200,150",
+    "ok": true
+  },
+  "T6": {
+    "answer": "42-Bravo-circle-11",
+    "ok": true
+  },
+  "T7": {
+    "answer": "{\"log\":\"fShiftFx\",\"echo\":\"fFx\"}",
+    "ok": true
+  },
+  "T8": {
+    "answer": "no h1 (count 0)",
+    "ok": true
+  },
+  "miniwob/click-button": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9614166666666668,
+      "reason": null,
+      "done": true,
+      "note": "clicked first cancel button"
+    },
+    "ok": true
+  },
+  "miniwob/click-checkboxes": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9862055555555556,
+      "reason": null,
+      "done": true,
+      "note": "selected nothing, submitted"
+    },
+    "ok": true
+  },
+  "miniwob/click-dialog": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9850722222222222,
+      "reason": null,
+      "done": true,
+      "note": "closed dialog via x"
+    },
+    "ok": true
+  },
+  "miniwob/click-link": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9800888888888888,
+      "reason": null,
+      "done": true,
+      "note": "links [\"Auctor\"] idx 0"
+    },
+    "ok": true
+  },
+  "miniwob/click-option": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9824111111111112,
+      "reason": null,
+      "done": true,
+      "note": "selected HWtF5D, submit"
+    },
+    "ok": true
+  },
+  "miniwob/click-tab": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9869722222222224,
+      "reason": null,
+      "done": true,
+      "note": "clicked Tab #1"
+    },
+    "ok": true
+  },
+  "miniwob/enter-text": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9851666666666666,
+      "reason": null,
+      "done": true,
+      "note": "entered Riley"
+    },
+    "ok": true
+  },
+  "miniwob/enter-password": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9835222222222222,
+      "reason": null,
+      "done": true,
+      "note": "entered bWTa twice"
+    },
+    "ok": true
+  },
+  "miniwob/focus-text-2": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9846222222222222,
+      "reason": null,
+      "done": true,
+      "note": "clicked 3rd input"
+    },
+    "ok": true
+  },
+  "miniwob/drag-box": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9138055555555556,
+      "reason": null,
+      "done": true,
+      "note": "dragged small box into large box, submit"
+    },
+    "ok": true
+  },
+  "miniwob/drag-items": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9503,
+      "reason": null,
+      "done": true,
+      "note": "order after drag: [\"Mavis\",\"Mireielle\",\"Kalli\",\"Cherye\",\"Kori\"]"
+    },
+    "ok": true
+  },
+  "miniwob/scroll-text": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9572277777777778,
+      "reason": null,
+      "done": true,
+      "note": "entered \"non\" (last word of textarea, \"Sed non.\")"
+    },
+    "ok": true
+  },
+  "miniwob/use-slider": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.8937111111111111,
+      "reason": null,
+      "done": true,
+      "note": "dragged handle (-82) then ArrowUp to -81, submit"
+    },
+    "ok": true
+  },
+  "miniwob/simple-algebra": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.98175,
+      "reason": null,
+      "done": true,
+      "note": "x=54"
+    },
+    "ok": true
+  },
+  "miniwob/email-inbox-delete": {
+    "answer": {
+      "rawReward": 1,
+      "discountedReward": 0.9662222222222222,
+      "reason": null,
+      "done": true,
+      "note": "clicked trash on Cordelia email"
+    },
+    "ok": true
+  },
+  "T9": {
+    "answer": "tabs after=1 before=1",
+    "ok": true
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "schema": 1,
+  "experiment": "m5t6r1",
+  "relay": "wss://178-104-102-73.sslip.io/ws",
+  "phase": "operator-cleanup",
+  "endpoints": [
+    {
+      "device": "cua-linux",
+      "name": "repl-m5t6r1-linux",
+      "surfaces": [
+        "computer",
+        "browser"
+      ],
+      "experiment": "m5t6r1",
+      "home": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+      "token": "95edd2d2-0eb4-4763-bf17-9d7e3847ca9d",
+      "nodeMode": "managed",
+      "profile": "me",
+      "extensionInstanceId": "ee43424f-bb6d-4f91-9101-226f44c4ad9e",
+      "profileFacts": "harness-supplied presence only; exact backend liveness required",
+      "release": "26.928.40906-linux-arm64",
+      "ownNode": {
+        "path": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/node/24.22.0/bin/node",
+        "version": "v24.22.0"
+      },
+      "commit": "fabfb112862e2999cc7ff9abd877a7244dc8b730",
+      "deviceId": "92mj0CikRSA_BrFOBRkfMA",
+      "relayEndpoint": "https://178-104-102-73.sslip.io/d/92mj0CikRSA_BrFOBRkfMA/mcp",
+      "clientSecretKey": "CUA_DEVICE_92mj0CikRSA_BrFOBRkfMA",
+      "devicesEntry": "\"92mj0CikRSA_BrFOBRkfMA\": {\"deviceCredentialSha256\": \"7749a17a9f6fb537fa952a0227a438fe4a19aa348ac9a86c88ee4fdf8cecf2cc\", \"clientCredentialSha256\": \"fe5b70a5487198ed5a8e976bc736dfe5f615975186fb73c7d89493749e983327\"}",
+      "ready": false,
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+        "commit": "fabfb112862e2999cc7ff9abd877a7244dc8b730",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792205829908.7803
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+          "ownNode": {
+            "path": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "pid": 41901,
+          "nodeMode": "managed"
+        }
+      },
+      "host": "cua",
+      "hostAttestation": {
+        "host": "cua",
+        "serverInfo": {
+          "name": "cua-repl-host",
+          "version": "0.5.0"
+        },
+        "_meta": {
+          "codex/nodeReplExecutionDurationMs": 336,
+          "cua/replHost": {
+            "host": "cua",
+            "version": "0.5.0"
+          },
+          "cua/taskId": "2b871886-1515-471a-9495-b304ef68e006"
+        },
+        "executionFacts": {
+          "checkout": "/home/admin/Developer/GitHub/cua-parity",
+          "home": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+          "commit": "fabfb112862e2999cc7ff9abd877a7244dc8b730",
+          "dirty": false,
+          "release": "26.928.40906-linux-arm64",
+          "node": "v22.23.3",
+          "runtimeNode": "v24.21.0",
+          "platform": "linux",
+          "ownNode": {
+            "path": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "browserRoute": {
+            "selection": {
+              "service": "cua",
+              "reason": "cua_route",
+              "explicit": false,
+              "route": "cua",
+              "registration": {
+                "route": "cua",
+                "at": 1792205829908.7803
+              }
+            },
+            "recordPath": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/chrome/cua-registration.json",
+            "manifests": []
+          },
+          "chromeLaunch": [
+            {
+              "executable": "/opt/google/chrome/chrome",
+              "flags": [
+                "--profile-directory=Default",
+                "--disable-gpu",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-background-timer-throttling"
+              ],
+              "display": ":0",
+              "displaySource": "prepared-X-session (process environment unavailable)",
+              "profileDirectory": "Default",
+              "registrationHome": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+              "unrecordedFlagNames": [],
+              "omittedPositionalArguments": 1
+            }
+          ],
+          "answeringHost": {
+            "home": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q",
+            "ownNode": {
+              "path": "/home/admin/.local/share/cua-parity-remote/m5t6r1-9Kpv3q/node/24.22.0/bin/node",
+              "version": "v24.22.0"
+            },
+            "pid": 41901,
+            "nodeMode": "managed"
+          }
+        }
+      },
+      "disconnect": {
+        "requestId": 3,
+        "disruption": "after-started",
+        "count": 1,
+        "load": "03:03:07 up  1:31,  6 users,  load average: 0.03, 0.54, 1.22"
+      },
+      "removed": true
+    }
+  ],
+  "requestedDevices": [
+    "cua-linux"
+  ]
+}

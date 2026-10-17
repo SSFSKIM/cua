@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "release": "26.928.40906-darwin-arm64",
+  "root": "/Users/new/.local/share/cua-parity-maws/cua-home-JCBu2h/runtimes/26.928.40906-darwin-arm64",
+  "changed": true,
+  "source": "download",
+  "chromeHost": {
+    "root": "/Users/new/.local/share/cua-parity-maws/cua-home-JCBu2h/runtimes/26.928.40906-darwin-arm64/chrome-plugin",
+    "changed": true
+  },
+  "node": {
+    "version": "24.22.0",
+    "root": "/Users/new/.local/share/cua-parity-maws/cua-home-JCBu2h/node/24.22.0",
+    "node": "/Users/new/.local/share/cua-parity-maws/cua-home-JCBu2h/node/24.22.0/bin/node",
+    "changed": true,
+    "activated": true,
+    "source": "download"
+  }
+}

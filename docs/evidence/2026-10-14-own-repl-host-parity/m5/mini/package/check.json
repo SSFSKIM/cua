@@ -1,0 +1,32 @@
+{
+  "name": "cua",
+  "version": "0.1.0",
+  "entryCount": 200,
+  "engines": {
+    "node": "^22.14 || >=23.7"
+  },
+  "enginesFloorUnchanged": true,
+  "checks": {
+    "documents": {
+      "missing": [],
+      "present": 4
+    },
+    "parser": {
+      "missing": [],
+      "present": 2
+    },
+    "validator": {
+      "missing": [],
+      "present": 3
+    },
+    "nodePins": {
+      "missing": [],
+      "present": 4
+    },
+    "host": {
+      "missing": [],
+      "present": 4
+    }
+  },
+  "ok": true
+}

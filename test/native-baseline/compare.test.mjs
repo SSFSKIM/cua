@@ -13,9 +13,18 @@ import {readRuns} from '../../scripts/native-baseline/summary.mjs';
 import {compare, latencyLimit, renderComparison} from '../../scripts/native-baseline/compare.mjs';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/native-baseline.mjs', import.meta.url));
+const answeringNode = host => ({path:host==='cua'?'/scratch/node/24.22.0/bin/node':'/scratch/runtimes/26.928.40906-linux-arm64/node',version:host==='cua'?'v24.22.0':'v24.21.0'});
 const attest = host => ({host, serverInfo: host === 'cua' ? {name: 'cua-repl-host', version: '0.2.0'} : {name: 'node_repl', version: '0.1.0'},
-  _meta: host === 'cua' ? {'cua/replHost': {host: 'cua', version: '0.2.0'}} : null});
+  _meta: {'cua/nativeExecution':answeringNode(host),...(host === 'cua' ? {'cua/replHost': {host: 'cua', version: '0.2.0'}} : {})}});
 const meta = (host, n, extra = {}) => ({
+  answeringNode:answeringNode(host),
+  measurement: {schema: 2, experiment: 'm5-test-sitting', freshInstall: true},
+  controllerIdentity:{hostname:'controller',platform:'darwin',arch:'arm64',os:'25.6',cpu:{model:'Apple',count:10}},
+  deviceIdentity: {alias: 'cua-linux', arch: 'arm64', hostname: 'vm', os: {name:'Ubuntu',version:'24.04'}, cpu: {model:'test CPU', count:4}},
+  xSession: {DISPLAY:':0', XAUTHORITY:'/home/admin/.Xauthority', DBUS_SESSION_BUS_ADDRESS:'unix:path=/run/user/1000/bus'},
+  gedit: {version:'gedit 46',locale:{LANG:'C.UTF-8'}}, nodeMode:'managed', ownNode:{path:'/scratch/node/24.22.0/bin/node',version:'v24.22.0'},
+  home:'/scratch', userHome:'/scratch/home', node:'v22.23.3', checkout:'/home/admin/Developer/GitHub/cua-parity',
+  load:{device:{before:'up 1 day',after:'up 1 day'},controller:{before:'up 2 days',after:'up 2 days'}},
   device: 'cua-linux', host, hostAttestations: Array.from({length: 6}, () => attest(host)), connections: 6,
   commit: host === 'cua' ? 'bbbbbbb' : 'aaaaaaa', complete: true, protocolVersion: '2025-06-18', platform: 'linux',
   plan: {samples: 30, cold: 5, tasks: 10, coldPlan: ['miss', 'hit', 'miss', 'hit', 'hit']},
@@ -218,4 +227,43 @@ test('the CLI compare command prints the comparison and exits 0 only on PASS', t
   const fail = spawnSync(process.execPath, [SCRIPT, 'compare', vendor, slow, '--out', out], {encoding: 'utf8'});
   assert.equal(fail.status, 1);
   assert.match(readFileSync(out, 'utf8'), /Verdict: \*\*FAIL\*\*/);
+});
+
+test('historic M0 evidence is readable history but never an M5 comparator', t => {
+  const vendor=three('vendor'), own=three('cua');
+  for(const run of vendor)delete run.meta.measurement;
+  const result=judge(t,vendor,own);
+  assert.equal(result.verdict,'NO VERDICT');
+  assert.match(result.problems.join('\n'),/historical|M0/);
+});
+test('comparison refuses environment drift within either triple, and diagnostic Node runs', t => {
+  for(const change of [
+    m=>{m.xSession.DISPLAY=':1';}, m=>{m.deviceIdentity.arch='x64';},
+    m=>{m.deviceIdentity.cpu.model='different CPU';}, m=>{m.gedit.version='gedit 99';},
+    m=>{m.measurement.experiment='another-sitting';}, m=>{m.nodeMode='diagnostic-override';},
+    m=>{m.controllerIdentity.hostname='another-controller';}, m=>{m.ownNode.version='v24.99.0';}, m=>{m.device='cua-bench';},
+  ]) {
+    const vendor=three('vendor'),own=three('cua');change(own[1].meta);
+    assert.equal(judge(t,vendor,own).verdict,'NO VERDICT');
+  }
+});
+
+
+test('comparison requires executable witnesses on real calls, not just host identity', t => {
+  const vendor=three('vendor'),own=three('cua');
+  delete own[0].meta.hostAttestations[0]._meta['cua/nativeExecution'];
+  assert.equal(judge(t,vendor,own).verdict,'NO VERDICT');
+});
+
+
+test('comparison refuses differing or unrecorded gedit locales across six runs', t => {
+  const vendor=three('vendor'),own=three('cua');
+  own[1].meta.gedit.locale.LC_ALL='fr_FR.UTF-8';
+  let result=judge(t,vendor,own);
+  assert.equal(result.verdict,'NO VERDICT');
+  assert.match(result.problems.join('\n'),/locale/);
+  for(const run of [...vendor,...own])delete run.meta.gedit.locale;
+  result=judge(t,vendor,own);
+  assert.equal(result.verdict,'NO VERDICT');
+  assert.match(result.problems.join('\n'),/locale/);
 });

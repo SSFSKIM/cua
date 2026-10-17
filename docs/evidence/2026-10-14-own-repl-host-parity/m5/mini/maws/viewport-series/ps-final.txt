@@ -1,0 +1,4 @@
+2026-10-16T18:04:15Z after the series, before cleanup: processes naming the scratch tree, Electron or the probe user data:
+(none)
+scratch homes left:
+(none)

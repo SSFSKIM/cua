@@ -1,0 +1,16 @@
+comparison axis: host; browser service: cua
+bench/drag-box vendor ep-1: not done, drag none, MISS
+bench/drag-items vendor ep-1: not done, drag none, MISS
+bench/drag-box vendor ep-2: not done, drag none, MISS
+bench/drag-items vendor ep-2: not done, drag none, MISS
+bench/drag-box vendor ep-3: not done, drag none, MISS
+bench/drag-items vendor ep-3: not done, drag none, MISS
+bench/drag-box cua ep-1: not done, drag none, MISS
+bench/drag-items cua ep-1: not done, drag none, MISS
+bench/drag-box cua ep-2: not done, drag none, MISS
+bench/drag-items cua ep-2: not done, drag none, MISS
+bench/drag-box cua ep-3: not done, drag none, MISS
+bench/drag-items cua ep-3: not done, drag none, MISS
+bench/drag-box: vendor 0/3, cua 0/3
+bench/drag-items: vendor 0/3, cua 0/3
+verdict: cua not below vendor: bench/drag-box vendor 0/3, cua 0/3; bench/drag-items vendor 0/3, cua 0/3

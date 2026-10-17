@@ -1,0 +1,1016 @@
+[
+  {
+    "id": "cua@0.1.0",
+    "name": "cua",
+    "version": "0.1.0",
+    "size": 847322,
+    "unpackedSize": 3124579,
+    "shasum": "f6324d5b1573a1b221e76c163f16d404ca468b45",
+    "integrity": "sha512-WtWyOQVzWMbtYkqTxB4Ri85pZmyZbhtqC+HfheaQ4XT9NZHC8h3iE3FmkNk3eoMDFjeyC9ZzKZey+bD0kxlv+A==",
+    "filename": "cua-0.1.0.tgz",
+    "files": [
+      {
+        "path": ".claude-plugin/marketplace.json",
+        "size": 752,
+        "mode": 420
+      },
+      {
+        "path": ".claude-plugin/plugin.json",
+        "size": 1085,
+        "mode": 420
+      },
+      {
+        "path": "README.md",
+        "size": 138863,
+        "mode": 420
+      },
+      {
+        "path": "bin/cua.mjs",
+        "size": 151,
+        "mode": 493
+      },
+      {
+        "path": "cua-shim.mjs",
+        "size": 488,
+        "mode": 420
+      },
+      {
+        "path": "docs/cua-api/confirmations.md",
+        "size": 5607,
+        "mode": 420
+      },
+      {
+        "path": "docs/cua-api/core.md",
+        "size": 13223,
+        "mode": 420
+      },
+      {
+        "path": "docs/cua-api/other-browser-apis.md",
+        "size": 792,
+        "mode": 420
+      },
+      {
+        "path": "docs/cua-api/PROVENANCE.md",
+        "size": 2336,
+        "mode": 420
+      },
+      {
+        "path": "extension/background.js",
+        "size": 27357,
+        "mode": 420
+      },
+      {
+        "path": "extension/icons/16.png",
+        "size": 761,
+        "mode": 420
+      },
+      {
+        "path": "extension/icons/32.png",
+        "size": 1577,
+        "mode": 420
+      },
+      {
+        "path": "extension/icons/48.png",
+        "size": 2322,
+        "mode": 420
+      },
+      {
+        "path": "extension/icons/128.png",
+        "size": 5618,
+        "mode": 420
+      },
+      {
+        "path": "extension/manifest.json",
+        "size": 1065,
+        "mode": 420
+      },
+      {
+        "path": "extension/popup.html",
+        "size": 785,
+        "mode": 420
+      },
+      {
+        "path": "extension/popup.js",
+        "size": 1864,
+        "mode": 420
+      },
+      {
+        "path": "native/peer-auth/peer-auth.c",
+        "size": 4338,
+        "mode": 420
+      },
+      {
+        "path": "native/peer-auth/prebuilds/darwin-arm64/peer-auth.node",
+        "size": 51296,
+        "mode": 493
+      },
+      {
+        "path": "native/peer-auth/README.md",
+        "size": 1992,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 889,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/26.928.40906-darwin-arm64.json",
+        "size": 2298,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/26.928.40906-linux-arm64.json",
+        "size": 2940,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/26.928.40906-linux-x64.json",
+        "size": 2932,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/node/24.22.0-darwin-arm64.json",
+        "size": 1963,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/node/24.22.0-darwin-x64.json",
+        "size": 2069,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/node/24.22.0-linux-arm64.json",
+        "size": 1491,
+        "mode": 420
+      },
+      {
+        "path": "runtime/releases/node/24.22.0-linux-x64.json",
+        "size": 1485,
+        "mode": 420
+      },
+      {
+        "path": "scripts/probe/lib.mjs",
+        "size": 7036,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/actions.mjs",
+        "size": 29833,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/api-manifest.mjs",
+        "size": 67344,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/assets.mjs",
+        "size": 22412,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/authhandoff.mjs",
+        "size": 4893,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/backend.mjs",
+        "size": 22970,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/botdetect.mjs",
+        "size": 1986,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/browsers.mjs",
+        "size": 11368,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/budgets.mjs",
+        "size": 2894,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/byte-bounds.mjs",
+        "size": 3483,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/cdp.mjs",
+        "size": 51214,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/chooser.mjs",
+        "size": 8555,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/clipboard-bridge.mjs",
+        "size": 16334,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/clipboard.mjs",
+        "size": 6030,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/cursor.mjs",
+        "size": 1234,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/devlogs.mjs",
+        "size": 6285,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/dialogs.mjs",
+        "size": 3878,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/docs-content.mjs",
+        "size": 46828,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/docs.mjs",
+        "size": 9685,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/downloads.mjs",
+        "size": 28438,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/errors.mjs",
+        "size": 4904,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/evaluate.mjs",
+        "size": 24966,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/exports.mjs",
+        "size": 19185,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/filesystem.mjs",
+        "size": 808,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/history.mjs",
+        "size": 2725,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/index.mjs",
+        "size": 12333,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/injected.mjs",
+        "size": 15515,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/input.mjs",
+        "size": 20251,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/keyboard.mjs",
+        "size": 19672,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/manifest.mjs",
+        "size": 4673,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/navigation.mjs",
+        "size": 8538,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/paste.mjs",
+        "size": 26839,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/rawcdp.mjs",
+        "size": 10662,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/reads.mjs",
+        "size": 4747,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/screenshot.mjs",
+        "size": 8014,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/selectors.mjs",
+        "size": 32232,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/session.mjs",
+        "size": 4783,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/snapshot.mjs",
+        "size": 7752,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/tab-context.mjs",
+        "size": 6826,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/tabs.mjs",
+        "size": 7748,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/vendor/injected-script.js",
+        "size": 301595,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/vendor/markdown-it/markdown-it.mjs",
+        "size": 308013,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/vendor/markdown-it/VERSION",
+        "size": 7,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/vendor/VERSION",
+        "size": 7,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/VERSION",
+        "size": 6,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/viewport.mjs",
+        "size": 1578,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/visible-dom.mjs",
+        "size": 24562,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/waits.mjs",
+        "size": 9829,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/webmcp-page.mjs",
+        "size": 6744,
+        "mode": 420
+      },
+      {
+        "path": "src/browser-service/webmcp.mjs",
+        "size": 24815,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/client-mode.mjs",
+        "size": 8161,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/discovery.mjs",
+        "size": 3866,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/extension.mjs",
+        "size": 3344,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/host.mjs",
+        "size": 47758,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/peer.mjs",
+        "size": 4630,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/protocol.mjs",
+        "size": 6106,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/registration.mjs",
+        "size": 60067,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/route.mjs",
+        "size": 3573,
+        "mode": 420
+      },
+      {
+        "path": "src/chrome/trace.mjs",
+        "size": 1885,
+        "mode": 420
+      },
+      {
+        "path": "src/cli.mjs",
+        "size": 58535,
+        "mode": 493
+      },
+      {
+        "path": "src/cua-api/bind-linux-app.mjs",
+        "size": 4152,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/bind-mac-app.mjs",
+        "size": 4108,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/bind-tab.mjs",
+        "size": 3961,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/bootstrap-emitter.mjs",
+        "size": 4717,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/bootstrap.mjs",
+        "size": 1553,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/browser-api.mjs",
+        "size": 11833,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/browser-client.mjs",
+        "size": 189881,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/create-tinysky-alt.mjs",
+        "size": 4899,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/display.mjs",
+        "size": 2139,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/documentation.mjs",
+        "size": 2591,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/get-state.mjs",
+        "size": 3662,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/linux-accessibility-tree.mjs",
+        "size": 6852,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/sky.mjs",
+        "size": 3986,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/errors.js",
+        "size": 243,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/external.js",
+        "size": 205,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/helpers/errorUtil.js",
+        "size": 300,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/helpers/parseUtil.js",
+        "size": 3601,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/helpers/typeAliases.js",
+        "size": 11,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/helpers/util.js",
+        "size": 4055,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/LICENSE",
+        "size": 1072,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/locales/en.js",
+        "size": 5602,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/types.js",
+        "size": 131212,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/VERSION",
+        "size": 8,
+        "mode": 420
+      },
+      {
+        "path": "src/cua-api/vendor/zod/ZodError.js",
+        "size": 4349,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/anchor.mjs",
+        "size": 2303,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/connection.mjs",
+        "size": 12821,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/http.mjs",
+        "size": 27932,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/lazy-runtime.mjs",
+        "size": 14984,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/server.mjs",
+        "size": 29696,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/surface.mjs",
+        "size": 26553,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/target.mjs",
+        "size": 24336,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/task.mjs",
+        "size": 10383,
+        "mode": 420
+      },
+      {
+        "path": "src/mcp/upstream.mjs",
+        "size": 9849,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/bind.mjs",
+        "size": 8661,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/checks.mjs",
+        "size": 14101,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/chrome.mjs",
+        "size": 11936,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/commands.mjs",
+        "size": 14575,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/directory-map.mjs",
+        "size": 6404,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/inventory.mjs",
+        "size": 11939,
+        "mode": 420
+      },
+      {
+        "path": "src/profiles/registry.mjs",
+        "size": 18182,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/address.mjs",
+        "size": 1174,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/agent.mjs",
+        "size": 12584,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/chrome-health.mjs",
+        "size": 2856,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/client.mjs",
+        "size": 22729,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/console.mjs",
+        "size": 2845,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/device.mjs",
+        "size": 9163,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/devices.mjs",
+        "size": 12941,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/directory.mjs",
+        "size": 3660,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/health.mjs",
+        "size": 2939,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/job.mjs",
+        "size": 4508,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/launchd.mjs",
+        "size": 11566,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/limits.mjs",
+        "size": 1353,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/plist.mjs",
+        "size": 5166,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/relay-link.mjs",
+        "size": 12236,
+        "mode": 420
+      },
+      {
+        "path": "src/remote/systemd.mjs",
+        "size": 17431,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/budget.mjs",
+        "size": 2778,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/elicitation.mjs",
+        "size": 4625,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/identity.mjs",
+        "size": 1195,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions.mjs",
+        "size": 3755,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/browser-disabled.md",
+        "size": 27,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/code.md",
+        "size": 62,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/computer-disabled.md",
+        "size": 35,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/linux/browser.md",
+        "size": 1472,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/linux/computer.md",
+        "size": 140,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/linux/description.md",
+        "size": 856,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/linux/output.md",
+        "size": 488,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/macos/browser.md",
+        "size": 1472,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/macos/computer.md",
+        "size": 140,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/macos/description.md",
+        "size": 856,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/macos/output.md",
+        "size": 488,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/PROVENANCE.md",
+        "size": 2373,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/reset.md",
+        "size": 240,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/instructions/server.md",
+        "size": 62,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/kernel-child.mjs",
+        "size": 16443,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/kernel.mjs",
+        "size": 57131,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/launch-services.mjs",
+        "size": 2798,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/lifeline-thread.mjs",
+        "size": 1456,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/lifeline.mjs",
+        "size": 4098,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/native-pipe.mjs",
+        "size": 10606,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/privileged-node-repl.mjs",
+        "size": 18182,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/results.mjs",
+        "size": 4535,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/supervisor.mjs",
+        "size": 42637,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/tools.mjs",
+        "size": 10763,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/trusted-worker.mjs",
+        "size": 7296,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/vendor/meriyah/meriyah.mjs",
+        "size": 135074,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/vendor/meriyah/VERSION",
+        "size": 6,
+        "mode": 420
+      },
+      {
+        "path": "src/repl-host/worker-runtime.mjs",
+        "size": 14379,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/checks.mjs",
+        "size": 4818,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/chrome-component.mjs",
+        "size": 11282,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/doctor.mjs",
+        "size": 40184,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/errors.mjs",
+        "size": 512,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/install.mjs",
+        "size": 16431,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/launch.mjs",
+        "size": 32498,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/layout.mjs",
+        "size": 3589,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/linux-desktop.mjs",
+        "size": 9991,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/login.mjs",
+        "size": 7288,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/managed-node.mjs",
+        "size": 11900,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/manifest.mjs",
+        "size": 14345,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/node-install.mjs",
+        "size": 11793,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/run-dir.mjs",
+        "size": 5519,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/sandbox.mjs",
+        "size": 18723,
+        "mode": 420
+      },
+      {
+        "path": "src/runtime/tools.mjs",
+        "size": 1518,
+        "mode": 420
+      },
+      {
+        "path": "src/secrets/check.mjs",
+        "size": 4444,
+        "mode": 420
+      },
+      {
+        "path": "src/secrets/commands.mjs",
+        "size": 7120,
+        "mode": 420
+      },
+      {
+        "path": "src/secrets/label.mjs",
+        "size": 1484,
+        "mode": 420
+      },
+      {
+        "path": "src/secrets/project.mjs",
+        "size": 1962,
+        "mode": 420
+      },
+      {
+        "path": "src/secrets/reference.mjs",
+        "size": 994,
+        "mode": 420
+      },
+      {
+        "path": "src/secrets/store.mjs",
+        "size": 10658,
+        "mode": 420
+      },
+      {
+        "path": "src/services/browser.mjs",
+        "size": 18083,
+        "mode": 420
+      },
+      {
+        "path": "src/services/secret-input.mjs",
+        "size": 5432,
+        "mode": 420
+      },
+      {
+        "path": "src/services/sky.mjs",
+        "size": 9624,
+        "mode": 420
+      },
+      {
+        "path": "verify.mjs",
+        "size": 15828,
+        "mode": 420
+      }
+    ],
+    "entryCount": 200,
+    "bundled": []
+  }
+]

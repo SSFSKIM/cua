@@ -88,6 +88,13 @@ test('the sandbox check describes the mode and fails a scoped home whose runtime
   assert.match(failed.detail, /\$TMPDIR \(.*\), which contains the trusted code path .*runtimes/);
   assert.match(failed.detail, /cua serve .*refuse/);
   assert.match(failed.detail, /outside \$TMPDIR.*CUA_SHIM_SANDBOX=disabled/);
+  // $CUA_HOME/node, the Node cua install places for the own host, is protected as the connection protects it.
+  const node = check(await inspect({TMPDIR: join(realpathSync(home), 'node')}), 'sandbox');
+  assert.equal(node.status, 'fail');
+  assert.match(node.detail, /\$TMPDIR \(.*\/node\), which contains the Node cua installed for its own REPL host/);
+  const staging = check(await inspect({TMPDIR: join(realpathSync(home), 'staging')}), 'sandbox');
+  assert.equal(staging.status, 'fail');
+  assert.match(staging.detail, /\$TMPDIR \(.*\/staging\), which contains cua install's staging directory/);
   for (const [mode, text] of [['disabled', /wherever your account can.*network/], ['default', /denies every write/]]) {
     const row = check(await inspect({TMPDIR: realpathSync(home), CUA_SHIM_SANDBOX: mode}), 'sandbox');
     assert.equal(row.status, 'pass', mode);

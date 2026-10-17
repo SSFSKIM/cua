@@ -104,6 +104,26 @@ test('install writes CUA_REPL_HOST into the unit only when it was given, cua or 
   }
 });
 
+// CUA_NODE (spec 2026-10-14-own-repl-host-design.md, Decision Log 2026-10-16): as on macOS, only an explicit value
+// enters the unit, which is how a resident Linux agent whose system Node is 22 finds a Node 24 for the own host; a value
+// that is not an absolute path is refused before the unit is written or systemctl is asked.
+test('install writes CUA_NODE into the unit only when it was given, as given, never a resolved Node, and refuses one that is not an absolute path first', async t => {
+  const {home, install, unit} = setup(t);
+  for (const env of [{CUA_HOME: home}, {CUA_HOME: home, CUA_NODE: ''}]) {
+    await install({http: '127.0.0.1:7801', env});
+    assert.deepEqual(readUnit(readFileSync(unit, 'utf8')).environment, {DISPLAY: ':0', CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, `${JSON.stringify(env.CUA_NODE)}: resolved at each connection`);
+  }
+  // Carried as given: not resolved to a real path or probed, so the unit follows the path (a Node upgraded in place).
+  await install({http: '127.0.0.1:7801', env: {CUA_HOME: home, CUA_NODE: '/opt/node-24/bin/node', CUA_REPL_HOST: 'cua'}});
+  assert.deepEqual(readUnit(readFileSync(unit, 'utf8')).environment, {...{DISPLAY: ':0', CUA_HOME: home, CUA_SHIM_SURFACES: 'computer,browser'}, CUA_REPL_HOST: 'cua', CUA_NODE: '/opt/node-24/bin/node'});
+  for (const bad of ['node', 'bin/node', '~/node']) {
+    const fresh = setup(t);
+    await assert.rejects(fresh.install({http: '127.0.0.1:7801', env: {CUA_HOME: fresh.home, CUA_NODE: bad}}), {code: 'invalid_setting', message: /CUA_NODE must be the absolute path of a Node executable/}, bad);
+    assert.equal(existsSync(fresh.unit), false);
+    assert.deepEqual(fresh.systemctl.calls, []);
+  }
+});
+
 test('an unreachable user manager refuses install before the unit is written, and reads as unknown in status', async t => {
   const {install, unit, common} = setup(t, {unreachable: true});
   await assert.rejects(install({http: '127.0.0.1:7801'}), error => {

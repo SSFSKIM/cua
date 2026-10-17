@@ -3,10 +3,11 @@ import {resolvePendingDeclarations,pendingCellsFor,classifyPendingCell} from './
 import {runNativeScenario} from './repl-parity/native.mjs';
 import {parseArgs} from 'node:util';
 import {mkdirSync,readFileSync,writeFileSync,appendFileSync} from 'node:fs';
-import {dirname,join,resolve} from 'node:path';
+import {join,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {execFileSync} from 'node:child_process';
-import {root,prepareCommand,execute,cellsCommand} from './repl-parity/topology.mjs';
+import {root,cellsCommand} from './repl-parity/topology.mjs';
+import {managePreparation} from './repl-parity/prepare-device.mjs';
 import {selectScenarios,inventory,caseSchedule,inSuite,milestones,scenarioCellLabels} from './repl-parity/registry.mjs';
 import scenarios from '../test/repl-parity/scenarios/index.mjs';
 import {REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
@@ -28,9 +29,9 @@ export async function main(argv=process.argv.slice(2)){
  if((v['pending-cell']?.length||v['pending-reason'])&&(action!=='run'||v.device!=='cua-linux'))throw new Error('Pending declarations require a live Linux run; diff reads recorded declarations');
  if(v.through&&!milestones.includes(v.through))throw new Error('Invalid through milestone');
  if(!['local','mini','cua-linux'].includes(v.device)||!['vendor','cua'].includes(v.host)||!['cells','services','api','docs-profiles','secrets','secrets-live','native','all'].includes(v.suite??'cells'))throw new Error('Invalid parity selection');
- if(action==='prepare'){
-  const prepared=JSON.parse(execute(prepareCommand(v)).trim().split('\n').at(-1));mkdirSync(dirname(state(v.device)),{recursive:true});save(state(v.device),prepared);
-  if(v.out){mkdirSync(resolve(v.out),{recursive:true});save(join(resolve(v.out),'prepare.json'),prepared);}console.log(JSON.stringify(prepared,null,2));return;
+ if(action==='prepare'||action==='cleanup-prepared'){
+  const prepared=managePreparation(action,{...v,journal:state(v.device)});
+  console.log(JSON.stringify(prepared,null,2));return;
  }
  if(action==='diff'){
   if(!a||!b)throw new Error('diff needs two run directories');
@@ -42,7 +43,7 @@ export async function main(argv=process.argv.slice(2)){
   const result=compareParityRuns(documentComparisonRun(left),documentComparisonRun(right),{expected:v.expected?json(v.expected):[],caseIds,caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)]))});console.log(JSON.stringify(result,null,2));if(!result.ok)process.exitCode=1;return;
  }
  v.suite??='cells';
- if(action!=='run'||!v.out)throw new Error('Usage: repl-parity prepare|run|diff; run requires --out');
+ if(action!=='run'||!v.out)throw new Error('Usage: repl-parity prepare|cleanup-prepared|run|diff; run requires --out');
  if(v.device==='local'){
   const {scenarios:selected,pending}=selectScenarios(scenarios,inventory,{suite:v.suite,through:v.through,platform:process.platform});
   const doubles=selected.filter(s=>s.backend==='secret-double');
@@ -56,7 +57,7 @@ export async function main(argv=process.argv.slice(2)){
  if(!selected.length)throw new Error('No executable cases selected');
  const environmentPending=resolvePendingDeclarations({logicalCells:v['pending-cell']??[],reason:v['pending-reason'],platform:prepared.platform,through:v.through,scenarios:selected});
  const out=resolve(v.out);mkdirSync(out,{recursive:false});
- const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:['computer'],sandbox:'disabled'}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),complete:false,connections:[],hostAttestations:[]};
+ const meta={schema:1,...environmentPending,host:v.host,observedHost:v.host,commit:prepared.commit,harnessCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),node:prepared.node,runtimeRelease:prepared.release,ownNode:prepared.ownNode??null,nodeMode:prepared.nodeMode??null,nodeOverride:prepared.nodeOverride??null,hostVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,apiVersion:v.host==='vendor'?prepared.release:REPL_HOST_VERSION,device:v.device,platform:prepared.platform,surfaces:selected.some(s=>s.backend==='native')?['computer','browser']:['browser'],sandbox:selected.some(s=>s.backend==='native')?'per-case':'scoped',caseConfigurations:Object.fromEntries(selected.map(s=>[s.id,s.backend==='native'?{surfaces:['computer'],sandbox:'disabled'}:{surfaces:['browser'],sandbox:'scoped'}])),service:'cua',backend:evidenceBackend(selected),profile:prepared.profile,suite:v.suite,through:v.through??null,caseIds:selected.map(s=>s.id),caseCells:Object.fromEntries(selected.map(s=>[s.id,scenarioCellLabels(s)])),pending:pending.map(c=>({id:c.id,milestone:c.milestone})),limitations:selected.filter(s=>s.limitations).map(s=>({case:s.id,notes:s.limitations})),caseProofs:Object.fromEntries(selected.map(s=>[s.id,s.boundaryProof??s.backend])),complete:false,connections:[],hostAttestations:[]};
  save(join(out,'meta.json'),meta);writeFileSync(join(out,'results.jsonl'),'');
  const pool=new AttestedConnections(v.host);let failed=false;const resources=[],runRows=[];
  const clients=new Map();let browserFixture,profileClient;const profileObservations=[];

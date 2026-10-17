@@ -1,0 +1,3406 @@
+{
+  "schema": 1,
+  "pendingEnvironment": [],
+  "pendingObligations": [],
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+  "harnessCommit": "2f837fa527d11fda2f88d10ba3eac04a6bb80865",
+  "node": "v22.23.3",
+  "runtimeRelease": "26.928.40906-linux-arm64",
+  "ownNode": {
+    "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "hostVersion": "0.5.0",
+  "apiVersion": "0.5.0",
+  "device": "cua-linux",
+  "platform": "linux",
+  "surfaces": [
+    "browser"
+  ],
+  "sandbox": "scoped",
+  "caseConfigurations": {
+    "cells/elicitation/accept": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/decline": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/cancel": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/content-and-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/accepted-response-persistence": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/unsupported-form": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/malformed-reply": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/suspend-resume": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/nested-suspension": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/remaining-budget": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/approval-and-startup-waits": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/after-success": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/after-ordinary-error": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/sequential-after-code": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/background-drain": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/submitted-code-phase": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/separate-positive-timeouts": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/unregister": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/concurrent-best-effort-turn-end": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/turn-end-deadlines": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/end-task-after-hooks": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/deduplicated-turn-end": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/realpath-roots": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/symlink-escape-refused": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/no-privileges-through-cell-import": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/lazy-service-cache": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/execution-request-correlation": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/message-only-error-boundary": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/response-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/output/structured-content-and-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/emit-content-item-order": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/privileged-env-allowlist": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/no-account-telemetry-app-server": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/absolute-path": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/connect-timeout": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/frozen-interface": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/base64-correlation": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/data-close-error": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/browser/errors/worker-rejection-message-only": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native/errors/worker-rejection-message-only": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    }
+  },
+  "service": "cua",
+  "backend": "fixture-services",
+  "profile": "me",
+  "suite": "services",
+  "through": null,
+  "caseIds": [
+    "cells/elicitation/accept",
+    "cells/elicitation/decline",
+    "cells/elicitation/cancel",
+    "cells/elicitation/content-and-meta",
+    "cells/elicitation/accepted-response-persistence",
+    "cells/elicitation/unsupported-form",
+    "cells/elicitation/malformed-reply",
+    "cells/budget/suspend-resume",
+    "cells/budget/nested-suspension",
+    "cells/budget/remaining-budget",
+    "cells/budget/approval-and-startup-waits",
+    "cells/hooks/after-success",
+    "cells/hooks/after-ordinary-error",
+    "cells/hooks/sequential-after-code",
+    "cells/hooks/background-drain",
+    "cells/hooks/submitted-code-phase",
+    "cells/hooks/separate-positive-timeouts",
+    "cells/hooks/unregister",
+    "cells/hooks/concurrent-best-effort-turn-end",
+    "cells/hooks/turn-end-deadlines",
+    "cells/hooks/end-task-after-hooks",
+    "cells/hooks/deduplicated-turn-end",
+    "cells/trusted/realpath-roots",
+    "cells/trusted/symlink-escape-refused",
+    "cells/trusted/no-privileges-through-cell-import",
+    "cells/trusted/lazy-service-cache",
+    "cells/trusted/execution-request-correlation",
+    "cells/trusted/message-only-error-boundary",
+    "cells/trusted/response-meta",
+    "cells/output/structured-content-and-meta",
+    "cells/trusted/emit-content-item-order",
+    "cells/trusted/privileged-env-allowlist",
+    "cells/trusted/no-account-telemetry-app-server",
+    "cells/native-pipe/absolute-path",
+    "cells/native-pipe/connect-timeout",
+    "cells/native-pipe/frozen-interface",
+    "cells/native-pipe/base64-correlation",
+    "cells/native-pipe/data-close-error",
+    "secrets/browser/errors/worker-rejection-message-only",
+    "secrets/native/errors/worker-rejection-message-only"
+  ],
+  "caseCells": {
+    "cells/elicitation/accept": [
+      "reply"
+    ],
+    "cells/elicitation/decline": [
+      "reply"
+    ],
+    "cells/elicitation/cancel": [
+      "reply"
+    ],
+    "cells/elicitation/content-and-meta": [
+      "reply"
+    ],
+    "cells/elicitation/accepted-response-persistence": [
+      "reply"
+    ],
+    "cells/elicitation/unsupported-form": [
+      "cell-1"
+    ],
+    "cells/elicitation/malformed-reply": [
+      "reply"
+    ],
+    "cells/budget/suspend-resume": [
+      "warm",
+      "suspended"
+    ],
+    "cells/budget/nested-suspension": [
+      "warm",
+      "suspended"
+    ],
+    "cells/budget/remaining-budget": [
+      "warm",
+      "remaining",
+      "cell-2"
+    ],
+    "cells/budget/approval-and-startup-waits": [
+      "warm",
+      "approval",
+      "bare-elicitation"
+    ],
+    "cells/hooks/after-success": [
+      "cell-1"
+    ],
+    "cells/hooks/after-ordinary-error": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/sequential-after-code": [
+      "cell-1"
+    ],
+    "cells/hooks/background-drain": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/submitted-code-phase": [
+      "warm",
+      "hook-budget"
+    ],
+    "cells/hooks/separate-positive-timeouts": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/unregister": [
+      "cell-1"
+    ],
+    "cells/hooks/concurrent-best-effort-turn-end": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "cells/hooks/turn-end-deadlines": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "cells/hooks/end-task-after-hooks": [
+      "cell-1",
+      "end",
+      "cell-3"
+    ],
+    "cells/hooks/deduplicated-turn-end": [
+      "cell-1",
+      "duplicates-1",
+      "duplicates-2",
+      "duplicates-3",
+      "cell-3",
+      "again",
+      "cell-5",
+      "other-session",
+      "cell-7",
+      "other-turn",
+      "cell-9"
+    ],
+    "cells/trusted/realpath-roots": [
+      "cell-1"
+    ],
+    "cells/trusted/symlink-escape-refused": [
+      "cell-1"
+    ],
+    "cells/trusted/no-privileges-through-cell-import": [
+      "cell-1"
+    ],
+    "cells/trusted/lazy-service-cache": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/execution-request-correlation": [
+      "correlated"
+    ],
+    "cells/trusted/message-only-error-boundary": [
+      "cell-1"
+    ],
+    "cells/trusted/response-meta": [
+      "cell-1",
+      "cell-2",
+      "across-rpcs-and-hook"
+    ],
+    "cells/output/structured-content-and-meta": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/emit-content-item-order": [
+      "cell-1"
+    ],
+    "cells/trusted/privileged-env-allowlist": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/no-account-telemetry-app-server": [
+      "cell-1"
+    ],
+    "cells/native-pipe/absolute-path": [
+      "cell-1",
+      "stat-missing",
+      "connect-over-limit"
+    ],
+    "cells/native-pipe/connect-timeout": [
+      "warm",
+      "cell-1"
+    ],
+    "cells/native-pipe/frozen-interface": [
+      "cell-1"
+    ],
+    "cells/native-pipe/base64-correlation": [
+      "cell-1"
+    ],
+    "cells/native-pipe/data-close-error": [
+      "live-abort",
+      "wire-error"
+    ],
+    "secrets/browser/errors/worker-rejection-message-only": [
+      "cell-1"
+    ],
+    "secrets/native/errors/worker-rejection-message-only": [
+      "cell-1"
+    ]
+  },
+  "pending": [],
+  "limitations": [
+    {
+      "case": "cells/native-pipe/connect-timeout",
+      "notes": [
+        "A full AF_UNIX backlog refuses immediately on both platforms. Live proof records the 1,000 ms setting and bounded refusal; socket-double unit proof covers timer expiry."
+      ]
+    },
+    {
+      "case": "cells/native-pipe/data-close-error",
+      "notes": [
+        "Real macOS abort is close-only (EOF wins); Linux emits error-before-close with os error 104 and late replay. Error-before-close and late error are boundary-double proof injected into the selected worker stdin, not the supervisor."
+      ]
+    }
+  ],
+  "caseProofs": {
+    "cells/elicitation/accept": "fixture-services",
+    "cells/elicitation/decline": "fixture-services",
+    "cells/elicitation/cancel": "fixture-services",
+    "cells/elicitation/content-and-meta": "fixture-services",
+    "cells/elicitation/accepted-response-persistence": "fixture-services",
+    "cells/elicitation/unsupported-form": "fixture-services",
+    "cells/elicitation/malformed-reply": "fixture-services",
+    "cells/budget/suspend-resume": "fixture-services",
+    "cells/budget/nested-suspension": "fixture-services",
+    "cells/budget/remaining-budget": "fixture-services",
+    "cells/budget/approval-and-startup-waits": "fixture-services",
+    "cells/hooks/after-success": "fixture-services",
+    "cells/hooks/after-ordinary-error": "fixture-services",
+    "cells/hooks/sequential-after-code": "fixture-services",
+    "cells/hooks/background-drain": "fixture-services",
+    "cells/hooks/submitted-code-phase": "fixture-services",
+    "cells/hooks/separate-positive-timeouts": "fixture-services",
+    "cells/hooks/unregister": "fixture-services",
+    "cells/hooks/concurrent-best-effort-turn-end": "fixture-services",
+    "cells/hooks/turn-end-deadlines": "fixture-services",
+    "cells/hooks/end-task-after-hooks": "fixture-services",
+    "cells/hooks/deduplicated-turn-end": "fixture-services",
+    "cells/trusted/realpath-roots": "fixture-services",
+    "cells/trusted/symlink-escape-refused": "fixture-services",
+    "cells/trusted/no-privileges-through-cell-import": "fixture-services",
+    "cells/trusted/lazy-service-cache": "fixture-services",
+    "cells/trusted/execution-request-correlation": "fixture-services",
+    "cells/trusted/message-only-error-boundary": "fixture-services",
+    "cells/trusted/response-meta": "fixture-services",
+    "cells/output/structured-content-and-meta": "fixture-services",
+    "cells/trusted/emit-content-item-order": "fixture-services",
+    "cells/trusted/privileged-env-allowlist": "fixture-services",
+    "cells/trusted/no-account-telemetry-app-server": "fixture-services",
+    "cells/native-pipe/absolute-path": "fixture-services",
+    "cells/native-pipe/connect-timeout": "live-unreachable: non-blocking connect",
+    "cells/native-pipe/frozen-interface": "fixture-services",
+    "cells/native-pipe/base64-correlation": "fixture-services",
+    "cells/native-pipe/data-close-error": "fixture-services",
+    "secrets/browser/errors/worker-rejection-message-only": "fixture-services",
+    "secrets/native/errors/worker-rejection-message-only": "fixture-services"
+  },
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "connection-2",
+    "connection-3",
+    "connection-4",
+    "connection-5",
+    "connection-6",
+    "connection-7",
+    "connection-8",
+    "connection-9",
+    "connection-10",
+    "connection-11",
+    "connection-12",
+    "connection-13",
+    "connection-14",
+    "connection-15",
+    "connection-16",
+    "connection-17",
+    "connection-18",
+    "connection-19",
+    "connection-20",
+    "connection-21",
+    "connection-22",
+    "connection-23",
+    "connection-24",
+    "connection-25",
+    "connection-26",
+    "connection-27",
+    "connection-28",
+    "connection-29",
+    "connection-30",
+    "connection-31",
+    "connection-32",
+    "connection-33",
+    "connection-34",
+    "connection-35",
+    "connection-36",
+    "connection-37",
+    "connection-38",
+    "connection-39",
+    "connection-40",
+    "connection-41"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-XDxzpF",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-XDxzpF/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "66926762-5a8a-4602-a4b9-e33f8543a90c"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-9VYw2O",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-9VYw2O/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "ec9c64eb-3e2c-4d3b-99f0-c5800a598318"
+      }
+    },
+    {
+      "connection": "connection-3",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-oh4qbM",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-oh4qbM/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "5242bcf0-9f7a-492b-8de5-97483c2f8379"
+      }
+    },
+    {
+      "connection": "connection-4",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-pSt7Pt",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-pSt7Pt/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "a5e239f7-da09-4a3b-ac90-b04f4f545f31"
+      }
+    },
+    {
+      "connection": "connection-5",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-g9Vrr4",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-g9Vrr4/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "0aa76de3-3fac-4c97-955a-c6d88bdc8b7d"
+      }
+    },
+    {
+      "connection": "connection-6",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-BmLuxk",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-BmLuxk/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "d28b4b62-a6bb-4de6-af44-8a814617d7a8"
+      }
+    },
+    {
+      "connection": "connection-7",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-wZpU0h",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-wZpU0h/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1c4faf05-17a4-4aa5-a52b-9b3571801365"
+      }
+    },
+    {
+      "connection": "connection-8",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-gyZLi4",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-gyZLi4/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "74c59c04-4114-44ba-ac5c-e2ab15a40d6d"
+      }
+    },
+    {
+      "connection": "connection-9",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-6A9t62",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-6A9t62/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "ff178e43-b269-4960-9928-8dc07cb3068b"
+      }
+    },
+    {
+      "connection": "connection-10",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-AGxx2r",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-AGxx2r/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1474033f-6ed9-4110-bb24-d77114e94d2c"
+      }
+    },
+    {
+      "connection": "connection-11",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-zRFpst",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-zRFpst/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "49280ac4-d9c5-4d20-9cac-5014988dc4ef"
+      }
+    },
+    {
+      "connection": "connection-12",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-qqJ42c",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-qqJ42c/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "f45982cf-4356-4da4-a5d7-df98499ef9b1"
+      }
+    },
+    {
+      "connection": "connection-13",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-3f6Sf6",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-3f6Sf6/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "bef72247-e202-4a66-801b-058455792878"
+      }
+    },
+    {
+      "connection": "connection-14",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-Qsu1mA",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-Qsu1mA/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "84c7a9c0-bb3e-458c-927c-262fa30f1335"
+      }
+    },
+    {
+      "connection": "connection-15",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-WquhXC",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-WquhXC/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "acbcd596-c96d-4939-b928-724fa1649aa1"
+      }
+    },
+    {
+      "connection": "connection-16",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-v2qGPs",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-v2qGPs/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "b25f260f-787a-4403-b82a-9dba3b7db5e3"
+      }
+    },
+    {
+      "connection": "connection-17",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-ATggMo",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-ATggMo/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7ec3865d-727b-48d0-8765-6731202cdf03"
+      }
+    },
+    {
+      "connection": "connection-18",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-EQ0Ahs",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-EQ0Ahs/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "d9aa100a-e37c-460e-9475-243b626e24c1"
+      }
+    },
+    {
+      "connection": "connection-19",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-t8kTm5",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-t8kTm5/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c9ba6656-09ad-4338-832d-8ad3a75dde85"
+      }
+    },
+    {
+      "connection": "connection-20",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-WCiQkn",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-WCiQkn/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "066c7fdb-1197-4aa9-ad65-481b06623b51"
+      }
+    },
+    {
+      "connection": "connection-21",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-eSqEni",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-eSqEni/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "d1cb62ce-a725-43b0-afd0-f54c12a2efb1"
+      }
+    },
+    {
+      "connection": "connection-22",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-Osl40F",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-Osl40F/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "865d23be-1340-4f1a-9103-46e8b084b69a"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-aA0sTG",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-aA0sTG/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cbc99028-3c8f-45a4-b69e-5a7dbbf23ab6"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-1hGnMb",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-1hGnMb/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "4a6e85aa-e2bc-4ff5-bfe2-d375ccbdb117"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-hau2Pv",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-hau2Pv/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "dafa6ee7-461b-414a-a889-e4866c93cb42"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-CHcHb1",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-CHcHb1/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "3134f947-eb06-4e4a-8601-1962a91dacd3"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-SxyqjW",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-SxyqjW/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7aad4500-7330-4b88-a6b8-d129e18bbca3"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-sObYJe",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-sObYJe/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "edaa7503-b174-4bac-956d-a5a76e75cb35"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-2y2lmi",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-2y2lmi/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "b6b75ba6-b380-4618-8ade-ac662572c4c5"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-eRRoNC",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-eRRoNC/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "e96aeb78-cd31-4855-bd6c-317ac5b921da"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-7fKcGd",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-7fKcGd/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "261207de-c837-43e0-9dd2-01815b613635"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-I4NNVA",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-I4NNVA/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "577f0ea5-cb10-4c33-bccf-7c0defa672d2"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-avLH43",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-avLH43/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2d372a08-84ba-4dd8-aba0-16069fa656c5"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-DIjicQ",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-DIjicQ/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2b512ffb-483e-459a-a6b0-39e065dde44b"
+      }
+    },
+    {
+      "connection": "connection-35",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-agvpeV",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-agvpeV/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "5e939595-ff5f-4a15-9a98-fd9143d1e48d"
+      }
+    },
+    {
+      "connection": "connection-36",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-2Kkkpo",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-2Kkkpo/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "0f424a7a-f442-4e01-a98e-a0499ae52afb"
+      }
+    },
+    {
+      "connection": "connection-37",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-pufJk5",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-pufJk5/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "e47eb9ae-912f-4a53-bef8-448d563e67b8"
+      }
+    },
+    {
+      "connection": "connection-38",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-Fa08tg",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-Fa08tg/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "bfbc206a-05d9-45c8-8f19-ebdbca0c8616"
+      }
+    },
+    {
+      "connection": "connection-39",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-esX858",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-esX858/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "bfa35c91-1bbd-4bd3-b647-55a62bb2889f"
+      }
+    },
+    {
+      "connection": "connection-40",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-myFm4K",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-myFm4K/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "a4d8c88c-ac34-46b7-961f-9e56cd46ad3f"
+      }
+    },
+    {
+      "connection": "connection-41",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/home/admin/Developer/GitHub/cua-parity",
+        "home": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+        "commit": "b3cb6dbfde346a7e1e90bd2bc065052853aec056",
+        "dirty": false,
+        "release": "26.928.40906-linux-arm64",
+        "node": "v22.23.3",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "selection": {
+            "service": "cua",
+            "reason": "cua_route",
+            "explicit": false,
+            "route": "cua",
+            "registration": {
+              "route": "cua",
+              "at": 1792176123302.951
+            }
+          },
+          "recordPath": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/chrome/cua-registration.json",
+          "manifests": []
+        },
+        "chromeLaunch": [
+          {
+            "executable": "/opt/google/chrome/chrome",
+            "flags": [
+              "--profile-directory=Default",
+              "--disable-gpu",
+              "--disable-backgrounding-occluded-windows",
+              "--disable-renderer-backgrounding",
+              "--disable-background-timer-throttling"
+            ],
+            "display": ":0",
+            "displaySource": "prepared-X-session (process environment unavailable)",
+            "profileDirectory": "Default",
+            "registrationHome": "/home/admin/.local/share/cua-parity-remote/parity-PMhCs6",
+            "unrecordedFlagNames": [],
+            "omittedPositionalArguments": 1
+          }
+        ],
+        "answeringHost": {
+          "home": "/home/admin/.cp/cua-m5t6-cap-NltynV",
+          "ownNode": {
+            "path": "/home/admin/.cp/cua-m5t6-cap-NltynV/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "26e636b5-fc32-4d00-9d94-2465796fd084"
+      }
+    }
+  ],
+  "vendorDefects": [],
+  "coveredCases": 39,
+  "recordedCases": 40
+}

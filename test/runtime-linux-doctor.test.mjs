@@ -37,9 +37,11 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   const report = await inspectRuntime({home, env: {}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
     inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS; },
-    inspectLogin: async () => { asked++; return {state: 'logged-in'}; }, inspectChrome: async () => [], inspectAgent: async () => []});
+    inspectLogin: async () => { asked++; return {state: 'logged-in'}; }, inspectChrome: async () => [], inspectAgent: async () => [],
+    resolveOwnNode: () => '/opt/node-24/bin/node'});   // healthy includes a Node 24 for the own host, whatever runs the tests
   const rows = byName(report);
   assert.equal(report.ok, true);
+  assert.equal(rows['repl.host'].status, 'pass');
   for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'chrome.host.config', 'sandbox', 'codex.login'])
     assert.equal(rows[name]?.status, 'pass', name);
   assert.equal(rows['runtime.ipc'].detail, 'not applicable on linux');

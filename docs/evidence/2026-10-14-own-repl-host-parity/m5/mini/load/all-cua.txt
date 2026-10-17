@@ -1,0 +1,6 @@
+# mini before/after
+ 0:09  up 7 days,  5:16, 2 users, load averages: 11.67 12.10 11.55
+ 0:42  up 7 days,  5:49, 2 users, load averages: 2.99 3.70 7.00
+# this Mac before/after
+ 8:09  up 17 days, 20:11, 29 users, load averages: 14.83 17.54 17.10
+ 8:42  up 17 days, 20:44, 29 users, load averages: 26.27 22.63 23.00

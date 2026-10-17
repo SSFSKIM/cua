@@ -3,7 +3,6 @@
 // Setup manifest/selection replies reuse the source-grounded capability fixture (BC:10061-10212).
 import {chmod,lstat,mkdir,mkdtemp,realpath,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,resolve} from 'node:path';
-import {tmpdir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {createBrowserService,serviceSelection} from '../../../src/services/browser.mjs';
@@ -12,13 +11,14 @@ import {createCapabilityOracleService} from '../../browser-parity/capability-api
 import {liveSecretCases,LIVE_SECRET_LABEL,LIVE_SECRET_REFERENCE} from './live-secret-cases.mjs';
 const proof='service-boundary-double';
 const clean=value=>JSON.parse(JSON.stringify(value));
-// Only fixture-created homes UNDER the existing writable run root qualify. The capability root's sibling home
-// is intentionally read-only under scoped policy. Realpath checks reject symlink aliases.
-export async function assertScratchHome({userHome,capabilityHome,runDirectory}){
+// Authorize only the exact canonical home returned by this run's capability producer, never its parent or a
+// directory-name allowlist. The synthetic store remains under run/session/home; scoped policy stays unchanged.
+export async function assertScratchHome({userHome,capabilityHome,runDirectory,expectedCapabilityHome}){
+ if(typeof expectedCapabilityHome!=='string'||capabilityHome!==expectedCapabilityHome)throw Error('Live secrets require the chosen capability scratch HOME');
  if(typeof userHome!=='string'||typeof capabilityHome!=='string'||typeof runDirectory!=='string'||resolve(userHome)!==join(resolve(runDirectory),'home')||dirname(resolve(runDirectory))!==join(resolve(capabilityHome),'run')||!/^[A-Za-z0-9-]{1,128}$/.test(basename(runDirectory))||!/^cua-(?:[a-z0-9]+-)*cap-/.test(basename(capabilityHome)))throw Error('Live secrets require the capability run-directory scratch HOME');
  const root=await realpath(capabilityHome),home=await realpath(userHome);
  if(await realpath(runDirectory)!==resolve(runDirectory))throw Error('Live secrets require a canonical scratch run directory');
- if(root!==resolve(capabilityHome)||home!==resolve(userHome)||![await realpath('/tmp'),await realpath(tmpdir())].includes(dirname(root))||!(await lstat(home)).isDirectory())throw Error('Live secrets require a real capability scratch HOME');
+ if(root!==expectedCapabilityHome||home!==resolve(userHome)||!(await lstat(home)).isDirectory())throw Error('Live secrets require a real capability scratch HOME');
  return home;
 }
 // This returns one boolean, never a cleaned copy that might retain an unanticipated value-bearing property.
@@ -112,7 +112,7 @@ export async function handleRpc(request){
  if(!service){
   const env=globalThis.nodeRepl?.env;
   if(env?.PARITY_LIVE_SECRET_REMOTE!=='1')throw Error('Live secret fixture is remote-only');
-  service=await createLiveSecretOracle({userHome:env.PARITY_LIVE_SECRET_HOME,capabilityHome:env.PARITY_LIVE_SECRET_CAPABILITY_HOME,runDirectory:env.PARITY_LIVE_SECRET_RUN_DIRECTORY});
+  service=await createLiveSecretOracle({userHome:env.PARITY_LIVE_SECRET_HOME,capabilityHome:env.PARITY_LIVE_SECRET_CAPABILITY_HOME,expectedCapabilityHome:env.PARITY_LIVE_SECRET_CAPABILITY_ROOT,runDirectory:env.PARITY_LIVE_SECRET_RUN_DIRECTORY});
  }
  return service.handleRpc(request);
 }

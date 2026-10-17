@@ -10,7 +10,8 @@ import {execFileSync, spawnSync} from 'node:child_process';
 
 const base = 'docs/evidence/2026-10-14-own-repl-host-parity/m2/';
 const root = new URL('../../', import.meta.url).pathname;
-const fixture = JSON.parse(readFileSync(new URL('./repl-host-expected-differences.json', import.meta.url), 'utf8'));
+// Pin the historical seven-entry regression separately from M5's expanded live calibration.
+const fixture = JSON.parse(readFileSync(new URL('./fixtures/m2-trace-variance.json', import.meta.url), 'utf8'));
 const withFixture = async (value, run) => {
   const dir = mkdtempSync(join(tmpdir(), 'cua-trace-fixture-'));
   try { const file = join(dir, 'expected.json'); writeFileSync(file, JSON.stringify(value)); return await run(file); }

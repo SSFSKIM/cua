@@ -1,0 +1,16 @@
+{
+  "axis": "repl-host",
+  "kind": "vendor-trace-variance",
+  "revision": "50f556baa72ce3024f7108f4978536fbe0788c3c",
+  "pairs": [
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/corpus-c49777c/vendor-host",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-vendor-host"
+    },
+    {
+      "a": "docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-vendor-host",
+      "b": "docs/evidence/2026-10-14-own-repl-host-parity/m2/browser-diagnostics/reruns-coordinates-networkidle/vendor-2",
+      "cases": ["input/coordinates", "waits/networkidle"]
+    }
+  ]
+}

@@ -1,0 +1,187 @@
+{"t":"2026-10-17T00:48:29.623Z","task":"T0","tool":"profiles_list","kind":"other","ok":true,"ms":4221,"note":"MCP tool outside JS; shell-side clocks (include tool-call overhead); ssfs ready"}
+{"t":"2026-10-17T00:48:56.374Z","task":"T0","tool":"cua.getBrowser","kind":"action","ok":true,"ms":6.418999999999869,"note":"select ssfs extension instance"}
+{"t":"2026-10-17T00:49:05.437Z","task":"T0","tool":"browser.tabs.list","kind":"observe","ok":true,"ms":4.469333999999435,"note":"count tabs before (count only)"}
+{"task":"T0","done":"2026-10-17T00:49:05.442Z","answer":"selected ssfs; Service: cua browser service 0.1.0; tabs before=0","ok":true}
+{"t":"2026-10-17T00:49:09.457Z","task":"T1","tool":"browser.tabs.new","kind":"action","ok":true,"ms":21.330458999997063,"note":"new tab"}
+{"t":"2026-10-17T00:49:09.478Z","task":"T1","tool":"tab.goto","kind":"action","ok":true,"ms":25.76012499999706,"note":"open fixture index"}
+{"t":"2026-10-17T00:49:09.504Z","task":"T1","tool":"tab.title","kind":"observe","ok":true,"ms":3.5773750000007567,"note":"page title"}
+{"t":"2026-10-17T00:49:09.508Z","task":"T1","tool":"locator.innerText","kind":"observe","ok":true,"ms":26.670834000000468,"note":"#bench-id"}
+{"task":"T1","done":"2026-10-17T00:49:09.535Z","answer":"{\"title\":\"Bench Home\",\"benchId\":\"BENCH-2026-10-05\"}","ok":null}
+{"t":"2026-10-17T00:49:12.390Z","task":"T2","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":15.56145800000013,"note":"read table rows"}
+{"task":"T2","done":"2026-10-17T00:49:16.032Z","answer":"1437.50","ok":null}
+{"t":"2026-10-17T00:49:16.033Z","task":"T3","tool":"tab.screenshot","kind":"observe","ok":true,"ms":43.15995800000019,"note":"probe"}
+{"t":"2026-10-17T00:49:19.949Z","task":"T3","tool":"locator.evaluate","kind":"observe","ok":true,"ms":9.456583999999566,"note":"graph rect"}
+{"t":"2026-10-17T00:49:19.959Z","task":"T3","tool":"tab.screenshot","kind":"observe","ok":true,"ms":73.37975000000006,"note":"graph screenshot"}
+{"task":"T3","done":"2026-10-17T00:49:22.929Z","answer":"D","ok":null}
+{"t":"2026-10-17T00:49:22.930Z","task":"T4","tool":"locator.waitFor","kind":"wait","ok":true,"ms":6.413790999999037,"note":"wait for #late"}
+{"t":"2026-10-17T00:49:22.936Z","task":"T4","tool":"locator.innerText","kind":"observe","ok":true,"ms":2.9039170000032755,"note":"#late text"}
+{"task":"T4","done":"2026-10-17T00:49:22.939Z","answer":"LATE-7f3a","ok":null}
+{"t":"2026-10-17T00:49:30.191Z","task":"T5","tool":"locator.evaluate","kind":"observe","ok":true,"ms":13.571250000000873,"note":"draw rect"}
+{"t":"2026-10-17T00:49:34.287Z","task":"T5","tool":"tab.cua.drag","kind":"action","ok":true,"ms":22.20116699999926,"note":"drag canvas 50,40 -> 250,190"}
+{"t":"2026-10-17T00:49:34.309Z","task":"T5","tool":"locator.innerText","kind":"observe","ok":true,"ms":2.8993330000012065,"note":"#draw-result"}
+{"task":"T5","done":"2026-10-17T00:49:36.908Z","answer":"50,40,200,150","ok":null}
+{"t":"2026-10-17T00:49:36.908Z","task":"T6","tool":"locator.click","kind":"action","ok":true,"ms":71.22008300000016,"note":"click #to-frame"}
+{"t":"2026-10-17T00:49:36.980Z","task":"T6","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":54.23045799999818,"note":"frame page snapshot"}
+{"t":"2026-10-17T00:49:41.079Z","task":"T6","tool":"locator.fill","kind":"action","ok":true,"ms":19.126791999995476,"note":"qty-a"}
+{"t":"2026-10-17T00:49:41.099Z","task":"T6","tool":"locator.fill","kind":"action","ok":true,"ms":6.087124999998196,"note":"qty-b"}
+{"t":"2026-10-17T00:49:41.105Z","task":"T6","tool":"locator.fill","kind":"action","ok":true,"ms":4.96141599999828,"note":"qty-c"}
+{"t":"2026-10-17T00:49:41.110Z","task":"T6","tool":"locator.click","kind":"action","ok":true,"ms":280.5342090000049,"note":"open dropdown"}
+{"t":"2026-10-17T00:49:41.391Z","task":"T6","tool":"locator.click","kind":"action","ok":true,"ms":267.0844580000048,"note":"choose Bravo"}
+{"t":"2026-10-17T00:49:41.659Z","task":"T6","tool":"locator.check","kind":"action","ok":true,"ms":289.95387499999924,"note":"radio circle"}
+{"t":"2026-10-17T00:49:41.950Z","task":"T6","tool":"locator.fill","kind":"action","ok":true,"ms":11.338250000000698,"note":"phrase"}
+{"t":"2026-10-17T00:49:41.962Z","task":"T6","tool":"locator.click","kind":"action","ok":true,"ms":280.83954199999425,"note":"submit"}
+{"t":"2026-10-17T00:49:42.243Z","task":"T6","tool":"locator.innerText","kind":"observe","ok":true,"ms":9.541666000004625,"note":"#result"}
+{"task":"T6","done":"2026-10-17T00:49:47.411Z","answer":"42-Bravo-circle-11","ok":null}
+{"t":"2026-10-17T00:49:47.412Z","task":"T7","tool":"locator.click","kind":"action","ok":true,"ms":264.5211250000066,"note":"focus #deep"}
+{"t":"2026-10-17T00:49:47.677Z","task":"T7","tool":"locator.press","kind":"action","ok":true,"ms":16.17512500000157,"note":"press f"}
+{"t":"2026-10-17T00:49:47.697Z","task":"T7","tool":"locator.press","kind":"action","ok":true,"ms":7.592458999999508,"note":"press Shift+F"}
+{"t":"2026-10-17T00:49:47.705Z","task":"T7","tool":"locator.press","kind":"action","ok":true,"ms":5.179042000003392,"note":"press x"}
+{"t":"2026-10-17T00:49:47.711Z","task":"T7","tool":"locator.innerText","kind":"observe","ok":true,"ms":3.5901249999951688,"note":"#deep-log"}
+{"t":"2026-10-17T00:49:47.715Z","task":"T7","tool":"locator.innerText","kind":"observe","ok":true,"ms":3.1143750000046566,"note":"#deep-echo"}
+{"task":"T7","done":"2026-10-17T00:49:51.170Z","answer":"{\"log\":\"fShiftFx\",\"echo\":\"fFx\"}","ok":null}
+{"t":"2026-10-17T00:49:51.171Z","task":"T8","tool":"tab.goto","kind":"action","ok":true,"ms":40.83629199999996,"note":"open example.com"}
+{"t":"2026-10-17T00:49:51.212Z","task":"T8","tool":"locator.count","kind":"observe","ok":true,"ms":16.822333999996772,"note":"count h1"}
+{"t":"2026-10-17T00:49:54.246Z","task":"T8","tool":"tab.url","kind":"observe","ok":true,"ms":3.1072500000009313,"note":"url"}
+{"t":"2026-10-17T00:49:54.250Z","task":"T8","tool":"tab.title","kind":"observe","ok":true,"ms":1.3615420000060112,"note":"title"}
+{"t":"2026-10-17T00:49:54.251Z","task":"T8","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":9.00195800000074,"note":"snapshot"}
+{"task":"T8","done":"2026-10-17T00:49:56.485Z","answer":"no h1","ok":null}
+{"task":"T1","scored":true,"ok":true,"t":"2026-10-17T00:49:59.880Z"}
+{"task":"T2","scored":true,"ok":true,"t":"2026-10-17T00:49:59.881Z"}
+{"task":"T3","scored":true,"ok":true,"t":"2026-10-17T00:49:59.881Z"}
+{"task":"T4","scored":true,"ok":true,"t":"2026-10-17T00:49:59.881Z"}
+{"task":"T5","scored":true,"ok":true,"t":"2026-10-17T00:49:59.882Z"}
+{"task":"T6","scored":true,"ok":true,"t":"2026-10-17T00:49:59.882Z"}
+{"task":"T7","scored":true,"ok":true,"t":"2026-10-17T00:49:59.882Z"}
+{"task":"T8","scored":true,"ok":true,"t":"2026-10-17T00:49:59.882Z"}
+{"t":"2026-10-17T00:50:10.796Z","task":"miniwob/click-button","tool":"tab.goto","kind":"action","ok":true,"ms":40.34145799999533,"note":"open task"}
+{"t":"2026-10-17T00:50:10.837Z","task":"miniwob/click-button","tool":"locator.click","kind":"action","ok":true,"ms":303.7002499999944,"note":"click START"}
+{"t":"2026-10-17T00:50:11.141Z","task":"miniwob/click-button","tool":"locator.innerText","kind":"observe","ok":true,"ms":4.59316599999147,"note":"#query"}
+{"t":"2026-10-17T00:50:11.146Z","task":"miniwob/click-button","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":7.7224999999889405,"note":"snapshot"}
+{"t":"2026-10-17T00:50:14.999Z","task":"miniwob/click-button","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":10.871833000011975,"note":"list buttons"}
+{"t":"2026-10-17T00:50:17.686Z","task":"miniwob/click-button","tool":"locator.click","kind":"action","ok":true,"ms":272.31874999999127,"note":"click first cancel"}
+{"t":"2026-10-17T00:50:17.959Z","task":"miniwob/click-button","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":6.9898749999993015,"note":"read outcome globals"}
+{"task":"miniwob/click-button","done":"2026-10-17T00:50:17.967Z","answer":{"rawReward":1,"discountedReward":0.9621666666666666,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:20.052Z","task":"miniwob/click-checkboxes","tool":"tab.goto","kind":"action","ok":true,"ms":49.0367499999993,"note":"open task"}
+{"t":"2026-10-17T00:50:20.102Z","task":"miniwob/click-checkboxes","tool":"locator.click","kind":"action","ok":true,"ms":290.8678749999963,"note":"click START"}
+{"t":"2026-10-17T00:50:20.394Z","task":"miniwob/click-checkboxes","tool":"locator.innerText","kind":"observe","ok":true,"ms":8.488292000009096,"note":"#query"}
+{"t":"2026-10-17T00:50:20.403Z","task":"miniwob/click-checkboxes","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":7.610499999995227,"note":"snapshot"}
+{"t":"2026-10-17T00:50:22.903Z","task":"miniwob/click-checkboxes","tool":"locator.click","kind":"action","ok":true,"ms":288.23225000000093,"note":"click Submit"}
+{"t":"2026-10-17T00:50:23.191Z","task":"miniwob/click-checkboxes","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":3.5595420000026934,"note":"read outcome globals"}
+{"task":"miniwob/click-checkboxes","done":"2026-10-17T00:50:23.195Z","answer":{"rawReward":1,"discountedReward":0.98445,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:25.031Z","task":"miniwob/click-dialog","tool":"tab.goto","kind":"action","ok":true,"ms":37.80091699998593,"note":"open task"}
+{"t":"2026-10-17T00:50:25.069Z","task":"miniwob/click-dialog","tool":"locator.click","kind":"action","ok":true,"ms":287.9411669999972,"note":"click START"}
+{"t":"2026-10-17T00:50:25.358Z","task":"miniwob/click-dialog","tool":"locator.innerText","kind":"observe","ok":true,"ms":6.959875000000466,"note":"#query"}
+{"t":"2026-10-17T00:50:25.366Z","task":"miniwob/click-dialog","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":7.02508300000045,"note":"snapshot"}
+{"t":"2026-10-17T00:50:27.725Z","task":"miniwob/click-dialog","tool":"locator.click","kind":"action","ok":true,"ms":285.202833000003,"note":"click x/Close"}
+{"t":"2026-10-17T00:50:28.011Z","task":"miniwob/click-dialog","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":6.134375000008731,"note":"read outcome globals"}
+{"task":"miniwob/click-dialog","done":"2026-10-17T00:50:28.018Z","answer":{"rawReward":1,"discountedReward":0.9852833333333333,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:30.089Z","task":"miniwob/click-link","tool":"tab.goto","kind":"action","ok":true,"ms":40.895249999986845,"note":"open task"}
+{"t":"2026-10-17T00:50:30.131Z","task":"miniwob/click-link","tool":"locator.click","kind":"action","ok":true,"ms":294.1992079999909,"note":"click START"}
+{"t":"2026-10-17T00:50:30.425Z","task":"miniwob/click-link","tool":"locator.innerText","kind":"observe","ok":true,"ms":6.900792000000365,"note":"#query"}
+{"t":"2026-10-17T00:50:30.433Z","task":"miniwob/click-link","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":6.3229580000042915,"note":"snapshot"}
+{"t":"2026-10-17T00:50:33.964Z","task":"miniwob/click-link","tool":"locator.allTextContents","kind":"observe","ok":true,"ms":3.482292000000598,"note":"list .alink"}
+{"t":"2026-10-17T00:50:33.967Z","task":"miniwob/click-link","tool":"locator.click","kind":"action","ok":true,"ms":290.9529579999944,"note":"click Auctor link"}
+{"t":"2026-10-17T00:50:34.259Z","task":"miniwob/click-link","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":6.165959000005387,"note":"read outcome globals"}
+{"task":"miniwob/click-link","done":"2026-10-17T00:50:34.266Z","answer":{"rawReward":1,"discountedReward":0.9787166666666667,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:36.149Z","task":"miniwob/click-option","tool":"tab.goto","kind":"action","ok":true,"ms":36.90104199999769,"note":"open task"}
+{"t":"2026-10-17T00:50:36.187Z","task":"miniwob/click-option","tool":"locator.click","kind":"action","ok":true,"ms":289.2509580000042,"note":"click START"}
+{"t":"2026-10-17T00:50:36.477Z","task":"miniwob/click-option","tool":"locator.innerText","kind":"observe","ok":true,"ms":7.821416999999201,"note":"#query"}
+{"t":"2026-10-17T00:50:36.485Z","task":"miniwob/click-option","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":7.448999999993248,"note":"snapshot"}
+{"t":"2026-10-17T00:50:39.108Z","task":"miniwob/click-option","tool":"locator.click","kind":"action","ok":true,"ms":267.2248330000002,"note":"select radio HWtF5D"}
+{"t":"2026-10-17T00:50:39.376Z","task":"miniwob/click-option","tool":"locator.click","kind":"action","ok":true,"ms":265.57937500000116,"note":"click Submit"}
+{"t":"2026-10-17T00:50:39.643Z","task":"miniwob/click-option","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":6.825457999992068,"note":"read outcome globals"}
+{"task":"miniwob/click-option","done":"2026-10-17T00:50:39.650Z","answer":{"rawReward":1,"discountedReward":0.9823666666666666,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:41.537Z","task":"miniwob/click-tab","tool":"tab.goto","kind":"action","ok":true,"ms":39.531958999999915,"note":"open task"}
+{"t":"2026-10-17T00:50:41.576Z","task":"miniwob/click-tab","tool":"locator.click","kind":"action","ok":true,"ms":297.7318749999977,"note":"click START"}
+{"t":"2026-10-17T00:50:41.874Z","task":"miniwob/click-tab","tool":"locator.innerText","kind":"observe","ok":true,"ms":4.658999999999651,"note":"#query"}
+{"t":"2026-10-17T00:50:41.879Z","task":"miniwob/click-tab","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":5.918707999997423,"note":"snapshot"}
+{"t":"2026-10-17T00:50:44.367Z","task":"miniwob/click-tab","tool":"locator.click","kind":"action","ok":true,"ms":291.99400000000605,"note":"click Tab #1"}
+{"t":"2026-10-17T00:50:44.659Z","task":"miniwob/click-tab","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":2.8540000000066357,"note":"read outcome globals"}
+{"task":"miniwob/click-tab","done":"2026-10-17T00:50:44.662Z","answer":{"rawReward":1,"discountedReward":0.9845444444444444,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:46.820Z","task":"miniwob/enter-text","tool":"tab.goto","kind":"action","ok":true,"ms":47.54795799999556,"note":"open task"}
+{"t":"2026-10-17T00:50:46.867Z","task":"miniwob/enter-text","tool":"locator.click","kind":"action","ok":true,"ms":291.4691670000029,"note":"click START"}
+{"t":"2026-10-17T00:50:47.160Z","task":"miniwob/enter-text","tool":"locator.innerText","kind":"observe","ok":true,"ms":7.109375,"note":"#query"}
+{"t":"2026-10-17T00:50:47.168Z","task":"miniwob/enter-text","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":7.1247089999960735,"note":"snapshot"}
+{"t":"2026-10-17T00:50:50.133Z","task":"miniwob/enter-text","tool":"locator.fill","kind":"action","ok":true,"ms":81.04045899999619,"note":"fill Riley"}
+{"t":"2026-10-17T00:50:50.220Z","task":"miniwob/enter-text","tool":"locator.click","kind":"action","ok":true,"ms":386.6012080000073,"note":"click Submit"}
+{"t":"2026-10-17T00:50:50.607Z","task":"miniwob/enter-text","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":49.23124999999709,"note":"read outcome globals"}
+{"task":"miniwob/enter-text","done":"2026-10-17T00:50:50.657Z","answer":{"rawReward":1,"discountedReward":0.9803777777777778,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:52.596Z","task":"miniwob/enter-password","tool":"tab.goto","kind":"action","ok":true,"ms":28.38758299998881,"note":"open task"}
+{"t":"2026-10-17T00:50:52.625Z","task":"miniwob/enter-password","tool":"locator.click","kind":"action","ok":true,"ms":282.71312499999476,"note":"click START"}
+{"t":"2026-10-17T00:50:52.908Z","task":"miniwob/enter-password","tool":"locator.innerText","kind":"observe","ok":true,"ms":5.061333000005106,"note":"#query"}
+{"t":"2026-10-17T00:50:52.914Z","task":"miniwob/enter-password","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":4.580375000005006,"note":"snapshot"}
+{"t":"2026-10-17T00:50:55.757Z","task":"miniwob/enter-password","tool":"locator.fill","kind":"action","ok":true,"ms":7.992582999999286,"note":"fill password"}
+{"t":"2026-10-17T00:50:55.765Z","task":"miniwob/enter-password","tool":"locator.fill","kind":"action","ok":true,"ms":3.223833000010927,"note":"fill verify"}
+{"t":"2026-10-17T00:50:55.768Z","task":"miniwob/enter-password","tool":"locator.click","kind":"action","ok":true,"ms":272.6532920000027,"note":"click Submit"}
+{"t":"2026-10-17T00:50:56.041Z","task":"miniwob/enter-password","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":3.065499999996973,"note":"read outcome globals"}
+{"task":"miniwob/enter-password","done":"2026-10-17T00:50:56.045Z","answer":{"rawReward":1,"discountedReward":0.9825888888888888,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:50:58.134Z","task":"miniwob/focus-text-2","tool":"tab.goto","kind":"action","ok":true,"ms":29.45183299999917,"note":"open task"}
+{"t":"2026-10-17T00:50:58.163Z","task":"miniwob/focus-text-2","tool":"locator.click","kind":"action","ok":true,"ms":294.6285409999982,"note":"click START"}
+{"t":"2026-10-17T00:50:58.458Z","task":"miniwob/focus-text-2","tool":"locator.innerText","kind":"observe","ok":true,"ms":4.365958000009414,"note":"#query"}
+{"t":"2026-10-17T00:50:58.463Z","task":"miniwob/focus-text-2","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":4.512000000002445,"note":"snapshot"}
+{"t":"2026-10-17T00:51:00.646Z","task":"miniwob/focus-text-2","tool":"locator.click","kind":"action","ok":true,"ms":262.2900410000002,"note":"click 3rd textbox"}
+{"t":"2026-10-17T00:51:00.909Z","task":"miniwob/focus-text-2","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":8.696875000008731,"note":"read outcome globals"}
+{"task":"miniwob/focus-text-2","done":"2026-10-17T00:51:00.919Z","answer":{"rawReward":1,"discountedReward":0.9863833333333334,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:51:03.759Z","task":"miniwob/drag-box","tool":"tab.goto","kind":"action","ok":true,"ms":42.775915999984136,"note":"open task"}
+{"t":"2026-10-17T00:51:03.802Z","task":"miniwob/drag-box","tool":"locator.click","kind":"action","ok":true,"ms":288.65754200000083,"note":"click START"}
+{"t":"2026-10-17T00:51:04.092Z","task":"miniwob/drag-box","tool":"locator.innerText","kind":"observe","ok":true,"ms":4.046041999972658,"note":"#query"}
+{"t":"2026-10-17T00:51:04.096Z","task":"miniwob/drag-box","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":14.818250000011176,"note":"element geometry"}
+{"t":"2026-10-17T00:51:07.945Z","task":"miniwob/drag-box","tool":"tab.cua.drag","kind":"action","ok":true,"ms":62.05820899998071,"note":"drag small box into large box"}
+{"t":"2026-10-17T00:51:08.008Z","task":"miniwob/drag-box","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":2.209208000014769,"note":"read outcome globals"}
+{"t":"2026-10-17T00:51:11.260Z","task":"miniwob/drag-box","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":12.442082999972627,"note":"element geometry"}
+{"t":"2026-10-17T00:51:13.813Z","task":"miniwob/drag-box","tool":"locator.click","kind":"action","ok":true,"ms":260.36737500000163,"note":"click Submit button"}
+{"t":"2026-10-17T00:51:14.074Z","task":"miniwob/drag-box","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":5.179082999995444,"note":"read outcome globals"}
+{"task":"miniwob/drag-box","done":"2026-10-17T00:51:14.079Z","answer":{"rawReward":1,"discountedReward":0.94445,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:51:16.857Z","task":"miniwob/drag-items","tool":"tab.goto","kind":"action","ok":true,"ms":39.60487499998999,"note":"open task"}
+{"t":"2026-10-17T00:51:16.896Z","task":"miniwob/drag-items","tool":"locator.click","kind":"action","ok":true,"ms":296.6684580000001,"note":"click START"}
+{"t":"2026-10-17T00:51:17.194Z","task":"miniwob/drag-items","tool":"locator.innerText","kind":"observe","ok":true,"ms":6.89758299998357,"note":"#query"}
+{"t":"2026-10-17T00:51:17.202Z","task":"miniwob/drag-items","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":20.45837500001653,"note":"element geometry"}
+{"t":"2026-10-17T00:51:20.545Z","task":"miniwob/drag-items","tool":"tab.cua.drag","kind":"action","ok":true,"ms":98.13366700001643,"note":"drag Kori to bottom"}
+{"t":"2026-10-17T00:51:20.643Z","task":"miniwob/drag-items","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":2.512542000011308,"note":"read outcome globals"}
+{"t":"2026-10-17T00:51:20.646Z","task":"miniwob/drag-items","tool":"locator.allTextContents","kind":"observe","ok":true,"ms":2.8502080000180285,"note":"item order"}
+{"task":"miniwob/drag-items","done":"2026-10-17T00:51:20.649Z","answer":{"rawReward":1,"discountedReward":0.9795722222222222,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:51:23.523Z","task":"miniwob/scroll-text","tool":"tab.goto","kind":"action","ok":true,"ms":29.579333000001498,"note":"open task"}
+{"t":"2026-10-17T00:51:23.553Z","task":"miniwob/scroll-text","tool":"locator.click","kind":"action","ok":true,"ms":304.5071250000037,"note":"click START"}
+{"t":"2026-10-17T00:51:23.859Z","task":"miniwob/scroll-text","tool":"locator.innerText","kind":"observe","ok":true,"ms":5.139332999999169,"note":"#query"}
+{"t":"2026-10-17T00:51:23.864Z","task":"miniwob/scroll-text","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":12.951749999978347,"note":"element geometry"}
+{"t":"2026-10-17T00:51:27.356Z","task":"miniwob/scroll-text","tool":"tab.cua.scroll","kind":"action","ok":true,"ms":216.21820799997658,"note":"scroll textarea down"}
+{"t":"2026-10-17T00:51:27.573Z","task":"miniwob/scroll-text","tool":"locator.evaluate","kind":"observe","ok":true,"ms":13.441583000007086,"note":"read textarea scroll+tail"}
+{"t":"2026-10-17T00:51:33.484Z","task":"miniwob/scroll-text","tool":"locator.fill","kind":"action","ok":true,"ms":7.977666999999201,"note":"fill last word"}
+{"t":"2026-10-17T00:51:33.492Z","task":"miniwob/scroll-text","tool":"locator.click","kind":"action","ok":true,"ms":281.8520000000135,"note":"click Submit"}
+{"t":"2026-10-17T00:51:33.774Z","task":"miniwob/scroll-text","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":5.275417000026209,"note":"read outcome globals"}
+{"task":"miniwob/scroll-text","done":"2026-10-17T00:51:33.780Z","answer":{"rawReward":1,"discountedReward":0.9449222222222222,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:51:36.574Z","task":"miniwob/use-slider","tool":"tab.goto","kind":"action","ok":true,"ms":38.83070799999405,"note":"open task"}
+{"t":"2026-10-17T00:51:36.613Z","task":"miniwob/use-slider","tool":"locator.click","kind":"action","ok":true,"ms":294.4373750000086,"note":"click START"}
+{"t":"2026-10-17T00:51:36.908Z","task":"miniwob/use-slider","tool":"locator.innerText","kind":"observe","ok":true,"ms":3.4462920000078157,"note":"#query"}
+{"t":"2026-10-17T00:51:36.912Z","task":"miniwob/use-slider","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":12.530916999996407,"note":"element geometry"}
+{"t":"2026-10-17T00:51:41.340Z","task":"miniwob/use-slider","tool":"locator.innerText","kind":"observe","ok":true,"ms":4.44283399998676,"note":"#val"}
+{"t":"2026-10-17T00:51:41.344Z","task":"miniwob/use-slider","tool":"tab.screenshot","kind":"observe","ok":true,"ms":67.5346669999999,"note":"screenshot area"}
+{"t":"2026-10-17T00:51:46.048Z","task":"miniwob/use-slider","tool":"tab.cua.drag","kind":"action","ok":true,"ms":44.69733300001826,"note":"drag handle down to y=100"}
+{"t":"2026-10-17T00:51:46.093Z","task":"miniwob/use-slider","tool":"locator.innerText","kind":"observe","ok":true,"ms":2.3803339999867603,"note":"#val"}
+{"t":"2026-10-17T00:51:46.095Z","task":"miniwob/use-slider","tool":"locator.evaluate","kind":"observe","ok":true,"ms":8.682417000003625,"note":"handle center y"}
+{"t":"2026-10-17T00:51:50.453Z","task":"miniwob/use-slider","tool":"tab.cua.drag","kind":"action","ok":true,"ms":55.42191599999205,"note":"drag handle to y=125"}
+{"t":"2026-10-17T00:51:50.508Z","task":"miniwob/use-slider","tool":"locator.innerText","kind":"observe","ok":true,"ms":2.3790419999859296,"note":"#val"}
+{"t":"2026-10-17T00:51:54.447Z","task":"miniwob/use-slider","tool":"locator.press","kind":"action","ok":true,"ms":9.114999999990687,"note":"ArrowDown on handle"}
+{"t":"2026-10-17T00:51:54.456Z","task":"miniwob/use-slider","tool":"locator.innerText","kind":"observe","ok":true,"ms":2.2812080000003334,"note":"#val"}
+{"t":"2026-10-17T00:51:56.884Z","task":"miniwob/use-slider","tool":"locator.click","kind":"action","ok":true,"ms":256.1388329999754,"note":"click Submit"}
+{"t":"2026-10-17T00:51:57.141Z","task":"miniwob/use-slider","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":5.006124999985332,"note":"read outcome globals"}
+{"task":"miniwob/use-slider","done":"2026-10-17T00:51:57.146Z","answer":{"rawReward":1,"discountedReward":0.8876055555555555,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:51:59.175Z","task":"miniwob/simple-algebra","tool":"tab.goto","kind":"action","ok":true,"ms":32.72104199999012,"note":"open task"}
+{"t":"2026-10-17T00:51:59.208Z","task":"miniwob/simple-algebra","tool":"locator.click","kind":"action","ok":true,"ms":281.87275000000955,"note":"click START"}
+{"t":"2026-10-17T00:51:59.491Z","task":"miniwob/simple-algebra","tool":"locator.innerText","kind":"observe","ok":true,"ms":5.416750000003958,"note":"#query"}
+{"t":"2026-10-17T00:51:59.497Z","task":"miniwob/simple-algebra","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":6.089124999998603,"note":"snapshot"}
+{"t":"2026-10-17T00:52:01.938Z","task":"miniwob/simple-algebra","tool":"locator.fill","kind":"action","ok":true,"ms":8.011499999993248,"note":"fill 54"}
+{"t":"2026-10-17T00:52:01.946Z","task":"miniwob/simple-algebra","tool":"locator.click","kind":"action","ok":true,"ms":277.0417090000119,"note":"click Submit"}
+{"t":"2026-10-17T00:52:02.224Z","task":"miniwob/simple-algebra","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":6.2859580000222195,"note":"read outcome globals"}
+{"task":"miniwob/simple-algebra","done":"2026-10-17T00:52:02.231Z","answer":{"rawReward":1,"discountedReward":0.98495,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:52:04.193Z","task":"miniwob/email-inbox-delete","tool":"tab.goto","kind":"action","ok":true,"ms":36.12287500000093,"note":"open task"}
+{"t":"2026-10-17T00:52:04.229Z","task":"miniwob/email-inbox-delete","tool":"locator.click","kind":"action","ok":true,"ms":295.07137500002864,"note":"click START"}
+{"t":"2026-10-17T00:52:04.525Z","task":"miniwob/email-inbox-delete","tool":"locator.innerText","kind":"observe","ok":true,"ms":3.2634170000092126,"note":"#query"}
+{"t":"2026-10-17T00:52:04.528Z","task":"miniwob/email-inbox-delete","tool":"tab.playwright.domSnapshot","kind":"observe","ok":true,"ms":5.33674999998766,"note":"snapshot"}
+{"t":"2026-10-17T00:52:07.246Z","task":"miniwob/email-inbox-delete","tool":"locator.evaluateAll","kind":"observe","ok":true,"ms":21.05716699999175,"note":"element geometry"}
+{"t":"2026-10-17T00:52:09.993Z","task":"miniwob/email-inbox-delete","tool":"tab.cua.click","kind":"action","ok":true,"ms":253.7603330000129,"note":"click trash icon of Cordelia email"}
+{"t":"2026-10-17T00:52:10.248Z","task":"miniwob/email-inbox-delete","tool":"tab.playwright.evaluate","kind":"observe","ok":true,"ms":5.2795420000038575,"note":"read outcome globals"}
+{"task":"miniwob/email-inbox-delete","done":"2026-10-17T00:52:10.254Z","answer":{"rawReward":1,"discountedReward":0.9680111111111112,"reason":null,"done":true},"ok":true}
+{"t":"2026-10-17T00:52:16.094Z","task":"T9","tool":"tab.close","kind":"action","ok":true,"ms":12.236333999986527,"note":"close my tab"}
+{"t":"2026-10-17T00:52:16.107Z","task":"T9","tool":"browser.tabs.list","kind":"observe","ok":true,"ms":15.445042000006652,"note":"count tabs after"}
+{"task":"T9","done":"2026-10-17T00:52:16.122Z","answer":"tabs after=0 (before=0)","ok":true}

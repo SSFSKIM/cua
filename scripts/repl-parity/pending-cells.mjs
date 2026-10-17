@@ -1,4 +1,4 @@
-// Explicit M4/#141 deferral, not an expected-difference allowance. Every cell still executes. Only the two
+// Explicit M5/#141 deferral, not an expected-difference allowance. Every cell still executes. Only the two
 // approved logical cells may have their recorded stall compared as pending; every sibling result remains exact.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -22,10 +22,12 @@ export function classifyPendingCell(result){
 }
 export function assertAlternativeProof(run,id){
  validateAttestations(run.meta);
+ assert.equal(run.meta.through,policy.through,'alternate proof must cover the declared milestone');
  assert.equal(run.meta.platform,'darwin','alternate proof must be another platform');assert.equal(run.meta.device,'mini');assert.notEqual(run.meta.fake,true);
  assert.equal(run.meta.caseProofs?.[id],'chrome','alternate proof must be Chrome-live');assert.ok(run.meta.caseIds.includes(id));
  const rows=run.rows.filter(r=>r.case===id);assert.ok(rows.length>1);assert.ok(rows.every(r=>!r.fake));
- assert.equal(rows.filter(r=>r.assertion?.ok===true).length,1,'alternate proof must pass');
+ const assertions=rows.filter(r=>r.assertion);assert.equal(assertions.length,1,'alternate proof requires one assertion');
+ assert.deepEqual(assertions[0].assertion,{ok:true},'alternate proof must pass without pending coverage');
  const cells=rows.filter(r=>r.cell);assert.deepEqual(cells.map(r=>r.cell).sort(),[...run.meta.caseCells[id]].sort());
  assert.ok(cells.every(r=>r.ok===true&&r.isError===false));assert.equal(classifyPendingCell(cells.find(r=>r.cell==='scroll')),'unexpected-pass');
 }
@@ -41,7 +43,7 @@ export function loadAlternativeProofs(){
 }
 export function resolvePendingDeclarations({logicalCells=[],reason,platform,through,scenarios,caseIds}={}){
  if(!logicalCells.length){if(reason)throw Error('pending reason requires a declared cell');return {pendingEnvironment:[],pendingObligations:[]};}
- if(platform!==policy.platform||through!==policy.through)throw Error('Pending cells are approved only for Linux through M4');
+ if(platform!==policy.platform||through!==policy.through)throw Error(`Pending cells are approved only for Linux through ${policy.through}`);
  if(reason!==policy.reason)throw Error('Pending reason must match the approved #141 reason');
  if(new Set(logicalCells).size!==logicalCells.length)throw Error('Duplicate pending logical cell');
  const selected=logicalCells.map(name=>{const scope=policy.scopes.find(s=>s.logicalCell===name);if(!scope)throw Error('Unknown pending logical cell: '+name);return scope;}).sort((a,b)=>a.logicalCell.localeCompare(b.logicalCell));
@@ -53,18 +55,30 @@ export function resolvePendingDeclarations({logicalCells=[],reason,platform,thro
  });
  return {pendingEnvironment,pendingObligations:pendingEnvironment.map(d=>d.member)};
 }
+// Provisional oracle cells (test/repl-parity/provisional-oracles.json): on the named platform the cell's expectation is
+// source-derived until a live vendor control is recorded. The cell still executes and compares exactly, and its
+// assertion still checks the provisional expectation, but the case is pending there, never counted as covered. A claim
+// applies only to recordings that carry the cell, so runs made before it existed keep their own coverage.
+export const provisionalOracles=JSON.parse(readFileSync(new URL('../../test/repl-parity/provisional-oracles.json',import.meta.url)));
+if(!Array.isArray(provisionalOracles)||provisionalOracles.some(d=>Object.keys(d).sort().join()!=='case,cell,platform,reason'||!['darwin','linux'].includes(d.platform)||!d.case||!d.cell||!d.reason)||new Set(provisionalOracles.map(d=>`${d.platform}|${d.case}|${d.cell}`)).size!==provisionalOracles.length)throw new Error('Invalid provisional oracle declaration');
+export function provisionalCellsFor(platform,id,recorded){return provisionalOracles.filter(d=>d.platform===platform&&d.case===id&&(!recorded||recorded.includes(d.cell))).map(({cell,reason})=>({cell,reason}));}
+export const recordedCells=(rows,id)=>rows.filter(r=>r.case===id&&Object.hasOwn(r,'cell')).map(r=>r.cell);
 export function pendingCellsFor(declarations,id){return (declarations??[]).filter(d=>d.cases.includes(id)).map(({logicalCell,cell,reason})=>({logicalCell,cell,reason}));}
 export function validatePendingMetadata(meta){
  const declarations=meta.pendingEnvironment??[],expected=resolvePendingDeclarations({logicalCells:declarations.map(d=>d.logicalCell),reason:declarations[0]?.reason,platform:meta.platform,through:meta.through,caseIds:meta.caseIds});
  assert.deepEqual(declarations,expected.pendingEnvironment,'invalid pending declaration');assert.deepEqual(meta.pendingObligations??[],expected.pendingObligations,'invalid pending coverage');return expected;
 }
 export function pendingProjection(run,ids){
- const declarations=validatePendingMetadata(run.meta).pendingEnvironment,observations=[];
+ const declarations=validatePendingMetadata(run.meta).pendingEnvironment,observations=[],provisional=[];
  const rows=run.rows.map(row=>{
   if(!ids.includes(row.case))return row;
   const scope=pendingCellsFor(declarations,row.case);
   if(row.assertion){
-   if(scope.length&&row.assertion.ok===true){assert.deepEqual(row.assertion.pendingCells,scope.map(p=>p.cell),'pending assertion must name its cells');assert.equal(row.assertion.covered,!(run.meta.pendingObligations??[]).includes(row.case),'pending coverage mismatch');}
+   const claims=provisionalCellsFor(run.meta.platform,row.case,recordedCells(run.rows,row.case));
+   if(claims.length&&row.assertion.ok===true){
+    assert.deepEqual(row.assertion.pendingCells,[...scope,...claims].map(p=>p.cell),'provisional pending assertion must name its cells');assert.equal(row.assertion.covered,false,'a provisional oracle cell is never covered');
+    provisional.push(...claims.map(p=>({case:row.case,...p})));
+   } else if(scope.length&&row.assertion.ok===true){assert.deepEqual(row.assertion.pendingCells,scope.map(p=>p.cell),'pending assertion must name its cells');assert.equal(row.assertion.covered,!(run.meta.pendingObligations??[]).includes(row.case),'pending coverage mismatch');}
    else assert.ok(row.assertion.covered===undefined&&row.assertion.pendingCells===undefined,'undeclared pending assertion');
    return row;
   }
@@ -75,5 +89,5 @@ export function pendingProjection(run,ids){
   // Raw evidence is untouched. Only this exact, classified content slot is projected; sibling fields still compare.
   return {...row,content:[{...row.content[0],text:`<pending ${declaration.logicalCell}>`}]};
  });
- return {rows,observations};
+ return {rows,observations,provisional};
 }

@@ -1,0 +1,229 @@
+{
+ "service": "cua",
+ "started": "2026-10-16T17:38:56.875Z",
+ "maws": {
+  "sockets": {
+   "m4-A": "/tmp/mcua-m4-i6xtrI/browser/cua/m4-A.sock",
+   "m4-B": "/tmp/mcua-m4-i6xtrI/browser/cua/m4-B.sock"
+  },
+  "trusted": true
+ },
+ "features": {
+  "summary": {
+   "profiles": "PASS",
+   "service": "PASS",
+   "createTab": "PASS",
+   "locator": "PASS",
+   "viewport": "PASS",
+   "popup": "PASS",
+   "download": "PASS",
+   "alert": "PASS",
+   "confirm": "PASS",
+   "chooser": "PASS",
+   "cleanup": "PASS",
+   "isolation": "PASS"
+  },
+  "status": "PASS",
+  "backends": [
+   "/tmp/mcua-m4-i6xtrI/browser/cua/m4-A.sock"
+  ],
+  "other": "/tmp/mcua-m4-i6xtrI/browser/cua/m4-B.sock",
+  "details": {
+   "profiles": {
+    "status": "ok",
+    "profiles": [
+     {
+      "key": "maws",
+      "ready": true,
+      "extensionInstanceId": "maws:m4-A"
+     }
+    ]
+   },
+   "service": {
+    "requested": "cua",
+    "served": "cua browser service 0.1.0"
+   },
+   "createTab": {
+    "instance": "maws:m4-A",
+    "profileName": "MAWS",
+    "tabId": "1",
+    "markerMatches": true
+   },
+   "locator": {
+    "state": "submitted:x"
+   },
+   "viewport": {
+    "during": {
+     "format": "jpeg",
+     "width": 800,
+     "height": 600
+    },
+    "after": {
+     "format": "jpeg",
+     "width": 1280,
+     "height": 800
+    }
+   },
+   "popup": {
+    "added": [
+     {
+      "id": "2",
+      "url": "http://127.0.0.1:59853/popup"
+     }
+    ]
+   },
+   "download": {
+    "basename": "cua-report.pdf",
+    "directory": "Downloads",
+    "size": 7729,
+    "sha256": "a3030829e7251330d53ac0d0a803039b8f82f6fa53d294b66e76d8fe3d8c6ec5",
+    "sha256Match": true,
+    "createdByFixture": true,
+    "inDownloads": true,
+    "elapsedMs": 271,
+    "removed": {
+     "deleted": true
+    }
+   },
+   "alert": {
+    "type": "alert",
+    "closed": true,
+    "state": "after-alert",
+    "clearedPreviousType": null
+   },
+   "confirm": {
+    "type": "confirm",
+    "closed": true,
+    "state": "confirm:false",
+    "clearedPreviousType": null
+   },
+   "chooser": {
+    "picked": "cua-upload.txt:1234",
+    "expected": "cua-upload.txt:1234"
+   },
+   "cleanup": {
+    "createdListed": false,
+    "popupListed": false
+   },
+   "isolation": {
+    "ours": {
+     "mawsInstances": [
+      "maws:m4-A"
+     ],
+     "otherSelected": false,
+     "otherError": "The Chrome instance is unavailable."
+    },
+    "theirs": {
+     "mawsInstances": [
+      "maws:m4-B"
+     ],
+     "otherSelected": false,
+     "otherError": "The Chrome instance is unavailable."
+    }
+   },
+   "serve": {
+    "code": 0,
+    "signal": null
+   },
+   "serveOther": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  "elicitations": [],
+  "pageRequests": {
+   "total": 3,
+   "served": 3,
+   "refused": 0
+  }
+ },
+ "created": {
+  "id": "1",
+  "profileName": "MAWS",
+  "instance": "maws:m4-A"
+ },
+ "cursor": {
+  "before": 0,
+  "click": {
+   "ok": true,
+   "ms": 264
+  },
+  "after": 4,
+  "ok": true
+ },
+ "caps": {
+  "browser": [
+   "viewport"
+  ],
+  "tab": []
+ },
+ "history": {
+  "ok": false,
+  "error": "No handler registered for method: getUserHistory"
+ },
+ "takeover": {
+  "defaultBudget": {
+   "person": {
+    "at": 1792172352827,
+    "tab": "b_000000000003",
+    "row": {
+     "path": "/tmp/mcua-m4-i6xtrI/browser/cua/m4-A.sock",
+     "connections": 1,
+     "held": 0,
+     "leased": [
+      "b_000000000003"
+     ],
+     "refused": 0
+    },
+    "down": true,
+    "up": true,
+    "control": "human",
+    "cursorMessages": 5
+   },
+   "click": {
+    "ok": false,
+    "ms": 3019,
+    "error": "Error: Playwright selector deadline exceeded",
+    "sincePersonMs": 3029
+   },
+   "state": "waiting",
+   "controlAfter": "agent"
+  },
+  "timeoutMs15000": {
+   "person": {
+    "at": 1792172359496,
+    "tab": "b_000000000003",
+    "row": {
+     "path": "/tmp/mcua-m4-i6xtrI/browser/cua/m4-A.sock",
+     "connections": 1,
+     "held": 0,
+     "leased": [
+      "b_000000000003"
+     ],
+     "refused": 0
+    },
+    "down": true,
+    "up": true,
+    "control": "human",
+    "cursorMessages": 6
+   },
+   "click": {
+    "ok": true,
+    "ms": 3249,
+    "sincePersonMs": 3277
+   },
+   "state": "submitted:x",
+   "controlAfter": "agent"
+  }
+ },
+ "serve": {
+  "code": 0,
+  "signal": null
+ },
+ "mawsInspectAtQuit": null,
+ "finished": "2026-10-16T17:39:23.094Z",
+ "verdict": {
+  "status": "PASS",
+  "failures": []
+ }
+}

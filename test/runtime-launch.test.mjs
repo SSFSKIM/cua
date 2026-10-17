@@ -12,10 +12,11 @@ import {writeCuaRecord, writeVendorRecord} from './fixtures/route-records.mjs';
 import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs';
 import {scratch, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
+import {CuaError} from '../src/runtime/errors.mjs';
 import {connectionSecrets} from '../src/secrets/store.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends} from '../src/profiles/inventory.mjs';
-import {inspectRuntime} from '../src/runtime/doctor.mjs';
+import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {hostIdentity, REPL_HOST_META_KEY, REPL_HOST_NAME, REPL_HOST_VERSION} from '../src/repl-host/identity.mjs';
 import {toolOverrides} from '../src/repl-host/instructions.mjs';
 
@@ -201,7 +202,9 @@ test('cua\'s service is the default selection on the cua route, unset or empty, 
   assert.equal(BROWSER_SERVICE_IMPL_DIR, join(repo, 'src', 'browser-service'));
   for (const ambient of [AMBIENT, {...AMBIENT, CUA_BROWSER_SERVICE: ''}, {...AMBIENT, CUA_BROWSER_SERVICE: 'cua'}]) {
     const label = JSON.stringify(ambient.CUA_BROWSER_SERVICE);
-    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
+    // On the vendor host (explicit, else this browser-only session defaults to the own host), whose launch names its
+    // trusted roots NODE_REPL_TRUSTED_CODE_PATHS; the own host's are the next tests'.
+    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...ambient, CUA_REPL_HOST: 'vendor'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
     assert.equal(env.CUA_BROWSER_SERVICE, 'cua', `${label}: the selection is written out, so the wrapper never falls back on a default`);
     assert.deepEqual(env.NODE_REPL_TRUSTED_CODE_PATHS.split(':'), [runtime.paths.moduleDir, dirname(BROWSER_SERVICE), ...SERVICE_SUPPORT_DIRS, BROWSER_SERVICE_IMPL_DIR], label);
     for (const wider of [repo, join(repo, 'src'), home]) assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(wider), `${label}: ${wider}`);
@@ -258,7 +261,7 @@ test('with both registrations the launch\'s service and its backend sockets foll
     const {home, runtime} = fixtureRuntime(t);
     writeVendorRecord(home, {at: vendorAt});
     writeCuaRecord(home, {at: cuaAt});
-    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
+    const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'vendor'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
     assert.equal(env.CUA_BROWSER_SERVICE, service, `${service} registered last`);
     if (service === 'vendor') assert.equal(env.BROWSER_USE_BACKEND_PATHS, undefined, 'the vendor service discovers OpenAI\'s hosts itself');
     else assert.equal(typeof env.BROWSER_USE_BACKEND_PATHS, 'string', 'cua\'s service is given cua\'s host sockets');
@@ -272,7 +275,7 @@ test('a home on the ChatGPT extension route launches the vendor\'s service by de
   const {env} = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}});
   assert.equal(env.CUA_BROWSER_SERVICE, 'vendor');
   assert.ok(!env.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(BROWSER_SERVICE_IMPL_DIR));
-  const explicit = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: 'cua'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}).env;
+  const explicit = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_BROWSER_SERVICE: 'cua', CUA_REPL_HOST: 'vendor'}, surfaces: ['browser'], services: {browser: BROWSER_SERVICE}}).env;
   assert.equal(explicit.CUA_BROWSER_SERVICE, 'cua', 'an explicit value wins over the route');
   assert.ok(explicit.NODE_REPL_TRUSTED_CODE_PATHS.split(':').includes(BROWSER_SERVICE_IMPL_DIR));
 });
@@ -360,10 +363,20 @@ const MAWS = selection('cua', 'maws_client_mode', {route: 'vendor'});
 const EXPLICIT_CUA = selection('cua', 'explicit', {route: 'vendor'});
 const EXPLICIT_VENDOR = selection('vendor', 'explicit', {route: 'cua'});
 const SELECTIONS = {NO_REGISTRATION, CHATGPT_ROUTE, CUA_ROUTE, MAWS, EXPLICIT_CUA, EXPLICIT_VENDOR};
-const hostFor = (platform, surfaces, browserSelection, host) => outcome(() => replHostFor({platform, surfaces, ambient: host === undefined ? {} : {CUA_REPL_HOST: host}, browserSelection: surfaces.includes('browser') ? browserSelection : null}));
+// The own host's Node as a connection resolves it (ownHostNode), injected: one that finds a Node 24 or later, and one
+// that finds none, as ownHostNode refuses (repl_host_node, with the candidates it tried).
+const NODE24 = '/fixture/node24/bin/node';
+const TRIED = ['CUA_NODE (unset)', 'the node running cua /fixture/node22 (v22.23.2)', 'node on PATH (not found)'];
+const withNode = () => NODE24;
+const withoutNode = () => { throw Object.assign(new CuaError('repl_host_node', 'cua\'s own REPL host needs Node 24 or later, and none was found'), {tried: TRIED}); };
+const hostFor = (platform, surfaces, browserSelection, host, resolveOwnNode = withNode) => outcome(() => replHostFor({platform, surfaces, ambient: host === undefined ? {} : {CUA_REPL_HOST: host},
+  browserSelection: surfaces.includes('browser') ? browserSelection : null, resolveOwnNode}));
+// A resolver that counts its calls, so a test can say whether (and how often) a selection asked for Node.
+const counted = resolve => { const fn = () => { fn.calls++; return resolve(); }; fn.calls = 0; return fn; };
 
-test('the REPL host follows the selection table: vendor browser routes and macOS computer keep vendor, every other session keeps the staged vendor default until M5', () => {
+test('the REPL host follows the selection table: vendor browser routes and macOS computer keep vendor, Linux and browser-only sessions default to cua\'s own host', () => {
   const vendor = reason => ({host: 'vendor', reason});
+  const own = reason => ({host: 'cua', reason, node: NODE24});
   for (const unset of [undefined, '']) {
     const label = what => `${what}, CUA_REPL_HOST=${JSON.stringify(unset)}`;
     for (const [platform, surfaces, browserSelection, expected] of [
@@ -371,25 +384,56 @@ test('the REPL host follows the selection table: vendor browser routes and macOS
       ['linux', BOTH, CHATGPT_ROUTE, vendor('vendor_browser_route')],
       ['linux', BROWSER, EXPLICIT_VENDOR, vendor('vendor_browser_route')],
       ['darwin', BOTH, NO_REGISTRATION, vendor('vendor_browser_route')],
-      ['linux', COMPUTER, null, vendor('staged_vendor_default')],
-      ['linux', BROWSER, CUA_ROUTE, vendor('staged_vendor_default')],
-      ['linux', BOTH, MAWS, vendor('staged_vendor_default')],
-      ['darwin', BROWSER, CUA_ROUTE, vendor('staged_vendor_default')],
-      ['darwin', BROWSER, MAWS, vendor('staged_vendor_default')],
-      ['darwin', BROWSER, EXPLICIT_CUA, vendor('staged_vendor_default')],
+      ['linux', COMPUTER, null, own('linux')],
+      ['linux', COMPUTER, EXPLICIT_VENDOR, own('linux')],   // without the browser surface the browser setting is not read
+      ['linux', BROWSER, CUA_ROUTE, own('linux')],
+      ['linux', BOTH, MAWS, own('linux')],
+      ['linux', BOTH, EXPLICIT_CUA, own('linux')],
+      ['darwin', BROWSER, CUA_ROUTE, own('browser_only')],
+      ['darwin', BROWSER, MAWS, own('browser_only')],
+      ['darwin', BROWSER, EXPLICIT_CUA, own('browser_only')],
       ['darwin', COMPUTER, null, vendor('macos_native_peer_requires_vendor')],
       ['darwin', BOTH, CUA_ROUTE, vendor('macos_native_peer_requires_vendor')],
       ['darwin', BOTH, MAWS, vendor('macos_native_peer_requires_vendor')],   // MAWS client mode does not override macOS computer
-    ]) assert.deepEqual(hostFor(platform, surfaces, browserSelection, unset), expected, label(`${platform} ${surfaces} ${JSON.stringify(browserSelection)}`));
+    ]) {
+      const resolve = counted(withNode);
+      assert.deepEqual(hostFor(platform, surfaces, browserSelection, unset, resolve), expected, label(`${platform} ${surfaces} ${JSON.stringify(browserSelection)}`));
+      assert.equal(resolve.calls, expected.host === 'cua' ? 1 : 0, label(`${platform} ${surfaces}: Node is asked for only where the default is cua's host, once`));
+    }
   }
-  for (const platform of ['darwin', 'linux']) for (const surfaces of [COMPUTER, BROWSER, BOTH]) for (const browserSelection of Object.values(SELECTIONS))
-    assert.deepEqual(hostFor(platform, surfaces, browserSelection, 'vendor'), vendor('explicit'), `${platform} ${surfaces}: an explicit vendor is the rollback everywhere`);
+  for (const platform of ['darwin', 'linux']) for (const surfaces of [COMPUTER, BROWSER, BOTH]) for (const browserSelection of Object.values(SELECTIONS)) {
+    const resolve = counted(withNode);
+    assert.deepEqual(hostFor(platform, surfaces, browserSelection, 'vendor', resolve), vendor('explicit'), `${platform} ${surfaces}: an explicit vendor is the rollback everywhere`);
+    assert.equal(resolve.calls, 0, 'the rollback never probes Node');
+  }
+});
+
+test('with no Node 24 or later, a session the table moves to cua\'s own host keeps the vendor host, naming why and what was tried', () => {
+  for (const unset of [undefined, '']) for (const [platform, surfaces, browserSelection] of [['linux', COMPUTER, null], ['linux', BROWSER, CUA_ROUTE], ['linux', BOTH, MAWS],
+    ['darwin', BROWSER, CUA_ROUTE], ['darwin', BROWSER, MAWS], ['darwin', BROWSER, EXPLICIT_CUA]])
+    assert.deepEqual(hostFor(platform, surfaces, browserSelection, unset, withoutNode), {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: TRIED}, `${platform} ${surfaces} ${browserSelection?.reason}`);
+  // Sessions that keep the vendor host for another reason keep that reason.
+  assert.deepEqual(hostFor('darwin', BOTH, CUA_ROUTE, undefined, withoutNode), {host: 'vendor', reason: 'macos_native_peer_requires_vendor'});
+  assert.deepEqual(hostFor('linux', BROWSER, CHATGPT_ROUTE, undefined, withoutNode), {host: 'vendor', reason: 'vendor_browser_route'});
+  // A CUA_NODE that is not an absolute path is an invalid setting, refused, not a missing Node.
+  const invalid = () => { throw new CuaError('invalid_setting', 'CUA_NODE must be the absolute path of a Node executable'); };
+  assert.equal(hostFor('linux', COMPUTER, null, undefined, invalid).code, 'invalid_setting');
+  // The default resolver is the production one: an implicit Linux session with an unusable CUA_NODE and no other Node.
+  const s = scratch();
+  try {
+    const old = fakeNode(realpathSync(s.dir), 'old/node', '22.23.2');
+    assert.deepEqual(outcome(() => replHostFor({platform: 'linux', surfaces: COMPUTER, ambient: {CUA_NODE: old, PATH: dirname(old)}, browserSelection: null})).reason,
+      Number(process.versions.node.split('.')[0]) >= NODE_FLOOR ? 'linux' : 'own_host_node_unavailable', 'the node running cua is the second candidate');
+  } finally { s.cleanup(); }
 });
 
 test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and otherwise refused before launch, never downgraded to vendor', () => {
   for (const [platform, surfaces, browserSelection] of [['linux', COMPUTER, null], ['linux', BROWSER, CUA_ROUTE], ['linux', BOTH, MAWS], ['darwin', BROWSER, CUA_ROUTE], ['darwin', BROWSER, MAWS], ['darwin', BROWSER, EXPLICIT_CUA],
     ['linux', COMPUTER, EXPLICIT_VENDOR]])   // without the browser surface the browser setting is not read, as the launch ignores it
-    assert.deepEqual(hostFor(platform, surfaces, browserSelection, 'cua'), {host: 'cua', reason: 'explicit'}, `${platform} ${surfaces} ${browserSelection?.reason}`);
+    assert.deepEqual(hostFor(platform, surfaces, browserSelection, 'cua'), {host: 'cua', reason: 'explicit', node: NODE24}, `${platform} ${surfaces} ${browserSelection?.reason}`);
+  // With no Node 24 or later an explicit cua is refused with the resolver's diagnostic, never downgraded to vendor.
+  for (const [platform, surfaces, browserSelection] of [['linux', COMPUTER, null], ['darwin', BROWSER, CUA_ROUTE]])
+    assert.deepEqual(hostFor(platform, surfaces, browserSelection, 'cua', withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'});
 
   const refused = (platform, surfaces, browserSelection, ...patterns) => {
     const result = hostFor(platform, surfaces, browserSelection, 'cua');
@@ -407,11 +451,14 @@ test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and 
   refused('darwin', BOTH, CUA_ROUTE, /#117/);
   refused('darwin', BOTH, MAWS, /#117/);
 
-  // Whatever the inputs: no override never selects cua before M5, vendor is always vendor, cua is cua or a refusal.
+  // Whatever the inputs: no override selects cua exactly where an explicit cua is honoured and a Node 24 resolves,
+  // and never refuses; vendor is always vendor; cua is cua or a refusal.
   for (const platform of ['darwin', 'linux']) for (const surfaces of [COMPUTER, BROWSER, BOTH]) for (const browserSelection of Object.values(SELECTIONS)) {
-    assert.equal(hostFor(platform, surfaces, browserSelection, undefined).host, 'vendor');
     const cua = hostFor(platform, surfaces, browserSelection, 'cua');
     assert.ok(cua.host === 'cua' || cua.code === 'repl_host_refused', JSON.stringify(cua));
+    const implicit = hostFor(platform, surfaces, browserSelection, undefined);
+    assert.equal(implicit.host, cua.host === 'cua' ? 'cua' : 'vendor', JSON.stringify(implicit));
+    assert.equal(hostFor(platform, surfaces, browserSelection, undefined, withoutNode).host, 'vendor');
   }
 });
 
@@ -447,6 +494,10 @@ test('the own host\'s Node is the first of CUA_NODE, the running node and node o
   assert.match(missing.message, /CUA_NODE .*absent \(not found\)/);
   assert.match(missing.message, /node on PATH \(not found\)/);
   for (const bad of ['node', 'bin/node', '~/node']) assert.equal(outcome(() => ownHostNode({ambient: {CUA_NODE: bad}, execPath: v26})).code, 'invalid_setting', bad);
+  // The refusal carries the candidates it tried, for a selection that falls back to the vendor host to name them.
+  try { ownHostNode({ambient: {CUA_NODE: v22, PATH: dirname(oldOnPath)}, execPath: broken}); assert.fail('resolved'); } catch (error) {
+    assert.deepEqual(error.tried, [`CUA_NODE ${v22} (v22.23.2)`, `the node running cua ${broken} (no readable version)`, `node on PATH ${dirname(oldOnPath)}/node (v23.11.1)`]);
+  }
 });
 
 test('the launch records the host it runs; an explicit cua host runs the own supervisor on the resolved user Node, never the vendor\'s', t => {
@@ -467,8 +518,13 @@ test('the launch records the host it runs; an explicit cua host runs the own sup
   assert.equal(own.command, node);
   assert.deepEqual(own.args, ['--disable-sigusr1', REPL_HOST_SUPERVISOR]);
   assert.equal(own.cwd, join(home, 'run', SESSION));
-  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: '/not/consulted'}, ownNode: node, ...browserOnly}).command, node,
-    'a Node the connection resolved once is used as given');
+  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: '/not/consulted'}, replHost: {host: 'cua', reason: 'explicit', node}, ...browserOnly}).command, node,
+    'the Node the connection\'s selection resolved once is used as given');
+  const resolveOwnNode = () => node;
+  const implicit = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode, ...browserOnly});
+  assert.deepEqual([implicit.replHost, implicit.command], [{host: 'cua', reason: 'browser_only'}, node], 'browser-only on the cua route defaults to the own host');
+  const noNode = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, resolveOwnNode: () => ownHostNode({ambient: {}, execPath: join(dir, 'absent')}), ...browserOnly});
+  assert.deepEqual([noNode.replHost, noNode.command], [{host: 'vendor', reason: 'own_host_node_unavailable'}, runtime.paths.node], 'and keeps the vendor host where no Node 24 resolves');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: 'node'}, ...browserOnly})).code, 'invalid_setting');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua'}})).code, 'repl_host_refused', 'macOS computer');
   assert.equal(outcome(() => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'own'}, ...browserOnly})).code, 'invalid_repl_host');
@@ -520,6 +576,36 @@ test('the scoped preflight protects the own host\'s trusted roots, its own code 
   assertSandboxFits('scoped', {...launch, replHost: {host: 'vendor', reason: 'explicit'}, env: {...launch.env, TMPDIR: dirname(REPL_HOST_DIR), CUA_REPL_TRUSTED_CODE_PATHS: undefined}});
 });
 
+for (const [name, label, key] of [['node', 'the Node cua installed for its own REPL host', 'managedNodeRoot'], ['staging', 'cua install\'s staging directory', 'stagingRoot']]) {
+  test(`the scoped preflight protects $CUA_HOME/${name} (${label}) on either host, by real path`, t => {
+    const {home, dir, runtime} = fixtureRuntime(t);
+    writeCuaRecord(home);
+    const node = fakeNode(dir, 'n/node', '24.1.0');
+    const own = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_REPL_HOST: 'cua', CUA_NODE: node}, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
+    const vendor = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT});
+    const root = join(realpathSync(home), name);
+    assert.equal(own[key], root);
+    assert.equal(vendor[key], root);
+    assert.equal(Object.values(own.env).includes(root), false, 'the root is the proxy\'s to protect, not a runtime setting');
+    mkdirSync(join(root, 'inner'), {recursive: true});
+    symlinkSync(root, join(dir, `${name}-alias`));
+    const escaped = `${label} ${root}`.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const launch of [own, vendor]) {
+      assertSandboxFits('scoped', launch);
+      for (const tmpdir of [root, join(root, 'inner', 'tmp'), join(dir, `${name}-alias`), join(dir, `${name}-alias`, 'later')]) {
+        const overlap = outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: tmpdir}}));
+        assert.equal(overlap.code, 'sandbox_conflict', `${launch.replHost.host} ${tmpdir}`);
+        assert.match(overlap.message, new RegExp(escaped));
+      }
+      assertSandboxFits('disabled', {...launch, env: {...launch.env, TMPDIR: root}});
+    }
+    // Protected before it exists, too.
+    const fresh = fixtureRuntime(t);
+    const launch = buildLaunch({runtime: fresh.runtime, home: fresh.home, sessionId: SESSION, ambient: AMBIENT});
+    assert.equal(outcome(() => assertSandboxFits('scoped', {...launch, env: {...launch.env, TMPDIR: join(realpathSync(fresh.home), name)}})).code, 'sandbox_conflict');
+  });
+}
+
 test('an own-host launch refuses a trusted service outside every trusted root, through a symlink too, before anything starts', t => {
   const {home, dir, runtime} = fixtureRuntime(t);
   writeCuaRecord(home);
@@ -550,11 +636,13 @@ test('a launch given the connection\'s selections uses them, not a fresh resolut
   const {home, runtime} = fixtureRuntime(t);
   writeCuaRecord(home, {at: EARLY});
   const browserSelection = browserSelectionFor({}, home);
-  const replHost = replHostFor({platform: 'darwin', surfaces: BROWSER, ambient: {}, browserSelection});
+  const node = '/fixture/node24/bin/node';
+  const replHost = replHostFor({platform: 'darwin', surfaces: BROWSER, ambient: {}, browserSelection, resolveOwnNode: () => node});
   writeVendorRecord(home, {at: LATE});   // the ChatGPT route is now the most recent registration
-  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}, browserSelection, replHost});
+  const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}, browserSelection, replHost,
+    resolveOwnNode: () => assert.fail('a launch given the selection does not resolve Node again')});
   assert.equal(launch.env.CUA_BROWSER_SERVICE, 'cua');
-  assert.deepEqual(launch.replHost, {host: 'vendor', reason: 'staged_vendor_default'});
+  assert.deepEqual([launch.replHost, launch.command], [{host: 'cua', reason: 'browser_only'}, node]);
   const fresh = buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, surfaces: BROWSER, services: {browser: BROWSER_SERVICE}});
   assert.equal(fresh.env.CUA_BROWSER_SERVICE, 'vendor');
   assert.deepEqual(fresh.replHost, {host: 'vendor', reason: 'vendor_browser_route'});
@@ -565,21 +653,22 @@ test('the host identity names the answering host and its version: the own host\'
   assert.equal(REPL_HOST_META_KEY, 'cua/replHost');
   assert.match(REPL_HOST_VERSION, /^\d+\.\d+\.\d+$/);
   // Bumped once per milestone that changes what the own host answers (#116): 0.2.0 at M1, 0.3.0 for M2 and M3, 0.4.0
-  // for M4's Linux native route, so no recorded handshake or evidence of an earlier host passes for this one.
-  assert.equal(REPL_HOST_VERSION, '0.4.0');
+  // for M4's Linux native route, 0.5.0 for M5's default switch (with M4's lifeline and strerror changes), so no
+  // recorded handshake or evidence of an earlier host passes for this one.
+  assert.equal(REPL_HOST_VERSION, '0.5.0');
   assert.deepEqual(hostIdentity({host: 'cua', release: '26.928.40906-darwin-arm64'}), {host: 'cua', version: REPL_HOST_VERSION});
   assert.deepEqual(hostIdentity({host: 'vendor', release: '26.928.40906-darwin-arm64'}), {host: 'vendor', version: '26.928.40906-darwin-arm64'});
 });
 
 // The matrix through both launch consumers (a connection, src/mcp/connection.mjs, and the independent browser-only
 // profiles listing, src/profiles/inventory.mjs) and doctor's repl.host row: every route (no registration, ChatGPT active,
-// cua active, both orderings, MAWS client mode), surface set and explicit pair, on both platforms, agrees with
-// replHostFor. Nothing is spawned: prepareLaunch captures the launch and stops it.
-test('connections, the profiles listing and doctor agree with the selection table on every route, surface set and explicit pair', async t => {
+// cua active, both orderings, MAWS client mode), surface set and explicit pair, on both platforms, with and without a
+// Node 24 or later for the own host, agrees with replHostFor. Nothing is spawned: prepareLaunch captures the launch and
+// stops it. The Node is injected (resolveOwnNode), so the matrix does not depend on the Node running the tests.
+test('connections, the profiles listing and doctor agree with the selection table on every route, surface set, explicit pair and Node', async t => {
   const STOP = Object.assign(new Error('stopped before spawn'), {code: 'test_stop'});
   const capture = launches => launch => { launches.push(launch); throw STOP; };
   const usernsPass = async () => ({status: 'pass'});
-  const node = (() => { const s = scratch(); t.after(s.cleanup); return fakeNode(realpathSync(s.dir), 'node', '24.18.0'); })();
   const ROUTES = {
     'no registration': () => {},
     'ChatGPT active': home => writeVendorRecord(home, {at: EARLY}),
@@ -589,37 +678,43 @@ test('connections, the profiles listing and doctor agree with the selection tabl
   };
   const BROWSER_SETTINGS = {'service unset': {}, 'MAWS client mode': {CUA_BROWSER_BACKENDS: '/maws/a.sock'}, 'service vendor': {CUA_BROWSER_SERVICE: 'vendor'}, 'service cua': {CUA_BROWSER_SERVICE: 'cua'}};
   const HOSTS = {'host unset': {}, 'host vendor': {CUA_REPL_HOST: 'vendor'}, 'host cua': {CUA_REPL_HOST: 'cua'}};
+  // An explicit vendor never asks for Node, so the no-Node column repeats only the other two.
+  const NODES = {'Node 24': {resolve: withNode, hosts: Object.keys(HOSTS)}, 'no Node 24': {resolve: withoutNode, hosts: ['host unset', 'host cua']}};
   // What every consumer must show: replHostFor's selection, the own host's included.
-  const expected = ({platform, surfaces, env, home}) => outcome(() => replHostFor({platform, surfaces, ambient: env, browserSelection: surfaces.includes('browser') ? browserSelectionFor(env, home) : null}));
+  const expected = ({platform, surfaces, env, home, resolveOwnNode}) => outcome(() => replHostFor({platform, surfaces, ambient: env, resolveOwnNode, browserSelection: surfaces.includes('browser') ? browserSelectionFor(env, home) : null}));
+  const recorded = r => (r.code ? r : {host: r.host, reason: r.reason});   // a launch records {host, reason}
   const doctorStubs = {inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
     inspectChrome: async () => [], inspectLogin: async () => ({state: 'logged-out'}), inspectLinux: async () => [], verifySignatures: async () => []};
   const words = r => (r.code ? `refused (${r.code}): ${r.message}` : `${r.host} host (${r.reason})`);
+  const status = (...rs) => (rs.some(r => r.code) ? 'fail' : rs.some(r => r.reason === 'own_host_node_unavailable') ? 'warn' : 'pass');
   let rows = 0;
   for (const host of [DARWIN, LINUX]) {
     for (const [routeLabel, register] of Object.entries(ROUTES)) {
       const home = fakeInstalledHome(t, {host});
       register(home);
       const runtime = resolveRuntime({home, host});
-      for (const [browserLabel, browserEnv] of Object.entries(BROWSER_SETTINGS)) for (const [hostLabel, hostEnv] of Object.entries(HOSTS)) {
-        const base = {PATH: '/usr/bin:/bin', CUA_NODE: node, CUA_SHIM_SECRETS: 'off', ...browserEnv, ...hostEnv};
+      for (const [nodeLabel, {resolve, hosts}] of Object.entries(NODES)) for (const [browserLabel, browserEnv] of Object.entries(BROWSER_SETTINGS)) for (const hostLabel of hosts) {
+        const base = {PATH: '/usr/bin:/bin', CUA_SHIM_SECRETS: 'off', ...browserEnv, ...HOSTS[hostLabel]};
         // The independent listing: browser only, whatever the connection's surfaces.
-        const listingExpected = expected({platform: host.platform, surfaces: BROWSER, env: base, home});
+        const listingExpected = expected({platform: host.platform, surfaces: BROWSER, env: base, home, resolveOwnNode: resolve});
         const listed = [];
-        const listing = await listLiveBackends({home, runtime, ambient: base, tabCounts: false, probeUserns: usernsPass, prepareLaunch: capture(listed)}).then(() => ({}), error => error);
-        const label = `${host.platform}, ${routeLabel}, ${browserLabel}, ${hostLabel}`;
+        const listing = await listLiveBackends({home, runtime, ambient: base, tabCounts: false, probeUserns: usernsPass, resolveOwnNode: resolve, prepareLaunch: capture(listed)}).then(() => ({}), error => error);
+        const label = `${host.platform}, ${routeLabel}, ${nodeLabel}, ${browserLabel}, ${hostLabel}`;
         if (listingExpected.code) assert.deepEqual({code: listing.code, message: listing.message, launches: listed.length}, {...listingExpected, launches: 0}, `listing: ${label}`);
-        else assert.deepEqual({code: listing.code, replHost: listed[0]?.replHost}, {code: 'test_stop', replHost: listingExpected}, `listing: ${label}`);
+        else assert.deepEqual({code: listing.code, replHost: listed[0]?.replHost, command: listed[0]?.command}, {code: 'test_stop', replHost: recorded(listingExpected),
+          command: listingExpected.host === 'cua' ? NODE24 : runtime.paths.node}, `listing: ${label}`);
 
         for (const surfaces of [COMPUTER, BROWSER, BOTH]) {
           const env = {...base, CUA_SHIM_SURFACES: surfaces.join(',')};
-          const sessionExpected = expected({platform: host.platform, surfaces, env, home});
+          const sessionExpected = expected({platform: host.platform, surfaces, env, home, resolveOwnNode: resolve});
           const full = `${label}, ${surfaces}`;
           const launches = [];
           const input = new PassThrough(), output = new PassThrough();
           const frames = [];
           createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
+          const resolveOwnNode = counted(resolve);
           const opened = await openConnection({home, env, host, sessionId: randomUUID(), input, output, diagnostics: () => {}, prepareLaunch: capture(launches), probeUserns: usernsPass,
-            chrome: {}, listBackends: async () => ({backends: []})}).then(connection => ({connection}), error => ({error}));
+            chrome: {}, listBackends: async () => ({backends: []}), resolveOwnNode}).then(connection => ({connection}), error => ({error}));
           if (sessionExpected.code) {
             assert.deepEqual({code: opened.error?.code, message: opened.error?.message}, sessionExpected, `connection: ${full}`);
           } else {
@@ -628,11 +723,12 @@ test('connections, the profiles listing and doctor agree with the selection tabl
             for (let i = 0; i < 200 && !frames.length; i++) await new Promise(resolve => setTimeout(resolve, 5));
             input.end();
             await opened.connection.closed;
-            assert.deepEqual(launches.map(l => l.replHost), [sessionExpected], `connection: ${full}`);
+            assert.deepEqual(launches.map(l => [l.replHost, l.command]), [[recorded(sessionExpected), sessionExpected.host === 'cua' ? NODE24 : runtime.paths.node]], `connection: ${full}`);
           }
+          assert.ok(resolveOwnNode.calls <= 1, `connection: ${full}: Node is resolved at most once per connection (${resolveOwnNode.calls})`);
 
-          const row = (await inspectRuntime({home, env, host, ...doctorStubs})).checks.find(c => c.name === 'repl.host');
-          assert.equal(row?.status, sessionExpected.code || listingExpected.code ? 'fail' : 'pass', `doctor: ${full}: ${row?.detail}`);
+          const row = (await inspectRuntime({home, env, host, resolveOwnNode: resolve, ...doctorStubs})).checks.find(c => c.name === 'repl.host');
+          assert.equal(row?.status, status(sessionExpected, listingExpected), `doctor: ${full}: ${row?.detail}`);
           assert.ok(row.detail.startsWith(`${words(sessionExpected)}`), `doctor: ${full}: ${row.detail}`);
           assert.ok(row.detail.includes(`profile listing (browser only): ${words(listingExpected)}`), `doctor: ${full}: ${row.detail}`);
           if (surfaces.includes('browser') && !env.CUA_BROWSER_SERVICE) assert.match(row.detail, /Browser route: /, `doctor names the route: ${full}`);
@@ -641,7 +737,7 @@ test('connections, the profiles listing and doctor agree with the selection tabl
       }
     }
   }
-  assert.equal(rows, 2 * 5 * 4 * 3 * 3);
+  assert.equal(rows, 2 * 5 * 4 * (3 + 2) * 3);
 });
 
 test('doctor\'s repl.host row names the route and the registration that decided it, or their absence', async t => {
@@ -669,4 +765,55 @@ test('doctor\'s repl.host row names the route and the registration that decided 
   const invalid = await row(homeWith(), {CUA_REPL_HOST: 'own'});
   assert.equal(invalid.status, 'fail');
   assert.match(invalid.detail, /CUA_REPL_HOST must be cua or vendor/);
+});
+
+test('doctor\'s repl.host row explains the M5 defaults, and warns with the remedies where no Node 24 lets a session default to cua\'s own host', async t => {
+  const s = scratch();
+  t.after(s.cleanup);
+  writeCuaRecord(s.dir, {at: EARLY});
+  const stubs = {inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
+    inspectChrome: async () => [], inspectLogin: async () => ({state: 'logged-out'}), inspectLinux: async () => [], verifySignatures: async () => []};
+  const row = async (host, env, resolveOwnNode, home = s.dir) => (await inspectRuntime({home, host, env, resolveOwnNode, ...stubs})).checks.find(c => c.name === 'repl.host');
+
+  const browserOnly = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser'}, withNode);
+  assert.equal(browserOnly.status, 'pass');
+  assert.ok(browserOnly.detail.startsWith(`cua host (browser_only) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default for a browser-only session on cua's browser service`), browserOnly.detail);
+  assert.match(browserOnly.detail, /CUA_REPL_HOST=vendor/, 'names the rollback');
+  const linux = await row(LINUX, {CUA_SHIM_SURFACES: 'computer', DISPLAY: ':0'}, withNode);
+  assert.ok(linux.detail.startsWith(`cua host (linux) on Node ${NODE24}: CUA_REPL_HOST is unset, and cua's own host is the default on Linux`), linux.detail);
+  assert.ok(linux.detail.includes(`The profile listing (browser only): cua host (linux) on Node ${NODE24}`), linux.detail);
+
+  // No Node 24: both the session and the listing keep the vendor host, and the row is a warning naming the remedies,
+  // `cua install` (which installs the pinned Node for the own host) first.
+  const resolve = counted(withoutNode);
+  const warned = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser'}, resolve);
+  assert.equal(warned.status, 'warn');
+  assert.equal(resolve.calls, 1, 'doctor resolves Node once for the session and the listing, as a connection does');
+  for (const pattern of [/^vendor host \(own_host_node_unavailable\)/, /cua's own host needs Node 24 or later/, new RegExp(TRIED.map(x => x.replace(/[()]/g, '\\$&')).join(', ')),
+    /run `cua install` \(it installs the pinned Node 24 for it under \$CUA_HOME\/node\)/, /install Node 24 or later yourself/, /set CUA_NODE to the absolute path of one/, /The profile listing \(browser only\): vendor host \(own_host_node_unavailable\)/])
+    assert.match(warned.detail, pattern);
+  // A session that keeps the vendor host anyway (macOS computer) still warns for its listing, which would default to cua.
+  const computer = await row(DARWIN, {CUA_SHIM_SURFACES: 'computer,browser'}, withoutNode);
+  assert.equal(computer.status, 'warn');
+  assert.match(computer.detail, /^vendor host \(macos_native_peer_requires_vendor\)/);
+  // An explicit cua with no Node 24 is a refusal, as the connection's is.
+  const explicit = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser', CUA_REPL_HOST: 'cua'}, withoutNode);
+  assert.equal(explicit.status, 'fail');
+  assert.match(explicit.detail, /^refused \(repl_host_node\)/);
+  // A CUA_NODE that is not an absolute path fails the row whatever the selection, as `cua serve` refuses it at start
+  // (settingsFrom): an explicit vendor host and an implicit vendor route never ask for Node, and still fail.
+  const chatgpt = scratch();
+  t.after(chatgpt.cleanup);
+  // The home with no registration is the ChatGPT extension route: its browser-only session keeps the vendor host.
+  assert.match((await row(DARWIN, {CUA_SHIM_SURFACES: 'browser'}, withNode, chatgpt.dir)).detail, /^vendor host \(vendor_browser_route\)/);
+  for (const [home, env] of [[s.dir, {CUA_REPL_HOST: 'vendor'}], [chatgpt.dir, {}], [s.dir, {CUA_SHIM_SURFACES: 'computer'}]]) {
+    const resolve = counted(withNode);
+    const invalid = await row(DARWIN, {CUA_SHIM_SURFACES: 'browser', ...env, CUA_NODE: 'relative/node'}, resolve, home);
+    assert.equal(invalid.status, 'fail', JSON.stringify(env));
+    assert.match(invalid.detail, /^CUA_NODE must be the absolute path of a Node executable; every connection is refused/, JSON.stringify(env));
+    assert.equal(resolve.calls, 0, 'refused on its form, before any selection');
+  }
+  // The summary names a warning without calling the setup unhealthy.
+  const report = await inspectRuntime({home: s.dir, host: DARWIN, env: {CUA_SHIM_SURFACES: 'browser'}, resolveOwnNode: withoutNode, ...stubs});
+  assert.match(summarize({...report, ok: true}), /warn: repl\.host/);
 });

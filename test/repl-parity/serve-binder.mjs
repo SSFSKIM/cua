@@ -6,9 +6,10 @@ import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
 import {executionFacts,assertPreparedFacts,attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
 import {cellsServeEnv} from './fixture-launch.mjs';
-import {noServicesLaunch} from './serve-cells.mjs';
+import {noServicesLaunch,attestFixtureLaunch,fixtureNodeEnvironment} from './serve-cells.mjs';
 import {binderServices,binderBanner} from './fixtures/binder-bootstrap.mjs';
-export function prepareBinderLaunch(launch,{host}={}){
+export function prepareBinderLaunch(launch,{host,...provenance}={}){
+ if(provenance.facts)attestFixtureLaunch(launch,{host,...provenance});
  const prefix=host==='vendor'?'NODE_REPL':'CUA_REPL';
  const originalRoots=launch.env[`${prefix}_TRUSTED_CODE_PATHS`].split(delimiter);
  const services=binderServices();services.roots=[...new Set([...originalRoots,...services.roots])];
@@ -27,7 +28,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const source=process.env.CUA_HOME,host=process.env.CUA_REPL_HOST,facts=executionFacts({source});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
  const scratch=prepareCapabilityHome({source});
  try{
-  const connection=await openConnection({home:scratch.dir,env:cellsServeEnv(process.env,{scratch,sandbox:'scoped',host}),sessionId:randomUUID(),input:process.stdin,output:attestedOutput(process.stdout,facts),chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:launch=>prepareBinderLaunch(launch,{host})});
+  const connection=await openConnection({home:scratch.dir,env:cellsServeEnv(fixtureNodeEnvironment(process.env),{scratch,sandbox:'scoped',host}),sessionId:randomUUID(),input:process.stdin,output:attestedOutput(process.stdout,facts),chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:launch=>prepareBinderLaunch(launch,{host,facts,home:scratch.dir})});
   const stop=()=>connection.close('signal');process.once('SIGTERM',stop);process.once('SIGINT',stop);
   try{process.exitCode=(await connection.closed).code;}finally{process.off('SIGTERM',stop);process.off('SIGINT',stop);}
  }finally{scratch.cleanup();}

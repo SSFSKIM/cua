@@ -73,8 +73,9 @@
 // adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH, NODE_REPL_WORKER_WRAPPER,
 // NODE_REPL_DENIED_PATHS.
 //
-// cua's own REPL host (replHost `cua`, src/repl-host/supervisor.mjs) is launched instead as the user's Node (ownHostNode,
-// at least NODE_FLOOR; never the vendor's pinned Node) running the supervisor with --disable-sigusr1, under the same
+// cua's own REPL host (replHost `cua`, src/repl-host/supervisor.mjs) is launched instead as the Node ownHostNode resolves
+// (at least NODE_FLOOR: CUA_NODE, the Node `cua install` pins under $CUA_HOME/node, else the user's; never the vendor's
+// pinned Node) running the supervisor with --disable-sigusr1, under the same
 // allowlist, CODEX_HOME, CODEX_CLI_PATH (its kernel's sandbox), surfaces, services and secrets settings, with the host's
 // own settings under owned names in place of the vendor's NODE_REPL_ ones (no vendor launcher, node_repl or vendor Node
 // path is set):
@@ -100,13 +101,15 @@
 //                                            (src/repl-host/instructions.mjs), as NODE_REPL_TOOL_OVERRIDES
 //   NODE_REPL_DISABLE_ANALYTICS=1            kept: the retained vendor sky service reads it
 //
+// The launch record also carries `managedNodeRoot`, <home>/node (the Node `cua install` places for the own host), and
+// `stagingRoot`, <home>/staging (where install verifies what it places), which the scoped preflight protects for either
+// host (src/runtime/sandbox.mjs assertSandboxFits); neither is in `env`.
 // The working directory is <home>/run/<sessionId>; model cells can see it, so it is never the caller's directory or
 // the repository. The caller creates it (mode 0700) before spawning and removes it when the connection ends.
 import {accessSync, constants, realpathSync, statSync} from 'node:fs';
-import {execFileSync} from 'node:child_process';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {fail} from './errors.mjs';
+import {CuaError, fail} from './errors.mjs';
 import {homeLayout, realHome} from './layout.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
@@ -114,6 +117,10 @@ import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs'
 import {assertTrustedServicesContained} from './sandbox.mjs';
 import {toolOverrides} from '../repl-host/instructions.mjs';
 import {chromeRoute, registrationTimes} from '../chrome/route.mjs';
+import {cuaNodeFrom} from '../mcp/surface.mjs';
+import {NODE_FLOOR, managedNode, nodeVersion} from './managed-node.mjs';
+
+export {NODE_FLOOR};
 
 const AMBIENT_ALLOWLIST = ['HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', '__CF_USER_TEXT_ENCODING'];
 const FIXED_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -147,24 +154,23 @@ const REPL_HOSTS = ['cua', 'vendor'];
 // its node_repl's allowlist (cua-repl launch.js). The facade reads the first (src/cua-api/bootstrap.mjs); the second's
 // vendor modes are not ported, and the launch never sets it.
 const CELL_ENV_ALLOWLIST = 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV';
-// The oldest Node major cua's own REPL host runs on (its kernel's vm modules); the vendor host keeps its pinned Node.
-export const NODE_FLOOR = 24;
 
 // `browserBackends` ({hostPaths, defaultInstance}) is the process's MAWS backends (src/chrome/client-mode.mjs), when
 // CUA_BROWSER_BACKENDS configured any. `browserSelection` (browserSelectionFor) and `replHost` (replHostFor) are the
 // connection's, resolved once at its open so every launch of it (an idle relaunch too) runs what it resolved then; a
-// caller that gives neither, a single launch, has them resolved here from `ambient` and `home`. `ownNode` is the own
-// host's Node (ownHostNode) when the connection resolved it already; otherwise a launch of the own host resolves it.
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, browserSelection, replHost, ownNode}) {
+// caller that gives neither, a single launch, has them resolved here from `ambient` and `home`, the own host's Node
+// through `resolveOwnNode` (replHostFor's). A `cua` selection carries the Node it resolved (`node`), which the launch runs.
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, browserSelection, replHost, resolveOwnNode}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
   if (secretsDir !== undefined && (typeof secretsDir !== 'string' || !isAbsolute(secretsDir))) fail('invalid_secrets_dir', 'the secret store directory must be an absolute path');
   if (secretsProjectDir !== undefined && (typeof secretsProjectDir !== 'string' || !isAbsolute(secretsProjectDir) || !secretsDir)) fail('invalid_secrets_dir', 'the project secret store directory must be an absolute path beside the global one');
   browserSelection = enabled.includes('browser') ? (browserSelection ?? browserSelectionFor(ambient, home)) : null;
-  replHost ??= replHostFor({platform: runtime.manifest.platform, surfaces: enabled, ambient, browserSelection});
+  replHost ??= replHostFor({platform: runtime.manifest.platform, surfaces: enabled, ambient, home, browserSelection, resolveOwnNode});
   const own = replHost.host === 'cua';
-  if (own) ownNode ??= ownHostNode({ambient});
+  const ownNode = own ? replHost.node : undefined;
+  if (own && typeof ownNode !== 'string') throw new TypeError('buildLaunch: a cua selection carries the Node it resolved');
   const browserService = browserSelection?.service ?? null;
   const owned = homeLayout(realHome(home));
   const p = runtime.paths;
@@ -211,7 +217,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
     env[STORE_ENV.dir] = secretsDir;
     if (secretsProjectDir) env[STORE_ENV.projectDir] = secretsProjectDir;
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
-  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason}};
+  const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd: join(owned.run, sessionId), replHost: {host: replHost.host, reason: replHost.reason},
+    managedNodeRoot: owned.node, stagingRoot: owned.staging};
   if (own) assertTrustedServicesContained(launch);
   return launch;
 }
@@ -259,21 +266,27 @@ export function describeBrowserRoute({service, reason, registration}) {
     : 'the ChatGPT extension route, as a home with no Chrome registration is read';
 }
 
-// The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}. `browserSelection`
-// (browserSelectionFor; required with the browser surface, ignored without it, as the launch ignores CUA_BROWSER_SERVICE
-// then) carries the original explicitness. CUA_REPL_HOST in `ambient`, the caller's original environment:
-//   vendor   always the vendor host (`explicit`): the rollback.
+// The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}, plus, for
+// `cua`, `node`: the Node it runs on, and for `own_host_node_unavailable`, `nodeTried`: the candidates ownHostNode tried.
+// `browserSelection` (browserSelectionFor; required with the browser surface, ignored without it, as the launch ignores
+// CUA_BROWSER_SERVICE then) carries the original explicitness. `resolveOwnNode` resolves the own host's Node
+// (ownHostNode from `ambient` and `home` by default), asked at most once and only when the selection would be cua's own host: a
+// connection resolves its selection once, so its Node too. CUA_REPL_HOST in `ambient`, the caller's original environment:
+//   vendor   always the vendor host (`explicit`): the rollback; Node is never asked for.
 //   cua      cua's own host (`explicit`) where it can run, else refused before launch (repl_host_refused), never
 //            downgraded: with CUA_BROWSER_SERVICE=vendor (a contradictory pair); with the browser surface on a vendor
 //            browser route resolved from the home (named, with the registration that decided it and how to move the
 //            home); with the computer surface on macOS, whose native helper accepts only the vendor host's node_repl as
-//            a peer until #117.
-//   unset or empty   the vendor host: `vendor_browser_route` when the browser surface's service is the vendor's (only the
-//            vendor host runs it), `macos_native_peer_requires_vendor` for the computer surface on macOS (MAWS client
-//            mode does not change that), else `staged_vendor_default`: the sessions #116's last stage (M5) moves to
-//            cua's own host by default (`linux`, `browser_only`).
-// Any other value is refused (invalid_repl_host).
-export function replHostFor({platform, surfaces, ambient, browserSelection}) {
+//            a peer until #117. Where it can run but no Node 24 or later resolves, refused too (repl_host_node).
+//   unset or empty   the vendor host with `vendor_browser_route` when the browser surface's service is the vendor's
+//            (only the vendor host runs it), or `macos_native_peer_requires_vendor` for the computer surface on macOS
+//            (MAWS client mode does not change that); else cua's own host, the default since #116's last stage (M5):
+//            `linux` on Linux, `browser_only` for a macOS session with only the browser surface (on cua's service).
+//            That default needs a Node 24 or later: where none resolves, the vendor host with
+//            `own_host_node_unavailable`, never a refused session (cua itself runs on Node 22).
+// Any other CUA_REPL_HOST is refused (invalid_repl_host), as is a CUA_NODE that is not an absolute path wherever Node is
+// asked for (invalid_setting).
+export function replHostFor({platform, surfaces, ambient, home, browserSelection, resolveOwnNode = () => ownHostNode({ambient, home})}) {
   const value = ambient.CUA_REPL_HOST;
   const requested = value === undefined || value === '' ? null : value;
   if (requested !== null && !REPL_HOSTS.includes(requested)) fail('invalid_repl_host', `CUA_REPL_HOST must be ${REPL_HOSTS.join(' or ')}`);
@@ -288,38 +301,39 @@ export function replHostFor({platform, surfaces, ambient, browserSelection}) {
       fail('repl_host_refused', `CUA_REPL_HOST=cua needs cua's own browser service, but this home's browser service resolves to the vendor's: ${describeBrowserRoute(browser)}. Run \`cua chrome register\` to move this home to the cua route, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor) to keep the vendor host`);
     if (macosComputer)
       fail('repl_host_refused', 'CUA_REPL_HOST=cua is not supported with the computer surface on macOS: its computer-use helper accepts only the vendor host\'s node_repl as a peer until #117 replaces it. Use CUA_SHIM_SURFACES=browser for cua\'s own host, or unset CUA_REPL_HOST (or use CUA_REPL_HOST=vendor)');
-    return {host: 'cua', reason: 'explicit'};
+    return {host: 'cua', reason: 'explicit', node: resolveOwnNode()};
   }
   if (browser?.service === 'vendor') return {host: 'vendor', reason: 'vendor_browser_route'};
   if (macosComputer) return {host: 'vendor', reason: 'macos_native_peer_requires_vendor'};
-  return {host: 'vendor', reason: 'staged_vendor_default'};
+  const reason = platform === 'linux' ? 'linux' : 'browser_only';
+  try {
+    return {host: 'cua', reason, node: resolveOwnNode()};
+  } catch (error) {
+    if (error?.code !== 'repl_host_node') throw error;
+    return {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: error.tried};
+  }
 }
 
-// The Node cua's own REPL host runs on: the first of an explicit CUA_NODE (an absolute path), the node running cua
-// (`execPath`) and the first `node` on the caller's PATH whose `--version` (`versionOf`) is at least NODE_FLOOR, as its
-// real path, which the launch can name in an environment whose PATH is fixed. None: refused (repl_host_node), naming
-// every candidate tried and its version. The vendor host's pinned Node is never a candidate.
-export function ownHostNode({ambient, execPath = process.execPath, versionOf = nodeVersion}) {
-  const explicit = ambient.CUA_NODE || null;
-  if (explicit !== null && !isAbsolute(explicit)) fail('invalid_setting', 'CUA_NODE must be the absolute path of a Node executable');
+// The Node cua's own REPL host runs on: the first of an explicit CUA_NODE (an absolute path), the Node `cua install`
+// placed in `home` (managed-node.mjs; a caller that names no home has none to try), the node running cua (`execPath`)
+// and the first `node` on the caller's PATH whose `--version` (`versionOf`) is at least NODE_FLOOR, as its real path,
+// which the launch can name in an environment whose PATH is fixed. None: refused (repl_host_node), naming every
+// candidate tried and its version, which the error also carries as `tried`. The vendor host's pinned Node is never a
+// candidate.
+export function ownHostNode({ambient, home, execPath = process.execPath, versionOf = nodeVersion}) {
+  const explicit = cuaNodeFrom(ambient);
+  const managed = home === undefined ? null : managedNode(home);
   const tried = [];
-  for (const [label, path] of [['CUA_NODE', explicit], ['the node running cua', execPath], ['node on PATH', nodeOnPath(ambient.PATH)]]) {
-    if (!path) { tried.push(`${label} (${label === 'CUA_NODE' ? 'unset' : 'not found'})`); continue; }
+  for (const [label, path, missing] of [['CUA_NODE', explicit, 'unset'], ...(managed ? [['the cua-installed Node', managed.path, managed.missing]] : []),
+    ['the node running cua', execPath, 'not found'], ['node on PATH', nodeOnPath(ambient.PATH), 'not found']]) {
+    if (!path) { tried.push(`${label} (${missing})`); continue; }
     let real;
     try { real = realpathSync(path); } catch { tried.push(`${label} ${path} (not found)`); continue; }
     const version = versionOf(real);
     if (version && Number(version.slice(1).split('.')[0]) >= NODE_FLOOR) return real;
     tried.push(`${label} ${path} (${version ?? 'no readable version'})`);
   }
-  fail('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and none was found: ${tried.join(', ')}; set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later, or run cua with one (the vendor host's pinned Node is never used for it)`);
-}
-
-// `vX.Y.Z` as the executable at `path` reports it, or null.
-function nodeVersion(path) {
-  try {
-    const out = execFileSync(path, ['--version'], {encoding: 'utf8', timeout: 5000, env: {PATH: FIXED_PATH}, stdio: ['ignore', 'pipe', 'ignore']});
-    return out.trim().match(/^v\d+\.\d+\.\d+/)?.[0] ?? null;
-  } catch { return null; }
+  throw Object.assign(new CuaError('repl_host_node', `cua's own REPL host needs Node ${NODE_FLOOR} or later, and none was found: ${tried.join(', ')}; run \`cua install\` to install the pinned Node ${NODE_FLOOR} for it, set CUA_NODE to the absolute path of a Node ${NODE_FLOOR} or later, or run cua with one (the vendor host's pinned Node is never used for it)`), {tried});
 }
 
 // The `node` a shell would run from `PATH`: the first executable file of that name in an absolute entry.

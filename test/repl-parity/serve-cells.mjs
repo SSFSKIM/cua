@@ -9,6 +9,28 @@ import {pathToFileURL} from 'node:url';
 import {cellsServeEnv} from './fixture-launch.mjs';
 import {openConnection} from '../../src/mcp/connection.mjs';
 import {prepareCapabilityHome} from '../../scripts/browser-parity/capability-home.mjs';
+import {assertManagedNode,nodeEnvironment,observeLaunchNode} from '../../scripts/repl-parity/node-provenance.mjs';
+
+export function fixtureNodeEnvironment(ambient) {
+  return ambient.CUA_PARITY_NODE_MODE==='managed' ? nodeEnvironment(ambient) : ambient;
+}
+
+// Observe the real production launch before any trusted fixture replaces its command with a tap. Keep the prepared
+// source facts intact; attestedOutput holds this shared object until serialization. A notification also carries the
+// live observation when initialize came from the legitimate handshake cache before the runtime launched.
+export function attestFixtureLaunch(launch,{facts,home,host,nodeMode=process.env.CUA_PARITY_NODE_MODE,
+  observe=observeLaunchNode,output=process.stdout,legacyExpected=false}={}) {
+  if((launch.replHost?.host??host)!=='cua')return launch;
+  if(nodeMode==='managed') {
+    const ownNode=assertManagedNode({home,ownNode:observe(launch)});
+    facts.answeringHost={home,ownNode,nodeMode:'managed'};
+    output.write(JSON.stringify({jsonrpc:'2.0',method:'cua/parityAnsweringHost',params:facts.answeringHost})+'\n');
+  } else if(legacyExpected&&launch.command!==facts.ownNode?.path) {
+    throw new Error('The own host launch does not run the Node its provenance names');
+  }
+  return launch;
+}
+
 export function noServicesLaunch(launch,{host='vendor',witness=false,brokenSandbox=false,fixtureServices}={}) {
   const env={...launch.env};
   delete env[host==='vendor'?'NODE_REPL_TOOL_OVERRIDES':'CUA_REPL_TOOL_OVERRIDES'];
@@ -45,12 +67,12 @@ export async function serveCells({source,host='vendor',sandbox='scoped',witness=
   const facts=executionFacts({source});assertPreparedFacts(JSON.parse(process.env.CUA_PARITY_EXPECTED),facts);
   output=attestedOutput(output,facts);
   const scratch=prepareCapabilityHome({source});
-  const env=cellsServeEnv(process.env,{scratch,sandbox,host});
+  const env=cellsServeEnv(fixtureNodeEnvironment(process.env),{scratch,sandbox,host});
   let connection,fixtureServices;
   try {
-    fixtureServices=services?await createFixtureServices({nativeSecrets:process.env.CUA_PARITY_FIXTURE_CASE?.startsWith('secrets/native-live/'),timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
+    fixtureServices=services?await createFixtureServices({nativeSecrets:process.env.CUA_PARITY_FIXTURE_CASE?.startsWith('secrets/native-live/'),longPathPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/absolute-path',timeoutPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/connect-timeout',errorPipe:process.env.CUA_PARITY_FIXTURE_CASE==='cells/native-pipe/data-close-error'}):null;
     connection=await openConnection({home:scratch.dir,env,sessionId:randomUUID(),input,output,
-      chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{if(host==='cua'&&l.command!==facts.ownNode?.path)throw new Error('The own host launch does not run the Node its provenance names');if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});
+      chrome:{profiles:[]},listBackends:async()=>[],prepareLaunch:l=>{attestFixtureLaunch(l,{host,facts,home:scratch.dir,output,legacyExpected:true});if(controlDir)writeFileSync(join(controlDir,'launch.json'),JSON.stringify({pid:process.pid,cwd:l.cwd,home:scratch.dir,nodePath:l.env.NODE_REPL_NODE_PATH??l.command}));return noServicesLaunch(l,{host,witness,brokenSandbox,fixtureServices});}});
     const terminate=()=>connection.close('signal');process.once('SIGTERM',terminate);process.once('SIGINT',terminate);
     try {const result=await connection.closed;if(controlDir)writeFileSync(join(controlDir,'closed.json'),JSON.stringify(result));process.exitCode=result.code;}finally{process.off('SIGTERM',terminate);process.off('SIGINT',terminate);}
   } finally {try{await fixtureServices?.close();}finally{scratch.cleanup();}}

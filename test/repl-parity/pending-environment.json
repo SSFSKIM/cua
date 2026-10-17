@@ -1,8 +1,8 @@
 {
   "issue": "#141",
   "platform": "linux",
-  "through": "M4",
-  "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M3 api",
+  "through": "M5",
+  "reason": "#141 VM Chrome synthesizeScrollGesture stall (both hosts, browser-service path); proven on the mini in M5 all at product e24a1cd",
   "scopes": [
     {
       "logicalCell": "input/coordinates#scroll",
@@ -37,17 +37,17 @@
   ],
   "proofs": [
     {
-      "path": "docs/evidence/2026-10-14-own-repl-host-parity/m3/vendor-api-1",
+      "path": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/all-vendor-2",
       "files": {
-        "meta.json": "a3f39d21b7d4246fb10a00d62281bf2500bba5a2cba446f212f51e06fc9bd56b",
-        "results.jsonl": "0fe6f58f45e632a5c0e84c5038a0990f6f4771b9ef60b44a87e696ce9f206330"
+        "meta.json": "e6a6ff8bb849194d26b819cb8bcea58110ab40dc1be0dd290be6459a40b1868a",
+        "results.jsonl": "f46cd01a416b4902a45dc503f965460c097e667bcffe0940ea0b4aaebec38560"
       }
     },
     {
-      "path": "docs/evidence/2026-10-14-own-repl-host-parity/m3/cua-api",
+      "path": "docs/evidence/2026-10-14-own-repl-host-parity/m5/mini/all-cua",
       "files": {
-        "meta.json": "6411921d8ad7d900873df1d874dfb127e21b43397abeef04e5fa603b49d8a233",
-        "results.jsonl": "8862049ffc5c11bf0d06390cfdd109ee378ecd906bc20beb91a87c3df5c8e37c"
+        "meta.json": "b6aa05165c5e5b97844597cefb04f4a324d2ac79e4fdd7f40894f0a0d006e9e5",
+        "results.jsonl": "971942b8ae5cd3425e928cca8607377c2b05befe2b13a62b924d55d94b1bc96b"
       }
     }
   ]

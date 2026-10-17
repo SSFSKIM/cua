@@ -1,11 +1,11 @@
 import {randomUUID} from 'node:crypto';
-import {remoteCommand,quote,linuxSession,ownNodeEnv} from './topology.mjs';
+import {remoteCommand,quote,linuxSession,ownNodeEnv,preparedHomeEnv} from './topology.mjs';
 import {runRawScenario} from './runner.mjs';
 export function nativeCommand({device,checkout,home,host,fixtureMode='blank',...facts}){
  if(device!=='cua-linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires prepared cua-linux');
  if(!['blank','drag','scroll'].includes(fixtureMode))throw Error('Unknown native fixture mode');
  const expectedFacts={device,checkout,home,...facts},nativeFilename=`cua-m4-${randomUUID()}.txt`;
- return {expectedFacts,nativeFilename,closeTimeoutMs:20000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_NATIVE_FILENAME=${quote(nativeFilename)} CUA_PARITY_NATIVE_MODE=${quote(fixtureMode)} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-native.mjs`)};
+ return {expectedFacts,nativeFilename,closeTimeoutMs:20000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}${preparedHomeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_NATIVE_FILENAME=${quote(nativeFilename)} CUA_PARITY_NATIVE_MODE=${quote(fixtureMode)} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} node test/repl-parity/serve-native.mjs`)};
 }
 export const nativeSetup=`globalThis.nativeFilename="@@NATIVE_FILENAME@@";globalThis.nativeSay=v=>nodeRepl.write('NATIVE:'+JSON.stringify(v));
 var nativeEnd=Date.now()+20000;var nativeWindow;

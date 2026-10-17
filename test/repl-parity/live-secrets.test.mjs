@@ -8,7 +8,7 @@ import {prepareLiveSecretsLaunch} from './serve-live-secrets.mjs';
 const ref='{{secret:PARITY_SYNTHETIC}}';
 const rpc=(s,method,params)=>s.handleRpc({method,params});
 const fill=(method='execute',value=ref)=>({method,params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'7',selector:'#fixture',value,replace:true}});
-async function scratch(t,prefix='cua-cap-'){const capabilityHome=await realpath(await mkdtemp(join(tmpdir(),prefix)));const userHome=join(capabilityHome,'home'),runDirectory=join(capabilityHome,'run','unit'),workerHome=join(runDirectory,'home');await mkdir(userHome);await mkdir(workerHome,{recursive:true});t.after(()=>rm(capabilityHome,{recursive:true,force:true}));return {capabilityHome,userHome,runDirectory,workerHome};}
+async function scratch(t,prefix='cua-cap-'){const capabilityHome=await realpath(await mkdtemp(join(tmpdir(),prefix)));const userHome=join(capabilityHome,'home'),runDirectory=join(capabilityHome,'run','unit'),workerHome=join(runDirectory,'home');await mkdir(userHome);await mkdir(workerHome,{recursive:true});t.after(()=>rm(capabilityHome,{recursive:true,force:true}));return {capabilityHome,expectedCapabilityHome:capabilityHome,userHome,runDirectory,workerHome};}
 async function configured(t,tail){const dirs=await scratch(t),s=await createLiveSecretOracle({...dirs,userHome:dirs.workerHome});await rpc(s,'secret.configure',{id:`secrets/browser-live/${tail}`});return s;}
 // These are unit tests of the recorder/control boundary, not live host/client evidence.
 async function exercise(s,request){let error;try{await s.handleRpc(request);}catch(e){error=e;}return rpc(s,'secret.observe',{rejected:!!error,message:error?.message,stack:error?.stack,cause:String(error?.cause),serialized:JSON.stringify(error),messageOnly:true});}
@@ -102,7 +102,7 @@ test('launch keeps synthetic HOME within its existing scoped writable run direct
  assert.equal(next.cwd,cwd);assert.equal(next.env.TMPDIR,launch.env.TMPDIR);assert.equal(next.env.HOME,join(cwd,'home'));
  assert.equal(next.env.PARITY_LIVE_SECRET_HOME,next.env.HOME);assert.equal(next.env.PARITY_LIVE_SECRET_RUN_DIRECTORY,cwd);
  assert.equal(await realpath(next.env.HOME),next.env.HOME);
- const service=await createLiveSecretOracle({capabilityHome:dirs.capabilityHome,userHome:next.env.HOME,runDirectory:cwd});
+ const service=await createLiveSecretOracle({capabilityHome:dirs.capabilityHome,expectedCapabilityHome:dirs.expectedCapabilityHome,userHome:next.env.HOME,runDirectory:cwd});
  await rpc(service,'secret.configure',{id:'secrets/browser-live/execute/fill'});passed(await exercise(service,fill()));
  assert.throws(()=>prepareLiveSecretsLaunch({...launch,cwd:dirs.userHome},{host:'vendor',...dirs,remote:true}),/scratch/);
 });

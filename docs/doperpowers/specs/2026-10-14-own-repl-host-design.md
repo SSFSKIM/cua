@@ -21,7 +21,7 @@ execution, not reopen it.
 - [x] (2026-10-15T07:04Z) M2 — Trusted worker and privileged API; owned browser service and MAWS on the own host. Three tasks reviewed clean; whole-branch reviewer-high "correct" at bb3d59a. Mini, browser-only: services 41 cases 0 differences; tools contract 0 (Table 2 transform only); browser corpus 59/59 per host at e4ea7eb, 0 unexpected, 7 expected trace counts; MAWS live probe PASS with the own host attested. EOF drain bound for a suspended request deferred to M3.
 - [x] (2026-10-15T13:17Z) M3 — Owned cua API and documentation; complete facade coverage and profiles listing. Four tasks reviewed clean; whole-branch reviewer-high "correct". The own host with the owned facade against the M3 vendor controls on the mini, browser-only: api 290 cases, secrets-live 25 and docs-profiles 12 each 0 differences with identity slots only; tools contract 0; 59-case corpus 59/59, 0 unexpected; MAWS live probe PASS with per-session source records. core.md equals Table 3 plus the owner-approved amendment.
 - [x] (2026-10-16T00:30Z) M4 — Linux native path, approvals and native baseline comparison. Three tasks reviewed clean; whole-branch reviewer-high "correct" at 47ba181. On cua-linux the own host answers `--suite all --through M4` with 0 unexpected differences against a fresh vendor pair (490 cases, 1,392 cells; identity slots and #135 only), every connection attesting `cua-repl-host 0.4.0`, and the three Linux acceptance runners pass. The native-baseline comparison stays open (acceptance 8): this sitting ran at load average 80–250, so it is diagnostic only and the authoritative triple moves to M5's Linux sitting. Gates run on ci-kit's hosted macOS runner (#143) at the PR head.
-- [ ] M5 — Per-surface defaults, final parity/performance/remote proofs, documentation and plugin release.
+- [x] (2026-10-16T23:59Z) M5 — Per-surface defaults, final parity/performance/remote proofs, documentation and plugin release. Linux and browser-only sessions now default to cua's own host on a managed Node 24 that `cua install` pins. Without it they fall back to the vendor host with `own_host_node_unavailable`. Host 0.5.0, plugin 0.12.0. Ten tasks, each reviewed clean. The whole-branch reviewer-high found the branch correct. Product src was fixed at e24a1cd, and every M5 recording ran on that tree. Mini: `--suite all` 479/479, 0 unexpected. Inventory 542/542. Corpus 0 unexpected against three vendor controls. Selection 260/260. MAWS probe PASS. Remote endpoint and kill-client 1. Browser benchmark tool time 23/23, with the outcome ruling recorded. Linux: 0 differences over 490 cases (#141 qualified), runners PASS, remote endpoint and kill-client 1. Native speed on cua-bench: every latency row passes, with the typeText-sentence ruling recorded.
 
 ## Scope, inheritance and evidence
 
@@ -62,7 +62,7 @@ Use the recovered schemas and verbatim base descriptions in the embedded index, 
 `src/mcp/surface.mjs` host rules still layer above the base tools; the vendor launcher currently supplies overrides and cannot simply disappear with its effective text. M0 records both base and effective contracts; M1 reproduces the effective retained tool surface, documenting
 only approved branding/exclusion departures. The core API document is a different output, not a replacement for MCP instructions.
 
-The own host uses the user's Node **≥24**, resolved to an absolute executable before constructing the allowlisted environment, with `--experimental-vm-modules` for the kernel. Vendor-routed sessions keep the pinned vendor Node. Do not infer a patched JavaScript engine from the
+The own host runs on a Node **≥24** (revised 2026-10-16). By default that is the official Node 24 LTS which `cua install` pins and installs under `$CUA_HOME/node/<version>/`; the user's own Node is an override (`CUA_NODE`) and a fallback (the node running cua, then PATH). The cua process itself keeps running on the user's Node within the package's engines range. The chosen Node is resolved to an absolute executable before constructing the allowlisted environment, with `--experimental-vm-modules` for the kernel. Vendor-routed sessions keep the pinned vendor Node. Do not infer a patched JavaScript engine from the
 vendor distribution's `24.21.0-cua.1` name: its binary identifies as `24.21.0`. Keeping vendor Node for the own host would preserve distribution coupling and, as the peer spike shows, would not restore native socket authorization.
 
 ### Selection is a connection fact, not an opportunistic fallback
@@ -539,6 +539,199 @@ owned browser service/extension host. The new docs directory must be included in
 
 ## Decision Log
 
+- Decision (amends the 2026-10-15 #141 entries): the Linux pending-environment exception for the two browser scroll members carries into M5.
+  - The members are coordinate and DOM scroll, 14 cells. On Linux they stay pending and are never counted as covered.
+  - `test/repl-parity/pending-environment.json` moves from `through: M4` to `through: M5`. The citation is task 4's mini M5 evidence, where both hosts pass the scroll members on the same product tree (e24a1cd).
+  - Acceptance 3 is qualified on Linux for exactly these two members.
+  - **Linux M5 completeness** rests on three things together:
+    - The fabfb11 Linux recordings were diffed under the declaration they carry, `--through M4`. That selects the same 493 cases as `--through M5` on Linux. Vendor-1 and vendor-4 each show 0 differences against own over 490 cases and 1,394 cells, and 0 against each other.
+    - This ruling.
+    - The mini's M5 proof of the two scroll members.
+  - **Not re-recorded.** Re-recording would only change the policy label on an unchanged product tree, and would cost 2–3 hours of VM time on a Mac the owner asked to free. The comparator keeps refusing to relabel recorded runs. The `through: M5` declaration (8c23f3d) and its regressions govern future runs.
+  - Rejected: holding M5 until #141 is fixed. The stall is in VM Chrome's synthesized scroll gesture, under the cua browser service, outside #116, and it affects both hosts equally.
+  Rationale: The REPL-host path for these members is proven live at M5 on the mini. Withholding the release until a browser-service environment bug is fixed would add no evidence about the host.
+  Date/Author: 2026-10-16, session ruling on the evidence review's finding, recorded by the plan-executor.
+- Decision: T5's remote acceptance and model benchmark (f855784, 36e736f) have three session rulings.
+  - **Remote acceptance on the mini's harness-owned browser-only endpoint passes.** The endpoint is `repl-m5t5r1-mini-browser`.
+    - It attests `cua-repl-host 0.5.0` on the managed Node.
+    - Kill-client/count-one gave exactly 1 run, with no replay.
+    - The resident `mini` endpoint was checked separately and is vendor-routed.
+  - **Elicitation is not reachable live on this route.** The cua browser service requests no approvals, cells cannot reach `createElicitation`, and secrets are off. A live dialog would also land in the owner's own session. The proof is unit-level: `test/mcp-devices.test.mjs` and the services suite's elicitation accept/decline/cancel cases.
+  - **The browser benchmark (acceptance 8) is met.**
+    - Tool time is within max(10%, 500 ms) on all 23 tasks. The worst case is use-slider at +117 ms.
+    - The summarizer's outcome line reads `regression`, and stays visible beside this ruling. The own host went 2/3 on T2, drag-box and drag-items, against 3/3 for the vendor.
+    - Two of the three misses are identified controller mistakes: a NaN parse on T2, and drag-box never pressing Submit. drag-items is a single miss.
+    - The spec makes #130's scripted outcomes the outcome measure after the model runs. Task 4's scripted benchmark at the same product head is 12/12 on both hosts, with drag-box and drag-items 3/3 each.
+    - There is no fresh 3+3, because rerunning until it passes is not evidence. #113 M5 ruled the same way, and #130 carries the question of model-run outcome noise.
+  Rationale: Session rulings. A model controller's own mistakes are not a host difference. The deterministic outcome measure is equal on both hosts.
+  Date/Author: 2026-10-16, session rulings on M5 task 5's DONE_WITH_CONCERNS, recorded by the plan-executor.
+- Decision: Acceptance 8's native half is met on cua-bench (experiment `m5t6b-cua-bench-2026-10-16`, d8fefc2), with `compare`'s raw `verdict: FAIL` kept visible beside this ruling.
+  - **What failed.** The only failing row is `method.typeText`, and it failed on outcome. In 6 of 6 samples on both hosts typeText threw and its gedit window exited. One vendor sample (run-1, when the box wrote its first gedit crash report) gave `os error 11`; the other five samples gave D-Bus `NoReply`.
+  - **What passed.** All 19 latency operations and the other five method cases. In-cell medians match; for example, task.total is 17,617.1 against 17,616.9 ms.
+  - **Ruling: no rerun and no oracle change.**
+    - The sentence comes from the pinned `sky_linux` helper, and the own host relays it unchanged.
+    - The vendor produced both sentences within this one sitting. M0 and M4 had already recorded the same pair for this crash. This is vendor-against-vendor spread, not a host difference.
+    - A new sitting would rerun until it passed. Changing the oracle after seeing the result would loosen it post hoc.
+  - **Open question, moved to #130.** Should `compare`'s outcome rule absorb vendor sentence spread derived in advance from recorded vendor runs? That is the question #130 asks of the benchmark verdict, so it goes there rather than into M5.
+  Rationale: Acceptance 8 asks for no capability or performance regression. The outcome class is identical on both hosts, and every timing row passes.
+  Date/Author: 2026-10-16, session ruling on M5 task 6b's DONE_WITH_CONCERNS, recorded by the plan-executor.
+- Decision: The over-limit nativePipe oracle (commits 519146a through d49e6da).
+  - **The case.** The services case gains a cell that connects to a harness-owned listener at a 192-byte absolute socket path. The peer binds a relative name inside its own deep cwd; the subject is handed the full absolute path.
+  - **What counts.** The cell counts only if all three hold: the listener's own journal shows exactly one accepted connection, that connection carried exactly the six bytes sent, and the reversed response arrived. Fabricated and replayed responses fail mutation tests.
+  - **Linux.** The expected Linux refusal comes from disassembly, so it is machine-readable provisional (`test/repl-parity/provisional-oracles.json`). A provisional cell is never covered, and it keeps `allAssertionsPassed` false until task 6 records the live Linux vendor control.
+  - **Evidence.** The mini vendor pair at 63a5157 (`m5/long-native-pipe/peer-witness/`): 41 cases, 76 cells, 0 differences. The earlier pair has no peer witness; it is kept as history and the current oracle rejects it.
+  Rationale: Two review waves. A byte proof the subject's own transport can satisfy is not proof of a connection.
+  Date/Author: 2026-10-16, M5 oracle executor and its reviews, folded by the plan-executor.
+- Decision: nativePipe connects to socket paths beyond `sun_path` as the vendor does (30b238e, d935899, a2ae6b2, e24a1cd). The session ruled this into M5's scope, superseding the residue note in the next entry. MAWS client-mode sockets (`<userData>/browser/cua/<id>.sock`) cross 104 bytes on macOS under a longer username or a scratch user-data path, and the own host failed there while the vendor connected.
+  - **The vendor's behaviour** (disassembly, `node_repl` 26.928.40906).
+    - macOS: below 104 bytes the canonical path is connected directly. At 104 bytes or more the vendor opens the parent read-only, sets a per-thread cwd (`pthread_fchdir_np`) and connects the bare file name. A file name over 103 bytes is refused with `native pipe file name is too long`.
+    - Linux: no parent-directory code. At 108 bytes or more the connect fails with `failed to connect native pipe: path must be shorter than SUN_LEN`.
+  - **The port.**
+    - Linux refuses with that sentence. The live Linux vendor control in task 6 confirms it; until then the oracle's Linux expectation is pending.
+    - On macOS, an over-limit path whose canonical form fits is connected at the canonical path. Otherwise a supervisor-owned connector process is spawned:
+      - Its cwd is the checked parent, its environment is empty, its only channel is IPC, and it runs with `--disable-sigusr1`.
+      - It verifies the dev/ino of its cwd against the parent it opened, failing closed on a swap.
+      - It connects the bare name and owns the connection for its whole life, relaying over IPC.
+      - It is registered with the owned-group reaper from spawn until it exits, so kernel resets spare it.
+    - The connect budget runs from before the spawn, and a connect after the deadline is never accepted.
+  - **Rejected alternatives.**
+    - A short `/tmp` alias: a scoped cell can swap it when TMPDIR is `/tmp`, and a crash leaves it behind.
+    - Handing the socket back to the supervisor: the server-observed `LOCAL_PEERPID` flips within about 20 ms, which fails MAWS's and cua's ancestry recheck.
+    - A process-wide `chdir`: excluded by the session.
+  - **The three macOS path sentences.** `has no parent directory` and `has no file name` are unreachable, because a canonical socket path that passed realpath, stat and the socket check is absolute and is not `/`. `file name is too long` is reachable through a renamed socket, and is ported.
+  - **Cost.** Each over-limit macOS connection costs one Node process, 60–100 ms to start under load. The connect budget absorbs that.
+  Rationale: Following the vendor where it is observable, with no mutable shared name and no change to peer identity.
+  Date/Author: 2026-10-16, session ruling, M5 fix executor with four review waves, folded by the plan-executor.
+- Decision: nativePipe path failures use the vendor's sentences (184f4e3, 32d7335). M5's mini sitting found the stat-missing row differing: the own host reported a failed path lookup with the connect prefix.
+  - **Validation order.** Disassembly of `validate_native_pipe_path` in both the darwin-arm64 and the linux-arm64 builds of `node_repl` 26.928.40906 shows the vendor's order:
+    1. Check that the path is absolute.
+    2. `realpath`. Any failure reports `native pipe path unavailable: <strerror> (os error N)`, covering ENOENT, ENOTDIR, EACCES, ELOOP, ENAMETOOLONG, EIO and Rust's NUL-byte sentence.
+    3. `stat` of the canonical path. A failure reports `native pipe stat failed: …`; only a race reaches it.
+    4. A socket check. A non-socket reports `native pipe path is not a socket`.
+    5. `failed to connect native pipe: …`, which only comes after all of the above.
+  - **The port.**
+    - The own host follows the same order.
+    - It stats the canonical path as realpath's raw bytes (`{encoding:'buffer'}`), so a non-UTF-8 directory name is not re-encoded.
+    - It still connects the path as given, because Node cannot connect through a parent directory the way the vendor does.
+    - A Linux-only real-filesystem regression runs in task 6's Linux sitting.
+  - **Not ported.** Three macOS-only vendor path sentences: `has no parent directory`, `has no file name` and `file name is too long`. Also the vendor's parent-directory connect, which reaches socket paths beyond 104 bytes. No oracle case exercises these, so they are recorded as residue, not changed here.
+  - `REPL_HOST_VERSION` stays 0.5.0. No M5 evidence had been accepted at the earlier head.
+  Rationale: The oracle found the difference, as it was built to. The fix reproduces the vendor's observable sentences, grounded in its binary.
+  Date/Author: 2026-10-16, session ruling and the M5 fix executor with its review, folded by the plan-executor.
+- Decision: Four rulings shape M5's remaining live work.
+  - **Linux native speed runs on a quiet cloud box.** The comparison (acceptance 8's native half) runs on `cua-bench` (Hetzner cax31, aarch64, Ubuntu 24.04, Xvfb :0 1440x900 with openbox and AT-SPI, gedit 46), not on the cua-linux VM.
+    - Both the own triple and a fresh vendor triple run there in one sitting. The M0 VM baseline is history, not the comparator.
+    - The evidence records the box, its idle load and its environment.
+    - Task 6a makes the native-baseline harness device-generic first: per-device facts, the managed Node from a fresh `cua install`, and `compare` refusing runs from different devices.
+    - If the controller Mac goes quiet before task 6, the VM remains acceptable for the measurement. Whichever host is used, its load is stated.
+    - The VM keeps the correctness work: `--suite all` on both hosts, the Linux runners, the lifeline check, the remote endpoint and the selection lane.
+  - **MAWS under its new gate rule** (MAWS gate-offload plan §3.5–3.6, Decision Log 45–46). MAWS e2e no longer runs on the MacBook.
+    - `e2e:browser-cua` runs once on the mini's ci runner through MAWS master's `scripts/ci-gate.sh <sha> --gates e2e:browser-cua --label cua-m5`. It pushes one `ci/` ref, deleted by the script. It is a fake-host regression independent of cua, so it is never host proof.
+    - The live probe runs afterwards from the mini parity clone, between CI jobs.
+      - Its MAWS clone is scratch, outside the runner's `_work`, and its `cua install` home is fresh, with the managed Node.
+      - It starts only with both runners idle and nothing queued or in progress.
+      - It must not overlap a job; a probe that overlaps one is aborted and rerun.
+      - It quits Electron cleanly, and the evidence records that no MAWS or Electron process from the clone remains.
+  - **Chrome window loss on the mini** is tracked as #148. Two mechanisms: the browser host's cleanup has no last-tab guard, and the extension host also died once with no client activity at all. Executors check ssfs readiness around every suite. On `host_not_live`, they may reopen the mini's Profile 1 window with exactly `open -na "Google Chrome" --args --profile-directory="Profile 1" chrome://extensions/` and wait up to 60 s, logging each occurrence. A suite interrupted by a drop is committed as a labelled diagnostic and rerun.
+  - **Secrets-live scratch home.** Since managed preparation puts the capability home under `~/.cp`, the live secret service accepts exactly the capability root the producer chose for the run, passed explicitly. Every other parent is still refused (5f188d9).
+  Rationale: Session rulings with the owner and the MAWS gate session. Timing needs a quiet host, and the controller Mac's load stays at 100–450. MAWS's gate moved its Electron runs to the mini.
+  Date/Author: 2026-10-16, session rulings, recorded by the plan-executor.
+- Decision: M5 task 2, the oracle, as built (merged at 28bfd5a; the calibration evidence pin f74b312 must stay an ancestor).
+  - **Stat sentence.** `cells/native-pipe/absolute-path` gains a separately journaled `stat-missing` cell, with platform-indexed expectations. Mini vendor: `native pipe path unavailable: No such file or directory (os error 2)`. The Linux control is recorded in task 6's sitting.
+  - **Polling recalibration.** Two fresh vendor pairs cover actions/locators, wait-for, slow-budget, input/coordinates and waits/networkidle. `deriveTraceAllowances` takes the union of the maximum spreads per case, cell and method, across these pairs and the M2 controls. Locator bounds are 1. Slow-budget's observed vendor spread is 19 evaluates and 21 releases; that is recorded vendor variance, not a hand-chosen allowance.
+  - **RemoteProofEndpoints** (`scripts/repl-parity/remote.mjs`).
+    - Endpoint homes are fresh, installed scratch `CUA_HOME`s outside TMPDIR, with ownership markers and journals.
+    - Enrollment stdout goes straight to a 0600 file. Only credential-free fields are read. Preparation stops for the relay merge and the owner's key transfer.
+    - Start requires a completed preparation with exactly the requested endpoint set.
+    - The controller takes three stdin ops: `restart` (mini under vendor or cua, same identity), `probe` (kill-client/count-one) and `stop`. Stdin EOF stops the agents.
+    - Endpoints allow two sessions, so the probe can reconnect while the killed session still exists.
+    - Scratch agents get a private HOME with synthetic, presence-only Chrome metadata for the prepared binding. No profile contents are copied and no extension is installed.
+  - **Attestation.** Own-host success is bound to the reviewed source commit, and the version is read from that commit's `identity.mjs`, so matching stale markers fail. The managed answering Node must lie under the answering home's `node/` subtree. Remote endpoints also witness the exact production supervisor argv (`NODE --disable-sigusr1 SUPERVISOR`) inside the owned agent's process subtree. A cached initialize never satisfies attestation without a real result marker.
+  - **Selection lane** (`scripts/repl-parity/selection.mjs`).
+    - An independent expected table with 260 rows per platform runs the real doctor CLI. It compares the leading `HOST host (REASON)` tokens of the ordinary and listing sentences with the host that actually answers.
+    - Cache reuse, version-namespace misses, cross-host separation, and job serialization with a persisted `CUA_NODE` are checked over service-manager doubles.
+    - Unmanaged Node 22 fallback is tested by moving the harness-owned `node/` tree aside and restoring it.
+  - **Preparation.** `prepare` on both parity CLIs creates fresh installed scratch homes through `cua install` and requires the managed Node. `cleanup-prepared --device <d>` removes them by ownership marker. `prepare --node` survives only as a recorded diagnostic override. Browser tracing configuration follows the recorded discovery home.
+  Rationale: The oracle that tasks 4 to 6 are graded by. Three review waves closed the false greens: agreeing stale versions, doctor substring matching, an empty preparation reaching "running", and the witness rejecting the production argv.
+  Date/Author: 2026-10-16, M5 task 2 executor and its reviews, folded by the plan-executor.
+- Decision: M5 task 1b as built (managed Node v24.22.0).
+  - **Pins.** `runtime/releases/node/<version>-<platform>-<arch>.json`. The packed runtime pin loader skips this path. Each pin names the exact official nodejs.org `.tar.gz` URL; gzip is used so macOS needs no xz. `notes` are required and record the provenance check: `SHASUMS256.txt.sig` verified against the Node.js release keys, with gpgv agreeing; all four tarballs match their signed hashes; the darwin binaries carry Developer ID team `HX7739G8FX` (certificate name "Node.js Foundation").
+  - **Install.**
+    - The runtime installs first, then Node. `tar` and `gzip` are checked before any download.
+    - On darwin, the code signature is verified against a Developer ID Application requirement for the pinned team before `--version` runs. An unverified binary never executes.
+    - Layout: `$CUA_HOME/node/<version>/{bin/node,LICENSE,install.json}`, with the pointer `node/current.json` (`{schema:1,version}`) written by write-then-rename.
+    - A damaged install fails `node_install_invalid` and is never repaired in place. A foreign directory at the target fails `target_occupied`. Old versions are kept.
+  - **Failures.**
+    - A failed Node step exits 1 with its error code. The hint says the runtime is installed and names `--node-archive <tarball>`, a retry, or `--no-node`.
+    - `--no-node` skips the step explicitly.
+    - A platform with no pin skips the step without failing.
+    - `--json` reports a `node` field.
+  - **Resolution** trusts the install record, not the checked-in pin. After a cua upgrade bumps the pin, the installed Node stays in use until `cua install` runs again.
+  - **Doctor.** No new row. `repl.host` names the Node path and lists `cua install` first among the remedies.
+  Rationale: Follows the owner's direction with the runtime's own install discipline. Verifying the signature before running anything keeps the trust chain closed on darwin; on Linux the pinned archive hash is the trust root.
+  Date/Author: 2026-10-16, M5 task 1b executor and its reviews (two fix waves: managed root and staging protected from scoped writes, record bound to the binary's SHA-256 and size, activation rollback, classified CLI errors), folded by the plan-executor.
+- Decision: `cua install` also installs a pinned official Node 24 for the own host, so the default switch does not depend on the user's Node. This is task 1b (opus), placed after task 1.
+  - **Pins.** One per supported platform and arch: darwin-arm64, darwin-x64, linux-arm64, linux-x64. Each sits next to the runtime release pins and names the official nodejs.org dist tarball by https URL, length and SHA-256, for the current Node 24 LTS patch. The hashes are checked once, when the pin is written, against nodejs.org's `SHASUMS256.txt` and its GPG signature, and the pin's notes record that check, as the vendor pin's provenance was recorded.
+  - **Install.** It follows the runtime's discipline in `src/runtime/install.mjs`:
+    - fetch the tarball, or take a local `--node-archive`;
+    - verify length and SHA-256 before anything reads the archive;
+    - stage it, and keep only what the own host needs (`bin/node` and the licence);
+    - verify that `node --version` matches the pin, and on darwin that its code signature is the OpenJS Foundation's Developer ID;
+    - one rename into `$CUA_HOME/node/<version>/`, then a pointer write.
+    An existing verified version makes this a no-op, and any failure leaves everything untouched. On Linux the archive hash is the trust root.
+  - **Resolution order for the own host:** `CUA_NODE`, then the cua-installed Node, then the node running cua, then PATH. The `own_host_node_unavailable` rule stays as the safety net for installs without the managed Node (offline, skipped, or an unpinned platform). Doctor's remedy list gains `cua install`.
+  - **cua itself** keeps running on the user's Node, with `engines` unchanged. Only the own host's children use the managed Node.
+  - **Acceptance 9's selection lane** gains a fifth case: no `CUA_NODE`, PATH Node 22 and the managed Node installed give an implicit cua.
+  - **Evidence.** M5's live runs on the mini and cua-linux use the managed Node from a fresh `cua install` in their scratch homes, not the hand-installed `~/.local/share/cua-parity-node` on the VM, so the release path itself is what gets proven.
+  - **Rejected alternatives.** The vendor runtime's bundled Node: the Design rejects it for distribution coupling, and it does not restore native peer authorization. Raising `engines` to 24 would break every Node 22 install.
+  Rationale: The owner's direction, relayed by the session. A default whose availability depends on what Node the user happens to have serves only part of the users the switch is for; cua already owns a verified-pin install path, so the managed Node rides it.
+  Date/Author: 2026-10-16, owner direction relayed by the session, recorded by the plan-executor.
+- Decision: M5 task 1 as built.
+  - **Selection.** `replHostFor` resolves Node through an injectable resolver. It calls it at most once, and only when the answer would be cua. The selection then carries either the resolved Node or the candidates it tried. `buildLaunch` no longer takes a separate `ownNode`.
+  - **CUA_NODE.**
+    - A value that is not an absolute path is refused as an invalid setting, also at serve and agent start through `settingsFrom`.
+    - An absolute path that is missing or older than 24 falls through to the next candidate, as the ruling orders.
+    - Agent jobs store an explicit `CUA_NODE` exactly as given: validated as absolute, never resolved or probed.
+  - **Doctor.** A new `warn` status that does not change `ok`. `repl.host` warns when either the session or the profile listing lacks Node 24. Doctor resolves Node once for both.
+  - **Package Node floor.** It stays `^22.14 || >=23.7`, because cua itself runs on Node 22. The own host's floor is 24, checked per connection. A test pins both, and another checks `npm pack --dry-run --json` for the owned documents and parser assets.
+  - **Versions.** Host 0.5.0, plugin 0.12.0.
+  - **Tests.** Tests that drive the fake vendor runtime now set `CUA_REPL_HOST=vendor`, and each gained an own-host counterpart, so the result no longer depends on the Node that runs them.
+  Rationale: Applies the 2026-10-16 ruling. Without the explicit vendor pin, default-path tests passed on local Node 22 and failed on CI's Node 24.
+  Date/Author: 2026-10-16, M5 task 1 executor, folded by the plan-executor.
+- Decision: An implicit default selects the own host only where a Node ≥24 resolves. This is ruled for M5, before any default flips.
+  - **Node resolution:** once per connection, in the existing order: `CUA_NODE`, then the node running cua, then `node` on PATH. Doctor and the profile listing use the same rule.
+  - **No Node ≥24:** with `CUA_REPL_HOST` absent or empty, a session the table would move to cua (`linux`, `browser_only`) selects vendor with reason `own_host_node_unavailable`, recorded in the connection's selection provenance. The cache identity carries the resolved host, so installing Node 24 takes effect on the next connection.
+  - **Doctor:** the `repl.host` row is `warn` for that reason and names both remedies: install Node 24 or later, or set `CUA_NODE`.
+  - **Explicit cua:** an explicit `CUA_REPL_HOST=cua` still refuses with the `repl_host_node` diagnostic. It is never downgraded.
+  - **Agent install:** `agent install` persists an explicitly supplied `CUA_NODE` into the launchd/systemd job, exactly as it persists `CUA_REPL_HOST`: only an explicit value, never a resolved one. This reverses M0 task 1's "`CUA_NODE` is not persisted into jobs". The 2026-10-14 ruling kept `CUA_NODE` out of shell profiles because a profile reaches every checkout on the device; a job-scoped explicit value reaches only that agent. It answers M4's carried question of how the Linux resident agent finds Node 24.
+  - **Acceptance 9's selection lane** covers all four cases: Node 22 implicit selects vendor with the reason; Node 22 with explicit cua refuses; Node 24 implicit selects cua; a persisted `CUA_NODE` on an installed job.
+  Rationale: cua's package floor is Node 22 (`^22.14 || >=23.7`), and the controller Mac and cua-linux run Node 22. A refusing default would break every working Node 22 session, against #114's no-regression contract. Raising the package floor would break every Node 22 install. Only this option keeps both no-regression and "an explicit choice is never silently downgraded". The selection is deterministic per connection, not a fallback after a failed launch.
+  Date/Author: 2026-10-16, session ruling on the plan-executor's question (option A), recorded by the plan-executor.
+- Decision: M5 runs as six tasks in one PR on `feat/own-repl-host-m5` (base main 56ea8c3). Code and mini-side work come first; every cua-linux step falls in one VM sitting at the end.
+  - **Task 1 (opus, main worktree): the switch.**
+    - `replHostFor`'s absent/empty defaults (`linux`, `browser_only`) and doctor's `repl.host` row, with `staged_vendor_default` gone.
+    - Package files and an `npm pack --dry-run --json` check for the owned documents and parser assets.
+    - `.claude-plugin/plugin.json` and `marketplace.json` from 0.11.0 to 0.12.0.
+    - `REPL_HOST_VERSION` from 0.4.0 to 0.5.0, so every M5 record attests one version, distinct from M4's pre-lifeline heads.
+  - **Task 2 (astra, sibling worktree, in parallel with task 1): the M5 oracle.**
+    - The live services row for a nativePipe stat/connect failure sentence, on both hosts.
+    - Locator polling recalibration from at least two vendor-against-vendor pairs.
+    - **RemoteProofEndpoints**: `scripts/repl-parity/remote.mjs` with the kill-client/count-one probe and owned cleanup. Its mini endpoint can be restarted under either host, so one enrolled browser-only identity also serves the benchmark's vendor-host control.
+    - A live selection/doctor lane for acceptance 9.
+    - The mini vendor controls those cases need.
+  - **Task 3 (sol-xhigh, after task 1's review): the documents.** README's ownership, Node floor, sandbox, Chrome, configuration and licensing sections and the staged macOS limitation; the dated Phase A/B revision of `2026-10-02-standalone-cua-design.md`.
+  - **Task 4 (opus): the mini sitting.**
+    - The cua host's `--suite all` against a fresh vendor pair.
+    - The 59-case corpus by host, docs-profiles, the MAWS probe and unchanged e2e.
+    - Scripted benchmark episodes 3+3, the selection lane and package contents.
+  - **Task 5: remote acceptance on the mini's browser-only endpoint, and the model benchmark.** Six serial controller runs: three vendor-host controls and three own, all on the same harness-owned browser-only route. That route is used because the resident mini's `computer,browser` surfaces select vendor, so #113's resident-route evidence is not a matched control.
+  - **Task 6 (opus): the cua-linux sitting.**
+    - Vendor and own `--suite all` at the M5 head, which carries the lifeline and strerror changes.
+    - The native-baseline own triple with a fresh vendor control, on a quiet controller.
+    - The three Linux runners and the Linux lifeline real-launcher check.
+    - The Linux remote endpoint with kill-client, and the selection lane.
+  Rationale: Same oracle/subject separation as M0–M4. The brief orders VM work into one sitting because the VM runs on the controller Mac and its timing needs that Mac quiet.
+  Date/Author: 2026-10-16, plan-executor M5 pre-flight.
 - Decision: M4 task 3's follow-up, as built.
   - **Orphaned tree.** Its root cause was a test double's deliberate busy loop, kept alive because M2's EOF drain was unbounded (M3 fixed that). What remained on the head: once a supervisor is SIGKILLed, nothing ends a kernel or worker that is busy in synchronous code. Each kernel and trusted worker now watches a lifeline FIFO whose only writer is the supervisor. A thread does the watching and exits the process when the FIFO closes. The setting is removed before the child's environment is copied, and test-harness kernels get lifelines too. The lifeline is verified live under the real macOS scoped sandbox before the PR; the Linux real-launcher check moves to M5's Linux sitting.
   - **OS error text.** nativePipe OS errors use per-platform strerror tables (glibc on Linux, Darwin libc on macOS) for every errno the relay's syscalls can reach, not libuv's text.
@@ -924,3 +1117,41 @@ owned browser service/extension host. The new docs directory must be included in
   - A test double's busy loop plus M2's unbounded drain left a supervisor tree spinning for 12 hours. Process lifetime has to be tied to the parent by construction (the lifeline), not by graceful-shutdown paths.
   - Local full-suite gates on a shared, overloaded machine are not evidence. ci-kit's hosted runner and event-based timing assertions (#143) replaced the "wait for a quiet machine" rule.
   - Carried to M5: re-record the Linux own `--suite all` at a head containing the lifeline and strerror changes; a live services row for the stat/connect error sentence; the quiet-machine native-baseline triple with a fresh vendor control; locator polling recalibrated from two or more vendor pairs; how the resident agent resolves Node 24 on Linux.
+- M5 (2026-10-16T23:59Z): the default switch is live.
+  - **Defaults.**
+    - Linux sessions, and macOS sessions that are browser-only with the cua browser service (including MAWS client mode and the profiles listing), run on cua's own host.
+    - Its Node is the official Node 24 that `cua install` pins and verifies, installed under `$CUA_HOME/node`, with the user's Node as an override or fallback.
+    - An implicit default with no Node 24 stays on the vendor host with `own_host_node_unavailable`, and doctor warns.
+    - An explicit cua is never downgraded.
+  - **Still on the vendor host.** macOS sessions that include `computer` stay vendor until #117 replaces the native helper. So do vendor-browser routes. `CUA_REPL_HOST=vendor` is the rollback, persisted in agent jobs.
+  - **Proof.** Everything was recorded on the one product tree e24a1cd.
+    - On the mini:
+      - `--suite all`: 479/479, 0 unexpected; the inventory gate covers 542/542.
+      - Corpus: 0 unexpected against three vendor controls after a mechanical recalibration.
+      - docs-profiles: 12/12.
+      - Scripted benchmark: 12/12 on each host.
+      - Selection lane: 260/260, with the cache and job checks.
+      - MAWS probe: PASS; `e2e:browser-cua` green on the mini's CI runner.
+      - Harness-owned relay endpoint: passes acceptance, and kill-client counts exactly 1.
+    - Browser benchmark: tool time is within the limit on 23/23 tasks. The outcome line reads `regression`, and is ruled not a host regression: controller mistakes, while scripted outcomes are equal.
+    - On cua-linux:
+      - 0 differences over 490 cases and 1,394 cells against two vendor controls.
+      - Acceptance 3 is qualified on Linux for the two browser scroll members that #141's VM Chrome stall keeps pending. The mini proves them at M5.
+      - The three runners pass.
+      - The lifeline ends children 251 ms after the supervisor is killed.
+      - Selection: 260/260. The Linux remote endpoint passes, with kill-client counting 1.
+    - Native speed on the quiet cloud box `cua-bench`: every latency row passes. TypeText's crash sentence varies vendor-against-vendor, and the session ruled it not a host difference (#130).
+  - **Residue.**
+    - #117 owns the macOS native switch.
+    - #120 must rewrite every ported file listed in `docs/cua-api/PROVENANCE.md` and the port headers, keeping the time-zone warm (#138), the vendor-derived behaviours in Surprises, and the nativePipe path rules taken from the binary.
+    - #148: Chrome window loss on the mini.
+    - #141: VM Chrome scroll stall.
+    - #130: how outcome rules should absorb vendor spread.
+  - **Lessons.**
+    - Live sittings found three product defects that unit tests could not:
+      - the stat sentence;
+      - over-limit socket paths, which the vendor reaches through a per-thread cwd;
+      - peer identity, which ruled out handing a socket to another process.
+      The oracle's job is to find exactly these.
+    - Most review waves were in the oracle again: version freshness, doctor parsing, empty preparation, peer witnesses, provisional coverage, refusal boundaries, route precedence. Treat oracle code as the critical path.
+    - Environment cost dominated again: Chrome windows closing, per-connection downloads, machine load, VM memory. Remedies that worked were a standing, logged reopen permission; one-time archive caching under the real install path; a separate quiet box for timing; and gates on a hosted runner.

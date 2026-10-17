@@ -4,11 +4,14 @@
 // pinned node on PATH). The macOS-only scripts are here (HELPER_SCRIPT, leftoverScript); the Linux ones are in
 // ./linux.mjs.
 import {remoteCommand, quote} from '../browser-parity/topology.mjs';
+import {SESSION_KEYS, sessionEnvironment} from '../repl-parity/devices.mjs';
 
 export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 // The MCP protocol version the harness asks for; the handshake record is kept per surface set and this version.
 export const PROTOCOL_VERSION = '2025-06-18';
 export const HOSTS = ['vendor', 'cua'];
+// Locale is part of the measured desktop environment, never an SSH-login preference.
+export const NATIVE_LOCALE = Object.freeze({LANG: 'C.UTF-8'});
 const assertHost = host => { if (!HOSTS.includes(host)) throw new Error('host must be vendor or cua'); };
 // An X display name (:0, :1.0, localhost:10.0), nothing a shell could read otherwise.
 // The own host's Node: an absolute path a shell cannot read otherwise, and only for the cua host (the vendor host runs on
@@ -29,17 +32,28 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // resident agent's).
 // `node` (cua host only) is the own host's Node, an absolute path on the device passed as CUA_NODE in this command's
 // environment, never a shell profile; the serve itself stays on the device's node, as the vendor baseline's did.
-export function serveCommand({device, checkout, home, host, platform, display, node}) {
-  assertHost(host);
-  assertOwnNode(host, node);
-  let x = '';
-  if (platform === 'linux') { assertDisplay(display); x = ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"`; }
-  const own = node === undefined ? '' : ` CUA_NODE=${quote(node)}`;
-  return remoteCommand(device, `cd ${quote(checkout)} && exec env CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${own} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x} node ${quote(`${checkout}/bin/cua.mjs`)} serve`);
+// When a prepared home is supplied, build the environment rather than inheriting SSH-login CUA settings.
+export function nativeEnvironment({home, userHome, host, display, platform, xSession, node}) {
+  assertHost(host); assertOwnNode(host, node);
+  if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
+  const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
+    : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
+  const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(userHome + '/.config')} `
+    : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
+}
+export function serveCommand(options) {
+  const {device, checkout, userHome, node} = options;
+  const script = userHome ? `${checkout}/scripts/native-baseline/serve.mjs` : `${checkout}/bin/cua.mjs`;
+  return remoteCommand(device, `cd ${quote(checkout)} && exec env ${nativeEnvironment(options)}${userHome ? ` CUA_NATIVE_NODE_MODE=${node ? 'diagnostic-override' : 'managed'}` : ''} node ${quote(script)}${userHome ? '' : ' serve'}`);
+}
+export function preparationScript(action, options) {
+  if (!['prepare','cleanup'].includes(action)) throw new Error('Invalid native preparation action');
+  return `cd ${PARITY_CHECKOUT} && node scripts/native-baseline/prepare.mjs ${action} ${quote(JSON.stringify(options))}`;
 }
 // The extended regular expression (for pgrep -f) of a serve that serveCommand started from `checkout`. The bracketed
 // [b] keeps it from matching the command line of the shell that runs pgrep with it.
-export const servePattern = checkout => `${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[b]in/cua\\.mjs serve`;
+export const servePattern = checkout => `${checkout.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/([b]in/cua\\.mjs serve|[s]cripts/native-baseline/serve\\.mjs)`;
 
 // Linux machine facts, pure (embedded in the preflight by their source): the distribution from /etc/os-release and the
 // kernel release; the root window's size and depth from xdpyinfo, or null when the display did not answer.
@@ -47,6 +61,14 @@ export function osReleaseFacts(text, kernel) {
   const field = key => text.match(new RegExp(`^${key}="?([^"\\n]*)"?$`, 'm'))?.[1] ?? null;
   const name = field('NAME') ?? 'Linux', pretty = field('PRETTY_NAME');
   return {name, version: pretty ? pretty.replace(new RegExp(`^${name} `), '') : field('VERSION'), build: kernel};
+}
+// /proc/cpuinfo on ARM often has implementer/part IDs but no model-name line for os.cpus(). lscpu decodes those IDs.
+export function linuxCpuFacts(text, processors) {
+  const fields = text ? JSON.parse(text).lscpu : [];
+  const usable = value => typeof value === 'string' && value.trim() && !['unknown','-'].includes(value.trim().toLowerCase());
+  const decoded = fields?.find(row => row.field === 'Model name:')?.data;
+  const model = usable(decoded) ? decoded.trim() : usable(processors[0]?.model) ? processors[0].model : null;
+  return {model, count: processors.length};
 }
 export function xDisplayFacts(text) {
   const size = /dimensions:\s+(\d+)x(\d+) pixels/.exec(text);
@@ -62,42 +84,45 @@ export function xDisplayFacts(text) {
 // is running that the run must know about (a cua-116-spike process, serves of the clone, the scratch app). macOS: model,
 // chip, memory, macOS, main display, TextEdit. Linux: CPU and memory, distribution and kernel, the X display (DISPLAY
 // `display`, the cookie in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
-export function preflightScript({host, display = ':0', node: ownNode}) {
+export function preflightScript({host, display = ':0', node: ownNode, prepared}) {
   assertHost(host);
   assertOwnNode(host, ownNode);
   assertDisplay(display);
   // The pattern is servePattern's, for the checkout the script runs in.
   const node = `import {execFileSync} from 'node:child_process';
 import {existsSync, readFileSync} from 'node:fs';
-import {arch, cpus, homedir, release as kernel, totalmem} from 'node:os';
+import {arch, cpus, homedir, hostname, release as kernel, totalmem} from 'node:os';
 import {join} from 'node:path';
 import {defaultHome, homeLayout, readPointer} from './src/runtime/layout.mjs';
 import {hostIdentity} from './src/repl-host/identity.mjs';
 import {sandboxModeFrom} from './src/runtime/sandbox.mjs';
+import {ownNodeFacts} from './scripts/repl-parity/provenance.mjs';
 const sh = (c, a, env) => { try { return execFileSync(c, a, {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30000, ...(env ? {env} : {})}).trim(); } catch { return ''; } };
 const read = path => { try { return readFileSync(path, 'utf8'); } catch { return ''; } };
 const ownNodePath = ${JSON.stringify(ownNode ?? null)};
 const home = defaultHome(), release = readPointer(home), id = hostIdentity({host: ${JSON.stringify(host)}, release: release ?? 'none'});
 const common = {
-  platform: process.platform, node: process.version,
+  platform: process.platform, node: process.version, arch: arch(), hostname: hostname(), cpu: {model: cpus()[0]?.model || arch(), count: cpus().length}, uptime: sh('uptime', []),
   commit: sh('git', ['rev-parse', 'HEAD']), dirty: sh('git', ['status', '--porcelain']) !== '', checkout: process.cwd(), home, release,
   handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', id.host + '@' + id.version, 'computer@${PROTOCOL_VERSION}.json'),
   runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null,
   spikeRunning: sh('pgrep', ['-f', 'cua-116-[s]pike']) !== '',
   serves: sh('pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
-  ...(ownNodePath === null ? {} : {ownNode: {path: ownNodePath, version: sh(ownNodePath, ['--version']) || null}}),
+  ownNode: ownNodePath === null ? ownNodeFacts(process.env, {home}) : {path: ownNodePath, version: sh(ownNodePath, ['--version']) || null},
   sandbox: (() => { try { return {mode: sandboxModeFrom(process.env, {platform: process.platform, surfaces: ['computer']}), explicit: process.env.CUA_SHIM_SANDBOX !== undefined}; } catch (e) { return {mode: null, error: e.message}; } })(),
 };
 let own;
 if (process.platform === 'linux') {
-  const xauthority = join(homedir(), '.Xauthority');
-  const x = {...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: xauthority};
+  const recorded = ${JSON.stringify(prepared?.xSession ?? null)};
+  const xauthority = recorded ? recorded.XAUTHORITY : join(homedir(), '.Xauthority');
+  const x = recorded ? {...process.env, ...recorded} : {...process.env, DISPLAY: ${JSON.stringify(display)}, XAUTHORITY: xauthority};
   const bus = process.env.DBUS_SESSION_BUS_ADDRESS ?? (process.env.XDG_RUNTIME_DIR ? 'unix:path=' + process.env.XDG_RUNTIME_DIR + '/bus' : null);
   own = {
+    cpu: (${linuxCpuFacts.toString()})(sh('lscpu', ['--json']), cpus()),
     hardware: {model: read('/sys/devices/virtual/dmi/id/product_name').trim() || null, chip: arch() + ', ' + cpus().length + ' CPUs', memoryBytes: totalmem()},
     os: (${osReleaseFacts.toString()})(read('/etc/os-release'), kernel()),
     display: (${xDisplayFacts.toString()})(sh('xdpyinfo', [], x)),
-    x: {display: ${JSON.stringify(display)}, xauthority: '~/.Xauthority', xauthorityPresent: existsSync(xauthority), bus: bus ? bus.replace(homedir(), '~') : null},
+    x: {display: x.DISPLAY, xauthority: xauthority ?? null, xauthorityPresent: xauthority ? existsSync(xauthority) : false, bus},
     gedit: sh('gedit', ['--version']) || null,
     geditRunning: sh('pgrep', ['-x', 'gedit']) !== '',
   };
@@ -114,7 +139,7 @@ if (process.platform === 'linux') {
   };
 }
 console.log(JSON.stringify({...common, ...own}));`;
-  return `cd ${PARITY_CHECKOUT} && node --input-type=module -e ${quote(node)}`;
+  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display})} ` : ''}node --input-type=module -e ${quote(node)}`;
 }
 
 // Clears (when asked) and then reports the native surface's handshake record of the selected host (the record of

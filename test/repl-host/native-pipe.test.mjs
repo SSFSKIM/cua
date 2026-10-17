@@ -1,10 +1,10 @@
 // The supervisor's native pipe relay (src/repl-host/native-pipe.mjs) against socket doubles and a real Unix socket:
-// the connect budget's expiry (unreachable live on macOS, where a saturated listener refuses at once), terminal events,
-// write failures and correlation.
+// the vendor's path checks, the connect budget's expiry (unreachable live on macOS, where a saturated listener refuses
+// at once), terminal events, write failures and correlation.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -27,10 +27,10 @@ class SocketDouble extends EventEmitter {
   end(callback) { this.writable = false; queueMicrotask(callback); }
 }
 
-function relayWith({connectTimeoutMs = 1000, stat = () => socketStat} = {}) {
+function relayWith({connectTimeoutMs = 1000, realpath = path => path, stat = () => socketStat} = {}) {
   const sent = [];
   const sockets = [];
-  const relay = nativePipeRelay({send: message => sent.push(message), connectTimeoutMs, stat,
+  const relay = nativePipeRelay({send: message => sent.push(message), connectTimeoutMs, realpath, stat,
     connect: ({path}) => { const socket = new SocketDouble(); socket.path = path; sockets.push(socket); return socket; }});
   return {relay, sent, sockets};
 }
@@ -60,21 +60,100 @@ test('the budget is the launch\'s setting', async () => {
   assert.deepEqual(sent, [{type: 'native_pipe_response', id: 'a', ok: false, error: CONNECT_TIMEOUT_SENTENCE}]);
 });
 
+// The vendor's validate_native_pipe_path (node_repl 26.928.40906, darwin-arm64 and linux-arm64 alike): is_absolute,
+// then canonicalize (realpath(3)), whose failure is `native pipe path unavailable: <io::Error>`, then metadata of the
+// canonical path, whose failure is `native pipe stat failed: <io::Error>`, then the S_IFSOCK check.
 test('paths are checked before anything connects', () => {
-  const {relay, sent, sockets} = relayWith({stat: path => (path === '/tmp/file' ? {isSocket: () => false} : (() => { throw Object.assign(new Error(`ENOENT: no such file or directory, stat '${path}'`), {code: 'ENOENT', errno: -2, syscall: 'stat'}); })())});
+  const missing = path => { throw Object.assign(new Error(`ENOENT: no such file or directory, realpath '${path}'`), {code: 'ENOENT', errno: -2, syscall: 'realpath'}); };
+  const canonical = {'/tmp/file': '/private/tmp/file', '/tmp/link.sock': '/private/tmp/real.sock', '/tmp/racing.sock': '/private/tmp/racing.sock'};
+  const statted = [];
+  const {relay, sent, sockets} = relayWith({
+    realpath: path => canonical[path] ?? missing(path),
+    stat: path => {
+      statted.push(path);
+      if (path === '/private/tmp/racing.sock') throw Object.assign(new Error(`EACCES: permission denied, stat '${path}'`), {code: 'EACCES', errno: -13, syscall: 'stat'});
+      return path === '/private/tmp/file' ? {isSocket: () => false} : socketStat;
+    },
+  });
   relay.handle({id: '1', op: 'connect', path: 'relative.sock'});
   relay.handle({id: '2', op: 'connect', path: 42});
   relay.handle({id: '3', op: 'connect', path: '/tmp/file'});
   relay.handle({id: '4', op: 'connect', path: '/tmp/absent'});
   relay.handle({id: '5', op: 'listen', path: '/tmp/x'});
+  relay.handle({id: '6', op: 'connect', path: '/tmp/racing.sock'});
+  relay.handle({id: '7', op: 'connect', path: '/tmp/nul\0.sock'});
   assert.deepEqual(sent, [
     {type: 'native_pipe_response', id: '1', ok: false, error: NOT_ABSOLUTE_SENTENCE},
     {type: 'native_pipe_response', id: '2', ok: false, error: NOT_ABSOLUTE_SENTENCE},
     {type: 'native_pipe_response', id: '3', ok: false, error: NOT_SOCKET_SENTENCE},
-    {type: 'native_pipe_response', id: '4', ok: false, error: 'failed to connect native pipe: No such file or directory (os error 2)'},
+    {type: 'native_pipe_response', id: '4', ok: false, error: 'native pipe path unavailable: No such file or directory (os error 2)'},
     {type: 'native_pipe_response', id: '5', ok: false, error: 'unsupported native pipe operation: listen'},
+    {type: 'native_pipe_response', id: '6', ok: false, error: 'native pipe stat failed: Permission denied (os error 13)'},
+    // Rust's path-to-C-string conversion refuses an interior NUL before any syscall, with std's own message.
+    {type: 'native_pipe_response', id: '7', ok: false, error: 'native pipe path unavailable: file name contained an unexpected NUL byte'},
   ]);
+  assert.deepEqual(statted, ['/private/tmp/file', '/private/tmp/racing.sock'], 'only a canonical path is statted');
   assert.equal(sockets.length, 0);
+  relay.handle({id: '8', op: 'connect', path: '/tmp/link.sock'});
+  assert.deepEqual(sockets.map(socket => socket.path), ['/tmp/link.sock'], 'the connect goes to the path as given');
+});
+
+// On the real filesystem, every way realpath(3) can fail names the path unavailable with the platform's own errno.
+test('a path that does not resolve is unavailable, with the platform\'s sentence, before anything connects', t => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-pipe-')));
+  t.after(() => { chmodSync(join(dir, 'locked'), 0o700); rmSync(dir, {recursive: true, force: true}); });
+  writeFileSync(join(dir, 'file'), '');
+  mkdirSync(join(dir, 'locked'));
+  chmodSync(join(dir, 'locked'), 0);
+  symlinkSync(join(dir, 'b.sock'), join(dir, 'a.sock'));
+  symlinkSync(join(dir, 'a.sock'), join(dir, 'b.sock'));
+  symlinkSync(join(dir, 'gone.sock'), join(dir, 'dangling.sock'));
+  const linux = process.platform === 'linux';
+  const cases = [
+    ['absent.sock', 'No such file or directory (os error 2)'],
+    ['dangling.sock', 'No such file or directory (os error 2)'],
+    ['file/child.sock', 'Not a directory (os error 20)'],
+    ['a.sock', `Too many levels of symbolic links (os error ${linux ? 40 : 62})`],
+  ];
+  // Root searches any directory, so the permission case holds only for an unprivileged user.
+  if (process.getuid?.() !== 0) cases.push(['locked/s.sock', 'Permission denied (os error 13)']);
+  const sent = [];
+  const relay = nativePipeRelay({send: message => sent.push(message), connect: () => assert.fail('nothing connects')});
+  for (const [name] of cases) relay.handle({id: name, op: 'connect', path: join(dir, name)});
+  assert.deepEqual(sent, cases.map(([name, detail]) => ({type: 'native_pipe_response', id: name, ok: false, error: `native pipe path unavailable: ${detail}`})));
+});
+
+// Rust's PathBuf keeps a canonical path's bytes; a UTF-8 string would turn a non-UTF-8 name into replacement characters.
+test('the canonical path reaches stat as realpath\'s bytes, unchanged', () => {
+  const canonical = Buffer.from([0x2f, 0x74, 0x2f, 0xff, 0x2f, 0x73]); // /t/\xff/s
+  const calls = [];
+  const {relay, sockets} = relayWith({
+    realpath: (path, options) => { calls.push(['realpath', path, options]); return canonical; },
+    stat: path => { calls.push(['stat', path]); return socketStat; },
+  });
+  relay.handle({id: 'b', op: 'connect', path: '/alias/s'});
+  assert.deepEqual(calls, [['realpath', '/alias/s', {encoding: 'buffer'}], ['stat', canonical]]);
+  assert.equal(calls[1][1], canonical, 'the same Buffer, not a decoded copy');
+  assert.deepEqual(sockets.map(socket => socket.path), ['/alias/s']);
+});
+
+// Linux names are bytes; APFS refuses a non-UTF-8 name (EILSEQ), so the case exists only on Linux.
+test('a socket under a non-UTF-8 directory, reached through an ASCII alias, connects', {skip: process.platform !== 'linux' && 'non-UTF-8 file names exist only on Linux (APFS refuses them with EILSEQ)'}, async t => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-pipe-')));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const raw = Buffer.concat([Buffer.from(`${dir}/`), Buffer.from([0x6e, 0xff, 0x6e])]);
+  mkdirSync(raw);
+  symlinkSync(raw, join(dir, 'alias'));
+  const path = join(dir, 'alias', 's.sock');
+  const server = createServer(c => c.end()).listen(path);
+  t.after(() => server.close());
+  await new Promise(resolve => server.once('listening', resolve));
+  const sent = [];
+  const relay = nativePipeRelay({send: message => sent.push(message)});
+  t.after(() => relay.closeAll());
+  relay.handle({id: 'n', op: 'connect', path});
+  for (let i = 0; i < 100 && !sent.some(m => m.type === 'native_pipe_response'); i++) await delay(10);
+  assert.deepEqual(sent.find(m => m.type === 'native_pipe_response'), {type: 'native_pipe_response', id: 'n', ok: true, result: {connection_id: 'native-pipe-connection-0'}});
 });
 
 test('a connected socket relays data and a write; a transport error that is not the peer leaving closes with its sentence; writes after close are refused', async () => {
@@ -213,16 +292,4 @@ test('an OS error reads as the platform C library\'s strerror, with the platform
   // Not a system error, or one no relay syscall reaches: its own message, never a guessed sentence.
   assert.equal(osErrorSentence(new Error('plain')), 'plain');
   assert.equal(osErrorSentence(Object.assign(new Error('spawn E2BIG'), {code: 'E2BIG', errno: -7, syscall: 'spawn'}), 'linux'), 'spawn E2BIG');
-});
-
-test('a symbolic link loop at the socket path is refused with the platform\'s sentence before anything connects', t => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'cua-pipe-')));
-  t.after(() => rmSync(dir, {recursive: true, force: true}));
-  symlinkSync(join(dir, 'b.sock'), join(dir, 'a.sock'));
-  symlinkSync(join(dir, 'a.sock'), join(dir, 'b.sock'));
-  const sent = [];
-  const relay = nativePipeRelay({send: message => sent.push(message)});
-  relay.handle({id: 'loop', op: 'connect', path: join(dir, 'a.sock')});
-  const errno = process.platform === 'linux' ? 40 : 62;
-  assert.deepEqual(sent, [{type: 'native_pipe_response', id: 'loop', ok: false, error: `failed to connect native pipe: Too many levels of symbolic links (os error ${errno})`}]);
 });

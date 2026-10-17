@@ -1,0 +1,65 @@
+{
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi",
+  "commit": "60f44d4f1c41074c59a075e841a28034657d3143",
+  "dirty": false,
+  "release": "26.928.40906-darwin-arm64",
+  "node": "v24.18.0",
+  "runtimeNode": "v24.21.0",
+  "platform": "darwin",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "browserRoute": {
+    "selection": {
+      "service": "cua",
+      "reason": "cua_route",
+      "explicit": false,
+      "route": "cua",
+      "registration": {
+        "route": "cua",
+        "at": 1792154213441.2683
+      }
+    },
+    "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi/chrome/cua-registration.json",
+    "manifests": []
+  },
+  "device": "mini",
+  "profile": "ssfs",
+  "chromeProfileDirectory": "Profile 1",
+  "extensionInstanceId": "3b45d47c-51f6-469b-a915-3d46ac5fb0ad",
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "discoveryHome": "/Users/new/Library/Application Support/cua",
+  "fixturePort": 48732,
+  "userHome": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi/home",
+  "ownedPreparation": {
+    "device": "mini",
+    "home": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi",
+    "experiment": "parity",
+    "token": "b1390ca9-fc9c-4a5d-841e-4fe327e22b3d"
+  },
+  "display": null,
+  "xSession": {},
+  "environment": {
+    "PATH": "/Users/new/.nvm/versions/node/v24.18.0/bin:/opt/homebrew/bin:/opt/homebrew/bin:/usr/local/bin:/Users/new/.cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+    "TMPDIR": "/var/folders/c1/l4z5k02n2779byvnymzxsvth0000gn/T/",
+    "LANG": "ko_KR.UTF-8",
+    "USER": "new",
+    "LOGNAME": "new",
+    "HOME": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi/home",
+    "CUA_HOME": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi",
+    "CHROME_CONFIG_HOME": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi/home/.config",
+    "XDG_CONFIG_HOME": "/Users/new/.local/share/cua-parity-remote/parity-HpfTfi/home/.config",
+    "CUA_PARITY_NODE_MODE": "managed"
+  },
+  "load": {
+    "average": [
+      1.5185546875,
+      1.83154296875,
+      2.03759765625
+    ],
+    "cpus": 10
+  }
+}

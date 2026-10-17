@@ -43,7 +43,9 @@ test('a real Linux connection: Linux host notes, secrets_list lists the store, t
   const output = new PassThrough();
   const frames = [];
   createInterface({input: output}).on('line', line => frames.push(JSON.parse(line)));
-  const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000'};
+  // The vendor host, explicitly: the fake installed runtime's launcher is the vendor's (fake-upstream-process.mjs), and a
+  // Linux session would otherwise default to cua's own host wherever the Node running the tests is 24 or later.
+  const env = {PATH: process.env.PATH, HOME: user.home, TMPDIR: process.env.TMPDIR, CUA_SHIM_SECRETS: 'on', DISPLAY: ':0', XDG_RUNTIME_DIR: '/run/user/1000', CUA_REPL_HOST: 'vendor'};
   const connection = await openConnection({home, env, host: LINUX, sessionId: randomUUID(), input, output, diagnostics: () => {}});
   const reply = async id => { for (let i = 0; i < 400; i++) { const f = frames.find(m => m.id === id); if (f) return f; await new Promise(r => setTimeout(r, 25)); } throw new Error(`no reply ${id}`); };
   const send = msg => input.write(JSON.stringify({jsonrpc: '2.0', ...msg}) + '\n');

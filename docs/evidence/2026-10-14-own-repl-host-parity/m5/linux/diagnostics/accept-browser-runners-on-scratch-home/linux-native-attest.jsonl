@@ -1,0 +1,7 @@
+{"session":1,"pid":70304,"kind":"source","facts":{"checkout":"/home/admin/Developer/GitHub/cua-parity","commit":"b3cb6dbfde346a7e1e90bd2bc065052853aec056","dirty":false,"release":"26.928.40906-linux-arm64","ownNode":{"path":"/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node","version":"v24.22.0"},"platform":"linux","home":"/home/admin/.local/share/cua-parity-remote/parity-PMhCs6","cuaNodeSet":false,"requested":{"CUA_REPL_HOST":"cua","CUA_BROWSER_SERVICE":null,"CUA_SHIM_SURFACES":"computer"}}}
+{"session":1,"pid":70304,"kind":"initialize","serverInfo":{"name":"cua-repl-host","version":"0.5.0"}}
+{"session":1,"pid":70304,"kind":"result","tool":"js","isError":false,"replHost":{"host":"cua","version":"0.5.0"}}
+{"session":1,"pid":70304,"kind":"supervisor","node":{"path":"/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node","version":"v24.22.0"},"argv":["/home/admin/.local/share/cua-parity-remote/parity-PMhCs6/node/24.22.0/bin/node","--disable-sigusr1","…/supervisor.mjs"],"found":1}
+{"session":1,"pid":70304,"kind":"result","tool":"js","isError":false,"replHost":{"host":"cua","version":"0.5.0"}}
+{"session":1,"pid":70304,"kind":"result","tool":"js","isError":false,"replHost":{"host":"cua","version":"0.5.0"}}
+{"session":1,"pid":70304,"kind":"result","tool":"end_task","isError":false,"replHost":null}

@@ -25,7 +25,7 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
     const installed = report.checks.find(c => c.name === 'runtime.installed');
     assert.equal(installed.status, 'fail');
     assert.match(installed.detail, /cua install/);
-    for (const c of report.checks) assert.ok(['pass', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
+    for (const c of report.checks) assert.ok(['pass', 'warn', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
     for (const name of ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'])
       assert.equal(report.checks.find(c => c.name === name)?.status, 'skip', name);
   } finally { s.cleanup(); }
@@ -43,6 +43,30 @@ test('install --archive with a file that is not the pinned archive fails classif
     assert.equal(out.ok, false);
     assert.equal(out.error.code, 'archive_length_mismatch');
     assert.equal(existsSync(join(home, 'current.json')), false);
+  } finally { s.cleanup(); }
+});
+
+test('install takes the runtime first: a runtime archive that is not the pin fails before any Node is fetched or placed', {skip: !installedHomeSupported}, () => {
+  const s = scratch();
+  try {
+    const archive = join(s.dir, 'not-the-pin.zip');
+    writeFileSync(archive, 'definitely not 687457051 bytes');
+    const home = join(s.dir, 'home');
+    for (const node of [[], ['--node-archive', join(s.dir, 'absent.tar.gz')], ['--no-node']]) {
+      const r = cua(['install', '--archive', archive, ...node, '--json'], home);
+      assert.equal(r.status, 1, node.join(' '));
+      assert.equal(JSON.parse(r.stdout).error.code, 'archive_length_mismatch', node.join(' '));
+      assert.equal(existsSync(join(home, 'node')), false, 'no Node step ran');
+    }
+  } finally { s.cleanup(); }
+});
+
+test('install takes --node-archive or --no-node, not both', () => {
+  const s = scratch();
+  try {
+    const r = cua(['install', '--no-node', '--node-archive', join(s.dir, 'x.tar.gz')], s.dir);
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /--node-archive or --no-node, not both/);
   } finally { s.cleanup(); }
 });
 
@@ -78,6 +102,7 @@ test('the usage names the default home per platform: Application Support on macO
   const {usageFor} = await import('../src/cli.mjs');
   assert.match(usageFor('darwin'), /^environment: CUA_HOME \(default ~\/Library\/Application Support\/cua\); for agent run \(agent install/m);
   assert.match(usageFor('darwin'), /install \[--archive <ChatGPT zip>\]/);
+  assert.match(usageFor('linux'), /\[--node-archive <node tarball> \| --no-node\]/);
   assert.match(usageFor('linux'), /^environment: CUA_HOME \(default \$XDG_DATA_HOME\/cua, else ~\/\.local\/share\/cua\); for agent run \(agent install carries those set into\n  the unit\):/m);
   assert.match(usageFor('linux'), /install \[--archive <ChatGPT deb>\]/);
 });

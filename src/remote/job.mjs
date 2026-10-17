@@ -8,7 +8,11 @@
 // only when given (cua or vendor, the one-release rollback a job's fixed environment could not otherwise take), never a
 // resolved default: unset, each launch resolves it from the home's route (src/runtime/launch.mjs browserServiceFor).
 // CUA_REPL_HOST likewise only when given (cua or vendor; vendor is the installed agent's rollback), never a resolved
-// default: unset, each connection resolves its REPL host afresh (src/runtime/launch.mjs replHostFor).
+// default: unset, each connection resolves its REPL host afresh (src/runtime/launch.mjs replHostFor). CUA_NODE likewise
+// only when given (an absolute path, carried as given), never the Node a connection would resolve: it is how a job whose
+// node is older than the own REPL host's floor (a Linux system Node 22) finds a Node 24 or later for it; unset, each
+// connection resolves the own host's Node afresh (src/runtime/launch.mjs ownHostNode), so a Node installed later counts.
+// The job scope is deliberate: a shell profile would reach every checkout on the device.
 // Every check that can refuse runs here, before a service manager is touched. `--relay` is refused
 // (relay_unavailable) when this checkout cannot load the ws package the relay path needs: such a job would refuse at
 // every start and be restarted every 10 s.
@@ -18,7 +22,7 @@ import {checkRelayUrl, readDevice} from './device.mjs';
 import {AGENT_SETTINGS, limitsFrom} from './limits.mjs';
 import {consoleCheckFrom} from './console.mjs';
 import {parseFixedAddress} from './address.mjs';
-import {browserServiceFrom, replHostFrom, surfacesFrom} from '../mcp/surface.mjs';
+import {browserServiceFrom, cuaNodeFrom, replHostFrom, surfacesFrom} from '../mcp/surface.mjs';
 import {runtimeIdleFrom} from '../mcp/lazy-runtime.mjs';
 import {loadWebSocket} from './relay-link.mjs';
 import {fail} from '../runtime/errors.mjs';
@@ -37,6 +41,7 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
   runtimeIdleFrom(env);
   const browserService = browserServiceFrom(env);
   const replHost = replHostFrom(env);
+  const cuaNode = cuaNodeFrom(env);
   const device = readDevice(home);
   if (!device) fail('remote_not_enrolled', `${machine} is not enrolled for remote control`, {hint: 'run cua remote enroll first'});
   if (device.relayUrl) checkRelayUrl(device.relayUrl);
@@ -48,6 +53,7 @@ export async function agentJobSpec({home, env, http, surfaces = DEFAULT_SURFACES
     ...Object.fromEntries([...AGENT_SETTINGS, 'CUA_RUNTIME_IDLE_MS'].filter(key => env[key] !== undefined).map(key => [key, env[key]])),
     ...(browserService ? {CUA_BROWSER_SERVICE: browserService} : {}),
     ...(replHost ? {CUA_REPL_HOST: replHost} : {}),
+    ...(cuaNode ? {CUA_NODE: cuaNode} : {}),
   };
   return {
     programArguments: [node, cli, 'agent', 'run', ...args],

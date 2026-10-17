@@ -2,7 +2,7 @@
 // and NR:trusted-worker.js:134-230. Not a host implementation; the selected real host supplies nodeRepl.
 import {createBrowserService,PINNED_VENDOR_VERSION} from '../../../src/services/browser.mjs';
 import {createSkyService} from '../../../src/services/sky.mjs';
-import {writeFileSync} from 'node:fs';
+import {writeFileSync,readFileSync} from 'node:fs';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const events=[];let calls=0,completedHooks=0;
 const request={message:'Synthetic fixture approval',requestedSchema:{type:'object',properties:{fixture:{type:'string'}}},meta:{fixture:'request'}};
@@ -42,6 +42,22 @@ export async function handleRpc(r){
   return createSkyService({loadVendor:async()=>backend,secrets,platform:'darwin'}).handleRpc({type:'execute',method:'type_text',args:[{app:'fixture',text:'{{secret:PARITY_SYNTHETIC}}'}]});
  }
  case 'pipe':{
+  if(r.mode==='long-path'){
+   const path=nodeRepl.env.PARITY_PIPE_LONG,metadata={platform:process.platform,pathBytes:Buffer.byteLength(path),sunPathBytes:process.platform==='darwin'?104:108};
+   // `peer` is the owned listener's own journal (fixtures/long-pipe.mjs), read from disk once the subject's socket has
+   // settled; the nativePipe under test never touches it, so a success the listener did not see cannot be reported.
+   const journal=nodeRepl.env.PARITY_PIPE_LONG_PEER;if(!journal)throw new Error('The long-path peer witness is harness-only');
+   const peer=()=>JSON.parse(readFileSync(journal,'utf8'));
+   let socket;try{socket=await nodeRepl.nativePipe.createConnection(path);}catch(error){return {...metadata,status:'refused',bytes:[],message:error.message,peer:peer()};}
+   return await new Promise((resolve,reject)=>{
+    const bytes=[];let message=null,finished=false;
+    const finish=status=>{if(finished)return;finished=true;clearTimeout(timer);try{resolve({...metadata,status,bytes,message,peer:peer()});}catch(error){reject(error);}};
+    const timer=setTimeout(()=>{socket.end();finish('fixture-timeout');},5000);
+    socket.on('data',chunk=>bytes.push(...chunk));socket.on('error',error=>{message=error.message;});
+    socket.on('close',()=>finish(message===null?'connected':'transport-error'));
+    socket.write(new Uint8Array([0,255,128,10,13,65]));
+   });
+  }
   if(r.mode==='wire-error'&&nodeRepl.env.PARITY_FIXTURE_WIRE_INJECTION!=='1')throw new Error('Native wire injection is harness-only');
   if(r.mode==='relative')return nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_RELATIVE);
   if(r.mode==='timeout'){const start=performance.now();try{await nodeRepl.nativePipe.createConnection(nodeRepl.env.PARITY_PIPE_BLOCKED);return {refused:false};}catch(e){return {refused:true,budget:Number(nodeRepl.env.NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS??nodeRepl.env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS),observation:/timed out|timeout/i.test(e.message)?'timer-expired':/refused|temporarily unavailable/i.test(e.message)?'saturated-peer-refused':'unexpected-error',platform:process.platform,...(process.platform==='linux'?{message:e.message,boundedRefusal:performance.now()-start<1000}:{})};}}

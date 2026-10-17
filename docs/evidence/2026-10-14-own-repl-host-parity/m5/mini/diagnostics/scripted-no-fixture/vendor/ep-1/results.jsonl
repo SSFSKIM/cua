@@ -1,0 +1,2 @@
+{"case":"bench/drag-box","assertion":{"ok":false,"reason":"setup failed","error":{"code":"Error","message":"Browser Use cannot open http://127.0.0.1:48731/miniwob/miniwob/drag-box.html in tab 1030417338. Browser reported: net::ERR_CONNECTION_REFUSED"}}}
+{"case":"bench/drag-items","assertion":{"ok":false,"reason":"setup failed","error":{"code":"Error","message":"Browser Use cannot open http://127.0.0.1:48731/miniwob/miniwob/drag-items.html in tab 1030417340. Browser reported: net::ERR_CONNECTION_REFUSED"}}}

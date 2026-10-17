@@ -1,0 +1,4 @@
+2026-10-16T17:22:14Z before cleanup: processes naming the scratch tree, Electron or the probe user data:
+(none)
+probe scratch dirs under /tmp:
+(none)

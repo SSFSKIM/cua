@@ -7,7 +7,7 @@ import {after, test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 
@@ -16,24 +16,28 @@ const macOS = process.platform === 'darwin';
 let buildDir;
 after(() => { if (buildDir) rmSync(buildDir, {recursive: true, force: true}); });
 
-// The probe, built once with the system clang -> {bin} or {skip: why}. The default SDK can be one the linker cannot
-// read (the mini: the Command Line Tools' macOS 27 SDK's libSystem.tbd against Xcode's ld, M0's evidence README), and an
-// environment rebuilt from `env -i` drops the SDKROOT a shell there exports. So each SDK on offer is tried in turn: the
-// caller's SDKROOT, the default, Xcode's own. Only when none builds is the suite skipped, naming the compiler's error.
+// The probe, built once with the system clang -> {bin}, {skip: why} or {rejected: why}. The default SDK can be one the
+// linker cannot read (the mini: the Command Line Tools' macOS 27 SDK's libSystem.tbd against Xcode's ld, M0's evidence
+// README), and an environment rebuilt from `env -i` drops the SDKROOT a shell there exports. So each SDK on offer is
+// tried in turn: the caller's SDKROOT, the default, Xcode's own. The suite is skipped only when the toolchain is what
+// fails (no compiler, no SDK it can link against); a compiler that rejects the probe's own source fails it.
 const XCODE_SDK = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk';
 function buildProbe() {
   if (!macOS) return {skip: 'macOS only'};
   buildDir = mkdtempSync(join(tmpdir(), 'cua-capture-bin-'));
   const out = join(buildDir, 'capture-argv');
   const sdks = [...new Set([process.env.SDKROOT, undefined, existsSync(XCODE_SDK) ? XCODE_SDK : null].filter(sdk => sdk !== null && sdk !== ''))];
-  let error = '';
+  const failures = [];
   for (const sdk of sdks) {
     const {SDKROOT: _caller, ...env} = process.env;
     const r = spawnSync('/usr/bin/clang', ['-O2', '-Wall', '-Werror', '-o', out, SOURCE], {encoding: 'utf8', env: sdk ? {...env, SDKROOT: sdk} : env});
     if (r.status === 0) return {bin: out};
-    error ||= `${(r.stderr || String(r.error ?? '')).split('\n').find(Boolean) ?? `clang exited ${r.status}`}`;
+    failures.push(r.error ? String(r.error) : r.stderr);
   }
-  return {skip: `no SDK here builds the probe with /usr/bin/clang (${error})`};
+  // A diagnostic against the probe's own source is the source's fault, whichever SDK it came from.
+  const diagnostic = failures.flatMap(text => text.split('\n')).find(line => line.includes(`${basename(SOURCE)}:`) && /\berror:/.test(line));
+  if (diagnostic) return {rejected: `the compiler rejects the probe's source: ${diagnostic}`};
+  return {skip: `the toolchain cannot build here, with any SDK on offer (${failures[0].split('\n').find(Boolean) ?? 'no output'})`};
 }
 const probe = buildProbe();
 const skip = probe.skip ?? false;
@@ -44,6 +48,7 @@ function capture(t) {
     try { for (const pid of pidsIn(join(dir, 'pids'))) if (alive(pid)) process.kill(pid, 'SIGKILL'); } catch { /* none recorded */ }
     rmSync(dir, {recursive: true, force: true});
   });
+  if (probe.rejected) assert.fail(probe.rejected);
   return {dir, bin: probe.bin};
 }
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };

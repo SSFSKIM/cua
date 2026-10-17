@@ -11,9 +11,9 @@
 // disabled: no profile) plus the host's read paths. The kernel adds the deny list: each denied directory as a `none`
 // entry, each re-exposed path as a read entry (where the state also makes one writable, the original's precedence keeps
 // it writable: write beats read at equal depth). The kernel's network is always restricted.
-import {accessSync, constants, lstatSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
+import {lstatSync, mkdirSync, readdirSync, realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
-import {dirname, isAbsolute, join, relative} from 'node:path';
+import {isAbsolute, join, relative} from 'node:path';
 import {SandboxStateError, assertDenyListShape, realish, sandboxPolicy} from '../runtime/sandbox.mjs';
 import {fail} from '../runtime/errors.mjs';
 import {homeLayout} from '../runtime/layout.mjs';
@@ -28,32 +28,31 @@ const within = (path, root) => {
 };
 const exists = path => { try { lstatSync(path); return true; } catch { return false; } };
 
-// Discovering the secret store's tiers fails closed, with one exception that is sound by construction:
-// - Absent (ENOENT): nothing there to deny.
-// - Not searchable (X_OK denied on the store or on projects/, e.g. mode 0000 or 0600): no path through that directory
-//   resolves for this uid, sandboxed or not, so no tier can be reached by its path under the store; the store itself
-//   stays on the deny list and the launch proceeds (the store is unusable meanwhile: secret_unreadable at use).
-//   The boundary this accepts: the store follows a symlinked tier (src/secrets/store.mjs:52 joins
-//   projects/<slug>/<KEY>, and its O_NOFOLLOW at :93 guards the key file only), so a tier whose target lies outside
-//   the store is reachable by that target's own real path; with the store unsearchable cua cannot discover such a
-//   target, so it is not denied, and a cell that already knows the real path could read it. Before #115 nothing was.
-// - Anything else (searchable but not listable, the 0111 case; ELOOP, EIO...): a tier it hides would stay readable to
-//   the kernel, so the launch is refused.
-const DISCOVERY_HINT = 'make the secret store and its projects/ readable by your account (chmod u+rx), or set CUA_SHIM_SANDBOX=disabled to run without a sandbox openly';
-const discoveryFailed = (path, error) => fail('sandbox_state_invalid',
-  `the secret store's tiers could not be listed at ${path} (${error.code ?? error.message}), so the kernel's deny list would miss any tier there; the launch is refused`, {hint: DISCOVERY_HINT});
-const searchable = dir => { try { accessSync(dir, constants.X_OK); return true; } catch { return false; } };
-function isSymlink(path) {
-  try { return lstatSync(path).isSymbolicLink(); } catch (error) {
-    if (error.code === 'ENOENT' || (error.code === 'EACCES' && !searchable(dirname(path)))) return false;
-    return discoveryFailed(path, error);
-  }
+// Discovering the secret store's tiers fails closed for a confined launch (a disabled one never discovers them):
+// - Absent (ENOENT, a fresh install with no secrets, a store without projects/): nothing there to deny; proceed.
+// - A symlinked tier whose target is absent: the target is denied by its path and created (0700) with the other
+//   missing deny targets at launch (prepareDenyTargets), so a tier made there later is already denied.
+// - Any other failure to establish the tier set (EACCES on the store or projects/, whatever its mode; ELOOP; EIO...)
+//   refuses: a hidden tier's target outside the store stays readable to the kernel by its own real path, since the
+//   store follows a symlinked tier (src/secrets/store.mjs:52 joins projects/<slug>/<KEY>; its O_NOFOLLOW at :93 guards
+//   the key file only).
+// The refusal names the directory's role and the store's path, never a tier or key name (the store's own errors name
+// at most a key and its file), and gives the remedy.
+const discoveryFailed = (role, store, error) => fail('sandbox_state_invalid',
+  `${role} (secret store ${store}) could not be read (${error.code ?? 'error'}), so the kernel's deny list cannot be established; this confined launch is refused`,
+  {hint: 'fix that directory\'s permissions for your account (chmod u+rwx), or run the connection with CUA_SHIM_SANDBOX=disabled'});
+const ROLE = {store: 'the secret store', projects: 'the secret store\'s projects/ directory', tier: 'a project tier in the secret store\'s projects/ directory',
+  project: 'this connection\'s project tier'};
+// Whether `path` is a symlink; a failure is its parent directory's (`role`).
+function isSymlink(path, role, store) {
+  try { return lstatSync(path).isSymbolicLink(); } catch (error) { if (error.code === 'ENOENT') return false; return discoveryFailed(role, store, error); }
 }
-function tiersIn(projects) {
-  try { return readdirSync(projects).sort(); } catch (error) {
-    if (error.code === 'ENOENT' || (error.code === 'EACCES' && !searchable(projects))) return [];
-    return discoveryFailed(projects, error);
-  }
+function tiersIn(projects, store) {
+  try { return readdirSync(projects).sort(); } catch (error) { if (error.code === 'ENOENT') return []; return discoveryFailed(ROLE.projects, store, error); }
+}
+// realish (a dangling link followed to its target), its failure classified as `role`'s.
+function realOf(path, role, store) {
+  try { return realish(path); } catch (error) { return discoveryFailed(role, store, error); }
 }
 
 // The deny list for one launch -> {deny, reexpose, metadataOnly}, absolute paths. Denied (the kernel role only):
@@ -86,9 +85,9 @@ export function denyListFor({home, env, secretsDir, secretsProjectDir, sessionId
     deny.push(path);
   };
   const projects = join(store, PROJECTS_FOLDER);
-  if (isSymlink(projects)) addSecret(realish(projects));
-  for (const name of tiersIn(projects)) if (isSymlink(join(projects, name))) addSecret(realish(join(projects, name)));
-  if (secretsProjectDir) addSecret(realish(secretsProjectDir));
+  if (isSymlink(projects, ROLE.store, store)) addSecret(realOf(projects, ROLE.projects, store));
+  for (const name of tiersIn(projects, store)) if (isSymlink(join(projects, name), ROLE.projects, store)) addSecret(realOf(join(projects, name), ROLE.tier, store));
+  if (secretsProjectDir) addSecret(realOf(secretsProjectDir, ROLE.project, store));
   const add = path => { if (!deny.includes(path)) deny.push(path); };
   add(join(env.HOME || homedir(), '.config', 'cua'));
   const run = join(layout.run, sessionId);

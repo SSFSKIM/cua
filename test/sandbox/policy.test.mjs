@@ -146,25 +146,57 @@ test('the kernel profile denies by the deny list\'s paths as given (buildLaunch 
 
 // Discovery fails closed (review finding, M1): only an absent path means "nothing to deny there".
 const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-test('a searchable projects/ the account cannot list (0111) refuses rather than miss a symlinked tier; an unsearchable store or projects/ (0000) and an absent one proceed, the store denied', {skip: asRoot && 'root lists any directory'}, t => {
+// Discovery fails closed for a confined launch (#115 M1 review): any store or projects/ whose tier set cannot be
+// established refuses, whatever its mode; only absence (ENOENT) proceeds.
+test('a store or projects/ whose tiers cannot be established refuses, whatever its mode; an external tier behind them never goes undenied', {skip: asRoot && 'root lists any directory'}, t => {
   const l = layout(t);
   const tier = join(l.elsewhere, 'tier');
   symlinkSync(tier, join(l.store, 'projects', '-linked-project'));
-  assert.ok(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}).deny.includes(tier), 'listable: the tier is denied');
+  const list = (extra = {}) => denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin', ...extra});
+  assert.ok(list().deny.includes(tier), 'listable: the external tier is denied');
   const withMode = (path, mode, check) => { chmodSync(path, mode); try { check(); } finally { chmodSync(path, 0o700); } };
-  withMode(join(l.store, 'projects'), 0o111, () => assert.throws(() => denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}),
-    error => error.code === 'sandbox_state_invalid' && error.message.includes(join(l.store, 'projects')) && /EACCES/.test(error.message)));
-  // A store or projects/ this uid cannot search (0000, 0600): nothing under it resolves by path for this uid, so the
-  // launch proceeds with the store itself denied (probe-secrets then meets secret_unreadable at use).
-  const expected = platform => (platform === 'darwin' ? [l.store, join(l.home, '.config', 'cua'), l.cua] : [l.store, join(l.home, '.config', 'cua'), ...['state', 'remote', 'chrome', 'run'].map(d => join(l.cua, d))]);
-  for (const [dir, mode] of [[l.store, 0o000], [l.store, 0o600], [join(l.store, 'projects'), 0o000], [join(l.store, 'projects'), 0o444]])
-    for (const platform of ['darwin', 'linux'])
-      withMode(dir, mode, () => assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform}).deny, expected(platform), `${dir} ${mode.toString(8)} ${platform}`));
+  const refused = (role, extra) => assert.throws(() => list(extra),
+    error => error.code === 'sandbox_state_invalid' && error.message.startsWith(role) && error.message.includes(`(secret store ${l.store})`) && /EACCES/.test(error.message)
+      && /CUA_SHIM_SANDBOX=disabled/.test(error.hint) && /permissions/.test(error.hint), role);
+  for (const [dir, mode, role] of [[join(l.store, 'projects'), 0o111, 'the secret store\'s projects/ directory'], [join(l.store, 'projects'), 0o000, 'the secret store\'s projects/ directory'],
+    [join(l.store, 'projects'), 0o444, 'the secret store\'s projects/ directory'], [l.store, 0o000, 'the secret store'], [l.store, 0o600, 'the secret store']])
+    for (const platform of ['darwin', 'linux']) withMode(dir, mode, () => refused(role, {platform}));
+  // An explicit project tier beneath a blocked projects/, present or not: the same classified refusal, never raw EACCES.
+  mkdirSync(join(l.store, 'projects', '-own-project'));
+  for (const projectDir of [join(l.store, 'projects', '-own-project'), join(l.store, 'projects', '-not-yet-a-project')])
+    withMode(join(l.store, 'projects'), 0o000, () => refused('the secret store\'s projects/ directory', {secretsProjectDir: projectDir}));
   // Absent: no store, or a store without projects/, has no tiers to deny.
   rmSync(join(l.store, 'projects'), {recursive: true});
-  assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}).deny, [l.store, join(l.home, '.config', 'cua'), l.cua]);
-  assert.deepEqual(denyListFor({home: l.cua, env: {HOME: l.home}, secretsDir: join(l.root, 'no-store'), sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}).deny,
-    [join(l.root, 'no-store'), join(l.home, '.config', 'cua'), l.cua]);
+  assert.deepEqual(list().deny, [l.store, join(l.home, '.config', 'cua'), l.cua]);
+  assert.deepEqual(list({secretsDir: join(l.root, 'no-store')}).deny, [join(l.root, 'no-store'), join(l.home, '.config', 'cua'), l.cua]);
+});
+
+test('a dangling symlinked tier proceeds: its absent target is denied by path and created (0700) before the kernel starts', t => {
+  const l = layout(t);
+  const target = join(l.elsewhere, 'not-there-yet');
+  symlinkSync(target, join(l.store, 'projects', '-dangling'));
+  const list = denyListFor({home: l.cua, env: {HOME: l.home}, sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'});
+  assert.deepEqual(list.deny, [l.store, target, join(l.home, '.config', 'cua'), l.cua]);
+  assert.equal(existsSync(target), false, 'nothing is created while the list is computed');
+  prepareDenyTargets(list);
+  assert.equal(statSync(target).mode & 0o777, 0o700, 'created with the other missing deny targets at launch');
+});
+
+test('the refusal names the directory\'s role and the store, never a tier or key name', {skip: asRoot && 'root lists any directory'}, t => {
+  const l = layout(t);
+  mkdirSync(join(l.elsewhere, 'tiername-acme-private'), {recursive: true});
+  symlinkSync(join(l.elsewhere, 'tiername-acme-private'), join(l.store, 'projects', '-Users-someone-tiername-acme-private'));
+  writeFileSync(join(l.store, 'KEYNAME_ACME_TOKEN'), 'x', {mode: 0o600});
+  // 0444: projects/ lists, but its entries cannot be inspected: the failure is at a tier, and still names none.
+  for (const mode of [0o111, 0o444, 0o000]) {
+    chmodSync(join(l.store, 'projects'), mode);
+    let error;
+    try { denyListFor({home: l.cua, env: {HOME: l.home}, secretsProjectDir: join(l.store, 'projects', '-Users-someone-tiername-acme-private'), sessionId: 's', sessionTmp: l.sessionTmp, platform: 'darwin'}); }
+    catch (caught) { error = caught; } finally { chmodSync(join(l.store, 'projects'), 0o700); }
+    assert.equal(error?.code, 'sandbox_state_invalid', mode.toString(8));
+    const text = `${error.message} ${error.hint} ${error.stack}`;
+    assert.equal(/tiername|KEYNAME|acme/i.test(text), false, `${mode.toString(8)}: ${error.message}`);
+  }
 });
 
 test('a symlinked tier inside the store or inside another tier adds nothing: the outer deny covers it', t => {

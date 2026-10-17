@@ -846,18 +846,23 @@ test('a layout whose deny targets overlap fails the preflight in scoped and defa
 // #115 M1 review round 2: the store's tiers are discovered strictly for a confined connection only. A disabled one
 // confines nothing, so an unreadable projects/ does not refuse it, and its launch carries no deny list.
 const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
-test('an unreadable projects/ refuses a confined launch; a disabled one is built without a deny list', {skip: asRoot && 'root lists any directory'}, t => {
+test('a projects/ whose tiers cannot be established (0111, 0000, 0444) refuses a confined launch; a disabled one is built without a deny list', {skip: asRoot && 'root lists any directory'}, t => {
   const {home, runtime} = fixtureRuntime(t);
   const user = scratchUserHome(t);
   const projects = join(user, STORE_RELATIVE, 'projects');
   mkdirSync(projects, {recursive: true});
+  // An external tier behind it: readable by its real path, so a projects/ that hides it refuses, whatever the mode.
+  mkdirSync(join(user, 'elsewhere-tier'));
+  symlinkSync(join(user, 'elsewhere-tier'), join(projects, '-a-project'));
   const build = sandbox => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, HOME: user}, sandbox});
-  chmodSync(projects, 0o111);
   let disabled;
-  try {
-    for (const sandbox of ['scoped', 'default', undefined]) assert.equal(outcome(() => build(sandbox)).code, 'sandbox_state_invalid', String(sandbox));
-    disabled = build('disabled');
-  } finally { chmodSync(projects, 0o700); }
+  for (const mode of [0o111, 0o000, 0o444]) {
+    chmodSync(projects, mode);
+    try {
+      for (const sandbox of ['scoped', 'default', undefined]) assert.equal(outcome(() => build(sandbox)).code, 'sandbox_state_invalid', `${mode.toString(8)} ${sandbox}`);
+      disabled = build('disabled');
+    } finally { chmodSync(projects, 0o700); }
+  }
   assert.equal(disabled.denyRead, null);
   assert.equal('CUA_SANDBOX_DENY_READ' in disabled.env, false, 'no list reaches the runtime');
   assertSandboxFits('disabled', disabled);

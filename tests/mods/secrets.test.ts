@@ -502,3 +502,50 @@ test('a value printed in base64 or hex is scrubbed too', async ($, on) => {
   // Since 0.14.0 each spelling has a handle of its own, which restores to it on write.
   expect(ran.result).toEqual({ stdout: '[secret:API_KEY~b64] [secret:API_KEY~hex]', stderr: '', interrupted: false })
 })
+
+// A `/secret` echo whose value was never stored (refused, typed in the box)
+// and is shaped like no token: only the echo's own mask hides it.
+describe("a /secret echo a tool reads back is masked, whichever guard holds the session", () => {
+  const UNSTORED = 'zq unstored 77'
+  const echo = `<command-name>/secret</command-name>\n<command-args>OTHER_KEY ${UNSTORED}</command-args>`
+  const masked = `<command-name>/secret</command-name>\n<command-args>OTHER_KEY ${MASK.repeat(UNSTORED.length)}</command-args>`
+  // A Read of a transcript or history export that holds the echo, beside a stored value's base64.
+  const read = (on: On) =>
+    on('tool.call', (_, e) => ({
+      result: { type: 'text', file: { filePath: e.file_path, content: `${echo}\n${btoa(STORED)}`, numLines: 3, startLine: 1, totalLines: 3 } } as never,
+    }))
+  const fileOf = (call: { result?: unknown }) => (call.result as { file: { content: string } }).file.content
+
+  test('in a nested tool result the conversation keeps', async ($, on) => {
+    let kept: unknown
+    on('session.append', (_, e, next) => {
+      kept = e.message.content[0]?.content
+      return next(e)
+    })
+    await startWith($, on, { API_KEY: STORED })
+    await $.session
+      .append({
+        message: { type: 'user', role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: `history: ${echo}` }] }] },
+        door: 'tool-result',
+        origin: { kind: 'tool', tool: 'Read' },
+        uuid: 'row-1',
+      } as never)
+      .catch(() => undefined)
+    expect(kept).toEqual([{ type: 'text', text: `history: ${masked}` }])
+  })
+
+  test("in a Read's result and record, a stored value's handle beside it intact", async ($, on) => {
+    read(on)
+    await startWith($, on, { API_KEY: STORED })
+    const call = await $.tool.call({ tool: 'Read', file_path: '/work/repo/history.jsonl' } as never)
+    expect(fileOf(call)).toBe(`${masked}\n[secret:API_KEY~b64]`)
+  })
+
+  test("with devcloud's marker set, the echo is still masked and the rest left to devcloud", async ($, on) => {
+    marker(on, { owner: 'devcloud', version: 1 })
+    read(on)
+    await startWith($, on, { API_KEY: STORED })
+    const call = await $.tool.call({ tool: 'Read', file_path: '/work/repo/history.jsonl' } as never)
+    expect(fileOf(call)).toBe(`${masked}\n${btoa(STORED)}`)
+  })
+})

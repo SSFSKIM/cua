@@ -98,6 +98,20 @@ export function maskEcho(text: string): string {
   return text.replace(ECHO, (_, head: string, value: string, tail: string) => head + MASK.repeat(value.length) + tail)
 }
 
+// A tool's record with every `/secret` echo in it masked; the same object when none changed.
+function maskRecord(value: unknown): unknown {
+  if (typeof value === 'string') return maskEcho(value)
+  if (Array.isArray(value)) {
+    const items = value.map(maskRecord)
+    return items.some((item, i) => item !== value[i]) ? items : value
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value).map(([k, v]) => [k, maskRecord(v)] as const)
+    return entries.some(([k, v]) => v !== (value as Record<string, unknown>)[k]) ? Object.fromEntries(entries) : value
+  }
+  return value
+}
+
 /**
  * A project's path as Claude Code names its folder under ~/.claude/projects/:
  * every character other than an ASCII letter or digit becomes '-', and a slug
@@ -306,17 +320,43 @@ export function registerSecrets(on: On) {
     return next(e)
   })
 
-  // A `/secret` echo typed where nothing masked it is masked in the row the
-  // conversation keeps, whichever guard holds the session. Taken with a
-  // matcher every row meets: the guard registers session.append too.
+  // A `/secret` echo typed where nothing masked it is masked wherever the
+  // model or the transcript would read it, whichever guard holds the session:
+  // the echo is `/secret`'s, and its value may be stored nowhere (refused) or
+  // shaped like no token. In a tool's record here, since the transcript keeps
+  // it (`toolUseResult`) beside the row the model reads, which
+  // `session.append` cannot reach. Each taken with a matcher every event
+  // meets: the guard registers tool.call and session.append too.
+  on('tool.call', { tool: /(?:)/ }, async (_, e, next) => {
+    const ran = await next(e)
+    if (ran.deny !== undefined) {
+      const deny = maskEcho(ran.deny)
+      return deny === ran.deny ? ran : { deny }
+    }
+    if (ran.isError) {
+      const text = maskEcho(ran.text ?? '')
+      return text === ran.text ? ran : { deny: text }
+    }
+    const result = maskRecord(ran.result)
+    return result === ran.result ? ran : { result, context: ran.context }
+  }).catch((_, e, next) => (next.called ? { deny: 'secret: the echo mask failed on this result, so it is withheld.' } : next(e)))
+
   on('session.append', { uuid: /(?:)/ }, async (_, e, next) => {
     let isChanged = false
     const content = e.message.content.map((block) => {
-      if (block.type !== 'text' || typeof block.text !== 'string') return block
-      const text = maskEcho(block.text)
-      if (text === block.text) return block
-      isChanged = true
-      return { ...block, text }
+      if (block.type === 'text' && typeof block.text === 'string') {
+        const text = maskEcho(block.text)
+        if (text === block.text) return block
+        isChanged = true
+        return { ...block, text }
+      }
+      if (block.type === 'tool_result') {
+        const inner = maskRecord(block.content)
+        if (inner === block.content) return block
+        isChanged = true
+        return { ...block, content: inner }
+      }
+      return block
     })
     return isChanged ? next({ ...e, message: { ...e.message, content } }) : next(e)
   })

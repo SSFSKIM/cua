@@ -64,7 +64,12 @@ encrypted at rest only as the disk is.
 
 What a tool prints of a stored value is the secrets guard's (below): `/secret`
 itself only masks the value of a `/secret` echo typed where nothing masked it,
-in the row the conversation keeps, whichever guard holds the session.
+whichever guard holds the session: in every row the conversation keeps, a
+tool result's included, and in a tool's record (`toolUseResult`), so a tool
+that reads an echo back (a transcript, the prompt history) shows bullets. That
+value may be stored nowhere and shaped like no token, so no guard would catch
+it. The mask touches only the echo's value, so a guard's handles beside it
+stay whole in either hook order.
 
 Known limits: characters that arrive together with Enter show in the clear
 for the frame before the redraw; an edit inside the bullets (the cursor moved

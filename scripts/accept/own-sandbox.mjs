@@ -67,7 +67,7 @@ const {createRequire} = await import('node:module'), {execFileSync} = await impo
 const run = (file, args = []) => execFileSync(file, args, {encoding: 'utf8'}).trim();
 const env = Object.fromEntries(run('/usr/bin/env').split('\\n').map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
 const self = {pid: Number(run('/bin/sh', ['-c', 'echo $PPID'])), cwd: run('/bin/pwd'), tmpdir: env.TMPDIR, sandbox: env.CODEX_SANDBOX ?? null};
-const code = fn => { try { const value = fn(); return {ok: true, value}; } catch (error) { return {ok: false, code: error.code ?? (error.status != null ? `exit ${error.status}` : 'error')}; } };
+const code = fn => { try { const value = fn(); return {ok: true, value}; } catch (error) { return {ok: false, code: error.code ?? (error.status != null ? \`exit \${error.status}\` : 'error')}; } };
 const targets = ${JSON.stringify(targets)};
 const out = {reads: {}, writes: {}};
 for (const [label, t] of Object.entries(targets))

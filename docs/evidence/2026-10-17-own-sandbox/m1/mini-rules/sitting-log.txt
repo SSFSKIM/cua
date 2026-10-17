@@ -155,3 +155,10 @@
 2026-10-17T17:24:23.963Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70
 2026-10-17T17:24:29.527Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70: exit 0
 2026-10-17T17:24:30.103Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70: com.apple.Terminal
+2026-10-17T17:25:11.083Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.65 -> idle
+2026-10-17T17:25:59.106Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.63 -> idle
+2026-10-17T17:25:59.108Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs
+2026-10-17T17:35:36.676Z watch cfprefs-5d9bf70: started for pid 17934
+2026-10-17T17:42:49.268Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: exit 1
+2026-10-17T17:42:49.693Z front after gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: com.apple.Terminal
+2026-10-17T17:43:18.045Z watch cfprefs-5d9bf70: the run ended on its own; no stop

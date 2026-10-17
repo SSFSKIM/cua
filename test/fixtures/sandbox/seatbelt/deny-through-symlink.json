@@ -1,0 +1,228 @@
+{
+  "name": "deny-through-symlink",
+  "description": "a deny entry whose path is a symlink: the excluded subpath is its target",
+  "upstream": {
+    "repository": "openai/codex",
+    "tag": "rust-v0.159.2",
+    "commit": "ff6aec96948b70d94983af2641a6b67c94faeff5"
+  },
+  "setup": [
+    {
+      "dir": "home/.config/cua"
+    },
+    {
+      "dir": "home/.config/claude-secrets/projects"
+    },
+    {
+      "dir": "cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/bin"
+    },
+    {
+      "dir": "cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules"
+    },
+    {
+      "file": "cuahome/node/24.22.0/bin/node"
+    },
+    {
+      "dir": "cuahome/state/codex"
+    },
+    {
+      "dir": "cuahome/remote"
+    },
+    {
+      "dir": "cuahome/chrome"
+    },
+    {
+      "dir": "cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp"
+    },
+    {
+      "dir": "cuahome/run/0d3c9a51-7d3f-4c1e-9b8e-5a2f6c1d0e47"
+    },
+    {
+      "file": "cua/src/repl-host/kernel.mjs"
+    },
+    {
+      "file": "cua/src/repl-host/trusted-worker.mjs"
+    },
+    {
+      "dir": "cua/src/cua-api"
+    },
+    {
+      "dir": "cua/docs/cua-api"
+    },
+    {
+      "dir": "cua/src/services"
+    },
+    {
+      "dir": "elsewhere/config"
+    },
+    {
+      "symlink": "home/.config/linked",
+      "target": "@ROOT@/elsewhere/config"
+    }
+  ],
+  "tmpdir": "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+  "input": {
+    "cwd": "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+    "profile": {
+      "type": "managed",
+      "network": "restricted",
+      "file_system": {
+        "type": "restricted",
+        "entries": [
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cua/docs/cua-api"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cua/src/cua-api"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cua/src/repl-host"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cuahome/node/24.22.0/bin"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/home/.config/linked"
+            },
+            "access": "none"
+          },
+          {
+            "path": {
+              "type": "special",
+              "value": {
+                "kind": "root"
+              }
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "special",
+              "value": {
+                "kind": "tmpdir"
+              }
+            },
+            "access": "write"
+          },
+          {
+            "path": {
+              "type": "special",
+              "value": {
+                "kind": "project_roots"
+              }
+            },
+            "access": "write"
+          }
+        ]
+      }
+    },
+    "command": [
+      "@ROOT@/cuahome/node/24.22.0/bin/node",
+      "--experimental-vm-modules",
+      "@ROOT@/cua/src/repl-host/kernel.mjs",
+      "--session-id",
+      "3f0b6c2ad9e84f1b8a7c5e4d3b2a1908",
+      "--working-dir",
+      "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291"
+    ],
+    "env": {
+      "HOME": "@ROOT@/home",
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "LANG": "C.UTF-8",
+      "TMPDIR": "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+      "NODE_REPL_AUTH_TOKEN": "synthetic",
+      "node_repl_auth_token": "synthetic-lowercase",
+      "OPENAI_FEDERATION_RULE_ID": "synthetic",
+      "OPENAI_IDENTITY_TOKEN_FILE": "synthetic",
+      "OPENAI_WORKLOAD_IDENTITY_CONTEXT": "synthetic",
+      "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN": "synthetic",
+      "CODEX_GUARDIAN_DECISIONS_API_KEY": "synthetic"
+    }
+  },
+  "output": {
+    "argsNumeric": [
+      "-p",
+      "(version 1)\n\n; inspired by Chrome's sandbox policy:\n; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/common.sb;l=273-319;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd\n; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/renderer.sb;l=64;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd\n\n; start with closed-by-default\n(deny default)\n\n; child processes inherit the policy of their parent\n(allow process-exec)\n(allow process-fork)\n(allow signal (target same-sandbox))\n\n; process-info\n(allow process-info* (target same-sandbox))\n\n(allow file-write-data\n  (require-all\n    (path \"/dev/null\")\n    (vnode-type CHARACTER-DEVICE)))\n\n; sysctls permitted.\n(allow sysctl-read\n  (sysctl-name \"hw.activecpu\")\n  (sysctl-name \"hw.busfrequency_compat\")\n  (sysctl-name \"hw.byteorder\")\n  (sysctl-name \"hw.cacheconfig\")\n  (sysctl-name \"hw.cachelinesize_compat\")\n  (sysctl-name \"hw.cpufamily\")\n  (sysctl-name \"hw.cpufrequency_compat\")\n  (sysctl-name \"hw.cputype\")\n  (sysctl-name \"hw.l1dcachesize_compat\")\n  (sysctl-name \"hw.l1icachesize_compat\")\n  (sysctl-name \"hw.l2cachesize_compat\")\n  (sysctl-name \"hw.l3cachesize_compat\")\n  (sysctl-name \"hw.logicalcpu_max\")\n  (sysctl-name \"hw.machine\")\n  (sysctl-name \"hw.model\")\n  (sysctl-name \"hw.memsize\")\n  (sysctl-name \"hw.ncpu\")\n  (sysctl-name \"hw.nperflevels\")\n  ; Chrome locks these CPU feature detection down a bit more tightly,\n  ; but mostly for fingerprinting concerns which isn't an issue for codex.\n  (sysctl-name-prefix \"hw.optional.arm.\")\n  (sysctl-name-prefix \"hw.optional.armv8_\")\n  (sysctl-name \"hw.packages\")\n  (sysctl-name \"hw.pagesize_compat\")\n  (sysctl-name \"hw.pagesize\")\n  (sysctl-name \"hw.physicalcpu\")\n  (sysctl-name \"hw.physicalcpu_max\")\n  (sysctl-name \"hw.logicalcpu\")\n  (sysctl-name \"hw.cpufrequency\")\n  (sysctl-name \"hw.tbfrequency_compat\")\n  (sysctl-name \"hw.vectorunit\")\n  (sysctl-name \"machdep.cpu.brand_string\")\n  (sysctl-name \"kern.argmax\")\n  (sysctl-name \"kern.hostname\")\n  (sysctl-name \"kern.maxfilesperproc\")\n  (sysctl-name \"kern.maxproc\")\n  (sysctl-name \"kern.osproductversion\")\n  (sysctl-name \"kern.osrelease\")\n  (sysctl-name \"kern.ostype\")\n  (sysctl-name \"kern.osvariant_status\")\n  (sysctl-name \"kern.osversion\")\n  (sysctl-name \"kern.secure_kernel\")\n  ; Python's ProcessPoolExecutor queries this through sysconf(_SC_SEM_NSEMS_MAX).\n  (sysctl-name \"kern.sysv.semmns\")\n  (sysctl-name \"kern.usrstack64\")\n  (sysctl-name \"kern.version\")\n  (sysctl-name \"sysctl.proc_cputype\")\n  (sysctl-name \"vm.loadavg\")\n  (sysctl-name-prefix \"hw.perflevel\")\n  (sysctl-name-prefix \"kern.proc.pgrp.\")\n  (sysctl-name-prefix \"kern.proc.pid.\")\n  (sysctl-name-prefix \"net.routetable.\")\n)\n\n; Allow Java to read some CPU info. This is misclassified as a \"write\" because\n; userspace passes a memory buffer to the sysctl, but conceptually it is a read.\n(allow sysctl-write\n  (sysctl-name \"kern.grade_cputype\"))\n\n; IOKit\n(allow iokit-open\n  (iokit-registry-entry-class \"RootDomainUserClient\")\n)\n\n; needed to look up user info, see https://crbug.com/792228\n(allow mach-lookup\n  (global-name \"com.apple.system.opendirectoryd.libinfo\")\n)\n\n; Needed for python multiprocessing on MacOS for the SemLock\n(allow ipc-posix-sem)\n\n; Needed for PyTorch/libomp on macOS to register OpenMP runtimes.\n(allow ipc-posix-shm-read-data\n  ipc-posix-shm-write-create\n  ipc-posix-shm-write-unlink\n  (ipc-posix-name-regex #\"^/__KMP_REGISTERED_LIB_[0-9]+$\"))\n\n(allow mach-lookup\n  (global-name \"com.apple.PowerManagement.control\")\n)\n\n; allow openpty()\n(allow pseudo-tty)\n(allow file-read* file-write* file-ioctl (literal \"/dev/ptmx\"))\n(allow file-read* file-write*\n  (require-all\n    (regex #\"^/dev/ttys[0-9]+\")\n    (extension \"com.apple.sandbox.pty\")))\n; PTYs created before entering seatbelt may lack the extension; allow ioctl\n; on those slave ttys so interactive shells detect a TTY and remain functional.\n(allow file-ioctl (regex #\"^/dev/ttys[0-9]+\"))\n\n; allow read-only file operations\n(allow file-read*\n(subpath (param \"READABLE_ROOT_0\")) (subpath (param \"READABLE_ROOT_1\")) (subpath (param \"READABLE_ROOT_2\")) (subpath (param \"READABLE_ROOT_3\")) (subpath (param \"READABLE_ROOT_4\")) (require-all (subpath (param \"READABLE_ROOT_5\")) (require-not (literal (param \"READABLE_ROOT_5_EXCLUDED_0\"))) (require-not (subpath (param \"READABLE_ROOT_5_EXCLUDED_0\"))) ) (subpath (param \"READABLE_ROOT_6\")) (subpath (param \"READABLE_ROOT_7\"))\n)\n(allow file-write*\n(require-all (subpath (param \"WRITABLE_ROOT_0\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.git(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.agents(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.codex(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.aws(/.*)?$\")) ) (require-all (subpath (param \"WRITABLE_ROOT_1\")) (require-not (literal (param \"WRITABLE_ROOT_1_EXCLUDED_0\"))) (require-not (subpath (param \"WRITABLE_ROOT_1_EXCLUDED_0\"))) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.git(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.agents(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.codex(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.aws(/.*)?$\")) )\n)\n(deny file-write-unlink (require-all (literal (param \"WRITABLE_ROOT_0\")) (vnode-type DIRECTORY)))\n(deny file-write-unlink (require-all (literal (param \"WRITABLE_ROOT_1\")) (vnode-type DIRECTORY)))\n\n(deny file-read* file-write* (literal \"/private/tmp/codex-daemon-@EUID@\") (subpath \"/private/tmp/codex-daemon-@EUID@\"))\n(deny network-outbound (remote unix-socket (subpath \"/private/tmp/codex-daemon-@EUID@\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/private/tmp\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/private\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/\")))\n(deny mach-lookup (xpc-service-name-prefix \"\"))\n\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal (param \"PROTECTED_ANCESTOR_0\"))))\n(deny system-fcntl (fcntl-command 80 110))\n(deny file-ioctl (ioctl-command 2147578994))",
+      "-DREADABLE_ROOT_0=@ROOT@/cua/docs/cua-api",
+      "-DREADABLE_ROOT_1=@ROOT@/cua/src/cua-api",
+      "-DREADABLE_ROOT_2=@ROOT@/cua/src/repl-host",
+      "-DREADABLE_ROOT_3=@ROOT@/cuahome/node/24.22.0/bin",
+      "-DREADABLE_ROOT_4=@ROOT@/cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+      "-DREADABLE_ROOT_5=/",
+      "-DREADABLE_ROOT_5_EXCLUDED_0=@ROOT@/elsewhere/config",
+      "-DREADABLE_ROOT_6=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+      "-DREADABLE_ROOT_7=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+      "-DWRITABLE_ROOT_0=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+      "-DWRITABLE_ROOT_1=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+      "-DWRITABLE_ROOT_1_EXCLUDED_0=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/.codex",
+      "-DPROTECTED_ANCESTOR_0=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+      "--",
+      "@ROOT@/cuahome/node/24.22.0/bin/node",
+      "--experimental-vm-modules",
+      "@ROOT@/cua/src/repl-host/kernel.mjs",
+      "--session-id",
+      "3f0b6c2ad9e84f1b8a7c5e4d3b2a1908",
+      "--working-dir",
+      "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291"
+    ],
+    "argsSymbolic": [
+      "-p",
+      "(version 1)\n\n; inspired by Chrome's sandbox policy:\n; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/common.sb;l=273-319;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd\n; https://source.chromium.org/chromium/chromium/src/+/main:sandbox/policy/mac/renderer.sb;l=64;drc=7b3962fe2e5fc9e2ee58000dc8fbf3429d84d3bd\n\n; start with closed-by-default\n(deny default)\n\n; child processes inherit the policy of their parent\n(allow process-exec)\n(allow process-fork)\n(allow signal (target same-sandbox))\n\n; process-info\n(allow process-info* (target same-sandbox))\n\n(allow file-write-data\n  (require-all\n    (path \"/dev/null\")\n    (vnode-type CHARACTER-DEVICE)))\n\n; sysctls permitted.\n(allow sysctl-read\n  (sysctl-name \"hw.activecpu\")\n  (sysctl-name \"hw.busfrequency_compat\")\n  (sysctl-name \"hw.byteorder\")\n  (sysctl-name \"hw.cacheconfig\")\n  (sysctl-name \"hw.cachelinesize_compat\")\n  (sysctl-name \"hw.cpufamily\")\n  (sysctl-name \"hw.cpufrequency_compat\")\n  (sysctl-name \"hw.cputype\")\n  (sysctl-name \"hw.l1dcachesize_compat\")\n  (sysctl-name \"hw.l1icachesize_compat\")\n  (sysctl-name \"hw.l2cachesize_compat\")\n  (sysctl-name \"hw.l3cachesize_compat\")\n  (sysctl-name \"hw.logicalcpu_max\")\n  (sysctl-name \"hw.machine\")\n  (sysctl-name \"hw.model\")\n  (sysctl-name \"hw.memsize\")\n  (sysctl-name \"hw.ncpu\")\n  (sysctl-name \"hw.nperflevels\")\n  ; Chrome locks these CPU feature detection down a bit more tightly,\n  ; but mostly for fingerprinting concerns which isn't an issue for codex.\n  (sysctl-name-prefix \"hw.optional.arm.\")\n  (sysctl-name-prefix \"hw.optional.armv8_\")\n  (sysctl-name \"hw.packages\")\n  (sysctl-name \"hw.pagesize_compat\")\n  (sysctl-name \"hw.pagesize\")\n  (sysctl-name \"hw.physicalcpu\")\n  (sysctl-name \"hw.physicalcpu_max\")\n  (sysctl-name \"hw.logicalcpu\")\n  (sysctl-name \"hw.cpufrequency\")\n  (sysctl-name \"hw.tbfrequency_compat\")\n  (sysctl-name \"hw.vectorunit\")\n  (sysctl-name \"machdep.cpu.brand_string\")\n  (sysctl-name \"kern.argmax\")\n  (sysctl-name \"kern.hostname\")\n  (sysctl-name \"kern.maxfilesperproc\")\n  (sysctl-name \"kern.maxproc\")\n  (sysctl-name \"kern.osproductversion\")\n  (sysctl-name \"kern.osrelease\")\n  (sysctl-name \"kern.ostype\")\n  (sysctl-name \"kern.osvariant_status\")\n  (sysctl-name \"kern.osversion\")\n  (sysctl-name \"kern.secure_kernel\")\n  ; Python's ProcessPoolExecutor queries this through sysconf(_SC_SEM_NSEMS_MAX).\n  (sysctl-name \"kern.sysv.semmns\")\n  (sysctl-name \"kern.usrstack64\")\n  (sysctl-name \"kern.version\")\n  (sysctl-name \"sysctl.proc_cputype\")\n  (sysctl-name \"vm.loadavg\")\n  (sysctl-name-prefix \"hw.perflevel\")\n  (sysctl-name-prefix \"kern.proc.pgrp.\")\n  (sysctl-name-prefix \"kern.proc.pid.\")\n  (sysctl-name-prefix \"net.routetable.\")\n)\n\n; Allow Java to read some CPU info. This is misclassified as a \"write\" because\n; userspace passes a memory buffer to the sysctl, but conceptually it is a read.\n(allow sysctl-write\n  (sysctl-name \"kern.grade_cputype\"))\n\n; IOKit\n(allow iokit-open\n  (iokit-registry-entry-class \"RootDomainUserClient\")\n)\n\n; needed to look up user info, see https://crbug.com/792228\n(allow mach-lookup\n  (global-name \"com.apple.system.opendirectoryd.libinfo\")\n)\n\n; Needed for python multiprocessing on MacOS for the SemLock\n(allow ipc-posix-sem)\n\n; Needed for PyTorch/libomp on macOS to register OpenMP runtimes.\n(allow ipc-posix-shm-read-data\n  ipc-posix-shm-write-create\n  ipc-posix-shm-write-unlink\n  (ipc-posix-name-regex #\"^/__KMP_REGISTERED_LIB_[0-9]+$\"))\n\n(allow mach-lookup\n  (global-name \"com.apple.PowerManagement.control\")\n)\n\n; allow openpty()\n(allow pseudo-tty)\n(allow file-read* file-write* file-ioctl (literal \"/dev/ptmx\"))\n(allow file-read* file-write*\n  (require-all\n    (regex #\"^/dev/ttys[0-9]+\")\n    (extension \"com.apple.sandbox.pty\")))\n; PTYs created before entering seatbelt may lack the extension; allow ioctl\n; on those slave ttys so interactive shells detect a TTY and remain functional.\n(allow file-ioctl (regex #\"^/dev/ttys[0-9]+\"))\n\n; allow read-only file operations\n(allow file-read*\n(subpath (param \"READABLE_ROOT_0\")) (subpath (param \"READABLE_ROOT_1\")) (subpath (param \"READABLE_ROOT_2\")) (subpath (param \"READABLE_ROOT_3\")) (subpath (param \"READABLE_ROOT_4\")) (require-all (subpath (param \"READABLE_ROOT_5\")) (require-not (literal (param \"READABLE_ROOT_5_EXCLUDED_0\"))) (require-not (subpath (param \"READABLE_ROOT_5_EXCLUDED_0\"))) ) (subpath (param \"READABLE_ROOT_6\")) (subpath (param \"READABLE_ROOT_7\"))\n)\n(allow file-write*\n(require-all (subpath (param \"WRITABLE_ROOT_0\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.git(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.agents(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.codex(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/tmp/\\.aws(/.*)?$\")) ) (require-all (subpath (param \"WRITABLE_ROOT_1\")) (require-not (literal (param \"WRITABLE_ROOT_1_EXCLUDED_0\"))) (require-not (subpath (param \"WRITABLE_ROOT_1_EXCLUDED_0\"))) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.git(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.agents(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.codex(/.*)?$\")) (require-not (regex #\"^@ROOT@/cuahome/run/7062c419\\-3288\\-4b60\\-970f\\-a808ecfcf291/\\.aws(/.*)?$\")) )\n)\n(deny file-write-unlink (require-all (literal (param \"WRITABLE_ROOT_0\")) (vnode-type DIRECTORY)))\n(deny file-write-unlink (require-all (literal (param \"WRITABLE_ROOT_1\")) (vnode-type DIRECTORY)))\n\n(deny file-read* file-write* (literal \"/private/tmp/codex-daemon-@EUID@\") (subpath \"/private/tmp/codex-daemon-@EUID@\"))\n(deny network-outbound (remote unix-socket (subpath \"/private/tmp/codex-daemon-@EUID@\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/private/tmp\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/private\")))\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal \"/\")))\n(deny mach-lookup (xpc-service-name-prefix \"\"))\n\n(deny file-write-unlink (require-all (vnode-type DIRECTORY) (literal (param \"PROTECTED_ANCESTOR_0\"))))\n(deny system-fcntl (fcntl-command 80 110))\n(deny file-ioctl (ioctl-command TIOCSTI))",
+      "-DREADABLE_ROOT_0=@ROOT@/cua/docs/cua-api",
+      "-DREADABLE_ROOT_1=@ROOT@/cua/src/cua-api",
+      "-DREADABLE_ROOT_2=@ROOT@/cua/src/repl-host",
+      "-DREADABLE_ROOT_3=@ROOT@/cuahome/node/24.22.0/bin",
+      "-DREADABLE_ROOT_4=@ROOT@/cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules",
+      "-DREADABLE_ROOT_5=/",
+      "-DREADABLE_ROOT_5_EXCLUDED_0=@ROOT@/elsewhere/config",
+      "-DREADABLE_ROOT_6=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+      "-DREADABLE_ROOT_7=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+      "-DWRITABLE_ROOT_0=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+      "-DWRITABLE_ROOT_1=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+      "-DWRITABLE_ROOT_1_EXCLUDED_0=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/.codex",
+      "-DPROTECTED_ANCESTOR_0=@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291",
+      "--",
+      "@ROOT@/cuahome/node/24.22.0/bin/node",
+      "--experimental-vm-modules",
+      "@ROOT@/cua/src/repl-host/kernel.mjs",
+      "--session-id",
+      "3f0b6c2ad9e84f1b8a7c5e4d3b2a1908",
+      "--working-dir",
+      "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291"
+    ],
+    "env": {
+      "CODEX_GUARDIAN_DECISIONS_API_KEY": "synthetic",
+      "CODEX_SANDBOX": "seatbelt",
+      "CODEX_SANDBOX_NETWORK_DISABLED": "1",
+      "HOME": "@ROOT@/home",
+      "LANG": "C.UTF-8",
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "TMPDIR": "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp"
+    }
+  }
+}

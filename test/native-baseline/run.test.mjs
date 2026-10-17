@@ -71,6 +71,7 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
 function fakeClient(options, cua, state) {
   const own = state.answeringHost === 'cua';
   const meta = own ? {'cua/nativeExecution': state.answeringNode ?? prepared.ownNode, 'cua/replHost': {host: 'cua', version: '0.1.0'}, 'cua/taskId': 't'} : {'cua/nativeExecution': {path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't'};
+  meta['cua/sandboxLaunch'] = {launcher: 'codex-cli', tmpdir: 'inherited'};
   state.serves = [...(state.serves ?? []), options.args.at(-1)];
   state.options = options;
   return {
@@ -112,7 +113,9 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   assert.equal(meta.host, 'vendor');
   assert.equal(meta.connections, 3);
   assert.deepEqual(meta.sandbox, {mode: 'disabled', explicit: false});
-  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/nativeExecution':{path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't'}})));
+  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/nativeExecution':{path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't','cua/sandboxLaunch':{launcher:'codex-cli',tmpdir:'inherited'}}})));
+  assert.deepEqual(meta.sandboxLaunch, {launcher: 'codex-cli', tmpdir: 'inherited'});
+  assert.equal(meta.surface, 'computer');
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...prepared.xSession});
   // The cold plan: a planned miss clears the record first; each connection is labelled by the record it found.
   assert.equal(state.clears, 1);
@@ -178,6 +181,9 @@ test('a cell that times out stops all further input, and the run still ends its 
 
 // The macOS path through the same loop: TextEdit's approval (accepted only for that exact request), its launch panel,
 // the scratch document, the guarded series, the delete-without-saving task and quitting the TextEdit the run launched.
+// The mini's native runs serve the approved runtime copy in place (prepare.mjs): the double prepares one.
+const reuseOf = home => ({approvedHome: home, release: '26.928.40906-darwin-arm64', runtimeRoot: `${home}/runtimes/26.928.40906-darwin-arm64`,
+  helper: `${home}/runtimes/26.928.40906-darwin-arm64/SkyComputerUseService.app`, reason: 'reused'});
 test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attests its host', async t => {
   const app = textEdit();
   const state = {record: true, scripts: [], answeringHost: 'vendor'};
@@ -196,14 +202,15 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
     },
   };
   const release = '26.928.40906-darwin-arm64', home = '/Users/someone/Library/Application Support/cua';
-  const pre = {ownNode:prepared.ownNode,arch:'arm64',hostname:'mini',cpu:{model:'Apple',count:10},uptime:'device before',platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
+  const ownNode = {path: `${home}/node/24.22.0/bin/node`, version: 'v24.22.0'};
+  const pre = {ownNode,arch:'arm64',hostname:'mini',cpu:{model:'Apple',count:10},uptime:'device before',platform: 'darwin', node: 'v24.18.0', commit: 'c0ffee1', dirty: false, checkout: '/Users/someone/Developer/GitHub/cua-parity', home, release,
     handshakeRecord: `${home}/state/handshake/${release}/vendor@${release}/computer@2025-06-18.json`, runtimeRoot: `${home}/runtimes/${release}`, spikeRunning: false, serves: 0,
     hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 17179869184}, os: {name: 'macOS', version: '27.0', build: '26A428'},
     display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2, virtual: true}, textEditRunning: false, sandbox: {mode: 'scoped', explicit: false}};
   const remote = script => {
     if (script === 'uptime') return 'device after';
-    if (/prepare.mjs prepare/.test(script)) return JSON.stringify({...prepared,device:'mini',xSession:{}});
-    if (/prepare.mjs cleanup/.test(script)) return JSON.stringify({removed:true});
+    if (/prepare.mjs prepare/.test(script)) { state.prepareScript = script; return JSON.stringify({...prepared,device:'mini',xSession:{},home,ownNode,userHome:'/Users/someone',configHome:'/Users/someone/.local/share/cua-native-baseline/run-1/config',scratch:'/Users/someone/.local/share/cua-native-baseline/run-1',runtimeReuse:reuseOf(home),stashed:['state']}); }
+    if (/prepare.mjs cleanup/.test(script)) return JSON.stringify({removed:true,restored:['state']});
     if (script === 'true') return '';
     if (/hostIdentity/.test(script)) return JSON.stringify(pre);
     if (/cua-116-\[s\]pike/.test(script)) return 'idle';
@@ -212,9 +219,14 @@ test('a macOS vendor-host run keeps the TextEdit baseline\'s sequence and attest
   };
   const device = {helpers: () => [], leftovers: () => ({serves: 0, textEditRunning: launched && !app.quit})};
   const out = outDir(t);
-  const code = await run({device: 'mini', out, host: 'vendor', ...plan, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
+  const code = await run({device: 'mini', out, host: 'vendor', approvedRuntime: home, ...plan, io: {remote, controllerLoad:()=> 'controller load', device: () => device, connect: options => fakeClient(options, cua, state)}});
   const meta = metaOf(out), rows = results(out);
   assert.equal(code, 0, meta.error);
+  assert.match(state.prepareScript, /"approvedHome":"\/Users\/someone\/Library\/Application Support\/cua"/);
+  assert.equal(meta.measurement.freshInstall, false);
+  assert.deepEqual(meta.runtimeReuse, reuseOf(home));
+  assert.equal(state.options.args.at(-1).includes("XDG_CONFIG_HOME='/Users/someone/.local/share/cua-native-baseline/run-1/config'"), true);
+  assert.deepEqual(meta.preparationCleanup, {removed: true, restored: ['state']});
   assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total', 'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total',
     'warm.noop', 'warm.getState', 'warm.listApps', 'bind.getApp', 'approval.elicitation', 'setup.newDocument', 'warm.getAXState', 'guard.scratch', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.close', 'task.total', 'end_task']);
   assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
@@ -306,4 +318,26 @@ test('a refusal before connecting still removes the run-owned fresh installation
   await assert.rejects(run({device:'cua-linux',out:outDir(t),host:'vendor',...plan,io}),/gedit is running/);
   assert.ok(state.scripts.some(s=>s.includes('prepare.mjs cleanup')));
   assert.equal(state.serves,undefined);
+});
+
+test('a macOS computer run refuses to start without the approved runtime, and one whose serve resolves another runtime', async t => {
+  const scripts = [];
+  const remote = script => { scripts.push(script); throw new Error('no device'); };
+  await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', experiment: 'x', ...plan, io: {remote, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
+    /--approved-runtime/);
+  assert.equal(scripts.length, 0, 'nothing ran on the device');
+  const home = '/Users/someone/cua-115/home', release = '26.928.40906-darwin-arm64';
+  const ownNode = {path: `${home}/node/24.22.0/bin/node`, version: 'v24.22.0'};
+  const pre = {platform: 'darwin', commit: 'c0ffee1', dirty: false, checkout: '/c', home, release, runtimeRoot: `/elsewhere/runtimes/${release}`, serves: 0, sandbox: {mode: 'scoped'}, textEditRunning: false, ownNode};
+  const cleaned = [];
+  const remote2 = script => {
+    if (/prepare.mjs prepare/.test(script)) return JSON.stringify({...prepared, device: 'mini', xSession: {}, home, ownNode, runtimeReuse: reuseOf(home)});
+    if (/prepare.mjs cleanup/.test(script)) { cleaned.push(script); return JSON.stringify({removed: true, restored: []}); }
+    if (/hostIdentity/.test(script)) return JSON.stringify(pre);
+    if (/cua-116-\[s\]pike/.test(script)) return 'idle';
+    throw new Error(`unexpected script: ${script.slice(0, 60)}`);
+  };
+  await assert.rejects(run({device: 'mini', out: outDir(t), host: 'vendor', approvedRuntime: home, experiment: 'x', ...plan, io: {remote: remote2, controllerLoad: () => 'l', connect: () => { throw new Error('no'); }}}),
+    /resolves the runtime \/elsewhere\/runtimes\/26\.928\.40906-darwin-arm64, not the approved/);
+  assert.equal(cleaned.length, 1, 'the stash is restored');
 });

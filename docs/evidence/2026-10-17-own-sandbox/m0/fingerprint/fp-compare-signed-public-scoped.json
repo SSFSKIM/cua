@@ -1,0 +1,22 @@
+{
+  "left": {
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-signed-scoped.json",
+    "launcher": "signed"
+  },
+  "right": {
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-public-scoped.json",
+    "launcher": "public"
+  },
+  "equal": true,
+  "sandboxed": [
+    true,
+    true
+  ],
+  "cwdEqual": true,
+  "checks": [],
+  "env": {
+    "onlyLeft": [],
+    "onlyRight": [],
+    "differing": []
+  }
+}

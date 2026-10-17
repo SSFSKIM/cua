@@ -1,8 +1,9 @@
 import {remoteCommand,quote} from '../browser-parity/topology.mjs';
 import {linuxSession,ownNodeEnv,preparedHomeEnv} from './topology.mjs';
+import {isDeclaredDevice} from './devices.mjs';
 // All live fixtures execute in the prepared remote clone; local tests cannot launch the installed runtime.
 export function apiCommand({device,checkout,home,host,...facts},{lane='chrome'}={}) {
- if(!['mini','cua-linux'].includes(device)||!['vendor','cua'].includes(host))throw new Error('API parity requires a remote selected host');
+ if(!isDeclaredDevice(device)||!['vendor','cua'].includes(host))throw new Error('API parity requires a remote selected host');
  const file={chrome:'serve-production.mjs',profiles:'serve-profiles.mjs','binder-double':'serve-binder.mjs','capability-boundary':'serve-capability-api.mjs'}[lane];
  if(!file)throw new Error('Unknown API lane');
  const expectedFacts={device,checkout,home,...facts};

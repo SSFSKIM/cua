@@ -2,10 +2,11 @@ import {remoteCommand,quote} from '../browser-parity/topology.mjs';
 import {ownedJsonProcess} from '../browser-parity/resources.mjs';
 import {assertPreparedFacts} from './provenance.mjs';
 import {linuxSession,ownNodeEnv} from './topology.mjs';
+import {isDeclaredDevice} from './devices.mjs';
 // The client's environment is cleared. Only a recorded diagnostic --node override is forwarded; a resolved
 // source-home Node must not override the managed Node in the client's own scratch installation.
 export function capabilityFixtureCommand({device,checkout,home,api=false,...facts}) {
- if(!['mini','cua-linux'].includes(device))throw new Error('Capability live host must run on the remote device; local unit tests use doubles');
+ if(!isDeclaredDevice(device))throw new Error('Capability live host must run on the remote device; local unit tests use doubles');
  return remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify({device,checkout,home,...facts}))} CUA_PARITY_REMOTE=1 CUA_PARITY_API=${api?'1':'0'} CUA_HOME=${quote(home)} node test/repl-parity/serve-capability.mjs`);
 }
 export async function remoteCapabilityLane({device,checkout,home,host,api=false,liveSecrets=false,...facts},{start=ownedJsonProcess}={}) {

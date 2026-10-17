@@ -1,0 +1,3 @@
+# The toolchain upstream pins at ff6aec96 (codex-rs/rust-toolchain.toml).
+[toolchain]
+channel = "1.95.0"

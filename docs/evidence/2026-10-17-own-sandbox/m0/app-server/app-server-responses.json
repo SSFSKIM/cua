@@ -1,0 +1,239 @@
+{
+  "ok": false,
+  "framing": {
+    "jsonrpc": false,
+    "idType": "string"
+  },
+  "requests": [
+    {
+      "id": "47518B74-9D2A-448B-A1A1-AAF4322514A9",
+      "method": "initialize",
+      "params": {
+        "capabilities": {
+          "experimentalApi": true,
+          "optOutNotificationMethods": []
+        },
+        "clientInfo": {
+          "title": "Codex Computer Use",
+          "name": "codex-computer-use",
+          "version": "26.924.1001281"
+        }
+      }
+    },
+    {
+      "id": "85D08A32-40DA-4473-8D66-A34A019FCB03",
+      "method": "configRequirements/read",
+      "params": null
+    },
+    {
+      "id": "03E47563-29CC-46E0-9267-76F51595A2BA",
+      "method": "config/read",
+      "params": {
+        "includeLayers": false
+      }
+    }
+  ],
+  "clientNotifications": [],
+  "responses": {
+    "initialize": {
+      "userAgent": "codex-computer-use/0.159.2 (Mac OS 27.0.0; arm64) unknown (codex-computer-use; 26.924.1001281)",
+      "codexHome": "${CODEX_HOME}",
+      "platformFamily": "unix",
+      "platformOs": "macos"
+    },
+    "configRequirements/read": {
+      "requirements": null
+    },
+    "config/read": {
+      "config": {
+        "model": null,
+        "review_model": null,
+        "model_context_window": null,
+        "model_auto_compact_token_limit": null,
+        "model_auto_compact_token_limit_scope": null,
+        "model_provider": null,
+        "approval_policy": null,
+        "approvals_reviewer": null,
+        "sandbox_mode": null,
+        "sandbox_workspace_write": null,
+        "forced_chatgpt_workspace_id": null,
+        "forced_login_method": null,
+        "web_search": null,
+        "tools": null,
+        "instructions": null,
+        "developer_instructions": null,
+        "compact_prompt": null,
+        "model_reasoning_effort": null,
+        "model_reasoning_summary": null,
+        "model_verbosity": null,
+        "service_tier": null,
+        "analytics": null,
+        "apps": null,
+        "browser_use": null,
+        "computer_use": null,
+        "desktop": null,
+        "features": {
+          "api_key_model_discovery": false,
+          "auth_elicitation": true,
+          "background_paginated_rollout_migration": false,
+          "codex_apps_mcp_2026_07_28": false,
+          "mcp_2026_07_28": false,
+          "memories": false,
+          "mentions_v2": true,
+          "remote_control": false,
+          "remote_plugin": true,
+          "tool_suggest": true,
+          "windows_sandbox_service": false
+        },
+        "otel": null,
+        "goals": null,
+        "personality": null,
+        "check_for_update_on_startup": null,
+        "default_permissions": null,
+        "model_catalog_json": null,
+        "experimental_use_unified_exec_tool": null,
+        "cloud": null,
+        "hooks": null,
+        "tool_output_token_limit": null,
+        "js_repl_node_module_dirs": null,
+        "hide_agent_reasoning": false,
+        "marketplaces": {},
+        "include_environment_context": true,
+        "experimental_realtime_ws_model": null,
+        "experimental_realtime_ws_startup_context": null,
+        "responses_api_metadata": null,
+        "experimental_realtime_ws_base_url": null,
+        "mcp_servers": {},
+        "mcp_oauth_credentials_store": "auto",
+        "plugins": {},
+        "skills": null,
+        "model_providers": {},
+        "cli_auth_credentials_store": "file",
+        "mcp_oauth_callback_port": null,
+        "include_apps_instructions": true,
+        "include_collaboration_mode_instructions": true,
+        "audio": null,
+        "file_opener": "vscode",
+        "plan_mode_reasoning_effort": null,
+        "memories": null,
+        "oss_provider": null,
+        "apps_mcp_product_sku": null,
+        "agents": null,
+        "mcp_optional_startup_grace_ms": null,
+        "include_permissions_instructions": true,
+        "tool_suggest": null,
+        "permissions": null,
+        "windows": null,
+        "sqlite_home": null,
+        "mcp_oauth_callback_url": null,
+        "background_terminal_max_timeout": 300000,
+        "project_root_markers": [
+          ".git"
+        ],
+        "mcp_enterprise_managed_auth": null,
+        "auto_review": null,
+        "projects": null,
+        "allow_login_shell": true,
+        "project_doc_fallback_filenames": [],
+        "experimental_realtime_start_instructions": null,
+        "js_repl_node_path": null,
+        "experimental_realtime_ws_backend_prompt": null,
+        "experimental_thread_store": null,
+        "experimental_realtime_webrtc_call_base_url": null,
+        "experimental_thread_store_endpoint": null,
+        "openai_base_url": null,
+        "history": {
+          "persistence": "save-all",
+          "max_bytes": null
+        },
+        "log_dir": null,
+        "realtime": null,
+        "model_instructions_file": null,
+        "tui": null,
+        "ghost_snapshot": null,
+        "notify": [
+          "${CUA_HOME}/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+          "turn-ended"
+        ],
+        "profile": null,
+        "orchestrator": null,
+        "notice": null,
+        "suppress_unstable_features_warning": null,
+        "profiles": {},
+        "experimental_compact_prompt_file": null,
+        "model_post_turn_compact_threshold_percent": null,
+        "shell_environment_policy": {
+          "inherit": null,
+          "ignore_default_excludes": null,
+          "exclude": null,
+          "set": null,
+          "include_only": null,
+          "filters": null,
+          "experimental_use_profile": null
+        },
+        "chatgpt_base_url": "https://chatgpt.com/backend-api/",
+        "show_raw_agent_reasoning": null,
+        "feedback": null,
+        "project_doc_max_bytes": 32768,
+        "disable_paste_burst": null,
+        "thread_unload_delay_secs": null,
+        "allow_symlinked_codex_home": null
+      },
+      "origins": {
+        "notify.0": {
+          "name": {
+            "type": "user",
+            "file": "${CODEX_HOME}/config.toml",
+            "profile": null
+          },
+          "version": "sha256:0fe35dd027bc7ccd003016bac41c7f55eb5aeea8f011444d9be6fdeff96c9331"
+        },
+        "notify.1": {
+          "name": {
+            "type": "user",
+            "file": "${CODEX_HOME}/config.toml",
+            "profile": null
+          },
+          "version": "sha256:0fe35dd027bc7ccd003016bac41c7f55eb5aeea8f011444d9be6fdeff96c9331"
+        }
+      }
+    }
+  },
+  "errors": {},
+  "serverNotifications": [
+    {
+      "method": "remoteControl/status/changed",
+      "params": {
+        "status": "disabled",
+        "serverName": "Mac-mini.local",
+        "installationId": "<withheld>",
+        "environmentId": null
+      }
+    }
+  ],
+  "unanswered": [],
+  "findings": [
+    {
+      "path": "remoteControl/status/changed.params.installationId",
+      "reason": "credential- or account-shaped field"
+    }
+  ],
+  "reviewed": [
+    {
+      "path": "config/read.config.features.auth_elicitation",
+      "kept": "boolean"
+    },
+    {
+      "path": "config/read.config.mcp_oauth_credentials_store",
+      "kept": "string"
+    },
+    {
+      "path": "config/read.config.cli_auth_credentials_store",
+      "kept": "string"
+    },
+    {
+      "path": "config/read.config.allow_login_shell",
+      "kept": "boolean"
+    }
+  ]
+}

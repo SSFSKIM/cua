@@ -90,3 +90,17 @@ test('ARM Linux CPU identity uses lscpu when the kernel exposes no model name to
   assert.deepEqual(linuxCpuFacts('',[{model:'Test CPU'}]),{model:'Test CPU',count:1});
   assert.deepEqual(linuxCpuFacts('',[{model:'unknown'}]),{model:null,count:1});
 });
+
+// The browser-surface mode (#115 acceptance 11): the serve has the browser surface alone with cua's browser service,
+// and the preflight resolves that surface's handshake record and sandbox mode.
+test('a browser-surface serve names the browser surface and cua\'s browser service; its handshake record is the browser one', () => {
+  const at = {device: 'mini', checkout: '/Users/someone/cua-parity', home: '/Users/someone/Library/Application Support/cua', host: 'cua', platform: 'darwin'};
+  assert.match(serveCommand({...at, surface: 'browser'}).args[3], /CUA_REPL_HOST=cua CUA_SHIM_SURFACES=browser CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node /);
+  assert.throws(() => serveCommand({...at, surface: 'computer,browser'}), /--surfaces must be computer or browser/);
+  const record = '/Users/someone/.local/share/cua/state/handshake/26.928.40906-darwin-arm64/cua@0.1.0/browser@2025-06-18.json';
+  assert.match(handshakeScript({record, clear: true}), /^rm -f '.*\/browser@2025-06-18\.json'/);
+  const script = preflightScript({host: 'cua', display: ':0', surface: 'browser'});
+  assert.match(script, /browser@2025-06-18\.json/);
+  assert.doesNotMatch(script, /computer@2025-06-18\.json/);
+  assert.match(preflightScript({host: 'cua', display: ':0'}), /computer@2025-06-18\.json/);
+});

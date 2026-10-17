@@ -194,8 +194,8 @@ tear the port down.
 ### The host (`src/chrome/host.mjs`)
 
 Spawned by Chrome through the launcher registration writes (below); stdin/stdout are the native-messaging port;
-stderr goes to `$CUA_HOME/chrome/logs/<pid>.log` (renamed to `<socketName>.log` after `hello`; truncated at start;
-Chrome discards stderr). It exits when the port closes (Chrome closed, extension disabled or reloaded) after running
+stderr goes to `$CUA_HOME/chrome/logs/<pid>.log` (renamed to `<socketName>.log` after `hello`, the previous host's log
+kept as `<socketName>.prev.log`; truncated at start; Chrome discards stderr). It exits when the port closes (Chrome closed, extension disabled or reloaded) after running
 turn-end cleanup for every session and closing every socket client.
 
 **Backend protocol coverage.** The host answers the vendor service's 23 methods as follows; everything not listed
@@ -235,11 +235,15 @@ Set, children: sessionId → targetId}`. A session is created by the first reque
 {session_id, turn_id}` acts on that turn's tabs only (a late `turnEnded` for task N must not touch task N+1's tabs,
 which cua creates immediately after `end_task` with `turn_id = taskId`): unmarked created tabs are closed; unmarked
 claimed tabs and `deliverable` tabs are released open and leave the group; `handoff` tabs stay owned with the debugger
-detached and are listed by `getTabs` on the session's next turn. A client disconnect runs `turnEnded` for every turn of
-its sessions. A detach initiated by the user (reason `canceled_by_user`) is forwarded as `onCDPDetach` and never
-re-attached. `Another debugger is already attached` from Chrome is success: Chromium raises it only when this same
-extension already holds the debuggee (DevTools and other extensions attach alongside), so the extension adopts the
-debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor extension does.
+detached and are listed by `getTabs` on the session's next turn. No close takes a window's last tab with it (#148): a
+turn's end, a cleanup, and the agent's own `Target.closeTarget` of a tab's page or `Page.close` of a tab first open a
+New Tab page (inactive, ungrouped, owned by no session) in a normal window whose every other tab is closing too; the
+check is waited for at most 2 s (`KEEP_WAIT_MS`), and a close `executeCdp` timed out on is never sent. A client
+disconnect runs `turnEnded` for every turn of its sessions. A detach initiated by the user (reason `canceled_by_user`)
+is forwarded as `onCDPDetach` and never re-attached. `Another debugger is already attached` from Chrome is success:
+Chromium raises it only when this same extension already holds the debuggee (DevTools and other extensions attach
+alongside), so the extension adopts the debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor
+extension does.
 
 **Page guards and popups.** The host guards the tabs it owns: created tabs from creation (`tabs.create {guard:true}`),
 and every owned tab again (`tabs.guard`, a sweep) before each `attach`/`attachTarget`, waited for at most 1.5 s
@@ -879,6 +883,33 @@ No new npm dependencies.
   with the check disabled the chooser passes), so it is documented, not coded; and the rejected CDP alternative is
   refused outright (`Browser.setDownloadBehavior` "wasn't found", `Page.setDownloadBehavior` "Cannot not access
   browser-level commands").
+- Decision (2026-10-16, #148): the host keeps a window open when one of its closes would take the window's last tab: it
+  first opens a New Tab page there (`tabs.create {windowId}`: inactive, ungrouped, unguarded, owned by no session).
+  Chrome closes a window with its last tab and unloads a profile left with no window, which ends the extension and the
+  host, so the next session found the profile `host_not_live` (the mini's `ssfs` profile, four times during #116). The
+  check covers every close the host makes or passes on: turn end, the create-then-ended cleanups, and the agent's
+  `Target.closeTarget` of a tab's page target and `Page.close` on a tab's debuggee (the service's `tab.close()`). Only
+  normal windows are kept (a popup closes with its last tab, as Chrome closes it), and a MAWS peer is left alone (its
+  windows are the app's). A tab counts as going while a close of it is in flight (each attempt counted, so a failed one
+  withdraws only itself) and, once a close of it succeeded or Chrome reported it removed, until a check's own
+  `tabs.query` no longer lists it: a removal can land while another check holds a list taken before it, and that check
+  must still see the tab go. An id a list lacks is gone for good (Chrome never reuses a tab id within a browser run),
+  so each check prunes the set by its own list, of the ids it held when it asked. A `Page.close` whose `beforeunload`
+  dialog the user refuses succeeds without closing the tab, which then stays going while it lives: accepted, since that
+  costs at most one New Tab page its window did not need, while expiring it would risk the window. The checks run one
+  at a time, so a turn's end that closes all of a window's tabs together opens exactly one New Tab page, and each is
+  waited for at most 2 s (`KEEP_WAIT_MS`; past it the host logs it and the close goes ahead), so one unanswered
+  primitive holds up no other close. An `executeCdp` whose timeout fires while its close waits on that preflight (the
+  page-target lookup, the check) refuses the send behind it: a close its caller was told timed out is never dispatched.
+  Alternatives rejected: the guard in the extension's `tabs.remove` (the ticket's first sketch) — it never sees the
+  agent's own `Target.closeTarget`, which reaches Chrome as `debugger.sendCommand`, and an update would reach a Chrome
+  only when its user reloads the unpacked extension or the Store or CRX update lands, while the host ships with the
+  checkout and runs the new code at its next start; letting a window cua created close — such a window is created only
+  when the profile has no normal window, and Chrome opens it with its own New Tab page, so the check never fires for it
+  unless the user closed that page, and keeping it is right then too. The host's log of the previous run is kept as
+  `<name>.prev.log`: the second loss on the mini (no cua activity, 2026-10-16 10:35–10:50Z) left no record of how its
+  host ended, because the next host's log replaced it; the launcher log showed no reconnect attempt in that span, which
+  is what an unloaded profile (a profile with no window) looks like, not an extension that lost its port while loaded.
 
 ## Outcomes & Retrospective
 

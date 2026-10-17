@@ -504,6 +504,9 @@ What exists at the end: macOS computer sessions run node_repl with CODEX_CLI_PAT
 - The compat TOML subset: inline tables of string keys to a string or an inline table, as `sandboxArgs` renders and node_repl emits (`shim.log`), nothing else.
 - `process.execve` failure exits 1 with a sentence.
 - The app-server reads lines until EOF and answers each request in order.
+- The per-session TMPDIR reaches the native helper too, since `open` passes node_repl's environment. A helper started by one session can outlive it while another session still uses it. M2 checks whether the helper writes under TMPDIR (watch the directory across a session that captures screenshots).
+  - If it does not, nothing changes.
+  - If it does, the vendor host's TMPDIR moves to `$CUA_HOME/tmp/<sessionId>`, inside the denied home and re-exposed writable for its own session. It is removed when no helper started with it is alive, not at connection end.
 
 **Does not touch:** Linux pins or the Linux host; CODEX_HOME's contents (M4).
 

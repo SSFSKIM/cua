@@ -89,7 +89,7 @@ setInterval(() => {}, 1000);
 }
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const scratchDirs = () => new Set(readdirSync('/tmp').filter(name => /^mcua-m4-/.test(name)));
-const probeEnv = (checkout, extra = {}) => ({...process.env, MAWS_CHECKOUT: checkout, CUA_HOME: join(checkout, 'home'), CUA_BROWSER_SERVICE: 'cua', ...extra});
+const probeEnv = (checkout, extra = {}) => ({...process.env, MAWS_CHECKOUT: checkout, CUA_HOME: join(checkout, 'home'), ...extra});
 
 test('a start-up failure (MAWS does not trust the probe) exits nonzero, stops MAWS and removes the scratch directories', () => {
   const checkout = fakeCheckout({trusted: false});

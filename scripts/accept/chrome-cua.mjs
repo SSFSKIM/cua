@@ -1,10 +1,10 @@
-// The cua route's live acceptance scenarios (spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md,
-// Acceptance 3-6), run by scripts/accept-chrome.mjs --route cua against `cua serve` over MCP, with the cua host's
+// The Chrome route's live acceptance scenarios (spec docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md,
+// Acceptance 3-6), run by scripts/accept-chrome.mjs against `cua serve` over MCP, with the cua host's
 // <name>.json (beside its socket in $CUA_HOME/chrome/b) as the host-side evidence:
 //   user tab      a page of the runner's own, on a loopback origin of its own, opened in the profile as a person would
-//                 (Chrome itself, `open -a`), is listed through the vendor's user-tabs API, claimed and read; reading it
+//                 (Chrome itself, `open -a`), is listed through the browser API's user tabs, claimed and read; reading it
 //                 must raise the origin-access elicitation for that origin, which reaches the client and the runner's
-//                 policy accepts (claimTab itself is exempt from the vendor's origin gate, so the read is what asks);
+//                 policy accepts (claimTab itself is exempt from the service's origin gate, so the read is what asks);
 //                 after end_task the tab is open and owned by no session. Chrome's debugger infobar while it is claimed
 //                 is the owner's observation, not the runner's;
 //   turn end      three created tabs, one marked deliverable and one handoff: after end_task the unmarked one is closed,
@@ -65,7 +65,7 @@ export function socketAccepts(path, ms = 500) {
   });
 }
 
-// A backend client of the host's socket, as the vendor service is one, for the checks the agent API cannot make.
+// A backend client of the host's socket, as the browser service is one, for the checks the agent API cannot make.
 export function rawBackendClient(socketPath) {
   return new Promise((resolve, reject) => {
     const socket = connect(socketPath);
@@ -107,21 +107,16 @@ export async function rawGetInfo(socketPath) {
 // hands it to the running browser); the agent is not involved.
 export const openAsUserArgs = (url, profileDirectory) => ['-n', '-a', 'Google Chrome', '--args', `--profile-directory=${profileDirectory}`, url];
 
-// The route's own preconditions. The cua route needs no Codex login and its host is the profile's socket accepting a
-// connection; the vendor route keeps its login gate and counts the OpenAI hosts Chrome runs. A run on a route other than
-// the home's is refused (the runtime would list the other route's backends). -> {missing, loginGate, liveHosts, ...}
-export function routePreconditions({route, homeRoute, socketLive, authPresent, liveHosts}) {
+// The route's preconditions: the home is registered for cua's route (`route` is chromeRoute(home)), the profile's own
+// socket accepts a connection, and the home holds no Codex credential file, since the route needs no Codex login.
+// -> {missing, liveHosts, codexAuthPresent}
+export function routePreconditions({route, socketLive, authPresent}) {
   const missing = [];
-  if (route === 'cua') {
-    if (homeRoute !== 'cua') missing.push(`the home is on the ${homeRoute ?? 'no'} route, not cua (cua chrome register switches it)`);
-    if (!socketLive) missing.push('no cua host serves this profile\'s socket (is the cua extension loaded and connected in it?)');
-    // The no-login negative control: an existence check only, never opened.
-    if (authPresent) missing.push('the home has a Codex credential file (state/codex/auth.json): the no-login control fails; use a scratch home that never ran cua login');
-    return {missing, loginGate: false, liveHosts: socketLive ? 1 : 0, codexAuthPresent: authPresent};
-  }
-  if (homeRoute === 'cua') missing.push('the home is on the cua route, not vendor (cua chrome register --vendor switches it)');
-  if (!liveHosts) missing.push('no OpenAI Chrome host is running');
-  return {missing, loginGate: true, liveHosts};
+  if (route !== 'cua') missing.push('the home is not registered for cua\'s Chrome route (run cua chrome register)');
+  if (!socketLive) missing.push('no cua host serves this profile\'s socket (is the cua extension loaded and connected in it?)');
+  // The no-login negative control: an existence check only, never opened.
+  if (authPresent) missing.push('the home has a Codex credential file (state/codex/auth.json): the no-login control fails; use a scratch home that never held a Codex login');
+  return {missing, liveHosts: socketLive ? 1 : 0, codexAuthPresent: authPresent};
 }
 
 // ---- shared pieces --------------------------------------------------------------------------------------------------

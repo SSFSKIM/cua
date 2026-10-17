@@ -1,6 +1,6 @@
 // Synthetic service/store doubles only. Never calls fileStore or loads a vendor/native/browser backend.
 import assert from 'node:assert/strict';
-import {createBrowserService,PINNED_VENDOR_VERSION} from '../../../src/services/browser.mjs';
+import {createBrowserService,PINNED_CUA_VERSION} from '../../../src/services/browser.mjs';
 import {createSkyService} from '../../../src/services/sky.mjs';
 import {SecretStoreError} from '../../../src/secrets/store.mjs';
 import {RESERVED_PREFIX} from '../../../src/secrets/label.mjs';
@@ -43,7 +43,7 @@ export async function runSecretCase(id){
  if(tail==='optional-fields/timeouts-and-text-format')request.params.timeout_ms=1000;
  const secrets={read:async label=>{reads.push(label);if(storeCode)throw new SecretStoreError(storeCode,{key:label});return sentinel;}};
  const backend={handleRpc:async r=>{received.push(r);if(expectedError==='secret_input_failed'){if(tail==='errors/recovery-envelope-sanitized')return {ok:false,error:{reason:'protected_command_failed',echo:sentinel}};throw new Error(sentinel,{cause:new Error(sentinel)});}return {ok:true};}};
- const service=isBrowser?createBrowserService({loadService:async()=>backend,actualServiceVersion:async()=>tail==='refuse/service-version'?'0.0.0':PINNED_VENDOR_VERSION,expectedVersion:PINNED_VENDOR_VERSION,serviceName:'vendor',secrets,secretsUnavailable:unavailable}):createSkyService({loadVendor:async()=>backend,secrets,secretsUnavailable:unavailable,platform:tail.startsWith('linux/')?'linux':'darwin'});
+ const service=isBrowser?createBrowserService({loadService:async()=>backend,actualServiceVersion:async()=>tail==='refuse/service-version'?'0.0.0':PINNED_CUA_VERSION,secrets,secretsUnavailable:unavailable}):createSkyService({loadVendor:async()=>backend,secrets,secretsUnavailable:unavailable,platform:tail.startsWith('linux/')?'linux':'darwin'});
  let error;try{await service.handleRpc(request);}catch(e){error=e;}
  if(expectedError){assert.equal(error?.code,expectedError);assert.ok(![error?.message,error?.stack,JSON.stringify(error),String(error?.cause)].join('\n').includes(sentinel));if(expectedError==='secret_input_failed'){assert.equal(reads.length,1);assert.equal(received.length,1);assert.ok(error.message.includes('PARITY_SYNTHETIC'));}else{assert.equal(received.length,0);assert.equal(reads.length,storeCode?1:0);}}
  else {assert.equal(error,undefined);assert.equal(received.length,1);if(tail.startsWith('no-substitution/')){assert.equal(reads.length,0);assert.deepEqual(received[0],request);}else{assert.equal(reads.length,1);let value=received[0];for(const k of field)value=value[k];assert.equal(value,sentinel);}}

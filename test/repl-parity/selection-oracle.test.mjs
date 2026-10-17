@@ -4,30 +4,30 @@ import {execFileSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {installRoutes} from '../../scripts/repl-parity/selection-device.mjs';
-import {chromeRoute} from '../../src/chrome/route.mjs';
-test('scratch registration fixtures actually change route in both orders without touching browser manifests',()=>{
+import {chromeRoute,readVendorRecord} from '../../src/chrome/route.mjs';
+// The ChatGPT route's record is only a leftover now: the home is on the cua route exactly when cua's record is there.
+test('scratch registration fixtures write each route\'s record, in both orders, without touching browser manifests',()=>{
  const home=mkdtempSync(join(tmpdir(),'cua-selection-test-'));
- try{for(const [registration,route] of [['cua-then-chatgpt','vendor'],['chatgpt-then-cua','cua'],['none',null],['chatgpt','vendor'],['cua','cua']]){installRoutes(home,registration);assert.equal(chromeRoute(home),route);}}
+ try{for(const [registration,route,chatgpt] of [['cua-then-chatgpt','cua',true],['chatgpt-then-cua','cua',true],['none',null,false],['chatgpt',null,true],['cua','cua',false]]){installRoutes(home,registration);assert.equal(chromeRoute(home),route);assert.equal(Boolean(readVendorRecord(home)),chatgpt,registration);}}
  finally{rmSync(home,{recursive:true,force:true});}
 });
 import assert from 'node:assert/strict';
 import {expectedSelection,selectionCases,assertSelection} from '../../scripts/repl-parity/selection.mjs';
 import {doctorReplHost} from './fixtures/doctor-repl-host.mjs';
-test('independent M5 table preserves route precedence, explicit refusals and Node fallback',()=>{
+test('independent M5 table preserves explicit refusals and Node fallback, whatever the registration',()=>{
  const base={platform:'darwin',surfaces:['browser'],registration:'cua',override:'unset',node24:true};
  assert.deepEqual(expectedSelection(base),{host:'cua',reason:'browser_only',status:'pass'});
  assert.deepEqual(expectedSelection({...base,platform:'linux'}),{host:'cua',reason:'linux',status:'pass'});
  assert.deepEqual(expectedSelection({...base,node24:false}),{host:'vendor',reason:'own_host_node_unavailable',status:'warn'});
  assert.equal(expectedSelection({...base,override:'cua',node24:false}).error,'repl_host_node');
- assert.equal(expectedSelection({...base,registration:'none'}).reason,'vendor_browser_route');
+ for(const registration of ['none','chatgpt','cua-then-chatgpt'])assert.deepEqual(expectedSelection({...base,registration}),expectedSelection(base),registration);
  assert.equal(expectedSelection({...base,surfaces:['computer','browser']}).reason,'macos_native_peer_requires_vendor');
  assert.equal(expectedSelection({...base,registration:'chatgpt',maws:true}).host,'cua');
  assert.equal(expectedSelection({...base,surfaces:['computer','browser'],maws:true}).host,'vendor');
- assert.equal(expectedSelection({...base,registration:'chatgpt',override:'cua'}).error,'repl_host_refused');
+ assert.deepEqual(expectedSelection({...base,registration:'chatgpt',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
+ assert.equal(expectedSelection({...base,registration:'chatgpt',surfaces:['computer','browser'],override:'cua'}).error,'repl_host_refused');
  assert.equal(expectedSelection({...base,override:'invalid'}).error,'invalid_setting');
  assert.equal(expectedSelection({...base,override:'invalid',lane:'profiles'}).error,'invalid_repl_host');
- assert.equal(expectedSelection({...base,browserService:'vendor',override:'cua'}).error,'repl_host_refused');
- assert.equal(expectedSelection({...base,registration:'none',browserService:'cua'}).host,'cua');
  assert.equal(expectedSelection({...base,platform:'linux',surfaces:['computer'],registration:'none'}).reason,'linux');
 });
 test('selection matrix covers both launch consumers, registration orderings, surfaces and all overrides',()=>{
@@ -48,8 +48,8 @@ const HOME='/scratch',MANAGED='/scratch/node/24.22.0/bin/node';
 const ownObservation=(commit,path=MANAGED)=>({host:'cua',serverInfo:{name:'cua-repl-host',version:'0.5.0'},_meta:{'cua/replHost':{host:'cua',version:'0.5.0'}},executionFacts:{commit,dirty:false,home:HOME,ownNode:{path,version:'v24.22.0'}}});
 const envFor=row=>({CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override})});
 const doctorFor=(t,row,{node=MANAGED,...env}={})=>doctorReplHost(t,{platform:row.platform,env:{...envFor(row),...env},node});
-const lanes=detail=>{const [ordinary,rest]=detail.split('. Browser route: ');const [route,listing]=rest.split('. The profile listing (browser only): ');return {ordinary,route,listing:listing.replace(/\. CUA_REPL_HOST=cua or vendor chooses$/,'')};};
-const rejoin=({ordinary,route,listing})=>`${ordinary}. Browser route: ${route}. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
+const lanes=detail=>{const [ordinary,listing]=detail.split('. The profile listing (browser only): ');return {ordinary,listing:listing.replace(/\. CUA_REPL_HOST=cua or vendor chooses$/,'')};};
+const rejoin=({ordinary,listing})=>`${ordinary}. The profile listing (browser only): ${listing}. CUA_REPL_HOST=cua or vendor chooses`;
 const ownRows=[
  ...['ordinary','profiles'].flatMap(lane=>['unset','cua'].map(override=>({platform:'darwin',registration:'cua',maws:false,surfaces:['browser'],lane,override,node24:true,managedNode:true}))),
  ...['ordinary','profiles'].map(lane=>({platform:'darwin',registration:'cua',maws:false,surfaces:['browser'],lane,override:'unset',node24:false,managedNode:true})),
@@ -104,37 +104,15 @@ test('selection verdict rejects mismatched real host markers under doctor\'s act
 });
 // The live lane's environment for a row, as selection-device.mjs builds it; MAWS client mode needs only a configured
 // backend path to be in play.
-const liveEnv=row=>({...envFor(row),...(row.maws?{CUA_BROWSER_BACKENDS:'/maws-fixture.sock'}:{}),...(row.browserService?{CUA_BROWSER_SERVICE:row.browserService}:{})});
+const liveEnv=row=>({...envFor(row),...(row.maws?{CUA_BROWSER_BACKENDS:'/maws-fixture.sock'}:{})});
 const doctorAs=(t,row,registration=row.registration)=>doctorReplHost(t,{platform:row.platform,env:liveEnv(row),node:MANAGED,registration});
 const observationFor=(row,commit)=>expectedSelection(row).host==='cua'?ownObservation(commit):{host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:null};
-test('route precedence on doctor\'s actual row: explicit service, then an active cua registration, then MAWS, then ChatGPT',async t=>{
+test('every selectable row passes on doctor\'s actual row, whatever the registration ordering or MAWS',async t=>{
  const reviewed=reviewedSource(t);
  const rows=selectionCases('darwin').filter(r=>r.node24&&!r.managedNode&&!expectedSelection(r).error).map(r=>({...r,managedNode:true}));
- assert.ok(rows.some(r=>r.maws&&r.registration==='cua')&&rows.some(r=>r.maws&&r.registration==='chatgpt-then-cua')&&rows.some(r=>r.maws&&r.registration==='cua-then-chatgpt')&&rows.some(r=>r.browserService));
+ for(const registration of ['none','chatgpt','cua','cua-then-chatgpt','chatgpt-then-cua'])for(const maws of [false,true])assert.ok(rows.some(r=>r.registration===registration&&r.maws===maws),`${registration}${maws?' with MAWS':''}`);
  for(const row of rows){
   const doctor=await doctorAs(t,row);
   assert.doesNotThrow(()=>assertSelection(row,{doctor,observation:observationFor(row,reviewed.reviewedCommit)},reviewed),JSON.stringify(row));
  }
-});
-test('route verdict rejects doctor\'s actual row when another source decided the route',async t=>{
- const reviewed=reviewedSource(t);
- const row=(registration,maws,extra={})=>({platform:'darwin',registration,maws,surfaces:['browser'],lane:'ordinary',override:'vendor',node24:true,managedNode:true,...extra});
- const vendor={host:'vendor',serverInfo:{name:'rmcp',version:'1.5.0'},_meta:null};
- for(const [label,graded,decidedBy] of [
-  ['MAWS named where cua\'s registration decides',row('cua',true),row('none',true)],
-  ['MAWS named where cua\'s later registration decides',row('chatgpt-then-cua',true),row('chatgpt',true)],
-  ['cua\'s registration named where MAWS decides',row('cua-then-chatgpt',true),row('cua',true)],
-  ['cua\'s registration named where MAWS decides over no registration',row('none',true),row('cua',false)],
-  ['MAWS named where the ChatGPT registration decides',row('chatgpt',false),row('none',true)],
-  ['no registration named where the ChatGPT registration decides',row('chatgpt',false),row('none',false)],
-  ['a registration named where the explicit service decides',row('cua',true,{browserService:'vendor'}),row('cua',true)],
- ]){
-  const doctor=await doctorAs(t,decidedBy);
-  assert.throws(()=>assertSelection(graded,{doctor,observation:vendor},reviewed),/browser route|MAWS/,label);
- }
- // MAWS named anywhere in the row, not only in its route words, where a cua registration decides.
- const graded=row('cua',true),doctor=await doctorAs(t,graded);
- assert.doesNotThrow(()=>assertSelection(graded,{doctor,observation:vendor},reviewed));
- const mawsElsewhere={...doctor,detail:doctor.detail.replace('CUA_REPL_HOST=vendor. Browser route:','CUA_REPL_HOST=vendor, in MAWS. Browser route:')};
- assert.throws(()=>assertSelection(graded,{doctor:mawsElsewhere,observation:vendor},reviewed),/MAWS only where MAWS client mode decides/);
 });

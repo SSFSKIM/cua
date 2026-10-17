@@ -1,12 +1,11 @@
-// The Linux Chrome fixture (scripts/accept/linux-chrome.mjs) names the live host it drove: on the cua route the bound
-// profile's own host (its socket at the pre-listed path, its status file naming the instance id, its pid running
-// host.mjs); on the vendor route OpenAI's hosts running from $CUA_HOME/runtimes, as before. Spec
+// The Linux Chrome fixture (scripts/accept/linux-chrome.mjs) names the live host it drove: the bound profile's own cua
+// host (its socket at the pre-listed path, its status file naming the instance id, its pid running host.mjs). Spec
 // docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md, "What users see change", H4.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {join} from 'node:path';
 import {socketNameFor} from '../src/chrome/extension.mjs';
-import {cuaHostStep, ownedTabs, vendorHostStep} from '../scripts/accept/linux-chrome-lib.mjs';
+import {cuaHostStep, ownedTabs} from '../scripts/accept/linux-chrome-lib.mjs';
 
 const home = '/home/u/.local/share/cua';
 const id = 'e579ff6c-ef9c-40c7-8134-265f45c366e2';
@@ -28,13 +27,6 @@ test('cua route: the bound profile\'s host serves at its pre-listed socket, its 
     ['another id', files({[sock]: true, [statusPath]: {...status, instanceId: 'other'}})],
     ['pid not host.mjs', files({[sock]: true, [statusPath]: {...status, pid: 77}})],
   ]) assert.equal(cuaHostStep({home, instanceId: id, psLines: ps, ...input}).ok, false, why);
-});
-
-test('vendor route: every OpenAI host runs from $CUA_HOME/runtimes (unchanged)', () => {
-  const host = `9 ${home}/runtimes/26.928.40906-linux-arm64/chrome-plugin/extension-host/linux/arm64/extension-host chrome-extension://x/`;
-  assert.equal(vendorHostStep({home, psLines: [host]}).ok, true);
-  assert.equal(vendorHostStep({home, psLines: []}).ok, false);
-  assert.equal(vendorHostStep({home, psLines: [host, '10 /elsewhere/chrome-plugin/extension-host/linux/arm64/extension-host']}).ok, false);
 });
 
 test('ownedTabs lists every tab a session still owns in a host status', () => {

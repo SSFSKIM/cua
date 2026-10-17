@@ -2,8 +2,7 @@
 // M4's live MAWS client-mode run (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md, M4; acceptance 8's
 // meaningful half): MAWS's e2e:browser-cua group drives MAWS's primitive server with a fake host and never runs cua, so
 // this runs cua itself against a real MAWS. It starts MAWS from a MAWS worktree (launch.cjs: serve-plain.cjs, two app
-// sessions, this process trusted as their engine would be), then, with the CUA_BROWSER_SERVICE and CUA_HOME of its own
-// environment:
+// sessions, this process trusted as their engine would be), then, with the CUA_HOME of its own environment:
 //   features   scripts/accept/maws-features.mjs's harness on session A's socket (--other session B's): profiles,
 //              the service attestation, createTab (hello.profileName read back as the browser's profileName), locator,
 //              viewport, popup (tabs.adopted), download, alert, confirm, chooser, cleanup, isolation
@@ -17,8 +16,9 @@
 // The verdict (verdict.mjs) is written into the report and is the exit code: 0 only when every required check passed.
 // A catchable termination signal (SIGINT, SIGTERM, SIGHUP) goes through the same shutdown as a normal end: the probe's
 // own session terminated, MAWS stopped, the scratch profile and trigger directory removed, the report written.
-//   MAWS_CHECKOUT=<MAWS worktree> CUA_HOME=<scratch home with the runtime> CUA_BROWSER_SERVICE=cua|vendor \
-//     node run.mjs --out <report.json>
+// The run is cua's browser service's, the only one `cua serve` runs since #79; the vendor service's control runs recorded
+// before that (report `service: 'vendor'`) are still read by verdict.mjs, and CUA_BROWSER_SERVICE=vendor is refused.
+//   MAWS_CHECKOUT=<MAWS worktree> CUA_HOME=<scratch home with the runtime> node run.mjs --out <report.json>
 import {spawn} from 'node:child_process';
 import {existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -29,17 +29,17 @@ import {parseFeatureResult} from '../../../../../scripts/accept/linux-chrome-fea
 import {cell, featureDecision, runHarness} from '../../../../../scripts/accept/maws-features.mjs';
 import {answerFor} from '../../../../../scripts/probe/chrome/original/elicitation.mjs';
 import {startFeaturesPage} from '../../../../../scripts/accept/features-page.mjs';
-import {serviceSelection} from '../../../../../src/services/browser.mjs';
 import {verdict} from './verdict.mjs';
 
 const {values} = parseArgs({options: {out: {type: 'string'}}});
 const MAWS = process.env.MAWS_CHECKOUT;
 if (!MAWS || !process.env.CUA_HOME) throw new Error('set MAWS_CHECKOUT to a MAWS worktree and CUA_HOME to a scratch home with the runtime');
+if (process.env.CUA_BROWSER_SERVICE === 'vendor') throw new Error('cua serve runs only cua\'s browser service since #79: the vendor control cannot be run');
 const CLI = fileURLToPath(new URL('../../../../../bin/cua.mjs', import.meta.url));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const userData = mkdtempSync('/tmp/mcua-m4-');
 const probeDir = mkdtempSync('/tmp/mcua-m4-probe-');
-const report = {service: serviceSelection(process.env).name, started: new Date().toISOString()};
+const report = {service: 'cua', started: new Date().toISOString()};
 
 // MAWS, and the person's stand-in through the launcher's file trigger
 const electron = join(MAWS, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron');

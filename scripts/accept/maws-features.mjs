@@ -2,13 +2,13 @@
 // The terminal harness for MAWS's in-app browser (docs/doperpowers/specs/2026-10-08-maws-in-app-browser-design.md,
 // M1; run by M2, M3 and M5 against a running MAWS session). It runs `cua serve` (this checkout, the browser surface,
 // secrets off) with the CUA_BROWSER_BACKENDS of its own environment, serves the features page on loopback, and drives
-// the configured backend through the vendor API exactly as an agent inside MAWS would: cua.getBrowser() with no id.
+// the configured backend through the browser API exactly as an agent inside MAWS would: cua.getBrowser() with no id.
 //
 //   CUA_BROWSER_BACKENDS=<socket> node scripts/accept/maws-features.mjs [--report FILE] [--other <second socket>]
 //
 // Steps, in order (each PASS, FAIL or SKIP; a step that needs an earlier one's tab is FAIL when that one failed):
 //   profiles   profiles_list lists key maws first, ready, with a maws:… instance
-//   service    the default browser's documentation shows the service CUA_BROWSER_SERVICE selects (cua's marker or not)
+//   service    the default browser's documentation shows cua's browser service marker (the only service since #79)
 //   createTab  cua.getBrowser() selects that instance; createBrowserTab(page) shows the page's document marker
 //   locator    #name filled with "x", #submit clicked: #state reads submitted:x
 //   viewport   the browser's viewport capability set to 800×600, then tab.screenshot() is an image of 800×600; reset

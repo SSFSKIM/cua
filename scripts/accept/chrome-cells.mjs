@@ -51,7 +51,7 @@ for (let i = 0; i < 20 && !/^done: /.test(text); i++) {
 const match = text.match(/^done: ([0-9a-f]{${DIGEST_HEX}})$/);
 __out.digest = match ? match[1] : null;`);
 
-// A substituted fill the vendor must fail (no such element): the error the cell sees is the wrapper's fixed
+// A substituted fill the service must fail (no such element): the error the cell sees is the wrapper's fixed
 // classification. Only its code and classification leave the REPL.
 export const inducedFailure = (page, reference) => cellCode(`${owned(page)}
 try {
@@ -147,8 +147,8 @@ __out.afterReset = imageSize(await m.tab.getScreenshot({emit: false}));`);
 const at = ns => `globalThis[${js(ns)}]`;
 const ID_OF = 'const idsOf = t => [t?.id, t?.providerTabId].filter(v => v != null).map(String);';
 
-// cua.listBrowsers on the cua route: only cua's own hosts may be listed (the backend paths are set, so the vendor's
-// /tmp/codex-browser-use scan is skipped), the selected instance among them. (The service's BrowserInfo keeps only two
+// cua.listBrowsers on the cua route: only cua's own hosts may be listed (the launch names cua's sockets as the only
+// backend paths), the selected instance among them. (The service's BrowserInfo keeps only two
 // metadata fields, so whether getInfo asks for agent request headers is checked on the host's raw answer instead.)
 export const discoverBackends = instanceId => cellCode(`const list = await cua.listBrowsers({emit: false});
 __out.count = list.length;

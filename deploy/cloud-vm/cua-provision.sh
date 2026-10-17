@@ -254,8 +254,8 @@ checklist() { # the owner's steps, written for create-hetzner.sh and printed
       step "On the client: store the credential with /secret <clientSecretKey> (the value is clientCredential in"
       echo "     ssh root@$ip cat /root/cua-enrollment.json), then run its devicesAddCommand (both in that file)."
     fi
-    if ((n == 0)); then echo "  none: the device is ready (no ChatGPT or Codex sign-in is needed)"; fi
-    echo "  Check: ssh $CUA_USER@$ip DISPLAY=:0 cua doctor   (codex.login reads skip: cua's extension route needs no Codex login)"
+    if ((n == 0)); then echo "  none: the device is ready (no sign-in is needed)"; fi
+    echo "  Check: ssh $CUA_USER@$ip DISPLAY=:0 cua doctor"
   } >"$state/checklist.txt"
 }
 doctor() {
@@ -304,8 +304,8 @@ if [[ ! -f "$deb" ]]; then
 fi
 chmod 0644 "$deb"
 
-# 9. cua: install the release (a no-op when it is installed; the vendor's service still drives the browser), register
-# cua's Chrome host (the cua route: io.github.ssfskim.cua names the launcher in cua's home), register the profile.
+# 9. cua: install the release (a no-op when it is installed), register cua's Chrome host (io.github.ssfskim.cua names
+# the launcher in cua's home), register the profile.
 log "cua install $release"
 as_user cua install --archive "$deb" --json | jq -c '{ok, release, source, changed}'
 as_user cua chrome register

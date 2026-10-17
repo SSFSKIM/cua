@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Live fixture: run ON the Linux browser machine in its X session, through cua's own Chrome host (not --vendor).
-// Needs a ready bound profile and cua chrome register. This script opens only its own tab, accepts only its page's
-// origin-access elicitation, and reports which browser service answered (CUA_BROWSER_SERVICE), downloads, JavaScript
+// Live fixture: run ON the Linux browser machine in its X session, through cua's own Chrome host, the only Chrome
+// route. Needs a ready bound profile and cua chrome register. This script opens only its own tab, accepts only its page's
+// origin-access elicitation, and attests that cua's browser service answered, then reports downloads, JavaScript
 // dialogs, file chooser and connection cleanup.
 //   node scripts/accept/linux-chrome-features.mjs [<profile key>]   JSON report; exit 0 when all required steps pass
 // API citations below are BS = the pinned readable browser-service.mjs in
@@ -13,7 +13,7 @@ import {join, basename, dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {defaultHome} from '../../src/runtime/layout.mjs';
-import {chromeRoute, effectiveRoute} from '../../src/chrome/route.mjs';
+import {chromeRoute} from '../../src/chrome/route.mjs';
 import {backendDir, socketNameFor} from '../../src/chrome/extension.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 import {cuaHostStep, ownedTabs} from './linux-chrome-lib.mjs';
@@ -154,7 +154,7 @@ export const fileChooserCell = path => `
 
 export async function runAcceptance(key = 'me') {
   const home = process.env.CUA_HOME ?? defaultHome();
-  const route = effectiveRoute(chromeRoute(home));
+  const route = chromeRoute(home);
   const runEntries = () => existsSync(join(home, 'run')) ? readdirSync(join(home, 'run')).sort() : [];
   const readJson = path => { try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; } };
   const psLines = () => spawnSync('ps', ['-eo', 'pid=,args='], {encoding: 'utf8'}).stdout.split('\n').filter(Boolean);
@@ -170,7 +170,7 @@ export async function runAcceptance(key = 'me') {
   const runBefore = runEntries();
   let session = null, page = null, profile = null, download = null, inputPath = null, inputDirectory = null, inputStat = null;
   try {
-    if (!step('the browser uses the cua route', route === 'cua', route)) throw new Error('requires cua chrome register (not --vendor)');
+    if (!step('the browser uses the cua route', route === 'cua', route)) throw new Error('requires cua chrome register');
     page = await startFeaturesPage();
     const ORIGIN = page.origin;
     // The shared policy accepts origin access for the served page only; this fixture also accepts the service's

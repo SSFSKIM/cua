@@ -57,7 +57,7 @@ test('render.sh: the cua extension from the Store or a self-hosted update URL; t
 test('cua-provision.sh force-installs cua\'s own extension: its id is CUA_EXTENSION_ID', () => {
   const script = readFileSync(`${dir}cua-provision.sh`, 'utf8');
   assert.equal(script.match(/^EXTENSION_ID=([a-p]{32})\b/m)?.[1], CUA_EXTENSION_ID);
-  assert.doesNotMatch(script, /hehggadaopoacecdllhhajmbjkdcmajg|cua login|Sign in to ChatGPT/);
+  assert.doesNotMatch(script, /hehggadaopoacecdllhhajmbjkdcmajg|cua login|codex\.login|Sign in to ChatGPT/);
 });
 
 test('render.sh refuses anything that is not plain (it lands in a shell-sourced file)', () => {

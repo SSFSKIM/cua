@@ -1,0 +1,39 @@
+{
+  "left": {
+    "file": "/Users/new/cua-115/probe-out/exp-signed-vendor-default.json",
+    "label": "signed-vendor-default",
+    "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+    "appServer": "forward"
+  },
+  "right": {
+    "file": "/Users/new/cua-115/probe-out/exp-public-vendor-default.json",
+    "label": "public-vendor-default",
+    "cli": "/Users/new/cua-115/upstream/codex-rs/target/release/codex",
+    "appServer": "forward"
+  },
+  "confinementEqual": true,
+  "confinementDiffering": [],
+  "cells": {
+    "banner": [
+      true,
+      true
+    ],
+    "listApps#1": [
+      true,
+      true
+    ],
+    "Finder getApp+getAXState#1": [
+      true,
+      true
+    ],
+    "listApps#2": [
+      true,
+      true
+    ],
+    "Finder getAXState#2": [
+      true,
+      true
+    ]
+  },
+  "cellsEqual": true
+}

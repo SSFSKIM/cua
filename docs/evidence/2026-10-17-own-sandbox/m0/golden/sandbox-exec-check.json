@@ -1,0 +1,219 @@
+{
+  "upstream": {
+    "repository": "openai/codex",
+    "tag": "rust-v0.159.2",
+    "commit": "ff6aec96948b70d94983af2641a6b67c94faeff5"
+  },
+  "macos": "27.0",
+  "checks": [
+    {
+      "name": "scoped-worker",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "scoped-kernel",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "default-worker",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "default-kernel",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "scoped-worker-network-enabled",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "carve-outs-present",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "carve-outs-gitdir-pointer",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "tmpdir-unset",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "tmpdir-relative",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "tmpdir-var-alias",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "symlinked-read-root",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "vendor-script-dir-in-tmpdir",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "deny-one",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "deny-several",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "deny-through-symlink",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "deny-missing-target",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "home-nesting",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "minimal-platform-defaults",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    },
+    {
+      "name": "slash-tmp-write",
+      "symbolic": {
+        "status": 0,
+        "stderr": ""
+      },
+      "numeric": {
+        "status": 0,
+        "stderr": ""
+      }
+    }
+  ]
+}

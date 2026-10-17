@@ -1,0 +1,119 @@
+{
+  "label": "signed-cua-default",
+  "host": "cua",
+  "mode": "default",
+  "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+  "appServer": "forward",
+  "native": false,
+  "started": "2026-10-17T07:59:10.630Z",
+  "events": [
+    {
+      "at": "2026-10-17T07:59:11.862Z",
+      "what": "cell banner",
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 703
+    },
+    {
+      "at": "2026-10-17T07:59:11.882Z",
+      "what": "cell confinement",
+      "ok": true,
+      "value": {
+        "cwdWrite": "EPERM",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "EPERM",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "EPERM",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 0,
+        "scriptDirWrite": null
+      },
+      "ms": 8,
+      "wallMs": 20
+    }
+  ],
+  "serverInfo": {
+    "name": "cua-repl-host",
+    "version": "0.5.0"
+  },
+  "serveExit": {
+    "code": 0,
+    "signal": null
+  },
+  "results": {
+    "banner": {
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 703
+    },
+    "confinement": {
+      "ok": true,
+      "value": {
+        "cwdWrite": "EPERM",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "EPERM",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "EPERM",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 0,
+        "scriptDirWrite": null
+      },
+      "ms": 8,
+      "wallMs": 20
+    }
+  },
+  "elicitations": [],
+  "slot": {
+    "invocations": [
+      {
+        "t": "2026-10-17T07:59:11.376Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "kernel.mjs"
+      },
+      {
+        "t": "2026-10-17T07:59:11.620Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "trusted-worker.mjs"
+      }
+    ]
+  },
+  "appServers": [],
+  "rawLogDir": "/Users/new/cua-115/scratch/signed-cua-default-4SAGIB/slot",
+  "finished": "2026-10-17T07:59:12.611Z"
+}

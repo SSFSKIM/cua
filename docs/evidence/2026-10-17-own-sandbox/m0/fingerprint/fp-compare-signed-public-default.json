@@ -1,0 +1,22 @@
+{
+  "left": {
+    "file": "/Users/new/cua-115/probe-out/fp-signed-default.json",
+    "launcher": "signed"
+  },
+  "right": {
+    "file": "/Users/new/cua-115/probe-out/fp-public-default.json",
+    "launcher": "public"
+  },
+  "equal": true,
+  "sandboxed": [
+    true,
+    true
+  ],
+  "cwdEqual": true,
+  "checks": [],
+  "env": {
+    "onlyLeft": [],
+    "onlyRight": [],
+    "differing": []
+  }
+}

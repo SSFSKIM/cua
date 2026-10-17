@@ -1,0 +1,119 @@
+{
+  "label": "public-cua-default",
+  "host": "cua",
+  "mode": "default",
+  "cli": "/Users/new/cua-115/upstream/codex-rs/target/release/codex",
+  "appServer": "forward",
+  "native": false,
+  "started": "2026-10-17T08:04:40.630Z",
+  "events": [
+    {
+      "at": "2026-10-17T08:04:41.256Z",
+      "what": "cell banner",
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 374
+    },
+    {
+      "at": "2026-10-17T08:04:41.264Z",
+      "what": "cell confinement",
+      "ok": true,
+      "value": {
+        "cwdWrite": "EPERM",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "EPERM",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "EPERM",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 0,
+        "scriptDirWrite": null
+      },
+      "ms": 5,
+      "wallMs": 8
+    }
+  ],
+  "serverInfo": {
+    "name": "cua-repl-host",
+    "version": "0.5.0"
+  },
+  "serveExit": {
+    "code": 0,
+    "signal": null
+  },
+  "results": {
+    "banner": {
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 374
+    },
+    "confinement": {
+      "ok": true,
+      "value": {
+        "cwdWrite": "EPERM",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "EPERM",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "EPERM",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 0,
+        "scriptDirWrite": null
+      },
+      "ms": 5,
+      "wallMs": 8
+    }
+  },
+  "elicitations": [],
+  "slot": {
+    "invocations": [
+      {
+        "t": "2026-10-17T08:04:41.019Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "kernel.mjs"
+      },
+      {
+        "t": "2026-10-17T08:04:41.155Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "trusted-worker.mjs"
+      }
+    ]
+  },
+  "appServers": [],
+  "rawLogDir": "/Users/new/cua-115/scratch/public-cua-default-UHnIxh/slot",
+  "finished": "2026-10-17T08:04:41.437Z"
+}

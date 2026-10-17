@@ -20,3 +20,8 @@ current.json
 
 # doperpowers execution ledgers and review packages (local only)
 .doperpowers/sde/
+
+# The seatbelt golden generator's local links and build state (scripts/sandbox-golden/generate.sh)
+scripts/sandbox-golden/upstream
+scripts/sandbox-golden/Cargo.lock
+scripts/sandbox-golden/target/

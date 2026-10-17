@@ -1,0 +1,23 @@
+{
+  "left": {
+    "file": "/Users/new/cua-115/probe-out/exp-signed-cua-scoped.json",
+    "label": "signed-cua-scoped",
+    "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+    "appServer": "forward"
+  },
+  "right": {
+    "file": "/Users/new/cua-115/probe-out/exp-public-cua-scoped.json",
+    "label": "public-cua-scoped",
+    "cli": "/Users/new/cua-115/upstream/codex-rs/target/release/codex",
+    "appServer": "forward"
+  },
+  "confinementEqual": true,
+  "confinementDiffering": [],
+  "cells": {
+    "banner": [
+      true,
+      true
+    ]
+  },
+  "cellsEqual": true
+}

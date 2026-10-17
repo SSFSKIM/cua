@@ -1,0 +1,471 @@
+{
+  "label": "signed-vendor-default",
+  "host": "vendor",
+  "mode": "default",
+  "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+  "appServer": "forward",
+  "native": true,
+  "started": "2026-10-17T08:06:41.562Z",
+  "events": [
+    {
+      "at": "2026-10-17T08:06:42.583Z",
+      "what": "cell banner",
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 575
+    },
+    {
+      "at": "2026-10-17T08:06:42.602Z",
+      "what": "cell confinement",
+      "ok": true,
+      "value": {
+        "cwdWrite": "EPERM",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "EPERM",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "EPERM",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 1,
+        "scriptDirWrite": "EPERM"
+      },
+      "ms": 10,
+      "wallMs": 19
+    },
+    {
+      "at": "2026-10-17T08:06:43.340Z",
+      "what": "cell listApps#1",
+      "ok": true,
+      "value": {
+        "apps": 7,
+        "running": 7
+      },
+      "ms": 730,
+      "wallMs": 737
+    },
+    {
+      "at": "2026-10-17T08:06:43.647Z",
+      "what": "cell Finder getApp+getAXState#1",
+      "ok": true,
+      "value": {
+        "chars": 3577,
+        "lines": 67
+      },
+      "ms": 265,
+      "wallMs": 270
+    },
+    {
+      "at": "2026-10-17T08:06:43.705Z",
+      "what": "cell listApps#2",
+      "ok": true,
+      "value": {
+        "apps": 7
+      },
+      "ms": 16,
+      "wallMs": 19
+    },
+    {
+      "at": "2026-10-17T08:06:43.926Z",
+      "what": "cell Finder getAXState#2",
+      "ok": true,
+      "value": {
+        "chars": 3577
+      },
+      "ms": 188,
+      "wallMs": 193
+    }
+  ],
+  "serverInfo": {
+    "name": "rmcp",
+    "version": "1.5.0"
+  },
+  "helperCodexCliPath": [
+    "/Users/new/cua-115/scratch/signed-vendor-default-bUPE3p/codex"
+  ],
+  "serveExit": {
+    "code": 0,
+    "signal": null
+  },
+  "helpers": {
+    "started": 1,
+    "quitByThemselves": 1,
+    "quitByHarness": 0
+  },
+  "results": {
+    "banner": {
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 575
+    },
+    "confinement": {
+      "ok": true,
+      "value": {
+        "cwdWrite": "EPERM",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "EPERM",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "EPERM",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 1,
+        "scriptDirWrite": "EPERM"
+      },
+      "ms": 10,
+      "wallMs": 19
+    },
+    "listApps#1": {
+      "ok": true,
+      "value": {
+        "apps": 7,
+        "running": 7
+      },
+      "ms": 730,
+      "wallMs": 737
+    },
+    "Finder getApp+getAXState#1": {
+      "ok": true,
+      "value": {
+        "chars": 3577,
+        "lines": 67
+      },
+      "ms": 265,
+      "wallMs": 270
+    },
+    "listApps#2": {
+      "ok": true,
+      "value": {
+        "apps": 7
+      },
+      "ms": 16,
+      "wallMs": 19
+    },
+    "Finder getAXState#2": {
+      "ok": true,
+      "value": {
+        "chars": 3577
+      },
+      "ms": 188,
+      "wallMs": 193
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-17T08:06:43.386Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "app": "com.apple.finder",
+      "persist": [
+        "session",
+        "always"
+      ]
+    }
+  ],
+  "slot": {
+    "invocations": [
+      {
+        "t": "2026-10-17T08:06:42.258Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "trusted-worker.js"
+      },
+      {
+        "t": "2026-10-17T08:06:42.263Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "kernel.js"
+      },
+      {
+        "t": "2026-10-17T08:06:43.247Z",
+        "sub": "app-server",
+        "mode": "forward",
+        "configKeys": [],
+        "script": null,
+        "args": [
+          "app-server",
+          "--listen",
+          "stdio://"
+        ]
+      }
+    ]
+  },
+  "appServers": [
+    {
+      "file": "app-server-91398.jsonl",
+      "exit": null,
+      "stdinEof": true,
+      "audit": {
+        "ok": false,
+        "framing": {
+          "jsonrpc": false,
+          "idType": "string"
+        },
+        "requests": [
+          {
+            "id": "53D5FEBF-6709-47EF-85EA-A2C714B3F8D8",
+            "method": "initialize",
+            "params": {
+              "clientInfo": {
+                "title": "Codex Computer Use",
+                "version": "26.924.1001281",
+                "name": "codex-computer-use"
+              },
+              "capabilities": {
+                "optOutNotificationMethods": [],
+                "experimentalApi": true
+              }
+            }
+          },
+          {
+            "id": "716FFA06-A931-43F9-999B-11D9B295484B",
+            "method": "configRequirements/read",
+            "params": null
+          },
+          {
+            "id": "CF6A3345-4EC3-4098-9B83-065F1AA5E3EF",
+            "method": "config/read",
+            "params": {
+              "includeLayers": false
+            }
+          }
+        ],
+        "clientNotifications": [],
+        "responses": {
+          "initialize": {
+            "userAgent": "codex-computer-use/0.159.2 (Mac OS 27.0.0; arm64) unknown (codex-computer-use; 26.924.1001281)",
+            "codexHome": "${CODEX_HOME}",
+            "platformFamily": "unix",
+            "platformOs": "macos"
+          },
+          "configRequirements/read": {
+            "requirements": null
+          },
+          "config/read": {
+            "config": {
+              "model": null,
+              "review_model": null,
+              "model_context_window": null,
+              "model_auto_compact_token_limit": null,
+              "model_auto_compact_token_limit_scope": null,
+              "model_provider": null,
+              "approval_policy": null,
+              "approvals_reviewer": null,
+              "sandbox_mode": null,
+              "sandbox_workspace_write": null,
+              "forced_chatgpt_workspace_id": null,
+              "forced_login_method": null,
+              "web_search": null,
+              "tools": null,
+              "instructions": null,
+              "developer_instructions": null,
+              "compact_prompt": null,
+              "model_reasoning_effort": null,
+              "model_reasoning_summary": null,
+              "model_verbosity": null,
+              "service_tier": null,
+              "analytics": null,
+              "apps": null,
+              "browser_use": null,
+              "computer_use": null,
+              "desktop": null,
+              "agents": null,
+              "apps_mcp_product_sku": null,
+              "skills": null,
+              "marketplaces": {},
+              "disable_paste_burst": null,
+              "model_instructions_file": null,
+              "hide_agent_reasoning": false,
+              "ghost_snapshot": null,
+              "experimental_realtime_ws_startup_context": null,
+              "include_environment_context": true,
+              "mcp_optional_startup_grace_ms": null,
+              "check_for_update_on_startup": null,
+              "experimental_realtime_webrtc_call_base_url": null,
+              "realtime": null,
+              "include_collaboration_mode_instructions": true,
+              "mcp_enterprise_managed_auth": null,
+              "experimental_thread_store_endpoint": null,
+              "experimental_compact_prompt_file": null,
+              "experimental_realtime_start_instructions": null,
+              "windows": null,
+              "experimental_use_unified_exec_tool": null,
+              "include_permissions_instructions": true,
+              "cli_auth_credentials_store": "file",
+              "model_providers": {},
+              "log_dir": null,
+              "model_catalog_json": null,
+              "suppress_unstable_features_warning": null,
+              "thread_unload_delay_secs": null,
+              "history": {
+                "persistence": "save-all",
+                "max_bytes": null
+              },
+              "otel": null,
+              "js_repl_node_module_dirs": null,
+              "tool_suggest": null,
+              "responses_api_metadata": null,
+              "audio": null,
+              "shell_environment_policy": {
+                "inherit": null,
+                "ignore_default_excludes": null,
+                "exclude": null,
+                "set": null,
+                "include_only": null,
+                "filters": null,
+                "experimental_use_profile": null
+              },
+              "show_raw_agent_reasoning": null,
+              "project_doc_fallback_filenames": [],
+              "default_permissions": null,
+              "js_repl_node_path": null,
+              "experimental_realtime_ws_model": null,
+              "features": {
+                "api_key_model_discovery": false,
+                "auth_elicitation": true,
+                "background_paginated_rollout_migration": false,
+                "codex_apps_mcp_2026_07_28": false,
+                "mcp_2026_07_28": false,
+                "memories": false,
+                "mentions_v2": true,
+                "remote_control": false,
+                "remote_plugin": true,
+                "tool_suggest": true,
+                "windows_sandbox_service": false
+              },
+              "personality": null,
+              "plugins": {},
+              "plan_mode_reasoning_effort": null,
+              "cloud": null,
+              "openai_base_url": null,
+              "project_root_markers": [
+                ".git"
+              ],
+              "tui": null,
+              "tool_output_token_limit": null,
+              "allow_login_shell": true,
+              "allow_symlinked_codex_home": null,
+              "include_apps_instructions": true,
+              "auto_review": null,
+              "mcp_oauth_callback_port": null,
+              "profile": null,
+              "experimental_realtime_ws_base_url": null,
+              "goals": null,
+              "memories": null,
+              "hooks": null,
+              "oss_provider": null,
+              "feedback": null,
+              "profiles": {},
+              "background_terminal_max_timeout": 300000,
+              "mcp_servers": {},
+              "notice": null,
+              "sqlite_home": null,
+              "chatgpt_base_url": "https://chatgpt.com/backend-api/",
+              "experimental_thread_store": null,
+              "mcp_oauth_callback_url": null,
+              "model_post_turn_compact_threshold_percent": null,
+              "project_doc_max_bytes": 32768,
+              "orchestrator": null,
+              "file_opener": "vscode",
+              "experimental_realtime_ws_backend_prompt": null,
+              "permissions": null,
+              "notify": [
+                "${CUA_HOME}/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+                "turn-ended"
+              ],
+              "projects": null,
+              "mcp_oauth_credentials_store": "auto"
+            },
+            "origins": {
+              "notify.0": {
+                "name": {
+                  "type": "user",
+                  "file": "${CODEX_HOME}/config.toml",
+                  "profile": null
+                },
+                "version": "sha256:0fe35dd027bc7ccd003016bac41c7f55eb5aeea8f011444d9be6fdeff96c9331"
+              },
+              "notify.1": {
+                "name": {
+                  "type": "user",
+                  "file": "${CODEX_HOME}/config.toml",
+                  "profile": null
+                },
+                "version": "sha256:0fe35dd027bc7ccd003016bac41c7f55eb5aeea8f011444d9be6fdeff96c9331"
+              }
+            }
+          }
+        },
+        "errors": {},
+        "serverNotifications": [
+          {
+            "method": "remoteControl/status/changed",
+            "params": {
+              "status": "disabled",
+              "serverName": "Mac-mini.local",
+              "installationId": "<withheld>",
+              "environmentId": null
+            }
+          }
+        ],
+        "unanswered": [],
+        "findings": [
+          {
+            "path": "remoteControl/status/changed.params.installationId",
+            "reason": "opaque token-shaped value"
+          }
+        ],
+        "reviewed": [
+          {
+            "path": "config/read.config.cli_auth_credentials_store",
+            "kept": "string"
+          },
+          {
+            "path": "config/read.config.features.auth_elicitation",
+            "kept": "boolean"
+          },
+          {
+            "path": "config/read.config.allow_login_shell",
+            "kept": "boolean"
+          },
+          {
+            "path": "config/read.config.mcp_oauth_credentials_store",
+            "kept": "string"
+          }
+        ]
+      }
+    }
+  ],
+  "rawLogDir": "/Users/new/cua-115/scratch/signed-vendor-default-bUPE3p/slot",
+  "finished": "2026-10-17T08:06:44.116Z"
+}

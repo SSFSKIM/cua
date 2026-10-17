@@ -1,0 +1,247 @@
+{
+  "label": "replay-vendor-scoped",
+  "host": "vendor",
+  "mode": "scoped",
+  "cli": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/CodexCLI.app/Contents/MacOS/codex",
+  "appServer": "replay",
+  "native": true,
+  "started": "2026-10-17T07:58:41.130Z",
+  "events": [
+    {
+      "at": "2026-10-17T07:58:43.164Z",
+      "what": "cell banner",
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 1086
+    },
+    {
+      "at": "2026-10-17T07:58:43.201Z",
+      "what": "cell confinement",
+      "ok": true,
+      "value": {
+        "cwdWrite": "ok",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "ok",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "ENOSYS",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 1,
+        "scriptDirWrite": "EPERM"
+      },
+      "ms": 16,
+      "wallMs": 37
+    },
+    {
+      "at": "2026-10-17T07:58:44.398Z",
+      "what": "cell listApps#1",
+      "ok": true,
+      "value": {
+        "apps": 7,
+        "running": 7
+      },
+      "ms": 1191,
+      "wallMs": 1197
+    },
+    {
+      "at": "2026-10-17T07:58:46.063Z",
+      "what": "cell Finder getApp+getAXState#1",
+      "ok": true,
+      "value": {
+        "chars": 3577,
+        "lines": 67
+      },
+      "ms": 1594,
+      "wallMs": 1602
+    },
+    {
+      "at": "2026-10-17T07:58:46.157Z",
+      "what": "cell listApps#2",
+      "ok": true,
+      "value": {
+        "apps": 7
+      },
+      "ms": 27,
+      "wallMs": 33
+    },
+    {
+      "at": "2026-10-17T07:58:46.540Z",
+      "what": "cell Finder getAXState#2",
+      "ok": true,
+      "value": {
+        "chars": 3577
+      },
+      "ms": 324,
+      "wallMs": 336
+    }
+  ],
+  "serverInfo": {
+    "name": "rmcp",
+    "version": "1.5.0"
+  },
+  "helperCodexCliPath": [
+    "/Users/new/cua-115/scratch/replay-vendor-scoped-IADiWh/codex"
+  ],
+  "serveExit": {
+    "code": 0,
+    "signal": null
+  },
+  "helpers": {
+    "started": 1,
+    "quitByThemselves": 1,
+    "quitByHarness": 0
+  },
+  "results": {
+    "banner": {
+      "ok": true,
+      "value": {
+        "ready": true
+      },
+      "ms": 0,
+      "wallMs": 1086
+    },
+    "confinement": {
+      "ok": true,
+      "value": {
+        "cwdWrite": "ok",
+        "tmpdirIsSession": true,
+        "tmpdirWrite": "ok",
+        "outsideWrite": "EPERM",
+        "trustedWrite": "EPERM",
+        "slashTmpWrite": "EPERM",
+        "readHosts": "ok",
+        "readOutsideMarker": "ok",
+        "listCuaHome": "ok",
+        "hardLink": "EPERM",
+        "clone": "ENOSYS",
+        "exec": "ok",
+        "tcp": "EPERM",
+        "unix": "EPERM",
+        "mDNSResponder": "EPERM",
+        "scriptDirs": 1,
+        "scriptDirWrite": "EPERM"
+      },
+      "ms": 16,
+      "wallMs": 37
+    },
+    "listApps#1": {
+      "ok": true,
+      "value": {
+        "apps": 7,
+        "running": 7
+      },
+      "ms": 1191,
+      "wallMs": 1197
+    },
+    "Finder getApp+getAXState#1": {
+      "ok": true,
+      "value": {
+        "chars": 3577,
+        "lines": 67
+      },
+      "ms": 1594,
+      "wallMs": 1602
+    },
+    "listApps#2": {
+      "ok": true,
+      "value": {
+        "apps": 7
+      },
+      "ms": 27,
+      "wallMs": 33
+    },
+    "Finder getAXState#2": {
+      "ok": true,
+      "value": {
+        "chars": 3577
+      },
+      "ms": 324,
+      "wallMs": 336
+    }
+  },
+  "elicitations": [
+    {
+      "t": "2026-10-17T07:58:44.482Z",
+      "method": "elicitation/create",
+      "action": "accept",
+      "app": "com.apple.finder",
+      "persist": [
+        "session",
+        "always"
+      ]
+    }
+  ],
+  "slot": {
+    "invocations": [
+      {
+        "t": "2026-10-17T07:58:42.366Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "kernel.js"
+      },
+      {
+        "t": "2026-10-17T07:58:42.370Z",
+        "sub": "sandbox",
+        "mode": "forward",
+        "configKeys": [
+          "shell_environment_policy.inherit",
+          "default_permissions",
+          "permissions.node_repl"
+        ],
+        "script": "trusted-worker.js"
+      },
+      {
+        "t": "2026-10-17T07:58:44.340Z",
+        "sub": "app-server",
+        "mode": "replay",
+        "configKeys": [],
+        "script": null,
+        "args": [
+          "app-server",
+          "--listen",
+          "stdio://"
+        ]
+      }
+    ]
+  },
+  "appServers": [
+    {
+      "file": "replay-46828.jsonl",
+      "replay": [
+        {
+          "method": "initialize",
+          "id": "82BA6117-7ED9-4CDC-8602-CF4B80C8FB45",
+          "answered": "result"
+        },
+        {
+          "method": "configRequirements/read",
+          "id": "6D86C205-9EEB-449A-98FA-307DE4505FE9",
+          "answered": "result"
+        },
+        {
+          "method": "config/read",
+          "id": "9BF0ED48-B717-4D07-8861-626A63346834",
+          "answered": "result"
+        }
+      ]
+    }
+  ],
+  "rawLogDir": "/Users/new/cua-115/scratch/replay-vendor-scoped-IADiWh/slot",
+  "finished": "2026-10-17T07:58:46.849Z"
+}

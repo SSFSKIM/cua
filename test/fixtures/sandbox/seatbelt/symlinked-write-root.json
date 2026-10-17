@@ -1,0 +1,160 @@
+{
+  "name": "symlinked-write-root",
+  "description": "the run directory reached through a symlink below the top level: the original refuses it",
+  "upstream": {
+    "repository": "openai/codex",
+    "tag": "rust-v0.159.2",
+    "commit": "ff6aec96948b70d94983af2641a6b67c94faeff5"
+  },
+  "setup": [
+    {
+      "dir": "home/.config/cua"
+    },
+    {
+      "dir": "home/.config/claude-secrets/projects"
+    },
+    {
+      "dir": "cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/bin"
+    },
+    {
+      "dir": "cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules"
+    },
+    {
+      "file": "cuahome/node/24.22.0/bin/node"
+    },
+    {
+      "dir": "cuahome/state/codex"
+    },
+    {
+      "dir": "cuahome/remote"
+    },
+    {
+      "dir": "cuahome/chrome"
+    },
+    {
+      "dir": "cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp"
+    },
+    {
+      "dir": "cuahome/run/0d3c9a51-7d3f-4c1e-9b8e-5a2f6c1d0e47"
+    },
+    {
+      "file": "cua/src/repl-host/kernel.mjs"
+    },
+    {
+      "file": "cua/src/repl-host/trusted-worker.mjs"
+    },
+    {
+      "dir": "cua/src/cua-api"
+    },
+    {
+      "dir": "cua/docs/cua-api"
+    },
+    {
+      "dir": "cua/src/services"
+    },
+    {
+      "symlink": "cuahome/runlink",
+      "target": "run"
+    }
+  ],
+  "tmpdir": "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+  "input": {
+    "cwd": "@ROOT@/cuahome/runlink/7062c419-3288-4b60-970f-a808ecfcf291",
+    "profile": {
+      "type": "managed",
+      "network": "restricted",
+      "file_system": {
+        "type": "restricted",
+        "entries": [
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cua/docs/cua-api"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cua/src/cua-api"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cua/src/repl-host"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cuahome/node/24.22.0/bin"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "path",
+              "path": "@ROOT@/cuahome/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules"
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "special",
+              "value": {
+                "kind": "root"
+              }
+            },
+            "access": "read"
+          },
+          {
+            "path": {
+              "type": "special",
+              "value": {
+                "kind": "tmpdir"
+              }
+            },
+            "access": "write"
+          },
+          {
+            "path": {
+              "type": "special",
+              "value": {
+                "kind": "project_roots"
+              }
+            },
+            "access": "write"
+          }
+        ]
+      }
+    },
+    "command": [
+      "@ROOT@/cuahome/node/24.22.0/bin/node",
+      "--experimental-vm-modules",
+      "@ROOT@/cua/src/repl-host/kernel.mjs",
+      "--session-id",
+      "3f0b6c2ad9e84f1b8a7c5e4d3b2a1908",
+      "--working-dir",
+      "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291"
+    ],
+    "env": {
+      "HOME": "@ROOT@/home",
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "LANG": "C.UTF-8",
+      "TMPDIR": "@ROOT@/cuahome/run/7062c419-3288-4b60-970f-a808ecfcf291/tmp",
+      "NODE_REPL_AUTH_TOKEN": "synthetic",
+      "node_repl_auth_token": "synthetic-lowercase",
+      "OPENAI_FEDERATION_RULE_ID": "synthetic",
+      "OPENAI_IDENTITY_TOKEN_FILE": "synthetic",
+      "OPENAI_WORKLOAD_IDENTITY_CONTEXT": "synthetic",
+      "CODEX_EXEC_SERVER_NOISE_AUTH_TOKEN": "synthetic",
+      "CODEX_GUARDIAN_DECISIONS_API_KEY": "synthetic"
+    }
+  },
+  "output": {
+    "error": "writable root @ROOT@/cuahome/runlink/7062c419-3288-4b60-970f-a808ecfcf291 contains symlink component @ROOT@/cuahome/runlink; symlinked writable roots are not supported.\nIf this writable root is at or beneath CODEX_HOME and you trust its symlink targets, set `allow_symlinked_codex_home = true` at the top level of `$CODEX_HOME/config.toml` (normally `~/.codex/config.toml`) on the execution host, then restart Codex or its executor. This opt-out trusts targets outside CODEX_HOME and targets changed between commands. It does not apply to other writable roots."
+  }
+}

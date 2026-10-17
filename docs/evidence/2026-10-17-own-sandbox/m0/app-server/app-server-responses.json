@@ -215,7 +215,7 @@
   "findings": [
     {
       "path": "remoteControl/status/changed.params.installationId",
-      "reason": "opaque token-shaped value"
+      "reason": "credential- or account-shaped field"
     }
   ],
   "reviewed": [

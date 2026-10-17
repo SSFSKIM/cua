@@ -43,7 +43,7 @@ The resident checkout, its agent, the owner's runtime home and Chrome were not t
 4. **Fingerprint.** `oracle.mjs fingerprint` runs `fingerprint.c` in place of the kernel's command under the same launch. It adds as labelled targets the deny-list locations, another session's run directory, a synthetic store sentinel to link and clone, and harness TCP and Unix listeners. With `--generator`, it runs under the original's kernel-role argv instead.
 5. **App-server.**
    - The signed CLI's exchange was recorded by the slot.
-   - It was audited (`scripts/sandbox-probe/app-server.mjs audit`): paths rendered as `${CODEX_HOME}`/`${CUA_HOME}`/`${HOME}`, the server notification's `installationId` withheld, and four settings under credential-shaped names kept as reviewed flags and enum words.
+   - It was audited (`scripts/sandbox-probe/app-server.mjs audit`): paths rendered as `${CODEX_HOME}`/`${CUA_HOME}`/`${HOME}`, the server notification's `installationId` withheld, and four settings under credential-shaped names kept because they are on the audit's explicit allowlist (`SAFE_SETTINGS`: two flags and two credential-store choices, each by exact path and allowed value). After review, the audit reads camelCase and kebab-case keys and treats every `*_id` as an identifier. Re-running it over every committed exchange (`app-server.mjs reaudit`) changed only the reason recorded for `installationId`; no answer changed.
    - It was then replayed (`--app-server replay`) with the signed CLI still doing `sandbox`.
 
 Commands, with `S` the scratch home's `CodexCLI.app/Contents/MacOS/codex` and `P` the public build. `xcrun clang` on the mini needs `SDKROOT` set to Xcode's SDK: the Command Line Tools' 27.0 SDK has a `libSystem.tbd` that Xcode's ld-1267 cannot read.

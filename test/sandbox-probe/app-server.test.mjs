@@ -37,26 +37,41 @@ test('auditExchange withholds credential- and account-shaped values, naming only
   const config = audit.responses['config/read'].config;
   assert.equal(config.chatgpt_auth_token, '<withheld>');
   assert.equal(config.chatgpt_account_id, '<withheld>', 'an identifier-valued key is withheld whatever its value looks like');
+  assert.equal(config.forced_login_method, '<withheld>', 'a login setting outside the allowlist is withheld, enum-shaped or not');
   assert.equal(config.account_id, null, 'an empty value is kept: it reveals nothing');
   assert.equal(config.api_key, '');
-  assert.deepEqual(audit.findings.map(f => f.path), ['config/read.config.chatgpt_auth_token', 'config/read.config.chatgpt_account_id']);
+  assert.deepEqual(audit.findings.map(f => f.path),
+    ['config/read.config.chatgpt_auth_token', 'config/read.config.forced_login_method', 'config/read.config.chatgpt_account_id']);
   assert.ok(audit.findings.every(f => !JSON.stringify(f).includes('eyJ')), 'no withheld value appears in a finding');
   assert.equal(audit.ok, false);
 });
 
-test('auditExchange keeps settings under credential-shaped names when their value is a flag, a number or an enum word, and lists them as reviewed', () => {
+test('auditExchange withholds short credential and account values under snake, camel and kebab keys alike', () => {
+  const values = {authToken: 'abc', apiKey: 'k1', accountId: 'acct1', account: 'me', installationId: 'u1', 'session-id': 's1',
+    'user-email': 'a@b', AccessToken: 'x', deviceId: 'd1', password: 'pw', authMode: 'chatgpt'};
+  const audit = auditExchange([rec('in', {id: 1, method: 'initialize', params: {}}), rec('out', {id: 1, result: values})], {env});
+  for (const key of Object.keys(values)) assert.equal(audit.responses.initialize[key], '<withheld>', key);
+  assert.deepEqual(audit.findings.map(f => f.path).sort(), Object.keys(values).map(k => `initialize.${k}`).sort());
+  assert.deepEqual(audit.reviewed, []);
+});
+
+test('auditExchange keeps only the allowlisted settings under credential-shaped names, with their allowed values, and lists them as reviewed', () => {
   const audit = auditExchange(exchange, {env});
   const config = audit.responses['config/read'].config;
-  assert.equal(config.forced_login_method, 'chatgpt');
   assert.equal(config.allow_login_shell, true);
   assert.equal(config.cli_auth_credentials_store, 'file');
   assert.equal(config.features.auth_elicitation, true);
   assert.deepEqual(audit.reviewed, [
-    {path: 'config/read.config.forced_login_method', kept: 'string'},
     {path: 'config/read.config.allow_login_shell', kept: 'boolean'},
     {path: 'config/read.config.cli_auth_credentials_store', kept: 'string'},
     {path: 'config/read.config.features.auth_elicitation', kept: 'boolean'},
   ]);
+  const odd = auditExchange([rec('in', {id: 1, method: 'config/read', params: {}}),
+    rec('out', {id: 1, result: {config: {cli_auth_credentials_store: 'sk-live', allow_login_shell: 'yes', features: {auth_elicitation: 1}}}})], {env});
+  assert.deepEqual(odd.responses['config/read'].config, {cli_auth_credentials_store: '<withheld>', allow_login_shell: '<withheld>', features: {auth_elicitation: '<withheld>'}},
+    'an allowlisted setting with a value outside its allowed set is withheld');
+  const elsewhere = auditExchange([rec('in', {id: 1, method: 'initialize', params: {}}), rec('out', {id: 1, result: {allow_login_shell: true}})], {env});
+  assert.equal(elsewhere.responses.initialize.allow_login_shell, '<withheld>', 'the allowlist is by path, not by name');
 });
 
 test('auditExchange withholds opaque tokens and user paths it cannot render, wherever they sit', () => {

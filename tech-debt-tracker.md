@@ -2,10 +2,17 @@
 
 ## Open
 
+- **2026-10-17 — Leftovers of the vendor browser service in the bind rule and the wrapper (minor, #79).** (a) `cua
+  profiles bind`'s name branch (src/profiles/bind.mjs, "Name") and the labelling story in src/profiles/inventory.mjs's
+  header rest on the vendor service's profile enrichment; cua's service labels only MAWS backends, which bind ignores,
+  so on the only route left every Chrome candidate is unlabelled and the branch never binds. Trimming it means
+  rewriting the bind rule's tests. (b) src/services/browser.mjs still classifies the vendor's error classes
+  (BrowserUseSecurityError, BrowserCredentialRecoveryError, ZodError) and its {ok:false} recovery envelope, which cua's
+  service never produces; it is harmless fail-closed sanitising, and the repl-parity secret cases
+  (`errors/recovery-envelope-sanitized`) pin it, so it goes when that corpus is retired.
+
 - **2026-10-17 — Host last-tab guard (#148): a check past its bound can still act late (minor, review round 2 of PR #150).** `keepWindow` stops waiting for `checkWindow` after `KEEP_WAIT_MS`, but the check keeps running on its old tab list. Suppose its query answers after the next close's check has already opened the window's New Tab page. Its list then shows both tabs going, so it opens a second New Tab page. It happens only when the extension takes over 2 s to answer a tab query, and the cost is one extra New Tab page, never a lost window. Fix: give each check an expiry token that `checkWindow` reads before `tabs.create`.
 - **2026-10-17 — Every agent-created tab logs a guard refusal (minor, seen on the mini).** The host creates tabs at `about:blank` with `guard: true`. The extension's first sweep can't script `about:blank` ("Cannot access contents of url "about:blank". Extension manifest must request permission to access this host."), so every session's host log carries one `extension refused tabs.guard` line, and that noise hides real refusals. The tab is guarded again when its first real document commits, so nothing is unprotected that matters. Fix: skip the sweep for `about:blank` in `tabs.create`, or inject with `matchOriginAsFallback`.
-
-- **2026-10-15 — `profiles list` ignores the explicit-override rule on a vendor-routed home (minor, found in #116 M4).** On cua-linux, the default home is vendor-routed. There, `CUA_BROWSER_SERVICE=cua node bin/cua.mjs profiles list --json` returns `ok:true` with every profile `ready:false, reason:host_not_live`. It should refuse with a route diagnostic naming the route and the deciding registration, as an explicit contradictory setting does at connection launch (#116 Design, "Selection is a connection fact"). The misleading `host_not_live` cost a debugging round in M4. Fix: apply the same explicit-route refusal in the independent profiles-listing path (`src/profiles/inventory.mjs`).
 
 - **2026-10-15 — Own REPL host (#116): two minor gaps left after M2/M3 review.**
   - (a) On a live connection, a kernel whose event loop blocks after its submitted code completes still holds the call with no bound. Only EOF is bounded, by M3's drain. The vendor behaves the same way, and nothing observed hits it. A per-execution watchdog in `src/repl-host/supervisor.mjs` would close it.
@@ -33,7 +40,7 @@
   prunes them (the Chrome route's logs are per profile and bounded in number). (b) When `profiles.json` does not parse,
   `profiles_list` answers `profiles_invalid` and the `maws` entry, which needs no registry, is lost with it.
 
-- **2026-10-08 — Viewport capability: what is not pinned yet (minor, issue #82).** (a) The `accept-chrome --route cua`
+- **2026-10-08 — Viewport capability: what is not pinned yet (minor, issue #82).** (a) The `accept-chrome` (cua route)
   viewport cell (800x600 set, screenshot pixel size, reset) has not run live; it needs the owner's loaded cua
   extension. Whether the service's screenshot path returns exactly the override's size (no downscale) is unobserved.
   (b) Two host branches have no test of their own: the `touch` in `setViewport` (a set adopts the active tab into the
@@ -209,12 +216,12 @@
   is resolved. Make the individual attach error equally accurate at the next relevant prototype/production edit;
   do not treat this text as evidence of successful release.
 
-- **2026-10-04 — `accept-chrome --all` cannot bind a supplied live report to a commit (minor, M13).** The `--live`
+## Resolved
+
+- **2026-10-04 — `accept-chrome --all` cannot bind a supplied live report to a commit (minor, M13; obsolete 2026-10-17).** Obsolete: #79 removed `--all` with the ChatGPT extension route's runner. The `--live`
   report records its time but no commit or runtime-tree identity, and the `--c6-report` is assembled by hand, so
   `--all` records each supplied file's length and sha256 and trusts its contents. Have `--live` record `git rev-parse
   HEAD` and the release, and have `--all` report (or refuse) a report from another commit.
-
-## Resolved
 
 - **2026-10-07 — A success result's text is invisible in Claude Code when it has structured content (minor, issue
   #70 G4; resolved 2026-10-07, issue #72).** Resolved: `profiles_list` puts its not-ready guidance in a `guidance`

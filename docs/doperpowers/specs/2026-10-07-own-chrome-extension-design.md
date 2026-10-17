@@ -341,7 +341,8 @@ across all three, so registration, binding and doctor never care which one is in
 ### Out of scope
 
 Replacing the vendor service (option C); removing the vendor route, `cua login`, M12's host placement and
-`chrome.host.config` (a follow-up ticket, registered in H5, after the Store listing is live); MAWS's in-app browser;
+`chrome.host.config` (a follow-up ticket, registered in H5, after the Store listing is live; done by #79 without
+waiting for the listing, Decision Log 2026-10-17); MAWS's in-app browser;
 page events (WebMCP), browser management, history/bookmarks (they answer `No handler`), the coordinate and DOM
 `download_media` variants (`executeUnhandledCommand`; the ChatGPT extension does not implement them either); the
 cursor overlay and favicon badges; peer code-signature checks on the socket; Windows. Downloads, JavaScript dialogs
@@ -910,6 +911,30 @@ No new npm dependencies.
   `<name>.prev.log`: the second loss on the mini (no cua activity, 2026-10-16 10:35–10:50Z) left no record of how its
   host ended, because the next host's log replaced it; the launcher log showed no reconnect attempt in that span, which
   is what an unloaded profile (a profile with no window) looks like, not an extension that lost its port while loaded.
+- Decision (2026-10-17, owner ruling on the #115 design question, board #79, `feat/79-remove-chatgpt-route`, plugin
+  0.13.0): the ChatGPT extension route is removed now. cua's distribution stays internal (research use), so the Chrome
+  Web Store listing (#78) is no longer a precondition; #79 runs ahead of #115 so that #115 can drop CodexCLI.app whole.
+  Removed: `cua chrome register|unregister --vendor` and the vendor registration (registerHost, unregisterHost, the
+  com.openai.codexextension manifest handling, its record writes and backups); `cua install`'s placement of OpenAI's
+  Chrome host in a release (M12's component, its configuration naming the codex CLI and CODEX_HOME, and the pins'
+  `chromePlugin`); doctor's `chrome.host.config`, `codex.login` and `browser.service` rows and the OpenAI extension
+  rows; `cua login` (`src/runtime/login.mjs`); the vendor browser service selection (`CUA_BROWSER_SERVICE`, the
+  `chatgpt_extension_route` and `vendor_browser_route` reasons, `CUA_BROWSER_VENDOR_SERVICE`), so the browser surface
+  always runs cua's own service on either REPL host; the vendor socket-directory scan in discovery and in cua's
+  service (`BROWSER_USE_BACKEND_PATHS` is always set, empty when there are no sockets). The route of a home is `cua`
+  while `chrome/cua-registration.json` exists, with no time ordering against another record. The old record
+  (`chrome/registration.json`) is read only to move a home: `chromeMigration` (src/chrome/route.mjs) gives doctor's
+  new `chrome.route` row (blocked with no registration or only the old one, warn while cua's is in place but the old
+  one is newer or left), a `note:` on every `cua profiles` command and on `cua chrome register`, all naming `cua chrome
+  register`, the profiles bound on the ChatGPT extension (`rebind_required`, `cua profiles bind <key>`) and the exact
+  removal or restore of each com.openai.codexextension manifest the old record lists that still names a host in the
+  home. Bindings without `route: 'cua'` stay readable and read `rebind_required`; a `route` other than `cua` is
+  invalid. Kept: CODEX_CLI_PATH and the CodexCLI.app relocation (the sandbox launcher) and CODEX_HOME, for #115; the
+  pin's `browserVendorService` layout key, read only by the parity harnesses' test-only vendor oracle
+  (`test/browser-parity/vendor-oracle.mjs`); the wrapper's classification of the vendor's error classes and recovery
+  envelope (fail-closed for whatever answers). Alternatives rejected: keeping `unregister --vendor` as a migration
+  command (the steps are few and exact, and keeping it kept the vendor registration code); reading a home with no
+  registration as the cua route (nothing would launch its host; the row says what to run).
 
 ## Outcomes & Retrospective
 

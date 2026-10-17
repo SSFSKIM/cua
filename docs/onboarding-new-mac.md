@@ -5,8 +5,8 @@ the user's own Chrome profiles. It is written for the next machine and for a lat
 step says what it needs from a person at the console and what can run unattended. The commands are the README's. The
 browser goes through cua's own Chrome extension and host, which need no ChatGPT account and no Codex login
 (`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`); the clean-machine gate
-(`docs/evidence/clean-machine-acceptance.md`) passed the earlier ChatGPT extension route, whose steps are kept at the
-end until that route is removed.
+(`docs/evidence/clean-machine-acceptance.md`) passed the earlier ChatGPT extension route, which #79 removed; a Mac
+that was set up that way moves with the README's "Moving a home off the ChatGPT extension route (#79)".
 
 ## What it takes, in one view
 
@@ -14,7 +14,7 @@ end until that route is removed.
 |---|---|---|---|
 | 1 Install cua | `git clone`, `npm install`, `cua install` | no (network, ~690 MB download) | `cua doctor`: `runtime.*` PASS |
 | 2 Secrets (only if secret substitution will be used) | `/secret KEY` in Claude Code, or `cua secrets set KEY` | yes: the value is typed (masked) | `secrets.store` PASS |
-| 3 (no login) | nothing: the cua extension route needs no Codex login | no | `codex.login` SKIP |
+| 3 (no login) | nothing: cua needs no Codex login | no | — |
 | 4 Extension in each Chrome profile | the cua extension from the Chrome Web Store once listed; until then load `extension/` unpacked | yes | `chrome.extension.<key>` PASS |
 | 5 Native host registration | `cua chrome register` | no | `chrome.host.registered` PASS |
 | 6 Register and bind the profile | `cua profiles add`, Chrome open on it, `cua profiles bind` | yes, for any pick | `profiles list`: ready |
@@ -50,8 +50,7 @@ there (README, Secrets). `cua doctor` reports both.
 
 ### 3. No login
 
-The cua extension route needs no Codex login and no ChatGPT account: doctor's `codex.login` reads `skip`. Only the
-ChatGPT extension route (below) needs `cua login`.
+cua needs no Codex login and no ChatGPT account.
 
 ### 4. The extension in each Chrome profile
 
@@ -125,8 +124,7 @@ What this sequence implies for a service that is meant to run without a person:
   connects and ends when that connection closes (spike #7). A service should check readiness (`profiles list --json`
   or the agent's `profiles_list`) before each task and surface `host_not_live` / `binding_stale` as a person's step,
   not retry. The next spontaneous host exit is still being recorded (#41).
-- **Bindings can go stale without anyone touching cua.** A reinstall of the extension mints a new instance id (the
-  ChatGPT extension's update or toggle can too). With
+- **Bindings can go stale without anyone touching cua.** A reinstall of the extension mints a new instance id. With
   the directory map, `bind` repairs this automatically when the profile's store names one live backend, so a service
   can run `cua profiles bind <key>` itself after a `binding_stale`; it must never pick between profiles.
 - **Full Disk Access decides what a background process can read.** A launchd service without it gets the file checks
@@ -136,13 +134,3 @@ What this sequence implies for a service that is meant to run without a person:
   directory, closed by `end_task` or EOF; stale run directories are swept at the next start (#29).
 - **Not yet shown:** a fresh user account on a shared Mac, Developer ID signing of the helper (#14), and file-level TCC
   behaviour on macOS 27 without Full Disk Access on a SIP-enabled Mac (the VM has SIP off).
-
-## The ChatGPT extension route (until removal)
-
-Before the cua extension, the browser went through OpenAI's ChatGPT extension (`hehggadaopoacecdllhhajmbjkdcmajg`)
-and its native host; the clean-machine gate passed that way. It stays until the cua extension is on the Chrome Web
-Store. Its steps differ: the server needs a Codex login (`node bin/cua.mjs login`, once, at the
-console or with `--device-auth`; it lives in `$CUA_HOME/state/codex`, never `~/.codex`); step 4 installs OpenAI's
-extension from the Web Store instead (signing in to ChatGPT inside Chrome was not needed); and step 5 is nothing when
-ChatGPT.app is installed (its registration serves), else `node bin/cua.mjs chrome register --vendor`. To wake its host,
-click that extension's icon. Toggling it can mint a new instance id, so `bind` again after one.

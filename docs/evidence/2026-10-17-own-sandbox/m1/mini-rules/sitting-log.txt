@@ -212,3 +212,26 @@
 2026-10-17T18:34:34.935Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=2 queued=0 load=4.66 -> STOP
 2026-10-17T18:34:34.936Z watch cfprefs-5d9bf70: STOP the run: 2 Runner.Worker (front=com.apple.Terminal busy=false workers=2 queued=0 load=4.66)
 2026-10-17T18:34:40.465Z watch cfprefs-5d9bf70: ended pids 81222 795 781 768 99971 81198 96583
+2026-10-17T18:38:02.841Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.9 -> idle
+2026-10-17T18:38:51.697Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.3 -> idle
+2026-10-17T18:38:51.698Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs
+2026-10-17T18:38:51.754Z watch cfprefs-5d9bf70: started for pid 96421 (mode pause-aware)
+2026-10-17T18:38:55.175Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.3 -> idle
+2026-10-17T18:39:28.988Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.08 -> idle
+2026-10-17T18:40:03.014Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.88 -> idle
+2026-10-17T18:40:36.707Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.13 -> idle
+2026-10-17T18:41:09.792Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.07 -> idle
+2026-10-17T18:41:43.304Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.34 -> idle
+2026-10-17T18:42:16.779Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.53 -> idle
+2026-10-17T18:42:50.251Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.3 -> idle
+2026-10-17T18:43:24.361Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.33 -> idle
+2026-10-17T18:43:57.888Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6 -> idle
+2026-10-17T18:44:31.509Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.42 -> idle
+2026-10-17T18:45:05.611Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.42 -> idle
+2026-10-17T18:45:38.658Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.94 -> idle
+2026-10-17T18:46:11.398Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.58 -> idle
+2026-10-17T18:46:44.242Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.23 -> idle
+2026-10-17T18:47:17.216Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.17 -> idle
+2026-10-17T18:47:50.343Z watch cfprefs-5d9bf70: runner 2 Runner.Worker; pause off, heartbeat 18 s, paused-before lines 0
+2026-10-17T18:47:50.344Z watch cfprefs-5d9bf70: reading: front=com.apple.Terminal busy=false workers=2 queued=0 load=5.67 -> idle
+2026-10-17T18:48:23Z attempt 5 held by the controller (probe fix): ended own tree of cfprefs.sh 95905

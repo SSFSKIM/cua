@@ -3,7 +3,8 @@
 // profile) and after (under cua's), judged. Both runs must be complete; their results must be equal but for the one
 // fact M1 changes in a result, the kernel's exit status after SIGKILL on cells/lifecycle/child-exit-settles (the
 // Codex CLI's exited(code=137) before, Node's own exited(signal=9) after, with the kernel then the stderr's Node:
-// repl-parity's kernel-exit-status, which compares only across hosts).
+// repl-parity's kernel-exit-status, which compares only across hosts). Only those facts are set aside; the rest of
+// that cell's row compares as repl-parity compares it.
 //
 //   node scripts/sandbox-probe/m1-judge.mjs before-after <diff.json> <before-run-dir> <after-run-dir>
 //
@@ -11,18 +12,29 @@
 import {readFileSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {kernelExitFacts, normalizeHostDiagnostic} from '../repl-parity/diagnostics.mjs';
+import {isDeepStrictEqual} from 'node:util';
+import {kernelExitFacts, normalizeHostDiagnostic, projectKernelExit} from '../repl-parity/diagnostics.mjs';
 
 const EXIT_CASE = 'cells/lifecycle/child-exit-settles', EXIT_CELL = 'interrupted';
 const BEFORE = {kernel_status: 'exited(code=137)', kernelIsStderrNode: false}, AFTER = {kernel_status: 'exited(signal=9)', kernelIsStderrNode: true};
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// A result row as repl-parity compares it: its result fields, its meta without the volatile execution duration.
+const comparable = row => {
+  const {'codex/nodeReplExecutionDurationMs': _duration, ...meta} = row.meta ?? {};
+  return {content: row.content, isError: row.isError, structuredContent: row.structuredContent, value: row.value, meta};
+};
 
 // -> {ok, incomplete: [side...], undeclared: [difference...], exitStatus: 'equal' | 'declared' | 'absent'}
 export function judgeBeforeAfter({diff, before, after}) {
   const incomplete = [['before', before], ['after', after]].filter(([, run]) => run.meta.complete !== true).map(([side]) => side);
   const exitRow = run => run.rows.filter(r => r.case === EXIT_CASE && r.cell === EXIT_CELL).map(normalizeHostDiagnostic);
   const [b, a] = [exitRow(before), exitRow(after)];
-  const declared = b.length === 1 && a.length === 1 && same(kernelExitFacts(b[0]), BEFORE) && same(kernelExitFacts(a[0]), AFTER);
+  // Declared only when each side holds exactly its facts and, with those facts (status, kernel pid and the stderr's
+  // Node label) projected to one placeholder, the two rows are otherwise equal: reason, stream_error, the rest of the
+  // stderr tail and every other field still compare.
+  const PLACEHOLDER = '<kernel-exit-status:own-kernel-is-node>';
+  const declared = b.length === 1 && a.length === 1 && same(kernelExitFacts(b[0]), BEFORE) && same(kernelExitFacts(a[0]), AFTER)
+    && isDeepStrictEqual(comparable(projectKernelExit(b[0], PLACEHOLDER)), comparable(projectKernelExit(a[0], PLACEHOLDER)));
   const differences = diff.differences ?? [];
   const undeclared = differences.filter(d => !(declared && d.case === EXIT_CASE && d.cell === EXIT_CELL));
   const exitStatus = differences.some(d => d.case === EXIT_CASE && d.cell === EXIT_CELL) ? (declared ? 'declared' : 'undeclared') : 'equal';

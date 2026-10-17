@@ -2,9 +2,63 @@
 
 M1's held runs (task-4 report, "Held runs"; `scripts/sandbox-probe/m1-mini.sh`), on the mini.
 
-**Status.** Every item will be rerun at M1's final SHA, once its review is clean, so that the evidence carries one SHA. The runs below are the first attempts, each kept under `m1/<item>-attempt-1/`.
+**Status.** M1's final SHA is 5d9bf70. Every item reruns there so that the evidence carries one SHA. Earlier runs are kept as attempts under `m1/<item>-attempt-N/`.
 
 **Where the runs come from.** Attempt 1 ran from M1's working checkout. During the cfprefs attempt, M1's executor committed four times into that checkout (15:42:57Z to 15:58:22Z), so the two sides of that measurement ran different harness code: before recorded f4bec92, after recorded 080981b. From the rerun on, the harness runs from a separate clone that nothing else writes to, and the evidence is committed on `feat/115-own-sandbox-m1-evidence`.
+
+# The rerun at 5d9bf70
+
+**Gate.** Every step had two readings about 45 s apart before it and a frontmost check after it. The current mini rules applied (load under 5). The readings are in `mini-rules/sitting-log.txt`. GUI-bound groups also had the runner watched during the run (MAWS DL 58), with a reading every 30 s; a busy runner, a queued macOS job or a system dialog would have ended the run's own process tree. The watch never fired.
+
+## Tier discovery: proceeds
+
+- Run: 16:26:18Z; gate loads 4 and 4.05.
+- File: `tier-discovery/tier-check.json`.
+- Result, unchanged from attempt 2: `projects/` absent; 0 tiers, 0 symlinked, 0 absent targets.
+
+## Oracles: PASS
+
+- Command: `sh scripts/sandbox-probe/m1-mini.sh oracles 5d9bf70`; exit 0 at 17:23:32Z.
+- Gate: loads 4.68 and 4.9. The gate first waited from 16:27Z to 17:22Z while the mac lane's runner worked through a queue of about 30 MAWS macOS jobs.
+- Fingerprints: all four comparisons have `judgement.ok` with no undeclared difference. They are golden kernel against cua kernel, and signed CLI against cua worker, each in scoped and default.
+- Port against the signed capture: equal argv and profile in both modes. The environment differs only in the CLI's arg0 PATH entry and `__CF_USER_TEXT_ENCODING`.
+
+## Own-sandbox: PASS
+
+- Command: `sh scripts/sandbox-probe/m1-mini.sh own-sandbox 5d9bf70`; exit 0 at 17:24:30Z.
+- Gate: loads 4.77 and 4.01.
+- File: `own-sandbox/own-sandbox.json`. **76 of 76 checks PASS** across scoped, default and disabled.
+- The new store-root checks use a scratch HOME's store, browser surface only, and run under sandbox-exec with no helper and no GUI. Each check passes both plain and through a symlinked `~/.config`:
+  - a store root missing at launch is not created;
+  - once created mid-session, it stays denied;
+  - once created mid-session, it cannot be listed.
+
+## cfprefs, attempt 2 (90cbfe0 against 5d9bf70): no judgement; a design conflict
+
+- Command: `sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs`.
+- Run: 17:25:59Z to 17:42:49Z; gate loads 4.65 and 4.63.
+- Watch: the runner watch ran from 17:35:36Z to the end of the run without firing.
+- Files: `cfprefs-attempt-2/`.
+
+**Before side (90cbfe0).** Cells 150/150 and services 41/41, both complete with assertions PASS.
+
+**After side (5d9bf70).** Both suites failed at connect with "MCP exited (1)". The ssh stderr, kept outside the evidence for diagnosis, shows the serve refusing:
+- `sandbox_conflict`: "what JavaScript cells may not read overlaps: `<CUA_HOME>/home/.config/<store>` and `<CUA_HOME>`; `<CUA_HOME>/home/.config/cua` and `<CUA_HOME>`";
+- raised from `assertDenyListShape`, called by `assertSandboxFits`, called by `openConnection`.
+
+Why it refuses:
+- repl-parity's prepared endpoint puts the run's HOME at `<endpoint home>/home`, inside its CUA_HOME (`scripts/repl-parity/prepare-device.mjs`).
+- On macOS, M1 denies the whole cua home and refuses a store or `~/.config/cua` nested inside it.
+- Linux denies the home's private directories one by one, so the GCE lane is unaffected.
+- Attempt 1's after side at c55ba01 most likely failed the same way.
+
+**Chrome.** Before (17:25:07Z) pid 36513 with 1 ssfs tab; after (17:42:50Z) pid 36513 with 1 tab. Chrome was never quit. Both preparations were removed.
+
+## Parity: not run
+
+Parity would meet the same refusal, so it waits for the layout decision.
+
+# Attempt 2
 
 ## Tier discovery, attempt 2 (e4bfece): proceeds
 

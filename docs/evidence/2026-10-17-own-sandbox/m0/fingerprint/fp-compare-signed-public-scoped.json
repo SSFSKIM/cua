@@ -1,10 +1,10 @@
 {
   "left": {
-    "file": "/Users/new/cua-115/probe-out/fp-signed-scoped.json",
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-signed-scoped.json",
     "launcher": "signed"
   },
   "right": {
-    "file": "/Users/new/cua-115/probe-out/fp-public-scoped.json",
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-public-scoped.json",
     "launcher": "public"
   },
   "equal": true,

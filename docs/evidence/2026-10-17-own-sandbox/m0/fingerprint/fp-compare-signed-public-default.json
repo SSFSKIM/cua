@@ -1,10 +1,10 @@
 {
   "left": {
-    "file": "/Users/new/cua-115/probe-out/fp-signed-default.json",
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-signed-default.json",
     "launcher": "signed"
   },
   "right": {
-    "file": "/Users/new/cua-115/probe-out/fp-public-default.json",
+    "file": "docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-public-default.json",
     "launcher": "public"
   },
   "equal": true,

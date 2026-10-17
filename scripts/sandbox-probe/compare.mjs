@@ -71,13 +71,17 @@ export function compareCapture({captured, golden}) {
 const normalizeValue = value => value.replace(/codex-arg0[A-Za-z0-9]+/g, 'codex-arg0*')
   .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<session>');
 
+// Checks are matched by (op, filter, label) and compared by result and errno: two failures of the same check are
+// different outcomes when their errno differs (EPERM from the sandbox against ECONNREFUSED from an absent listener).
 export function compareFingerprints(left, right) {
-  const index = fp => new Map(fp.checks.map(row => [`${row.op}\u0000${row.label}`, row.result]));
+  const SEP = '\u0000';
+  const index = fp => new Map(fp.checks.map(row => [[row.op, row.filter, row.label].join(SEP), {result: row.result, errno: row.errno ?? null}]));
   const a = index(left), b = index(right);
-  const checks = [...new Set([...a.keys(), ...b.keys()])].sort().filter(key => a.get(key) !== b.get(key)).map(key => {
-    const [op, label] = key.split('\u0000');
-    return {op, label, left: a.get(key) ?? null, right: b.get(key) ?? null};
-  });
+  const checks = [...new Set([...a.keys(), ...b.keys()])].sort()
+    .filter(key => JSON.stringify(a.get(key) ?? null) !== JSON.stringify(b.get(key) ?? null)).map(key => {
+      const [op, filter, label] = key.split(SEP);
+      return {op, filter, label, left: a.get(key) ?? null, right: b.get(key) ?? null};
+    });
   const normalize = env => Object.fromEntries(Object.entries(env).map(([k, v]) => [k, normalizeValue(v)]));
   const env = envDiff(normalize(left.env), normalize(right.env));
   const cwdEqual = normalizeValue(left.cwd) === normalizeValue(right.cwd);

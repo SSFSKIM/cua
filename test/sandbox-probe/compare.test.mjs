@@ -76,9 +76,9 @@ test('compareFingerprints names differing checks, checks one side lacks, and env
   const result = compareFingerprints(a, b);
   assert.equal(result.equal, false);
   assert.deepEqual(result.checks, [
-    {op: 'file-link', label: 'cwd', left: null, right: 'deny'},
-    {op: 'file-read-data', label: 'home', left: 'allow', right: 'deny'},
-    {op: 'mach-lookup', label: 'cfprefsd', left: 'allow', right: null},
+    {op: 'file-link', filter: 'path', label: 'cwd', left: null, right: {result: 'deny', errno: null}},
+    {op: 'file-read-data', filter: 'path', label: 'home', left: {result: 'allow', errno: null}, right: {result: 'deny', errno: null}},
+    {op: 'mach-lookup', filter: 'path', label: 'cfprefsd', left: {result: 'allow', errno: null}, right: null},
   ]);
   assert.deepEqual(result.env, {onlyLeft: ['X'], onlyRight: [], differing: []});
 });
@@ -102,4 +102,15 @@ test('compareExperiments: the confinement outcomes key by key, and each side\'s 
     cells: {banner: [true, true], 'listApps#1': [true, false]}, cellsEqual: false});
   assert.equal(compareExperiments(a, a).confinementEqual, true);
   assert.equal(compareExperiments(a, a).cellsEqual, true);
+});
+
+test('compareFingerprints tells failures apart by errno, and checks apart by filter', () => {
+  const attempt = (errno, filter = 'attempt') => ({pid: 1, cwd: '/run', sandboxed: true, env: {},
+    checks: [{op: 'connect-tcp', filter, label: 'harness-tcp', target: '127.0.0.1:1', result: 'deny', errno}]});
+  const result = compareFingerprints(attempt(1), attempt(61));
+  assert.equal(result.equal, false, 'EPERM (the sandbox) and ECONNREFUSED (no listener) are different outcomes');
+  assert.deepEqual(result.checks, [{op: 'connect-tcp', filter: 'attempt', label: 'harness-tcp', left: {result: 'deny', errno: 1}, right: {result: 'deny', errno: 61}}]);
+  assert.equal(compareFingerprints(attempt(1), attempt(1)).equal, true);
+  const byFilter = compareFingerprints(attempt(1), attempt(1, 'none'));
+  assert.deepEqual(byFilter.checks.map(c => [c.filter, Boolean(c.left), Boolean(c.right)]), [['attempt', true, false], ['none', false, true]]);
 });

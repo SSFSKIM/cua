@@ -10,6 +10,10 @@ export const PARITY_CHECKOUT = '$HOME/Developer/GitHub/cua-parity';
 // The MCP protocol version the harness asks for; the handshake record is kept per surface set and this version.
 export const PROTOCOL_VERSION = '2025-06-18';
 export const HOSTS = ['vendor', 'cua'];
+// The surface a run measures: the native one (the full baseline), or the browser one alone (--surfaces browser: the
+// same cold connections with no native call, #115 acceptance 11).
+export const SURFACES = ['computer', 'browser'];
+export const assertSurface = surface => { if (!SURFACES.includes(surface)) throw new Error('--surfaces must be computer or browser'); };
 // Locale is part of the measured desktop environment, never an SSH-login preference.
 export const NATIVE_LOCALE = Object.freeze({LANG: 'C.UTF-8'});
 const assertHost = host => { if (!HOSTS.includes(host)) throw new Error('host must be vendor or cua'); };
@@ -23,9 +27,10 @@ export function assertOwnNode(host, node) {
 }
 export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.test(display ?? '')) throw new Error('display must be an X display name such as :0'); };
 
-// Native surface only, the REPL host the run measures (explicit, so the selection is never a default that moves under
-// the run; the browser service is not a factor with the browser surface off), approvals for the session only, no secret
-// store: nothing of the owner's store is read and no approval outlives the connection. On Linux the serve joins the X
+// One surface, the native one unless the run measures the browser one alone (then with cua's browser service,
+// explicit: a fresh home has no registration that would select it), the REPL host the run measures (explicit, so the
+// selection is never a default that moves under the run; the browser service is not a factor with the browser surface
+// off), approvals for the session only, no secret store: nothing of the owner's store is read and no approval outlives the connection. On Linux the serve joins the X
 // session: its display and the cookie file in the account's home (a path, expanded on the device; the session bus comes
 // from the ssh session's XDG_RUNTIME_DIR, src/runtime/linux-desktop.mjs). The script is named by its absolute path, so
 // the serve's command line names the checkout and servePattern finds it (and no other checkout's serve, such as the
@@ -33,14 +38,14 @@ export const assertDisplay = display => { if (!/^[A-Za-z0-9.-]*:\d+(\.\d+)?$/.te
 // `node` (cua host only) is the own host's Node, an absolute path on the device passed as CUA_NODE in this command's
 // environment, never a shell profile; the serve itself stays on the device's node, as the vendor baseline's did.
 // When a prepared home is supplied, build the environment rather than inheriting SSH-login CUA settings.
-export function nativeEnvironment({home, userHome, host, display, platform, xSession, node}) {
-  assertHost(host); assertOwnNode(host, node);
+export function nativeEnvironment({home, userHome, host, display, platform, xSession, node, surface = 'computer'}) {
+  assertHost(host); assertOwnNode(host, node); assertSurface(surface);
   if (platform === 'linux') assertDisplay(xSession?.DISPLAY ?? display);
   const x = xSession === undefined ? (platform === 'linux' ? ` DISPLAY=${quote(display)} XAUTHORITY="$HOME/.Xauthority"` : '')
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
   const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(userHome + '/.config')} `
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
-  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface}${surface === 'browser' ? ' CUA_BROWSER_SERVICE=cua' : ''} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
 }
 export function serveCommand(options) {
   const {device, checkout, userHome, node} = options;
@@ -78,14 +83,15 @@ export function xDisplayFacts(text) {
 
 // One JSON line: the platform, the clone's commit and cleanliness, the Node that runs the serve (and, given `node`, the
 // own host's Node and the version it reports, null when it does not run), the home and runtime
-// release a serve there uses, the handshake record's path for the native surface and the selected host
+// release a serve there uses, the handshake record's path for the measured surface and the selected host
 // (src/repl-host/identity.mjs hostIdentity, as src/mcp/lazy-runtime.mjs handshakeRecords keys it), the sandbox policy
-// the serve resolves in this environment (src/runtime/sandbox.mjs sandboxModeFrom, computer surface), the machine and what
+// the serve resolves in this environment (src/runtime/sandbox.mjs sandboxModeFrom, the measured surface), the machine and what
 // is running that the run must know about (a cua-116-spike process, serves of the clone, the scratch app). macOS: model,
 // chip, memory, macOS, main display, TextEdit. Linux: CPU and memory, distribution and kernel, the X display (DISPLAY
 // `display`, the cookie in the account's home; checked with xdpyinfo, only its size kept), the session bus, gedit.
-export function preflightScript({host, display = ':0', node: ownNode, prepared}) {
+export function preflightScript({host, display = ':0', node: ownNode, prepared, surface = 'computer'}) {
   assertHost(host);
+  assertSurface(surface);
   assertOwnNode(host, ownNode);
   assertDisplay(display);
   // The pattern is servePattern's, for the checkout the script runs in.
@@ -104,12 +110,12 @@ const home = defaultHome(), release = readPointer(home), id = hostIdentity({host
 const common = {
   platform: process.platform, node: process.version, arch: arch(), hostname: hostname(), cpu: {model: cpus()[0]?.model || arch(), count: cpus().length}, uptime: sh('uptime', []),
   commit: sh('git', ['rev-parse', 'HEAD']), dirty: sh('git', ['status', '--porcelain']) !== '', checkout: process.cwd(), home, release,
-  handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', id.host + '@' + id.version, 'computer@${PROTOCOL_VERSION}.json'),
+  handshakeRecord: join(homeLayout(home).handshake, release ?? 'none', id.host + '@' + id.version, '${surface}@${PROTOCOL_VERSION}.json'),
   runtimeRoot: release ? join(homeLayout(home).runtimes, release) : null,
   spikeRunning: sh('pgrep', ['-f', 'cua-116-[s]pike']) !== '',
   serves: sh('pgrep', ['-f', (${servePattern.toString()})(process.cwd())]).split('\\n').filter(Boolean).length,
   ownNode: ownNodePath === null ? ownNodeFacts(process.env, {home}) : {path: ownNodePath, version: sh(ownNodePath, ['--version']) || null},
-  sandbox: (() => { try { return {mode: sandboxModeFrom(process.env, {platform: process.platform, surfaces: ['computer']}), explicit: process.env.CUA_SHIM_SANDBOX !== undefined}; } catch (e) { return {mode: null, error: e.message}; } })(),
+  sandbox: (() => { try { return {mode: sandboxModeFrom(process.env, {platform: process.platform, surfaces: ${JSON.stringify([surface])}}), explicit: process.env.CUA_SHIM_SANDBOX !== undefined}; } catch (e) { return {mode: null, error: e.message}; } })(),
 };
 let own;
 if (process.platform === 'linux') {
@@ -139,14 +145,14 @@ if (process.platform === 'linux') {
   };
 }
 console.log(JSON.stringify({...common, ...own}));`;
-  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display})} ` : ''}node --input-type=module -e ${quote(node)}`;
+  return `cd ${PARITY_CHECKOUT} && ${prepared ? `env ${nativeEnvironment({...prepared, host, node: ownNode, platform: prepared.xSession?.DISPLAY ? 'linux' : 'darwin', display, surface})} ` : ''}node --input-type=module -e ${quote(node)}`;
 }
 
-// Clears (when asked) and then reports the native surface's handshake record of the selected host (the record of
+// Clears (when asked) and then reports the measured surface's handshake record of the selected host (the record of
 // <release>/vendor@<release> or <release>/cua@<version>, src/mcp/lazy-runtime.mjs handshakeRecords): "present" or
 // "absent".
 export function handshakeScript({record, clear}) {
-  if (!/\/state\/handshake\/([^/]+)\/(vendor@\1|cua@[A-Za-z0-9._-]*[A-Za-z0-9_-])\/computer@[0-9-]+\.json$/.test(record) || record.includes('/../'))
+  if (!/\/state\/handshake\/([^/]+)\/(vendor@\1|cua@[A-Za-z0-9._-]*[A-Za-z0-9_-])\/(computer|browser)@[0-9-]+\.json$/.test(record) || record.includes('/../'))
     throw new Error('not a native handshake record path');
   return `${clear ? `rm -f ${quote(record)} && ` : ''}if [ -f ${quote(record)} ]; then echo present; else echo absent; fi`;
 }

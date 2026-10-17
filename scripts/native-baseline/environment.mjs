@@ -1,6 +1,7 @@
 // A fresh-home path changes each run; its role does not. Everything else affecting this native experiment is exact.
 import {isDeepStrictEqual} from 'node:util';
 import {assertManagedNode} from '../repl-parity/node-provenance.mjs';
+import {surfaceOf} from './summary.mjs';
 const relativeNode = meta => meta.ownNode?.path?.startsWith(meta.home + '/') ? meta.ownNode.path.slice(meta.home.length) : meta.ownNode?.path;
 export function comparisonEnvironment(meta) {
   const {CUA_REPL_HOST: _host, ...environment} = meta.environment ?? {};
@@ -29,8 +30,10 @@ export function environmentProblems(runs) {
     for (const place of ['device','controller']) for (const when of ['before','after']) {
       if (typeof meta.load?.[place]?.[when] !== 'string' || !meta.load[place][when].trim()) problems.push(`${name}: missing ${place} ${when} uptime`);
     }
-    if (meta.platform === 'linux' && (!meta.xSession?.DISPLAY || !meta.gedit?.version)) problems.push(`${name}: Linux desktop environment is incomplete`);
-    if (meta.platform === 'linux' && !meta.gedit?.locale?.LANG) problems.push(`${name}: gedit locale is missing`);
+    // gedit is the native run's target; a browser-surface run drives no app.
+    const native = meta.platform === 'linux' && surfaceOf(meta) === 'computer';
+    if (native && (!meta.xSession?.DISPLAY || !meta.gedit?.version)) problems.push(`${name}: Linux desktop environment is incomplete`);
+    if (native && !meta.gedit?.locale?.LANG) problems.push(`${name}: gedit locale is missing`);
     const actual = comparisonEnvironment(meta);
     for (const key of Object.keys(reference)) if (!isDeepStrictEqual(reference[key],actual[key])) problems.push(`${name}: ${key} environment differs from ${runs[0].name}`);
   }

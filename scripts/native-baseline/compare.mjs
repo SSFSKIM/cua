@@ -16,8 +16,16 @@
 // some rows, such as a cold connection's end_task, only on failure). There is no verdict unless each side has three runs, each complete, attested and covering its whole plan
 // (summary.mjs coverageProblems), the baseline the vendor host's and the candidate cua's, on a like machine, runtime,
 // native service, sandbox policy and plan.
-import {attestation, operationRank, summarize} from './summary.mjs';
-import {environmentProblems} from './environment.mjs';
+//
+// compareSameHost (#115 acceptance 11) judges one host's runs after a change against its runs before it on the same
+// machine: the cold first_js rows (SAME_HOST_JUDGED) by the same limit and outcome rule, every other row reported. Each
+// side must be a whole, attested triple of one sitting; across the sides everything must match except what the change
+// is: the commit, the sitting, and the configuration differences acceptance 11 permits, each recorded in the result
+// (`permitted`): the sandbox launcher (the Codex CLI to cua's own or its compat executable), TMPDIR (the caller's to the
+// session's own), and on Linux computer sessions the platform-default sandbox mode from disabled to scoped.
+import {isDeepStrictEqual} from 'node:util';
+import {attestation, operationRank, summarize, surfaceOf} from './summary.mjs';
+import {comparisonEnvironment, environmentProblems} from './environment.mjs';
 
 export const TOLERANCE = {ratio: 0.1, floorMs: 500};
 export const latencyLimit = median => median + Math.max(TOLERANCE.ratio * median, TOLERANCE.floorMs);
@@ -28,14 +36,14 @@ const RUNS = 3;
 const round = ms => (ms === null || ms === undefined ? null : Math.round(ms * 10) / 10);
 
 // What one side's runs are: their pooled summary, their requested host (when every run agrees on one) and its problems.
-function sideOf(label, runs, expectedHost) {
+function sideOf(label, runs, expectedHost, usage = 'compare <vendor-dir> <cua-dir>') {
   const summary = summarize(runs);
   const problems = summary.problems.map(p => `${label}: ${p}`);
   if (runs.length !== RUNS) problems.push(`${label}: ${runs.length} run${runs.length === 1 ? '' : 's'}, acceptance 8 needs three`);
   const hosts = [...new Set(runs.map(r => r.meta.host))];
   for (const run of runs) if (run.meta.host === undefined) problems.push(`${label}: ${run.name} has no requested host (recorded before host attestation; remeasure it)`);
   const host = hosts.length === 1 ? hosts[0] ?? null : null;
-  if (host && host !== expectedHost) problems.push(`the ${label} attests the ${host} host, not ${expectedHost} (compare <vendor-dir> <cua-dir>)`);
+  if (host && host !== expectedHost) problems.push(`the ${label} attests the ${host} host, not ${expectedHost} (${usage})`);
   const ssh = summary.operations.find(o => o.op === 'ssh.roundtrip')?.wall?.median ?? null;
   const methodRows = new Map();
   for (const run of runs) for (const row of run.rows) if (typeof row.op === 'string' && row.op.startsWith('method.')) {
@@ -127,13 +135,73 @@ export function compare(baselineRuns, candidateRuns) {
   return {baseline: describe(baseline, left), candidate: describe(candidate, right), operations, problems, verdict};
 }
 
+export const SAME_HOST_JUDGED = ['cold.miss.first_js', 'cold.hit.first_js'];
+// The configuration changes acceptance 11 permits between before and after, as {field, baseline, candidate, reason}, and
+// the problems for any other: the sandbox mode (Linux computer sessions, platform default, disabled -> scoped), the
+// launcher and TMPDIR (the sandbox launch witness, scripts/native-baseline/provenance.mjs sandboxLaunchOf).
+const LAUNCHER_MOVES = [['codex-cli', 'cua'], ['codex-cli', 'cua-compat']];
+const TMPDIR_MOVES = [['inherited', 'session']];
+function permittedChanges(before, after) {
+  const permitted = [], problems = [];
+  const mode = s => (s?.mode ? `${s.mode} (${s.explicit ? 'CUA_SHIM_SANDBOX' : 'platform default'})` : null);
+  if (!isDeepStrictEqual(before.sandbox, after.sandbox)) {
+    const linuxComputer = before.platform === 'linux' && after.platform === 'linux' && surfaceOf(before) === 'computer' && surfaceOf(after) === 'computer';
+    if (linuxComputer && isDeepStrictEqual(before.sandbox, {mode: 'disabled', explicit: false}) && isDeepStrictEqual(after.sandbox, {mode: 'scoped', explicit: false}))
+      permitted.push({field: 'sandbox mode', baseline: mode(before.sandbox), candidate: mode(after.sandbox), reason: 'Linux computer sessions default to scoped with the confined kernel (#115), the change being measured'});
+    else problems.push(`sandbox differs (baseline ${mode(before.sandbox) ?? '–'}, candidate ${mode(after.sandbox) ?? '–'}); only a Linux computer session's platform default may move from disabled to scoped`);
+  }
+  const witness = [before.sandboxLaunch, after.sandboxLaunch];
+  if (witness.some(w => !w?.launcher || !w?.tmpdir)) problems.push('a side records no sandbox launch witness (launcher and TMPDIR); remeasure it');
+  else for (const [field, key, moves, reason] of [['sandbox launcher', 'launcher', LAUNCHER_MOVES, 'cua\'s own launcher replaces the Codex CLI (#115)'],
+    ['TMPDIR', 'tmpdir', TMPDIR_MOVES, 'each session gets its own TMPDIR (#115)']]) {
+    const [b, c] = witness.map(w => w[key]);
+    if (b === c) continue;
+    if (moves.some(([x, y]) => x === b && y === c)) permitted.push({field, baseline: b, candidate: c, reason});
+    else problems.push(`${field} differs (baseline ${b}, candidate ${c}); only ${moves.map(([x, y]) => `${x} -> ${y}`).join(' or ')} is permitted`);
+  }
+  return {permitted, problems};
+}
+
+// -> compare()'s result for one host's runs before a change (`baselineRuns`) and after it (`candidateRuns`), with
+// `mode: 'same-host'` and the permitted differences found (`permitted`).
+export function compareSameHost(baselineRuns, candidateRuns) {
+  const expected = baselineRuns[0]?.meta?.host ?? null;
+  const usage = 'compare --same-host compares one host before and after';
+  const baseline = sideOf('baseline', baselineRuns, expected, usage), candidate = sideOf('candidate', candidateRuns, expected, usage);
+  const named = (label, runs) => runs.map(r => ({...r, name: `${label} ${r.name}`}));
+  const problems = [...baseline.problems, ...candidate.problems,
+    ...environmentProblems(named('baseline', baselineRuns)), ...environmentProblems(named('candidate', candidateRuns))];
+  for (const [label, runs] of [['baseline', baselineRuns], ['candidate', candidateRuns]])
+    for (const run of runs.slice(1)) if (!isDeepStrictEqual(run.meta.sandboxLaunch, runs[0].meta.sandboxLaunch)) problems.push(`${label}: ${run.name} records another sandbox launch witness than ${runs[0].name}`);
+  const before = baselineRuns[0].meta, after = candidateRuns[0].meta;
+  const left = attestation(before), right = attestation(after);
+  for (const [key, label] of Object.entries(COMPARABLE)) if (key !== 'sandbox' && left[key] !== right[key]) problems.push(`${label} differs (baseline ${left[key] ?? '–'}, candidate ${right[key] ?? '–'})`);
+  const [envBefore, envAfter] = [before, after].map(comparisonEnvironment);
+  for (const key of Object.keys(envBefore)) if (!['sandbox', 'experiment'].includes(key) && !isDeepStrictEqual(envBefore[key], envAfter[key])) problems.push(`${key} environment differs between the baseline and the candidate`);
+  const changes = permittedChanges(before, after);
+  problems.push(...changes.problems);
+  const ops = [...new Set([...baseline.summary.operations, ...candidate.summary.operations].map(o => o.op))]
+    .sort((a, b) => operationRank(a) - operationRank(b) || a.localeCompare(b));
+  const operations = ops.map(op => {
+    const judged = judgeOperation(op, baseline, candidate);
+    if (!SAME_HOST_JUDGED.includes(op)) return {...judged, limitMs: null, verdict: 'not judged', reasons: []};
+    if (!judged.baseline) return {...judged, verdict: 'fail', reasons: ['no baseline samples']};
+    return judged;
+  });
+  for (const op of SAME_HOST_JUDGED) if (!ops.includes(op)) operations.push({op, kind: 'latency', basis: null, baseline: null, candidate: null, limitMs: null, verdict: 'fail', reasons: ['no samples on either side']});
+  const verdict = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
+  const describe = (side, a) => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: a, sshMedianMs: side.ssh});
+  return {mode: 'same-host', baseline: describe(baseline, left), candidate: describe(candidate, right), operations, permitted: changes.permitted, problems, verdict};
+}
+
 const fmt = value => (value === null || value === undefined ? '–' : value < 10 ? value.toFixed(2) : value.toFixed(1));
 const triple = s => (s ? `${fmt(s.median)} / ${fmt(s.p95)} / ${fmt(s.max)}` : '–');
 const share = f => (f ? `${f.ok}/${f.samples - f.invalid}` : '–');
 export function renderComparison(result) {
   const {baseline: b, candidate: c} = result;
+  const sameHost = result.mode === 'same-host';
   const lines = [
-    '# Native baseline comparison', '',
+    sameHost ? '# Native baseline comparison, same host (before and after)' : '# Native baseline comparison', '',
     '| | Baseline | Candidate |', '|---|---|---|',
     `| REPL host | ${b.host ?? '–'} | ${c.host ?? '–'} |`,
     `| initialize answered by | ${b.serverInfo.join(', ') || '–'} | ${c.serverInfo.join(', ') || '–'} |`,
@@ -141,7 +209,9 @@ export function renderComparison(result) {
     ...['device', 'release', 'hardware', 'os', 'display', 'service', 'sandbox', 'plan'].map(key => `| ${key} | ${b.attestation[key] ?? '–'} | ${c.attestation[key] ?? '–'} |`),
     `| Runs | ${b.runs.map(r => r.name).join(', ')} | ${c.runs.map(r => r.name).join(', ')} |`,
     `| ssh.roundtrip median | ${fmt(b.sshMedianMs)} | ${fmt(c.sshMedianMs)} |`, '',
-    'Rule (acceptance 8): three complete, attested runs a side covering the same plan; per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. The judged median is wall time around the MCP call; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.', '',
+    sameHost
+      ? `Rule (#115 acceptance 11): one host, three complete, attested runs a side covering the same plan, on the same machine and configuration except the permitted differences below; the judged rows are ${SAME_HOST_JUDGED.join(' and ')}: the candidate\'s median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. Every other row is reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
+      : 'Rule (acceptance 8): three complete, attested runs a side covering the same plan; per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. The judged median is wall time around the MCP call; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.', '',
     '| Operation | Basis | Baseline OK | Candidate OK | Baseline judged | Candidate judged | Limit | Verdict | Baseline wall | Candidate wall | Baseline in-cell | Candidate in-cell |',
     '|---|---|---|---|---|---|---|---|---|---|---|---|',
     ...result.operations.filter(o => o.kind === 'latency').map(o => `| ${o.op} | ${o.basis ?? '–'} | ${share(o.baseline)} | ${share(o.candidate)} | ${fmt(o.baseline?.judgedMs)} | ${fmt(o.candidate?.judgedMs)} | ${fmt(o.limitMs)} | ${o.verdict} | ${triple(o.baseline?.wall)} | ${triple(o.candidate?.wall)} | ${triple(o.baseline?.inCell)} | ${triple(o.candidate?.inCell)} |`),
@@ -150,6 +220,8 @@ export function renderComparison(result) {
   if (methods.length) lines.push('', '## Method cases', '', 'Outcomes are counted per sample (`n x` the outcome); wall is median / p95 / max of the samples the harness ran, judged by the same rule.', '',
     '| Method case | Baseline samples | Baseline outcomes | Candidate samples | Candidate outcomes | Baseline wall | Candidate wall | Limit | Verdict |', '|---|---|---|---|---|---|---|---|---|',
     ...methods.map(o => `| ${o.op} | ${o.baseline?.samples ?? 0} | ${o.baseline?.outcomes.join('<br>') || '–'} | ${o.candidate?.samples ?? 0} | ${o.candidate?.outcomes.join('<br>') || '–'} | ${triple(o.baseline?.wall)} | ${triple(o.candidate?.wall)} | ${fmt(o.limitMs)} | ${o.verdict} |`));
+  if (sameHost) lines.push('', '## Permitted configuration differences', '',
+    ...(result.permitted.length ? result.permitted.map(p => `- ${p.field}: ${p.baseline} -> ${p.candidate} (${p.reason})`) : ['None: the configuration is unchanged.']));
   const notes = result.operations.filter(o => o.reasons.length).map(o => `- ${o.op} (${o.verdict}): ${o.reasons.join('; ')}`);
   lines.push('', '## Failures and notes', '', ...(notes.length ? notes : ['None.']));
   lines.push('', '## Problems', '', ...(result.problems.length ? result.problems.map(p => `- ${p}`) : ['None: both sides are complete, attested and comparable.']));

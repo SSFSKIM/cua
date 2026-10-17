@@ -49,6 +49,9 @@ export function readRuns(dir) {
   });
 }
 
+// The surface a run measured: recorded since #115 added the browser-surface mode; every earlier run was a native one.
+export const surfaceOf = meta => meta.surface ?? 'computer';
+
 const GiB = 1024 ** 3;
 const ATTESTED = ['device', 'commit', 'host', 'release', 'hardware', 'os', 'display', 'service', 'sandbox', 'plan'];
 // The answering host a run attests: the requested host and what its connections' initialize named, or null for a run
@@ -69,7 +72,8 @@ export function attestation(meta) {
     hardware: [hw.model, hw.chip, hw.memoryBytes ? `${Math.round(hw.memoryBytes / GiB)} GiB` : null].filter(Boolean).join(', ') || null,
     os: os.version ? `${os.name ?? 'macOS'} ${os.version}${os.build ? ` (${os.build})` : ''}` : null,
     display: display.resolution ? `${display.resolution} points at scale ${display.scale ?? '?'}${display.pixels ? ` (${display.pixels} pixels)` : ''}` : null,
-    service: service.surface ? `${service.surface} surface, answered by ${service.answered ?? '?'}${service.helper ? ` (helper: ${service.helper})` : ''}` : null,
+    service: service.surface === 'browser' ? 'browser surface, no service call'
+      : service.surface ? `${service.surface} surface, answered by ${service.answered ?? '?'}${service.helper ? ` (helper: ${service.helper})` : ''}` : null,
     sandbox: meta.sandbox?.mode ? `${meta.sandbox.mode} (${meta.sandbox.explicit ? 'CUA_SHIM_SANDBOX' : 'platform default'})` : null,
     plan: plan.samples ? `${plan.cold} cold, ${plan.samples} warm, ${plan.tasks} tasks` : null,
   };
@@ -77,13 +81,13 @@ export function attestation(meta) {
 
 // What a complete run of `plan` must have recorded, per operation (the task's verify step runs only after a successful
 // act, so it is bounded, not fixed): a run whose rows fall short is not evidence of its plan, whatever `complete` says.
-// Cold connections are counted across their observed hit/miss labels.
+// Cold connections are counted across their observed hit/miss labels. A browser-surface run is its ssh and cold rows.
 export function coverageProblems(run) {
   const {meta, rows, name} = run, plan = meta.plan ?? {};
   if (!plan.samples || !plan.cold || !plan.tasks) return [`${name} records no sample plan`];
   const count = op => rows.filter(r => r.op === op).length;
   const linux = meta.platform === 'linux';
-  const expected = [['ssh.roundtrip', 5], ['warm.noop', plan.samples], ['warm.getState', plan.samples], ['warm.listApps', plan.samples],
+  const expected = surfaceOf(meta) === 'browser' ? [['ssh.roundtrip', 5]] : [['ssh.roundtrip', 5], ['warm.noop', plan.samples], ['warm.getState', plan.samples], ['warm.listApps', plan.samples],
     [linux ? 'setup.findWindow' : 'setup.newDocument', 1], ['bind.getApp', 1], ['warm.getAXState', plan.samples], ['warm.getScreenshot', plan.samples],
     ['task.act', plan.tasks], [linux ? 'task.clear' : 'task.close', plan.tasks], ['task.total', plan.tasks],
     ...(linux ? Object.keys(METHOD_CASES).map(op => [op, 1]) : []), ['end_task', 1]];

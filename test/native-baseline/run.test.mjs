@@ -71,6 +71,7 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
 function fakeClient(options, cua, state) {
   const own = state.answeringHost === 'cua';
   const meta = own ? {'cua/nativeExecution': state.answeringNode ?? prepared.ownNode, 'cua/replHost': {host: 'cua', version: '0.1.0'}, 'cua/taskId': 't'} : {'cua/nativeExecution': {path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't'};
+  meta['cua/sandboxLaunch'] = {launcher: 'codex-cli', tmpdir: 'inherited'};
   state.serves = [...(state.serves ?? []), options.args.at(-1)];
   state.options = options;
   return {
@@ -112,7 +113,9 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   assert.equal(meta.host, 'vendor');
   assert.equal(meta.connections, 3);
   assert.deepEqual(meta.sandbox, {mode: 'disabled', explicit: false});
-  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/nativeExecution':{path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't'}})));
+  assert.deepEqual(meta.hostAttestations, Array.from({length: 3}, () => ({host: 'vendor', serverInfo: {name: 'node_repl', version: '0.1.0'}, _meta: {'cua/nativeExecution':{path:HOME+'/runtimes/'+RELEASE+'/node',version:'v24.21.0'},'cua/taskId': 't','cua/sandboxLaunch':{launcher:'codex-cli',tmpdir:'inherited'}}})));
+  assert.deepEqual(meta.sandboxLaunch, {launcher: 'codex-cli', tmpdir: 'inherited'});
+  assert.equal(meta.surface, 'computer');
   assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'vendor', CUA_SHIM_SURFACES: 'computer', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...prepared.xSession});
   // The cold plan: a planned miss clears the record first; each connection is labelled by the record it found.
   assert.equal(state.clears, 1);

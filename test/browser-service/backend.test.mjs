@@ -5,7 +5,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {endianness} from 'node:os';
-import {mkdirSync, writeFileSync} from 'node:fs';
 import {createServer} from 'node:net';
 import {join} from 'node:path';
 import {
@@ -311,16 +310,12 @@ test('turnMetadata reads x-codex-turn-metadata as an object or JSON text; sessio
 
 // --- discovery --------------------------------------------------------------------------------------------------------
 
-test('backendPaths: BROWSER_USE_BACKEND_PATHS verbatim (absolute, deduplicated, empty entries skipped), else the vendor socket directory', async t => {
+test('backendPaths: BROWSER_USE_BACKEND_PATHS verbatim (absolute, deduplicated, empty entries skipped); unset is none, never a socket directory scan', async () => {
   assert.deepEqual(await backendPaths({BROWSER_USE_BACKEND_PATHS: '/a/one.sock::/b/two.sock:/a/one.sock'}), ['/a/one.sock', '/b/two.sock']);
-  assert.deepEqual(await backendPaths({BROWSER_USE_BACKEND_PATHS: ''}), [], 'an empty list is a list (no scan)');
+  assert.deepEqual(await backendPaths({BROWSER_USE_BACKEND_PATHS: ''}), [], 'an empty list is a list');
   await assert.rejects(backendPaths({BROWSER_USE_BACKEND_PATHS: 'relative.sock'}), /BROWSER_USE_BACKEND_PATHS entries must be absolute/);
-  const scratch = shortScratch('cua-bp-');
-  t.after(scratch.cleanup);
-  mkdirSync(join(scratch.dir, 'reg'));
-  writeFileSync(join(scratch.dir, 'reg', 'x.sock'), '');
-  assert.deepEqual(await backendPaths({}, {socketDir: join(scratch.dir, 'reg')}), [join(scratch.dir, 'reg', 'x.sock')]);
-  assert.deepEqual(await backendPaths({}, {socketDir: join(scratch.dir, 'missing')}), []);
+  assert.deepEqual(await backendPaths({}), [], 'unset: none (every launch sets it; OpenAI\'s host socket directory is never read)');
+  assert.deepEqual(await backendPaths(undefined), []);
 });
 
 test('discovery against the real host: one browser with cua\'s getInfo answer, a session API over the socket, reused on the next pass', async t => {

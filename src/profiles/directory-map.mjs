@@ -1,4 +1,4 @@
-// Which Chrome profile directory each OpenAI extension instance belongs to, computed by cua itself in the CLI process
+// Which Chrome profile directory each cua extension instance belongs to, computed by cua itself in the CLI process
 // for `cua profiles bind`, independent of the vendor's own labelling (browser-service.mjs `sL`, which runs inside the
 // sandboxed runtime and fails silently there). The method is the vendor's: each profile in Local State's
 // profile.info_cache whose `Local Extension Settings/<extension id>` store exists has that LevelDB store copied to a

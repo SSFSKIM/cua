@@ -38,7 +38,6 @@ import {fail} from '../runtime/errors.mjs';
 import {createAgentState} from './health.mjs';
 import {observeAgentChrome} from './chrome-health.mjs';
 import {chromeFacts} from '../profiles/chrome.mjs';
-import {chromeRoute, extensionIdFor} from '../chrome/route.mjs';
 import {homedir} from 'node:os';
 
 export {connectRelay};
@@ -189,7 +188,7 @@ export async function runAgent({home, env = process.env, http = null, relay = fa
     };
     const health = createAgentState(home, {diagnostics});
     const observeChrome = () => health.chrome(observeAgentChrome({home,
-      chrome: chromeFacts({host: {platform}, env, userHome: env.HOME ?? homedir(), extensionId: extensionIdFor(chromeRoute(home))})}));
+      chrome: chromeFacts({host: {platform}, env, userHome: env.HOME ?? homedir()})}));
     observeChrome();
     mcp = createHttp({home, env, onProfilesList: observeChrome, clientCredential, ...limits, ...(consoleChecked ? {console: checkConsole} : {}), diagnostics});
     const served = `device ${device.deviceId}; at most ${limits.maxSessions} session${limits.maxSessions === 1 ? '' : 's'}, idle after ${limits.idleMs / 60_000} min`;

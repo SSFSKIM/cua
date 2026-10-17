@@ -29,7 +29,7 @@ client's `/secret` field themselves.
    profile to drive (from the Chrome Web Store, or loaded unpacked from the checkout's `extension/`, which needs the
    owner at the screen once; a VM from `deploy/cloud-vm/` has it by policy), `cua chrome register`, then
    `cua profiles add <key>` and `cua profiles bind <key>`; `cua doctor` must show the `chrome.*` rows passing and the
-   profile ready (`codex.login` reads `skip`: no login is needed). A client cannot do any of this remotely.
+   profile ready (no Codex or ChatGPT login is needed). A client cannot do any of this remotely.
 3. **Enrol.** The relay must already exist: the project's hosted one, or `relay/deploy/create-server.sh`
    (`relay/README.md`, Hosting) when there is none. Then run `cua remote show --json`. If it succeeds, the device already has an identity: it gives the same
    fields as below without the credential, which was shown only once, to whoever enrolled it. `enroll --relay <url>`
@@ -46,10 +46,7 @@ client's `/secret` field themselves.
 5. **The agent.** `cua agent install`: a launchd job in the GUI session on macOS, a systemd user unit on Linux (there,
    `sudo loginctl enable-linger "$USER"` once so it runs from boot, and `--display`/`--xauthority` when the installing
    shell has no X session). Run it again after node moves (a Homebrew or nvm upgrade). The job's environment is fixed
-   at install: a `CUA_BROWSER_SERVICE` set for `install` (`vendor`, OpenAI's service, is the one-release rollback) is
-   kept until you install again; unset, each launch picks it from the device's active Chrome route (cua's once
-   `cua chrome register`, as step 2 has it, is the most recent registration; OpenAI's otherwise), and `cua doctor`'s
-   `browser.service` row says which and why.
+   at install: a `CUA_REPL_HOST` or `CUA_NODE` set for `install` is kept until you install again.
 6. **Check.** `cua doctor --json`: the applicable `agent.*` rows (`installed`, `running`, `enrolled`, `console`, `relay`) must pass.
    `agent.relay` reads the agent's recorded link state, not the network; a failing relay is not a stopped agent.
    On macOS the first drive asks for Accessibility and Screen Recording at the screen, so someone must be there once.
@@ -79,7 +76,7 @@ server: no registration per device, no reconnect.
    the current target; `devices_use <name>` switches every tool to it and returns its host notes and its `js` and
    `profiles_list` descriptions (its surface rules), which then apply. They follow that device's checkout and browser
    service: with cua's own, each phase of a locator action, wait or `evaluate` takes its `timeoutMs` up to 120 s and
-   `evaluate` acts on the page, sent once; a device on an older checkout or on the vendor service caps them at 3 s and
+   `evaluate` acts on the page, sent once; a device on an older checkout still on OpenAI's service caps them at 3 s and
    evaluates read-only, and says so.
    Work as usual, `end_task` when done (it also frees the device for other clients), then `devices_use local` to
    drive this machine again; a switch while a task is open is refused `task_open`.

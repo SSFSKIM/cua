@@ -128,7 +128,7 @@ async function main() {
 
   const env = {HOME: userHome, XDG_CONFIG_HOME: values['config-home'] ?? join(userHome, '.config'), USER: process.env.USER, LOGNAME: process.env.LOGNAME, LANG: 'C.UTF-8',
     PATH: process.env.PATH, TMPDIR: sessionTmp, CUA_HOME: home, CUA_REPL_HOST: host, CUA_SHIM_SURFACES: host === 'vendor' ? 'computer' : 'browser',
-    CUA_SHIM_SANDBOX: mode, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(host === 'cua' ? {CUA_BROWSER_SERVICE: 'cua'} : {}),
+    CUA_SHIM_SANDBOX: mode, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off',
     CUA_PROBE_SLOT: slot};
   const elicitations = [];
   const client = new StdioClient({command: process.execPath, args: [SERVE], env, cwd: run, timeoutMs: 120_000, clientName: 'cua-115-m0',

@@ -3,13 +3,15 @@
 // system probe are injected, so this runs on any machine.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
+import {mkdirSync, realpathSync} from 'node:fs';
 import {join} from 'node:path';
 import {inspectRuntime, summarize} from '../src/runtime/doctor.mjs';
 import {installRuntime} from '../src/runtime/install.mjs';
 import {parsePin} from '../src/runtime/manifest.mjs';
 import {linuxDesktopChecks, sessionBusAddress} from '../src/runtime/linux-desktop.mjs';
-import {shortScratch, debFixture, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
+import {browsersFor, registerCuaHost} from '../src/chrome/registration.mjs';
+import {CUA_HOST_NAME, launcherPath} from '../src/chrome/extension.mjs';
+import {REPO, shortScratch, debFixture, linuxFixturePin, debTools} from './fixtures/runtime-fixture.mjs';
 
 const LINUX = {platform: 'linux', arch: 'x64'};
 const byName = report => Object.fromEntries(report.checks.map(c => [c.name, c]));
@@ -33,20 +35,18 @@ const DESKTOP_ROWS = [
 
 test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and signatures not applicable, the secret store', async t => {
   const {home, pin} = await linuxHome(t);
-  let asked = 0;
   const report = await inspectRuntime({home, env: {}, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
     inspectLinux: async ({env}) => { assert.deepEqual(env, {}); return DESKTOP_ROWS; },
-    inspectLogin: async () => { asked++; return {state: 'logged-in'}; }, inspectChrome: async () => [], inspectAgent: async () => [],
+    inspectChrome: async () => [], inspectAgent: async () => [],
     resolveOwnNode: () => '/opt/node-24/bin/node'});   // healthy includes a Node 24 for the own host, whatever runs the tests
   const rows = byName(report);
   assert.equal(report.ok, true);
   assert.equal(rows['repl.host'].status, 'pass');
-  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'chrome.host.config', 'sandbox', 'codex.login'])
+  for (const name of ['platform', 'runtime.installed', 'runtime.files', 'runtime.vendor-manifest', 'runtime.ipc', 'runtime.signatures', 'sandbox'])
     assert.equal(rows[name]?.status, 'pass', name);
   assert.equal(rows['runtime.ipc'].detail, 'not applicable on linux');
   assert.match(rows['runtime.signatures'].detail, /archive hash is the trust root on linux/);
-  assert.match(rows['chrome.host.config'].detail, /extension-host\/linux\/x64\/extension-host trusted by the archive hash/);
   assert.equal(rows['helper.live'], undefined);
   assert.equal(rows['helper.permissions'], undefined);
   assert.deepEqual(['display', 'accessibility.bus'].map(n => rows[n].status), ['pass', 'pass']);
@@ -54,7 +54,6 @@ test('a healthy Linux install: no darwin rows, the Linux desktop rows, IPC and s
   assert.equal(rows['sandbox.userns'].status, 'skip', 'no sandbox runs under the Linux default, so a refusing bubblewrap blocks nothing');
   assert.equal(rows['secrets.helper'], undefined);
   assert.equal(rows['secrets.store'].status, 'pass', 'Linux has the same file store');
-  assert.equal(asked, 1, 'the bundled CLI is asked about the login: the release is trusted by its hash');
   assert.equal(summarize(report), 'passive runtime checks pass');
 });
 
@@ -66,7 +65,7 @@ test('the sandbox row on Linux says what the mode does there: scoped breaks the 
   const doctor = (env, userns) => inspectRuntime({home, env, pins: [pin], host: LINUX, verifySignatures: never('codesign'),
     inspectHelper: never('the native socket helper inspection'), inspectSecrets: async () => ({dir: '/home/u/.config/claude-secrets', exists: true, directory: true, owned: true, mode: 0o700, keys: ['K'], unsafe: []}),
     inspectLinux: async () => [DESKTOP_ROWS[0], DESKTOP_ROWS[1], {name: 'sandbox.userns', status: userns, detail: 'fixture'}],
-    inspectLogin: async () => ({state: 'logged-in'}), inspectChrome: async () => [], inspectAgent: async () => []}).then(byName);
+    inspectChrome: async () => [], inspectAgent: async () => []}).then(byName);
 
   let rows = await doctor({CUA_SHIM_SANDBOX: 'scoped'}, 'pass');
   assert.equal(rows.sandbox.status, 'fail');
@@ -226,16 +225,15 @@ test('sandbox.userns runs bwrap --ro-bind / / true; a refusal is blocked with it
 
 test('the default Chrome checks on Linux read the host\'s Chrome under $XDG_CONFIG_HOME, as doctor\'s env and host say', async t => {
   const {home, pin} = await linuxHome(t);
-  const config = join(home, '..', 'config');
-  const manifestDir = join(config, 'google-chrome', 'NativeMessagingHosts');
-  mkdirSync(manifestDir, {recursive: true});
-  const host = join(realpathSync(home), 'runtimes', pin.release, 'chrome-plugin', 'extension-host', 'linux', 'x64', 'extension-host');
-  writeFileSync(join(manifestDir, 'com.openai.codexextension.json'), JSON.stringify({name: 'com.openai.codexextension', type: 'stdio', path: host}));
+  const xdg = join(realpathSync(join(home, '..')), 'config');
+  mkdirSync(join(xdg, 'google-chrome'), {recursive: true});
+  await registerCuaHost({home, checkout: REPO, browsers: browsersFor({host: LINUX, env: {XDG_CONFIG_HOME: xdg}, userHome: '/nonexistent-user'})});
   // The secrets rows are stubbed: this env has no HOME, so the default would describe the account's own store.
-  const report = await inspectRuntime({home, env: {XDG_CONFIG_HOME: realpathSync(config)}, pins: [pin], host: LINUX,
-    inspectSecrets: async () => ({dir: '/none', exists: false}), inspectLinux: async () => DESKTOP_ROWS, inspectLogin: async () => ({state: 'logged-in'}), inspectAgent: async () => []});
+  const report = await inspectRuntime({home, env: {XDG_CONFIG_HOME: xdg}, pins: [pin], host: LINUX,
+    inspectSecrets: async () => ({dir: '/none', exists: false}), inspectLinux: async () => DESKTOP_ROWS, inspectAgent: async () => []});
   const rows = byName(report);
-  assert.equal(rows['chrome.host.registered'].status, 'pass');
-  assert.equal(rows['chrome.host.registered'].detail, `cua: com.openai.codexextension names ${host}`);
-  assert.ok(rows['chrome.hosts.live'], 'the live-host row is computed from the Linux process table');
+  assert.equal(rows['chrome.route'].status, 'pass', rows['chrome.route'].detail);
+  assert.equal(rows['chrome.host.registered'].status, 'pass', rows['chrome.host.registered'].detail);
+  assert.ok(rows['chrome.host.registered'].detail.startsWith(`cua: ${CUA_HOST_NAME} names this home's launcher ${launcherPath(realpathSync(home))} `), rows['chrome.host.registered'].detail);
+  assert.ok(rows['chrome.hosts.live'], 'the live-host row is computed from the home\'s sockets');
 });

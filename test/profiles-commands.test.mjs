@@ -8,7 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {chmodSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {REPO, scratch} from './fixtures/runtime-fixture.mjs';
-import {chromeFacts, chromeUserData, OPENAI_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
+import {chromeFacts, chromeUserData, CUA_EXTENSION_ID, PERMISSION_FIX} from '../src/profiles/chrome.mjs';
 import {addProfile, bindProfile, readRegistry, reasonText, removeProfile} from '../src/profiles/registry.mjs';
 import {bindCommand, openCommand, openInvocation, profileReadiness} from '../src/profiles/commands.mjs';
 import {fakeChromeFacts} from './fixtures/chrome-facts.mjs';
@@ -28,7 +28,7 @@ function setup(t, profiles = {Default: {name: 'Personal', extension: true}, 'Pro
     mkdirSync(join(userData, dir), {recursive: true});
     infoCache[dir] = {name};
     if (extension) {
-      const v = join(userData, dir, 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+      const v = join(userData, dir, 'Extensions', CUA_EXTENSION_ID, '1.0_0');
       mkdirSync(v, {recursive: true});
       writeFileSync(join(v, 'manifest.json'), '{}');
     }
@@ -161,7 +161,7 @@ test('bind never binds another browser\'s backend and reports such backends only
 // Review fix: the reviewer's reproduction, the key removed and re-added for Profile 8 while discovery for Default ran.
 test('a registration that changes during discovery is not bound with the instance found for the old one', async t => {
   const {home, userData, chrome} = setup(t);
-  const v = join(userData, 'Profile 8', 'Extensions', OPENAI_EXTENSION_ID, '1.0_0');
+  const v = join(userData, 'Profile 8', 'Extensions', CUA_EXTENSION_ID, '1.0_0');
   mkdirSync(v, {recursive: true});
   writeFileSync(join(v, 'manifest.json'), '{}');
   const duringDiscovery = (change, backends) => async () => { change(); return listing(backends)(); };
@@ -216,16 +216,16 @@ test('readiness: a bound profile is ready only while its instance is live; other
   for (const list of [[{instanceId: 'inst-a'}], []]) assert.equal((await profileReadiness({home, chrome, listBackends: listing(list)})).profiles.find(p => p.key === 'work').reason, 'extension_not_installed');
 });
 
-test('the not-live reasons name the key, the Chrome profile directory and the one wake action; toggling is not offered as a plain wake', () => {
+test('the not-live reasons name the key, the Chrome profile directory and the one wake action; a rebind only for a new instance id', () => {
   const p = {key: 'personal', chromeProfileDirectory: 'Profile 8', extensionInstanceId: 'inst-a'};
   const notLive = reasonText({...p, reason: 'host_not_live'});
   assert.match(notLive, /Chrome profile "Profile 8"/);
-  assert.match(notLive, /click the OpenAI \(ChatGPT\) extension's icon.*then retry/);
-  assert.match(notLive, /chrome:\/\/extensions.*new instance id.*cua profiles bind personal/, 'a toggle wakes it too but needs a rebind');
+  assert.match(notLive, /open the cua extension's popup \(its toolbar icon\).*then retry/);
+  assert.doesNotMatch(notLive, /cua profiles bind/, 'waking the host keeps the binding');
   // Other profiles' backends are live but not this one's: unlabelled backends cannot tell a sleeping host from a new id,
   // so the text says so and gives both steps, the wake first.
   const stale = reasonText({...p, reason: 'binding_stale'});
-  assert.match(stale, /Chrome profile "Profile 8".*click the OpenAI \(ChatGPT\) extension's icon.*cua profiles bind personal/);
+  assert.match(stale, /Chrome profile "Profile 8".*the cua extension's popup.*reinstalled.*new instance id.*cua profiles bind personal/);
   assert.match(stale, /cannot tell which/);
 });
 
@@ -390,13 +390,13 @@ test('cua profiles add/list/remove against the user\'s Chrome directory, with re
   const env = setup(t);
   const add = cua(['profiles', 'add', 'personal', '--chrome-profile', 'Default'], env);
   assert.equal(add.status, 0, add.stderr);
-  assert.match(add.stdout, /registered personal -> Chrome profile "Default"; the OpenAI extension is installed there/);
+  assert.match(add.stdout, /registered personal -> Chrome profile "Default"; the cua extension is installed there \(next: cua profiles bind personal\)$/m);
   const work = cua(['profiles', 'add', 'work', '--chrome-profile', 'Profile 8', '--json'], env);
   assert.deepEqual(JSON.parse(work.stdout), {ok: true, key: 'work', chromeProfileDirectory: 'Profile 8', extension: 'absent'});
   const list = JSON.parse(cua(['profiles', 'list', '--json'], env).stdout);
   assert.deepEqual(list.profiles.map(p => [p.key, p.ready, p.reason]), [['personal', false, 'not_bound'], ['work', false, 'extension_not_installed']]);
   const human = cua(['profiles', 'list'], env);
-  assert.match(human.stdout, /work\s+not ready\s+Profile 8\s+the OpenAI extension is not installed/);
+  assert.match(human.stdout, /work\s+not ready\s+Profile 8\s+the cua extension is not installed/);
   const missing = cua(['profiles', 'add', 'school', '--chrome-profile', 'Profile 99'], env);
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /chrome_profile_not_found/);
@@ -416,7 +416,7 @@ test('cua profiles list reports a bound profile it cannot check as backends_unli
   assert.equal(listed.listingError, 'runtime_not_installed');
   const human = cua(['profiles', 'list'], env);
   assert.equal(human.status, 0, human.stderr);
-  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+the live OpenAI extension backends could not be listed .*whether its bound instance is live cannot be told$/m);
+  assert.match(human.stdout, /^personal\s+not ready\s+Default\s+the live cua extension backends could not be listed .*whether its bound instance is live cannot be told$/m);
   assert.match(human.stderr, /could not be listed \(runtime_not_installed: /);
 });
 
@@ -500,12 +500,12 @@ test('cua profiles add and list name an unreadable Chrome data directory, never 
 // Each listed directory's extension store records its instance id; the stores stay open as Chrome keeps them.
 async function withStores(t, ctx, ids) {
   for (const [dir, id] of Object.entries(ids)) {
-    const path = join(ctx.userData, dir, 'Local Extension Settings', OPENAI_EXTENSION_ID);
+    const path = join(ctx.userData, dir, 'Local Extension Settings', CUA_EXTENSION_ID);
     mkdirSync(join(path, '..'), {recursive: true});
     const db = await writeStore(path, id, {keepOpen: true});
     t.after(() => db.close());
   }
-  return () => mapExtensionDirectories({home: ctx.home, chrome: ctx.chrome, moduleDir: CLASSIC_LEVEL_MODULES, extensionIds: [OPENAI_EXTENSION_ID]});
+  return () => mapExtensionDirectories({home: ctx.home, chrome: ctx.chrome, moduleDir: CLASSIC_LEVEL_MODULES, extensionIds: [CUA_EXTENSION_ID]});
 }
 
 test('bind places each candidate in its profile directory and binds by directory where display names collide', {skip: NO_CLASSIC_LEVEL}, async t => {
@@ -569,7 +569,7 @@ test('cua profiles open prints the command it ran and the readiness line; --json
   const human = run(['profiles', 'open', 'work']);
   assert.equal(human.status, 1, human.stderr);
   assert.ok(human.stdout.split('\n').includes(`ran: ${shown}`), human.stdout);
-  assert.match(human.stdout, /^work\s+not ready\s+Profile 8\s+the live OpenAI extension backends could not be listed/m);
+  assert.match(human.stdout, /^work\s+not ready\s+Profile 8\s+the live cua extension backends could not be listed/m);
   assert.match(human.stderr, /checking its readiness 5 s after opening \(1 of at most 3/);
   assert.match(human.stderr, /could not be listed \(runtime_not_installed: /);
   assert.deepEqual(readFileSync(log, 'utf8').split('\n').slice(0, args.length), args);
@@ -585,15 +585,15 @@ test('cua profiles open prints the command it ran and the readiness line; --json
   assert.equal(readFileSync(log, 'utf8').split('\n').filter(Boolean).length, 2 * args.length, 'two opens, none for the unknown key');
 });
 
-test('unreadable Chrome cannot bypass a route change and explains why live evidence did not confirm readiness', async t => {
+test('unreadable Chrome cannot bypass a binding made on the ChatGPT extension and explains why live evidence did not confirm readiness', async t => {
   const home = unreadableHome(t);
   const chrome = fakeChromeFacts({Default: {directory: 'unreadable'}});
-  addProfile({home, key: 'personal', directory: 'Default', chrome});
-  bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a', route: 'cua'});
-  // Default home route is vendor: a live id is not permission to use a binding from another route.
-  const changed = await profileReadiness({home, chrome, listBackends: async () => assert.fail('the wrong-route binding must not launch')});
+  // Bound on the ChatGPT extension (no route): a live id is not permission to use that binding.
+  mkdirSync(home);
+  writeFileSync(join(home, 'profiles.json'), JSON.stringify({version: 1, profiles: {personal: {chromeProfileDirectory: 'Default', extensionInstanceId: 'inst-a', boundAt: 'x'}}}));
+  const changed = await profileReadiness({home, chrome, listBackends: async () => assert.fail('a ChatGPT extension binding must not launch')});
   assert.equal(changed.profiles[0].reason, 'rebind_required');
-  assert.match(reasonText(changed.profiles[0]), /other Chrome route.*bind it again/);
+  assert.match(reasonText(changed.profiles[0]), /ChatGPT extension.*bind it again with cua profiles bind personal/);
   bindProfile({home, key: 'personal', extensionInstanceId: 'inst-a'});
   const ready = await profileReadiness({home, chrome, listBackends: listing([{instanceId: 'inst-a'}])});
   assert.equal(ready.profiles[0].ready, true);

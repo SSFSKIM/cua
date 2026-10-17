@@ -28,6 +28,11 @@ test('doctor --json on an empty home exits nonzero with structured checks and in
     for (const c of report.checks) assert.ok(['pass', 'warn', 'fail', 'blocked', 'skip'].includes(c.status), c.name);
     for (const name of ['agent.installed', 'agent.running', 'agent.enrolled', 'agent.console'])
       assert.equal(report.checks.find(c => c.name === name)?.status, 'skip', name);
+    // The Chrome rows read the scratch HOME's Chrome: no registration, and none of the ChatGPT route's rows (#79).
+    const route = report.checks.find(c => c.name === 'chrome.route');
+    assert.equal(route.status, 'blocked');
+    assert.match(route.detail, /\[chrome_not_registered\]$/);
+    for (const name of ['codex.login', 'chrome.host.config', 'browser.service']) assert.equal(report.checks.some(c => c.name === name), false, name);
   } finally { s.cleanup(); }
 });
 

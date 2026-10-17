@@ -28,7 +28,6 @@
 // registered profile's own display name is unknown (Local State unreadable or silent about it), the user's live choice
 // stands.
 import {ACCESS_NOTE} from './chrome.mjs';
-import {effectiveRoute} from '../chrome/route.mjs';
 import {isMawsInstance} from '../chrome/extension.mjs';
 
 // A MAWS backend reports family chrome (its pages are Chromium) but is no Chrome profile's: bind and readiness ignore it.
@@ -79,8 +78,10 @@ export function decideBinding({directory, displayNames, backends: live, explicit
 
 // Why the user must pick (no_live_backends: why there is nothing to pick from at all).
 export const PICK_REASONS = {
-  no_live_backends: 'no OpenAI extension backend of Google Chrome is live (is Chrome open with the extension enabled in this profile?)',
-  unlabelled: 'the runtime labelled no live backend with a profile name',
+  no_live_backends: 'no cua extension backend of Google Chrome is live (is Chrome open on this profile with the cua extension enabled? its popup shows whether its host is connected)',
+  // The service labels no backend on the cua route (cua's host omits the extension id it labels by), so only the
+  // directory's store could have decided.
+  unlabelled: 'this profile directory\'s cua extension store records no live backend (the extension is not loaded in this profile, its host is not running, or the store could not be read), and the cua route gives backends no profile label to fall back on',
   no_display_name: 'Chrome\'s Local State has no display name for this profile directory',
   local_state_unreadable: `this process may not read Chrome's Local State (${ACCESS_NOTE}), so this profile's display name is unknown`,
   display_name_not_unique: 'another Chrome profile has the same display name, so the runtime\'s label cannot tell them apart',
@@ -91,16 +92,6 @@ export const PICK_REASONS = {
   instance_in_several_directories: 'the extension stores of several profile directories record the same instance id, so the directory cannot tell them apart',
   labelled_backend_other_directory: 'the backend labelled with this profile\'s name belongs to another profile directory by its extension store',
 };
-
-// The cua route's extension where PICK_REASONS names the ChatGPT extension (codes unchanged).
-const CUA_PICK_REASONS = {
-  ...PICK_REASONS,
-  no_live_backends: 'no cua extension backend of Google Chrome is live (is Chrome open on this profile with the cua extension enabled? its popup shows whether its host is connected)',
-  // The service labels no backend on the cua route (cua's host omits the extension id it labels by), so only the
-  // directory's store could have decided.
-  unlabelled: 'this profile directory\'s cua extension store records no live backend (the extension is not loaded in this profile, its host is not running, or the store could not be read), and the cua route gives backends no profile label to fall back on',
-};
-export const pickReasonFor = (reason, route) => (effectiveRoute(route) === 'cua' ? CUA_PICK_REASONS : PICK_REASONS)[reason];
 
 export const REFUSED = {
   not_live: 'that extension instance is not among the live backends now (only Google Chrome\'s count)',

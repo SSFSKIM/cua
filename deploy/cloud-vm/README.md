@@ -2,7 +2,7 @@
 
 One cloud-init template that turns a fresh Ubuntu 24.04 VM into a machine a cloud agent drives with cua: its own X11
 desktop, Google Chrome with cua's own extension, cua and the pinned runtime installed, and the agent for remote control
-when a relay is given. Nobody signs in to anything: cua's extension route needs no ChatGPT account and no Codex login
+when a relay is given. Nobody signs in to anything: cua's own extension and host need no account
 (`docs/doperpowers/specs/2026-10-07-own-chrome-extension-design.md`). It does by script what Phase F and issue #58 did by hand (the README's "Linux" section;
 `docs/evidence/2026-10-06-linux-acceptance.md`, `docs/evidence/2026-10-06-linux-agent-and-x64.md`). The live proof is
 `docs/evidence/2026-10-07-cloud-vm-provisioning.md`.
@@ -56,8 +56,7 @@ as Hetzner's 32 KiB).
   (`/etc/opt/chrome/policies/managed/cua.json`, the whole `ExtensionInstallForcelist`: Chrome does not merge one
   policy across files there). With `--extension hosted` it comes from the self-hosted CRX the relay serves
   (`CUA_EXTENSION_KEY=<the owner's key> npm run extension:pack`, then `relay/deploy/update.sh --ext dist`); with
-  `store`, from the Chrome Web Store (see "Hosted or store" below). A VM provisioned by an earlier version of this
-  template had OpenAI's extension in that list; a re-run replaces it with cua's, so Chrome uninstalls OpenAI's.
+  `store`, from the Chrome Web Store (see "Hosted or store" below).
   `/usr/local/bin/google-chrome` adds `--force-renderer-accessibility` (web contents in the native route's tree),
   `--password-store=basic` (no keyring prompt in an autologin session) and no first-run prompts. Toolkit accessibility
   is on as a system dconf default. One profile, `Default`.
@@ -65,8 +64,8 @@ as Hetzner's 32 KiB).
   sandbox works for the browser surface alone and for `cua profiles list` and `bind`. With the computer surface the
   Linux default is `disabled` (README, "Linux": the runtime's sandbox refuses every socket, X's included).
 - **cua.** Node 22 (NodeSource, unless Node 22.14+ or 23.7+ is already on `PATH`), a checkout of `--ref` at `/opt/cua`
-  owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua` (the vendor's
-  browser service still runs from it), cua's Chrome host registered (`cua chrome register`, the cua route), and the
+  owned by the user, `npm ci`, `cua` on `PATH`, the pinned runtime installed in `~/.local/share/cua` (the vendor REPL
+  host and the computer surface run from it), cua's Chrome host registered (`cua chrome register`), and the
   profile `me` registered for `Default` and bound. The extension starts cua's host as soon as the registration is there,
   so the bind needs no one; if it fails (Chrome not up yet), the checklist keeps it.
 - **The deb.** By default the VM downloads the pin's official URL (about 450 MB); `--deb <https URL>` downloads a
@@ -105,8 +104,7 @@ a relay it is empty when the bind succeeded; with one:
    --devices` (the file replaces the whole table), and give the client its credential (`/secret <clientSecretKey>`,
    then the `devicesAddCommand`, both in `/root/cua-enrollment.json`).
 
-Doctor reads `ok: true` with `codex.login` `skip` (cua's extension route needs no Codex login) and `secrets.store`
-blocked (no secret has been stored on the VM; cua's file store works on Linux, `cua secrets set KEY` at the VM's
+Doctor reads `ok: true` with `secrets.store` blocked (no secret has been stored on the VM; cua's file store works on Linux, `cua secrets set KEY` at the VM's
 terminal). Every other row passes, `chrome.hosts.live` included, and the `agent.*` rows read `skip` without a relay or
 `pass` with one. To see the screen: `ssh -t -L 5901:localhost:5900 <user>@<vm> x11vnc -display :0 -localhost -once
 -passwd <one-time password>`, then open `vnc://localhost:5901` (or use the provider's web console).
@@ -119,7 +117,8 @@ missing, files are rewritten only when different (lightdm restarts only then), t
 registered profile or an existing enrolment is kept (a changed relay URL moves it and refreshes the relay fields of
 `/root/cua-enrollment.json`). Edit the conf to change the ref or the relay. With a relay, a re-run restarts the agent
 unit (`cua agent install` always does), which ends any remote session open at that moment. On a VM provisioned by an earlier
-version of this template (the ChatGPT extension route), a re-run is the migration to the cua route: the force-list
-now names only cua's extension, so Chrome uninstalls the ChatGPT extension, the host registers as cua's and the profile
-re-binds; no sign-in is involved. Root's SSH keys are copied
+version of this template, whose force-list named OpenAI's extension, a re-run is the migration: the force-list now names
+only cua's extension, so Chrome uninstalls the other, cua's host registers and the profile re-binds; no sign-in is
+involved. `cua chrome register` then prints, and doctor's `chrome.route` row names until they are done, the steps that
+remove what the earlier registration left in cua's home and Chrome's native-messaging directory. Root's SSH keys are copied
 to the user only while the user has none, and everything under the user's home is written as the user.

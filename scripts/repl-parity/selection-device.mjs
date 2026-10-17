@@ -1,4 +1,6 @@
-// Live selection probe on the prepared device. Fresh cua install in an owned home; only route metadata is copied.
+// Live selection probe on the prepared device. Fresh cua install in an owned home; only route metadata is copied. Each
+// row writes its registration fixture (installRoutes: cua's record, the removed ChatGPT route's record, both in either
+// order, or none), which the selection must not depend on.
 import {execFileSync,spawnSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,realpathSync,writeFileSync,readFileSync,rmSync,symlinkSync,utimesSync,readdirSync,renameSync} from 'node:fs';
 import {join,dirname,basename} from 'node:path';
@@ -20,7 +22,7 @@ export function installRoutes(home,registration){
  mkdirSync(join(home,'chrome'),{recursive:true,mode:0o700});
  for(const [i,route] of order.entries()){
   const file=route==='cua'?cuaRecordFile(home):vendorRecordFile(home);
-  writeFileSync(file,JSON.stringify(route==='cua'?{schema:1,route,launcher:null,backendsDir:backendDir(home),browsers:{}}:{schema:1,browsers:{chrome:{manifestPath:'/fixture/manifest',previous:null}}}),{mode:0o600});
+  writeFileSync(file,JSON.stringify(route==='cua'?{schema:1,route,launcher:null,backendsDir:backendDir(home),browsers:{}}:{schema:1,browsers:{chrome:{manifest:'/fixture/manifest',replaced:false}}}),{mode:0o600});
   utimesSync(file,1700000000+i,1700000000+i);
  }
 }
@@ -89,7 +91,7 @@ export async function runSelection({prepared,node22}){
   const evaluateRow=async row=>{
    installRoutes(home,row.registration);
    const node=row.node24?ownNode.path:node22;
-   const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.browserService?{CUA_BROWSER_SERVICE:row.browserService}:{}),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{})};
+   const env={...base,CUA_SHIM_SURFACES:row.surfaces.join(','),...(row.override==='unset'?{}:{CUA_REPL_HOST:row.override}),...(row.maws?{CUA_BROWSER_BACKENDS:join(home,'maws-fixture.sock')}:{})};
    if(!row.node24)env.PATH=nodeBin+':/usr/bin:/bin';
    const doc=spawnSync(node,['bin/cua.mjs','doctor','--json'],{env,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});
    let doctor;try{doctor=JSON.parse(doc.stdout).checks.find(c=>c.name==='repl.host');}catch{}

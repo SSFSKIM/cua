@@ -13,9 +13,8 @@
 // foreground follow of orbit sessions, allowDownload (never asked of an extension backend) and the WebMCP notice; from
 // discovery: Chrome profile names read from disk (cua's hosts name their profile), the full-CDP, WebMCP and
 // accessibility capability rewrites (the manifest's), and telemetry.
-import {readdir} from 'node:fs/promises';
 import {endianness} from 'node:os';
-import {isAbsolute, resolve} from 'node:path';
+import {isAbsolute} from 'node:path';
 import {BrowserServiceError, DEADLINE_EXCEEDED, serviceError} from './errors.mjs';
 import {Deadline} from './budgets.mjs';
 
@@ -30,8 +29,6 @@ export const CDP_ANSWER_GRACE_MS = 1000;
 const exceeded = () => new BrowserServiceError('timeout', DEADLINE_EXCEEDED);
 // How long discovery waits for a backend's getInfo ($_).
 export const BACKEND_INFO_TIMEOUT_MS = 5000;
-// The vendor's own socket directory on macOS and Linux (Va), listed when BROWSER_USE_BACKEND_PATHS is unset.
-export const VENDOR_SOCKET_DIR = '/tmp/codex-browser-use';
 // BROWSER_USE_AVAILABLE_BACKENDS names backends by these (Yr); the service drives `extension` backends.
 const BACKEND_KIND = {cdp: 'cdp', extension: 'chrome', iab: 'iab', mcpapps: 'mcpapps'};
 
@@ -414,24 +411,19 @@ export class TurnEndedTracker {
 
 // --- discovery -----------------------------------------------------------------------------------------------------
 
-// The backend socket paths: BROWSER_USE_BACKEND_PATHS verbatim when set (absolute, deduplicated; an empty list means
-// none), else every entry of the vendor's socket directory (Cte, Ste).
-export async function backendPaths(env, {socketDir = VENDOR_SOCKET_DIR} = {}) {
+// The backend socket paths: BROWSER_USE_BACKEND_PATHS verbatim (absolute, deduplicated; an empty list means none).
+// Unset is none too: every launch sets it (src/chrome/discovery.mjs), and the vendor's fallback, a scan of its own
+// socket directory (Cte, Ste), would reach OpenAI's hosts, which this service does not serve.
+export async function backendPaths(env) {
   const listed = env?.BROWSER_USE_BACKEND_PATHS;
-  if (listed != null) {
-    const paths = [];
-    for (const path of listed.split(':')) {
-      if (path === '') continue;
-      if (!isAbsolute(path)) throw new Error('BROWSER_USE_BACKEND_PATHS entries must be absolute');
-      paths.push(path);
-    }
-    return [...new Set(paths)];
+  if (listed == null) return [];
+  const paths = [];
+  for (const path of listed.split(':')) {
+    if (path === '') continue;
+    if (!isAbsolute(path)) throw new Error('BROWSER_USE_BACKEND_PATHS entries must be absolute');
+    paths.push(path);
   }
-  try {
-    return (await readdir(socketDir)).map(name => resolve(socketDir, name));
-  } catch {
-    return [];
-  }
+  return [...new Set(paths)];
 }
 
 // BROWSER_USE_AVAILABLE_BACKENDS (a comma list of cdp, chrome, iab, mcpapps), when set, admits only those kinds (Gg).
@@ -456,9 +448,9 @@ let nextBrowserId = 1;
 // BROWSER_USE_AVAILABLE_BACKENDS excludes is left out (its connection closed). `createApi(backend)` builds each API
 // (the owner passes its turn metadata and turn-ended tracker); a failed listing is no browsers (cL).
 export async function discoverBackends(env, {nativePipe, previous = [], createApi = backend => new BackendApi(backend),
-  infoTimeoutMs = BACKEND_INFO_TIMEOUT_MS, socketDir} = {}) {
+  infoTimeoutMs = BACKEND_INFO_TIMEOUT_MS} = {}) {
   let paths;
-  try { paths = await backendPaths(env, {socketDir}); } catch { paths = []; }
+  try { paths = await backendPaths(env); } catch { paths = []; }
   const kept = new Map(previous.filter(b => !b.api.backend.closed).map(b => [b.path, b]));
   const listed = new Set(paths);
   await Promise.all(previous.filter(b => !listed.has(b.path) || b.api.backend.closed).map(b => b.api.close().catch(() => {})));

@@ -3,7 +3,7 @@
 // extension-UI sentence (BS:18308-18340).
 //
 // cua's browser service, registered in node_repl's trusted worker in place of the vendor's @oai/browser-desktop service
-// (src/services/browser.mjs selects it with CUA_BROWSER_SERVICE=cua). The REPL contract, exactly as the spec's "The REPL
+// (src/services/browser.mjs delegates every request to it). The REPL contract, exactly as the spec's "The REPL
 // contract, exactly" states it:
 //   setup {environment, undocumentedApiMembers?, excludedDocumentation?} -> {apiManifest, disabledMemberIds}, with no
 //     credentialRecoveryErrorVersion, so the unchanged REPL client uses `execute`;

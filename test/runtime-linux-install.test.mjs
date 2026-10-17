@@ -1,6 +1,6 @@
 // Installing a Linux pin (Phase F): the deb is verified by length and hash, its data tar unpacked with the system `ar`
-// and `tar`, the pinned components (one of them a file) and the Chrome plugin kept, and the release activated with no
-// code-signature step. Runs on any host: the Linux host is injected, and the fixture deb is a few harmless files.
+// and `tar`, the pinned components (one of them a file) kept (the deb's Chrome plugin is not, since #79), and the release
+// activated with no code-signature step. Runs on any host: the Linux host is injected, and the fixture deb is a few harmless files.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, readFileSync, readdirSync, realpathSync, statSync} from 'node:fs';
@@ -24,26 +24,21 @@ function setup(t, {arch = 'x64', deb: debOptions = {}, pin: pinOverrides = {}} =
 const install = (ctx, extra = {}) => installRuntime({home: ctx.home, manifest: ctx.pin, archivePath: ctx.archive.deb, verifySignatures: noSignatures, host: ctx.host, tools: debTools(), ...extra});
 
 for (const arch of ['x64', 'arm64']) {
-  test(`the ${arch} deb installs: only the pinned components (codex a file), the Chrome plugin with its host configuration, then activation`, async t => {
+  test(`the ${arch} deb installs: only the pinned components (codex a file), then activation`, async t => {
     const ctx = setup(t, {arch});
     const result = await install(ctx);
     const home = realpathSync(ctx.home);
     const root = join(home, 'runtimes', ctx.pin.release);
     assert.equal(result.root, root);
     assert.equal(result.changed, true);
-    assert.deepEqual(readdirSync(root).sort(), ['chrome-plugin', 'codex', 'cua_node', 'install.json']);
+    assert.deepEqual(readdirSync(root).sort(), ['codex', 'cua_node', 'install.json']);
     assert.ok(statSync(join(root, 'codex')).isFile());
     assert.equal(statSync(join(root, 'codex')).mode & 0o100, 0o100, 'the sandbox CLI stays executable');
     assert.equal(statSync(join(root, 'cua_node/bin/node_repl')).mode & 0o100, 0o100);
     assert.ok(existsSync(join(root, `cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_${arch}`)));
     assert.equal(pointer(ctx.home), ctx.pin.release);
     assert.deepEqual(JSON.parse(readFileSync(join(root, 'install.json'), 'utf8')).archive, {sha256: ctx.archive.sha256, length: ctx.archive.length});
-    const hostDir = join(root, 'chrome-plugin', 'extension-host', 'linux', arch);
-    assert.ok(existsSync(join(hostDir, 'extension-host')));
-    const config = JSON.parse(readFileSync(join(hostDir, 'extension-host-config.json'), 'utf8'));
-    assert.equal(config.codexCliPath, join(root, 'codex'));
-    assert.equal(config.nodeReplPath, join(root, 'cua_node/bin/node_repl'));
-    assert.equal(config.codexHome, join(home, 'state', 'codex'));
+    assert.equal(existsSync(join(home, 'state', 'codex')), false, 'install creates no CODEX_HOME');
     assert.deepEqual(stagingLeftovers(home), []);
   });
 }

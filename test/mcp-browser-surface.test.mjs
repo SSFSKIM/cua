@@ -53,7 +53,7 @@ test('with the browser surface, profiles_list is the fifth tool and returns keys
   ]});
   // Claude Code shows the model only a successful result's structured content, so the guidance is there, and the text
   // (for other clients) carries it once, before a JSON line that does not repeat it.
-  assert.equal(guidance, 'work is not ready (extension_not_installed): the OpenAI extension is not installed in this Chrome profile (install it there yourself; cua never does).\nTell the user; do not bind or pick a profile for them.');
+  assert.equal(guidance, 'work is not ready (extension_not_installed): the cua extension is not installed or loaded in this Chrome profile (load the checkout\'s extension/ directory unpacked there, README "Chrome"; cua never installs it).\nTell the user; do not bind or pick a profile for them.');
   assert.equal(response.result.content[0].text, `${guidance}\n${JSON.stringify(fields)}`);
   assertModelSeesText(response);
   assert.ok(!JSON.stringify(response).includes('Profile 8') && !JSON.stringify(response).includes('Default'), 'no directory names');
@@ -82,8 +82,8 @@ test('profiles_list hides a stale, sleeping or unverifiable binding\'s instance 
   assert.ok(response.result.content[0].text.startsWith(`${text}\n`), 'the text carries the same guidance');
   assertModelSeesText(response);
   // The user's step happens in that Chrome profile, so the guidance names its directory (never its display name).
-  assert.match(text, /home is not ready \(host_not_live\): .*Chrome profile "Profile 3".*click the OpenAI \(ChatGPT\) extension's icon.*then retry/);
-  assert.match(text, /personal is not ready \(binding_stale\): .*Chrome profile "Default".*can mint a new instance id.*cua profiles bind personal/);
+  assert.match(text, /home is not ready \(host_not_live\): .*Chrome profile "Profile 3".*open the cua extension's popup.*then retry/);
+  assert.match(text, /personal is not ready \(binding_stale\): .*Chrome profile "Default".*mints a new instance id.*cua profiles bind personal/);
   assert.match(text, /school is not ready \(backends_unlistable\): .*could not be listed/);
   assert.match(text, /do not bind or pick a profile for them/);
   assert.ok(!/inst-old|inst-s\b|inst-h|Profile 6|Profile 8/.test(text), 'no instance id, and no directory where the user has no step');
@@ -137,11 +137,6 @@ const BROWSER_RULES = {
   'closing the only window unloads the profile and its host': /closing your tab or end_task unloads it; mark a tab handoff to keep it/,
 };
 const BROWSER_POINTER = /Chrome: follow the rules in profiles_list's description/;
-// The vendor service's own limits, which cua's lifts: only the vendor selection (the one-release rollback) teaches them.
-const VENDOR_BROWSER_RULES = {
-  'the vendor\'s fixed 3 s cap and how to wait longer': /Locator actions, waits and evaluate stop at 3 s \(timeoutMs can only shorten it\); to wait longer, loop short waits to your own deadline under a larger js timeout_ms\./,
-  'the vendor\'s read-only evaluate': /evaluate is read-only: no fetch, no require, objects are non-extensible\./,
-};
 const COMPUTER_RULES = {
   'element indexes; coordinates in screenshot pixels, downscaled': /Prefer accessibility element indexes; coordinates are screenshot pixels \(apply the host's downscale\)/,
   'role names in the system language': /role names are in the system language/,
@@ -223,8 +218,7 @@ test('each surface\'s rules are in the description of its tool, ahead of the 2,0
     assert.equal(Boolean(tools.profiles_list), browser, label);
     if (browser) {
       for (const [rule, pattern] of Object.entries(BROWSER_RULES)) assert.match(seen('profiles_list'), pattern, `${label}: profiles_list ${rule}`);
-      for (const [rule, pattern] of Object.entries(VENDOR_BROWSER_RULES)) assert.doesNotMatch(seen('profiles_list'), pattern, `${label}: profiles_list without ${rule}`);
-      assert.doesNotMatch(seen('js'), /3 s cap|read-only/, `${label}: js points to cua's service's rules`);
+      assert.match(seen('js'), /DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab/, `${label}: js points to cua's service's rules`);
       assert.ok(tools.profiles_list.description.length <= DESCRIPTION_CAP, `${label}: profiles_list ${tools.profiles_list.description.length}`);
     }
 
@@ -240,23 +234,6 @@ test('each surface\'s rules are in the description of its tool, ahead of the 2,0
     if (platform === 'linux') for (const text of [instructions, ...Object.keys(tools).map(seen)]) assert.doesNotMatch(text, MACOS_ONLY, label);
   }
   assert.ok(jsRulesFor(['computer'], {platform: 'darwin'}).length + 2 + VENDOR_COMPUTER_JS <= DESCRIPTION_CAP, 'the default surface\'s js description is never cut');
-});
-
-test('under the vendor browser service, the rollback, profiles_list and js teach the vendor\'s 3 s cap and read-only evaluate instead', async () => {
-  const {modelTools} = await import('../src/mcp/surface.mjs');
-  for (const platform of ['darwin', 'linux']) for (const surfaces of [['browser'], ['computer', 'browser']]) for (const inAppBrowser of [false, true]) {
-    const label = `${platform} ${surfaces.join()}${inAppBrowser ? ' maws' : ''}`;
-    const tools = Object.fromEntries(modelTools(UPSTREAM_TOOLS, {surfaces, platform, inAppBrowser, browserService: 'vendor'}).map(t => [t.name, t]));
-    const cua = Object.fromEntries(modelTools(UPSTREAM_TOOLS, {surfaces, platform, inAppBrowser}).map(t => [t.name, t]));
-    for (const [rule, pattern] of Object.entries(VENDOR_BROWSER_RULES)) assert.match(tools.profiles_list.description, pattern, `${label}: ${rule}`);
-    for (const [rule, pattern] of Object.entries(BROWSER_RULES)) {
-      if (/budgets|evaluate in the page/.test(rule)) assert.doesNotMatch(tools.profiles_list.description, pattern, `${label}: not ${rule}`);
-      else if (!(inAppBrowser && /never pick/.test(rule))) assert.match(tools.profiles_list.description, pattern, `${label}: ${rule}`);
-    }
-    assert.ok(tools.profiles_list.description.length <= DESCRIPTION_CAP, label);
-    assert.match(tools.js.description, /DOM-only tabs, the 3 s cap, read-only evaluate, slow createBrowserTab/, label);
-    assert.match(cua.js.description, /DOM-only tabs, per-phase budgets up to 120 s, evaluate in the page, slow createBrowserTab/, label);
-  }
 });
 
 test('CUA_REPL_HOST is checked at start whatever the surfaces: cua, vendor, or unset (each connection resolves it)', () => {
@@ -275,12 +252,11 @@ test('CUA_NODE is checked at start whatever the surfaces: an absolute path, or u
   }
 });
 
-test('CUA_BROWSER_SERVICE is checked at start with the browser surface: cua, vendor, or unset (the launch resolves it)', () => {
-  for (const value of [undefined, '', 'cua', 'vendor']) settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: value});
-  for (const bad of ['openai', 'Cua', ' vendor'])
-    assert.throws(() => settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: bad}), error => error.code === 'invalid_setting', bad);
-  assert.deepEqual(settingsFrom({CUA_BROWSER_SERVICE: 'openai'}).surfaces, ['computer'], 'without the browser surface the selection is not read, as the launch ignores it');
-  assert.equal('browserService' in settingsFrom({CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: 'vendor'}), false, 'the rules follow the launch the connection plans, not the variable alone');
+test('CUA_BROWSER_SERVICE is not read at start: the browser surface always runs cua\'s service (#79)', () => {
+  for (const surfaces of ['computer', 'browser', 'computer,browser']) for (const value of [undefined, '', 'cua', 'vendor', 'openai']) {
+    const settings = settingsFrom({CUA_SHIM_SURFACES: surfaces, CUA_BROWSER_SERVICE: value});
+    assert.deepEqual(settings, settingsFrom({CUA_SHIM_SURFACES: surfaces}), `${surfaces} ${value}`);
+  }
 });
 
 test('CUA_SHIM_SURFACES selects computer (default), browser or both, and anything else is refused', () => {

@@ -23,7 +23,7 @@ function ownHostLaunch(t){
  const node=join(bin,'node');writeFileSync(node,'#!/bin/sh\necho v24.18.0\n',{mode:0o755});
  const ownNode={path:realpathSync(node),version:'v24.18.0'};
  const runtime=runtimeFor({home:fixture.dir,pin:parsePin(fixturePin({sha256:'a'.repeat(64),length:1})),record:null});
- const launch=buildLaunch({runtime,home:fixture.dir,sessionId:'node-witness',surfaces:['browser'],ambient:{CUA_REPL_HOST:'cua',CUA_BROWSER_SERVICE:'cua',CUA_NODE:node}});
+ const launch=buildLaunch({runtime,home:fixture.dir,sessionId:'node-witness',surfaces:['browser'],ambient:{CUA_REPL_HOST:'cua',CUA_NODE:node}});
  assert.equal(launch.command,ownNode.path);
  return {ownNode,entry:REPL_HOST_SUPERVISOR,command:[launch.command,...launch.args].join(' ')};
 }

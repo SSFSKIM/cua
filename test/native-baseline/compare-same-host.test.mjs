@@ -36,7 +36,7 @@ function browserMeta({host = 'cua', launch = BEFORE, experiment = '115-m0', n = 
     load: {device: {before: 'up', after: 'up'}, controller: {before: 'up', after: 'up'}},
     device: 'mini', host, surface: 'browser', hostAttestations: Array.from({length: 5}, () => attest(host, launch)), connections: 5, commit, complete: true,
     protocolVersion: '2025-06-18', platform: 'darwin', plan: PLAN,
-    environment: {CUA_REPL_HOST: host, CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'},
+    environment: {CUA_REPL_HOST: host, CUA_SHIM_SURFACES: 'browser', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'},
     runtime: {release: '26.928.40906-darwin-arm64'}, hardware: {model: 'Mac14,12', chip: 'Apple M2 Pro', memoryBytes: 16 * 1024 ** 3},
     os: {name: 'macOS', version: '27.0', build: '26A428'}, display: {pixels: '5120 x 2880', resolution: '2560 x 1440', scale: 2},
     service: {surface: 'browser'}, sandbox: {mode: 'scoped', explicit: false}, started: `2026-10-17T0${n}:00:00Z`, finished: `2026-10-17T0${n}:05:00Z`, ...extra};

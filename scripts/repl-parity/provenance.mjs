@@ -3,7 +3,6 @@ import {chromeLaunchFacts} from './chrome-launch.mjs';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {readCuaRecord,readVendorRecord,cuaRecordFile,vendorRecordFile,chromeRoute} from '../../src/chrome/route.mjs';
-import {browserSelectionFor} from '../../src/runtime/launch.mjs';
 import {execFileSync} from 'node:child_process';import {resolve} from 'node:path';import {fileURLToPath} from 'node:url';import {Writable} from 'node:stream';
 import {resolveRuntime} from '../../src/runtime/manifest.mjs';
 import {ownHostNode} from '../../src/runtime/launch.mjs';
@@ -39,9 +38,12 @@ export function attestedOutput(output,facts){
  }catch(error){done(error);}}});
 }
 
-// Registration files contain only launcher paths and extension origins, never profile content or credentials.
+// The home's Chrome route as recorded: `route` is chromeRoute ('cua' or null), `recordPath` and `manifests` are cua's
+// registration and the manifests it placed, and `chatgptRecordPath` names the record the removed ChatGPT extension route
+// left, when there is one (a fact about the home; nothing selects that route). Registration files contain only launcher
+// paths and extension origins, never profile content or credentials.
 export function browserRouteFacts(home){
- const route=chromeRoute(home),record=route==='cua'?readCuaRecord(home):route==='vendor'?readVendorRecord(home):null;
- return {selection:browserSelectionFor({},home),recordPath:route==='cua'?cuaRecordFile(home):route==='vendor'?vendorRecordFile(home):null,
+ const route=chromeRoute(home),record=route==='cua'?readCuaRecord(home):null;
+ return {route,recordPath:route==='cua'?cuaRecordFile(home):null,chatgptRecordPath:readVendorRecord(home)?vendorRecordFile(home):null,
   manifests:Object.entries(record?.browsers??{}).map(([browser,entry])=>{const path=entry.manifestPath;const bytes=readFileSync(path),manifest=JSON.parse(bytes);return {browser,path,sha256:createHash('sha256').update(bytes).digest('hex'),name:manifest.name,type:manifest.type,launcher:manifest.path,allowedOrigins:manifest.allowed_origins};})};
 }

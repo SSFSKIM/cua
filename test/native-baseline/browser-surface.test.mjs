@@ -79,14 +79,14 @@ test('a browser-surface run records the cold rows alone, through the browser sur
   assert.equal(meta.complete, true, meta.error);
   assert.equal(meta.surface, 'browser');
   assert.deepEqual(meta.service, {surface: 'browser'});
-  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_BROWSER_SERVICE: 'cua', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
+  assert.deepEqual(meta.environment, {CUA_REPL_HOST: 'cua', CUA_SHIM_SURFACES: 'browser', CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off'});
   assert.deepEqual(meta.sandboxLaunch, LAUNCH);
   assert.equal(meta.connections, 2);
   assert.deepEqual([...new Set(rows.map(r => r.op))], ['ssh.roundtrip', 'cold.miss.initialize', 'cold.miss.tools_list', 'cold.miss.first_js', 'cold.miss.total',
     'cold.hit.initialize', 'cold.hit.tools_list', 'cold.hit.first_js', 'cold.hit.total']);
   assert.ok(rows.every(r => r.ok), JSON.stringify(rows.filter(r => !r.ok)));
   assert.deepEqual(state.nativeTouched, []);
-  assert.ok(state.serves.every(s => /CUA_SHIM_SURFACES=browser CUA_BROWSER_SERVICE=cua /.test(s)), state.serves.join('\n'));
+  assert.ok(state.serves.every(s => /CUA_SHIM_SURFACES=browser /.test(s)), state.serves.join('\n'));
   // The preflight resolves the browser surface's handshake record and sandbox mode.
   const preflight = state.scripts.find(s => /hostIdentity/.test(s));
   assert.match(preflight, /browser@2025-06-18\.json/);

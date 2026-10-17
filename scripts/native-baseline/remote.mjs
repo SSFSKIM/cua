@@ -47,7 +47,7 @@ export function nativeEnvironment({home, userHome, configHome, host, display, pl
     : Object.entries(sessionEnvironment(xSession)).map(([key,value]) => ` ${key}=${quote(value)}`).join('');
   const clean = userHome ? `-i PATH="$PATH" LANG=${NATIVE_LOCALE.LANG} HOME=${quote(userHome)} XDG_CONFIG_HOME=${quote(configHome ?? userHome + '/.config')} `
     : '-u CUA_NODE ' + SESSION_KEYS.filter(key => xSession && !Object.hasOwn(xSession,key)).map(key => `-u ${key} `).join('');
-  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface}${surface === 'browser' ? ' CUA_BROWSER_SERVICE=cua' : ''} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
+  return `${clean}CUA_HOME=${quote(home)} CUA_REPL_HOST=${host}${node === undefined ? '' : ` CUA_NODE=${quote(node)}`} CUA_SHIM_SURFACES=${surface} CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off${x}`;
 }
 export function serveCommand(options) {
   const {device, checkout, userHome, node} = options;

@@ -1,6 +1,6 @@
 // Oracle fixtures grounded in chatgpt-26.928.40906 NR:privileged-node-repl.js:14-129,200-472,528-647
 // and NR:trusted-worker.js:134-230. Not a host implementation; the selected real host supplies nodeRepl.
-import {createBrowserService,PINNED_VENDOR_VERSION} from '../../../src/services/browser.mjs';
+import {createBrowserService,PINNED_CUA_VERSION} from '../../../src/services/browser.mjs';
 import {createSkyService} from '../../../src/services/sky.mjs';
 import {writeFileSync,readFileSync} from 'node:fs';
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
@@ -38,7 +38,7 @@ export async function handleRpc(r){
   // Synthetic in-memory store only; real wrappers, real worker/kernel error serialization, no filesystem secret reads.
   const sentinel='fixture-private-value',secrets={read:async()=>sentinel};
   const backend={handleRpc:async()=>{const e=new Error(sentinel);e.cause={value:sentinel};e.stack=sentinel;e.custom=sentinel;throw e;}};
-  if(r.surface==='browser')return createBrowserService({loadService:async()=>backend,actualServiceVersion:async()=>PINNED_VENDOR_VERSION,expectedVersion:PINNED_VENDOR_VERSION,serviceName:'vendor',secrets}).handleRpc({method:'execute',params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'1',selector:'#fixture',value:'{{secret:PARITY_SYNTHETIC}}',replace:true}});
+  if(r.surface==='browser')return createBrowserService({loadService:async()=>backend,actualServiceVersion:async()=>PINNED_CUA_VERSION,secrets}).handleRpc({method:'execute',params:{type:'playwright_locator_fill',browser_id:'fixture',tab_id:'1',selector:'#fixture',value:'{{secret:PARITY_SYNTHETIC}}',replace:true}});
   return createSkyService({loadVendor:async()=>backend,secrets,platform:'darwin'}).handleRpc({type:'execute',method:'type_text',args:[{app:'fixture',text:'{{secret:PARITY_SYNTHETIC}}'}]});
  }
  case 'pipe':{

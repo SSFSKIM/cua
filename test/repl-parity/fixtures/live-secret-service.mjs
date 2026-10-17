@@ -1,11 +1,11 @@
-// Service-boundary double: the actual selected browser client calls the unchanged production secret wrapper,
+// Service-boundary double: the production browser client calls the unchanged production secret wrapper,
 // then this recorder. This is not an AX/browser-service implementation and never contacts Chrome.
 // Setup manifest/selection replies reuse the source-grounded capability fixture (BC:10061-10212).
 import {chmod,lstat,mkdir,mkdtemp,realpath,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
-import {createBrowserService,serviceSelection} from '../../../src/services/browser.mjs';
+import {createBrowserService} from '../../../src/services/browser.mjs';
 import {fileStore} from '../../../src/secrets/store.mjs';
 import {createCapabilityOracleService} from '../../browser-parity/capability-api-fixture.mjs';
 import {liveSecretCases,LIVE_SECRET_LABEL,LIVE_SECRET_REFERENCE} from './live-secret-cases.mjs';
@@ -37,8 +37,6 @@ export async function createLiveSecretOracle(dirs){
  const privateValue=`synthetic-${randomUUID()}`;
  const boot=createCapabilityOracleService({handleRpc:async()=>{throw Error('Live secret fixture cannot delegate to a live backend');}});
  await boot.handleRpc({method:'oracle.configure',params:{mode:'boundary-double'}});
- // The production selection reads src/browser-service/VERSION; no installed runtime or native helper is loaded.
- const selected=serviceSelection({CUA_BROWSER_SERVICE:'cua'});
  let current=null,wrapped=null,reads=[],inputs=[],outputs=[],substitutions=[],wrapperErrorSafe=true;
  async function configure(id){
   const row=liveSecretCases.find(c=>c.id===id);if(!row)throw Error('Unknown live secret case');
@@ -50,7 +48,8 @@ export async function createLiveSecretOracle(dirs){
    // ENOTDIR is deterministic on macOS/Linux, even as root. No chmod-based permission assumption.
    const blocked=join(dir,'not-a-directory');await writeFile(blocked,'fixture',{mode:0o600});store=fileStore({dir:join(blocked,'store')});
   }
-  wrapped=createBrowserService({loadService:async()=>({handleRpc:backend}),actualServiceVersion:row.versionMismatch?async()=>'0.0.0':selected.actualServiceVersion,expectedVersion:selected.expectedVersion,serviceName:selected.name,
+  // The wrapper's default version reads src/browser-service/VERSION; no installed runtime or native helper is loaded.
+  wrapped=createBrowserService({loadService:async()=>({handleRpc:backend}),...(row.versionMismatch?{actualServiceVersion:async()=>'0.0.0'}:{}),
    secretsUnavailable:row.unavailable,secrets:{read:async label=>{reads.push(label);return store.read(label);}}});
   return {ready:true,boundaryProof:proof};
  }

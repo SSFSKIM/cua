@@ -178,7 +178,7 @@ async function runPrepared({device, out, host, node, experiment, prepared, surfa
     deviceIdentity: {alias:device,arch:pre.arch,hostname:pre.hostname,os:pre.os,cpu:pre.cpu},
     load: {device:{before:pre.uptime,after:null},controller:{before:io.controllerLoad(),after:null}},
     device, platform: pre.platform, host, surface, hostAttestations: [], connections: 0, protocolVersion: PROTOCOL_VERSION,
-    environment: {CUA_REPL_HOST: host, ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: surface, ...(surface === 'browser' ? {CUA_BROWSER_SERVICE: 'cua'} : {}), CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? prepared.xSession : {})},
+    environment: {CUA_REPL_HOST: host, ...(node === undefined ? {} : {CUA_NODE: node}), CUA_SHIM_SURFACES: surface, CUA_SHIM_PERSIST: 'session', CUA_SHIM_SECRETS: 'off', ...(linux ? prepared.xSession : {})},
     plan: {samples, cold, tasks, coldPlan: COLD_PLAN}, started: new Date().toISOString(), spikeWaitMs: Date.now() - waitStarted, elicitations: [], complete: false};
   Object.assign(meta, {commit: pre.commit, checkout: pre.checkout, home: pre.home, node: pre.node, ...(pre.ownNode ? {ownNode: pre.ownNode} : {}), runtime: {release: pre.release}, sandbox: pre.sandbox, hardware: pre.hardware, os: pre.os, display: pre.display});
   adapter.start(meta, pre);

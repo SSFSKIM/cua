@@ -28,7 +28,7 @@ test('the serve has the native surface only, the requested REPL host, session ap
   assert.equal(command, 'ssh');
   assert.deepEqual(args.slice(0, 3), ['-o', 'BatchMode=yes', 'mini']);
   assert.match(args[3], /CUA_REPL_HOST=vendor CUA_SHIM_SURFACES=computer CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node '\/Users\/someone\/cua-parity\/bin\/cua\.mjs' serve$/);
-  assert.doesNotMatch(args[3], /DISPLAY|CUA_BROWSER_SERVICE/);
+  assert.doesNotMatch(args[3], /DISPLAY/);
   assert.throws(() => serveCommand({device: 'mini', checkout: '/x', home: '/y', host: 'other', platform: 'darwin'}), /host must be vendor or cua/);
 });
 
@@ -95,7 +95,7 @@ test('ARM Linux CPU identity uses lscpu when the kernel exposes no model name to
 // and the preflight resolves that surface's handshake record and sandbox mode.
 test('a browser-surface serve names the browser surface and cua\'s browser service; its handshake record is the browser one', () => {
   const at = {device: 'mini', checkout: '/Users/someone/cua-parity', home: '/Users/someone/Library/Application Support/cua', host: 'cua', platform: 'darwin'};
-  assert.match(serveCommand({...at, surface: 'browser'}).args[3], /CUA_REPL_HOST=cua CUA_SHIM_SURFACES=browser CUA_BROWSER_SERVICE=cua CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node /);
+  assert.match(serveCommand({...at, surface: 'browser'}).args[3], /CUA_REPL_HOST=cua CUA_SHIM_SURFACES=browser CUA_SHIM_PERSIST=session CUA_SHIM_SECRETS=off node /);
   assert.throws(() => serveCommand({...at, surface: 'computer,browser'}), /--surfaces must be computer or browser/);
   const record = '/Users/someone/.local/share/cua/state/handshake/26.928.40906-darwin-arm64/cua@0.1.0/browser@2025-06-18.json';
   assert.match(handshakeScript({record, clear: true}), /^rm -f '.*\/browser@2025-06-18\.json'/);

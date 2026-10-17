@@ -20,6 +20,8 @@ const check = (report, name) => report.checks.find(c => c.name === name);
 const noHelper = async () => ({socket: '/x/computeruse.sock', holders: []});
 const noSecrets = async () => ({dir: '/nonexistent/.config/claude-secrets', exists: false});
 const noAgent = async () => [];
+// The Chrome rows read the user's Chrome directories by default; test/doctor-cua-route.test.mjs drives them on scratch ones.
+const noChrome = async () => [];
 
 // Under /tmp, outside $TMPDIR, where the scoped sandbox allows a home (the `sandbox` check).
 async function installedHome(t) {
@@ -35,7 +37,7 @@ async function installedHome(t) {
 test('a missing runtime fails with install guidance and still reports helper and permission evidence separately', async () => {
   const s = scratch();
   try {
-    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
+    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
     assert.equal(report.ok, false);
     assert.equal(report.runtime, undefined);
     assert.equal(check(report, 'platform').status, 'pass');
@@ -62,7 +64,7 @@ test('an unsupported platform is an explicit failure and nothing else is inspect
 
 test('a healthy installed runtime names its release and passes every installed-runtime check', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   assert.equal(report.ok, true);
   assert.equal(report.runtime.release, pin.release);
   assert.equal(report.runtime.root, join(realpathSync(home), 'runtimes', pin.release));
@@ -77,7 +79,7 @@ test('a healthy installed runtime names its release and passes every installed-r
 // doctor says so plainly, while disabled and default are choices it only describes.
 test('the sandbox check describes the mode and fails a scoped home whose runtime lies below $TMPDIR, naming the remedy', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
+  const inspect = env => inspectRuntime({home, env, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   const scoped = check(await inspect({TMPDIR: '/private/var/folders/xx/T/'}), 'sandbox');
   assert.equal(scoped.status, 'pass');
   assert.match(scoped.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\): .*run directory and \$TMPDIR.*no network/);
@@ -114,7 +116,7 @@ test('on macOS the sandbox row ignores CUA_SHIM_SURFACES, a bad value included',
   for (const surfaces of [undefined, 'computer,chrome', '']) {
     const env = surfaces === undefined ? {} : {CUA_SHIM_SURFACES: surfaces};
     const report = await inspectRuntime({home: join(s.dir, 'home'), env, pins: [pin], host: HOST, verifySignatures: acceptSignatures,
-      inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectLogin: async () => ({state: 'logged-out'}), inspectChrome: async () => []});
+      inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: async () => []});
     const row = check(report, 'sandbox');
     assert.equal(row.status, 'pass', JSON.stringify(surfaces));
     assert.match(row.detail, /^CUA_SHIM_SANDBOX=scoped \(the default\)/);
@@ -124,12 +126,12 @@ test('on macOS the sandbox row ignores CUA_SHIM_SURFACES, a bad value included',
 test('signature and layout damage in the installed tree fail the doctor with the component named', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const rejectNode = async (root, p) => p.signing.components.map(c => ({component: c, valid: c !== 'cua_node/bin/node', detail: c === 'cua_node/bin/node' ? 'invalid signature' : 'ok'}));
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: rejectNode, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: rejectNode, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.signatures').status, 'fail');
   assert.match(check(report, 'runtime.signatures').detail, /cua_node\/bin\/node/);
   rmSync(join(realpathSync(home), 'runtimes', pin.release, 'CodexCLI.app/Contents/MacOS/codex'));
-  const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
+  const damaged = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   assert.equal(damaged.ok, false);
   assert.equal(check(damaged, 'runtime.files').status, 'fail');
   assert.match(check(damaged, 'runtime.files').detail, /codexCli/);
@@ -142,7 +144,7 @@ test('signature and layout damage in the installed tree fail the doctor with the
 test('an incompatible running helper is a diagnosed conflict that fails the doctor', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
   const incompatible = async () => ({socket: '/x/computeruse.sock', holders: [{pid: 42, executable: '/Old/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService', ipc: ['CodexComputerUseIPC-4']}]});
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: incompatible, inspectSecrets: noSecrets, inspectAgent: noAgent});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: incompatible, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   assert.equal(report.ok, false);
   const helper = check(report, 'helper.live');
   assert.equal(helper.status, 'fail');
@@ -185,7 +187,7 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
   const {home, pin} = await installedHome(t);
   const {writeFileSync} = await import('node:fs');
   writeFileSync(join(realpathSync(home), 'runtimes', pin.release, pin.layout.vendorManifest), 'null');
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
+  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome});
   assert.equal(report.ok, false);
   assert.equal(check(report, 'runtime.vendor-manifest').status, 'fail');
   assert.match(check(report, 'runtime.vendor-manifest').detail, /not a JSON object/);
@@ -193,7 +195,7 @@ test('a vendor manifest that is JSON null is a failed check, not an exception', 
 
 test('secrets.store is reported beside runtime health: no store yet is blocked, an unsafe one fails', {skip: !darwin}, async t => {
   const {home, pin} = await installedHome(t);
-  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectAgent: noAgent};
+  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectAgent: noAgent, inspectChrome: noChrome};
   let asked;
   const env = {HOME: '/Users/u'};
   const none = await inspectRuntime({...common, env, inspectSecrets: async args => { asked = args; return noSecrets(); }});
@@ -223,81 +225,6 @@ test('secrets.store is reported beside runtime health: no store yet is blocked, 
   assert.equal(tiered.ok, false);
 });
 
-test('codex.login is capability evidence: pass when logged in, blocked with "run cua login" otherwise, ok unchanged', {skip: !darwin}, async t => {
-  const {home, pin} = await installedHome(t);
-  const seen = [];
-  const common = {home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent};
-  const as = state => async args => { seen.push(args); return {state, ...(state === 'logged-in' ? {} : {reason: 'codex login status reports no login'})}; };
-  const loggedIn = await inspectRuntime({...common, inspectLogin: as('logged-in')});
-  assert.equal(check(loggedIn, 'codex.login').status, 'pass');
-  assert.equal(loggedIn.ok, true);
-  assert.equal(seen[0].runtime.release, pin.release, 'the check asks the active runtime');
-  for (const state of ['not-logged-in', 'unknown']) {
-    const report = await inspectRuntime({...common, inspectLogin: as(state)});
-    const login = check(report, 'codex.login');
-    assert.equal(login.status, 'blocked', state);
-    assert.match(login.detail, /run cua login/);
-    assert.equal(report.ok, true, 'a missing login never fails runtime health');
-  }
-});
-
-test('codex.login without a usable runtime is blocked and asks nothing', async () => {
-  const s = scratch();
-  try {
-    let asked = false;
-    const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectLogin: async () => { asked = true; }});
-    assert.equal(asked, false);
-    assert.equal(check(report, 'codex.login').status, 'blocked');
-    assert.match(check(report, 'codex.login').detail, /cua install/);
-  } finally { s.cleanup(); }
-});
-
-test('the default codex.login check runs codex login status with the owned CODEX_HOME and never shows its output', {skip: !darwin}, async t => {
-  const {home, pin} = await installedHome(t);
-  const {writeFileSync: write, mkdirSync: mkdir, readFileSync: read, chmodSync: chmod} = await import('node:fs');
-  const {fakeCodexScript, FAKE_CODEX_SENTINEL} = await import('./fixtures/runtime-fixture.mjs');
-  const real = realpathSync(home);
-  const cli = join(real, 'runtimes', pin.release, pin.layout.codexCli);
-  write(cli, fakeCodexScript({exit: 1}));
-  chmod(cli, 0o755);
-  const codexHome = join(real, 'state', 'codex');
-  mkdir(codexHome, {recursive: true});
-  const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
-  assert.equal(check(report, 'codex.login').status, 'blocked');
-  assert.doesNotMatch(JSON.stringify(report), new RegExp(FAKE_CODEX_SENTINEL));
-  const log = read(join(codexHome, 'fake-codex.log'), 'utf8');
-  assert.match(log, /^argv: login status$/m);
-  assert.ok(log.includes(`env:CODEX_HOME=${codexHome}\n`));
-});
-
-test('codex.login never executes a release binary the same run found untrusted: blocked naming runtime.signatures', {skip: !darwin}, async t => {
-  const {home, pin} = await installedHome(t);
-  const {writeFileSync: write, mkdirSync: mkdir, existsSync: exists, chmodSync: chmod} = await import('node:fs');
-  const {fakeCodexScript} = await import('./fixtures/runtime-fixture.mjs');
-  const real = realpathSync(home);
-  const cli = join(real, 'runtimes', pin.release, pin.layout.codexCli);
-  write(cli, fakeCodexScript({exit: 0}));
-  chmod(cli, 0o755);
-  const codexHome = join(real, 'state', 'codex');
-  mkdir(codexHome, {recursive: true});
-  const marker = join(codexHome, 'fake-codex.log');
-  const rejectCli = async (root, p) => p.signing.components.map(c => ({component: c, valid: !c.startsWith('CodexCLI.app'), detail: 'invalid signature'}));
-  const unchecked = async () => [];
-  for (const [name, verifySignatures] of [['codex CLI rejected', rejectCli], ['no component checked', unchecked]]) {
-    // The production login probe: had it run, the fake CLI would have written its marker and reported a login.
-    const report = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
-    assert.equal(check(report, 'runtime.signatures').status, 'fail', name);
-    const login = check(report, 'codex.login');
-    assert.equal(login.status, 'blocked', name);
-    assert.match(login.detail, /runtime\.signatures failed/, name);
-    assert.equal(exists(marker), false, `${name}: the rejected CLI was executed`);
-  }
-  // With the signatures valid, the same CLI is asked.
-  const trusted = await inspectRuntime({home, pins: [pin], host: HOST, verifySignatures: acceptSignatures, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent});
-  assert.equal(check(trusted, 'codex.login').status, 'pass');
-  assert.equal(exists(marker), true);
-});
-
 // Issue #29: doctor sweeps $CUA_HOME/run as `cua serve` does at start and names what it removed; a session it could
 // not remove fails the row, a live one and an unrecorded entry are left alone.
 test('the run.stale check removes the sessions of gone owners and says so', async t => {
@@ -308,7 +235,7 @@ test('the run.stale check removes the sessions of gone owners and says so', asyn
   mkdirSync(join(run, stale), {recursive: true});
   writeFileSync(join(run, `${stale}.pid`), '999999\n');
   writeFileSync(join(run, `${process.pid}-live.pid`), `${process.pid}\n`);
-  const inspect = extra => inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, ...extra});
+  const inspect = extra => inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectAgent: noAgent, inspectChrome: noChrome, ...extra});
   const row = check(await inspect({sweep: home => sweepRun(home, {alive: pid => pid === process.pid})}), 'run.stale');
   assert.equal(row.status, 'pass');
   assert.match(row.detail, new RegExp(`removed the leftovers of 1 connection whose cua process is gone \\(${stale}, pid 999999\\); 1 live session left alone$`));
@@ -544,7 +471,7 @@ test('doctor reports the agent rows, and skip neither fails ok nor counts as blo
   const s = scratch();
   t.after(s.cleanup);
   const injected = [{name: 'agent.installed', status: 'skip', detail: 'not enrolled'}, {name: 'agent.console', status: 'pass', detail: 'ok'}];
-  const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets,
+  const report = await inspectRuntime({home: s.dir, host: HOST, inspectHelper: noHelper, inspectSecrets: noSecrets, inspectChrome: noChrome,
     inspectAgent: async ({home, env, host}) => { assert.equal(home, s.dir); assert.ok(env); assert.deepEqual(host, HOST); return injected; }});
   for (const row of injected) assert.deepEqual(check(report, row.name), row);
   const rows = [['runtime.files', 'pass'], ['agent.installed', 'skip'], ['helper.live', 'blocked']];

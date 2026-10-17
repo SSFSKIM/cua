@@ -41,7 +41,7 @@ test('ordinary preparation installs a fresh managed home and aliases only the se
  assert.ok(!existsSync(join(first.home,'private-profile')));assert.equal(readFileSync(join(source,'private-profile'),'utf8'),'DO-NOT-COPY');assert.equal(readFileSync(join(source,'profiles.json'),'utf8'),registry);
  assert.ok(!JSON.stringify(first).includes('DO-NOT-RETURN'));assert.ok(!JSON.stringify(first).includes('SECRET_VALUE'));assert.equal(first.environment.CUA_HOME,first.home);assert.equal(first.environment.HOME,first.userHome);assert.equal(first.display,':0');assert.equal(first.load.average.length,3);
  assert.equal(commands.filter(c=>c.home).length,2);assert.ok(commands.filter(c=>c.home).every(c=>c.home!==source));
- const discovery=commands.find(c=>c.file);assert.deepEqual(discovery.args,['bin/cua.mjs','profiles','list','--json']);assert.equal(discovery.env.CUA_REPL_HOST,'vendor');assert.equal(discovery.env.CUA_BROWSER_SERVICE,'cua');assert.equal(discovery.env.CUA_NODE,undefined);
+ const discovery=commands.find(c=>c.file);assert.deepEqual(discovery.args,['bin/cua.mjs','profiles','list','--json']);assert.equal(discovery.env.CUA_REPL_HOST,'vendor');assert.equal(discovery.env.CUA_NODE,undefined);
  const last=inspections.at(-1);assert.equal(last.home,second.home);assert.equal(last.env.CUA_HOME,second.home);assert.equal(last.env.HOME,second.userHome);assert.equal(last.env.CUA_NODE,undefined);assert.equal(last.env.CUA_PARITY_NODE_MODE,'managed');
 }));
 
@@ -96,7 +96,7 @@ test('preparation on a Linux device lists profiles through the own host, so it s
  const prepared=prepareDevice({device:'cua-gce',profile:'ssfs',home:source},{...deps,run:retiredOnLinux(deps.run)});
  assert.equal(prepared.device,'cua-gce');assert.equal(prepared.profile,'ssfs');
  const discovery=commands.find(c=>c.file);
- assert.equal(discovery.env.CUA_REPL_HOST,'cua');assert.equal(discovery.env.CUA_SHIM_SURFACES,'browser');assert.equal(discovery.env.CUA_BROWSER_SERVICE,'cua');
+ assert.equal(discovery.env.CUA_REPL_HOST,'cua');assert.equal(discovery.env.CUA_SHIM_SURFACES,'browser');assert.equal(discovery.env.CUA_BROWSER_SERVICE,undefined);
 }));
 test('preparation on the mini keeps the vendor host for its listing',()=>fixture(({source,commands,deps})=>{
  prepareDevice({device:'mini',profile:'ssfs',home:source},deps);

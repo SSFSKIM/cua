@@ -4,6 +4,9 @@
 // controller:
 //
 //   node scripts/mini-rules.mjs <item>...      items: vendor, browser, tz, tz-real-home, accept (in the order given)
+//   node scripts/mini-rules.mjs gated -- <command> [args...]
+//     any other mini run (M1 on): the gate below, then the command on the controller (which reaches the mini itself),
+//     then the frontmost-application check; exits with the command's status, or 4 when a rule stops it.
 //
 // Before each item, the gate: two readings about 45 s apart, each with every observation present (a request that fails
 // or an answer that does not parse stops the sequence; nothing missing is ever read as idle):
@@ -267,10 +270,23 @@ export async function sequence(items, ctx) {
   }
 }
 
+// `command` ([file, ...args], run on the controller) between the gate and the frontmost-application check -> its status.
+export async function gated(command, ctx) {
+  if (!command.length) throw new Error('gated needs a command: node scripts/mini-rules.mjs gated -- <command> [args...]');
+  const what = `gated ${command.join(' ')}`;
+  await gate(what, ctx);
+  const code = ctx.run(command[0], command.slice(1));
+  ctx.log(`${what}: exit ${code}`);
+  frontAfter(what, ctx);
+  return code;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const logFile = join(EVIDENCE, 'mini-rules', 'sitting-log.txt');
   const log = line => { const text = `${new Date().toISOString()} ${line}`; console.log(text); appendFileSync(logFile, text + '\n'); };
   const ctx = {exec: liveExec, log, evidence: EVIDENCE, now: Date.now, sleep: ms => new Promise(r => setTimeout(r, ms)),
     run: (cmd, args) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit'}).status ?? 1};
-  sequence(process.argv.slice(2), ctx).then(() => { process.exitCode = 0; }, error => { console.error(error.message); process.exitCode = error instanceof Stop ? 4 : 1; });
+  const [first, ...rest] = process.argv.slice(2);
+  const work = first === 'gated' ? gated(rest[0] === '--' ? rest.slice(1) : rest, ctx) : sequence(process.argv.slice(2), ctx).then(() => 0);
+  work.then(code => { process.exitCode = code; }, error => { console.error(error.message); process.exitCode = error instanceof Stop ? 4 : 1; });
 }

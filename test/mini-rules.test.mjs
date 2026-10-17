@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {observe, classify, gate, frontAfter, runState, sequence, verifyTz, verifyAcceptance, Stop, TERMINAL} from '../scripts/mini-rules.mjs';
+import {observe, classify, gate, gated, frontAfter, runState, sequence, verifyTz, verifyAcceptance, Stop, TERMINAL} from '../scripts/mini-rules.mjs';
 
 // The device and GitHub as one double. `state` drives the answers; `calls` records them.
 function world(over = {}) {
@@ -277,4 +277,18 @@ esac`);
   const missingTmp = launch({configHome: '/scratch/run-2/config'});
   assert.equal(missingTmp.status, 86);
   assert.equal(existsSync(seen), false);
+});
+
+test('gated: any other mini run runs only after the gate and is followed by the frontmost check; its status is returned', async () => {
+  const ran = [];
+  const ok = world();
+  assert.equal(await gated(['node', 'scripts/x.mjs', '--a'], {exec: ok.exec, run: (cmd, args) => { ran.push([cmd, ...args].join(' ')); return 3; }, log: quiet, sleep: noSleep}), 3);
+  assert.deepEqual(ran, ['node scripts/x.mjs --a']);
+  assert.equal(ok.calls.filter(c => c.includes('lsappinfo')).length, 3, 'two gate readings and the check after');
+  const dialog = world({front: 'com.apple.UserNotificationCenter'});
+  await assert.rejects(gated(['node', 'x'], {exec: dialog.exec, run: () => { throw new Error('must not run'); }, log: quiet, sleep: noSleep}), Stop);
+  let n = 0;
+  const after = world({front: () => (++n > 2 ? 'com.apple.SecurityAgent' : TERMINAL)});
+  await assert.rejects(gated(['node', 'x'], {exec: after.exec, run: () => 0, log: quiet, sleep: noSleep}), /after gated node x: the frontmost application is com.apple.SecurityAgent/);
+  await assert.rejects(gated([], {exec: ok.exec, run: () => 0, log: quiet, sleep: noSleep}), /gated needs a command/);
 });

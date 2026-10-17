@@ -865,6 +865,17 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: a bar the machine's idle state cannot meet blocks the runs without protecting the measurement; recording the load keeps the spread visible to whoever judges the comparison.
   Date/Author: 2026-10-17, execution session.
 
+- Decision: an unsearchable secret store lets the launch proceed with the store denied (2026-10-17, M1 live run; decided by the execution session, accepted by the dispatching session). M1's review made tier discovery fail closed, and the live probe-secrets run then showed that a store at mode 0000 refused every session, browser-only included (`sandbox_state_invalid`), where before only a `{{secret:…}}` reference failed (`secret_unreadable`): a capability regression. Discovery now distinguishes the following:
+  - When the store or `projects/` is not searchable for this uid (X_OK denied), nothing under it is reachable by path by the same uid, sandboxed or not. The launch proceeds, with the store itself on the deny list.
+  - A directory that is searchable but cannot be enumerated (0111), or any other error, still refuses.
+  - Boundary, accepted: `src/secrets/store.mjs` follows an intermediate symlinked tier (`projects/<slug>` is joined; `O_NOFOLLOW` guards only the key file). So while the store is unsearchable, an external tier target is neither discovered nor denied, and a cell that knows its real path could read it. The store is unusable in that state, and before #115 nothing was denied.
+  - Tests pin both shapes: 0111 refuses; 0000 and 0600 on the store, and 0000 and 0444 on `projects/`, proceed with the store denied.
+  Also from the live run:
+  - `scripts/accept/own-sandbox.mjs` had not parsed since 6016a8a (a nested template), so accept-native crashed on load. Every acceptance script is now syntax-checked, and accept-native's imports are loaded by the unit suite.
+  - Three M0/M1 tests now hold under accept-native's `env -i` item-1 environment on the mini.
+  Rationale: fail-closed discovery exists to stop a cell reading what discovery missed. When the same uid cannot traverse the directory, there is nothing to miss.
+  Date/Author: 2026-10-17, execution session.
+
 ## Outcomes & Retrospective
 
 Pending — written at finish.

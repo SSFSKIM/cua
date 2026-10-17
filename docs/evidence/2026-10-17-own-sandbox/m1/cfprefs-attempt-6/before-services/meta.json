@@ -1,0 +1,543 @@
+{
+  "schema": 1,
+  "pendingEnvironment": [],
+  "pendingObligations": [],
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "90cbfe0bd6f21cbde9b656392ee1f2b8dccbc754",
+  "harnessCommit": "638105b30194404f2873aed1fee62d5bb5d14ebf",
+  "node": "v24.18.0",
+  "runtimeRelease": "26.928.40906-darwin-arm64",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-vjzWyY/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "hostVersion": "0.5.0",
+  "apiVersion": "0.5.0",
+  "device": "mini",
+  "platform": "darwin",
+  "surfaces": [
+    "browser"
+  ],
+  "sandbox": "scoped",
+  "caseConfigurations": {
+    "cells/elicitation/accept": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/decline": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/cancel": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/content-and-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/accepted-response-persistence": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/unsupported-form": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/elicitation/malformed-reply": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/suspend-resume": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/nested-suspension": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/remaining-budget": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/budget/approval-and-startup-waits": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/after-success": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/after-ordinary-error": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/sequential-after-code": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/background-drain": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/submitted-code-phase": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/separate-positive-timeouts": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/unregister": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/concurrent-best-effort-turn-end": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/turn-end-deadlines": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/end-task-after-hooks": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/hooks/deduplicated-turn-end": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/realpath-roots": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/symlink-escape-refused": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/no-privileges-through-cell-import": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/lazy-service-cache": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/execution-request-correlation": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/message-only-error-boundary": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/response-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/output/structured-content-and-meta": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/emit-content-item-order": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/privileged-env-allowlist": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/trusted/no-account-telemetry-app-server": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/absolute-path": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/connect-timeout": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/frozen-interface": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/base64-correlation": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/native-pipe/data-close-error": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "cells/launch-services/open-application-macos-boundary": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/browser/errors/worker-rejection-message-only": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native/errors/worker-rejection-message-only": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    }
+  },
+  "service": "cua",
+  "backend": "fixture-services",
+  "profile": "ssfs",
+  "suite": "services",
+  "through": null,
+  "caseIds": [
+    "cells/elicitation/accept",
+    "cells/elicitation/decline",
+    "cells/elicitation/cancel",
+    "cells/elicitation/content-and-meta",
+    "cells/elicitation/accepted-response-persistence",
+    "cells/elicitation/unsupported-form",
+    "cells/elicitation/malformed-reply",
+    "cells/budget/suspend-resume",
+    "cells/budget/nested-suspension",
+    "cells/budget/remaining-budget",
+    "cells/budget/approval-and-startup-waits",
+    "cells/hooks/after-success",
+    "cells/hooks/after-ordinary-error",
+    "cells/hooks/sequential-after-code",
+    "cells/hooks/background-drain",
+    "cells/hooks/submitted-code-phase",
+    "cells/hooks/separate-positive-timeouts",
+    "cells/hooks/unregister",
+    "cells/hooks/concurrent-best-effort-turn-end",
+    "cells/hooks/turn-end-deadlines",
+    "cells/hooks/end-task-after-hooks",
+    "cells/hooks/deduplicated-turn-end",
+    "cells/trusted/realpath-roots",
+    "cells/trusted/symlink-escape-refused",
+    "cells/trusted/no-privileges-through-cell-import",
+    "cells/trusted/lazy-service-cache",
+    "cells/trusted/execution-request-correlation",
+    "cells/trusted/message-only-error-boundary",
+    "cells/trusted/response-meta",
+    "cells/output/structured-content-and-meta",
+    "cells/trusted/emit-content-item-order",
+    "cells/trusted/privileged-env-allowlist",
+    "cells/trusted/no-account-telemetry-app-server",
+    "cells/native-pipe/absolute-path",
+    "cells/native-pipe/connect-timeout",
+    "cells/native-pipe/frozen-interface",
+    "cells/native-pipe/base64-correlation",
+    "cells/native-pipe/data-close-error",
+    "cells/launch-services/open-application-macos-boundary",
+    "secrets/browser/errors/worker-rejection-message-only",
+    "secrets/native/errors/worker-rejection-message-only"
+  ],
+  "caseCells": {
+    "cells/elicitation/accept": [
+      "reply"
+    ],
+    "cells/elicitation/decline": [
+      "reply"
+    ],
+    "cells/elicitation/cancel": [
+      "reply"
+    ],
+    "cells/elicitation/content-and-meta": [
+      "reply"
+    ],
+    "cells/elicitation/accepted-response-persistence": [
+      "reply"
+    ],
+    "cells/elicitation/unsupported-form": [
+      "cell-1"
+    ],
+    "cells/elicitation/malformed-reply": [
+      "reply"
+    ],
+    "cells/budget/suspend-resume": [
+      "warm",
+      "suspended"
+    ],
+    "cells/budget/nested-suspension": [
+      "warm",
+      "suspended"
+    ],
+    "cells/budget/remaining-budget": [
+      "warm",
+      "remaining",
+      "cell-2"
+    ],
+    "cells/budget/approval-and-startup-waits": [
+      "warm",
+      "approval",
+      "bare-elicitation"
+    ],
+    "cells/hooks/after-success": [
+      "cell-1"
+    ],
+    "cells/hooks/after-ordinary-error": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/sequential-after-code": [
+      "cell-1"
+    ],
+    "cells/hooks/background-drain": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/submitted-code-phase": [
+      "warm",
+      "hook-budget"
+    ],
+    "cells/hooks/separate-positive-timeouts": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/hooks/unregister": [
+      "cell-1"
+    ],
+    "cells/hooks/concurrent-best-effort-turn-end": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "cells/hooks/turn-end-deadlines": [
+      "cell-1",
+      "turn",
+      "cell-3"
+    ],
+    "cells/hooks/end-task-after-hooks": [
+      "cell-1",
+      "end",
+      "cell-3"
+    ],
+    "cells/hooks/deduplicated-turn-end": [
+      "cell-1",
+      "duplicates-1",
+      "duplicates-2",
+      "duplicates-3",
+      "cell-3",
+      "again",
+      "cell-5",
+      "other-session",
+      "cell-7",
+      "other-turn",
+      "cell-9"
+    ],
+    "cells/trusted/realpath-roots": [
+      "cell-1"
+    ],
+    "cells/trusted/symlink-escape-refused": [
+      "cell-1"
+    ],
+    "cells/trusted/no-privileges-through-cell-import": [
+      "cell-1"
+    ],
+    "cells/trusted/lazy-service-cache": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/execution-request-correlation": [
+      "correlated"
+    ],
+    "cells/trusted/message-only-error-boundary": [
+      "cell-1"
+    ],
+    "cells/trusted/response-meta": [
+      "cell-1",
+      "cell-2",
+      "across-rpcs-and-hook"
+    ],
+    "cells/output/structured-content-and-meta": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/emit-content-item-order": [
+      "cell-1"
+    ],
+    "cells/trusted/privileged-env-allowlist": [
+      "cell-1",
+      "cell-2"
+    ],
+    "cells/trusted/no-account-telemetry-app-server": [
+      "cell-1"
+    ],
+    "cells/native-pipe/absolute-path": [
+      "cell-1",
+      "stat-missing",
+      "connect-over-limit"
+    ],
+    "cells/native-pipe/connect-timeout": [
+      "warm",
+      "cell-1"
+    ],
+    "cells/native-pipe/frozen-interface": [
+      "cell-1"
+    ],
+    "cells/native-pipe/base64-correlation": [
+      "cell-1"
+    ],
+    "cells/native-pipe/data-close-error": [
+      "live-abort",
+      "wire-error"
+    ],
+    "cells/launch-services/open-application-macos-boundary": [
+      "cell-1"
+    ],
+    "secrets/browser/errors/worker-rejection-message-only": [
+      "cell-1"
+    ],
+    "secrets/native/errors/worker-rejection-message-only": [
+      "cell-1"
+    ]
+  },
+  "pending": [],
+  "limitations": [
+    {
+      "case": "cells/native-pipe/connect-timeout",
+      "notes": [
+        "A full AF_UNIX backlog refuses immediately on both platforms. Live proof records the 1,000 ms setting and bounded refusal; socket-double unit proof covers timer expiry."
+      ]
+    },
+    {
+      "case": "cells/native-pipe/data-close-error",
+      "notes": [
+        "Real macOS abort is close-only (EOF wins); Linux emits error-before-close with os error 104 and late replay. Error-before-close and late error are boundary-double proof injected into the selected worker stdin, not the supervisor."
+      ]
+    }
+  ],
+  "caseProofs": {
+    "cells/elicitation/accept": "fixture-services",
+    "cells/elicitation/decline": "fixture-services",
+    "cells/elicitation/cancel": "fixture-services",
+    "cells/elicitation/content-and-meta": "fixture-services",
+    "cells/elicitation/accepted-response-persistence": "fixture-services",
+    "cells/elicitation/unsupported-form": "fixture-services",
+    "cells/elicitation/malformed-reply": "fixture-services",
+    "cells/budget/suspend-resume": "fixture-services",
+    "cells/budget/nested-suspension": "fixture-services",
+    "cells/budget/remaining-budget": "fixture-services",
+    "cells/budget/approval-and-startup-waits": "fixture-services",
+    "cells/hooks/after-success": "fixture-services",
+    "cells/hooks/after-ordinary-error": "fixture-services",
+    "cells/hooks/sequential-after-code": "fixture-services",
+    "cells/hooks/background-drain": "fixture-services",
+    "cells/hooks/submitted-code-phase": "fixture-services",
+    "cells/hooks/separate-positive-timeouts": "fixture-services",
+    "cells/hooks/unregister": "fixture-services",
+    "cells/hooks/concurrent-best-effort-turn-end": "fixture-services",
+    "cells/hooks/turn-end-deadlines": "fixture-services",
+    "cells/hooks/end-task-after-hooks": "fixture-services",
+    "cells/hooks/deduplicated-turn-end": "fixture-services",
+    "cells/trusted/realpath-roots": "fixture-services",
+    "cells/trusted/symlink-escape-refused": "fixture-services",
+    "cells/trusted/no-privileges-through-cell-import": "fixture-services",
+    "cells/trusted/lazy-service-cache": "fixture-services",
+    "cells/trusted/execution-request-correlation": "fixture-services",
+    "cells/trusted/message-only-error-boundary": "fixture-services",
+    "cells/trusted/response-meta": "fixture-services",
+    "cells/output/structured-content-and-meta": "fixture-services",
+    "cells/trusted/emit-content-item-order": "fixture-services",
+    "cells/trusted/privileged-env-allowlist": "fixture-services",
+    "cells/trusted/no-account-telemetry-app-server": "fixture-services",
+    "cells/native-pipe/absolute-path": "fixture-services",
+    "cells/native-pipe/connect-timeout": "live-unreachable: non-blocking connect",
+    "cells/native-pipe/frozen-interface": "fixture-services",
+    "cells/native-pipe/base64-correlation": "fixture-services",
+    "cells/native-pipe/data-close-error": "fixture-services",
+    "cells/launch-services/open-application-macos-boundary": "fixture-services",
+    "secrets/browser/errors/worker-rejection-message-only": "fixture-services",
+    "secrets/native/errors/worker-rejection-message-only": "fixture-services"
+  },
+  "complete": false,
+  "connections": [],
+  "hostAttestations": [],
+  "pauses": []
+}

@@ -162,3 +162,14 @@
 2026-10-17T17:42:49.268Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: exit 1
 2026-10-17T17:42:49.693Z front after gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: com.apple.Terminal
 2026-10-17T17:43:18.045Z watch cfprefs-5d9bf70: the run ended on its own; no stop
+2026-10-17T18:01:47.508Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.46 -> idle
+2026-10-17T18:02:35.319Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.49 -> idle
+2026-10-17T18:02:35.320Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 5d9bf70 ssfs
+2026-10-17T18:11:57.597Z watch cfprefs-3: started for pid 13015
+2026-10-17T18:12:00.525Z watch cfprefs-3: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.2 -> idle
+2026-10-17T18:12:33.196Z watch cfprefs-3: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.61 -> idle
+2026-10-17T18:13:05.805Z watch cfprefs-3: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.81 -> idle
+2026-10-17T18:13:38.837Z watch cfprefs-3: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.52 -> idle
+2026-10-17T18:14:11.754Z watch cfprefs-3: reading: front=com.apple.Terminal busy=false workers=1 queued=0 load=6.43 -> STOP
+2026-10-17T18:14:11.755Z watch cfprefs-3: STOP the run: 1 Runner.Worker (front=com.apple.Terminal busy=false workers=1 queued=0 load=6.43)
+2026-10-17T18:14:17.333Z watch cfprefs-3: ended pids 26629 46976 46971 46969 91345 91342 91313 91093 26624 13250 13015

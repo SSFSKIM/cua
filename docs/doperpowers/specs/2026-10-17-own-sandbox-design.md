@@ -865,15 +865,11 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Rationale: a bar the machine's idle state cannot meet blocks the runs without protecting the measurement; recording the load keeps the spread visible to whoever judges the comparison.
   Date/Author: 2026-10-17, execution session.
 
-- Decision: an unsearchable secret store lets the launch proceed with the store denied (2026-10-17, M1 live run; decided by the execution session, accepted by the dispatching session). M1's review made tier discovery fail closed, and the live probe-secrets run then showed that a store at mode 0000 refused every session, browser-only included (`sandbox_state_invalid`), where before only a `{{secret:…}}` reference failed (`secret_unreadable`): a capability regression. Discovery now distinguishes the following:
-  - When the store or `projects/` is not searchable for this uid (X_OK denied), nothing under it is reachable by path by the same uid, sandboxed or not. The launch proceeds, with the store itself on the deny list.
-  - A directory that is searchable but cannot be enumerated (0111), or any other error, still refuses.
-  - Boundary, accepted: `src/secrets/store.mjs` follows an intermediate symlinked tier (`projects/<slug>` is joined; `O_NOFOLLOW` guards only the key file). So while the store is unsearchable, an external tier target is neither discovered nor denied, and a cell that knows its real path could read it. The store is unusable in that state, and before #115 nothing was denied.
-  - Tests pin both shapes: 0111 refuses; 0000 and 0600 on the store, and 0000 and 0444 on `projects/`, proceed with the store denied.
-  Also from the live run:
-  - `scripts/accept/own-sandbox.mjs` had not parsed since 6016a8a (a nested template), so accept-native crashed on load. Every acceptance script is now syntax-checked, and accept-native's imports are loaded by the unit suite.
-  - Three M0/M1 tests now hold under accept-native's `env -i` item-1 environment on the mini.
-  Rationale: fail-closed discovery exists to stop a cell reading what discovery missed. When the same uid cannot traverse the directory, there is nothing to miss.
+- Decision: a secret store whose tiers cannot be established refuses confined launches (2026-10-17, M1 live run, reversed after review). M1's review made tier discovery fail closed. The live probe-secrets run then showed a store at mode 0000 refusing every confined session (`sandbox_state_invalid`) where before only a `{{secret:…}}` reference failed (`secret_unreadable`).
+  - **First attempt, reversed.** The execution session first let a launch proceed when the store or `projects/` was not searchable, reasoning that nothing under it was reachable. The fix review disproved that with a real `sandbox-exec` kernel. `src/secrets/store.mjs` follows an intermediate symlinked tier (`projects/<slug>` is joined; `O_NOFOLLOW` guards only the key file), so an unsearchable `projects/` hides an external tier target from discovery but not from a cell that knows its real path.
+  - **The rule now.** Scoped and default launches refuse with `sandbox_state_invalid` whenever the tier set cannot be established: any error other than ENOENT, including an unsearchable directory and an explicit project tier beneath one. The sentence names the store and the remedy (fix the permissions, or run the connection `disabled`). Disabled launches skip discovery. probe-secrets' "store unreadable" phase expects that classified refusal.
+  - Also from the live run: `scripts/accept/own-sandbox.mjs` had not parsed since 6016a8a, a nested template, so accept-native crashed on load. Every acceptance script is now syntax-checked, and accept-native's imports are loaded by the unit suite. Three M0/M1 tests now hold under accept-native's `env -i` item-1 environment on the mini.
+  Rationale: the owner's ruling denies the kernel the secret store, and a deny that depends on discovery is only as good as the discovery. A store with broken permissions is a misconfiguration the error names; a cell reading a tier is not recoverable.
   Date/Author: 2026-10-17, execution session.
 
 ## Outcomes & Retrospective

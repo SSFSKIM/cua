@@ -47,6 +47,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
   const calls = [];             // every primitive the host asked for: {method, params}
   const hold = new Map();       // CDP method -> pending resolvers: never answered while held
   const stalled = new Set();    // primitives that never answer (a page whose open dialog blocks chrome.scripting)
+  const holding = new Map();    // primitive -> pending resolvers: each asked one runs when released
   let onNotify = () => {};
 
   function addTab({windowId = [...state.windows.keys()][0], url = 'https://user.fixture.invalid/', title = 'User tab', active = false} = {}) {
@@ -158,6 +159,7 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     const primitive = Object.hasOwn(primitives, method) ? primitives[method] : null;
     if (!primitive) throw Object.assign(new Error(`No handler registered for method: ${method}`), {code: -1});
     if (stalled.has(method)) return await new Promise(() => {});
+    if (holding.has(method)) await new Promise(resolve => holding.get(method).push(resolve));
     return await primitive(params);
   }
 
@@ -197,6 +199,9 @@ export function createFakeCuaExtension({instanceId = randomUUID(), version = '0.
     // Primitives of `method` are asked but never answer from now on.
     stall(method) { stalled.add(method); },
     releaseCdp(method, result = {}) { for (const resolve of hold.get(method) ?? []) resolve(result); hold.delete(method); },
+    // Primitives of `method` are asked but answer only once released: each then runs on the state of that moment.
+    hold(method) { holding.set(method, []); },
+    release(method) { for (const resolve of holding.get(method) ?? []) resolve(); holding.delete(method); },
     // The native port, as the real extension holds it: hello first, then requests answered and notifications sent.
     connect({toHost, fromHost, sendHello = true, helloParams}) {
       const received = [];

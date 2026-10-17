@@ -237,11 +237,13 @@ which cua creates immediately after `end_task` with `turn_id = taskId`): unmarke
 claimed tabs and `deliverable` tabs are released open and leave the group; `handoff` tabs stay owned with the debugger
 detached and are listed by `getTabs` on the session's next turn. No close takes a window's last tab with it (#148): a
 turn's end, a cleanup, and the agent's own `Target.closeTarget` of a tab's page or `Page.close` of a tab first open a
-New Tab page (inactive, ungrouped, owned by no session) in a normal window whose every other tab is closing too. A client disconnect runs `turnEnded` for every turn of
-its sessions. A detach initiated by the user (reason `canceled_by_user`) is forwarded as `onCDPDetach` and never
-re-attached. `Another debugger is already attached` from Chrome is success: Chromium raises it only when this same
-extension already holds the debuggee (DevTools and other extensions attach alongside), so the extension adopts the
-debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor extension does.
+New Tab page (inactive, ungrouped, owned by no session) in a normal window whose every other tab is closing too; the
+check is waited for at most 2 s (`KEEP_WAIT_MS`), and a close `executeCdp` timed out on is never sent. A client
+disconnect runs `turnEnded` for every turn of its sessions. A detach initiated by the user (reason `canceled_by_user`)
+is forwarded as `onCDPDetach` and never re-attached. `Another debugger is already attached` from Chrome is success:
+Chromium raises it only when this same extension already holds the debuggee (DevTools and other extensions attach
+alongside), so the extension adopts the debuggee into its held set and answers `{alreadyHeld:true}`, as the vendor
+extension does.
 
 **Page guards and popups.** The host guards the tabs it owns: created tabs from creation (`tabs.create {guard:true}`),
 and every owned tab again (`tabs.guard`, a sweep) before each `attach`/`attachTarget`, waited for at most 1.5 s
@@ -888,8 +890,17 @@ No new npm dependencies.
   check covers every close the host makes or passes on: turn end, the create-then-ended cleanups, and the agent's
   `Target.closeTarget` of a tab's page target and `Page.close` on a tab's debuggee (the service's `tab.close()`). Only
   normal windows are kept (a popup closes with its last tab, as Chrome closes it), and a MAWS peer is left alone (its
-  windows are the app's). A tab counts as closing from its close until Chrome reports it removed, and the checks run
-  one at a time, so a turn's end that closes all of a window's tabs together opens exactly one New Tab page.
+  windows are the app's). A tab counts as going while a close of it is in flight (each attempt counted, so a failed one
+  withdraws only itself) and, once a close of it succeeded or Chrome reported it removed, until a check's own
+  `tabs.query` no longer lists it: a removal can land while another check holds a list taken before it, and that check
+  must still see the tab go. An id a list lacks is gone for good (Chrome never reuses a tab id within a browser run),
+  so each check prunes the set by its own list, of the ids it held when it asked. A `Page.close` whose `beforeunload`
+  dialog the user refuses succeeds without closing the tab, which then stays going while it lives: accepted, since that
+  costs at most one New Tab page its window did not need, while expiring it would risk the window. The checks run one
+  at a time, so a turn's end that closes all of a window's tabs together opens exactly one New Tab page, and each is
+  waited for at most 2 s (`KEEP_WAIT_MS`; past it the host logs it and the close goes ahead), so one unanswered
+  primitive holds up no other close. An `executeCdp` whose timeout fires while its close waits on that preflight (the
+  page-target lookup, the check) refuses the send behind it: a close its caller was told timed out is never dispatched.
   Alternatives rejected: the guard in the extension's `tabs.remove` (the ticket's first sketch) — it never sees the
   agent's own `Target.closeTarget`, which reaches Chrome as `debugger.sendCommand`, and an update would reach a Chrome
   only when its user reloads the unpacked extension or the Store or CRX update lands, while the host ships with the

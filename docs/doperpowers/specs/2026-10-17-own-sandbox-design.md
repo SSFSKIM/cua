@@ -417,6 +417,7 @@ Each item is behaviour someone can check. The commands are in Concrete Steps.
 - Never launch or kill the owner's Chrome, native helpers or hosts. Terminate only harness-owned processes; a native helper a harness started may be quit by its pid.
 - No GUI input events on the mini beyond what an acceptance item names, on a harness-owned target.
 - No TCC clicks, no password prompts (stop and report), no bypass flags.
+- A new on-disk copy of the native helper raises a one-time screen-capture confirmation per machine (Surprises & Discoveries). M2 either keeps the helper's on-disk path stable across its macOS pin change, or records the one-time prompt as an expected effect in its acceptance notes and the plugin's release notes. On the mini, native harness runs reuse one approved scratch runtime copy (Decision Log, "native runs on the mini"). The mini's resident cua is updated only by the dispatching session, at an idle window with the owner present, never by an executor; the same holds for M4's acceptance on the mini.
 
 **Machines.**
 - This MacBook runs no heavy builds and no VMs; the cua-linux Tart VM stays off.
@@ -755,6 +756,8 @@ Dependencies on other work: #79 merged before M2. #117 retires the compat execut
   Evidence: `docs/evidence/2026-10-17-own-sandbox/m0/fingerprint/fp-golden-kernel-*.json`.
 - Observation: native calls on the mini fail under a scratch HOME ("Sky Computer Use native pipe startup failed"; three runs, 07:54 to 07:56Z), and the first run under the account's real HOME (07:57:05Z) succeeded but raised a UserNotificationCenter permission dialog that only the owner can answer, which also stops the mini's CI runner. Native runs on the mini are paused until the owner answers it and the route is set.
   Evidence: task 1's report; the coordinator's record of the dialog at 07:57:14Z.
+- Observation: the dialog is most likely macOS's per-app screen-capture confirmation, raised the first time a new on-disk copy of the native helper captures the screen, not by the HOME or the signature. The scratch copy and the resident one verify identically (bundle id, team, designated requirement); the dialog came within 250 ms of the copy's first ScreenCaptureKit capture, inside the Finder call; tccd's decision is not persisted, so the owner's reading of the dialog is the confirmation. Consequence: every new on-disk helper copy raises it once per machine, including a runtime that lands in a new directory after a pin change (M2).
+  Evidence: task 1's report, its read-only `log show` and `codesign` analysis (07:57:13.13 to 07:57:14.186Z).
 
 ## Decision Log
 

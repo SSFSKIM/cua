@@ -50,6 +50,10 @@ The first pause passed 20 minutes and was reported; the controller ruled it a no
 - **Chrome.** pid 36513, 1 ssfs tab, both before and after.
 - **Cleanup.** Nothing of ours was left on the mini afterwards: no capability home, sibling home, denial log or `log stream`.
 
+**Rulings (controller, 2026-10-17):**
+- **logd and diagnosticd.** These lookups are among the original's `:minimal` platform defaults, and no suite failed without them. They stay denied and are noted, not granted; the spec's Surprises carries this.
+- **The suspend-resume difference.** Accepted as a pause artefact: the before side was held past the runtime's 15-minute idle stop. Logged as harness debt.
+
 Parity (f8019bf) follows. The 5d9bf70 runs of the steps above are kept as `tier-discovery-attempt-3/`, `oracles-attempt-2/` and `own-sandbox-attempt-2/`.
 
 # The rerun at 5d9bf70 (superseded by f8019bf)

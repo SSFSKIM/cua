@@ -72,11 +72,12 @@ test('inner boundaries: lists are read to their total across pages, a truncated 
   assert.throws(() => observe(world({workers: 0, pgrepStatus: 0})), /status and count disagree/);
 });
 
-test('classification: any non-Terminal frontmost application is a stop; CI and load are contention', () => {
+test('classification: with the runner idle any non-Terminal frontmost application is a stop; CI and load are contention', () => {
   const idle = {front: TERMINAL, busy: false, workers: 0, queued: 0, load: 1.2};
   assert.equal(classify(idle).state, 'idle');
   for (const front of ['com.apple.UserNotificationCenter', 'com.apple.TextEdit', 'com.google.Chrome']) assert.equal(classify({...idle, front}).state, 'stop');
-  for (const o of [{busy: true}, {workers: 1}, {queued: 2}, {load: 2}, {load: NaN}]) assert.equal(classify({...idle, ...o}).state, 'contention');
+  for (const o of [{busy: true}, {workers: 1}, {queued: 2}, {load: 5}, {load: NaN}]) assert.equal(classify({...idle, ...o}).state, 'contention');
+  assert.equal(classify({...idle, load: 4.9}).state, 'idle', 'the bar is a 1-minute load under 5');
 });
 
 test('the gate stops at once on a dialog, waits through contention, and needs two idle readings', async () => {
@@ -96,7 +97,7 @@ test('the gate stops at once on a dialog, waits through contention, and needs tw
   const late = world({front: () => (++reading > 1 ? 'com.apple.SecurityAgent' : TERMINAL)});
   await assert.rejects(gate('z', {exec: late.exec, sleep: noSleep, log: quiet}), /SecurityAgent/);
   // Contention that never clears stops after maxWaits.
-  const stuck = world({load: '3.5'});
+  const stuck = world({load: '5.5'});
   await assert.rejects(gate('w', {exec: stuck.exec, sleep: noSleep, log: quiet, maxWaits: 2}), /did not become idle/);
 });
 
@@ -291,4 +292,49 @@ test('gated: any other mini run runs only after the gate and is followed by the 
   const after = world({front: () => (++n > 2 ? 'com.apple.SecurityAgent' : TERMINAL)});
   await assert.rejects(gated(['node', 'x'], {exec: after.exec, run: () => 0, log: quiet, sleep: noSleep}), /after gated node x: the frontmost application is com.apple.SecurityAgent/);
   await assert.rejects(gated([], {exec: ok.exec, run: () => 0, log: quiet, sleep: noSleep}), /gated needs a command/);
+});
+
+// The refined frontmost rule (approved 2026-10-17 after the residue's first attempt stopped on MAWS CI's Chrome window).
+test('frontmost rule: a system prompt always stops; another app waits while the runner is busy and stops once it is idle', async () => {
+  const base = {front: TERMINAL, busy: false, workers: 0, queued: 0, load: 1.2};
+  for (const prompt of ['com.apple.UserNotificationCenter', 'com.apple.SecurityAgent', 'com.apple.coreservices.uiagent']) {
+    for (const runner of [{busy: true, workers: 1}, {busy: false, workers: 0}]) assert.equal(classify({...base, ...runner, front: prompt}).state, 'stop', `${prompt} ${JSON.stringify(runner)}`);
+  }
+  assert.equal(classify({...base, busy: true, workers: 1, front: 'com.google.Chrome'}).state, 'contention');
+  assert.equal(classify({...base, busy: false, workers: 1, front: 'com.google.Chrome'}).state, 'contention', 'a Runner.Worker alone is a busy runner');
+  assert.match(classify({...base, front: 'com.google.Chrome'}).reason, /not Terminal, with the runner idle/);
+  assert.equal(classify({...base, front: 'com.google.Chrome', queued: 3}).state, 'stop', 'an idle runner with a queued job does not excuse a window');
+  // The gate: busy with the CI job's Chrome in front waits; when the runner turns idle with Chrome still in front, it stops.
+  const transition = world({busy: 'true', workers: 1, pgrepStatus: 0, front: 'com.google.Chrome'});
+  let sleeps = 0;
+  const sleep = async () => { if (++sleeps === 2) Object.assign(transition.state, {busy: 'false', workers: 0, pgrepStatus: 1}); };
+  await assert.rejects(gate('x', {exec: transition.exec, sleep, log: quiet}), /com.google.Chrome, not Terminal, with the runner idle/);
+  assert.equal(sleeps, 2, 'it waited through the busy readings, then stopped on the first idle one');
+  // The same transition with Terminal back in front proceeds.
+  const clears = world({busy: 'true', workers: 1, pgrepStatus: 0, front: 'com.google.Chrome'});
+  let n = 0;
+  await gate('y', {exec: clears.exec, sleep: async () => { if (++n === 2) Object.assign(clears.state, {busy: 'false', workers: 0, pgrepStatus: 1, front: TERMINAL}); }, log: quiet});
+  // A prompt during a busy runner stops at once, with no wait.
+  const prompt = world({busy: 'true', workers: 1, pgrepStatus: 0, front: 'com.apple.SecurityAgent'});
+  let waited = 0;
+  await assert.rejects(gate('z', {exec: prompt.exec, sleep: async () => { waited++; }, log: quiet}), /SecurityAgent, a system prompt/);
+  assert.equal(waited, 0);
+});
+
+test('an unread CI observation waits and reads again; an unreadable frontmost application stops', async () => {
+  // GitHub reports one queued run but delivers none (seen live, 14:46Z): read again, then proceed once it reads whole.
+  const flaky = world({runs: {queued: [], in_progress: []}, totals: {queued: 1}});
+  const lines = [];
+  let sleeps = 0;
+  await gate('x', {exec: flaky.exec, log: l => lines.push(l), sleep: async () => { if (++sleeps === 1) flaky.state.totals = {}; }});
+  assert.ok(lines.some(l => /reading 1: unread \(missing observation: queued workflow runs \(truncated: 0 of 1\)\) -> contention/.test(l)));
+  assert.ok(lines.includes('idle before x'));
+  // Never readable: it stops after maxWaits, never proceeds.
+  const never = world({fail: new Set(['/runners'])});
+  await assert.rejects(gate('y', {exec: never.exec, sleep: noSleep, log: quiet, maxWaits: 3}), /did not become idle/);
+  // An unreadable frontmost application stops at once.
+  const blind = world({fail: new Set(['lsappinfo'])});
+  let waited = 0;
+  await assert.rejects(gate('z', {exec: blind.exec, sleep: async () => { waited++; }, log: quiet}), /missing observation: frontmost application/);
+  assert.equal(waited, 0);
 });

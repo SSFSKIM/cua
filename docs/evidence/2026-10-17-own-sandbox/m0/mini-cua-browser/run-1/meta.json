@@ -1,0 +1,257 @@
+{
+  "measurement": {
+    "schema": 2,
+    "experiment": "115-m0",
+    "freshInstall": true
+  },
+  "nodeMode": "managed",
+  "preparation": {
+    "device": "mini",
+    "home": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc",
+    "userHome": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/home",
+    "token": "dbcf3d8b-51fd-4cbe-83a7-fda02fe7a2c7",
+    "xSession": {},
+    "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/harness-tmp",
+    "nodeMode": "managed",
+    "nodeOverride": null,
+    "ownNode": {
+      "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+      "version": "v24.22.0"
+    }
+  },
+  "controllerIdentity": {
+    "hostname": "SK.local",
+    "platform": "darwin",
+    "arch": "arm64",
+    "os": "25.6.0",
+    "node": "v22.23.2",
+    "cpu": {
+      "model": "Apple M1 Max",
+      "count": 10
+    }
+  },
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/home",
+  "xSession": {},
+  "deviceIdentity": {
+    "alias": "mini",
+    "arch": "arm64",
+    "hostname": "Mac-mini.local",
+    "os": {
+      "name": "macOS",
+      "version": "27.0",
+      "build": "26A428"
+    },
+    "cpu": {
+      "model": "Apple M2 Pro",
+      "count": 10
+    }
+  },
+  "load": {
+    "device": {
+      "before": "23:53  up 8 days, 5 hrs, 2 users, load averages: 3.36 3.21 3.11",
+      "after": "23:54  up 8 days, 5 hrs, 2 users, load averages: 3.30 3.20 3.11"
+    },
+    "controller": {
+      "before": "7:53  up 18 days, 19:55, 28 users, load averages: 219.78 212.78 206.44",
+      "after": "7:54  up 18 days, 19:55, 28 users, load averages: 223.48 213.91 206.96"
+    }
+  },
+  "device": "mini",
+  "platform": "darwin",
+  "host": "cua",
+  "surface": "browser",
+  "hostAttestations": [
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 125,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2102915f-aa2b-48f2-82c7-424a4aa032bb",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "codex-cli",
+          "tmpdir": "inherited"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 117,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "0b3e2868-9532-4f39-9bf3-854ecd24b7f2",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "codex-cli",
+          "tmpdir": "inherited"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 112,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "f7c7edae-50b2-460a-9258-0a16fca4b565",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "codex-cli",
+          "tmpdir": "inherited"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 112,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "27a40ede-0bfe-44d0-8238-e0e0a42e3ac2",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "codex-cli",
+          "tmpdir": "inherited"
+        }
+      }
+    },
+    {
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 114,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "788b0ae6-f704-4552-9fc7-52d3a00d4ddd",
+        "cua/nativeExecution": {
+          "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "cua/sandboxLaunch": {
+          "launcher": "codex-cli",
+          "tmpdir": "inherited"
+        }
+      }
+    }
+  ],
+  "connections": 5,
+  "protocolVersion": "2025-06-18",
+  "environment": {
+    "CUA_REPL_HOST": "cua",
+    "CUA_SHIM_SURFACES": "browser",
+    "CUA_SHIM_PERSIST": "session",
+    "CUA_SHIM_SECRETS": "off"
+  },
+  "plan": {
+    "samples": 30,
+    "cold": 5,
+    "tasks": 10,
+    "coldPlan": [
+      "miss",
+      "hit",
+      "miss",
+      "hit",
+      "hit"
+    ]
+  },
+  "started": "2026-10-17T14:53:46.935Z",
+  "spikeWaitMs": 1611,
+  "elicitations": [],
+  "complete": true,
+  "commit": "90cbfe0bd6f21cbde9b656392ee1f2b8dccbc754",
+  "checkout": "/Users/new/Developer/GitHub/cua-parity",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc",
+  "node": "v24.18.0",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "runtime": {
+    "release": "26.928.40906-darwin-arm64"
+  },
+  "sandbox": {
+    "mode": "scoped",
+    "explicit": false
+  },
+  "hardware": {
+    "model": "Mac14,12",
+    "chip": "Apple M2 Pro",
+    "memoryBytes": 17179869184
+  },
+  "os": {
+    "name": "macOS",
+    "version": "27.0",
+    "build": "26A428"
+  },
+  "display": {
+    "pixels": "5120 x 2880",
+    "resolution": "2560 x 1440",
+    "scale": 2,
+    "virtual": true
+  },
+  "service": {
+    "surface": "browser"
+  },
+  "helperAtStart": {
+    "helper": "none observed",
+    "helpers": []
+  },
+  "answeringNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-uhSXjc/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "sandboxLaunch": {
+    "launcher": "codex-cli",
+    "tmpdir": "inherited"
+  },
+  "leftovers": {
+    "serves": 0
+  },
+  "finished": "2026-10-17T14:54:02.739Z",
+  "preparationCleanup": {
+    "removed": true
+  }
+}

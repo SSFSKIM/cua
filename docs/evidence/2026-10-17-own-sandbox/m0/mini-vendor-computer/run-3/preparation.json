@@ -1,0 +1,29 @@
+{
+  "device": "mini",
+  "home": "/Users/new/cua-115/home",
+  "userHome": "/Users/new",
+  "configHome": "/Users/new/.local/share/cua-native-baseline/run-LKvlE8/config",
+  "tmpdir": "/Users/new/.local/share/cua-native-baseline/run-LKvlE8/tmp",
+  "scratch": "/Users/new/.local/share/cua-native-baseline/run-LKvlE8",
+  "token": "62f77672-8d7d-43e1-ac79-584c9fae9258",
+  "admission": "62f77672-8d7d-43e1-ac79-584c9fae9258",
+  "xSession": {},
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "runtimeReuse": {
+    "approvedHome": "/Users/new/cua-115/home",
+    "release": "26.928.40906-darwin-arm64",
+    "runtimeRoot": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64",
+    "helper": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app",
+    "executable": "/Users/new/cua-115/home/runtimes/26.928.40906-darwin-arm64/cua_node/lib/node_modules/@oai/sky/Codex Computer Use.app/Contents/MacOS/SkyComputerUseService",
+    "reason": "a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused"
+  },
+  "stashed": [
+    "state",
+    "run"
+  ],
+  "ownNode": {
+    "path": "/Users/new/cua-115/home/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

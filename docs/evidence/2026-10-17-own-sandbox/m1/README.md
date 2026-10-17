@@ -1,8 +1,14 @@
 # M1 on the mini, 2026-10-17
 
-M1's held runs (task-4 report, "Held runs"; `scripts/sandbox-probe/m1-mini.sh`), on the mini. All of them ran from this checkout.
+M1's held runs (task-4 report, "Held runs"; `scripts/sandbox-probe/m1-mini.sh`), on the mini.
 
-## SHA split
+**Status.** Every item will be rerun at M1's final SHA, once its review is clean, so that the evidence carries one SHA. The runs below are the first attempts, each kept under `m1/<item>-attempt-1/`.
+
+**Where the runs come from.** Attempt 1 ran from M1's working checkout. During the cfprefs attempt, M1's executor committed four times into that checkout (15:42:57Z to 15:58:22Z), so the two sides of that measurement ran different harness code: before recorded f4bec92, after recorded 080981b. From the rerun on, the harness runs from a separate clone that nothing else writes to, and the evidence is committed on `feat/115-own-sandbox-m1-evidence`.
+
+# Attempt 1
+
+## SHA split (attempt 1)
 
 - **Oracles at 107c291.**
 - **Everything after them at c55ba01.** That is own-sandbox, M1's accept-native, and, still to run, cfprefs and parity.
@@ -22,7 +28,7 @@ The mini's scratch clone `~/cua-115/repo` held task 1's uncommitted working file
 
 Command: `sh scripts/sandbox-probe/m1-mini.sh oracles 107c291`. It exited 0 at 15:15:42Z. The gate's loads were 4.63 and 4.77.
 
-Results, in `oracles/`:
+Results, in `oracles-attempt-1/`:
 - **Golden kernel vs cua kernel, and signed CLI vs cua worker.** Each pair was compared in both modes, scoped and default. All four comparisons have `judgement.ok`, with no undeclared check, environment, cwd or sandbox difference.
 - **Port vs signed capture.** In both modes the argv and the profile are equal and no parameter differs. The environment differs only in the CLI's own arg0 PATH entry and `__CF_USER_TEXT_ENCODING`.
 
@@ -30,7 +36,7 @@ Results, in `oracles/`:
 
 Command: `sh scripts/sandbox-probe/m1-mini.sh own-sandbox c55ba01` (`scripts/accept/own-sandbox.mjs --home ~/cua-115/home`). It exited 0 at 15:19:49Z. The gate's loads were 4.97 and 4.2.
 
-The report is `own-sandbox/own-sandbox.json`: 71 checks PASS and 0 FAIL, across scoped, default and disabled plus the check on a store created after the session started.
+The report is `own-sandbox-attempt-1/own-sandbox.json`: 71 checks PASS and 0 FAIL, across scoped, default and disabled plus the check on a store created after the session started.
 
 ## accept-native at c55ba01, with item 11
 
@@ -46,7 +52,7 @@ Timing: the gate's loads were 4.71 and 4.73. The run took from 15:30:50Z to 15:3
 
 **Front after the run.** TextEdit was in front. For this run only, the controller allowed that case, provided the TextEdit pid started inside the run's window. Pid 27875 started at 15:34:17Z, inside the window from 15:30:45Z to 15:34:46Z, so the run was accepted. TextEdit was left running.
 
-The report is `accept-native-m1/acceptance.json`. Overall: FAIL.
+The report is `accept-native-attempt-1/acceptance.json`. Overall: FAIL.
 
 | Item | main 94366c1 | M1 c55ba01 | Note |
 |---|---|---|---|
@@ -88,8 +94,15 @@ On the controller (macOS, a branch checkout), all eight pass: 32 of 32 across th
 
 The clean-clone check fails as it does on main: "Remote branch HEAD not found in upstream origin", because the scratch clone is detached.
 
-## cfprefs and parity: not yet run
+## cfprefs, attempt 1 (90cbfe0 against c55ba01): no judgement
 
-The first attempt stopped at about 15:20Z, before preparation. Both bound profiles on the mini, ssfs and school, read `ready:false, reason:"host_not_live"`, so the live listing finds no Chrome backend. The record is `cfprefs-chrome/attempt-1-before.txt`: Chrome pid 36513, no live backend.
+**The first try, about 15:20Z.** It stopped before preparation. Both bound profiles on the mini, ssfs and school, read `ready:false, reason:"host_not_live"`, so the live listing found no Chrome backend (`cfprefs-attempt-1/chrome-ssfs-not-live.txt`). The harness never launches or rebinds Chrome. The dispatching session therefore opened one Profile 1 window inside the existing Chrome, after which ssfs read `ready:true`.
 
-The harness never launches or rebinds Chrome, so these runs wait until the dispatching session opens a Profile 1 window.
+**The run, 15:41:15Z to 15:57:57Z.** Command: `sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs`. The gate's loads were 4.64 and 4.58.
+- **Before (90cbfe0).** cells 150/150 and services 41/41, both complete with assertions PASS. The before-side denials (`denials.json`) hold no preferences (cfprefs) entry. They are:
+  - the notification_center mach-lookup;
+  - three sysctl-reads (kern.bootargs, kern.iossupportversion, security.mac.lockdown_mode_state);
+  - file-write-data and file-write-create on `<other>` and `<run directory>`;
+  - two network-outbound to loopback ports.
+- **After (c55ba01).** Both suites failed at connect with "MCP exited (1)". Their meta.json is `complete:false` with no cells, so there is no after-side denial set. The judge step crashed on the missing `tools.json`. The harness keeps no runtime stderr, so the cause cannot be recovered. That cause is either c55ba01's launch refusal in the prepared home or the harness change under the run (above).
+- **Chrome.** Before (15:40:25Z): pid 36513, 1 tab in the ssfs backend. After (15:57:59Z): pid 36513, 1 tab (`chrome-before.json`, `chrome-after.json`; counts only). Chrome was never quit, and the Profile 1 window was left open.

@@ -25,3 +25,8 @@
 2026-10-17T15:34:47.067Z TextEdit after accept-native at c55ba01 (M1, item 11): pid 27875 started 2026-10-17T15:34:17.000Z (run window 2026-10-17T15:30:45.987Z to 2026-10-17T15:34:46.029Z)
 2026-10-17T15:34:47.067Z accept-native at c55ba01 (M1, item 11): exit 1 (0 PASS, 1 FAIL, 3 BLOCKED), cleanup exit 0, report in mini:/tmp/cua-115-accept.79wDa7
 2026-10-17T15:34:48.354Z accept-native at c55ba01 (M1, item 11): done
+2026-10-17T15:40:27.929Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.64 -> idle
+2026-10-17T15:41:15.561Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.58 -> idle
+2026-10-17T15:41:15.561Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs
+2026-10-17T15:57:57.475Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs: exit 1
+2026-10-17T15:57:58.559Z front after gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 c55ba01 ssfs: com.apple.Terminal

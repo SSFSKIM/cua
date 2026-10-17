@@ -93,7 +93,7 @@ test('the scratch home puts the host on the cua route with the runtime cloned an
   assert.equal(readPointer(home.dir), 'r1');
   assert.equal(readFileSync(join(home.dir, 'runtimes', 'r1', 'cua_node', 'marker'), 'utf8'), 'runtime');
   assert.equal(chromeRoute(home.dir), 'cua');
-  assert.equal(home.userHome, join(home.dir, 'home'));
+  assert.equal(home.userHome, `${home.dir}.home`, 'the user HOME is the cua home\'s sibling, never inside it');
   assert.ok(existsSync(home.userHome), 'the serve\'s HOME exists, empty, inside the scratch home');
   assert.match(readFileSync(join(home.dir, 'state', 'codex', 'browser', 'config.toml'), 'utf8'), /^full_cdp_access_enabled = true$/m);
   const host = await startCapabilityHost({home: home.dir});

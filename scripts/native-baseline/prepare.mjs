@@ -37,6 +37,7 @@ import {discoverDesktopEnvironment} from '../repl-parity/desktop.mjs';
 import {executionFacts} from '../repl-parity/provenance.mjs';
 import {assertManagedNode, nodeEnvironment} from '../repl-parity/node-provenance.mjs';
 import {loadPins, locateRuntime, selectPin} from '../../src/runtime/manifest.mjs';
+import {removeScratchHomes, userHomeBeside} from '../harness-home.mjs';
 
 export const REUSE_REASON = 'a new on-disk copy of the native helper raises a one-time screen-capture confirmation; the approved copy is reused';
 // The run-owned parts of a reused home, moved aside for the run and back at cleanup.
@@ -126,7 +127,7 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
   fs.mkdirSync(directoryRoot, {recursive: true, mode: 0o700});
   const parent = fs.realpathSync(directoryRoot);
   if (parent === tempRoot || parent.startsWith(tempRoot + '/')) throw new Error('Native scratch home must be outside TMPDIR');
-  const home = fs.mkdtempSync(join(parent, 'run-')), userHome = join(home, 'home'), token = randomUUID();
+  const home = fs.mkdtempSync(join(parent, 'run-')), userHome = userHomeBeside(home), token = randomUUID();
   fs.writeFileSync(join(home, 'native-owner.json'), JSON.stringify({device, token}), {mode: 0o600, flag: 'wx'});
   // On macOS a run's serves also get a TMPDIR of their own, as an approved-runtime run's do (one witness for every mini run).
   const runTmp = declaration.platform === 'darwin' ? join(home, 'harness-tmp') : undefined;
@@ -142,7 +143,7 @@ export function prepareNative({device, display, node, approvedHome}, {directoryR
     if (!node) assertManagedNode(facts);
     else if (!facts.ownNode?.version || facts.ownNode.path !== node) throw new Error('Diagnostic Node override did not resolve');
     return {...prepared, ownNode: facts.ownNode};
-  } catch (error) { fs.rmSync(home, {recursive: true, force: true}); throw error; }
+  } catch (error) { removeScratchHomes(home); throw error; }
 }
 const reuseSeams = ({locate = locateApproved, usersOf = homeUsers, rename = fs.renameSync, undo, kill = pid => process.kill(pid, 'SIGTERM'), alive = isAlive,
   wait = () => pause(200), now = Date.now, userHomeDir = homedir()} = {}) => ({locate, usersOf, rename, undo: undo ?? rename, kill, alive, wait, now, userHomeDir});
@@ -277,7 +278,7 @@ export function cleanupNative(prepared, {directoryRoot = base(), ...options} = {
     if (owner.approvedHome !== prepared.home) throw new Error('Native scratch ownership mismatch');
     return cleanupReused(prepared, options);
   }
-  fs.rmSync(scratch, {recursive: true, force: true});
+  removeScratchHomes(scratch);
   return {removed: true};
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

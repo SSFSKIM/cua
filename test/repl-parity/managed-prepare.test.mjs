@@ -33,7 +33,7 @@ function fixture(run,{managed=true}={}) {
 test('ordinary preparation installs a fresh managed home and aliases only the selected ready backend',()=>fixture(({source,owned,binding,registry,inspections,commands,deps})=>{
  const first=prepareDevice({device:'mini',profile:'ssfs',home:source},deps),second=prepareDevice({device:'mini'},deps);
  assert.notEqual(first.home,source);assert.notEqual(first.home,second.home);assert.ok(first.home.startsWith(owned+'/'));
- assert.equal(first.nodeMode,'managed');assert.equal(first.nodeOverride,null);assert.equal(first.fixturePort,48732);assert.equal(first.userHome,join(first.home,'home'));
+ assert.equal(first.nodeMode,'managed');assert.equal(first.nodeOverride,null);assert.equal(first.fixturePort,48732);assert.equal(first.userHome,`${first.home}.home`);
  assert.equal(first.ownNode.path,join(first.home,'node/24.18.0/bin/node'));
  assert.equal(first.ownedPreparation.home,first.home);assert.ok(first.ownedPreparation.token);assert.ok(first.ownedPreparation.experiment);
  assert.deepEqual(JSON.parse(readFileSync(join(first.home,'profiles.json'),'utf8')),{version:1,profiles:{ssfs:binding}});

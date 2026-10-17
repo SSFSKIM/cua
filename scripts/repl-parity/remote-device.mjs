@@ -2,6 +2,7 @@
 import {spawn,execFileSync} from 'node:child_process';
 import {createInterface} from 'node:readline';
 import {mkdirSync,mkdtempSync,realpathSync,writeFileSync,readFileSync,rmSync,openSync,closeSync,symlinkSync,existsSync} from 'node:fs';
+import {removeScratchHomes,userHomeBeside} from '../harness-home.mjs';
 import {homedir,tmpdir} from 'node:os';
 import {join,dirname,basename} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -25,7 +26,8 @@ function ownership(e){
  const marker=JSON.parse(readFileSync(join(e.home,'proof-owner.json'),'utf8'));
  if(marker.token!==e.token||marker.experiment!==e.experiment)throw new Error('Remote scratch ownership mismatch');
 }
-const scratchEnvironment=home=>({HOME:join(home,'home'),CUA_HOME:home,CHROME_CONFIG_HOME:join(home,'home','.config'),XDG_CONFIG_HOME:join(home,'home','.config')});
+// The scratch user HOME is the cua home's sibling, never inside it (../harness-home.mjs).
+const scratchEnvironment=home=>({HOME:userHomeBeside(home),CUA_HOME:home,CHROME_CONFIG_HOME:join(userHomeBeside(home),'.config'),XDG_CONFIG_HOME:join(userHomeBeside(home),'.config')});
 function cli(home,args,{file,nodeOverride}={}){
  const fd=file?openSync(file,'wx',0o600):undefined;
  try{return execFileSync(process.execPath,['bin/cua.mjs',...args],{env:nodeEnvironment({...process.env,...scratchEnvironment(home)},nodeOverride),encoding:'utf8',timeout:300000,stdio:['ignore',fd??'pipe','pipe'],maxBuffer:1024*1024});}
@@ -39,7 +41,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true}
  const home=mkdtempSync(join(parent,experiment+'-')),token=randomUUID(),endpoint={...plan,experiment,home,token,...(prepared.nodeOverride?{nodeOverride:prepared.nodeOverride}:{}),nodeMode:prepared.nodeOverride?'diagnostic-override':'managed'};
  writeFileSync(join(home,'proof-owner.json'),JSON.stringify({experiment,token}),{mode:0o600,flag:'wx'});
  try{
-  mkdirSync(join(home,'home'),{mode:0o700});
+  mkdirSync(userHomeBeside(home),{mode:0o700});
   // The pinned archives are fetched and verified once, into this home; this install and every managed fixture's
   // fresh install take them from there (archive-cache.mjs). Removing the home removes them.
   const archives=cacheArchives(home);
@@ -57,7 +59,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true}
   writeFileSync(join(home,'profiles.json'),JSON.stringify({version:1,profiles:{[prepared.profile]:binding}}),{mode:0o600});
   // Agent health probes read Local State. Give them synthetic presence-only facts in a private HOME, never the
   // owner's profile. No extension is installed here. The endpoint must still prove the exact backend is live.
-  const chrome=chromeUserData({env:scratchEnvironment(home),userHome:join(home,'home')});
+  const chrome=chromeUserData({env:scratchEnvironment(home),userHome:userHomeBeside(home)});
   mkdirSync(join(chrome,binding.chromeProfileDirectory,'Local Extension Settings',CUA_EXTENSION_ID),{recursive:true,mode:0o700});
   writeFileSync(join(chrome,'Local State'),'{}',{mode:0o600});
   // Ordinary parity preparation uses the same fresh installation without enrolling anything.
@@ -67,7 +69,7 @@ export function prepareEndpoint({experiment,relay,plan,prepared,enrollment=true}
   runCli(home,['remote','enroll','--relay',relay,'--json'],{file:join(home,'enroll.json')});
   const shown=JSON.parse(runCli(home,['remote','show','--json']));
   return {...ready,...safeEnrollment({...shown,clientSecretKey:clientSecretKey(shown.deviceId)})};
- }catch(error){rmSync(home,{recursive:true,force:true});throw error;}
+ }catch(error){removeScratchHomes(home);throw error;}
 }
 export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgentState,assertOwner=ownership,facts=executionFacts,timeoutMs=30000,stopTimeoutMs=10000}={}){
  assertOwner(endpoint);let child,exit,fixture,startedFacts;
@@ -106,7 +108,7 @@ export async function deviceSession(endpoint,{spawnAgent=spawn,stateOf=readAgent
   async close(){await stop();if(fixture)rmSync(fixture,{recursive:true,force:true});},
  };
 }
-export function removeEndpoint(endpoint){ownership(endpoint);if(readAgentState(endpoint.home)?.pid){const pid=readAgentState(endpoint.home).pid;try{process.kill(pid,0);throw new Error('Refusing to remove a home whose recorded agent PID is still live');}catch(e){if(e.code!=='ESRCH')throw e;}}rmSync(endpoint.home,{recursive:true,force:true});return {removed:true};}
+export function removeEndpoint(endpoint){ownership(endpoint);if(readAgentState(endpoint.home)?.pid){const pid=readAgentState(endpoint.home).pid;try{process.kill(pid,0);throw new Error('Refusing to remove a home whose recorded agent PID is still live');}catch(e){if(e.code!=='ESRCH')throw e;}}removeScratchHomes(endpoint.home);return {removed:true};}
 async function main(){
  if(process.env.CUA_PARITY_REMOTE!=='1'||basename(process.cwd())!=='cua-parity')throw new Error('Remote proof helper requires the prepared parity clone');
  const lines=createInterface({input:process.stdin});let session;

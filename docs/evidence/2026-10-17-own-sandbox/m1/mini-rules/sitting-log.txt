@@ -458,3 +458,306 @@
 2026-10-17T21:23:11.383Z idle before gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf
 2026-10-17T21:23:18.863Z gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf: exit 0
 2026-10-17T21:23:19.754Z front after gated sh scripts/sandbox-probe/m1-mini.sh own-sandbox f8019bf: com.apple.Terminal
+2026-10-17T21:38:00Z after the controller-side restart: on the mini ~/.cp empty, no cua115-* files in /tmp, no log stream or harness process; two stale sibling homes ~/.local/share/cua-parity-remote/parity-RIdZgH.home (born 18:02:38Z, cfprefs attempt 3) and parity-4Rdexg.home (born 18:34:00Z, attempt 4), unused, removed
+2026-10-17T21:38:00Z before cfprefs at f8019bf: front=com.apple.Terminal, HIDIdleTime 4540 s, load 4.82; ssfs live (1 backend, 1 tab, Chrome pid 36513)
+2026-10-17T21:38:40.998Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 f8019bf ssfs: reading 1: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.56 -> idle
+2026-10-17T21:39:29.690Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 f8019bf ssfs: reading 2: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.48 -> idle
+2026-10-17T21:39:29.691Z idle before gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 f8019bf ssfs
+2026-10-17T21:39:29.741Z watch cfprefs-f8019bf: started for pid 87553 (mode pause-aware)
+2026-10-17T21:39:32.791Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.48 -> idle
+2026-10-17T21:40:05.792Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.41 -> idle
+2026-10-17T21:40:38.537Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.88 -> idle
+2026-10-17T21:41:11.436Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.64 -> idle
+2026-10-17T21:41:44.092Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.83 -> idle
+2026-10-17T21:42:17.247Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.32 -> idle
+2026-10-17T21:42:50.014Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.04 -> idle
+2026-10-17T21:43:23.969Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.25 -> idle
+2026-10-17T21:43:57.772Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 17 s, holding at a boundary true
+2026-10-17T21:43:57.773Z watch cfprefs-f8019bf: Runner.Worker seen: pid 99916 (elapsed 00:31) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 158; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:43:57.773Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=6.49 -> idle
+2026-10-17T21:44:31.305Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 14 s, holding at a boundary true
+2026-10-17T21:44:31.305Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 00:22) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:44:31.305Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=6.16 -> idle
+2026-10-17T21:45:05.574Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 11 s, holding at a boundary true
+2026-10-17T21:45:05.574Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 00:56) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:45:05.574Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=6.37 -> idle
+2026-10-17T21:45:39.512Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 8 s, holding at a boundary true
+2026-10-17T21:45:39.512Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 01:30) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:45:39.512Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.61 -> idle
+2026-10-17T21:46:13.502Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 5 s, holding at a boundary true
+2026-10-17T21:46:13.502Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 02:04) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:46:13.503Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.92 -> idle
+2026-10-17T21:46:48.125Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T21:46:48.126Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 02:39) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:46:48.126Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.25 -> idle
+2026-10-17T21:47:23.232Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 17 s, holding at a boundary true
+2026-10-17T21:47:23.232Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 03:14) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:47:23.232Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.91 -> idle
+2026-10-17T21:47:57.532Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 12 s, holding at a boundary true
+2026-10-17T21:47:57.533Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 03:48) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:47:57.533Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=6.32 -> idle
+2026-10-17T21:48:31.468Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 9 s, holding at a boundary true
+2026-10-17T21:48:31.468Z watch cfprefs-f8019bf: Runner.Worker seen: pid 2865 (elapsed 04:22) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 157 160; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:48:31.469Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.67 -> idle
+2026-10-17T21:49:05.520Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 6 s, holding at a boundary true
+2026-10-17T21:49:05.520Z watch cfprefs-f8019bf: Runner.Worker seen: pid 16941 (elapsed 00:25) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:49:05.520Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=9.59 -> idle
+2026-10-17T21:49:39.370Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 3 s, holding at a boundary true
+2026-10-17T21:49:39.370Z watch cfprefs-f8019bf: Runner.Worker seen: pid 16941 (elapsed 00:59) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:49:39.371Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=7.31 -> idle
+2026-10-17T21:50:13.431Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 0 s, holding at a boundary true
+2026-10-17T21:50:13.431Z watch cfprefs-f8019bf: Runner.Worker seen: pid 16941 (elapsed 01:33) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:50:13.431Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=6.17 -> idle
+2026-10-17T21:50:47.220Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 16 s, holding at a boundary true
+2026-10-17T21:50:47.220Z watch cfprefs-f8019bf: Runner.Worker seen: pid 16941 (elapsed 02:07) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:50:47.220Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=5.59 -> idle
+2026-10-17T21:51:20.710Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 12 s, holding at a boundary true
+2026-10-17T21:51:20.711Z watch cfprefs-f8019bf: Runner.Worker seen: pid 16941 (elapsed 02:40) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:51:20.711Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=4.88 -> idle
+2026-10-17T21:51:55.195Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 9 s, holding at a boundary true
+2026-10-17T21:51:55.196Z watch cfprefs-f8019bf: Runner.Worker seen: pid 16941 (elapsed 03:15) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 155 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:51:55.196Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=4.52 -> idle
+2026-10-17T21:52:28.226Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 6 s, holding at a boundary true
+2026-10-17T21:52:28.227Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 00:15) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:52:28.227Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.35 -> idle
+2026-10-17T21:53:00.699Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 4 s, holding at a boundary true
+2026-10-17T21:53:00.700Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 00:47) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:53:00.700Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.5 -> idle
+2026-10-17T21:53:33.211Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T21:53:33.211Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 01:20) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:53:33.211Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.24 -> idle
+2026-10-17T21:54:05.811Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 1 s, holding at a boundary true
+2026-10-17T21:54:05.811Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 01:52) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:54:05.811Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=5.58 -> idle
+2026-10-17T21:54:38.581Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 16 s, holding at a boundary true
+2026-10-17T21:54:38.581Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 02:25) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:54:38.581Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.87 -> idle
+2026-10-17T21:55:11.082Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 15 s, holding at a boundary true
+2026-10-17T21:55:11.082Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 02:58) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:55:11.082Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.73 -> idle
+2026-10-17T21:55:43.737Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 13 s, holding at a boundary true
+2026-10-17T21:55:43.738Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 03:30) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:55:43.738Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.34 -> idle
+2026-10-17T21:56:16.418Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 11 s, holding at a boundary true
+2026-10-17T21:56:16.419Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 04:03) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:56:16.419Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.09 -> idle
+2026-10-17T21:56:48.945Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 10 s, holding at a boundary true
+2026-10-17T21:56:48.946Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 04:35) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:56:48.946Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.41 -> idle
+2026-10-17T21:57:21.525Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 8 s, holding at a boundary true
+2026-10-17T21:57:21.525Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 05:08) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:57:21.525Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.77 -> idle
+2026-10-17T21:57:53.978Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 6 s, holding at a boundary true
+2026-10-17T21:57:53.978Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 05:40) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:57:53.978Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=3.44 -> idle
+2026-10-17T21:58:27.298Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 4 s, holding at a boundary true
+2026-10-17T21:58:27.298Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 06:14) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:58:27.298Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=4.04 -> idle
+2026-10-17T21:59:00.725Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T21:59:00.725Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 06:47) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:59:00.725Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=3.57 -> idle
+2026-10-17T21:59:34.802Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 18 s, holding at a boundary true
+2026-10-17T21:59:34.802Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 07:21) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T21:59:34.802Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=3.64 -> idle
+2026-10-17T22:00:08.486Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 15 s, holding at a boundary true
+2026-10-17T22:00:08.486Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 07:55) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:00:08.486Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=3.51 -> idle
+2026-10-17T22:00:42.537Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 13 s, holding at a boundary true
+2026-10-17T22:00:42.537Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 08:29) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:00:42.538Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=3.43 -> idle
+2026-10-17T22:01:16.305Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 11 s, holding at a boundary true
+2026-10-17T22:01:16.305Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 09:03) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:01:16.305Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=3.37 -> idle
+2026-10-17T22:01:49.911Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 8 s, holding at a boundary true
+2026-10-17T22:01:49.911Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 09:36) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:01:49.911Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=3.77 -> idle
+2026-10-17T22:02:23.487Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 4 queued macOS job(s); pause on, heartbeat 5 s, holding at a boundary true
+2026-10-17T22:02:23.488Z watch cfprefs-f8019bf: Runner.Worker seen: pid 27763 (elapsed 10:10) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 159; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:02:23.488Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=4 load=4.2 -> idle
+2026-10-17T22:02:57.055Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 4 s, holding at a boundary true
+2026-10-17T22:02:57.055Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 00:06) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:02:57.055Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.03 -> idle
+2026-10-17T22:03:31.381Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 1 s, holding at a boundary true
+2026-10-17T22:03:31.382Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 00:40) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:03:31.382Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.43 -> idle
+2026-10-17T22:04:06.625Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 17 s, holding at a boundary true
+2026-10-17T22:04:06.625Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 01:15) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:04:06.625Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.65 -> idle
+2026-10-17T22:04:41.369Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 14 s, holding at a boundary true
+2026-10-17T22:04:41.370Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 01:50) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:04:41.370Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.33 -> idle
+2026-10-17T22:05:15.994Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 10 s, holding at a boundary true
+2026-10-17T22:05:15.994Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 02:24) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:05:15.994Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.45 -> idle
+2026-10-17T22:05:50.197Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 7 s, holding at a boundary true
+2026-10-17T22:05:50.197Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 02:59) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:05:50.197Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.36 -> idle
+2026-10-17T22:06:23.746Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T22:06:23.746Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 03:32) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:06:23.746Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.07 -> idle
+2026-10-17T22:06:57.312Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 18 s, holding at a boundary true
+2026-10-17T22:06:57.312Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 04:06) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:06:57.312Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=3.8 -> idle
+2026-10-17T22:07:30.469Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 3 queued macOS job(s); pause on, heartbeat 16 s, holding at a boundary true
+2026-10-17T22:07:30.469Z watch cfprefs-f8019bf: Runner.Worker seen: pid 60950 (elapsed 04:39) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:07:30.470Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=3 load=4.28 -> idle
+2026-10-17T22:08:03.583Z watch cfprefs-f8019bf: runner runner busy, 3 queued macOS job(s); pause on, heartbeat 14 s, holding at a boundary true
+2026-10-17T22:08:03.583Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=0 queued=3 load=4.41 -> idle
+2026-10-17T22:08:36.081Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 11 s, holding at a boundary true
+2026-10-17T22:08:36.082Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 00:31) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:08:36.082Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=5.23 -> idle
+2026-10-17T22:09:08.577Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 9 s, holding at a boundary true
+2026-10-17T22:09:08.577Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 01:03) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:09:08.577Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=5.61 -> idle
+2026-10-17T22:09:41.403Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 7 s, holding at a boundary true
+2026-10-17T22:09:41.404Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 01:36) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:09:41.404Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=6.1 -> idle
+2026-10-17T22:10:14.035Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 6 s, holding at a boundary true
+2026-10-17T22:10:14.035Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 02:09) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:10:14.035Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=4.96 -> idle
+2026-10-17T22:10:46.676Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 4 s, holding at a boundary true
+2026-10-17T22:10:46.677Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 02:41) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:10:46.677Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=4.81 -> idle
+2026-10-17T22:11:19.600Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T22:11:19.600Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 03:14) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:11:19.600Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=4.45 -> idle
+2026-10-17T22:11:52.718Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 2 queued macOS job(s); pause on, heartbeat 0 s, holding at a boundary true
+2026-10-17T22:11:52.718Z watch cfprefs-f8019bf: Runner.Worker seen: pid 76421 (elapsed 03:47) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:11:52.718Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=2 load=5.32 -> idle
+2026-10-17T22:12:25.241Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker, 1 queued macOS job(s); pause on, heartbeat 15 s, holding at a boundary true
+2026-10-17T22:12:25.242Z watch cfprefs-f8019bf: Runner.Worker seen: pid 88456 (elapsed 00:12) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 156 161; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:12:25.242Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=1 load=7.65 -> idle
+2026-10-17T22:12:57.706Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 13 s, holding at a boundary true
+2026-10-17T22:12:57.706Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 00:08) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:12:57.706Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.78 -> idle
+2026-10-17T22:13:30.530Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 11 s, holding at a boundary true
+2026-10-17T22:13:30.530Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 00:41) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:13:30.530Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.05 -> idle
+2026-10-17T22:14:03.620Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 9 s, holding at a boundary true
+2026-10-17T22:14:03.620Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 01:14) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:14:03.620Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.47 -> idle
+2026-10-17T22:14:36.231Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 7 s, holding at a boundary true
+2026-10-17T22:14:36.232Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 01:47) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:14:36.232Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.77 -> idle
+2026-10-17T22:15:08.889Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 5 s, holding at a boundary true
+2026-10-17T22:15:08.889Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 02:19) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:15:08.889Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=3.65 -> idle
+2026-10-17T22:15:41.391Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 3 s, holding at a boundary true
+2026-10-17T22:15:41.391Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 02:52) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:15:41.392Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.62 -> idle
+2026-10-17T22:16:13.932Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T22:16:13.932Z watch cfprefs-f8019bf: Runner.Worker seen: pid 91316 (elapsed 03:24) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 160 163; parent 40318 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:16:13.933Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.09 -> idle
+2026-10-17T22:16:46.226Z watch cfprefs-f8019bf: runner idle; pause on, heartbeat 17 s, holding at a boundary true
+2026-10-17T22:16:46.226Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.57 -> idle
+2026-10-17T22:17:18.308Z watch cfprefs-f8019bf: runner idle; pause on, heartbeat 32 s, holding at a boundary true
+2026-10-17T22:17:18.309Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.39 -> idle
+2026-10-17T22:17:50.352Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=3.75 -> idle
+2026-10-17T22:18:22.378Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.07 -> idle
+2026-10-17T22:18:54.552Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.17 -> idle
+2026-10-17T22:19:26.708Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.41 -> idle
+2026-10-17T22:19:59.238Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.11 -> idle
+2026-10-17T22:20:31.420Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.42 -> idle
+2026-10-17T22:21:03.894Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=4.89 -> idle
+2026-10-17T22:21:36.597Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.01 -> idle
+2026-10-17T22:22:09.764Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 4 s, holding at a boundary true
+2026-10-17T22:22:09.764Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 00:31) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:22:09.765Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.38 -> idle
+2026-10-17T22:22:42.900Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T22:22:42.900Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 01:04) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:22:42.900Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.87 -> idle
+2026-10-17T22:23:16.159Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 1 s, holding at a boundary true
+2026-10-17T22:23:16.159Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 01:38) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:23:16.159Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.15 -> idle
+2026-10-17T22:23:49.184Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 16 s, holding at a boundary true
+2026-10-17T22:23:49.185Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 02:11) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:23:49.185Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.9 -> idle
+2026-10-17T22:24:22.603Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 14 s, holding at a boundary true
+2026-10-17T22:24:22.603Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 02:44) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:24:22.603Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.52 -> idle
+2026-10-17T22:24:55.457Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 12 s, holding at a boundary true
+2026-10-17T22:24:55.457Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 03:17) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:24:55.458Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.82 -> idle
+2026-10-17T22:25:28.550Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 10 s, holding at a boundary true
+2026-10-17T22:25:28.550Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 03:50) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:25:28.550Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=6.14 -> idle
+2026-10-17T22:26:01.691Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 8 s, holding at a boundary true
+2026-10-17T22:26:01.691Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 04:23) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:26:01.691Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.57 -> idle
+2026-10-17T22:26:34.719Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 6 s, holding at a boundary true
+2026-10-17T22:26:34.719Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 04:56) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:26:34.719Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.21 -> idle
+2026-10-17T22:27:07.883Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 3 s, holding at a boundary true
+2026-10-17T22:27:07.884Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 05:29) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:27:07.884Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.79 -> idle
+2026-10-17T22:27:41.202Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 2 s, holding at a boundary true
+2026-10-17T22:27:41.202Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 06:03) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:27:41.202Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.46 -> idle
+2026-10-17T22:28:15.519Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 18 s, holding at a boundary true
+2026-10-17T22:28:15.520Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 06:37) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:28:15.520Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.74 -> idle
+2026-10-17T22:28:48.549Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 15 s, holding at a boundary true
+2026-10-17T22:28:48.550Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 07:10) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:28:48.550Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.8 -> idle
+2026-10-17T22:29:21.772Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 13 s, holding at a boundary true
+2026-10-17T22:29:21.772Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 07:43) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:29:21.772Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.04 -> idle
+2026-10-17T22:29:54.897Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 10 s, holding at a boundary true
+2026-10-17T22:29:54.897Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 08:16) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:29:54.897Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.74 -> idle
+2026-10-17T22:30:27.977Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 8 s, holding at a boundary true
+2026-10-17T22:30:27.977Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 08:49) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:30:27.977Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.73 -> idle
+2026-10-17T22:31:00.867Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 5 s, holding at a boundary true
+2026-10-17T22:31:00.867Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 09:22) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:31:00.867Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.34 -> idle
+2026-10-17T22:31:34.129Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 3 s, holding at a boundary true
+2026-10-17T22:31:34.129Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 09:56) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:31:34.129Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=5.21 -> idle
+2026-10-17T22:32:07.216Z watch cfprefs-f8019bf: runner runner busy, 1 Runner.Worker; pause on, heartbeat 1 s, holding at a boundary true
+2026-10-17T22:32:07.216Z watch cfprefs-f8019bf: Runner.Worker seen: pid 18098 (elapsed 10:29) /Users/new/actions-runner-maws/bin/Runner.Worker spawnclient 149 152; parent 6672 /Users/new/actions-runner-maws/bin/Runner.Listener run --startuptype service
+2026-10-17T22:32:07.216Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=1 queued=0 load=4.8 -> idle
+2026-10-17T22:32:40.441Z watch cfprefs-f8019bf: runner runner busy; pause on, heartbeat 17 s, holding at a boundary true
+2026-10-17T22:32:40.441Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=true workers=0 queued=0 load=4.65 -> idle
+2026-10-17T22:33:13.089Z watch cfprefs-f8019bf: runner idle; pause on, heartbeat 14 s, holding at a boundary true
+2026-10-17T22:33:13.090Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.32 -> idle
+2026-10-17T22:33:45.542Z watch cfprefs-f8019bf: runner idle; pause on, heartbeat 47 s, holding at a boundary true
+2026-10-17T22:33:45.542Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.74 -> idle
+2026-10-17T22:34:18.175Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.13 -> idle
+2026-10-17T22:34:50.340Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.12 -> idle
+2026-10-17T22:35:22.780Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.51 -> idle
+2026-10-17T22:35:54.992Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.81 -> idle
+2026-10-17T22:36:27.001Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.42 -> idle
+2026-10-17T22:36:59.508Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.89 -> idle
+2026-10-17T22:37:31.435Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.21 -> idle
+2026-10-17T22:38:03.604Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.86 -> idle
+2026-10-17T22:38:36.029Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.48 -> idle
+2026-10-17T22:39:07.986Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.46 -> idle
+2026-10-17T22:39:40.454Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.6 -> idle
+2026-10-17T22:40:13.010Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.22 -> idle
+2026-10-17T22:40:45.867Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.3 -> idle
+2026-10-17T22:41:18.144Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=5.69 -> idle
+2026-10-17T22:41:50.427Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.72 -> idle
+2026-10-17T22:42:22.970Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.53 -> idle
+2026-10-17T22:42:55.237Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.12 -> idle
+2026-10-17T22:43:27.620Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.25 -> idle
+2026-10-17T22:43:59.825Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.9 -> idle
+2026-10-17T22:44:32.047Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.76 -> idle
+2026-10-17T22:45:04.819Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=10.38 -> idle
+2026-10-17T22:45:37.500Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=10.83 -> idle
+2026-10-17T22:46:10.702Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=8.71 -> idle
+2026-10-17T22:46:43.395Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.9 -> idle
+2026-10-17T22:47:16.057Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.05 -> idle
+2026-10-17T22:47:49.035Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.64 -> idle
+2026-10-17T22:48:21.620Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=6.62 -> idle
+2026-10-17T22:48:54.468Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=9.11 -> idle
+2026-10-17T22:49:27.248Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.65 -> idle
+2026-10-17T22:49:59.577Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.94 -> idle
+2026-10-17T22:50:31.711Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.99 -> idle
+2026-10-17T22:51:03.624Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.1 -> idle
+2026-10-17T22:51:36.617Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.82 -> idle
+2026-10-17T22:52:08.992Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=9.75 -> idle
+2026-10-17T22:52:41.239Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=9.3 -> idle
+2026-10-17T22:53:13.383Z watch cfprefs-f8019bf: reading: front=com.apple.Terminal busy=false workers=0 queued=0 load=7.92 -> idle
+2026-10-17T22:53:44.522Z gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 f8019bf ssfs: exit 1
+2026-10-17T22:53:44.957Z front after gated sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 f8019bf ssfs: com.apple.Terminal

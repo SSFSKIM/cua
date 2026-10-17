@@ -18,7 +18,39 @@ The harness is this clone at f8019bf. Every step was gated with two readings and
 
 Before oracles, the gate waited from about 21:01Z to 21:21Z while a real CI job held the runner. The busy flag was set, and the new probe logged Runner.Worker pid 22535.
 
-cfprefs (90cbfe0 against f8019bf) and parity (f8019bf) follow. The 5d9bf70 runs of the steps above are kept as `tier-discovery-attempt-3/`, `oracles-attempt-2/` and `own-sandbox-attempt-2/`.
+### cfprefs (90cbfe0 against f8019bf): every suite PASS; no preferences denial; two new logging denials; one pause-induced difference
+
+- **Command and commits.** `sh scripts/sandbox-probe/m1-mini.sh cfprefs 90cbfe0 f8019bf ssfs`. The harness is this clone on f8019bf; the before side ran at 90cbfe0 with its own scratch layout, which nests (accepted, spec).
+- **Run.** 21:39:29Z to 22:53:44Z.
+- **Before the run (21:38Z).** Terminal was in front, HIDIdleTime was 4540 s and ssfs was live. Two stale sibling homes from attempts 3 and 4 (`~/.local/share/cua-parity-remote/parity-*.home`, born 18:02:38Z and 18:34:00Z, unused) were removed.
+- **Suites.** All four ran to completion with assertions PASS: before cells 150/150 and services 41/41, after cells 150/150 and services 41/41.
+- **Pauses (DL 58).** Both were real CI, both in before-cells, and the hook held each at a cell boundary. The runner watch never fired.
+
+| Started | Ended | Held before | Reason |
+|---|---|---|---|
+| 21:43:40Z | 22:17:33Z (33.9 min) | `cells/budget/suspend-resume` warm | runner busy, 1 Runner.Worker, 2 queued |
+| 22:21:47Z | 22:33:45Z | `cells/native-pipe/frozen-interface` cell-1 | runner busy, 1 Runner.Worker |
+
+The first pause passed 20 minutes and was reported; the controller ruled it a normal working burst.
+
+- **Denials** (`denials.json`, reduced):
+  - **No preferences (cfprefs) entry on either side**, so the original's preferences semantics are kept.
+  - New on the after side:
+    - `mach-lookup com.apple.diagnosticd` ×391;
+    - `mach-lookup com.apple.logd` ×194.
+  - Network: two loopback `network-outbound` entries changed only their ephemeral port.
+  - Every other kind matches the before side.
+- **Judge** (`m1-judge before-after`):
+  - **services:** ok, exit status equal.
+  - **cells:** not ok, with one undeclared difference, in `cells/budget/suspend-resume` warm.
+    - On the before side, that cell's response carries "the runtime was stopped after 15 min without a tool call and has restarted for this call".
+    - It is the cell the first pause held for 33.9 minutes, past the runtime's 15-minute idle stop.
+    - The after side, which never paused, answered without that notice. The cell's value (`warm`) is the same on both sides.
+    - The difference comes from the pause, not from either sandbox profile.
+- **Chrome.** pid 36513, 1 ssfs tab, both before and after.
+- **Cleanup.** Nothing of ours was left on the mini afterwards: no capability home, sibling home, denial log or `log stream`.
+
+Parity (f8019bf) follows. The 5d9bf70 runs of the steps above are kept as `tier-discovery-attempt-3/`, `oracles-attempt-2/` and `own-sandbox-attempt-2/`.
 
 # The rerun at 5d9bf70 (superseded by f8019bf)
 

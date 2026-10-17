@@ -1,6 +1,6 @@
 # The mini's run rules, as M0c applied them
 
-The own-sandbox spec's Decision Log, "native runs on the mini" (2026-10-17), after task 1's run at 07:57Z raised a screen-capture confirmation that only the owner could answer and that held the mini's CI runner. Every M0c item on the mini (`../tz-probe/`, `../mini-vendor-computer/`, `../mini-cua-browser/`, `../accept-native-main/`) ran under these rules; `sitting.log` is the record of every check.
+The own-sandbox spec's Decision Log, "native runs on the mini" (2026-10-17), after task 1's run at 07:57Z raised a screen-capture confirmation that only the owner could answer and that held the mini's CI runner. Every M0c item on the mini (`../tz-probe/`, `../mini-vendor-computer/`, `../mini-cua-browser/`, `../accept-native-main/`) ran under these rules; `sitting-log.txt` is the record of every check.
 
 - **Before each item:** `mini-idle.sh`, which looks twice, 45 s apart: the mac lane's runner `ci-kit-mac-mini` (SSFSKIM/MAWS) not busy, no `Runner.Worker` under `~/actions-runner-maws`, and no MAWS job waiting for a `macOS`/`ci-kit-mac` runner in a queued or running workflow run. The mini's 1-minute load also had to be under 2 (the dispatch's rule for measurements on the shared mini). While either failed, the sequence waited and looked again a minute later.
 - **After each item:** `mini-front.sh`: the frontmost application's bundle id. On `com.apple.UserNotificationCenter`, `com.apple.SecurityAgent` or `com.apple.coreservices.uiagent` the sequence stops and reports; nothing is clicked.

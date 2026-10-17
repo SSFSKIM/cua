@@ -73,12 +73,16 @@ cfprefs)
   before=${2:?before sha}; after=${3:?after sha}; profile=${4:?harness profile}; mkdir -p "$E/cfprefs"
   # GUI-bound: the suites pause at their next cell while MAWS CI's mac lane is busy or has a macOS job queued (MAWS DL 58).
   # The watcher runs here, from this checkout, whichever commit a side prepares on the mini; it is this item's own
-  # process, ended with it. Its log is evidence; each run's pauses are in its meta.json.
+  # process, ended with it, and the pause file and its heartbeat are removed only then (a watcher that fails leaves a
+  # pause in place; a run that sees no heartbeat stops). Its log is evidence; each run's pauses are in its meta.json.
   PAUSE="$L/cua115-cfprefs-pause.json"
-  rm -f "$PAUSE"
+  rm -f "$PAUSE" "$PAUSE.alive"
   ${M1_MINI_PAUSE_WATCH:-node scripts/mini-pause.mjs} watch --file "$PAUSE" --log "$E/cfprefs/pauses.log" &
   WATCHER=$!
-  trap 'status=$?; kill "$WATCHER" 2>/dev/null || true; wait "$WATCHER" 2>/dev/null || true; exit $status' EXIT
+  trap 'status=$?; kill "$WATCHER" 2>/dev/null || true; wait "$WATCHER" 2>/dev/null || true; rm -f "$PAUSE" "$PAUSE.alive"; exit $status' EXIT
+  # The suites start only once the watcher beats.
+  n=0; while [ ! -e "$PAUSE.alive" ] && [ "$n" -lt 120 ]; do sleep 0.5; n=$((n + 1)); done
+  [ -e "$PAUSE.alive" ] || { echo "m1-mini $item: FAILED: the pause watcher never started" >&2; exit 1; }
   for side in before after; do
     if [ "$side" = before ]; then sha=$before; else sha=$after; fi
     if node scripts/repl-parity.mjs prepare --device mini --commit "$sha" --profile "$profile" >/dev/null; then

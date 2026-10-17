@@ -99,7 +99,8 @@ export async function runTextEdit({home, secret = false, forbid = () => {}, step
   const steps = [];
   const record = (name, status, detail) => { steps.push({name, status, detail}); return status === 'PASS'; };
   const observations = {elicitations: [], connections: [], pauses: []};
-  const pause = pauseGate({file: pauseFile, record: p => observations.pauses.push(p)});
+  // A lost watcher keeps the sitting paused (onLost 'wait'), never aborts it: the owner is standing by.
+  const pause = pauseGate({file: pauseFile, record: p => observations.pauses.push(p), onLost: 'wait'});
   // Like the value below, one unbroken upper-case token: TextEdit's autocorrect otherwise offers to capitalize a
   // lower-case first word and applies it when typing continues, rewriting text that was already observed.
   const marker = `CUAMARKER${randomBytes(6).toString('hex').toUpperCase()}`;

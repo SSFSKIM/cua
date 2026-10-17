@@ -58,8 +58,13 @@ export function siblingLayout(prepared) {
 export function managePreparation(action,{journal,out,...options},{execute=executeCommand}={}) {
  if(action==='prepare') {
   if(existsSync(journal)&&readJson(journal).ownedPreparation)throw new Error('Owned preparation already exists; run cleanup-prepared before preparing again');
-  const {prepared,move}=siblingLayout(JSON.parse(execute(prepareCommand(options)).trim().split('\n').at(-1)));
-  if(move)execute(remoteCommand(options.device,`set -e; test -d ${quote(move[0])}; test ! -e ${quote(move[1])}; mv ${quote(move[0])} ${quote(move[1])}`));
+  const raw=JSON.parse(execute(prepareCommand(options)).trim().split('\n').at(-1)),{prepared,move}=siblingLayout(raw);
+  // Ownership is journaled before the layout migration: a move that fails, or whose outcome is unknown, still leaves a
+  // preparation cleanup-prepared removes (both layouts: the home, with any nested HOME, and the sibling).
+  if(move){
+   save(journal,{...raw,layoutMigration:{from:move[0],to:move[1],state:'pending'}});
+   execute(remoteCommand(options.device,`set -e; test -d ${quote(move[0])}; test ! -e ${quote(move[1])}; mv ${quote(move[0])} ${quote(move[1])}`));
+  }
   save(journal,prepared);
   if(out)save(join(resolve(out),'prepare.json'),prepared);
   return prepared;
@@ -69,10 +74,14 @@ export function managePreparation(action,{journal,out,...options},{execute=execu
  if(!owner||owner.device!==options.device||owner.home!==prepared.home||!owner.experiment||!owner.token)throw new Error('No matching journaled owned preparation to clean');
  // Project only the ownership capability, never a journal PID or a relay enrollment.
  const owned={home:owner.home,experiment:owner.experiment,token:owner.token};
- // The sibling user HOME goes too, after the side's own cleanup: a side from before the layout fix does not know it.
- const result=JSON.parse(execute(remoteCommand(options.device,`cd ${quote(prepared.checkout)} && exec env -u CUA_NODE -u CUA_PARITY_NODE_MODE CUA_PARITY_REMOTE=1 node scripts/repl-parity/prepare-device.mjs cleanup ${quote(JSON.stringify(owned))} && rm -rf ${quote(userHomeBeside(owner.home))}`)).trim().split('\n').at(-1));
- if(result.removed!==true)throw new Error('Prepared home removal was not confirmed; journal retained');
- rmSync(journal);return result;
+ // The sibling user HOME goes too, after the side's own cleanup (a side from before the layout fix does not know it),
+ // and the removal is confirmed only once both are gone. No `exec`: the shell must outlive the cleanup to remove it.
+ const sibling=userHomeBeside(owner.home);
+ const lines=execute(remoteCommand(options.device,`cd ${quote(prepared.checkout)} && env -u CUA_NODE -u CUA_PARITY_NODE_MODE CUA_PARITY_REMOTE=1 node scripts/repl-parity/prepare-device.mjs cleanup ${quote(JSON.stringify(owned))} && rm -rf ${quote(sibling)} && test ! -e ${quote(sibling)} && echo '{"siblingRemoved":true}'`)).trim().split('\n');
+ const parsed=lines.map(line=>{try{return JSON.parse(line);}catch{return null;}}).filter(Boolean);
+ if(!parsed.some(r=>r.removed===true))throw new Error('Prepared home removal was not confirmed; journal retained');
+ if(parsed.at(-1)?.siblingRemoved!==true)throw new Error('The sibling user HOME\'s removal was not confirmed; journal retained');
+ rmSync(journal);return {removed:true,siblingRemoved:true};
 }
 
 function main(argv=process.argv.slice(2)) {

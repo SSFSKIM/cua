@@ -26,6 +26,7 @@ import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, rmSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {heartbeatOf, removePauseFiles, sshMirror} from './mini-pause.mjs';
 
 export const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 export const EVIDENCE = join(ROOT, 'docs/evidence/2026-10-17-own-sandbox/m0');
@@ -305,11 +306,34 @@ export async function gated(command, ctx) {
   return code;
 }
 
+// gated with a pause watcher beside it (a GUI-bound group, MAWS DL 58): the watcher is started, the command runs only
+// once it beats, and it gets the pause file as CUA_PAUSE_FILE (`pausePath`, the mirror's path for a group on the mini).
+// When the gated promise settles (the command done, or the gate stopped it) the watcher is stopped and awaited, and only
+// then are the pause files removed: a watcher that failed meanwhile has left a pause in place for the group to see.
+// `startWatcher()` -> {beating(), stop(), exited: Promise}.
+export async function pausedGated(command, ctx, {startWatcher, pausePath, removeFiles, beatMs = 30_000}) {
+  const watcher = startWatcher();
+  try {
+    for (const end = Date.now() + beatMs; !watcher.beating();) {
+      if (Date.now() > end) throw new Stop('the pause watcher never started beating');
+      await ctx.sleep(100);
+    }
+    return await gated(command, {...ctx, run: (cmd, args) => ctx.run(cmd, args, {CUA_PAUSE_FILE: pausePath})});
+  } finally {
+    watcher.stop();
+    await watcher.exited;
+    removeFiles();
+  }
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const logFile = join(EVIDENCE, 'mini-rules', 'sitting-log.txt');
+  // MINI_RULES_LOG_DIR: where the sitting log and the pause files go (tests point it at a scratch directory).
+  const logDir = process.env.MINI_RULES_LOG_DIR ?? join(EVIDENCE, 'mini-rules');
+  const logFile = join(logDir, 'sitting-log.txt');
   const log = line => { const text = `${new Date().toISOString()} ${line}`; console.log(text); appendFileSync(logFile, text + '\n'); };
   const ctx = {exec: liveExec, log, evidence: EVIDENCE, now: Date.now, sleep: ms => new Promise(r => setTimeout(r, ms)),
-    run: (cmd, args) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit'}).status ?? 1};
+    run: (cmd, args, env = {}) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit', env: {...process.env, ...env}}).status ?? 1,
+    ...(process.env.MINI_RULES_APART_MS ? {apartMs: Number(process.env.MINI_RULES_APART_MS)} : {})};
   const [first, ...rest] = process.argv.slice(2);
   // gated [--pause [--mirror <path on the mini>]] -- <command>: --pause is for a GUI-bound group (MAWS DL 58). A pause
   // watcher (scripts/mini-pause.mjs) runs beside the command, which gets the pause file as CUA_PAUSE_FILE (the mirror's
@@ -317,14 +341,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const options = [];
   while (rest[0] === '--pause' || rest[0] === '--mirror') options.push(...(rest[0] === '--mirror' ? rest.splice(0, 2) : rest.splice(0, 1)));
   if (rest[0] === '--') rest.shift();
+  let work;
   if (first === 'gated' && options.includes('--pause')) {
-    const file = join(EVIDENCE, 'mini-rules', `pause-${process.pid}.json`), mirror = options[options.indexOf('--mirror') + 1];
-    const watcher = spawn(process.execPath, [join(ROOT, 'scripts/mini-pause.mjs'), 'watch', '--file', file, '--log', join(EVIDENCE, 'mini-rules', 'pauses.log'), ...(options.includes('--mirror') ? ['--mirror', mirror] : [])],
-      {stdio: ['ignore', 'ignore', 'inherit']});
-    log(`pause watcher ${watcher.pid} for gated ${rest.join(' ')}`);
-    ctx.run = (cmd, args) => spawnSync(cmd, args, {cwd: ROOT, stdio: 'inherit', env: {...process.env, CUA_PAUSE_FILE: options.includes('--mirror') ? mirror : file}}).status ?? 1;
-    process.once('exit', () => watcher.kill('SIGTERM'));
-  }
-  const work = first === 'gated' ? gated(rest, ctx) : sequence(process.argv.slice(2), ctx).then(() => 0);
+    const file = join(logDir, `pause-${process.pid}.json`), mirrorPath = options.includes('--mirror') ? options[options.indexOf('--mirror') + 1] : null;
+    const mirror = mirrorPath ? sshMirror(mirrorPath, {exec: liveExec}) : null;
+    const startWatcher = () => {
+      const child = spawn(process.execPath, [join(ROOT, 'scripts/mini-pause.mjs'), 'watch', '--file', file, '--log', join(logDir, 'pauses.log'), ...(mirrorPath ? ['--mirror', mirrorPath] : [])],
+        {stdio: ['ignore', 'ignore', 'inherit']});
+      log(`pause watcher ${child.pid} for gated ${rest.join(' ')}`);
+      const exited = new Promise(done => child.once('exit', done));
+      return {beating: () => existsSync(heartbeatOf(file)), stop: () => child.kill('SIGTERM'), exited};
+    };
+    work = pausedGated(rest, ctx, {startWatcher, pausePath: mirrorPath ?? file, removeFiles: () => removePauseFiles(file, {mirror})});
+  } else work = first === 'gated' ? gated(rest, ctx) : sequence(process.argv.slice(2), ctx).then(() => 0);
   work.then(code => { process.exitCode = code; }, error => { console.error(error.message); process.exitCode = error instanceof Stop ? 4 : 1; });
 }

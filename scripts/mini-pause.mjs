@@ -7,14 +7,20 @@
 //
 // The watcher (on the controller, where scripts/mini-rules.mjs reads the same observations as the gate) writes the
 // pause file ({since, reason}) when a reading is not idle and removes it after two idle readings `apartMs` apart. A
-// reading that cannot be completed is never idle. `--mirror` keeps a copy of the file on the mini, for a group that runs
-// there (accept-native). Each pause it ends is logged with its start, end and reason. On SIGTERM/SIGINT it removes the
-// file (and the mirror): its owner stops it only after the group has finished.
+// reading that cannot be completed is never idle. With each reading it rewrites its heartbeat, `<file>.alive`
+// ({pid, generation, paused, at}; `generation` counts the pauses it has started). `--mirror` keeps a copy of both on the
+// mini, for a group that runs there (accept-native). Each pause it ends is logged with its start, end and reason.
 //
-// The harness side (pauseGate): before each cell it checks the file and, while it exists, waits there and never aborts;
-// what it waited for is recorded in the run's evidence. A cell during which the pause turned on is marked too, so its
-// timing can be dropped rather than judged.
-import {appendFileSync, existsSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+// It fails closed. If it fails, it leaves a pause in place (writing one if there was none) and stops beating; on
+// SIGTERM it just stops. It never removes the pause file on exit: the group's owner does, once the group has finished
+// (removePauseFiles).
+//
+// The harness side (pauseGate): before each cell it checks the heartbeat and the file. While the file exists it waits
+// there; a watcher whose heartbeat has gone stale is a lost watcher, and the group then stops (`onLost: 'stop'`) or stays
+// paused until it beats again (`'wait'`, the TextEdit sitting, which never aborts). Each wait is recorded in the run's
+// evidence. A cell is also marked when a pause overlapped it (the file at its end, or a pause generation that changed
+// while it ran), so its timing can be dropped rather than judged.
+import {appendFileSync, existsSync, readFileSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -32,64 +38,116 @@ export function pauseReading({exec}) {
   return {pause: reasons.length > 0, reason: reasons.length ? reasons.join(', ') : 'idle'};
 }
 
-const readPause = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return {reason: 'unknown'}; } };
+const readJson = (file, fallback) => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; } };
+export const heartbeatOf = file => `${file}.alive`;
 
-// A copy of the pause file on the mini (accept-native runs there).
+// A copy of a file on the mini (accept-native runs there).
 export const sshMirror = (path, {exec}) => ({
-  write: text => exec('ssh', ['-o', 'BatchMode=yes', 'mini', `mkdir -p "$(dirname ${quote(path)})" && printf %s ${quote(text)} > ${quote(path)}`]),
-  remove: () => exec('ssh', ['-o', 'BatchMode=yes', 'mini', `rm -f ${quote(path)}`]),
+  write: (text, target = path) => exec('ssh', ['-o', 'BatchMode=yes', 'mini', `mkdir -p "$(dirname ${quote(target)})" && printf %s ${quote(text)} > ${quote(target)}`]),
+  remove: (target = path) => exec('ssh', ['-o', 'BatchMode=yes', 'mini', `rm -f ${quote(target)}`]),
+  path,
 });
 
-// Runs until `stopped()` (or `maxReadings`); -> the pauses it ended, [{reason, since, until}].
+// The pause file and heartbeat, for their owner once the group has finished (never the watcher).
+export function removePauseFiles(file, {mirror = null} = {}) {
+  rmSync(file, {force: true});
+  rmSync(heartbeatOf(file), {force: true});
+  if (mirror) { mirror.remove(); mirror.remove(heartbeatOf(mirror.path)); }
+}
+
+// Runs until `stopped()` (or `maxReadings`); -> the pauses it ended, [{reason, since, until}]. Throws when a reading or a
+// write fails in a way it cannot read as a pause; the caller then leaves a pause in place (failClosed).
 export async function watchPause({file, exec, sleep, now = () => new Date(), log = () => {}, mirror = null, apartMs = 45_000, pollMs = 15_000,
-  stopped = () => false, maxReadings = Infinity, read = () => pauseReading({exec})}) {
+  stopped = () => false, maxReadings = Infinity, read = () => pauseReading({exec}), pid = process.pid}) {
   const ended = [];
-  let paused = existsSync(file) ? {...readPause(file), since: readPause(file).since ?? now().toISOString()} : null;
+  let paused = existsSync(file) ? {since: now().toISOString(), ...readJson(file, {reason: 'unknown'})} : null;
+  let generation = paused ? 1 : 0;
+  const beat = () => {
+    const text = JSON.stringify({pid, generation, paused: Boolean(paused), at: now().toISOString()});
+    writeFileSync(heartbeatOf(file), text);
+    mirror?.write(text, heartbeatOf(mirror.path));
+  };
   if (paused) log(`pause file present at start (${paused.reason}): it stays until two idle readings`);
+  beat();
   for (let readings = 0; readings < maxReadings && !stopped();) {
     const first = read(); readings++;
     if (!paused) {
       if (first.pause) {
         paused = {since: now().toISOString(), reason: first.reason};
+        generation++;
         const text = JSON.stringify(paused);
         writeFileSync(file, text);
         mirror?.write(text);
         log(`pause on: ${first.reason}`);
       }
+      beat();
       await sleep(pollMs);
       continue;
     }
+    beat();
     if (first.pause) { await sleep(pollMs); continue; }
     await sleep(apartMs);
     if (stopped()) break;
     const second = read(); readings++;
+    beat();
     if (second.pause) { log(`pause holds: the second reading is ${second.reason}`); await sleep(pollMs); continue; }
     rmSync(file, {force: true});
     mirror?.remove();
     const pause = {reason: paused.reason, since: paused.since, until: now().toISOString()};
     ended.push(pause);
-    log(`pause off after two idle readings: ${JSON.stringify(pause)}`);
     paused = null;
+    beat();
+    log(`pause off after two idle readings: ${JSON.stringify(pause)}`);
   }
   return ended;
 }
 
-// The harness side. `file` unset: no pause, ever. -> {wait(where), active(), reason(), note(pause)}.
-// wait() returns null when the file is absent, else waits until it is gone (never aborts) and returns
-// {where, reason, startedAt, endedAt}, after handing it to `record`.
-export function pauseGate({file, sleep = ms => new Promise(r => setTimeout(r, ms)), now = () => new Date(), log = () => {}, record = () => {}, pollMs = 2000} = {}) {
+// A watcher that failed leaves a pause in place: the pause file stays (or is written), never removed.
+export function failClosed(file, error, {mirror = null, now = () => new Date(), log = () => {}} = {}) {
+  const text = JSON.stringify({since: now().toISOString(), reason: `the pause watcher failed (${error.message.split('\n')[0]})`});
+  if (!existsSync(file)) writeFileSync(file, text);
+  try { mirror?.write(text); } catch { /* the mini may be unreachable: its group sees no heartbeat and stops or waits */ }
+  log(`watcher failed, pause left in place: ${error.message.split('\n')[0]}`);
+}
+
+export class PauseLost extends Error {}
+
+// The harness side. `file` unset: no pause, ever. -> {wait(where), begin(), overlapped(token, where)}.
+// wait() returns null when no pause holds, else waits until it is gone and returns {where, reason, startedAt, endedAt},
+// after handing it to `record`. A stale heartbeat (older than `staleMs`, by the file's own mtime, so a mirror is judged
+// by the mini's clock) is a lost watcher: `onLost` 'stop' throws PauseLost, 'wait' stays paused until it beats again.
+export function pauseGate({file, sleep = ms => new Promise(r => setTimeout(r, ms)), now = () => new Date(), log = () => {}, record = () => {},
+  pollMs = 2000, staleMs = 180_000, onLost = 'stop'} = {}) {
   if (!file) return NO_PAUSE;
+  const heartbeat = heartbeatOf(file);
+  const alive = () => { try { return now().getTime() - statSync(heartbeat).mtimeMs <= staleMs; } catch { return false; } };
+  const generation = () => readJson(heartbeat, {}).generation ?? null;
+  const reason = () => readJson(file, {reason: 'unknown'}).reason;
+  const held = () => existsSync(file) || !alive();
   return {
-    active: () => existsSync(file),
-    reason: () => readPause(file).reason,
-    note: pause => record(pause),   // a cell during which the pause turned on
     async wait(where) {
-      if (!existsSync(file)) return null;
-      const reason = readPause(file).reason, startedAt = now().toISOString();
-      log(`paused before ${where}: ${reason}`);
-      while (existsSync(file)) await sleep(pollMs);
-      const pause = {where, reason, startedAt, endedAt: now().toISOString()};
+      if (!held()) return null;
+      const startedAt = now().toISOString();
+      let why = alive() ? reason() : 'the pause watcher has no heartbeat';
+      log(`paused before ${where}: ${why}`);
+      while (held()) {
+        if (!alive()) {
+          why = 'the pause watcher has no heartbeat';
+          if (onLost === 'stop') throw new PauseLost(`the pause watcher is gone (no heartbeat within ${staleMs / 1000} s); the group stops before ${where}`);
+        }
+        await sleep(pollMs);
+      }
+      const pause = {where, reason: why, startedAt, endedAt: now().toISOString()};
       log(`resumed at ${where}`);
+      record(pause);
+      return pause;
+    },
+    // At a cell's start (after its wait): what a later overlapped() compares against.
+    begin: () => ({generation: generation()}),
+    // At its end: whether a pause overlapped the cell -> {where, reason, during: true} (recorded) or null.
+    overlapped(token, where) {
+      if (!existsSync(file) && generation() === token.generation) return null;
+      const pause = {where, reason: existsSync(file) ? reason() : 'a pause that began and ended while the cell ran', during: true};
       record(pause);
       return pause;
     },
@@ -102,7 +160,7 @@ export function pausing(session, gate, where = 'a cell') {
   session.js = async (...args) => { await gate.wait(where); return js(...args); };
   return session;
 }
-export const NO_PAUSE = Object.freeze({active: () => false, reason: () => null, note: () => {}, wait: async () => null});
+export const NO_PAUSE = Object.freeze({wait: async () => null, begin: () => ({generation: null}), overlapped: () => null});
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const {values, positionals: [command]} = parseArgs({allowPositionals: true, options: {file: {type: 'string'}, mirror: {type: 'string'}, log: {type: 'string'}}});
@@ -113,9 +171,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const sleep = ms => new Promise(r => { const timer = setTimeout(r, ms); wake = () => { clearTimeout(timer); r(); }; });
   const end = () => { stop = true; wake?.(); };
   process.once('SIGTERM', end); process.once('SIGINT', end);
-  watchPause({file: values.file, exec: liveExec, sleep, log, mirror, stopped: () => stop}).finally(() => {
-    rmSync(values.file, {force: true});
-    try { mirror?.remove(); } catch { /* the mini may be gone; the group has finished */ }
-    log('watcher stopped; pause file removed');
-  });
+  watchPause({file: values.file, exec: liveExec, sleep, log, mirror, stopped: () => stop}).then(
+    () => log('watcher stopped; the pause file is its owner\'s to remove'),
+    error => { failClosed(values.file, error, {mirror, log}); process.exitCode = 1; });
 }

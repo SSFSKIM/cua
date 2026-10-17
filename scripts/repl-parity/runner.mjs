@@ -7,7 +7,9 @@ import {assertPreparedFacts} from './provenance.mjs';
 import {validateAttestations} from './compare.mjs';
 import {NO_PAUSE} from '../mini-pause.mjs';
 // The run's pause gate (scripts/mini-pause.mjs pauseGate, MAWS DL 58), set once per run: every lane's cells wait at
-// their boundary while the mini's CI runner is busy. A cell that waited, or during which the pause turned on, keeps its
+// their boundary while the mini's CI runner is busy, and every js call a connection makes waits there too (a lane's
+// own setup cells included), so nothing reaches the mini's GUI during a pause. A cell that waited, or that a pause
+// overlapped (it held at the cell's end, or one began while the cell ran), keeps its
 // raw `ms` but is marked `pause`, and its timing is handed to the scenario's assertion as undefined: dropped, not judged.
 let runPause=NO_PAUSE;
 export const usePauseGate=gate=>{runPause=gate??NO_PAUSE;};
@@ -24,8 +26,9 @@ export class AttestedConnections {
     const executionFacts=init._meta?.['cua/parityExecution'];if(command.expectedFacts)assertPreparedFacts(command.expectedFacts,executionFacts);
     const call=client.call.bind(client);let observation;
     client.call=(name,args,meta)=>{
-      const pending=call(name,args,meta);
-      const result=pending.then(r=>{
+      // Every js call waits at the run's pause first, whoever makes it (a lane's setup cells too).
+      let pending;const dispatched=name==='js'?runPause.wait(`a js call on ${connection}`).then(()=>(pending=call(name,args,meta))):(pending=call(name,args,meta));
+      const result=Promise.resolve(dispatched).then(r=>{
         // Proxy-local tools cannot establish host identity. Every real host result is checked, not just the first.
         if(name==='js'||name==='js_reset'){
           const observedFacts=executionFacts?{...executionFacts,...(answeringHost?{answeringHost}:{})}:undefined;
@@ -34,7 +37,7 @@ export class AttestedConnections {
           if(!observation){observation=a;this.hostAttestations.push(a);}
         }
         return r;
-      });result.requestId=pending.requestId;return result;
+      });Object.defineProperty(result,'requestId',{get:()=>pending?.requestId});return result;
     };
     return client;
   }
@@ -46,17 +49,17 @@ export class AttestedConnections {
 export async function runRawScenario(scenario,{client,emit,checkout,reset=true,context={},profiles,replaceCode=code=>code,pause=runPause}) {
   const results=[],timings=[],pausedCells=[],normalize=createNormalizer({imageMode:scenario.imageMode??'exact',schemaFields:false});
   if(reset)await client.call('js_reset');
-  // A cell's pause: waited at its boundary, or the pause file appeared while it ran.
-  const pausedDuring=(where,waited)=>{if(waited)return waited;if(!pause.active())return null;const during={where,reason:pause.reason(),during:true};pause.note(during);return during;};
+  // A cell's pause: it waited at its boundary, or a pause overlapped it (the gate's generation history, not only the file).
+  const pausedDuring=(where,waited,token)=>waited??pause.overlapped(token,where);
   const timed=(paused,ms)=>{if(paused){pausedCells.push(timings.length);timings.push(undefined);}else timings.push(ms);};
   for(const cell of scenario.cells){
-    const where=`${scenario.id} ${cell.label??cell.op}`,waited=await pause.wait(where);
+    const where=`${scenario.id} ${cell.label??cell.op}`,waited=await pause.wait(where),token=pause.begin();
     if(cell.answer)client.setElicitationAnswer(async()=>{if(cell.answerDelayMs)await new Promise(r=>setTimeout(r,cell.answerDelayMs));return cell.answer;});
     const start=performance.now();let result,timer;
     if(cell.op==='turn'){
       const replies=await observeTurnReplies(cell,{client}),witnessed=cell.witnessCount!==undefined;
       if(replies.some(r=>r.result.isError))throw new Error('Turn completion refused');
-      const paused=pausedDuring(where,waited);
+      const paused=pausedDuring(where,waited,token);
       results.push(witnessed?{replies}:replies[0].result);timed(paused,Math.max(...replies.map(r=>r.hostTurnMs)));
       for(const [index,reply] of replies.entries()){
         const {afterHookMs,...proof}=reply.observation;
@@ -68,7 +71,7 @@ export async function runRawScenario(scenario,{client,emit,checkout,reset=true,c
       if(cell.op==='profiles'){
         if(!profiles)throw new Error('Profiles host observer unavailable');
         const observed=await profiles();result=observed.result;
-        const paused=pausedDuring(where,waited),ms=performance.now()-start;
+        const paused=pausedDuring(where,waited,token),ms=performance.now()-start;
         results.push(observed);timed(paused,ms);
         await emit({case:scenario.id,cell:cell.label,ok:true,...await normalizeRawResult(result,{normalize}),ms,...(paused?{pause:paused}:{})});continue;
       }
@@ -82,7 +85,7 @@ export async function runRawScenario(scenario,{client,emit,checkout,reset=true,c
         result=await pending;
       }
     } finally {clearTimeout(timer);}
-    const ms=performance.now()-start,paused=pausedDuring(where,waited);
+    const ms=performance.now()-start,paused=pausedDuring(where,waited,token);
     timed(paused,ms);results.push(result);
     const raw=await normalizeRawResult(result,{normalize,imageMode:scenario.imageMode??'exact',tool:cell.op==='endTask'?'end_task':undefined});
     // A tool error is raw outcome data; only independent assertions decide if the error was expected.

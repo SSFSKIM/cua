@@ -3,7 +3,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {REPO} from '../fixtures/runtime-fixture.mjs';
@@ -36,17 +36,24 @@ fi
 exec "$REAL_NODE" "$@"
 `;
 
+// The pause watcher double: it beats (the heartbeat the item waits for) and stays until the item ends it.
+const WATCH = `#!/bin/sh
+while [ $# -gt 0 ]; do [ "$1" = --file ] && f=$2; shift; done
+printf '{"generation":0}' > "$f.alive"; echo "watch $f" >> "$LOG"
+exec sleep 600
+`;
+
 function wrapper(t, args, fail = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua-m1-mini-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const bin = join(dir, 'bin');
   spawnSync('mkdir', ['-p', bin, join(dir, 'evidence'), join(dir, 'scratch')]);
-  for (const [name, body] of [['ssh', SSH], ['scp', SCP], ['node', NODE]]) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
+  for (const [name, body] of [['ssh', SSH], ['scp', SCP], ['node', NODE], ['pausewatch', WATCH]]) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
   const log = join(dir, 'log');
   writeFileSync(log, '');
   const run = spawnSync('sh', ['scripts/sandbox-probe/m1-mini.sh', ...args], {cwd: REPO, encoding: 'utf8',
-    env: {PATH: `${bin}:/usr/bin:/bin`, LOG: log, REAL_NODE: process.execPath, M1_MINI_EVIDENCE: join(dir, 'evidence'), M1_MINI_SCRATCH: join(dir, 'scratch'), M1_MINI_PAUSE_WATCH: 'true', ...fail}});
-  return {...run, log: readFileSync(log, 'utf8')};
+    env: {PATH: `${bin}:/usr/bin:/bin`, LOG: log, REAL_NODE: process.execPath, M1_MINI_EVIDENCE: join(dir, 'evidence'), M1_MINI_SCRATCH: join(dir, 'scratch'), M1_MINI_PAUSE_WATCH: join(bin, 'pausewatch'), ...fail}});
+  return {...run, log: readFileSync(log, 'utf8'), dir};
 }
 const failures = stderr => stderr.split('\n').filter(line => line.includes(': FAILED: '));
 
@@ -78,6 +85,8 @@ test('cfprefs: complete runs judged equal exit 0; a failed run, a failed prepare
   const ok = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness']);
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal((ok.log.match(/run --device mini --host cua --suite \w+ --out \S+ --pause-file \S+cua115-cfprefs-pause\.json/g) ?? []).length, 4, 'every GUI-bound suite run honours the pause file');
+  assert.match(ok.log, /^watch \S+cua115-cfprefs-pause\.json$/m, 'the item ran its watcher');
+  assert.deepEqual(readdirSync(join(ok.dir, 'scratch')).filter(n => n.startsWith('cua115-cfprefs-pause')), [], 'and removed the pause files once the group was done');
   const broken = wrapper(t, ['cfprefs', 'aaa', 'bbb', 'harness'], {FAIL_PARITY: 'run .*--suite services .*after-services'});
   assert.equal(broken.status, 1);
   assert.deepEqual(failures(broken.stderr).map(line => line.replace(/.*FAILED: /, '')), ['after services run (exit 1)', 'before vs after, services: a side has no run']);
